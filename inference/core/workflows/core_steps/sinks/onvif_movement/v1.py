@@ -15,6 +15,7 @@ import asyncio
 
 from pydantic import ConfigDict, Field
 
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
     AllOperationsType,
 )
@@ -178,14 +179,14 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
 # gets the CameraWrapper from the static cameras collection
-def get_camera(camera_ip:str,camera_port:int,camera_username:str,camera_password:str,max_update_rate:int):
+def get_camera(camera_ip:str,camera_port:int,camera_username:str,camera_password:str,max_update_rate:int,move_to_position_after_idle_seconds:int):
     global cameras
     mycam = None
     camera_key = (camera_ip,camera_port)
     if camera_key not in cameras:
         try:
             #"/usr/local/lib/python3.9/site-packages/onvif/wsdl"
-            cameras[camera_key] = CameraWrapper(max_update_rate)
+            cameras[camera_key] = CameraWrapper(max_update_rate,move_to_position_after_idle_seconds)
             #mycam = ONVIFCamera(camera_ip, camera_port, camera_username, camera_password, f"{os.path.dirname(spec.origin)}/wsdl")
             cameras[camera_key].connect_camera(camera_ip, camera_port, camera_username, camera_password)
         except Exception as e:
@@ -196,13 +197,13 @@ def get_camera(camera_ip:str,camera_port:int,camera_username:str,camera_password
             )
     return cameras[camera_key]
 
-def camera_moving(camera_ip:str,camera_port:int) -> bool:
+def camera_seeking(camera_ip:str,camera_port:int) -> bool:
     global cameras
     camera_key = (camera_ip,camera_port)
     camera = cameras.get(camera_key)
     if not camera:
         return False
-    return camera.moving()
+    return camera.seeking()
 
 # TODO: might just be easier to save XRange/YRange
 def limits(s) -> Tuple[float]:
@@ -254,16 +255,20 @@ class CameraWrapper:
     presets = None
     last_update_ms:Union[int,None] = None
     max_update_rate:int = 0
-    _moving:Union[bool,None] = None
+    move_to_position_after_idle_seconds:int = 0
+    existing_preset_task:Union[None,asyncio.Task] = None
+    _seeking:Union[bool,None] = None
     _prev_x:float = 100
     _prev_y:float = 100
     _prev_z:float = 100
 
     # create a new camera wrapper with an asyncio event loop
-    def __init__(self,max_update_rate:int):
+    def __init__(self,max_update_rate:int,move_to_position_after_idle_seconds:int):
         self.max_update_rate = max_update_rate
+        self.move_to_position_after_idle_seconds = move_to_position_after_idle_seconds
         self.run_loop = asyncio.new_event_loop()
         thread = threading.Thread(target=run_loop, args=(self.run_loop,))
+        thread.daemon = True
         thread.start()
 
     def connect_camera(self,camera_ip, camera_port, camera_username, camera_password) -> asyncio.Future:
@@ -278,6 +283,20 @@ class CameraWrapper:
     # schedule a future inside the camera's event loop
     def schedule(self,cor) -> asyncio.Future:
         return asyncio.run_coroutine_threadsafe(cor, loop=self.run_loop)
+
+    # pushes out the next scheduled reset
+    def schedule_next_reset(self,preset_name:str):
+        self.schedule(self.next_reset(preset_name))
+
+    async def next_reset(self,preset_name:str):
+        if self.existing_preset_task:
+            self.existing_preset_task.cancel()
+        self.existing_preset_task = asyncio.create_task(self.reset_task(preset_name))
+
+    async def reset_task(self,preset_name:str):
+        await asyncio.sleep(self.move_to_position_after_idle_seconds)
+        print(f"camera is idle for {self.move_to_position_after_idle_seconds}s: moving to preset")
+        await self.go_to_preset_async(preset_name)
 
     # true if movement update hasn't happened within max_update_rate
     def _can_update(self) -> bool:
@@ -347,14 +366,16 @@ class CameraWrapper:
         # reconfigure into a dict keyed by preset name
         self.presets = {preset['Name']:preset for preset in presets}
 
-    def moving(self):
-        return self._moving
+    def seeking(self):
+        return self._seeking
 
     # stops the camera movement
-    def stop_camera(self):
+    def stop_camera(self,preset_name:Union[None,str]):
         # don't stop if already stopped as stop commands aren't rate limited
-        if self._moving or self._moving is None:
+        if self._seeking or self._seeking is None:
             self.continuous_move(0,0,0,0)
+            if preset_name:
+                self.schedule_next_reset(preset_name)
             '''
             # not all cameras support stop
             try:
@@ -364,7 +385,7 @@ class CameraWrapper:
                 pass
             '''
 
-        self._moving = False
+        self._seeking = False
 
     def go_to_preset(self, preset_name:str):
         self.schedule(self.go_to_preset_async(preset_name))
@@ -401,8 +422,8 @@ class CameraWrapper:
             }
         }
 
+        self._seeking = False
         await ptz.GotoPreset(request)
-        self._moving = True
 
     # tells the camera to move at a continuous velocity
     def continuous_move(self,x:float,y:float,z:float,movement_speed_percent:float):
@@ -442,7 +463,7 @@ class CameraWrapper:
 
         limits = self.velocity_limits
 
-        print(f"x:{x} y:{y} z:{z} limits:{limits} speed_percent:{movement_speed_percent}")
+        #print(f"x:{x} y:{y} z:{z} limits:{limits} speed_percent:{movement_speed_percent}")
         # normalize to camera's velocity limits
         x_limit = limits.x.min if x<0 else limits.x.max
         y_limit = limits.y.min if x<0 else limits.y.max
@@ -462,17 +483,15 @@ class CameraWrapper:
             }
         }
 
-        #self.save_last_speeds(x,y)
-
         print(f"ptz continuous move update: {x},{y},{z}")
 
         # Execute the movement
         await ptz.ContinuousMove(request)
         self.last_update_ms = now()
-        self._moving = True
+        self._seeking = True
 
     def __del__(self):
-        self.stop_camera()
+        self.stop_camera(None)
         self.run_loop.stop()
 
 # pool of camera services can can be used across blocks
@@ -482,9 +501,10 @@ class ONVIFSinkBlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        thread_pool_executor: Optional[ThreadPoolExecutor],
+        step_execution_mode: StepExecutionMode,
     ):
-        self._thread_pool_executor = thread_pool_executor
+        self.bacnet_app = None
+        self._step_execution_mode = step_execution_mode
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -492,7 +512,7 @@ class ONVIFSinkBlockV1(WorkflowBlock):
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["thread_pool_executor"]
+        return ["step_execution_mode"]
 
     def run(
         self,
@@ -502,7 +522,7 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         camera_username: str,
         camera_password: str,
         movement_type: str,
-        default_position_preset: str,
+        default_position_preset: Union[str,None],
         zoom_if_able: bool,
         follow_tracker: bool,
         center_tolerance: int,
@@ -514,34 +534,42 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         reduce_speed_near_zone:bool
     ) -> BlockResult:
 
+        if self._step_execution_mode != StepExecutionMode.LOCAL:
+            raise ValueError(
+                "Inference must be run locally for the ONVIF block"
+            )
+
+        # disable the stop preset if necessary
+        stop_preset = default_position_preset if move_to_position_after_idle_seconds else None
+
         if movement_type=="Follow":
 
-
             if len(predictions.xyxy)==0:
-                # TODO: going to a preset is ok, but we don't want to do that if just one frame is missing a prediction - maybe add some time factor (ex. no prediction in 10 seconds?)
-                #asyncio.run(self.go_to_preset(camera_ip, camera_port, camera_username, camera_password, default_position_preset,camera_update_rate_limit))
-                #print(f"No predictions to move the camera to, moving to preset \"{default_position_preset}\"")
-                self.stop_camera(camera_ip, camera_port, camera_username, camera_password,camera_update_rate_limit)
-                return {PREDICTIONS_OUTPUT_KEY:False,MOVING_OUTPUT_KEY:camera_moving(camera_ip,camera_port)}
-
+                # get/create the camera first so that we can move it to the preset
+                if stop_preset:
+                    get_camera(camera_ip,camera_port,camera_username,camera_password,camera_update_rate_limit,move_to_position_after_idle_seconds)
+                self.stop_camera(camera_ip, camera_port, stop_preset)
+                return {PREDICTIONS_OUTPUT_KEY:False,MOVING_OUTPUT_KEY:camera_seeking(camera_ip,camera_port)}
 
             # get max confidence prediction
             max_confidence = predictions.confidence.max()
             max_confidence_prediction = predictions[predictions.confidence==max_confidence][0]
-            self.async_move(camera_ip, camera_port, camera_username, camera_password, max_confidence_prediction,zoom_if_able,center_tolerance,default_position_preset,camera_update_rate_limit,flip_x_movement,flip_y_movement,movement_speed_percent/100.0,reduce_speed_near_zone)
+            self.async_move(camera_ip, camera_port, camera_username, camera_password, max_confidence_prediction,zoom_if_able,center_tolerance,default_position_preset,camera_update_rate_limit,move_to_position_after_idle_seconds,flip_x_movement,flip_y_movement,movement_speed_percent/100.0,reduce_speed_near_zone,stop_preset)
 
         elif movement_type=="Go To Preset":
-            self.go_to_preset(camera_ip, camera_port, camera_username, camera_password, default_position_preset,camera_update_rate_limit)
+            self.go_to_preset(camera_ip, camera_port, camera_username, camera_password, default_position_preset,camera_update_rate_limit,move_to_position_after_idle_seconds)
 
-        return {PREDICTIONS_OUTPUT_KEY:True,MOVING_OUTPUT_KEY:camera_moving(camera_ip,camera_port)}
+        return {PREDICTIONS_OUTPUT_KEY:True,MOVING_OUTPUT_KEY:camera_seeking(camera_ip,camera_port)}
 
-    def stop_camera(self,camera_ip:str,camera_port:int,camera_username:str,camera_password:str,max_update_rate:int):
-        camera = get_camera(camera_ip,camera_port,camera_username,camera_password,max_update_rate)
-        camera.stop_camera()
+    def stop_camera(self,camera_ip:str,camera_port:int,stop_preset:str):
+        global cameras
+        camera = cameras.get((camera_ip,camera_port))
+        if camera:
+            camera.stop_camera(stop_preset)
 
-    def async_move(self,camera_ip:str,camera_port:int,camera_username:str,camera_password:str,prediction:OBJECT_DETECTION_PREDICTION_KIND,zoom_if_able:bool,center_tolerance:int,preset:str,max_update_rate:int,flip_x_movement:bool,flip_y_movement:bool,movement_speed_percent:float,reduce_speed_near_zone:bool):
+    def async_move(self,camera_ip:str,camera_port:int,camera_username:str,camera_password:str,prediction:OBJECT_DETECTION_PREDICTION_KIND,zoom_if_able:bool,center_tolerance:int,preset:str,max_update_rate:int,move_to_position_after_idle_seconds:int,flip_x_movement:bool,flip_y_movement:bool,movement_speed_percent:float,reduce_speed_near_zone:bool,stop_preset:str):
 
-        camera = get_camera(camera_ip,camera_port,camera_username,camera_password,max_update_rate)
+        camera = get_camera(camera_ip,camera_port,camera_username,camera_password,max_update_rate,move_to_position_after_idle_seconds)
 
         # use as stop command, more generic
         #await camera.continuous_move(0,0)
@@ -558,7 +586,7 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         # make the deltas x, y, zoom
         delta = (center_point-image_center)[0]
 
-        print(f"object center: xyxy:{tuple(xyxy[0])} {center_point} {image_dimensions} {image_center} delta:{delta}")
+        print(f"object center:{center_point} delta:{delta}")
 
         #print(f"delta:{delta}")
         abs_delta = np.abs(delta)
@@ -572,9 +600,9 @@ class ONVIFSinkBlockV1(WorkflowBlock):
                     z_speed = 0.5 if delta[1]<SPEED_REDUCTION_TOLERANCE_MULTIPLIER*center_tolerance and reduce_speed_near_zone else 1
                     camera.continuous_move(0,0,z_speed,movement_speed_percent)
                 else:
-                    camera.stop_camera()
+                    camera.stop_camera(stop_preset)
             else:
-                camera.stop_camera()
+                camera.stop_camera(stop_preset)
         else:
             # larger axis moves at max speed, so normalize to 100%
             speeds = delta/abs_delta.max()
@@ -597,7 +625,7 @@ class ONVIFSinkBlockV1(WorkflowBlock):
             camera.continuous_move(x*x_modifier,y*y_modifier,0,movement_speed_percent)
 
 
-    def go_to_preset(self,camera_ip:str,camera_port:int,camera_username:str,camera_password:str,preset:str,max_update_rate:int):
-        camera = get_camera(camera_ip,camera_port,camera_username,camera_password,max_update_rate)
-        camera.stop_camera()
+    def go_to_preset(self,camera_ip:str,camera_port:int,camera_username:str,camera_password:str,preset:str,max_update_rate:int,move_to_position_after_idle_seconds:int):
+        camera = get_camera(camera_ip,camera_port,camera_username,camera_password,max_update_rate,move_to_position_after_idle_seconds)
+        camera.stop_camera(None)
         camera.go_to_preset(preset)
