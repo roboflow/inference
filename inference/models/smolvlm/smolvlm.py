@@ -1,10 +1,15 @@
+import json
+import os
+
 import torch
+from peft import LoraConfig, PeftModel
 from PIL import Image
-from transformers import AutoModelForImageTextToText
+from transformers import (
+    AutoModelForImageTextToText,
+)
 
-from inference.models.transformers import TransformerModel
-
-
+from inference.core.env import DEVICE, MODEL_CACHE_DIR
+from inference.models.transformers import LoRATransformerModel, TransformerModel
 class SmolVLM(TransformerModel):
     generation_includes_input = True
     transformers_class = AutoModelForImageTextToText
@@ -46,3 +51,106 @@ class SmolVLM(TransformerModel):
             skip_special_tokens=True,
         )
         return generated_texts
+
+class LoRASmolVLM(LoRATransformerModel):
+    load_base_from_roboflow = True
+    generation_includes_input = True
+    skip_special_tokens = True
+    transformers_class = AutoModelForImageTextToText
+    default_dtype = torch.bfloat16
+    use_quantization = True
+
+    def get_lora_base_from_roboflow(self, model_id, revision):
+        cache_dir = super().get_lora_base_from_roboflow(model_id, revision)
+        return cache_dir
+
+    def initialize_model(self):
+        config_file = os.path.join(self.cache_dir, "adapter_config.json")
+
+        with open(config_file, "r") as file:
+            config = json.load(file)
+
+        keys_to_remove = ["corda_config", "lora_bias", "exclude_modules", "trainable_token_indices"]
+
+        for key in keys_to_remove:
+            config.pop(key, None)
+
+        with open(config_file, "w") as file:
+            json.dump(config, file, indent=2)
+
+        lora_config = LoraConfig(**config)
+        model_id = lora_config.base_model_name_or_path
+        revision = lora_config.revision
+        self.dtype = torch.bfloat16
+        model_load_id = self.get_lora_base_from_roboflow(model_id, revision)
+        cache_dir = model_load_id
+        revision = None
+        token = None
+
+        rm_weights = os.path.join(
+            MODEL_CACHE_DIR, "lora-bases/smolvlm2/main/weights.tar.gz"
+        )
+        if os.path.exists(rm_weights):
+            os.remove(rm_weights)
+
+        self.base_model = self.transformers_class.from_pretrained(
+            model_load_id,
+            revision=revision,
+            device_map=DEVICE,
+            cache_dir=cache_dir,
+            token=token,
+        )
+
+        self.model = (
+            PeftModel.from_pretrained(self.base_model, self.cache_dir)
+            .eval()
+            .to(self.dtype)
+        )
+
+        self.model.merge_and_unload()
+
+        self.processor = self.processor_class.from_pretrained(
+            os.path.join(
+            MODEL_CACHE_DIR, "lora-bases/smolvlm2/main")
+        )
+
+    def predict(self, image_in: Image.Image, prompt="", **kwargs):
+
+        conversation = [
+            {"role": "user", "content": [{"type": "text", "text": "Answer briefly."}, {"type": "image"}, {"type": "text", "text": prompt}]}
+        ]
+
+        text_prompt = self.processor.apply_chat_template(conversation, add_generation_prompt=True)
+
+        model_inputs = self.processor(text=text_prompt, images=image_in, return_tensors="pt", padding=True)
+
+        for k, v in model_inputs.items():
+            if isinstance(v, torch.Tensor):
+                model_inputs[k] = v.to(self.model.device)
+                if (v.dtype != torch.int64 and v.dtype != torch.int32):
+                    model_inputs[k] = v.to(self.model.device, dtype=self.dtype)
+
+        input_len = model_inputs["input_ids"].shape[-1]
+
+        with torch.inference_mode():
+            generation = self.model.generate(
+                **model_inputs,
+                max_new_tokens=1024,
+                do_sample=False,
+                pad_token_id=self.processor.tokenizer.pad_token_id,
+                eos_token_id=self.processor.tokenizer.eos_token_id,
+            )
+            
+        if self.generation_includes_input:
+            generation = generation[:, input_len:]
+
+        decoded = self.processor.decode(
+            generation[0],
+            skip_special_tokens=self.skip_special_tokens,
+        )
+
+        parts = decoded.split("Assistant: ")
+        if len(parts) > 1:
+            decoded = parts[-1].strip()
+
+        return (decoded,)
