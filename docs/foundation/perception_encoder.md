@@ -80,17 +80,15 @@ def render(result, image):
     cv2.putText(image, prompt, (20, 1050), cv2.FONT_HERSHEY_SIMPLEX, 2, (206, 6, 103), 5)
 
     # display the image
-    cv2.imshow("CLIP", image)
+    cv2.imshow("PE", image)
     cv2.waitKey(1)
 
 # start the stream
 inference.Stream(
     source="webcam",
     model=pe,
-
     output_channel_order="BGR",
     use_main_thread=True,
-
     on_prediction=render
 )
 ```
