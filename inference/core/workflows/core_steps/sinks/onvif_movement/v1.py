@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 import importlib
 import os
 import time
@@ -316,19 +317,18 @@ class CameraWrapper:
         return self._moving
 
     # stops the camera movement
-    async def stop_camera(self,zoom_out:bool):
+    async def stop_camera(self):
         # don't stop if already stopped as stop commands aren't rate limited
         if self._moving or self._moving is None:
             print("stopping camera")
             # make sure movement speed percent is 100% in this case for zoom
-            await self.continuous_move(0,0,-1 if zoom_out else 0,100)
+            await self.continuous_move(0,0,0,100)
             # not all cameras support stop
-            if not zoom_out:
-                try:
-                    ptz = await self.ptz_service()
-                    ptz.stop()
-                except Exception as e:
-                    pass
+            try:
+                ptz = await self.ptz_service()
+                ptz.stop()
+            except Exception as e:
+                pass
 
         self._moving = False
 
@@ -437,9 +437,19 @@ cameras: Dict[Tuple[str,int],CameraWrapper] = {}
 
 class ONVIFSinkBlockV1(WorkflowBlock):
 
+    def __init__(
+        self,
+        thread_pool_executor: Optional[ThreadPoolExecutor],
+    ):
+        self._thread_pool_executor = thread_pool_executor
+
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
+
+    @classmethod
+    def get_init_parameters(cls) -> List[str]:
+        return ["thread_pool_executor"]
 
     def run(
         self,
@@ -468,7 +478,7 @@ class ONVIFSinkBlockV1(WorkflowBlock):
                 # TODO: going to a preset is ok, but we don't want to do that if just one frame is missing a prediction - maybe add some time factor (ex. no prediction in 10 seconds?)
                 #asyncio.run(self.go_to_preset(camera_ip, camera_port, camera_username, camera_password, default_position_preset,camera_update_rate_limit))
                 #print(f"No predictions to move the camera to, moving to preset \"{default_position_preset}\"")
-                asyncio.run(self.stop_camera(camera_ip, camera_port, camera_username, camera_password,camera_update_rate_limit,True if zoom_if_able else False))
+                asyncio.run(self.stop_camera(camera_ip, camera_port, camera_username, camera_password,camera_update_rate_limit))
                 return {PREDICTIONS_OUTPUT_KEY:False,MOVING_OUTPUT_KEY:camera_moving(camera_ip,camera_port)}
 
 
@@ -482,9 +492,9 @@ class ONVIFSinkBlockV1(WorkflowBlock):
 
         return {PREDICTIONS_OUTPUT_KEY:True,MOVING_OUTPUT_KEY:camera_moving(camera_ip,camera_port)}
 
-    async def stop_camera(self,camera_ip:str,camera_port:int,camera_username:str,camera_password:str,max_update_rate:int,zoom_out:bool):
+    async def stop_camera(self,camera_ip:str,camera_port:int,camera_username:str,camera_password:str,max_update_rate:int):
         camera = await get_camera(camera_ip,camera_port,camera_username,camera_password,max_update_rate)
-        await camera.stop_camera(zoom_out)
+        await camera.stop_camera()
 
     async def async_move(self,camera_ip:str,camera_port:int,camera_username:str,camera_password:str,prediction:OBJECT_DETECTION_PREDICTION_KIND,zoom_if_able:bool,center_tolerance:int,preset:str,max_update_rate:int,flip_x_movement:bool,flip_y_movement:bool,movement_speed_percent:float,reduce_speed_near_zone:bool):
 
@@ -508,7 +518,8 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         print(f"object center: xyxy:{tuple(xyxy[0])} {center_point} {image_dimensions} {image_center} delta:{delta}")
 
         #print(f"delta:{delta}")
-        if np.all(np.abs(delta) < center_tolerance):
+        abs_delta = np.abs(delta)
+        if np.all(abs_delta < center_tolerance):
             #await camera.stop_camera(False)
             # zoom is only allowed if the camera is stopped - helps to minimize hunting
             # this could be integrated into the pan/tilt movement with better motion control
@@ -518,20 +529,25 @@ class ONVIFSinkBlockV1(WorkflowBlock):
                     z_speed = 0.5 if delta[1]<SPEED_REDUCTION_TOLERANCE_MULTIPLIER*center_tolerance and reduce_speed_near_zone else 1
                     await camera.continuous_move(0,0,z_speed,movement_speed_percent)
                 else:
-                    await camera.stop_camera(False)
+                    await camera.stop_camera()
             else:
-                await camera.stop_camera(False)
+                await camera.stop_camera()
         else:
             # larger axis moves at max speed, so normalize to 100%
-            speeds = delta/np.abs(delta).max()
+            speeds = delta/abs_delta.max()
 
-            x_reduction_factor = 0.5 if delta[0]<SPEED_REDUCTION_TOLERANCE_MULTIPLIER*center_tolerance and reduce_speed_near_zone else 1
-            y_reduction_factor = 0.5 if delta[1]<SPEED_REDUCTION_TOLERANCE_MULTIPLIER*center_tolerance and reduce_speed_near_zone else 1
+            # reduce speed by half if close to the zone
+            # this is a bit simpler than a P/PID control for v1
+            x_reduction_factor = 0.5 if abs_delta[0]<SPEED_REDUCTION_TOLERANCE_MULTIPLIER*center_tolerance and reduce_speed_near_zone else 1
+            y_reduction_factor = 0.5 if abs_delta[1]<SPEED_REDUCTION_TOLERANCE_MULTIPLIER*center_tolerance and reduce_speed_near_zone else 1
 
-            x = speeds[0]*x_reduction_factor
-            y = speeds[1]*y_reduction_factor
+            # set speed to 0 for axis within tolerance
+            # this might not be necessary and slows the process down a bit, but trying to avoid hunting
+            # with a good PID loop, this will no longer be necessary
+            x = speeds[0]*x_reduction_factor if abs_delta[0]>center_tolerance else 0
+            y = speeds[1]*y_reduction_factor if abs_delta[1]>center_tolerance else 0
 
-            # flip movement as necessary
+            # flip movement as necessary based on settings
             x_modifier = -1 if flip_x_movement else 1
             y_modifier = -1 if flip_y_movement else 1
 
@@ -540,9 +556,9 @@ class ONVIFSinkBlockV1(WorkflowBlock):
 
     async def go_to_preset(self,camera_ip:str,camera_port:int,camera_username:str,camera_password:str,preset:str,max_update_rate:int):
         camera = await get_camera(camera_ip,camera_port,camera_username,camera_password,max_update_rate)
-        await camera.stop_camera(False)
+        await camera.stop_camera()
         await camera.go_to_preset(preset)
 
     # if the block is destroyed, don't let the camera keep drifting
     def __del__(self):
-        asyncio.run(self.stop_camera(False))
+        asyncio.run(self.stop_camera())
