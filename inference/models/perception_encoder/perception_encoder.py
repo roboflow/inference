@@ -216,7 +216,7 @@ class PerceptionEncoder(RoboflowCoreModel):
         for texts_batch in create_batches(
             sequence=texts, batch_size=CLIP_MAX_BATCH_SIZE
         ):
-            tokenized = self.tokenizer(texts_batch)
+            tokenized = self.tokenizer(texts_batch).to(self.device)
             # Use float32 for CPU, bfloat16 for CUDA
             if self.device == "cpu" or self.device == "mps":
                 with torch.no_grad():
