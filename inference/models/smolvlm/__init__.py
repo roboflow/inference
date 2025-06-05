@@ -1,1 +1,1 @@
-from inference.models.smolvlm.smolvlm import SmolVLM, LoRASmolVLM
+from inference.models.smolvlm.smolvlm import LoRASmolVLM, SmolVLM
