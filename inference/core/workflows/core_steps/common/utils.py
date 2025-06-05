@@ -332,6 +332,19 @@ def filter_out_unwanted_classes_from_sv_detections_batch(
     return filtered_predictions
 
 
+def filter_out_sv_incompatible_instance_seg_predictions(
+    predictions: List[sv.Detections],
+) -> List[sv.Detections]:
+    processed_predictions = []
+    for p in predictions:
+        if p.mask is None or len(p) == 0:
+            processed_predictions.append(p)
+            continue
+        keep_mask = np.array([poly.shape[0] >= 3 for poly in p.mask])
+        processed_predictions.append(p[keep_mask])
+    return processed_predictions
+
+
 def grab_batch_parameters(
     operations_parameters: Dict[str, Any],
     main_batch_size: int,

@@ -11,6 +11,7 @@ from inference.core.workflows.core_steps.common.utils import (
     attach_prediction_type_info_to_sv_detections_batch,
     convert_inference_detections_batch_to_sv_detections,
     filter_out_unwanted_classes_from_sv_detections_batch,
+    filter_out_sv_incompatible_instance_seg_predictions,
     grab_batch_parameters,
     grab_non_batch_parameters,
     remove_unexpected_keys_from_dictionary,
@@ -772,6 +773,50 @@ def test_filter_out_unwanted_classes_from_sv_detections_batch_when_filtering_sho
     # then
     assert len(result) == 1, "Expected batch dimension not to change"
     assert result[0] == expected_result, "We expect result to be filtered"
+
+
+def test_filter_out_sv_incompatible_instance_seg_predictions() -> None:
+    # given
+    predictions = [
+        sv.Detections(
+            xyxy=np.array([[10, 20, 30, 40], [50, 60, 70, 80]]),
+            mask=np.array(
+                [
+                    np.array([[1, 1], [1, 2], [2, 2]]),
+                    np.array([[1, 1], [2, 2]]),
+                ],
+                dtype=object,
+            ),
+        ),
+        sv.Detections(
+            xyxy=np.array([[11, 21, 31, 41]]),
+            mask=np.array(
+                [
+                    np.array([[1, 1], [1, 2], [2, 2], [2, 1]]),
+                ],
+                dtype=object,
+            ),
+        ),
+        sv.Detections.empty(),
+        sv.Detections(
+            xyxy=np.array([[11, 21, 31, 41]]),
+            mask=None,
+        ),
+    ]
+
+    # when
+    result = filter_out_sv_incompatible_instance_seg_predictions(
+        predictions=predictions
+    )
+
+    # then
+    assert len(result) == 4
+    assert len(result[0]) == 1
+    assert len(result[1]) == 1
+    assert len(result[2]) == 0
+    assert len(result[3]) == 1
+    assert np.all(result[0].mask[0] == np.array([[1, 1], [1, 2], [2, 2]]))
+    assert np.all(result[1].mask[0] == np.array([[1, 1], [1, 2], [2, 2], [2, 1]]))
 
 
 def test_grab_batch_parameters() -> None:

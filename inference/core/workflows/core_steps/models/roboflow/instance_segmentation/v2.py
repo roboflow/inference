@@ -19,6 +19,7 @@ from inference.core.workflows.core_steps.common.utils import (
     attach_prediction_type_info_to_sv_detections_batch,
     convert_inference_detections_batch_to_sv_detections,
     filter_out_unwanted_classes_from_sv_detections_batch,
+    filter_out_sv_incompatible_instance_seg_predictions,
 )
 from inference.core.workflows.execution_engine.constants import INFERENCE_ID_KEY
 from inference.core.workflows.execution_engine.entities.base import (
@@ -363,6 +364,9 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
         predictions = filter_out_unwanted_classes_from_sv_detections_batch(
             predictions=predictions,
             classes_to_accept=class_filter,
+        )
+        predictions = filter_out_sv_incompatible_instance_seg_predictions(
+            predictions=predictions
         )
         predictions = attach_parents_coordinates_to_batch_of_sv_detections(
             images=images,
