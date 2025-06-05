@@ -241,6 +241,7 @@ class PerceptionEncoder(RoboflowCoreModel):
         Returns:
             Tuple[np.ndarray]: A tuple containing the embeddings as a numpy array.
         """
+        img_in = img_in.to(self.device)
         if self.device == "cpu" or self.device == "mps":
             with torch.inference_mode():
                 image_features, _, _ = self.model(img_in, None)
