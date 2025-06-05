@@ -485,14 +485,14 @@ def _parse_backend_type(value: str) -> BackendType:
 def _parse_requested_quantization(
     value: Union[str, Quantization, List[Union[str, Quantization]]]
 ) -> Set[Quantization]:
+    # Ensure value is iterable
     if not isinstance(value, list):
         value = [value]
-    result = set()
-    for element in value:
-        if isinstance(element, str):
-            element = _parse_quantization(value=element)
-        result.add(element)
-    return result
+    # Use set comprehension for performance and clarity
+    return {
+        _parse_quantization(element) if isinstance(element, str) else element
+        for element in value
+    }
 
 
 def _parse_quantization(value: str) -> Quantization:
