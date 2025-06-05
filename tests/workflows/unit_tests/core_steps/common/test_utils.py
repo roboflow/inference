@@ -782,8 +782,8 @@ def test_filter_out_sv_incompatible_instance_seg_predictions() -> None:
             xyxy=np.array([[10, 20, 30, 40], [50, 60, 70, 80]]),
             mask=np.array(
                 [
-                    np.array([[1, 1], [1, 2], [2, 2]]),
-                    np.array([[1, 1], [2, 2]]),
+                    sv.polygon_to_mask(polygon=np.array([[1, 1], [1, 2], [2, 2]]), resolution_wh=(100, 100)),
+                    sv.polygon_to_mask(polygon=np.array([[1, 1], [2, 2]]), resolution_wh=(100, 100)),
                 ],
                 dtype=object,
             ),
@@ -792,7 +792,7 @@ def test_filter_out_sv_incompatible_instance_seg_predictions() -> None:
             xyxy=np.array([[11, 21, 31, 41]]),
             mask=np.array(
                 [
-                    np.array([[1, 1], [1, 2], [2, 2], [2, 1]]),
+                    sv.polygon_to_mask(polygon=np.array([[1, 1], [1, 2], [2, 2], [2, 1]]), resolution_wh=(100, 100)),
                 ],
                 dtype=object,
             ),
