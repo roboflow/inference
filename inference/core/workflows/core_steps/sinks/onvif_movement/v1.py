@@ -42,9 +42,11 @@ from inference.core.workflows.prototypes.block import (
 # speed will start to be reduced this many tolerances from tolerance zone
 SPEED_REDUCTION_TOLERANCE_MULTIPLIER = 2
 
-# number of seconds to switch to zoom only (no xy movement)
-# will also turn off if bounding box goes all the way to the edge
-ZOOM_MODE_SECONDS = 5
+# max number of seconds to switch to zoom only (no xy movement)
+ZOOM_MODE_SECONDS = 2
+
+# after the first zoom mode, reduce speed by this much
+ZOOM_MODE_SPEED_REDUCER = 0.5
 
 PREDICTIONS_OUTPUT_KEY: str = "predictions"
 MOVING_OUTPUT_KEY: str = "moving"
@@ -60,18 +62,21 @@ Note that since the camera runs independently of the block, both booleans might 
 
 There are two modes:
 
-Follow:
+*Follow:
 The object it follows is the maximum confidence prediction out of all predictions passed into it. To follow
 a specific object, use the appropriate filters on the predictiion object to specify the object you want to
 follow. Additionally if a tracker is used, the camera will follow the tracked object until it disappears.
 Additionally, zoom can be toggled to get the camera to zoom into a position.
 
-Move to Preset:
+*Move to Preset:
 The camera can also move to a defined preset position. The camera must support the GotoPreset service.
 
 Note that the tracking block uses the ONVIF continuous movement service. Tracking is adjusted on each successive
 workflow execution. If workflow execution stops, and the camera is currently moving, the camera will continue
 moving until it reaches the limits and will no longer be following an object.
+
+In cases with significant RTSP lag, the camera can easily begin hunting. The speed might have to be
+reduced, and the tolerances might have to be increased.
 
 """
 
@@ -142,7 +147,7 @@ class BlockManifest(WorkflowBlockManifest):
         description="Move to the default position after this many seconds of not seeking (0 to disable)",
     )
     camera_update_rate_limit: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
-        default=1000,
+        default=500,
         description="Minimum number of milliseconds between ONVIF movement updates",
     )
     flip_x_movement: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
@@ -269,7 +274,9 @@ class CameraWrapper:
     _prev_x:float = 100
     _prev_y:float = 100
     _prev_z:float = 100
-    _zooming:bool=False # don't allow xy movements, zoom only
+    _start_zoom_time:Union[None,int] = None # don't allow xy movements when not None, zoom only
+    _stop_preset:Union[str,None] = None
+    _is_zoomed:bool = False
 
     # create a new camera wrapper with an asyncio event loop
     def __init__(self,max_update_rate:int,move_to_position_after_idle_seconds:int):
@@ -289,26 +296,31 @@ class CameraWrapper:
         self.camera = ONVIFCamera(camera_ip, camera_port, camera_username, camera_password, wdsl_path)
         await self.configure_async()
 
+    def set_stop_preset(self,stop_preset:Union[str,None]):
+        self._stop_preset = stop_preset
+
     # schedule a future inside the camera's event loop
     def schedule(self,cor) -> asyncio.Future:
         return asyncio.run_coroutine_threadsafe(cor, loop=self.run_loop)
 
     # pushes out the next scheduled reset
-    def schedule_next_reset(self,preset_name:str):
-        self.schedule(self.next_reset(preset_name))
+    def schedule_next_reset(self):
+        if self._stop_preset:
+            self.schedule(self.next_reset())
 
     def clear_next_reset(self):
         if self.existing_preset_task:
             self.existing_preset_task.cancel()
 
-    async def next_reset(self,preset_name:str):
+    async def next_reset(self):
         self.clear_next_reset()
-        self.existing_preset_task = asyncio.create_task(self.reset_task(preset_name))
+        self.existing_preset_task = asyncio.create_task(self.reset_task())
+        await self.existing_preset_task
 
-    async def reset_task(self,preset_name:str):
+    async def reset_task(self):
         await asyncio.sleep(self.move_to_position_after_idle_seconds)
         print(f"camera is idle for {self.move_to_position_after_idle_seconds}s: moving to preset")
-        await self.go_to_preset_async(preset_name)
+        await self.go_to_preset_async(self._stop_preset)
 
     # true if movement update hasn't happened within max_update_rate
     def _can_update(self) -> bool:
@@ -382,13 +394,12 @@ class CameraWrapper:
         return self._seeking
 
     # stops the camera movement
-    def stop_camera(self,preset_name:Union[None,str]):
-        self._zooming = False
+    def stop_camera(self):
         # don't stop if already stopped as stop commands aren't rate limited
         if self._seeking or self._seeking is None:
+            print("STOP CAMERA!!!!!!")
             self.continuous_move(0,0,0,0)
-            if preset_name:
-                self.schedule_next_reset(preset_name)
+            self.schedule_next_reset()
             '''
             # not all cameras support stop
             try:
@@ -436,14 +447,28 @@ class CameraWrapper:
         }
 
         self._seeking = False
+        self._is_zoomed = False
         await ptz.GotoPreset(request)
 
     def zoom(self,z:float,movement_speed_percent:float):
-        self._zooming=True
+        # start limited time zoom mode
+        if not self._start_zoom_time:
+            self._start_zoom_time = now()
+        # even though the zoom command should 0 out pan/tilt, sending an explicit stop on all axes seems to help
+        self.stop_camera()
         self.schedule(self.continuous_move_async(0,0,z,movement_speed_percent))
 
+    def stop_zoom(self):
+        if self._start_zoom_time is not None:
+            print("zoom mode is over")
+            self._start_zoom_time = None
+            #self.stop_camera()
+
     def zooming(self) -> bool:
-        return self._zooming
+        global ZOOM_MODE_SECONDS
+        if self._start_zoom_time and now()>self._start_zoom_time+ZOOM_MODE_SECONDS*1000:
+            self.stop_zoom()
+        return self._start_zoom_time is not None
 
     # tells the camera to move at a continuous velocity
     def continuous_move(self,x:float,y:float,z:float,movement_speed_percent:float):
@@ -462,18 +487,21 @@ class CameraWrapper:
             movement_speed_percent: percent of maximum movement speed as 0-1
         """
 
+        global ZOOM_MODE_SPEED_REDUCER
+
         if self.media_profile_token is None:
             await self.configure_async()
 
         # clear out any scheduled position resets
         # they'll be rescheduled on the next stop
-        self.clear_next_reset()
+        if x!=0 and y!=0 and z!=0:
+            self.clear_next_reset()
 
         # try to avoid hunting by allowing immediate stop
         x_changed, y_changed, z_changed = self.save_last_speeds(x,y,z)
-        #print(f"changed: {x_changed} {y_changed} {z_changed} {x} {y} {z}")
-        if (x==0 and x_changed) or (y==0 and y_changed) or (y==z and z_changed):
-            #print(f"forcing stop {self._can_update()}")
+
+        # don't rate limit stop commands
+        if (x==0 and x_changed) or (y==0 and y_changed) or (z==0 and z_changed):
             pass
         elif not self._can_update():
             return
@@ -497,6 +525,10 @@ class CameraWrapper:
         y = abs(y_limit) * y * movement_speed_percent
         z = abs(z_limit) * z * movement_speed_percent
 
+        if self._is_zoomed:
+            x = x*ZOOM_MODE_SPEED_REDUCER
+            y = y*ZOOM_MODE_SPEED_REDUCER
+
         request.Velocity = {
             'PanTilt': {
                 'x': x,
@@ -507,12 +539,18 @@ class CameraWrapper:
             }
         }
 
-        print(f"ptz continuous move update: {x},{y},{z}")
+        print(f"ptz continuous move update: {x},{y},{z} in_zoom:{self._is_zoomed}")
 
         # Execute the movement
         await ptz.ContinuousMove(request)
         self.last_update_ms = now()
-        self._seeking = True
+
+        if z>0:
+            self._is_zoomed = True
+
+        # prevent stops from re-flagging themselves as seeking
+        if x!=0 or y!=0 or z!=0:
+            self._seeking = True
 
     def __del__(self):
         self.stop_camera(None)
@@ -571,7 +609,8 @@ class ONVIFSinkBlockV1(WorkflowBlock):
             if len(predictions.xyxy)==0:
                 # get/create the camera first so that we can move it to the preset
                 if stop_preset:
-                    get_camera(camera_ip,camera_port,camera_username,camera_password,camera_update_rate_limit,move_to_position_after_idle_seconds)
+                    camera = get_camera(camera_ip,camera_port,camera_username,camera_password,camera_update_rate_limit,move_to_position_after_idle_seconds)
+                    camera.set_stop_preset(stop_preset)
                 self.stop_camera(camera_ip, camera_port, stop_preset)
                 return {PREDICTIONS_OUTPUT_KEY:False,MOVING_OUTPUT_KEY:camera_seeking(camera_ip,camera_port)}
 
@@ -588,12 +627,14 @@ class ONVIFSinkBlockV1(WorkflowBlock):
     def stop_camera(self,camera_ip:str,camera_port:int,stop_preset:str):
         global cameras
         camera = cameras.get((camera_ip,camera_port))
+        camera.set_stop_preset(stop_preset)
         if camera:
-            camera.stop_camera(stop_preset)
+            camera.stop_camera()
 
     def async_move(self,camera_ip:str,camera_port:int,camera_username:str,camera_password:str,prediction:OBJECT_DETECTION_PREDICTION_KIND,zoom_if_able:bool,center_tolerance:int,preset:str,max_update_rate:int,move_to_position_after_idle_seconds:int,flip_x_movement:bool,flip_y_movement:bool,movement_speed_percent:float,reduce_speed_near_zone:bool,stop_preset:str):
         global zoom
         camera = get_camera(camera_ip,camera_port,camera_username,camera_password,max_update_rate,move_to_position_after_idle_seconds)
+        camera.set_stop_preset(stop_preset)
 
         # use as stop command, more generic
         #await camera.continuous_move(0,0)
@@ -616,25 +657,31 @@ class ONVIFSinkBlockV1(WorkflowBlock):
 
         # if we're locked into zoom only mode, and the object goes to the edge, unlock it and go back to pan/tilt
         if camera.zooming() and zoom_delta<center_tolerance:
-            print(f"stop zooming: {xyxy[0]}")
-            camera.stop_camera(stop_preset)
+            #print(f"stop zooming: {xyxy[0]}")
+            #camera.stop_camera(stop_preset)
+            camera.stop_zoom()
 
         #print(f"delta:{delta}")
         abs_delta = np.abs(delta)
-        if (np.all(abs_delta < center_tolerance) or camera.zooming()) and not box_at_edge:
+
+        if (np.all(abs_delta < center_tolerance) or camera.zooming()):
+            # if within tolerance or currently zooming, then camera is in zoom mode if available
+            # this can continue for up to 5 seconds
             if zoom_if_able:
-                if zoom_delta>center_tolerance:
-                    print(f"zoom delta: {zoom_delta}")
+                if zoom_delta>center_tolerance or box_at_edge:
+                    print(f"zoom delta: {zoom_delta} box at edge:{box_at_edge}")
                     z = (0.5 if zoom_delta<SPEED_REDUCTION_TOLERANCE_MULTIPLIER*center_tolerance and reduce_speed_near_zone else 1) if zoom_if_able else 0
                     #camera.continuous_move(0,0,z,movement_speed_percent)
-                    camera.zoom(z,movement_speed_percent)
+                    camera.zoom(z*-1 if box_at_edge else z,movement_speed_percent)
+                    #camera.zoom(z,movement_speed_percent)
                 else:
-                    camera.stop_camera(stop_preset)
+                    if camera.zooming():
+                        camera.stop_camera()
             else:
-                camera.stop_camera(stop_preset)
-        elif box_at_edge or camera.zooming():
-            camera.zoom(-1,movement_speed_percent)
+                camera.stop_camera()
         else:
+            # if not in zoom mode, then allow xy (pan/tilt) motion
+
             # larger axis moves at max speed, so normalize to 100%
             speeds = delta/abs_delta.max()
 
