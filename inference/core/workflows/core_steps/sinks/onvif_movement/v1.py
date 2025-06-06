@@ -45,7 +45,7 @@ SPEED_REDUCTION_TOLERANCE_MULTIPLIER = 2
 # max number of seconds to switch to zoom only (no xy movement)
 ZOOM_MODE_SECONDS = 2
 
-# after the first zoom mode, reduce speed by this much
+# after the first zoom mode, reduce pan/tilt speed by this much
 ZOOM_MODE_SPEED_REDUCER = 0.5
 
 PREDICTIONS_OUTPUT_KEY: str = "predictions"
@@ -331,7 +331,7 @@ class CameraWrapper:
     def save_last_speeds(self,x,y,z) -> Tuple[bool,bool]:
         x_changed = x!=self._prev_x
         y_changed = y!=self._prev_y
-        z_changed = y!=self._prev_z
+        z_changed = z!=self._prev_z
         self._prev_x = x
         self._prev_y = y
         self._prev_z = z
@@ -458,9 +458,7 @@ class CameraWrapper:
 
     def stop_zoom(self):
         if self._start_zoom_time is not None:
-            print("zoom mode is over")
             self._start_zoom_time = None
-            #self.stop_camera()
 
     def zooming(self) -> bool:
         global ZOOM_MODE_SECONDS
@@ -649,8 +647,8 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         # make the deltas x, y, zoom
         delta = (image_width/2-center_point[0],image_height/2-center_point[1])
 
-        print(f"object center:{center_point} delta:{delta} zoom_delta:{zoom_delta}")
-        print(f"edge {tuple(xyxy[0])} {image_dimensions}")
+        #print(f"object center:{center_point} delta:{delta} zoom_delta:{zoom_delta}")
+        #print(f"edge {tuple(xyxy[0])} {image_dimensions}")
 
         # if we're locked into zoom only mode, and the object goes to the edge, unlock it and go back to pan/tilt
         if camera.zooming() and zoom_delta<center_tolerance and not box_at_edge:
@@ -666,7 +664,7 @@ class ONVIFSinkBlockV1(WorkflowBlock):
                 if zoom_delta<center_tolerance and not box_at_edge:
                     camera.stop_camera()
                 else:
-                    print(f"zoom delta: {zoom_delta} box in tol:{zoom_delta>center_tolerance} at edge:{box_at_edge}")
+                    #print(f"zoom delta: {zoom_delta} box in tol:{zoom_delta>center_tolerance} at edge:{box_at_edge}")
                     z = (0.5 if zoom_delta<SPEED_REDUCTION_TOLERANCE_MULTIPLIER*center_tolerance and reduce_speed_near_zone else 1) if zoom_if_able else 0
                     # back off slowly if the box is at the edge
                     camera.zoom(z*-0.5 if box_at_edge else z,movement_speed_percent)
