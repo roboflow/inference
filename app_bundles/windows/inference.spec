@@ -32,7 +32,8 @@ binaries=[
         *peft_datas,
         *cython_datas,
         *tldextract_datas,
-        *inference_datas
+        *inference_datas,
+        ('../../inference/core/interfaces/http/builder/editor.html', 'inference/core/interfaces/http/builder')
     ],
     hiddenimports=[
         *clip_hiddenimports,

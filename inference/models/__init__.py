@@ -43,6 +43,7 @@ OPTIONAL_MODELS = {
     "SmolVLM": "inference.models.smolvlm",
     "LoRASmolVLM": "inference.models.smolvlm",
     "Moondream2": "inference.models.moondream2",
+    "PerceptionEncoder": "inference.models.perception_encoder",
 }
 
 STANDARD_MODELS = {
