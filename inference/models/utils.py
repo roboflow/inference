@@ -405,6 +405,7 @@ try:
 
         ROBOFLOW_MODEL_TYPES[("lmm", "smolvlm-2.2b-instruct")] = SmolVLM
         ROBOFLOW_MODEL_TYPES[("text-image-pairs", "smolvlm2-peft")] = LoRASmolVLM
+        ROBOFLOW_MODEL_TYPES[("text-image-pairs", "smolvlm-256m-peft")] = LoRASmolVLM
 
 except:
     warnings.warn(
