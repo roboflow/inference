@@ -38,6 +38,8 @@ a = Analysis(
         *cython_datas,
         *tldextract_datas,
         *inference_datas,
+        # Manually include editor.html for the builder interface
+        ('../../inference/core/interfaces/http/builder/editor.html', 'inference/core/interfaces/http/builder'),
     ],
     hiddenimports=[
         *clip_hiddenimports,
