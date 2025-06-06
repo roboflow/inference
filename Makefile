@@ -8,8 +8,8 @@ style:
 	python3 -m isort $(check_dirs) --skip-glob '**/__init__.py' --skip-glob '**/node_modules/**' --skip-glob '**/perception_encoder/vision_encoder/**'
 
 check_code_quality:
-	python3 -m black --check $(check_dirs) --exclude '__init__\.py|node_modules'
-	python3 -m isort --check-only $(check_dirs) --skip-glob '**/__init__.py' --skip-glob '**/node_modules/**'
+	python3 -m black --check $(check_dirs) --exclude '__init__\.py|node_modules|perception_encoder/vision_encoder/'
+	python3 -m isort --check-only $(check_dirs) --skip-glob '**/__init__.py' --skip-glob '**/node_modules/**' --skip-glob '**/perception_encoder/vision_encoder/**'
 	# stop the build if there are Python syntax errors or undefined names
 	flake8 $(check_dirs) --count --select=E9,F63,F7,F82 --show-source --statistics --exclude __init__.py,inference/inference/landing/node_modules
 	# exit-zero treats all errors as warnings. E203 for black, E501 for docstring, W503 for line breaks before logical operators 
