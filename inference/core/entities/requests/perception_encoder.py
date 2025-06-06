@@ -17,9 +17,9 @@ class PerceptionEncoderInferenceRequest(BaseRequest):
         clip_version_id (Optional[str]): The version ID of PERCEPTION_ENCODER to be used for this request.
     """
 
-    clip_version_id: Optional[str] = Field(
+    perception_encoder_version_id: Optional[str] = Field(
         default=PERCEPTION_ENCODER_VERSION_ID,
-        examples=["ViT-B-16"],
+        examples=["PE-Core-L14-336"],
         description="The version ID of PERCEPTION_ENCODER to be used for this request. Must be one of RN101, RN50, RN50x16, RN50x4, RN50x64, ViT-B-16, ViT-B-32, ViT-L-14-336px, and ViT-L-14.",
     )
     model_id: Optional[str] = Field(None)
@@ -30,9 +30,9 @@ class PerceptionEncoderInferenceRequest(BaseRequest):
     def validate_model_id(cls, value, values):
         if value is not None:
             return value
-        if values.get("clip_version_id") is None:
+        if values.get("perception_encoder_version_id") is None:
             return None
-        return f"clip/{values['clip_version_id']}"
+        return f"perception_encoder/{values['perception_encoder_version_id']}"
 
 
 class PerceptionEncoderImageEmbeddingRequest(PerceptionEncoderInferenceRequest):

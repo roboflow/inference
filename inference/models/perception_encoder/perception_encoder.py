@@ -1,3 +1,4 @@
+import os
 from time import perf_counter
 from typing import Any, Dict, List, Tuple, Union
 
@@ -57,13 +58,15 @@ class PerceptionEncoder(RoboflowCoreModel):
     ):
         """Initializes the PerceptionEncoder with the given arguments and keyword arguments."""
         t1 = perf_counter()
-        super().__init__(model_id=model_id, *args, **kwargs)
-
+        super().__init__(model_id=model_id.lower(), *args, **kwargs)
         self.device = device
         self.log("Creating PE-CLIP model")
         # Parse model config from model_id (format: perception-encoder/PE-Core-L14-336)
         model_config = model_id.split("/")[-1]
-        self.model = pe.CLIP.from_config(model_config, pretrained=True)
+        checkpoint_path = os.path.join(self.cache_dir, "model.pt")
+        self.model = pe.CLIP.from_config(
+            model_config, pretrained=True, checkpoint_path=checkpoint_path
+        )
         self.model = self.model.to(device)
         self.model.eval()
 
@@ -74,7 +77,7 @@ class PerceptionEncoder(RoboflowCoreModel):
 
     def get_infer_bucket_file_list(self) -> List[str]:
         """Gets the list of files required for inference."""
-        return []  # No files needed as model is downloaded from HuggingFace
+        return ["model.pt"]  # No files needed as model is downloaded from HuggingFace
 
     def initialize_model(self) -> None:
         """Initialize the model. Not needed for PE-CLIP as it's loaded in __init__."""

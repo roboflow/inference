@@ -297,11 +297,8 @@ class RotaryEmbedding(Module):
         return freqs
 
 
-
-
-
 class Rope2D:
-    """ Helper class to apply RoPE2D as well as interpolate on the fly. """
+    """Helper class to apply RoPE2D as well as interpolate on the fly."""
 
     def __init__(self, dim, use_cls_token=False):
         self.dim = dim

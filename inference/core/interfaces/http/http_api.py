@@ -1781,7 +1781,7 @@ class HttpInterface(BaseInterface):
             if CORE_MODEL_PE_ENABLED:
 
                 @app.post(
-                    "/pe/embed_image",
+                    "/perception_encoder/embed_image",
                     response_model=PerceptionEncoderEmbeddingResponse,
                     summary="PE Image Embeddings",
                     description="Run the Meta Perception Encoder model to embed image data.",
@@ -1807,7 +1807,7 @@ class HttpInterface(BaseInterface):
                     Returns:
                         PerceptionEncoderEmbeddingResponse: The response containing the embedded image.
                     """
-                    logger.debug(f"Reached /pe/embed_image")
+                    logger.debug(f"Reached /perception_encoder/embed_image")
                     pe_model_id = load_pe_model(inference_request, api_key=api_key)
                     response = await self.model_manager.infer_from_request(
                         pe_model_id, inference_request
@@ -1820,7 +1820,7 @@ class HttpInterface(BaseInterface):
                     return response
 
                 @app.post(
-                    "/pe/embed_text",
+                    "/perception_encoder/embed_text",
                     response_model=PerceptionEncoderEmbeddingResponse,
                     summary="Perception Encoder Text Embeddings",
                     description="Run the Meta Perception Encoder model to embed text data.",
@@ -1846,7 +1846,7 @@ class HttpInterface(BaseInterface):
                     Returns:
                         PerceptionEncoderEmbeddingResponse: The response containing the embedded text.
                     """
-                    logger.debug(f"Reached /pe/embed_text")
+                    logger.debug(f"Reached /perception_encoder/embed_text")
                     pe_model_id = load_pe_model(inference_request, api_key=api_key)
                     response = await self.model_manager.infer_from_request(
                         pe_model_id, inference_request
@@ -1859,7 +1859,7 @@ class HttpInterface(BaseInterface):
                     return response
 
                 @app.post(
-                    "/pe/compare",
+                    "/perception_encoder/compare",
                     response_model=PerceptionEncoderCompareResponse,
                     summary="Perception Encoder Compare",
                     description="Run the Meta Perception Encoder model to compute similarity scores.",
@@ -1885,7 +1885,7 @@ class HttpInterface(BaseInterface):
                     Returns:
                         PerceptionEncoderCompareResponse: The response containing the similarity scores.
                     """
-                    logger.debug(f"Reached /pe/compare")
+                    logger.debug(f"Reached /perception_encoder/compare")
                     pe_model_id = load_pe_model(inference_request, api_key=api_key)
                     response = await self.model_manager.infer_from_request(
                         pe_model_id, inference_request

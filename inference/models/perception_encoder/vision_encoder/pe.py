@@ -5,7 +5,7 @@ from collections import OrderedDict
 from dataclasses import asdict
 from functools import partial
 from logging import getLogger
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union, Literal
+from typing import Any, Callable, Dict, List, Literal, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import torch
@@ -18,13 +18,16 @@ from torch.nn.init import constant_, xavier_normal_, xavier_uniform_
 from torch.nn.parameter import Parameter
 from torch.utils.checkpoint import checkpoint
 
-from core.vision_encoder.rope import Rope2D
-from core.vision_encoder.config import PEConfig, PETextConfig, PE_VISION_CONFIG, PE_TEXT_CONFIG, fetch_pe_checkpoint
-
-
+from inference.models.perception_encoder.vision_encoder.config import (
+    PE_TEXT_CONFIG,
+    PE_VISION_CONFIG,
+    PEConfig,
+    PETextConfig,
+    fetch_pe_checkpoint,
+)
+from inference.models.perception_encoder.vision_encoder.rope import Rope2D
 
 logger = getLogger()
-
 
 
 class LayerScale(nn.Module):
@@ -265,9 +268,9 @@ class Transformer(nn.Module):
 
     @torch.jit.ignore
     def truncate(self, layer_idx: int):
-        """ Delete layers so the last layer is the given layer index. """
+        """Delete layers so the last layer is the given layer index."""
         self.layers = ((self.layers + layer_idx) % self.layers) + 1
-        self.resblocks = nn.ModuleList(self.resblocks[:self.layers])
+        self.resblocks = nn.ModuleList(self.resblocks[: self.layers])
 
     def forward(
         self,
@@ -283,7 +286,7 @@ class Transformer(nn.Module):
                 x = checkpoint(r, x, None, None, attn_mask)
             else:
                 x = r(x, attn_mask=attn_mask)
-            
+
             if i == stop_idx:
                 break
 
@@ -371,7 +374,6 @@ class VisionTransformer(nn.Module):
 
         self.init_tensors()
 
-
     def init_tensors(self):
         def init_submodule_tensors(module):
             for name, child in module.named_children():
@@ -403,7 +405,6 @@ class VisionTransformer(nn.Module):
                 init_scale * torch.randn(self.width, self.proj_dim)
             )
 
-
     def load_ckpt(self, ckpt_path: str):
         _sd = torch.load(ckpt_path, weights_only=True)
         if "state_dict" in _sd:
@@ -422,12 +423,10 @@ class VisionTransformer(nn.Module):
         print(f"Missing keys for loading vision encoder: {m}")
         print(f"Unexpected keys for loading vision encoder: {u}")
 
-
     def truncate(self, layer_idx: int):
-        """ Delete layers so the last layer is the given layer index. """
+        """Delete layers so the last layer is the given layer index."""
         self.transformer.truncate(layer_idx)
         self.layers = self.transformer.layers
-
 
     @classmethod
     def from_config(
@@ -435,24 +434,23 @@ class VisionTransformer(nn.Module):
         name: str,
         pretrained: bool = False,
         checkpoint_path: Optional[str] = None,
-        **kwdargs
+        **kwdargs,
     ):
         if name not in PE_VISION_CONFIG:
             raise RuntimeError(f"{name} not found in configs.")
-    
+
         args = asdict(PE_VISION_CONFIG[name])
         args.update(kwdargs)
-        
+
         model = cls(**args)
         if pretrained:
             model.load_ckpt(fetch_pe_checkpoint(name, checkpoint_path))
-        
+
         return model
-    
+
     @classmethod
     def available_configs(cls):
         return list(PE_VISION_CONFIG.keys())
-
 
     @torch.jit.ignore
     def set_grad_checkpointing(self, enable=True):
@@ -499,7 +497,7 @@ class VisionTransformer(nn.Module):
         x: torch.Tensor,
         norm: bool = False,
         layer_idx: int = -1,
-        strip_cls_token: bool = False
+        strip_cls_token: bool = False,
     ):
         batch, _, h, w = x.shape
         grid_h, grid_w = h // self.patch_size, w // self.patch_size
@@ -538,13 +536,6 @@ class VisionTransformer(nn.Module):
             x = x @ self.proj
 
         return x
-
-
-
-
-
-
-
 
 
 class TextTransformer(nn.Module):
@@ -634,7 +625,7 @@ class TextTransformer(nn.Module):
         _sd = {k.replace("module.", ""): v for k, v in _sd.items()}
 
         m, u = self.load_state_dict(_sd, strict=False)
-        
+
         logger.info(f"Missing keys for loading model: {m}")
         logger.info(f"Unexpected keys for loading model: {u}")
         print(f"Missing keys for loading model: {m}")
@@ -667,9 +658,7 @@ class TextTransformer(nn.Module):
 
     def forward(self, text):
         seq_len = text.shape[1]
-        x = self.token_embedding(
-            text
-        ) 
+        x = self.token_embedding(text)
         attn_mask = self.attn_mask
         if attn_mask is not None:
             attn_mask = attn_mask[:seq_len, :seq_len]
@@ -692,26 +681,23 @@ class TextTransformer(nn.Module):
         return pooled
 
 
-
-
 class CLIP(TextTransformer):
     def __init__(
         self,
         vision_cfg: PEConfig,
         text_cfg: PETextConfig,
-        init_logit_scale: float = np.log(1 / 0.07)
+        init_logit_scale: float = np.log(1 / 0.07),
     ):
         super(CLIP, self).__init__(**asdict(text_cfg))
         self.visual = VisionTransformer(**asdict(vision_cfg))
         self.image_size = self.visual.image_size  # For ease of use
         self.logit_scale = nn.Parameter(torch.ones([]) * init_logit_scale)
 
-
     def encode_image(self, image, normalize: bool = False):
         x = self.visual(image)
         return F.normalize(x, dim=-1) if normalize else x
 
-    def encode_video(self, video, normalize: bool = False): # b n c h w
+    def encode_video(self, video, normalize: bool = False):  # b n c h w
         b, n, c, h, w = video.shape
         frms = video.reshape(b * n, c, h, w)
         frm_feats = self.encode_image(frms, normalize=normalize)
@@ -735,22 +721,21 @@ class CLIP(TextTransformer):
             self.encode_text(text, normalize=True) if text is not None else None
         )
         return image_features, text_features, self.logit_scale.exp()
-    
 
     @classmethod
     def from_config(
         cls,
         name: str,
         pretrained: bool = False,
-        checkpoint_path: Optional[str] = None  # To load your own
+        checkpoint_path: Optional[str] = None,  # To load your own
     ):
         if name not in PE_VISION_CONFIG or name not in PE_TEXT_CONFIG:
             raise RuntimeError(f"{name} not found in configs.")
-    
+
         model = cls(PE_VISION_CONFIG[name], PE_TEXT_CONFIG[name])
         if pretrained:
             model.load_ckpt(fetch_pe_checkpoint(name, checkpoint_path))
-        
+
         return model
 
     @classmethod

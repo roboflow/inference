@@ -329,7 +329,6 @@ def simple_mask_tokenize(
     return result
 
 
-
 def get_reduction_mask_fn(type: str):
     """Choose strategy for dropping (masking) tokens to achieve target context length"""
     assert type in ("simple", "random", "shuffle")

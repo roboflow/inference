@@ -1,19 +1,19 @@
-import os
-import pytest
-import numpy as np
-from PIL import Image
-import torch
 import base64
+import os
 from io import BytesIO
 
-from inference.models.perception_encoder import PerceptionEncoder
+import numpy as np
+import pytest
+import torch
+from PIL import Image
+
+from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.entities.requests.perception_encoder import (
+    PerceptionEncoderCompareRequest,
     PerceptionEncoderImageEmbeddingRequest,
     PerceptionEncoderTextEmbeddingRequest,
-    PerceptionEncoderCompareRequest,
 )
-from inference.core.entities.requests.inference import InferenceRequestImage
-
+from inference.models.perception_encoder import PerceptionEncoder
 
 
 @pytest.fixture
@@ -47,7 +47,7 @@ def test_image_embedding(model, test_image):
     # Test single image embedding
     request = PerceptionEncoderImageEmbeddingRequest(image=test_image)
     response = model.infer_from_request(request)
-    
+
     assert response.embeddings is not None
     assert isinstance(response.embeddings, list)
     assert len(response.embeddings) > 0
@@ -60,12 +60,13 @@ def test_text_embedding(model):
     # Test single text embedding
     request = PerceptionEncoderTextEmbeddingRequest(text="a red car")
     response = model.infer_from_request(request)
-    
+
     assert response.embeddings is not None
     assert isinstance(response.embeddings, list)
     assert len(response.embeddings) > 0
     assert isinstance(response.embeddings[0], list)
     assert isinstance(response.embeddings[0][0], float)
+
 
 def test_text_embedding_directly(model):
     prompt = "can"
@@ -73,13 +74,12 @@ def test_text_embedding_directly(model):
     assert text_embed is not None
 
 
-
 def test_batch_text_embedding(model):
     """Test batch text embedding functionality."""
     texts = ["a red car", "a blue truck"]
     request = PerceptionEncoderTextEmbeddingRequest(text=texts)
     response = model.infer_from_request(request)
-    
+
     assert response.embeddings is not None
     assert isinstance(response.embeddings, list)
     assert len(response.embeddings) == len(texts)
@@ -96,7 +96,7 @@ def test_image_text_comparison(model, test_image):
         prompt_type="text",
     )
     response = model.infer_from_request(request)
-    
+
     assert response.similarity is not None
     assert isinstance(response.similarity, list)
     assert len(response.similarity) == 1
@@ -112,7 +112,7 @@ def test_text_text_comparison(model):
         prompt_type="text",
     )
     response = model.infer_from_request(request)
-    
+
     assert response.similarity is not None
     assert isinstance(response.similarity, list)
     assert len(response.similarity) == 1
