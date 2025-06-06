@@ -4,8 +4,8 @@ export PYTHONPATH = .
 check_dirs := inference inference_sdk
 
 style:
-	python3 -m black $(check_dirs) --exclude '__init__\.py|node_modules'
-	python3 -m isort $(check_dirs) --skip-glob '**/__init__.py' --skip-glob '**/node_modules/**'
+	python3 -m black $(check_dirs) --exclude '__init__\.py|node_modules|perception_encoder/vision_encoder/'
+	python3 -m isort $(check_dirs) --skip-glob '**/__init__.py' --skip-glob '**/node_modules/**' --skip-glob '**/perception_encoder/vision_encoder/**'
 
 check_code_quality:
 	python3 -m black --check $(check_dirs) --exclude '__init__\.py|node_modules'

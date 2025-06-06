@@ -1,12 +1,12 @@
 from time import perf_counter
 from typing import Any, Dict, List, Tuple, Union
 
-import inference.models.perception_encoder.vision_encoder.pe as pe
-import inference.models.perception_encoder.vision_encoder.transforms as transforms
 import numpy as np
 import torch
 from PIL import Image
 
+import inference.models.perception_encoder.vision_encoder.pe as pe
+import inference.models.perception_encoder.vision_encoder.transforms as transforms
 from inference.core.entities.requests.clip import (
     ClipCompareRequest,
     ClipImageEmbeddingRequest,
