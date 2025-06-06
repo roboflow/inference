@@ -1128,6 +1128,7 @@ def get_from_queue(
         on_successful_read()
     return result
 
+
 def drop_single_frame_from_buffer(
     buffer: Queue,
     cause: str,
