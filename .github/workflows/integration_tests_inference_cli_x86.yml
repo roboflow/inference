@@ -38,7 +38,7 @@ jobs:
       - name: 📦 Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install --system --upgrade setuptools
-          pip install --system -r requirements/requirements.cli.txt -r requirements/requirements.sdk.http.txt -r requirements/requirements.test.unit.txt
+          pip install  --upgrade setuptools
+          pip install  -r requirements/requirements.cli.txt -r requirements/requirements.sdk.http.txt -r requirements/requirements.test.unit.txt
       - name: 🧪 Integration Tests of Inference CLI
         run: RUN_TESTS_EXPECTING_ERROR_WHEN_INFERENCE_NOT_INSTALLED=True INFERENCE_CLI_TESTS_API_KEY=${{ secrets.LOAD_TEST_PRODUCTION_API_KEY }} python -m pytest tests/inference_cli/integration_tests
