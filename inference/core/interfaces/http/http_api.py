@@ -1867,7 +1867,7 @@ class HttpInterface(BaseInterface):
                 @with_route_exceptions
                 @usage_collector("request")
                 async def pe_compare(
-                    inference_request: PerceptionEncdoerCompareRequest,
+                    inference_request: PerceptionEncoderCompareRequest,
                     request: Request,
                     api_key: Optional[str] = Query(
                         None,
