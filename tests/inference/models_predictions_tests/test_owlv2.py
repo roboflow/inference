@@ -446,7 +446,9 @@ def test_infer_with_numpy_image_uses_image_after_sizing() -> None:
 
         def embed_image(self, image):
             # Image should still be loaded when embed_image is called
-            self.before_unload_image_none = image.image is None or image._image_as_numpy is None
+            self.before_unload_image_none = (
+                image.image is None or image._image_as_numpy is None
+            )
             # simulate embedding
             _ = image.image_as_numpy
             image.unload_numpy_image()
@@ -464,7 +466,9 @@ def test_infer_with_numpy_image_uses_image_after_sizing() -> None:
 
     owl = DummyOwl()
     image_as_numpy = np.zeros((192, 168, 3), dtype=np.uint8)
-    result = owl.infer(image_as_numpy, training_data=[{"image": image_as_numpy, "boxes": []}])
+    result = owl.infer(
+        image_as_numpy, training_data=[{"image": image_as_numpy, "boxes": []}]
+    )
 
     assert result == []
     assert owl.before_unload_image_none is False

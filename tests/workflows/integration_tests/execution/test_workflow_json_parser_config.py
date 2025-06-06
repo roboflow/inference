@@ -12,7 +12,7 @@ JSON_PARSER_WORKFLOW = {
         {
             "type": "WorkflowParameter",
             "name": "config",
-            "default_value": "{\"model_id\": \"yolov8n-640\"}",
+            "default_value": '{"model_id": "yolov8n-640"}',
         },
         {"type": "WorkflowImage", "name": "image"},
     ],
@@ -63,7 +63,7 @@ def test_workflow_with_json_parameter(
     result = execution_engine.run(
         runtime_parameters={
             "image": dogs_image,
-            "config": "{\"model_id\": \"yolov8n-640\"}",
+            "config": '{"model_id": "yolov8n-640"}',
         }
     )
 

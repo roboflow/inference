@@ -82,6 +82,14 @@ CLIP_VERSION_ID = os.getenv("CLIP_VERSION_ID", "ViT-B-16")
 # CLIP model ID
 CLIP_MODEL_ID = f"clip/{CLIP_VERSION_ID}"
 
+# Perception Encoder version ID, default is "PE-Core-L14-336"
+PERCEPTION_ENCODER_VERSION_ID = os.getenv(
+    "PERCEPTION_ENCODER_VERSION_ID", "PE-Core-L14-336"
+)
+
+# Perception Encoder model ID
+PERCEPTION_ENCODER_MODEL_ID = f"perception-encoder/{PERCEPTION_ENCODER_VERSION_ID}"
+
 # Gaze version ID, default is "L2CS"
 GAZE_VERSION_ID = os.getenv("GAZE_VERSION_ID", "L2CS")
 
@@ -138,6 +146,9 @@ CORE_MODELS_ENABLED = str2bool(os.getenv("CORE_MODELS_ENABLED", True))
 
 # Flag to enable CLIP core model, default is True
 CORE_MODEL_CLIP_ENABLED = str2bool(os.getenv("CORE_MODEL_CLIP_ENABLED", True))
+
+# Flag to enable PE core model, default is True
+CORE_MODEL_PE_ENABLED = str2bool(os.getenv("CORE_MODEL_PE_ENABLED", True))
 
 # Flag to enable SAM core model, default is True
 CORE_MODEL_SAM_ENABLED = str2bool(os.getenv("CORE_MODEL_SAM_ENABLED", True))
