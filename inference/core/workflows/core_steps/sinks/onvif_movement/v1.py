@@ -644,19 +644,21 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         image_center = image_dimensions/2
         xyxy = prediction.xyxy
         (x1,y1,x2,y2) = tuple(xyxy[0])
-        center_point = np.array([x1+(x2-x1)/2,y1+(y2-y1)/2])
+        (image_height,image_width) = tuple(image_dimensions[0])
+        center_point = (x1+(x2-x1)/2,y1+(y2-y1)/2)
 
         # delta represents the amount of relative movement to get the object to the center
-        zoom_delta = min([x1,image_dimensions[0][0]-x2,y1,image_dimensions[0][1]-y2])
+        zoom_delta = min([x1,image_width-x2,y1,image_height-y2])
+        box_at_edge = zoom_delta<3 # small tolerance to be safe
         # make the deltas x, y, zoom
-        delta = (center_point-image_center)[0]
+        delta = (image_width/2-center_point[0],image_height/2-center_point[1])
 
-        print(f"object center:{center_point} delta:{delta}")
-
-        box_at_edge = (x1==0 or y1==0 or x2==image_dimensions[0][0] or y2==image_dimensions[0][1])
+        print(f"object center:{center_point} delta:{delta} zoom_delta:{zoom_delta}")
+        print(f"edge {tuple(xyxy[0])} {image_dimensions}")
+        #box_at_edge = (x1==0 or y1==0 or x2==image_width or y2==image_height)
 
         # if we're locked into zoom only mode, and the object goes to the edge, unlock it and go back to pan/tilt
-        if camera.zooming() and zoom_delta<center_tolerance:
+        if camera.zooming() and zoom_delta<center_tolerance and not box_at_edge:
             #print(f"stop zooming: {xyxy[0]}")
             #camera.stop_camera(stop_preset)
             camera.stop_zoom()
@@ -664,19 +666,18 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         #print(f"delta:{delta}")
         abs_delta = np.abs(delta)
 
-        if (np.all(abs_delta < center_tolerance) or camera.zooming()):
+        if (np.all(abs_delta < center_tolerance) or camera.zooming() or (box_at_edge and zoom_if_able)):
             # if within tolerance or currently zooming, then camera is in zoom mode if available
-            # this can continue for up to 5 seconds
+            # this can continue for up to 5 seconds, or as long as the box is at the edge
             if zoom_if_able:
-                if zoom_delta>center_tolerance or box_at_edge:
-                    print(f"zoom delta: {zoom_delta} box at edge:{box_at_edge}")
+                if zoom_delta<center_tolerance and not box_at_edge:
+                    camera.stop_camera()
+                else:
+                    print(f"zoom delta: {zoom_delta} box in tol:{zoom_delta>center_tolerance} at edge:{box_at_edge}")
                     z = (0.5 if zoom_delta<SPEED_REDUCTION_TOLERANCE_MULTIPLIER*center_tolerance and reduce_speed_near_zone else 1) if zoom_if_able else 0
-                    #camera.continuous_move(0,0,z,movement_speed_percent)
-                    camera.zoom(z*-1 if box_at_edge else z,movement_speed_percent)
-                    #camera.zoom(z,movement_speed_percent)
-                elif zoom_delta<center_tolerance:
-                    if camera.zooming():
-                        camera.stop_camera()
+                    # back off slowly if the box is at the edge
+                    camera.zoom(z*-0.5 if box_at_edge else z,movement_speed_percent)
+
             else:
                 camera.stop_camera()
         else:
