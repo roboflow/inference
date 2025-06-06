@@ -7,7 +7,7 @@ https://www.nvidia.com/en-us/autonomous-machines/embedded-systems/
 
 ## Prerequisites
 
-**Disk Space**: Allocate at least 4 GB free for the Roboflow Jetson image (~1–2 GB). 
+**Disk Space**: Allocate at least 10 GB free for the Roboflow Jetson image (8.14 GB). 
 
 **JetPack Version**: Must be running a supported JetPack (4.5, 4.6, 5.x, or 6.x).
 
