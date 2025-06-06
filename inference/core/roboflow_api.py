@@ -259,6 +259,7 @@ def get_roboflow_model_data(
             url=f"{api_base_url}/{endpoint_type.value}/{model_id}",
             params=params,
         )
+        print("API URL", api_url)
         api_data = _get_from_url(url=api_url)
         cache.set(
             api_data_cache_key,
