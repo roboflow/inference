@@ -88,7 +88,7 @@ PERCEPTION_ENCODER_VERSION_ID = os.getenv(
 )
 
 # Perception Encoder model ID
-PERCEPTION_ENCODER_MODEL_ID = f"perception-encoder/{PERCEPTION_ENCODER_VERSION_ID}"
+PERCEPTION_ENCODER_MODEL_ID = f"perception_encoder/{PERCEPTION_ENCODER_VERSION_ID}"
 
 # Gaze version ID, default is "L2CS"
 GAZE_VERSION_ID = os.getenv("GAZE_VERSION_ID", "L2CS")
