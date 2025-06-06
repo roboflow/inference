@@ -86,7 +86,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "ONVIF Control",
             "version": "v1",
-            "short_description": "Control a PTZ camera to follow an object",
+            "short_description": "Control an ONVIF compatible PTZ camera to follow an objec",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "sink",
@@ -95,6 +95,7 @@ class BlockManifest(WorkflowBlockManifest):
                 "icon": "fal fa-camera-cctv",
                 "blockPriority": 1,
                 "popular": False,
+                "inDevelopment": True
             },
         }
     )
@@ -124,7 +125,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     zoom_if_able: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=False,
-        description="Zoom If Able",
+        description="Attempt to zoom into an object so it fills the image",
         examples=[True,False,"$inputs.zoom_if_able"],
     )
     follow_tracker: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
