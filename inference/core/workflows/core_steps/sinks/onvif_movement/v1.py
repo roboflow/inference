@@ -49,14 +49,16 @@ ZOOM_MODE_SECONDS = 2
 ZOOM_MODE_SPEED_REDUCER = 0.5
 
 PREDICTIONS_OUTPUT_KEY: str = "predictions"
-MOVING_OUTPUT_KEY: str = "moving"
+SEEKING_OUTPUT_KEY: str = "seeking"
+TRACKER_OUTPUT_KEY: str = "tracker_id"
 
 LONG_DESCRIPTION = """
 This **ONVIF** block allows a workflow to control an ONVIF capable PTZ camera to follow a detected object.
 
-The block returns two booleans:
-* predictions - indicates whether or not it's following a valid prediction
-* moving - indicates whether or not the camera is currently moving
+The block returns three values:
+* predictions - boolean; indicates whether or not the camera following a valid prediction
+* seeking - boolean; indicates whether or not the camera is currently seeking an object (moving to center or zoom in)
+* tracker_id - integer; tracking id of object if applicable
 
 Note that since the camera runs independently of the block, both booleans might not be updated immediately
 
@@ -130,7 +132,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     follow_tracker: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
-        description="Follow the track of the highest confidence prediction (Byte Tracker must be added to the workflow)",
+        description="Lock to the tracking id of the highest confidence prediction until idle or reset. A tracker must be added to the workflow.",
         examples=[True,False,"$inputs.follow_tracker"],
     )
     center_tolerance: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
@@ -181,9 +183,15 @@ class BlockManifest(WorkflowBlockManifest):
                 ],
             ),
             OutputDefinition(
-                name=MOVING_OUTPUT_KEY,
+                name=SEEKING_OUTPUT_KEY,
                 kind=[
                     BOOLEAN_KIND,
+                ],
+            ),
+            OutputDefinition(
+                name=TRACKER_OUTPUT_KEY,
+                kind=[
+                    INTEGER_KIND,
                 ],
             ),
         ]
@@ -201,7 +209,6 @@ def get_camera(camera_ip:str,camera_port:int,camera_username:str,camera_password
         try:
             #"/usr/local/lib/python3.9/site-packages/onvif/wsdl"
             cameras[camera_key] = CameraWrapper(max_update_rate,move_to_position_after_idle_seconds)
-            #mycam = ONVIFCamera(camera_ip, camera_port, camera_username, camera_password, f"{os.path.dirname(spec.origin)}/wsdl")
             cameras[camera_key].connect_camera(camera_ip, camera_port, camera_username, camera_password)
         except Exception as e:
             if camera_key in cameras:
@@ -264,7 +271,7 @@ class CameraWrapper:
     media_profile = None
     configuration_options = None
     media_profile_token = None
-    #velocity_limits: Union[Tuple[float,float,float,float],None] = None
+    tracked_object: Union[int, None] = None
     velocity_limits:Union[VelocityLimits,None]
     presets = None
     last_update_ms:Union[int,None] = None
@@ -321,6 +328,7 @@ class CameraWrapper:
     async def reset_task(self):
         await asyncio.sleep(self.move_to_position_after_idle_seconds)
         print(f"camera is idle for {self.move_to_position_after_idle_seconds}s: moving to preset")
+        self.tracked_object = None
         await self.go_to_preset_async(self._stop_preset)
 
     # true if movement update hasn't happened within max_update_rate
@@ -446,6 +454,7 @@ class CameraWrapper:
 
         self._seeking = False
         self._is_zoomed = False
+        self.tracked_object = None
         await ptz.GotoPreset(request)
 
     def zoom(self,z:float,movement_speed_percent:float):
@@ -535,7 +544,7 @@ class CameraWrapper:
             }
         }
 
-        print(f"ptz continuous move update: {x},{y},{z} in_zoom:{self._is_zoomed}")
+        print(f"ptz continuous move update: {x},{y},{z} in_zoom:{self._is_zoomed} tracker:{self.tracked_object}")
 
         # Execute the movement
         await ptz.ContinuousMove(request)
@@ -600,36 +609,61 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         # disable the stop preset if necessary
         stop_preset = default_position_preset if move_to_position_after_idle_seconds else None
 
+        camera = None
+
         if movement_type=="Follow":
+
+            #print(predictions)
 
             if len(predictions.xyxy)==0:
                 # get/create the camera first so that we can move it to the preset
+                tracker_id = None
                 if stop_preset:
                     camera = get_camera(camera_ip,camera_port,camera_username,camera_password,camera_update_rate_limit,move_to_position_after_idle_seconds)
                     camera.set_stop_preset(stop_preset)
-                self.stop_camera(camera_ip, camera_port, stop_preset)
-                return {PREDICTIONS_OUTPUT_KEY:False,MOVING_OUTPUT_KEY:camera_seeking(camera_ip,camera_port)}
+                    tracker_id = camera.tracked_object
+                self.stop_camera_tracking(camera_ip, camera_port, stop_preset)
 
-            # get max confidence prediction
-            max_confidence = predictions.confidence.max()
-            max_confidence_prediction = predictions[predictions.confidence==max_confidence][0]
-            self.async_move(camera_ip, camera_port, camera_username, camera_password, max_confidence_prediction,zoom_if_able,center_tolerance,default_position_preset,camera_update_rate_limit,move_to_position_after_idle_seconds,flip_x_movement,flip_y_movement,movement_speed_percent/100.0,reduce_speed_near_zone,stop_preset)
+                return {PREDICTIONS_OUTPUT_KEY:False,SEEKING_OUTPUT_KEY:camera.seeking() if camera else None,TRACKER_OUTPUT_KEY:camera.tracked_object if camera else None}
+
+            camera = get_camera(camera_ip,camera_port,camera_username,camera_password,camera_update_rate_limit,move_to_position_after_idle_seconds)
+            tracked_object = camera.tracked_object
+
+            max_confidence_prediction = None
+
+            # if there's a tracked object, continue to use it
+            if tracked_object:
+                tracked_predictions = predictions[predictions.tracker_id==tracked_object]
+                if len(tracked_predictions.xyxy)>0:
+                    max_confidence_prediction = tracked_predictions[0]
+
+            # if there's no tracked object, use the max confidence prediction
+            if not max_confidence_prediction:
+                max_confidence = predictions.confidence.max()
+                max_confidence_prediction = predictions[predictions.confidence==max_confidence][0]
+                # if we're not tracking at the moment, start tracking this one
+                if follow_tracker and len(max_confidence_prediction.tracker_id)>0:
+                    tracked_object = max_confidence_prediction.tracker_id[0]
+
+            if camera: # note this is just the camera wrapper, connection is async
+                camera.tracked_object = tracked_object
+                self.move_camera(camera, max_confidence_prediction,zoom_if_able,center_tolerance,flip_x_movement,flip_y_movement,movement_speed_percent/100.0,reduce_speed_near_zone,stop_preset)
 
         elif movement_type=="Go To Preset":
             self.go_to_preset(camera_ip, camera_port, camera_username, camera_password, default_position_preset,camera_update_rate_limit,move_to_position_after_idle_seconds)
 
-        return {PREDICTIONS_OUTPUT_KEY:True,MOVING_OUTPUT_KEY:camera_seeking(camera_ip,camera_port)}
+        return {PREDICTIONS_OUTPUT_KEY:True,SEEKING_OUTPUT_KEY:camera.seeking() if camera else None,TRACKER_OUTPUT_KEY:camera.tracked_object if camera else None}
 
-    def stop_camera(self,camera_ip:str,camera_port:int,stop_preset:str):
+    def stop_camera_tracking(self,camera_ip:str,camera_port:int,stop_preset:str):
         global cameras
         camera = cameras.get((camera_ip,camera_port))
         camera.set_stop_preset(stop_preset)
         if camera:
             camera.stop_camera()
+            camera.tracked_object = None
 
-    def async_move(self,camera_ip:str,camera_port:int,camera_username:str,camera_password:str,prediction:OBJECT_DETECTION_PREDICTION_KIND,zoom_if_able:bool,center_tolerance:int,preset:str,max_update_rate:int,move_to_position_after_idle_seconds:int,flip_x_movement:bool,flip_y_movement:bool,movement_speed_percent:float,reduce_speed_near_zone:bool,stop_preset:str):
+    def move_camera(self,camera:CameraWrapper,prediction:OBJECT_DETECTION_PREDICTION_KIND,zoom_if_able:bool,center_tolerance:int,flip_x_movement:bool,flip_y_movement:bool,movement_speed_percent:float,reduce_speed_near_zone:bool,stop_preset:str):
         global zoom
-        camera = get_camera(camera_ip,camera_port,camera_username,camera_password,max_update_rate,move_to_position_after_idle_seconds)
         camera.set_stop_preset(stop_preset)
 
         # get dimensions of image and bounding box from prediction
@@ -647,9 +681,6 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         # make the deltas x, y, zoom
         delta = (image_width/2-center_point[0],image_height/2-center_point[1])
 
-        #print(f"object center:{center_point} delta:{delta} zoom_delta:{zoom_delta}")
-        #print(f"edge {tuple(xyxy[0])} {image_dimensions}")
-
         # if we're locked into zoom only mode, and the object goes to the edge, unlock it and go back to pan/tilt
         if camera.zooming() and zoom_delta<center_tolerance and not box_at_edge:
             camera.stop_zoom()
@@ -664,10 +695,9 @@ class ONVIFSinkBlockV1(WorkflowBlock):
                 if zoom_delta<center_tolerance and not box_at_edge:
                     camera.stop_camera()
                 else:
-                    #print(f"zoom delta: {zoom_delta} box in tol:{zoom_delta>center_tolerance} at edge:{box_at_edge}")
                     z = (0.5 if zoom_delta<SPEED_REDUCTION_TOLERANCE_MULTIPLIER*center_tolerance and reduce_speed_near_zone else 1) if zoom_if_able else 0
-                    # back off slowly if the box is at the edge
-                    camera.zoom(z*-0.5 if box_at_edge else z,movement_speed_percent)
+                    # back off slowly if the box is at the edge as we likely just missed it
+                    camera.zoom(z*-0.33 if box_at_edge else z,movement_speed_percent)
 
             else:
                 camera.stop_camera()
