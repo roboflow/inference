@@ -617,11 +617,9 @@ class ONVIFSinkBlockV1(WorkflowBlock):
 
             if len(predictions.xyxy)==0:
                 # get/create the camera first so that we can move it to the preset
-                tracker_id = None
                 if stop_preset:
                     camera = get_camera(camera_ip,camera_port,camera_username,camera_password,camera_update_rate_limit,move_to_position_after_idle_seconds)
                     camera.set_stop_preset(stop_preset)
-                    tracker_id = camera.tracked_object
                 self.stop_camera_tracking(camera_ip, camera_port, stop_preset)
 
                 return {PREDICTIONS_OUTPUT_KEY:False,SEEKING_OUTPUT_KEY:camera.seeking() if camera else None,TRACKER_OUTPUT_KEY:camera.tracked_object if camera else None}
