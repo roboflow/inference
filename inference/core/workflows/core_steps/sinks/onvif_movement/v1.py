@@ -133,9 +133,9 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[True,False,"$inputs.follow_tracker"],
     )
     center_tolerance: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
-        default=100,
-        description="Camera will stop once bounding box is within this many pixels of FoV center (or border for zoom)",
-        examples=[100,"$inputs.center_tolerance"],
+        default=50,
+        description="Camera will stop once bounding box is within this many pixels of FoV center (or border for zoom). Increasing tolerance helps avoid pan/tilt hunting, but decreasing tolerance helps avoid hunting after zoom.",
+        examples=[50,"$inputs.center_tolerance"],
     )
     default_position_preset: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="Preset Name for Default Position",
@@ -454,8 +454,8 @@ class CameraWrapper:
         # start limited time zoom mode
         if not self._start_zoom_time:
             self._start_zoom_time = now()
-        # even though the zoom command should 0 out pan/tilt, sending an explicit stop on all axes seems to help
-        self.stop_camera()
+            # even though the zoom command should 0 out pan/tilt, sending an explicit stop on all axes seems to help
+            self.stop_camera()
         self.schedule(self.continuous_move_async(0,0,z,movement_speed_percent))
 
     def stop_zoom(self):
@@ -674,7 +674,7 @@ class ONVIFSinkBlockV1(WorkflowBlock):
                     #camera.continuous_move(0,0,z,movement_speed_percent)
                     camera.zoom(z*-1 if box_at_edge else z,movement_speed_percent)
                     #camera.zoom(z,movement_speed_percent)
-                else:
+                elif zoom_delta<center_tolerance:
                     if camera.zooming():
                         camera.stop_camera()
             else:
