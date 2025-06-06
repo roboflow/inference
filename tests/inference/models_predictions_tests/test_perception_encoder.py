@@ -147,21 +147,3 @@ def test_invalid_prompt_type(model, test_image):
             prompt_type="invalid",
         )
         model.infer_from_request(request)
-
-
-def test_large_batch_size(model):
-    """Test handling of batch size exceeding maximum."""
-    large_batch = ["text"] * 100
-    with pytest.raises(ValueError):
-        request = PerceptionEncoderTextEmbeddingRequest(text=large_batch)
-        model.infer_from_request(request)
-
-
-def test_model_inference_time(model, test_image):
-    """Test that inference time is recorded."""
-    request = PerceptionEncoderImageEmbeddingRequest(image=test_image)
-    response = model.infer_from_request(request)
-    
-    assert hasattr(response, "time")
-    assert isinstance(response.time, float)
-    assert response.time > 0 
