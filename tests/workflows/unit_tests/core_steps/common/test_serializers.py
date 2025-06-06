@@ -6,9 +6,10 @@ import numpy as np
 import supervision as sv
 
 from inference.core.workflows.core_steps.common.serializers import (
+    mask_to_polygon,
     serialise_image,
     serialise_sv_detections,
-    serialize_wildcard_kind, mask_to_polygon,
+    serialize_wildcard_kind,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
@@ -400,7 +401,9 @@ def test_mask_to_polygon_when_mask_contains_point() -> None:
     result = mask_to_polygon(mask=mask)
 
     # then
-    assert np.allclose(result, np.array([[50, 40]] * 3)), "Expected single point to be duplicated"
+    assert np.allclose(
+        result, np.array([[50, 40]] * 3)
+    ), "Expected single point to be duplicated"
 
 
 def test_mask_to_polygon_when_mask_contains_line() -> None:
@@ -412,7 +415,9 @@ def test_mask_to_polygon_when_mask_contains_line() -> None:
     result = mask_to_polygon(mask=mask)
 
     # then
-    assert np.allclose(result, np.array([[50, 40], [59, 40], [59, 40]])), "Expected last point of the shape to be duplicated"
+    assert np.allclose(
+        result, np.array([[50, 40], [59, 40], [59, 40]])
+    ), "Expected last point of the shape to be duplicated"
 
 
 def test_mask_to_polygon_when_mask_contains_standard_shape() -> None:
@@ -424,12 +429,7 @@ def test_mask_to_polygon_when_mask_contains_standard_shape() -> None:
     result = mask_to_polygon(mask=mask)
 
     # then
-    assert np.allclose(result, np.array([
-        [50, 40],
-        [50, 49],
-        [59, 49],
-        [59, 40]]
-    ))
+    assert np.allclose(result, np.array([[50, 40], [50, 49], [59, 49], [59, 40]]))
 
 
 def test_mask_to_polygon_when_mask_contains_multiple_shapes() -> None:
@@ -442,17 +442,17 @@ def test_mask_to_polygon_when_mask_contains_multiple_shapes() -> None:
     result = mask_to_polygon(mask=mask)
 
     # then
-    assert np.allclose(result, np.array([
-        [100,  90],
-        [100,  99],
-        [109,  99],
-        [109,  90],
-    ])) or np.allclose(result, np.array([
-        [50, 40],
-        [50, 49],
-        [59, 49],
-        [59, 40]]
-    ))
+    assert np.allclose(
+        result,
+        np.array(
+            [
+                [100, 90],
+                [100, 99],
+                [109, 99],
+                [109, 90],
+            ]
+        ),
+    ) or np.allclose(result, np.array([[50, 40], [50, 49], [59, 49], [59, 40]]))
 
 
 def test_mask_to_polygon_output_reconstruction_when_output_was_padded() -> None:
@@ -462,11 +462,17 @@ def test_mask_to_polygon_output_reconstruction_when_output_was_padded() -> None:
 
     # when
     serialisation_result = mask_to_polygon(mask=mask)
-    de_serialisation_result = sv.polygon_to_mask(polygon=serialisation_result, resolution_wh=(128, 128))
+    de_serialisation_result = sv.polygon_to_mask(
+        polygon=serialisation_result, resolution_wh=(128, 128)
+    )
 
     # then
-    assert np.allclose(serialisation_result, np.array([[50, 40], [59, 40], [59, 40]])), "Expected last point of the shape to be duplicated"
-    assert np.allclose(mask, de_serialisation_result), "Expected reconstruction to be exact"
+    assert np.allclose(
+        serialisation_result, np.array([[50, 40], [59, 40], [59, 40]])
+    ), "Expected last point of the shape to be duplicated"
+    assert np.allclose(
+        mask, de_serialisation_result
+    ), "Expected reconstruction to be exact"
 
 
 def test_serialise_sv_detections_when_mask_with_single_point_detected_present() -> None:

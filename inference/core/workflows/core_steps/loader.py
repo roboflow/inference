@@ -200,6 +200,9 @@ from inference.core.workflows.core_steps.models.foundation.openai.v1 import (
 from inference.core.workflows.core_steps.models.foundation.openai.v2 import (
     OpenAIBlockV2,
 )
+from inference.core.workflows.core_steps.models.foundation.openai.v3 import (
+    OpenAIBlockV3,
+)
 from inference.core.workflows.core_steps.models.foundation.qwen.v1 import (
     Qwen25VLBlockV1,
 )
@@ -442,6 +445,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     QR_CODE_DETECTION_KIND,
     RGB_COLOR_KIND,
     ROBOFLOW_API_KEY_KIND,
+    ROBOFLOW_MANAGED_KEY,
     ROBOFLOW_MODEL_ID_KIND,
     ROBOFLOW_PROJECT_KIND,
     SECRET_KIND,
@@ -491,6 +495,7 @@ KINDS_DESERIALIZERS = {
     ROBOFLOW_MODEL_ID_KIND.name: deserialize_string_kind,
     ROBOFLOW_PROJECT_KIND.name: deserialize_string_kind,
     ROBOFLOW_API_KEY_KIND.name: deserialize_optional_string_kind,
+    ROBOFLOW_MANAGED_KEY.name: deserialize_optional_string_kind,
     FLOAT_ZERO_TO_ONE_KIND.name: deserialize_float_zero_to_one_kind,
     LIST_OF_VALUES_KIND.name: deserialize_list_of_values_kind,
     BOOLEAN_KIND.name: deserialize_boolean_kind,
@@ -587,6 +592,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         OCRModelBlockV1,
         OpenAIBlockV1,
         OpenAIBlockV2,
+        OpenAIBlockV3,
         PathDeviationAnalyticsBlockV1,
         PathDeviationAnalyticsBlockV2,
         PixelateVisualizationBlockV1,
@@ -682,6 +688,7 @@ def load_kinds() -> List[Kind]:
         QR_CODE_DETECTION_KIND,
         BAR_CODE_DETECTION_KIND,
         PREDICTION_TYPE_KIND,
+        ROBOFLOW_MANAGED_KEY,
         PARENT_ID_KIND,
         IMAGE_METADATA_KIND,
         BYTES_KIND,
