@@ -1120,14 +1120,13 @@ def get_from_queue(
             on_successful_read()
         except Empty:
             pass
+    if not purge:
+        return result
     while not queue.empty() and purge:
         result = queue.get()
         queue.task_done()
         on_successful_read()
-        if purge:
-            break
     return result
-
 
 def drop_single_frame_from_buffer(
     buffer: Queue,
