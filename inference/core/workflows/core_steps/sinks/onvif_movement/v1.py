@@ -382,9 +382,6 @@ class CameraWrapper:
             z = Limits(zoom_space.XRange if zoom_space else None)
         )
 
-        #self.velocity_limits = limits(config_options.Spaces.ContinuousPanTiltVelocitySpace[0])
-        #self.zoom_velocity_limits = limits(config_options.Spaces.ContinuousZoomVelocitySpace[0])
-        #print(f"camera velocity limits: {self.velocity_limits}")
         self.media_profile_token = self.media_profile.token
         presets = (await ptz.GetPresets({'ProfileToken':self.media_profile_token}))
         # reconfigure into a dict keyed by preset name
@@ -636,37 +633,32 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         camera = get_camera(camera_ip,camera_port,camera_username,camera_password,max_update_rate,move_to_position_after_idle_seconds)
         camera.set_stop_preset(stop_preset)
 
-        # use as stop command, more generic
-        #await camera.continuous_move(0,0)
-
-        # adjust speed so that camera moves proportionally towards bounding box
+        # get dimensions of image and bounding box from prediction
         image_dimensions = prediction.data['root_parent_dimensions']
-        image_center = image_dimensions/2
         xyxy = prediction.xyxy
+
+        # calculate centers
         (x1,y1,x2,y2) = tuple(xyxy[0])
         (image_height,image_width) = tuple(image_dimensions[0])
         center_point = (x1+(x2-x1)/2,y1+(y2-y1)/2)
 
-        # delta represents the amount of relative movement to get the object to the center
+        # calculate deltas from center and edge
         zoom_delta = min([x1,image_width-x2,y1,image_height-y2])
-        box_at_edge = zoom_delta<3 # small tolerance to be safe
+        box_at_edge = zoom_delta<=1 # allow 1px tolerance
         # make the deltas x, y, zoom
         delta = (image_width/2-center_point[0],image_height/2-center_point[1])
 
         print(f"object center:{center_point} delta:{delta} zoom_delta:{zoom_delta}")
         print(f"edge {tuple(xyxy[0])} {image_dimensions}")
-        #box_at_edge = (x1==0 or y1==0 or x2==image_width or y2==image_height)
 
         # if we're locked into zoom only mode, and the object goes to the edge, unlock it and go back to pan/tilt
         if camera.zooming() and zoom_delta<center_tolerance and not box_at_edge:
-            #print(f"stop zooming: {xyxy[0]}")
-            #camera.stop_camera(stop_preset)
             camera.stop_zoom()
 
         #print(f"delta:{delta}")
         abs_delta = np.abs(delta)
 
-        if (np.all(abs_delta < center_tolerance) or camera.zooming() or (box_at_edge and zoom_if_able)):
+        if (np.all(abs_delta < center_tolerance) or camera.zooming()):
             # if within tolerance or currently zooming, then camera is in zoom mode if available
             # this can continue for up to 5 seconds, or as long as the box is at the edge
             if zoom_if_able:
