@@ -22,6 +22,11 @@ from inference.core.entities.requests.clip import (
     ClipImageEmbeddingRequest,
     ClipTextEmbeddingRequest,
 )
+from inference.core.entities.requests.perception_encoder import (
+    PerceptionEncoderCompareRequest,
+    PerceptionEncoderImageEmbeddingRequest,
+    PerceptionEncoderTextEmbeddingRequest,
+)
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
 from inference.core.entities.requests.groundingdino import GroundingDINOInferenceRequest
@@ -61,6 +66,10 @@ from inference.core.entities.requests.yolo_world import YOLOWorldInferenceReques
 from inference.core.entities.responses.clip import (
     ClipCompareResponse,
     ClipEmbeddingResponse,
+)
+from inference.core.entities.responses.perception_encoder import (
+    PerceptionEncoderCompareResponse,
+    PerceptionEncoderEmbeddingResponse,
 )
 from inference.core.entities.responses.gaze import GazeDetectionInferenceResponse
 from inference.core.entities.responses.inference import (
@@ -103,6 +112,7 @@ from inference.core.env import (
     API_LOGGING_ENABLED,
     BUILDER_ORIGIN,
     CORE_MODEL_CLIP_ENABLED,
+    CORE_MODEL_PE_ENABLED,
     CORE_MODEL_DOCTR_ENABLED,
     CORE_MODEL_GAZE_ENABLED,
     CORE_MODEL_GROUNDINGDINO_ENABLED,
@@ -850,6 +860,17 @@ class HttpInterface(BaseInterface):
 
         Returns:
         The CLIP model ID.
+        """
+
+        load_pe_model = partial(load_core_model, core_model="perception_encoder")
+        """Loads the Perception Encoder model into the model manager.
+
+        Args:
+        inference_request: The request containing version and other details.
+        api_key: The API key for the request.
+
+        Returns:
+        The Perception Encoder model ID.
         """
 
         load_sam_model = partial(load_core_model, core_model="sam")
@@ -1755,6 +1776,124 @@ class HttpInterface(BaseInterface):
                             "authorizer"
                         ]["lambda"]["actor"]
                         trackUsage(clip_model_id, actor, n=2)
+                    return response
+
+            if CORE_MODEL_PE_ENABLED:
+                @app.post(
+                    "/pe/embed_image",
+                    response_model=PerceptionEncoderEmbeddingResponse,
+                    summary="PE Image Embeddings",
+                    description="Run the Meta Perception Encoder model to embed image data.",
+                )
+                @with_route_exceptions
+                @usage_collector("request")
+                async def pe_embed_image(
+                    inference_request: PerceptionEncoderImageEmbeddingRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                ):
+                    """
+                    Embeds image data using the Perception Encoder PE model.
+
+                    Args:
+                        inference_request (PerceptionEncoderImageEmbeddingRequest): The request containing the image to be embedded.
+                        api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
+                        request (Request, default Body()): The HTTP request.
+
+                    Returns:
+                        PerceptionEncoderEmbeddingResponse: The response containing the embedded image.
+                    """
+                    logger.debug(f"Reached /pe/embed_image")
+                    pe_model_id = load_pe_model(inference_request, api_key=api_key)
+                    response = await self.model_manager.infer_from_request(
+                        pe_model_id, inference_request
+                    )
+                    if LAMBDA:
+                        actor = request.scope["aws.event"]["requestContext"][
+                            "authorizer"
+                        ]["lambda"]["actor"]
+                        trackUsage(pe_model_id, actor)
+                    return response
+
+                @app.post(
+                    "/pe/embed_text",
+                    response_model=PerceptionEncoderEmbeddingResponse,
+                    summary="Perception Encoder Text Embeddings",
+                    description="Run the Meta Perception Encoder model to embed text data.",
+                )
+                @with_route_exceptions
+                @usage_collector("request")
+                async def pe_embed_text(
+                    inference_request: PerceptionEncoderTextEmbeddingRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                ):
+                    """
+                    Embeds text data using the Meta Perception Encoder model.
+
+                    Args:
+                        inference_request (PerceptionEncoderTextEmbeddingRequest): The request containing the text to be embedded.
+                        api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
+                        request (Request, default Body()): The HTTP request.
+
+                    Returns:
+                        PerceptionEncoderEmbeddingResponse: The response containing the embedded text.
+                    """
+                    logger.debug(f"Reached /pe/embed_text")
+                    pe_model_id = load_pe_model(inference_request, api_key=api_key)
+                    response = await self.model_manager.infer_from_request(
+                        pe_model_id, inference_request
+                    )
+                    if LAMBDA:
+                        actor = request.scope["aws.event"]["requestContext"][
+                            "authorizer"
+                        ]["lambda"]["actor"]
+                        trackUsage(pe_model_id, actor)
+                    return response
+
+                @app.post(
+                    "/pe/compare",
+                    response_model=PerceptionEncoderCompareResponse,
+                    summary="Perception Encoder Compare",
+                    description="Run the Meta Perception Encoder model to compute similarity scores.",
+                )
+                @with_route_exceptions
+                @usage_collector("request")
+                async def pe_compare(
+                    inference_request: PerceptionEncdoerCompareRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                ):
+                    """
+                    Computes similarity scores using the Meta Perception Encoder model.
+
+                    Args:
+                        inference_request (PerceptionEncoderCompareRequest): The request containing the data to be compared.
+                        api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
+                        request (Request, default Body()): The HTTP request.
+
+                    Returns:
+                        PerceptionEncoderCompareResponse: The response containing the similarity scores.
+                    """
+                    logger.debug(f"Reached /pe/compare")
+                    pe_model_id = load_pe_model(inference_request, api_key=api_key)
+                    response = await self.model_manager.infer_from_request(
+                        pe_model_id, inference_request
+                    )
+                    if LAMBDA:
+                        actor = request.scope["aws.event"]["requestContext"][
+                            "authorizer"
+                        ]["lambda"]["actor"]
+                        trackUsage(pe_model_id, actor, n=2)
                     return response
 
             if CORE_MODEL_GROUNDINGDINO_ENABLED:

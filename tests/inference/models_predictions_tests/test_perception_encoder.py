@@ -7,10 +7,10 @@ import base64
 from io import BytesIO
 
 from inference.models.perception_encoder import PerceptionEncoder
-from inference.core.entities.requests.clip import (
-    ClipImageEmbeddingRequest,
-    ClipTextEmbeddingRequest,
-    ClipCompareRequest,
+from inference.core.entities.requests.perception_encoder import (
+    PerceptionEncoderImageEmbeddingRequest,
+    PerceptionEncoderTextEmbeddingRequest,
+    PerceptionEncoderCompareRequest,
 )
 from inference.core.entities.requests.inference import InferenceRequestImage
 
@@ -45,7 +45,7 @@ def test_model_initialization(model):
 def test_image_embedding(model, test_image):
     """Test image embedding functionality."""
     # Test single image embedding
-    request = ClipImageEmbeddingRequest(image=test_image)
+    request = PerceptionEncoderImageEmbeddingRequest(image=test_image)
     response = model.infer_from_request(request)
     
     assert response.embeddings is not None
@@ -58,7 +58,7 @@ def test_image_embedding(model, test_image):
 def test_text_embedding(model):
     """Test text embedding functionality."""
     # Test single text embedding
-    request = ClipTextEmbeddingRequest(text="a red car")
+    request = PerceptionEncoderTextEmbeddingRequest(text="a red car")
     response = model.infer_from_request(request)
     
     assert response.embeddings is not None
@@ -77,7 +77,7 @@ def test_text_embedding_directly(model):
 def test_batch_text_embedding(model):
     """Test batch text embedding functionality."""
     texts = ["a red car", "a blue truck"]
-    request = ClipTextEmbeddingRequest(text=texts)
+    request = PerceptionEncoderTextEmbeddingRequest(text=texts)
     response = model.infer_from_request(request)
     
     assert response.embeddings is not None
@@ -89,7 +89,7 @@ def test_batch_text_embedding(model):
 
 def test_image_text_comparison(model, test_image):
     """Test image-text comparison functionality."""
-    request = ClipCompareRequest(
+    request = PerceptionEncoderCompareRequest(
         subject=test_image,
         prompt="a red car",
         subject_type="image",
@@ -105,7 +105,7 @@ def test_image_text_comparison(model, test_image):
 
 def test_text_text_comparison(model):
     """Test text-text comparison functionality."""
-    request = ClipCompareRequest(
+    request = PerceptionEncoderCompareRequest(
         subject="a red car",
         prompt="a blue truck",
         subject_type="text",
@@ -128,7 +128,7 @@ def test_invalid_request_type(model):
 def test_invalid_subject_type(model, test_image):
     """Test handling of invalid subject type."""
     with pytest.raises(ValueError):
-        request = ClipCompareRequest(
+        request = PerceptionEncoderCompareRequest(
             subject=test_image,
             prompt="a red car",
             subject_type="invalid",
@@ -140,7 +140,7 @@ def test_invalid_subject_type(model, test_image):
 def test_invalid_prompt_type(model, test_image):
     """Test handling of invalid prompt type."""
     with pytest.raises(ValueError):
-        request = ClipCompareRequest(
+        request = PerceptionEncoderCompareRequest(
             subject=test_image,
             prompt="a red car",
             subject_type="image",
@@ -153,13 +153,13 @@ def test_large_batch_size(model):
     """Test handling of batch size exceeding maximum."""
     large_batch = ["text"] * 100
     with pytest.raises(ValueError):
-        request = ClipTextEmbeddingRequest(text=large_batch)
+        request = PerceptionEncoderTextEmbeddingRequest(text=large_batch)
         model.infer_from_request(request)
 
 
 def test_model_inference_time(model, test_image):
     """Test that inference time is recorded."""
-    request = ClipImageEmbeddingRequest(image=test_image)
+    request = PerceptionEncoderImageEmbeddingRequest(image=test_image)
     response = model.infer_from_request(request)
     
     assert hasattr(response, "time")

@@ -147,6 +147,9 @@ CORE_MODELS_ENABLED = str2bool(os.getenv("CORE_MODELS_ENABLED", True))
 # Flag to enable CLIP core model, default is True
 CORE_MODEL_CLIP_ENABLED = str2bool(os.getenv("CORE_MODEL_CLIP_ENABLED", True))
 
+# Flag to enable PE core model, default is True
+CORE_MODEL_PE_ENABLED = str2bool(os.getenv("CORE_MODEL_PE_ENABLED", True))
+
 # Flag to enable SAM core model, default is True
 CORE_MODEL_SAM_ENABLED = str2bool(os.getenv("CORE_MODEL_SAM_ENABLED", True))
 CORE_MODEL_SAM2_ENABLED = str2bool(os.getenv("CORE_MODEL_SAM2_ENABLED", True))

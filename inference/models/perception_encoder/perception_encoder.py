@@ -7,16 +7,16 @@ from PIL import Image
 
 import inference.models.perception_encoder.vision_encoder.pe as pe
 import inference.models.perception_encoder.vision_encoder.transforms as transforms
-from inference.core.entities.requests.clip import (
-    ClipCompareRequest,
-    ClipImageEmbeddingRequest,
-    ClipInferenceRequest,
-    ClipTextEmbeddingRequest,
+from inference.core.entities.requests.perception_encoder import (
+    PerceptionEncoderCompareRequest,
+    PerceptionEncoderImageEmbeddingRequest,
+    PerceptionEncoderInferenceRequest,
+    PerceptionEncoderTextEmbeddingRequest,
 )
 from inference.core.entities.requests.inference import InferenceRequestImage
-from inference.core.entities.responses.clip import (
-    ClipCompareResponse,
-    ClipEmbeddingResponse,
+from inference.core.entities.responses.perception_encoder import (
+    PerceptionEncoderCompareResponse,
+    PerceptionEncoderEmbeddingResponse,
 )
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import CLIP_MAX_BATCH_SIZE, DEVICE, PERCEPTION_ENCODER_MODEL_ID
@@ -155,9 +155,9 @@ class PerceptionEncoder(RoboflowCoreModel):
 
     def make_compare_response(
         self, similarities: Union[List[float], Dict[str, float]]
-    ) -> ClipCompareResponse:
-        """Creates a ClipCompareResponse object from the provided similarity data."""
-        response = ClipCompareResponse(similarity=similarities)
+    ) -> PerceptionEncoderCompareResponse:
+        """Creates a PerceptionEncoderCompareResponse object from the provided similarity data."""
+        response = PerceptionEncoderCompareResponse(similarity=similarities)
         return response
 
     def embed_image(
@@ -262,33 +262,33 @@ class PerceptionEncoder(RoboflowCoreModel):
 
     def make_embed_image_response(
         self, embeddings: np.ndarray
-    ) -> ClipEmbeddingResponse:
-        """Converts the given embeddings into a ClipEmbeddingResponse object."""
-        response = ClipEmbeddingResponse(embeddings=embeddings.tolist())
+    ) -> PerceptionEncoderEmbeddingResponse:
+        """Converts the given embeddings into a PerceptionEncoderEmbeddingResponse object."""
+        response = PerceptionEncoderEmbeddingResponse(embeddings=embeddings.tolist())
         return response
 
-    def make_embed_text_response(self, embeddings: np.ndarray) -> ClipEmbeddingResponse:
-        """Converts the given text embeddings into a ClipEmbeddingResponse object."""
-        response = ClipEmbeddingResponse(embeddings=embeddings.tolist())
+    def make_embed_text_response(self, embeddings: np.ndarray) -> PerceptionEncoderEmbeddingResponse:
+        """Converts the given text embeddings into a PerceptionEncoderEmbeddingResponse object."""
+        response = PerceptionEncoderEmbeddingResponse(embeddings=embeddings.tolist())
         return response
 
     def infer_from_request(
-        self, request: ClipInferenceRequest
-    ) -> ClipEmbeddingResponse:
+        self, request: PerceptionEncoderInferenceRequest
+    ) -> PerceptionEncoderEmbeddingResponse:
         """Routes the request to the appropriate inference function."""
         t1 = perf_counter()
-        if isinstance(request, ClipImageEmbeddingRequest):
+        if isinstance(request, PerceptionEncoderImageEmbeddingRequest):
             infer_func = self.embed_image
             make_response_func = self.make_embed_image_response
-        elif isinstance(request, ClipTextEmbeddingRequest):
+        elif isinstance(request, PerceptionEncoderTextEmbeddingRequest):
             infer_func = self.embed_text
             make_response_func = self.make_embed_text_response
-        elif isinstance(request, ClipCompareRequest):
+        elif isinstance(request, PerceptionEncoderCompareRequest):
             infer_func = self.compare
             make_response_func = self.make_compare_response
         else:
             raise ValueError(
-                f"Request type {type(request)} is not a valid ClipInferenceRequest"
+                f"Request type {type(request)} is not a valid PerceptionEncoderInferenceRequest"
             )
         data = infer_func(**request.dict())
         response = make_response_func(data)
