@@ -8,7 +8,7 @@ import supervision as sv
 from inference.core.workflows.core_steps.common.serializers import (
     serialise_image,
     serialise_sv_detections,
-    serialize_wildcard_kind,
+    serialize_wildcard_kind, mask_to_polygon,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
@@ -378,3 +378,396 @@ def test_serialize_wildcard_kind_when_compound_input_is_given() -> None:
     assert (
         recovered_image == np_image
     ).all(), "Recovered image should be equal to input image"
+
+
+def test_mask_to_polygon_when_no_contours_to_be_found() -> None:
+    # given
+    mask = np.zeros((128, 128), dtype=np.uint8)
+
+    # when
+    result = mask_to_polygon(mask=mask)
+
+    # then
+    assert result is None, "No polygons should be manifested as None"
+
+
+def test_mask_to_polygon_when_mask_contains_point() -> None:
+    # given
+    mask = np.zeros((128, 128), dtype=np.uint8)
+    mask[40:41, 50:51] = 255
+
+    # when
+    result = mask_to_polygon(mask=mask)
+
+    # then
+    assert np.allclose(result, np.array([[50, 40]] * 3)), "Expected single point to be duplicated"
+
+
+def test_mask_to_polygon_when_mask_contains_line() -> None:
+    # given
+    mask = np.zeros((128, 128), dtype=np.uint8)
+    mask[40:41, 50:60] = 255
+
+    # when
+    result = mask_to_polygon(mask=mask)
+
+    # then
+    assert np.allclose(result, np.array([[50, 40], [59, 40], [59, 40]])), "Expected last point of the shape to be duplicated"
+
+
+def test_mask_to_polygon_when_mask_contains_standard_shape() -> None:
+    # given
+    mask = np.zeros((128, 128), dtype=np.uint8)
+    mask[40:50, 50:60] = 255
+
+    # when
+    result = mask_to_polygon(mask=mask)
+
+    # then
+    assert np.allclose(result, np.array([
+        [50, 40],
+        [50, 49],
+        [59, 49],
+        [59, 40]]
+    ))
+
+
+def test_mask_to_polygon_when_mask_contains_multiple_shapes() -> None:
+    # given
+    mask = np.zeros((128, 128), dtype=np.uint8)
+    mask[40:50, 50:60] = 255
+    mask[90:100, 100:110] = 255
+
+    # when
+    result = mask_to_polygon(mask=mask)
+
+    # then
+    assert np.allclose(result, np.array([
+        [100,  90],
+        [100,  99],
+        [109,  99],
+        [109,  90],
+    ])) or np.allclose(result, np.array([
+        [50, 40],
+        [50, 49],
+        [59, 49],
+        [59, 40]]
+    ))
+
+
+def test_mask_to_polygon_output_reconstruction_when_output_was_padded() -> None:
+    # given
+    mask = np.zeros((128, 128), dtype=np.uint8)
+    mask[40:41, 50:60] = 1
+
+    # when
+    serialisation_result = mask_to_polygon(mask=mask)
+    de_serialisation_result = sv.polygon_to_mask(polygon=serialisation_result, resolution_wh=(128, 128))
+
+    # then
+    assert np.allclose(serialisation_result, np.array([[50, 40], [59, 40], [59, 40]])), "Expected last point of the shape to be duplicated"
+    assert np.allclose(mask, de_serialisation_result), "Expected reconstruction to be exact"
+
+
+def test_serialise_sv_detections_when_mask_with_single_point_detected_present() -> None:
+    # given
+    detections = sv.Detections(
+        xyxy=np.array([[1, 1, 2, 2], [3, 3, 4, 4]], dtype=np.float64),
+        class_id=np.array([1, 2]),
+        confidence=np.array([0.1, 0.9], dtype=np.float64),
+        tracker_id=np.array([1, 2]),
+        mask=np.array(
+            [
+                sv.polygon_to_mask(
+                    np.array([[1, 1]]),
+                    resolution_wh=(15, 15),
+                ),
+                sv.polygon_to_mask(
+                    np.array([[1, 1], [1, 10], [10, 10], [10, 1]]),
+                    resolution_wh=(15, 15),
+                ),
+            ],
+            dtype=bool,
+        ),
+        data={
+            "class_name": np.array(["cat", "dog"]),
+            "detection_id": np.array(["first", "second"]),
+            "parent_id": np.array(["image", "image"]),
+            "keypoints_xy": np.array(
+                [
+                    np.array([[11, 11], [12, 13], [14, 15]], dtype=np.float64),
+                    np.array(
+                        [[16, 16], [17, 17], [18, 18], [19, 19]], dtype=np.float64
+                    ),
+                ],
+                dtype="object",
+            ),
+            "keypoints_class_id": np.array(
+                [
+                    np.array([1, 2, 3]),
+                    np.array([1, 2, 3, 4]),
+                ],
+                dtype="object",
+            ),
+            "keypoints_class_name": np.array(
+                [
+                    np.array(["nose", "ear", "eye"]),
+                    np.array(["nose", "ear", "eye", "tail"]),
+                ],
+                dtype="object",
+            ),
+            "keypoints_confidence": np.array(
+                [
+                    np.array([0.1, 0.2, 0.3], dtype=np.float64),
+                    np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float64),
+                ],
+                dtype="object",
+            ),
+            "parent_dimensions": np.array(
+                [
+                    [192, 168],
+                    [192, 168],
+                ]
+            ),
+            "image_dimensions": np.array(
+                [
+                    [192, 168],
+                    [192, 168],
+                ]
+            ),
+            "data": np.array(["some", "other"]),
+        },
+    )
+
+    # when
+    result = serialise_sv_detections(detections=detections)
+
+    # then
+    assert result == {
+        "image": {
+            "width": 168,
+            "height": 192,
+        },
+        "predictions": [
+            {
+                "data": "some",
+                "width": 1.0,
+                "height": 1.0,
+                "x": 1.5,
+                "y": 1.5,
+                "confidence": 0.1,
+                "class_id": 1,
+                "points": [
+                    {"x": 1.0, "y": 1.0},
+                    {"x": 1.0, "y": 1.0},  # POINT IS DUPLICATED HERE
+                    {"x": 1.0, "y": 1.0},  # POINT IS DUPLICATED HERE
+                ],
+                "tracker_id": 1,
+                "class": "cat",
+                "detection_id": "first",
+                "parent_id": "image",
+                "keypoints": [
+                    {
+                        "class_id": 1,
+                        "class": "nose",
+                        "confidence": 0.1,
+                        "x": 11.0,
+                        "y": 11.0,
+                    },
+                    {
+                        "class_id": 2,
+                        "class": "ear",
+                        "confidence": 0.2,
+                        "x": 12.0,
+                        "y": 13.0,
+                    },
+                    {
+                        "class_id": 3,
+                        "class": "eye",
+                        "confidence": 0.3,
+                        "x": 14.0,
+                        "y": 15.0,
+                    },
+                ],
+            },
+            {
+                "data": "other",
+                "width": 1.0,
+                "height": 1.0,
+                "x": 3.5,
+                "y": 3.5,
+                "confidence": 0.9,
+                "class_id": 2,
+                "points": [
+                    {"x": 1.0, "y": 1.0},
+                    {"x": 1.0, "y": 10.0},
+                    {"x": 10.0, "y": 10.0},
+                    {"x": 10.0, "y": 1.0},
+                ],
+                "tracker_id": 2,
+                "class": "dog",
+                "detection_id": "second",
+                "parent_id": "image",
+                "keypoints": [
+                    {
+                        "class_id": 1,
+                        "class": "nose",
+                        "confidence": 0.1,
+                        "x": 16.0,
+                        "y": 16.0,
+                    },
+                    {
+                        "class_id": 2,
+                        "class": "ear",
+                        "confidence": 0.2,
+                        "x": 17.0,
+                        "y": 17.0,
+                    },
+                    {
+                        "class_id": 3,
+                        "class": "eye",
+                        "confidence": 0.3,
+                        "x": 18.0,
+                        "y": 18.0,
+                    },
+                    {
+                        "class_id": 4,
+                        "class": "tail",
+                        "confidence": 0.4,
+                        "x": 19.0,
+                        "y": 19.0,
+                    },
+                ],
+            },
+        ],
+    }
+
+
+def test_serialise_sv_detections_when_empty_mask_detected() -> None:
+    # given
+    detections = sv.Detections(
+        xyxy=np.array([[1, 1, 2, 2], [3, 3, 4, 4]], dtype=np.float64),
+        class_id=np.array([1, 2]),
+        confidence=np.array([0.1, 0.9], dtype=np.float64),
+        tracker_id=np.array([1, 2]),
+        mask=np.array(
+            [
+                np.zeros((15, 15), dtype=np.uint8),
+                sv.polygon_to_mask(
+                    np.array([[1, 1], [1, 10], [10, 10], [10, 1]]),
+                    resolution_wh=(15, 15),
+                ),
+            ],
+            dtype=bool,
+        ),
+        data={
+            "class_name": np.array(["cat", "dog"]),
+            "detection_id": np.array(["first", "second"]),
+            "parent_id": np.array(["image", "image"]),
+            "keypoints_xy": np.array(
+                [
+                    np.array([[11, 11], [12, 13], [14, 15]], dtype=np.float64),
+                    np.array(
+                        [[16, 16], [17, 17], [18, 18], [19, 19]], dtype=np.float64
+                    ),
+                ],
+                dtype="object",
+            ),
+            "keypoints_class_id": np.array(
+                [
+                    np.array([1, 2, 3]),
+                    np.array([1, 2, 3, 4]),
+                ],
+                dtype="object",
+            ),
+            "keypoints_class_name": np.array(
+                [
+                    np.array(["nose", "ear", "eye"]),
+                    np.array(["nose", "ear", "eye", "tail"]),
+                ],
+                dtype="object",
+            ),
+            "keypoints_confidence": np.array(
+                [
+                    np.array([0.1, 0.2, 0.3], dtype=np.float64),
+                    np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float64),
+                ],
+                dtype="object",
+            ),
+            "parent_dimensions": np.array(
+                [
+                    [192, 168],
+                    [192, 168],
+                ]
+            ),
+            "image_dimensions": np.array(
+                [
+                    [192, 168],
+                    [192, 168],
+                ]
+            ),
+            "data": np.array(["some", "other"]),
+        },
+    )
+
+    # when
+    result = serialise_sv_detections(detections=detections)
+
+    # then
+    assert result == {
+        "image": {
+            "width": 168,
+            "height": 192,
+        },
+        "predictions": [
+            {  # Expected only second prediction as first to be filtered by empty mask
+                "data": "other",
+                "width": 1.0,
+                "height": 1.0,
+                "x": 3.5,
+                "y": 3.5,
+                "confidence": 0.9,
+                "class_id": 2,
+                "points": [
+                    {"x": 1.0, "y": 1.0},
+                    {"x": 1.0, "y": 10.0},
+                    {"x": 10.0, "y": 10.0},
+                    {"x": 10.0, "y": 1.0},
+                ],
+                "tracker_id": 2,
+                "class": "dog",
+                "detection_id": "second",
+                "parent_id": "image",
+                "keypoints": [
+                    {
+                        "class_id": 1,
+                        "class": "nose",
+                        "confidence": 0.1,
+                        "x": 16.0,
+                        "y": 16.0,
+                    },
+                    {
+                        "class_id": 2,
+                        "class": "ear",
+                        "confidence": 0.2,
+                        "x": 17.0,
+                        "y": 17.0,
+                    },
+                    {
+                        "class_id": 3,
+                        "class": "eye",
+                        "confidence": 0.3,
+                        "x": 18.0,
+                        "y": 18.0,
+                    },
+                    {
+                        "class_id": 4,
+                        "class": "tail",
+                        "confidence": 0.4,
+                        "x": 19.0,
+                        "y": 19.0,
+                    },
+                ],
+            },
+        ],
+    }
