@@ -22,11 +22,6 @@ from inference.core.entities.requests.clip import (
     ClipImageEmbeddingRequest,
     ClipTextEmbeddingRequest,
 )
-from inference.core.entities.requests.perception_encoder import (
-    PerceptionEncoderCompareRequest,
-    PerceptionEncoderImageEmbeddingRequest,
-    PerceptionEncoderTextEmbeddingRequest,
-)
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
 from inference.core.entities.requests.groundingdino import GroundingDINOInferenceRequest
@@ -41,6 +36,11 @@ from inference.core.entities.requests.inference import (
     ObjectDetectionInferenceRequest,
 )
 from inference.core.entities.requests.owlv2 import OwlV2InferenceRequest
+from inference.core.entities.requests.perception_encoder import (
+    PerceptionEncoderCompareRequest,
+    PerceptionEncoderImageEmbeddingRequest,
+    PerceptionEncoderTextEmbeddingRequest,
+)
 from inference.core.entities.requests.sam import (
     SamEmbeddingRequest,
     SamSegmentationRequest,
@@ -67,10 +67,6 @@ from inference.core.entities.responses.clip import (
     ClipCompareResponse,
     ClipEmbeddingResponse,
 )
-from inference.core.entities.responses.perception_encoder import (
-    PerceptionEncoderCompareResponse,
-    PerceptionEncoderEmbeddingResponse,
-)
 from inference.core.entities.responses.gaze import GazeDetectionInferenceResponse
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
@@ -85,6 +81,10 @@ from inference.core.entities.responses.inference import (
 )
 from inference.core.entities.responses.notebooks import NotebookStartResponse
 from inference.core.entities.responses.ocr import OCRInferenceResponse
+from inference.core.entities.responses.perception_encoder import (
+    PerceptionEncoderCompareResponse,
+    PerceptionEncoderEmbeddingResponse,
+)
 from inference.core.entities.responses.sam import (
     SamEmbeddingResponse,
     SamSegmentationResponse,
@@ -112,11 +112,11 @@ from inference.core.env import (
     API_LOGGING_ENABLED,
     BUILDER_ORIGIN,
     CORE_MODEL_CLIP_ENABLED,
-    CORE_MODEL_PE_ENABLED,
     CORE_MODEL_DOCTR_ENABLED,
     CORE_MODEL_GAZE_ENABLED,
     CORE_MODEL_GROUNDINGDINO_ENABLED,
     CORE_MODEL_OWLV2_ENABLED,
+    CORE_MODEL_PE_ENABLED,
     CORE_MODEL_SAM2_ENABLED,
     CORE_MODEL_SAM_ENABLED,
     CORE_MODEL_TROCR_ENABLED,
@@ -1779,6 +1779,7 @@ class HttpInterface(BaseInterface):
                     return response
 
             if CORE_MODEL_PE_ENABLED:
+
                 @app.post(
                     "/pe/embed_image",
                     response_model=PerceptionEncoderEmbeddingResponse,

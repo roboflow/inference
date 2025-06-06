@@ -7,18 +7,18 @@ from PIL import Image
 
 import inference.models.perception_encoder.vision_encoder.pe as pe
 import inference.models.perception_encoder.vision_encoder.transforms as transforms
+from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.entities.requests.perception_encoder import (
     PerceptionEncoderCompareRequest,
     PerceptionEncoderImageEmbeddingRequest,
     PerceptionEncoderInferenceRequest,
     PerceptionEncoderTextEmbeddingRequest,
 )
-from inference.core.entities.requests.inference import InferenceRequestImage
+from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.entities.responses.perception_encoder import (
     PerceptionEncoderCompareResponse,
     PerceptionEncoderEmbeddingResponse,
 )
-from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import CLIP_MAX_BATCH_SIZE, DEVICE, PERCEPTION_ENCODER_MODEL_ID
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.models.types import PreprocessReturnMetadata
@@ -267,7 +267,9 @@ class PerceptionEncoder(RoboflowCoreModel):
         response = PerceptionEncoderEmbeddingResponse(embeddings=embeddings.tolist())
         return response
 
-    def make_embed_text_response(self, embeddings: np.ndarray) -> PerceptionEncoderEmbeddingResponse:
+    def make_embed_text_response(
+        self, embeddings: np.ndarray
+    ) -> PerceptionEncoderEmbeddingResponse:
         """Converts the given text embeddings into a PerceptionEncoderEmbeddingResponse object."""
         response = PerceptionEncoderEmbeddingResponse(embeddings=embeddings.tolist())
         return response
