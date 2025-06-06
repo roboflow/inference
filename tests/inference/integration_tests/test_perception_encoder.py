@@ -16,7 +16,7 @@ def test_text_embedding(server_url: str, clean_loaded_models_fixture) -> None:
 
     # when
     response = requests.post(
-        f"{server_url}/perception-encoder/embed_text",
+        f"{server_url}/perception_encoder/embed_text",
         json=payload,
     )
 
@@ -41,7 +41,7 @@ def test_image_embedding(server_url: str, clean_loaded_models_fixture) -> None:
 
     # when
     response = requests.post(
-        f"{server_url}/perception-encoder/embed_image",
+        f"{server_url}/perception_encoder/embed_image",
         json=payload,
     )
 
@@ -67,7 +67,7 @@ def test_comparison(server_url: str, clean_loaded_models_fixture) -> None:
 
     # when
     response = requests.post(
-        f"{server_url}/perception-encoder/compare",
+        f"{server_url}/perception_encoder/compare",
         json=payload,
     )
 
