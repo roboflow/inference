@@ -926,7 +926,7 @@ class VideoConsumer:
 
     def _set_stream_mode_buffering_strategies(self) -> None:
         if self._buffer_filling_strategy is None:
-            self._buffer_filling_strategy = BufferFillingStrategy.WAIT
+            self._buffer_filling_strategy = BufferFillingStrategy.DROP_OLDEST
 
     def _video_fps_should_be_sub_sampled(self) -> bool:
         if self._desired_fps is None:
@@ -1120,8 +1120,6 @@ def get_from_queue(
             on_successful_read()
         except Empty:
             pass
-    if not purge:
-        return result
     while not queue.empty() and purge:
         result = queue.get()
         queue.task_done()
