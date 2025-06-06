@@ -312,4 +312,12 @@ class DynamicZonesBlockV1(WorkflowBlock):
                     OUTPUT_KEY_SIMPLIFICATION_CONVERGED: all_converged,
                 }
             )
+        if not result:
+            result.append(
+                {
+                    OUTPUT_KEY: [],
+                    OUTPUT_KEY_DETECTIONS: None,
+                    OUTPUT_KEY_SIMPLIFICATION_CONVERGED: False,
+                }
+            )
         return result

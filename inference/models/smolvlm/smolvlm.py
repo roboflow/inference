@@ -98,9 +98,17 @@ class LoRASmolVLM(LoRATransformerModel):
         revision = None
         token = None
 
-        rm_weights = os.path.join(
-            MODEL_CACHE_DIR, "lora-bases/smolvlm2/main/weights.tar.gz"
-        )
+        is_smolvlm_256m = "smolvlm-256m" in model_id
+
+        if is_smolvlm_256m:
+            rm_weights = os.path.join(
+                MODEL_CACHE_DIR, "lora-bases/smolvlm2/smolvlm-256m/main/weights.tar.gz"
+            )
+        else:
+            rm_weights = os.path.join(
+                MODEL_CACHE_DIR, "lora-bases/smolvlm2/main/weights.tar.gz"
+            )
+
         if os.path.exists(rm_weights):
             os.remove(rm_weights)
 
@@ -127,9 +135,14 @@ class LoRASmolVLM(LoRATransformerModel):
 
         self.model.merge_and_unload()
 
-        self.processor = self.processor_class.from_pretrained(
-            os.path.join(MODEL_CACHE_DIR, "lora-bases/smolvlm2/main")
-        )
+        if is_smolvlm_256m:
+            self.processor = self.processor_class.from_pretrained(
+                os.path.join(MODEL_CACHE_DIR, "lora-bases/smolvlm2/smolvlm-256m/main")
+            )
+        else:
+            self.processor = self.processor_class.from_pretrained(
+                os.path.join(MODEL_CACHE_DIR, "lora-bases/smolvlm2/main")
+            )
 
     def predict(self, image_in: Image.Image, prompt="", **kwargs):
 
