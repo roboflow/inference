@@ -933,6 +933,7 @@ CAPTION_WITH_VERSION_WORKFLOW = {
     ],
 }
 
+
 @add_to_workflows_gallery(
     category="Workflows with Visual Language Models",
     use_case_title="Using different versions of Google's Gemini for Image Captioning",
@@ -957,9 +958,9 @@ def test_workflow_with_different_gemini_versions(
         "gemini-2.0-flash",
         "gemini-2.0-flash-exp",
         "gemini-2.5-pro-preview-05-06",
-        "gemini-2.0-flash-lite"
+        "gemini-2.0-flash-lite",
     ]
-    
+
     # given
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
@@ -970,7 +971,7 @@ def test_workflow_with_different_gemini_versions(
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
-    
+
     for version in model_versions:
         result = execution_engine.run(
             runtime_parameters={
@@ -979,13 +980,18 @@ def test_workflow_with_different_gemini_versions(
                 "model_version": version,
             }
         )
-        
-        assert len(result) == 1, f"Single image given, expected single output for version {version}"
-        assert set(result[0].keys()) == {"result"}, f"Expected output key 'result' for version {version}"
+
+        assert (
+            len(result) == 1
+        ), f"Single image given, expected single output for version {version}"
+        assert set(result[0].keys()) == {
+            "result"
+        }, f"Expected output key 'result' for version {version}"
         assert (
             isinstance(result[0]["result"], str) and len(result[0]["result"]) > 0
         ), f"Expected non-empty string generated for version {version}"
-        
+
+
 @add_to_workflows_gallery(
     category="Workflows with Visual Language Models",
     use_case_title="Using Google's Gemini as secondary classifier",
@@ -1034,4 +1040,3 @@ def test_workflow_with_secondary_classifier(
     assert "dog" not in set(
         result[0]["predictions"].data["class_name"].tolist()
     ), "Expected classes to be substituted"
-    

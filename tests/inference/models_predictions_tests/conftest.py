@@ -61,6 +61,7 @@ def beer_image() -> np.ndarray:
 def truck_image() -> np.ndarray:
     return cv2.imread(TRUCK_IMAGE_PATH)
 
+
 @pytest.fixture(scope="function")
 def melee_image() -> np.ndarray:
     return cv2.imread(MELEE_IMAGE_PATH)
@@ -114,6 +115,7 @@ def yolov5_det_model() -> Generator[str, None, None]:
     yield model_id
     shutil.rmtree(model_cache_dir)
 
+
 @pytest.fixture(scope="function")
 def rfdetr_base_model() -> Generator[str, None, None]:
     model_id = "rfdetr-base/1"
@@ -123,6 +125,7 @@ def rfdetr_base_model() -> Generator[str, None, None]:
     )
     yield model_id
     shutil.rmtree(model_cache_dir)
+
 
 @pytest.fixture(scope="function")
 def yolov5_det_reference_prediction() -> ObjectDetectionInferenceResponse:
