@@ -7,7 +7,7 @@ import time
 from typing import Dict, List, Literal, Optional, Type, Union, Tuple
 import supervision as sv
 import numpy as np
-
+from simple_pid import PID
 
 from onvif import ONVIFCamera, ONVIFService
 import asyncio
@@ -40,13 +40,13 @@ from inference.core.workflows.prototypes.block import (
 )
 
 # speed will start to be reduced this many tolerances from tolerance zone
-SPEED_REDUCTION_TOLERANCE_MULTIPLIER = 2
+SPEED_REDUCTION_TOLERANCE_MULTIPLIER = 3
 
 # max number of seconds to switch to zoom only (no xy movement)
 ZOOM_MODE_SECONDS = 2
 
 # after the first zoom mode, reduce pan/tilt speed by this much
-ZOOM_MODE_SPEED_REDUCER = 0.5
+ZOOM_MODE_SPEED_REDUCER = 0.25
 
 PREDICTIONS_OUTPUT_KEY: str = "predictions"
 SEEKING_OUTPUT_KEY: str = "seeking"
@@ -135,10 +135,10 @@ class BlockManifest(WorkflowBlockManifest):
         description="Lock to the tracking id of the highest confidence prediction until idle or reset. A tracker must be added to the workflow.",
         examples=[True,False,"$inputs.follow_tracker"],
     )
-    center_tolerance: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
+    dead_zone: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         default=50,
-        description="Camera will stop once bounding box is within this many pixels of FoV center (or border for zoom). Increasing tolerance helps avoid pan/tilt hunting, but decreasing tolerance helps avoid hunting after zoom.",
-        examples=[50,"$inputs.center_tolerance"],
+        description="Camera will stop once bounding box is within this many pixels of FoV center (or border for zoom). Increasing dead zone helps avoid pan/tilt hunting, but decreasing dead zone helps avoid hunting after zoom.",
+        examples=[50,"$inputs.dead_zone"],
     )
     default_position_preset: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="Preset Name for Default Position",
@@ -163,14 +163,21 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[True, False],
         description="Flip Y movement if image is mirrored vertically",
     )
-    movement_speed_percent: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
-        default=100,
-        description="Percent of maximum speed to move camera at (0-100)",
+    minimum_camera_speed: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
+        default=0.25,
+        description="Minimum camera speed as percent (0-100). Some cameras won't honor speeds below a certain amount.",
     )
-    reduce_speed_near_zone: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
-        default=True,
-        examples=[True, False],
-        description="Reduce speed near the tolerance zone to avoid hunting in cases of RTSP lag",
+    pid_kp: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
+        default=0.3,
+        description="PID Kp constant.",
+    )
+    pid_ki: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
+        default=0.1,
+        description="PID Ki constant",
+    )
+    pid_kd: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
+        default=2,
+        description="PID Kd constant. Increase Kd if significant lag exists between video and movement.",
     )
 
     @classmethod
@@ -404,7 +411,7 @@ class CameraWrapper:
         # don't stop if already stopped as stop commands aren't rate limited
         if self._seeking or self._seeking is None:
             print("STOP CAMERA!!!!!!")
-            self.continuous_move(0,0,0,0)
+            self.continuous_move(0,0,0)
             self.schedule_next_reset()
             '''
             # not all cameras support stop
@@ -457,13 +464,13 @@ class CameraWrapper:
         self.tracked_object = None
         await ptz.GotoPreset(request)
 
-    def zoom(self,z:float,movement_speed_percent:float):
+    def zoom(self,z:float):
         # start limited time zoom mode
         if not self._start_zoom_time:
             self._start_zoom_time = now()
             # even though the zoom command should 0 out pan/tilt, sending an explicit stop on all axes seems to help
             self.stop_camera()
-        self.schedule(self.continuous_move_async(0,0,z,movement_speed_percent))
+        self.schedule(self.continuous_move_async(0,0,z))
 
     def stop_zoom(self):
         if self._start_zoom_time is not None:
@@ -476,20 +483,19 @@ class CameraWrapper:
         return self._start_zoom_time is not None
 
     # tells the camera to move at a continuous velocity
-    def continuous_move(self,x:float,y:float,z:float,movement_speed_percent:float):
-        self.schedule(self.continuous_move_async(x,y,z,movement_speed_percent))
+    def continuous_move(self,x:float,y:float,z:float,):
+        self.schedule(self.continuous_move_async(x,y,z))
 
     # x and y are velocities from -1 to 1
-    async def continuous_move_async(self,x:float,y:float,z:float,movement_speed_percent:float):
+    async def continuous_move_async(self,x:float,y:float,z:float):
         """
         Tells the camera to move at a continuous velocity, or 0 to stop
         Note this is rate limited, some commands will be ignored
 
         Args:
-            x: The x velocity as -1 to 1 where -1 and 1 are maximums
-            y: The y velocity as -1 to 1 where -1 and 1 are maximums
-            z: The zoom velocity as -1 to 1 where -1 and 1 are maximums
-            movement_speed_percent: percent of maximum movement speed as 0-1
+            x: The x velocity normalized as -1 to 1
+            y: The y velocity normalized as -1 to 1
+            z: The zoom velocity normalized as -1 to 1
         """
 
         global ZOOM_MODE_SPEED_REDUCER
@@ -520,15 +526,14 @@ class CameraWrapper:
 
         limits = self.velocity_limits
 
-        #print(f"x:{x} y:{y} z:{z} limits:{limits} speed_percent:{movement_speed_percent}")
         # normalize to camera's velocity limits
         x_limit = limits.x.min if x<0 else limits.x.max
         y_limit = limits.y.min if x<0 else limits.y.max
         z_limit = limits.z.min if x<0 else limits.z.max
 
-        x = abs(x_limit) * x * movement_speed_percent
-        y = abs(y_limit) * y * movement_speed_percent
-        z = abs(z_limit) * z * movement_speed_percent
+        x = abs(x_limit) * x
+        y = abs(y_limit) * y
+        z = abs(z_limit) * z
 
         if self._is_zoomed:
             x = x*ZOOM_MODE_SPEED_REDUCER
@@ -572,6 +577,14 @@ class ONVIFSinkBlockV1(WorkflowBlock):
     ):
         self.bacnet_app = None
         self._step_execution_mode = step_execution_mode
+        # all commands will be send to the camera normalized to -1 to 1
+        # all setpoints are 0, which represents the center of the frame
+        self.x_pid = PID(0, 0, 0, setpoint=0)
+        self.x_pid.output_limits = (-1, 1)
+        self.y_pid = PID(0, 0, 0, setpoint=0)
+        self.y_pid.output_limits = (-1, 1)
+        self.z_pid = PID(0, 0, 0, setpoint=0)
+        self.z_pid.output_limits = (-1, 1)
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -592,14 +605,19 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         default_position_preset: Union[str,None],
         zoom_if_able: bool,
         follow_tracker: bool,
-        center_tolerance: int,
+        dead_zone: int,
         camera_update_rate_limit:int,
         flip_y_movement:int,
         flip_x_movement:int,
-        movement_speed_percent:float,
         move_to_position_after_idle_seconds:int,
-        reduce_speed_near_zone:bool
+        pid_kp:float,
+        pid_ki:float,
+        pid_kd:float,
+        minimum_camera_speed:float
     ) -> BlockResult:
+
+        # TODO: get rid of these
+        reduce_speed_near_zone = False
 
         if self._step_execution_mode != StepExecutionMode.LOCAL:
             raise ValueError(
@@ -613,7 +631,10 @@ class ONVIFSinkBlockV1(WorkflowBlock):
 
         if movement_type=="Follow":
 
-            #print(predictions)
+            # for v1 use the same constants for all axes
+            self.x_pid.tunings = (pid_kp, pid_ki, pid_kd)
+            self.y_pid.tunings = (pid_kp, pid_ki, pid_kd)
+            self.z_pid.tunings = (pid_kp, pid_ki, pid_kd)
 
             if len(predictions.xyxy)==0:
                 # get/create the camera first so that we can move it to the preset
@@ -640,12 +661,13 @@ class ONVIFSinkBlockV1(WorkflowBlock):
                 max_confidence = predictions.confidence.max()
                 max_confidence_prediction = predictions[predictions.confidence==max_confidence][0]
                 # if we're not tracking at the moment, start tracking this one
-                if follow_tracker and len(max_confidence_prediction.tracker_id)>0:
-                    tracked_object = max_confidence_prediction.tracker_id[0]
+                if follow_tracker and max_confidence_prediction.tracker_id:
+                    if len(max_confidence_prediction.tracker_id)>0:
+                        tracked_object = max_confidence_prediction.tracker_id[0]
 
             if camera: # note this is just the camera wrapper, connection is async
                 camera.tracked_object = tracked_object
-                self.move_camera(camera, max_confidence_prediction,zoom_if_able,center_tolerance,flip_x_movement,flip_y_movement,movement_speed_percent/100.0,reduce_speed_near_zone,stop_preset)
+                self.move_camera(camera, max_confidence_prediction,zoom_if_able,dead_zone,flip_x_movement,flip_y_movement,minimum_camera_speed/100.0,reduce_speed_near_zone,stop_preset)
 
         elif movement_type=="Go To Preset":
             self.go_to_preset(camera_ip, camera_port, camera_username, camera_password, default_position_preset,camera_update_rate_limit,move_to_position_after_idle_seconds)
@@ -655,12 +677,12 @@ class ONVIFSinkBlockV1(WorkflowBlock):
     def stop_camera_tracking(self,camera_ip:str,camera_port:int,stop_preset:str):
         global cameras
         camera = cameras.get((camera_ip,camera_port))
-        camera.set_stop_preset(stop_preset)
         if camera:
+            camera.set_stop_preset(stop_preset)
             camera.stop_camera()
             camera.tracked_object = None
 
-    def move_camera(self,camera:CameraWrapper,prediction:OBJECT_DETECTION_PREDICTION_KIND,zoom_if_able:bool,center_tolerance:int,flip_x_movement:bool,flip_y_movement:bool,movement_speed_percent:float,reduce_speed_near_zone:bool,stop_preset:str):
+    def move_camera(self,camera:CameraWrapper,prediction:OBJECT_DETECTION_PREDICTION_KIND,zoom_if_able:bool,dead_zone:int,flip_x_movement:bool,flip_y_movement:bool,minimum_camera_speed:float,reduce_speed_near_zone:bool,stop_preset:str):
         global zoom
         camera.set_stop_preset(stop_preset)
 
@@ -680,47 +702,74 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         delta = (image_width/2-center_point[0],image_height/2-center_point[1])
 
         # if we're locked into zoom only mode, and the object goes to the edge, unlock it and go back to pan/tilt
-        if camera.zooming() and zoom_delta<center_tolerance and not box_at_edge:
+        if camera.zooming() and zoom_delta<dead_zone and not box_at_edge:
             camera.stop_zoom()
 
         #print(f"delta:{delta}")
         abs_delta = np.abs(delta)
 
-        if (np.all(abs_delta < center_tolerance) or camera.zooming()):
+        if (np.all(abs_delta < dead_zone) or camera.zooming()):
             # if within tolerance or currently zooming, then camera is in zoom mode if available
             # this can continue for up to 5 seconds, or as long as the box is at the edge
             if zoom_if_able:
-                if zoom_delta<center_tolerance and not box_at_edge:
+                if zoom_delta<dead_zone and not box_at_edge:
                     camera.stop_camera()
                 else:
-                    z = (0.5 if zoom_delta<SPEED_REDUCTION_TOLERANCE_MULTIPLIER*center_tolerance and reduce_speed_near_zone else 1) if zoom_if_able else 0
+                    # we want zoom_delta==dead_zone
+                    control_output_z = self.z_pid(abs(zoom_delta-dead_zone))
+
+                    if abs(control_output_z)<minimum_camera_speed:
+                        control_output_z = minimum_camera_speed*np.sign(control_output_z)
+
+                    # in the case where we've overshot, there's no signal to use for PID
                     # back off slowly if the box is at the edge as we likely just missed it
-                    camera.zoom(z*-0.33 if box_at_edge else z,movement_speed_percent)
+                    camera.zoom(-0.25 if box_at_edge else control_output_z)
 
             else:
                 camera.stop_camera()
         else:
             # if not in zoom mode, then allow xy (pan/tilt) motion
 
+            # normalize delta in terms of % for PID loop
+            normalized_delta = delta/np.array([image_width,image_height])
+
+            control_output_x = self.x_pid(normalized_delta[0])
+            control_output_y = self.y_pid(normalized_delta[1])
+
+            if abs(control_output_x)<minimum_camera_speed:
+                control_output_x = minimum_camera_speed*np.sign(control_output_x)
+            if abs(control_output_y)<minimum_camera_speed:
+                control_output_y = minimum_camera_speed*np.sign(control_output_y)
+
+            print(f"delta:{normalized_delta} output:{control_output_x} {control_output_y}")
+
             # larger axis moves at max speed, so normalize to 100%
-            speeds = delta/abs_delta.max()
+            speeds = abs(delta/abs_delta.max())
 
             # reduce speed by half if close to the zone
             # this is a bit simpler than a P/PID control for v1
-            x_reduction_factor = 0.5 if abs_delta[0]<SPEED_REDUCTION_TOLERANCE_MULTIPLIER*center_tolerance and reduce_speed_near_zone else 1
-            y_reduction_factor = 0.5 if abs_delta[1]<SPEED_REDUCTION_TOLERANCE_MULTIPLIER*center_tolerance and reduce_speed_near_zone else 1
+            #x_reduction_factor = 0.5 if abs_delta[0]<SPEED_REDUCTION_TOLERANCE_MULTIPLIER*dead_zone and reduce_speed_near_zone else 1
+            #y_reduction_factor = 0.5 if abs_delta[1]<SPEED_REDUCTION_TOLERANCE_MULTIPLIER*dead_zone and reduce_speed_near_zone else 1
+
 
             # set speed to 0 for axis within tolerance
             # this might not be necessary and slows the process down a bit, but trying to avoid hunting
             # with a good PID loop, this will no longer be necessary
-            x = speeds[0]*x_reduction_factor if abs_delta[0]>center_tolerance else 0
-            y = speeds[1]*y_reduction_factor if abs_delta[1]>center_tolerance else 0
+            x = speeds[0]*control_output_x if abs_delta[0]>dead_zone else 0
+            y = speeds[1]*control_output_y if abs_delta[1]>dead_zone else 0
+
+            #x = control_output_x if abs_delta[0]>dead_zone else 0
+            #y = control_output_y if abs_delta[1]>dead_zone else 0
+            #x = control_output_x
+            #y = control_output_y
+
 
             # flip movement as necessary based on settings
-            x_modifier = -1 if flip_x_movement else 1
-            y_modifier = -1 if flip_y_movement else 1
+            # this is actually reversed (delta is backwards)
+            x_modifier = 1 if flip_x_movement else -1
+            y_modifier = 1 if flip_y_movement else -1
 
-            camera.continuous_move(x*x_modifier,y*y_modifier,0,movement_speed_percent)
+            camera.continuous_move(x*x_modifier,y*y_modifier,0)
 
 
     def go_to_preset(self,camera_ip:str,camera_port:int,camera_username:str,camera_password:str,preset:str,max_update_rate:int,move_to_position_after_idle_seconds:int):
