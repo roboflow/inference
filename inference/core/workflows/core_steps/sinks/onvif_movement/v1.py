@@ -39,14 +39,11 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-# speed will start to be reduced this many tolerances from tolerance zone
-SPEED_REDUCTION_TOLERANCE_MULTIPLIER = 3
-
 # max number of seconds to switch to zoom only (no xy movement)
 ZOOM_MODE_SECONDS = 2
 
-# after the first zoom mode, reduce pan/tilt speed by this much
-ZOOM_MODE_SPEED_REDUCER = 0.25
+# after the first zoom mode, multiply pan/tilt speed by this much
+ZOOM_MODE_SPEED_REDUCER = 0.5
 
 PREDICTIONS_OUTPUT_KEY: str = "predictions"
 SEEKING_OUTPUT_KEY: str = "seeking"
@@ -164,8 +161,10 @@ class BlockManifest(WorkflowBlockManifest):
         description="Flip Y movement if image is mirrored vertically",
     )
     minimum_camera_speed: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
-        default=0.25,
+        default=10,
         description="Minimum camera speed as percent (0-100). Some cameras won't honor speeds below a certain amount.",
+        minimum=0,
+        maximum=100
     )
     pid_kp: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
         default=0.3,
@@ -176,7 +175,7 @@ class BlockManifest(WorkflowBlockManifest):
         description="PID Ki constant",
     )
     pid_kd: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
-        default=2,
+        default=2.5,
         description="PID Kd constant. Increase Kd if significant lag exists between video and movement.",
     )
 
@@ -616,12 +615,14 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         minimum_camera_speed:float
     ) -> BlockResult:
 
-        # TODO: get rid of these
-        reduce_speed_near_zone = False
-
         if self._step_execution_mode != StepExecutionMode.LOCAL:
             raise ValueError(
                 "Inference must be run locally for the ONVIF block"
+            )
+
+        if move_to_position_after_idle_seconds and not default_position_preset:
+            raise ValueError(
+                "Move to position after idle is set, but no default position is set"
             )
 
         # disable the stop preset if necessary
@@ -667,7 +668,7 @@ class ONVIFSinkBlockV1(WorkflowBlock):
 
             if camera: # note this is just the camera wrapper, connection is async
                 camera.tracked_object = tracked_object
-                self.move_camera(camera, max_confidence_prediction,zoom_if_able,dead_zone,flip_x_movement,flip_y_movement,minimum_camera_speed/100.0,reduce_speed_near_zone,stop_preset)
+                self.move_camera(camera, max_confidence_prediction,zoom_if_able,dead_zone,flip_x_movement,flip_y_movement,minimum_camera_speed/100.0,stop_preset)
 
         elif movement_type=="Go To Preset":
             self.go_to_preset(camera_ip, camera_port, camera_username, camera_password, default_position_preset,camera_update_rate_limit,move_to_position_after_idle_seconds)
@@ -682,7 +683,7 @@ class ONVIFSinkBlockV1(WorkflowBlock):
             camera.stop_camera()
             camera.tracked_object = None
 
-    def move_camera(self,camera:CameraWrapper,prediction:OBJECT_DETECTION_PREDICTION_KIND,zoom_if_able:bool,dead_zone:int,flip_x_movement:bool,flip_y_movement:bool,minimum_camera_speed:float,reduce_speed_near_zone:bool,stop_preset:str):
+    def move_camera(self,camera:CameraWrapper,prediction:OBJECT_DETECTION_PREDICTION_KIND,zoom_if_able:bool,dead_zone:int,flip_x_movement:bool,flip_y_movement:bool,minimum_camera_speed:float,stop_preset:str):
         global zoom
         camera.set_stop_preset(stop_preset)
 
@@ -715,15 +716,19 @@ class ONVIFSinkBlockV1(WorkflowBlock):
                 if zoom_delta<dead_zone and not box_at_edge:
                     camera.stop_camera()
                 else:
-                    # we want zoom_delta==dead_zone
-                    control_output_z = self.z_pid(abs(zoom_delta-dead_zone))
+                    # we want zoom_delta just past the dead zone, but not at the edge
+                    # zoom delta normalized to % image like with pan/tilt
+                    normalized_zoom_delta = abs(zoom_delta-dead_zone/2)/max(image_width,image_height)
+                    control_output_z = self.z_pid(normalized_zoom_delta)
 
                     if abs(control_output_z)<minimum_camera_speed:
                         control_output_z = minimum_camera_speed*np.sign(control_output_z)
 
+                    print(f"zdelta:{normalized_zoom_delta} output:{control_output_z}")
+
                     # in the case where we've overshot, there's no signal to use for PID
                     # back off slowly if the box is at the edge as we likely just missed it
-                    camera.zoom(-0.25 if box_at_edge else control_output_z)
+                    camera.zoom(minimum_camera_speed*-1 if box_at_edge else control_output_z*-1)
 
             else:
                 camera.stop_camera()
@@ -746,23 +751,10 @@ class ONVIFSinkBlockV1(WorkflowBlock):
             # larger axis moves at max speed, so normalize to 100%
             speeds = abs(delta/abs_delta.max())
 
-            # reduce speed by half if close to the zone
-            # this is a bit simpler than a P/PID control for v1
-            #x_reduction_factor = 0.5 if abs_delta[0]<SPEED_REDUCTION_TOLERANCE_MULTIPLIER*dead_zone and reduce_speed_near_zone else 1
-            #y_reduction_factor = 0.5 if abs_delta[1]<SPEED_REDUCTION_TOLERANCE_MULTIPLIER*dead_zone and reduce_speed_near_zone else 1
-
-
-            # set speed to 0 for axis within tolerance
-            # this might not be necessary and slows the process down a bit, but trying to avoid hunting
-            # with a good PID loop, this will no longer be necessary
+            # hard stop within deadzone seems to help, even though first pass will likely
+            # overshoot if there's a lot of lag
             x = speeds[0]*control_output_x if abs_delta[0]>dead_zone else 0
             y = speeds[1]*control_output_y if abs_delta[1]>dead_zone else 0
-
-            #x = control_output_x if abs_delta[0]>dead_zone else 0
-            #y = control_output_y if abs_delta[1]>dead_zone else 0
-            #x = control_output_x
-            #y = control_output_y
-
 
             # flip movement as necessary based on settings
             # this is actually reversed (delta is backwards)
