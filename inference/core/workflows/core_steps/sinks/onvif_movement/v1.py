@@ -388,6 +388,7 @@ class CameraWrapper:
         config_request.ConfigurationToken = self.media_profile.PTZConfiguration.token
         self.configuration_options = ptz.GetConfigurationOptions(config_request)
         config_options = (await self.configuration_options)
+
         #print(config_options.Spaces.__dict__)
         pan_tilt_space = config_options.Spaces.ContinuousPanTiltVelocitySpace[0]
         zoom_space = config_options.Spaces.ContinuousZoomVelocitySpace[0] if hasattr(config_options.Spaces, 'ContinuousZoomVelocitySpace') else None
@@ -670,7 +671,7 @@ class ONVIFSinkBlockV1(WorkflowBlock):
                 # if we're not tracking at the moment, start tracking this one
                 if follow_tracker and max_confidence_prediction.tracker_id:
                     if len(max_confidence_prediction.tracker_id)>0:
-                        tracked_object = max_confidence_prediction.tracker_id[0]
+                        tracked_object = int(max_confidence_prediction.tracker_id[0])
 
             if camera: # note this is just the camera wrapper, connection is async
                 camera.tracked_object = tracked_object
