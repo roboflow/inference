@@ -167,15 +167,15 @@ class BlockManifest(WorkflowBlockManifest):
         maximum=100
     )
     pid_kp: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
-        default=0.3,
+        default=0.25,
         description="PID Kp constant.",
     )
     pid_ki: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
-        default=0.1,
+        default=0.0,
         description="PID Ki constant",
     )
     pid_kd: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
-        default=2.5,
+        default=1,
         description="PID Kd constant. Increase Kd if significant lag exists between video and movement.",
     )
 
