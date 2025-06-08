@@ -119,7 +119,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     movement_type: Literal["Follow", "Go To Preset"] = Field(
         default="Follow",
-        description="Follow Object or Go To Preset On Execution",
+        description="Follow object or go to default position preset on execution",
         examples=["Follow","Go To Preset","$inputs.movement_type"],
     )
     zoom_if_able: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
@@ -423,10 +423,10 @@ class CameraWrapper:
 
         self._seeking = False
 
-    def go_to_preset(self, preset_name:str):
-        self.schedule(self.go_to_preset_async(preset_name))
+    def go_to_preset(self, preset_name:str, limit_rate:bool=False):
+        self.schedule(self.go_to_preset_async(preset_name, limit_rate))
 
-    async def go_to_preset_async(self, preset_name:str):
+    async def go_to_preset_async(self, preset_name:str, limit_rate:bool=False):
         """
         Tells the camera to move to a preset
         This is not rate limited - all commands will be sent to the camera
@@ -434,6 +434,12 @@ class CameraWrapper:
         Args:
             preset_name: The preset name to move to (this varies by camera)
         """
+
+        # this is only used for blocks in go to preset mode
+        if limit_rate:
+            if not self._can_update():
+                return
+            self.last_update_ms = now()
 
         if self.media_profile_token is None:
             await self.configure_async()
@@ -766,5 +772,5 @@ class ONVIFSinkBlockV1(WorkflowBlock):
 
     def go_to_preset(self,camera_ip:str,camera_port:int,camera_username:str,camera_password:str,preset:str,max_update_rate:int,move_to_position_after_idle_seconds:int):
         camera = get_camera(camera_ip,camera_port,camera_username,camera_password,max_update_rate,move_to_position_after_idle_seconds)
-        camera.stop_camera(None)
-        camera.go_to_preset(preset)
+        camera.stop_camera()
+        camera.go_to_preset(preset,True)
