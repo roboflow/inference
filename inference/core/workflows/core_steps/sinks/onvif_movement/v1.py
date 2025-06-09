@@ -437,25 +437,33 @@ class CameraWrapper:
             self.media_profile = (await media.GetProfiles())[0]
             ptz = await self.ptz_service()
             config_request = ptz.create_type("GetConfigurationOptions")
-            config_request.ConfigurationToken = self.media_profile.PTZConfiguration.token
+            config_request.ConfigurationToken = (
+                self.media_profile.PTZConfiguration.token
+            )
             config_options = ptz.GetConfigurationOptions(config_request)
             self.configuration_options = await config_options
             pan_tilt_space = (
                 self.configuration_options.Spaces.ContinuousPanTiltVelocitySpace[0]
-                if hasattr(self.configuration_options.Spaces, "ContinuousPanTiltVelocitySpace")
-                and len(self.configuration_options.Spaces.ContinuousPanTiltVelocitySpace)>0
+                if hasattr(
+                    self.configuration_options.Spaces, "ContinuousPanTiltVelocitySpace"
+                )
+                and len(
+                    self.configuration_options.Spaces.ContinuousPanTiltVelocitySpace
+                )
+                > 0
                 else None
             )
             # pan tilt space is necessary
             if pan_tilt_space is None:
                 print("Could not get pan tilt space for camera")
-                raise ValueError(
-                    "Could not get pan tilt space for camera"
-                )
+                raise ValueError("Could not get pan tilt space for camera")
             zoom_space = (
                 self.configuration_options.Spaces.ContinuousZoomVelocitySpace[0]
-                if hasattr(self.configuration_options.Spaces, "ContinuousZoomVelocitySpace")
-                and len(self.configuration_options.Spaces.ContinuousZoomVelocitySpace)>0
+                if hasattr(
+                    self.configuration_options.Spaces, "ContinuousZoomVelocitySpace"
+                )
+                and len(self.configuration_options.Spaces.ContinuousZoomVelocitySpace)
+                > 0
                 else None
             )
             self._velocity_limits = VelocityLimits(
@@ -887,7 +895,7 @@ class ONVIFSinkBlockV1(WorkflowBlock):
                 control_output_y = minimum_camera_speed * np.sign(control_output_y)
 
             logger.debug(
-               f"delta:{normalized_delta} output:{control_output_x} {control_output_y}"
+                f"delta:{normalized_delta} output:{control_output_x} {control_output_y}"
             )
 
             # larger axis moves at max speed, so normalize to 100%
