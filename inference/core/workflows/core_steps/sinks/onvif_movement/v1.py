@@ -315,6 +315,7 @@ class CameraWrapper:
     )
     _stop_preset: Union[str, None] = None
     _is_zoomed: bool = False
+    _has_config_error: bool = False
 
     @classmethod
     @experimental(
@@ -426,36 +427,49 @@ class CameraWrapper:
             raise WorkflowError(
                 f"Tried to configure camera, but camera was not created"
             )
+        if self._has_config_error:
+            return
 
-        await self.camera.update_xaddrs()
-        # capabilities = await self.camera.get_capabilities() # <- could be useful in the future
-        media = await self.media_service()
-        self.media_profile = (await media.GetProfiles())[0]
-        ptz = await self.ptz_service()
-        config_request = ptz.create_type("GetConfigurationOptions")
-        config_request.ConfigurationToken = self.media_profile.PTZConfiguration.token
-        config_options = ptz.GetConfigurationOptions(config_request)
-        self.configuration_options = await config_options
-
-        # print(config_options.Spaces.__dict__)
-        pan_tilt_space = (
-            self.configuration_options.Spaces.ContinuousPanTiltVelocitySpace[0]
-        )
-        zoom_space = (
-            self.configuration_options.Spaces.ContinuousZoomVelocitySpace[0]
-            if hasattr(self.configuration_options.Spaces, "ContinuousZoomVelocitySpace")
-            else None
-        )
-        self._velocity_limits = VelocityLimits(
-            x=Limits(pan_tilt_space.XRange),
-            y=Limits(pan_tilt_space.YRange),
-            z=Limits(zoom_space.XRange if zoom_space else None),
-        )
-
-        self._media_profile_token = self.media_profile.token
-        presets = await ptz.GetPresets({"ProfileToken": self._media_profile_token})
-        # reconfigure into a dict keyed by preset name
-        self._presets = {preset["Name"]: preset for preset in presets}
+        try:
+            await self.camera.update_xaddrs()
+            # capabilities = await self.camera.get_capabilities() # <- could be useful in the future
+            media = await self.media_service()
+            self.media_profile = (await media.GetProfiles())[0]
+            ptz = await self.ptz_service()
+            config_request = ptz.create_type("GetConfigurationOptions")
+            config_request.ConfigurationToken = self.media_profile.PTZConfiguration.token
+            config_options = ptz.GetConfigurationOptions(config_request)
+            self.configuration_options = await config_options
+            pan_tilt_space = (
+                self.configuration_options.Spaces.ContinuousPanTiltVelocitySpace[0]
+                if hasattr(self.configuration_options.Spaces, "ContinuousPanTiltVelocitySpace")
+                and len(self.configuration_options.Spaces.ContinuousPanTiltVelocitySpace)>0
+                else None
+            )
+            # pan tilt space is necessary
+            if pan_tilt_space is None:
+                print("Could not get pan tilt space for camera")
+                raise ValueError(
+                    "Could not get pan tilt space for camera"
+                )
+            zoom_space = (
+                self.configuration_options.Spaces.ContinuousZoomVelocitySpace[0]
+                if hasattr(self.configuration_options.Spaces, "ContinuousZoomVelocitySpace")
+                and len(self.configuration_options.Spaces.ContinuousZoomVelocitySpace)>0
+                else None
+            )
+            self._velocity_limits = VelocityLimits(
+                x=Limits(pan_tilt_space.XRange),
+                y=Limits(pan_tilt_space.YRange),
+                z=Limits(zoom_space.XRange) if zoom_space else None,
+            )
+            self._media_profile_token = self.media_profile.token
+            presets = await ptz.GetPresets({"ProfileToken": self._media_profile_token})
+            # reconfigure into a dict keyed by preset name
+            self._presets = {preset["Name"]: preset for preset in presets}
+        except Exception as e:
+            self._has_config_error = True
+            print(f"Config error: {e}")
 
     def seeking(self):
         return self._seeking
@@ -593,7 +607,10 @@ class CameraWrapper:
         # normalize to camera's velocity limits
         x_limit = limits.x.min if x < 0 else limits.x.max
         y_limit = limits.y.min if x < 0 else limits.y.max
-        z_limit = limits.z.min if x < 0 else limits.z.max
+        if limits.z:
+            z_limit = limits.z.min if x < 0 else limits.z.max
+        else:
+            z_limit = 0
 
         x = abs(x_limit) * x
         y = abs(y_limit) * y
@@ -869,9 +886,9 @@ class ONVIFSinkBlockV1(WorkflowBlock):
             if abs(control_output_y) < minimum_camera_speed:
                 control_output_y = minimum_camera_speed * np.sign(control_output_y)
 
-            # print(
-            #    f"delta:{normalized_delta} output:{control_output_x} {control_output_y}"
-            # )
+            logger.debug(
+               f"delta:{normalized_delta} output:{control_output_x} {control_output_y}"
+            )
 
             # larger axis moves at max speed, so normalize to 100%
             speeds = abs(delta / abs_delta.max())
