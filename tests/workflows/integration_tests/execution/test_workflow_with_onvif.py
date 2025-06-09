@@ -14,123 +14,109 @@ from tests.workflows.integration_tests.execution.workflows_gallery_collector.dec
 )
 
 ONVIF_WORKFLOW = {
-  "version": "1.0",
-  "inputs": [
-    {
-      "type": "InferenceImage",
-      "name": "image"
-    }
-  ],
-  "steps": [
-    {
-      "type": "roboflow_core/roboflow_object_detection_model@v2",
-      "name": "model_1",
-      "images": "$inputs.image",
-      "model_id": "yolov10n-640"
-    },
-    {
-      "type": "roboflow_core/onvif_sink@v1",
-      "name": "onvif_control",
-      "predictions": "$steps.byte_tracker.tracked_detections",
-      "camera_ip": "localhost",
-      "camera_username": "admin",
-      "camera_password": "123456",
-      "default_position_preset": "1",
-      "pid_ki": 0,
-      "pid_kp": 0.25,
-      "pid_kd": 1,
-      "zoom_if_able": False,
-      "move_to_position_after_idle_seconds": 0,
-      "minimum_camera_speed": 10,
-      "dead_zone": 10,
-      "movement_type": "Follow",
-      "camera_update_rate_limit": 500,
-      "camera_port": 1981
-    },
-    {
-      "type": "roboflow_core/detections_filter@v1",
-      "name": "detections_filter",
-      "predictions": "$steps.model_1.predictions",
-      "operations": [
+    "version": "1.0",
+    "inputs": [{"type": "InferenceImage", "name": "image"}],
+    "steps": [
         {
-          "type": "DetectionsFilter",
-          "filter_operation": {
-            "type": "StatementGroup",
-            "operator": "and",
-            "statements": [
-              {
-                "type": "BinaryStatement",
-                "negate": False,
-                "left_operand": {
-                  "type": "DynamicOperand",
-                  "operand_name": "_",
-                  "operations": [
-                    {
-                      "type": "ExtractDetectionProperty",
-                      "property_name": "class_name"
-                    }
-                  ]
-                },
-                "comparator": {
-                  "type": "in (Sequence)"
-                },
-                "right_operand": {
-                  "type": "StaticOperand",
-                  "value": [
-                    "banana"
-                  ]
+            "type": "roboflow_core/roboflow_object_detection_model@v2",
+            "name": "model_1",
+            "images": "$inputs.image",
+            "model_id": "yolov10n-640",
+        },
+        {
+            "type": "roboflow_core/onvif_sink@v1",
+            "name": "onvif_control",
+            "predictions": "$steps.byte_tracker.tracked_detections",
+            "camera_ip": "localhost",
+            "camera_username": "admin",
+            "camera_password": "123456",
+            "default_position_preset": "1",
+            "pid_ki": 0,
+            "pid_kp": 0.25,
+            "pid_kd": 1,
+            "zoom_if_able": False,
+            "move_to_position_after_idle_seconds": 0,
+            "minimum_camera_speed": 10,
+            "dead_zone": 10,
+            "movement_type": "Follow",
+            "camera_update_rate_limit": 500,
+            "camera_port": 1981,
+        },
+        {
+            "type": "roboflow_core/detections_filter@v1",
+            "name": "detections_filter",
+            "predictions": "$steps.model_1.predictions",
+            "operations": [
+                {
+                    "type": "DetectionsFilter",
+                    "filter_operation": {
+                        "type": "StatementGroup",
+                        "operator": "and",
+                        "statements": [
+                            {
+                                "type": "BinaryStatement",
+                                "negate": False,
+                                "left_operand": {
+                                    "type": "DynamicOperand",
+                                    "operand_name": "_",
+                                    "operations": [
+                                        {
+                                            "type": "ExtractDetectionProperty",
+                                            "property_name": "class_name",
+                                        }
+                                    ],
+                                },
+                                "comparator": {"type": "in (Sequence)"},
+                                "right_operand": {
+                                    "type": "StaticOperand",
+                                    "value": ["banana"],
+                                },
+                            }
+                        ],
+                    },
                 }
-              }
-            ]
-          }
+            ],
+            "operations_parameters": {},
+            "uistate": {
+                "selectedFilterType": "filter_by_class_and_confidence",
+                "isClassFilteringActive": True,
+                "isConfidenceFilteringActive": False,
+                "classSetInclusionMode": "in",
+                "classList": ["banana"],
+                "confidenceThreshold": 0.5,
+                "confidenceOperator": ">=",
+                "referenceImage": "$inputs.image",
+                "sizeThreshold": 5,
+                "sizeThresholdOperator": "<=",
+                "zoneOperator": "in",
+                "isZoneStatic": True,
+                "zonePoints": [],
+                "detectionReferencePoint": "center",
+                "dynamicZone": None,
+                "detectionsOffset": [0, 0],
+                "parentClassName": None,
+            },
+        },
+        {
+            "type": "roboflow_core/byte_tracker@v3",
+            "name": "byte_tracker",
+            "image": "$inputs.image",
+            "detections": "$steps.detections_filter.predictions",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "output",
+            "coordinates_system": "own",
+            "selector": "$steps.onvif_control.*",
         }
-      ],
-      "operations_parameters": {},
-      "uistate": {
-        "selectedFilterType": "filter_by_class_and_confidence",
-        "isClassFilteringActive": True,
-        "isConfidenceFilteringActive": False,
-        "classSetInclusionMode": "in",
-        "classList": [
-          "banana"
-        ],
-        "confidenceThreshold": 0.5,
-        "confidenceOperator": ">=",
-        "referenceImage": "$inputs.image",
-        "sizeThreshold": 5,
-        "sizeThresholdOperator": "<=",
-        "zoneOperator": "in",
-        "isZoneStatic": True,
-        "zonePoints": [],
-        "detectionReferencePoint": "center",
-        "dynamicZone": None,
-        "detectionsOffset": [
-          0,
-          0
-        ],
-        "parentClassName": None
-      }
-    },
-    {
-      "type": "roboflow_core/byte_tracker@v3",
-      "name": "byte_tracker",
-      "image": "$inputs.image",
-      "detections": "$steps.detections_filter.predictions"
-    }
-  ],
-  "outputs": [
-    {
-      "type": "JsonField",
-      "name": "output",
-      "coordinates_system": "own",
-      "selector": "$steps.onvif_control.*"
-    }
-  ]
+    ],
 }
 
 # responses are from https://www.onvif.org/wp-content/uploads/2016/12/ONVIF_WG-APG-Application_Programmers_Guide-1.pdf
 ONVIF_SOAP_RESPONSES = {
-    "http://www.onvif.org/ver10/device/wsdl/GetCapabilities": '''
+    "http://www.onvif.org/ver10/device/wsdl/GetCapabilities": """
 <?xml version="1.0" encoding="UTF-8"?>
 <SOAP-ENV:Envelope
 	xmlns:SOAP-ENV="http://www.w3.org/2003/05/soap-envelope"
@@ -301,8 +287,8 @@ ONVIF_SOAP_RESPONSES = {
 		</tds:GetCapabilitiesResponse>
 	</SOAP-ENV:Body>
 </SOAP-ENV:Envelope>
-''',
-"http://www.onvif.org/ver10/media/wsdl/GetProfiles":'''
+""",
+    "http://www.onvif.org/ver10/media/wsdl/GetProfiles": """
 <?xml version="1.0" encoding="UTF-8"?>
 <SOAP-ENV:Envelope
 	xmlns:SOAP-ENV="http://www.w3.org/2003/05/soap-envelope"
@@ -625,8 +611,8 @@ ONVIF_SOAP_RESPONSES = {
 		</trt:GetProfilesResponse>
 	</SOAP-ENV:Body>
 </SOAP-ENV:Envelope>
-''',
-"http://www.onvif.org/ver20/ptz/wsdl/GetConfigurationOptions":'''
+""",
+    "http://www.onvif.org/ver20/ptz/wsdl/GetConfigurationOptions": """
 <?xml version="1.0" encoding="UTF-8"?>
 <SOAP-ENV:Envelope
 	xmlns:SOAP-ENV="http://www.w3.org/2003/05/soap-envelope"
@@ -763,8 +749,8 @@ ONVIF_SOAP_RESPONSES = {
 		</tptz:GetConfigurationOptionsResponse>
 	</SOAP-ENV:Body>
 </SOAP-ENV:Envelope>
-''',
-"http://www.onvif.org/ver20/ptz/wsdl/GetPresets":'''
+""",
+    "http://www.onvif.org/ver20/ptz/wsdl/GetPresets": """
 <?xml version="1.0" encoding="UTF-8"?>
 <SOAP-ENV:Envelope
 	xmlns:SOAP-ENV="http://www.w3.org/2003/05/soap-envelope"
@@ -828,8 +814,8 @@ ONVIF_SOAP_RESPONSES = {
 		</tptz:GetPresetsResponse>
 	</SOAP-ENV:Body>
 </SOAP-ENV:Envelope>
-''',
-"http://www.onvif.org/ver20/ptz/wsdl/ContinuousMove":'''
+""",
+    "http://www.onvif.org/ver20/ptz/wsdl/ContinuousMove": """
 <?xml version="1.0" encoding="UTF-8"?>
 <SOAP-ENV:Envelope
 	xmlns:SOAP-ENV="http://www.w3.org/2003/05/soap-envelope"
@@ -889,15 +875,16 @@ ONVIF_SOAP_RESPONSES = {
 		<tptz:ContinuousMoveResponse></tptz:ContinuousMoveResponse>
 	</SOAP-ENV:Body>
 </SOAP-ENV:Envelope>
-'''
+""",
 }
 
-HOST = '127.0.0.1'  # Standard loopback interface address (localhost)
-PORT = 1981         # Port to listen on (non-privileged ports are > 1023)
+HOST = "127.0.0.1"  # Standard loopback interface address (localhost)
+PORT = 1981  # Port to listen on (non-privileged ports are > 1023)
 BUFFER_SIZE = 1024
 
 movement_event = threading.Event()
 quit_flag: bool = False
+
 
 # simulate an ONVIF device locally using canned responses
 def run_server():
@@ -905,7 +892,7 @@ def run_server():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
         server_socket.bind((HOST, PORT))
         server_socket.listen(1)  # Listen for one incoming connection at a time
-        server_socket.settimeout(1) # keep checking for a quit flag
+        server_socket.settimeout(1)  # keep checking for a quit flag
         print(f"SOAP ONVIF server listening on {HOST}:{PORT}")
 
         start_time = time.time()
@@ -916,24 +903,29 @@ def run_server():
                 with conn:
 
                     print(f"SOAP ONVIF connected by {addr}")
-                    request_data = conn.recv(4096).decode('utf-8')  # Receive data from the client
+                    request_data = conn.recv(4096).decode(
+                        "utf-8"
+                    )  # Receive data from the client
 
                     print(f"SOAP ONVIF received request:\n{request_data}")
 
                     request_lines = request_data.splitlines()
 
                     soap_action = None
-                    #content_length = 0
+                    # content_length = 0
 
                     for line in request_lines:
                         if "SOAPAction:" in line:
                             quoted_strings = re.findall(r'"(.*?)"', line)
-                            if len(quoted_strings)>0:
+                            if len(quoted_strings) > 0:
                                 soap_action = quoted_strings[0]
                                 break
                     assert soap_action is not None
 
-                    if soap_action=="http://www.onvif.org/ver20/ptz/wsdl/ContinuousMove":
+                    if (
+                        soap_action
+                        == "http://www.onvif.org/ver20/ptz/wsdl/ContinuousMove"
+                    ):
                         print("set continuous move")
                         movement_event.set()
 
@@ -943,18 +935,22 @@ def run_server():
                     print(f"soap response: {soap_action}")
                     http_response = [
                         "HTTP/1.1 200 OK",
-                        f"Content-Type: application/soap+xml; charset=utf-8; action=\"{soap_action}\"",
+                        f'Content-Type: application/soap+xml; charset=utf-8; action="{soap_action}"',
                         "Server: gSOAP/2.8",
                         "Access-Control-Allow-Origin: *",
                         f"Content-Length: {len(response_body)}",
                         "Connection: close",
                         "\r\n",
-                        f"{response_body}"
+                        f"{response_body}",
                     ]
-                    bytes_to_send = "\r\n".join(http_response).encode('utf-8')
+                    bytes_to_send = "\r\n".join(http_response).encode("utf-8")
                     total_sent = 0
                     while total_sent < len(bytes_to_send):
-                        segment = bytes_to_send[total_sent : max(total_sent + BUFFER_SIZE,len(bytes_to_send))]
+                        segment = bytes_to_send[
+                            total_sent : max(
+                                total_sent + BUFFER_SIZE, len(bytes_to_send)
+                            )
+                        ]
                         sent = conn.send(segment)
                         if sent == 0:
                             raise RuntimeError("Socket connection broken")
@@ -962,10 +958,11 @@ def run_server():
                     print(f"sent bytes: {total_sent}")
             except socket.timeout:
                 # don't let this thread run for more than 30 seconds as a safeguard
-                if time.time()-start_time>30:
+                if time.time() - start_time > 30:
                     break
                 if quit_flag:
                     break
+
 
 def get_movement_from_request(req):
     header_body_separator = "\r\n\r\n"
@@ -983,8 +980,10 @@ def get_movement_from_request(req):
         # No separator found, meaning there's no body or the string is malformed
         return ""
 
+
 def get_capabilities() -> str:
     return "{}"
+
 
 def test_workflow_with_onvif(
     model_manager: ModelManager,
@@ -1015,12 +1014,6 @@ def test_workflow_with_onvif(
     )
 
     output = result[0].get("output")
-    assert output is not None
-
-    print(output)
-
-    assert output["tracker_id"]>0
-    assert output["predictions"]
 
     global movement_event, quit_flag
     movement_event.wait(timeout=1)
@@ -1032,8 +1025,10 @@ def test_workflow_with_onvif(
     )
     quit_flag = True
     output = result[0].get("output")
-    assert output is not None
-
-    assert output["seeking"]
 
     server_thread.join()
+
+    assert output is not None
+    assert output["tracker_id"] > 0
+    assert output["predictions"]
+    assert output["seeking"]
