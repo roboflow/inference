@@ -1,8 +1,9 @@
 import re
 import socket
 import threading
-import numpy as np
 import time
+import numpy as np
+import xml.etree.ElementTree as ET
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
@@ -41,7 +42,7 @@ ONVIF_WORKFLOW = {
       "zoom_if_able": False,
       "move_to_position_after_idle_seconds": 0,
       "minimum_camera_speed": 10,
-      "dead_zone": 100,
+      "dead_zone": 10,
       "movement_type": "Follow",
       "camera_update_rate_limit": 500,
       "camera_port": 1981
@@ -626,34 +627,142 @@ ONVIF_SOAP_RESPONSES = {
 </SOAP-ENV:Envelope>
 ''',
 "http://www.onvif.org/ver20/ptz/wsdl/GetConfigurationOptions":'''
-<?xml version='1.0' encoding='utf-8'?>
-<soap-env:Envelope
-	xmlns:soap-env="http://www.w3.org/2003/05/soap-envelope"
+<?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope
+	xmlns:SOAP-ENV="http://www.w3.org/2003/05/soap-envelope"
+	xmlns:SOAP-ENC="http://www.w3.org/2003/05/soap-encoding"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+	xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing"
+	xmlns:wsdd="http://schemas.xmlsoap.org/ws/2005/04/discovery"
+	xmlns:chan="http://schemas.microsoft.com/ws/2005/02/duplex"
+	xmlns:wsa5="http://www.w3.org/2005/08/addressing"
+	xmlns:xmime="http://www.w3.org/2005/05/xmlmime"
+	xmlns:xop="http://www.w3.org/2004/08/xop/include"
+	xmlns:wsrfbf="http://docs.oasis-open.org/wsrf/bf-2"
+	xmlns:tt="http://www.onvif.org/ver10/schema"
+	xmlns:wstop="http://docs.oasis-open.org/wsn/t-1"
+	xmlns:wsrfr="http://docs.oasis-open.org/wsrf/r-2"
+	xmlns:tan="http://www.onvif.org/ver20/analytics/wsdl"
+	xmlns:tdn="http://www.onvif.org/ver10/network/wsdl"
+	xmlns:tds="http://www.onvif.org/ver10/device/wsdl"
+	xmlns:tev="http://www.onvif.org/ver10/events/wsdl"
 	xmlns:wsnt="http://docs.oasis-open.org/wsn/b-2"
-	xmlns:wsa="http://www.w3.org/2005/08/addressing">
-	<soap-env:Header>
-		<wsa:Action>http://www.onvif.org/ver20/ptz/wsdl/GetConfigurationOptions</wsa:Action>
-		<wsa:MessageID>urn:uuid:d64f3d4e-4d2a-4caf-afb0-9230ddb9a755</wsa:MessageID>
-		<wsa:To>http://127.0.0.1:1981/onvif/ptz</wsa:To>
-		<wsse:Security
-			xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">
+	xmlns:c14n="http://www.w3.org/2001/10/xml-exc-c14n#"
+	xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd"
+	xmlns:xenc="http://www.w3.org/2001/04/xmlenc#"
+	xmlns:wsc="http://schemas.xmlsoap.org/ws/2005/02/sc"
+	xmlns:ds="http://www.w3.org/2000/09/xmldsig#"
+	xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"
+	xmlns:timg="http://www.onvif.org/ver20/imaging/wsdl"
+	xmlns:tmd="http://www.onvif.org/ver10/deviceIO/wsdl"
+	xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"
+	xmlns:trt="http://www.onvif.org/ver10/media/wsdl"
+	xmlns:ter="http://www.onvif.org/ver10/error"
+	xmlns:tns1="http://www.onvif.org/ver10/topics"
+	xmlns:trt2="http://www.onvif.org/ver20/media/wsdl"
+	xmlns:tr2="http://www.onvif.org/ver20/media/wsdl"
+	xmlns:tplt="http://www.onvif.org/ver10/plus/schema"
+	xmlns:tpl="http://www.onvif.org/ver10/plus/wsdl"
+	xmlns:ewsd="http://www.onvifext.com/onvif/ext/ver10/wsdl"
+	xmlns:exsd="http://www.onvifext.com/onvif/ext/ver10/schema"
+	xmlns:tnshik="http://www.hikvision.com/2011/event/topics"
+	xmlns:hikwsd="http://www.onvifext.com/onvif/ext/ver10/wsdl"
+	xmlns:hikxsd="http://www.onvifext.com/onvif/ext/ver10/schema">
+	<SOAP-ENV:Header>
+		<wsa5:MessageID>urn:uuid:aca6cd69-2ed2-44f7-8bb2-6ac5e5bb1019</wsa5:MessageID>
+		<wsa5:To SOAP-ENV:mustUnderstand="true">http://192.168.1.253:80/onvif/ptz</wsa5:To>
+		<wsa5:Action SOAP-ENV:mustUnderstand="true">http://www.onvif.org/ver20/ptz/wsdl/GetConfigurationOptions</wsa5:Action>
+		<wsse:Security>
 			<wsse:UsernameToken>
 				<wsse:Username>admin</wsse:Username>
-				<wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest">THrBWudzVUhWAIqGP9d5LqVKgAo=</wsse:Password>
-				<wsse:Nonce EncodingType="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary">JWQbV2RNlHE9C2Czn28oOA==</wsse:Nonce>
-				<wsu:Created
-					xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">2025-06-08T21:55:38+00:00
-				</wsu:Created>
+				<wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest">BAtbdOX5oDLVZESEJKnc16HakcI=</wsse:Password>
+				<wsse:Nonce EncodingType="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary">lBMW+9Pdo2MAZFIdgNz6CQ==</wsse:Nonce>
+				<wsu:Created>2025-06-08T21:55:38+00:00</wsu:Created>
 			</wsse:UsernameToken>
 		</wsse:Security>
-	</soap-env:Header>
-	<soap-env:Body>
-		<ns0:GetConfigurationOptions
-			xmlns:ns0="http://www.onvif.org/ver20/ptz/wsdl">
-			<ns0:ConfigurationToken>ptz0</ns0:ConfigurationToken>
-		</ns0:GetConfigurationOptions>
-	</soap-env:Body>
-</soap-env:Envelope>
+	</SOAP-ENV:Header>
+	<SOAP-ENV:Body>
+		<tptz:GetConfigurationOptionsResponse>
+			<tptz:PTZConfigurationOptions>
+				<tt:Spaces>
+					<tt:AbsolutePanTiltPositionSpace>
+						<tt:URI>http://www.onvif.org/ver10/tptz/PanTiltSpaces/PositionGenericSpace</tt:URI>
+						<tt:XRange>
+							<tt:Min>-1</tt:Min>
+							<tt:Max>1</tt:Max>
+						</tt:XRange>
+						<tt:YRange>
+							<tt:Min>-1</tt:Min>
+							<tt:Max>1</tt:Max>
+						</tt:YRange>
+					</tt:AbsolutePanTiltPositionSpace>
+					<tt:AbsoluteZoomPositionSpace>
+						<tt:URI>http://www.onvif.org/ver10/tptz/ZoomSpaces/PositionGenericSpace</tt:URI>
+						<tt:XRange>
+							<tt:Min>-1</tt:Min>
+							<tt:Max>1</tt:Max>
+						</tt:XRange>
+					</tt:AbsoluteZoomPositionSpace>
+					<tt:RelativePanTiltTranslationSpace>
+						<tt:URI>http://www.onvif.org/ver10/tptz/PanTiltSpaces/TranslationGenericSpace</tt:URI>
+						<tt:XRange>
+							<tt:Min>-1</tt:Min>
+							<tt:Max>1</tt:Max>
+						</tt:XRange>
+						<tt:YRange>
+							<tt:Min>-1</tt:Min>
+							<tt:Max>1</tt:Max>
+						</tt:YRange>
+					</tt:RelativePanTiltTranslationSpace>
+					<tt:RelativeZoomTranslationSpace>
+						<tt:URI>http://www.onvif.org/ver10/tptz/ZoomSpaces/TranslationGenericSpace</tt:URI>
+						<tt:XRange>
+							<tt:Min>-1</tt:Min>
+							<tt:Max>1</tt:Max>
+						</tt:XRange>
+					</tt:RelativeZoomTranslationSpace>
+					<tt:ContinuousPanTiltVelocitySpace>
+						<tt:URI>http://www.onvif.org/ver10/tptz/PanTiltSpaces/VelocityGenericSpace</tt:URI>
+						<tt:XRange>
+							<tt:Min>-1</tt:Min>
+							<tt:Max>1</tt:Max>
+						</tt:XRange>
+						<tt:YRange>
+							<tt:Min>-1</tt:Min>
+							<tt:Max>1</tt:Max>
+						</tt:YRange>
+					</tt:ContinuousPanTiltVelocitySpace>
+					<tt:ContinuousZoomVelocitySpace>
+						<tt:URI>http://www.onvif.org/ver10/tptz/ZoomSpaces/VelocityGenericSpace</tt:URI>
+						<tt:XRange>
+							<tt:Min>-1</tt:Min>
+							<tt:Max>1</tt:Max>
+						</tt:XRange>
+					</tt:ContinuousZoomVelocitySpace>
+					<tt:PanTiltSpeedSpace>
+						<tt:URI>http://www.onvif.org/ver10/tptz/PanTiltSpaces/GenericSpeedSpace</tt:URI>
+						<tt:XRange>
+							<tt:Min>-1</tt:Min>
+							<tt:Max>1</tt:Max>
+						</tt:XRange>
+					</tt:PanTiltSpeedSpace>
+					<tt:ZoomSpeedSpace>
+						<tt:URI>http://www.onvif.org/ver10/tptz/ZoomSpaces/ZoomGenericSpeedSpace</tt:URI>
+						<tt:XRange>
+							<tt:Min>-1</tt:Min>
+							<tt:Max>1</tt:Max>
+						</tt:XRange>
+					</tt:ZoomSpeedSpace>
+				</tt:Spaces>
+				<tt:PTZTimeout>
+					<tt:Min>PT00H00M01S</tt:Min>
+					<tt:Max>PT00H01M00S</tt:Max>
+				</tt:PTZTimeout>
+			</tptz:PTZConfigurationOptions>
+		</tptz:GetConfigurationOptionsResponse>
+	</SOAP-ENV:Body>
+</SOAP-ENV:Envelope>
 ''',
 "http://www.onvif.org/ver20/ptz/wsdl/GetPresets":'''
 <?xml version="1.0" encoding="UTF-8"?>
@@ -764,14 +873,14 @@ ONVIF_SOAP_RESPONSES = {
 	xmlns:hikwsd="http://www.onvifext.com/onvif/ext/ver10/wsdl"
 	xmlns:hikxsd="http://www.onvifext.com/onvif/ext/ver10/schema">
 	<SOAP-ENV:Header>
-		<wsa5:MessageID>urn:uuid:e6a20ac2-f771-43f5-b364-77becfe3c0d2</wsa5:MessageID>
+		<wsa5:MessageID>urn:uuid:53f52b5b-9fb3-4765-a23d-d32672f3d2e6</wsa5:MessageID>
 		<wsa5:To SOAP-ENV:mustUnderstand="true">http://192.168.1.253:80/onvif/ptz</wsa5:To>
 		<wsa5:Action SOAP-ENV:mustUnderstand="true">http://www.onvif.org/ver20/ptz/wsdl/ContinuousMove</wsa5:Action>
 		<wsse:Security>
 			<wsse:UsernameToken>
 				<wsse:Username>admin</wsse:Username>
-				<wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest">keJSs3pC0udf+9afM2UjwFhH0uw=</wsse:Password>
-				<wsse:Nonce EncodingType="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary">SX08nwntn+2HnVLSa0CSrA==</wsse:Nonce>
+				<wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest">bm5/b5XuI+DHmaSi1jRe9ZMm4PA=</wsse:Password>
+				<wsse:Nonce EncodingType="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary">zde89lfY7cQbRSiF+/3BOg==</wsse:Nonce>
 				<wsu:Created>2025-06-08T21:55:38+00:00</wsu:Created>
 			</wsse:UsernameToken>
 		</wsse:Security>
@@ -780,7 +889,6 @@ ONVIF_SOAP_RESPONSES = {
 		<tptz:ContinuousMoveResponse></tptz:ContinuousMoveResponse>
 	</SOAP-ENV:Body>
 </SOAP-ENV:Envelope>
-
 '''
 }
 
@@ -788,70 +896,92 @@ HOST = '127.0.0.1'  # Standard loopback interface address (localhost)
 PORT = 1981         # Port to listen on (non-privileged ports are > 1023)
 BUFFER_SIZE = 1024
 
-# simulate an ONVIF device locally
+movement_event = threading.Event()
+quit_flag: bool = False
+
+# simulate an ONVIF device locally using canned responses
 def run_server():
+    global movement_event, quit_flag
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
         server_socket.bind((HOST, PORT))
         server_socket.listen(1)  # Listen for one incoming connection at a time
+        server_socket.settimeout(1) # keep checking for a quit flag
         print(f"SOAP ONVIF server listening on {HOST}:{PORT}")
 
+        start_time = time.time()
+
         while True:
-            conn, addr = server_socket.accept()  # Accept a new connection
-            with conn:
-                #buffer = b""  # Buffer to store incoming data
-                #while True:
-                #    data = conn.recv(BUFFER_SIZE)  # Read data from the socket
-                #    if not data:
-                #        break  # Connection closed
-                #    buffer += data
+            try:
+                conn, addr = server_socket.accept()  # Accept a new connection
+                with conn:
 
-                print(f"SOAP ONVIF connected by {addr}")
-                #request_data = buffer #
-                request_data = conn.recv(4096).decode('utf-8')  # Receive data from the client
+                    print(f"SOAP ONVIF connected by {addr}")
+                    request_data = conn.recv(4096).decode('utf-8')  # Receive data from the client
 
-                print(f"SOAP ONVIF received request:\n{request_data}")
+                    print(f"SOAP ONVIF received request:\n{request_data}")
 
-                request_lines = request_data.splitlines()
+                    request_lines = request_data.splitlines()
 
-                soap_action = None
-                soap_service = None
-                for line in request_lines:
-                    if "SOAPAction:" in line:
-                        quoted_strings = re.findall(r'"(.*?)"', line)
-                        if len(quoted_strings)>0:
-                            soap_action = quoted_strings[0]
-                            soap_service_strings = re.findall(r'[^\/]+(?=\/?$|\?|#)', quoted_strings[0])
-                            if len(soap_service_strings)>0:
-                                soap_service = soap_service_strings[0]
+                    soap_action = None
+                    #content_length = 0
+
+                    for line in request_lines:
+                        if "SOAPAction:" in line:
+                            quoted_strings = re.findall(r'"(.*?)"', line)
+                            if len(quoted_strings)>0:
+                                soap_action = quoted_strings[0]
                                 break
+                    assert soap_action is not None
 
-                assert soap_action is not None
-                assert soap_service is not None
+                    if soap_action=="http://www.onvif.org/ver20/ptz/wsdl/ContinuousMove":
+                        print("set continuous move")
+                        movement_event.set()
 
+                    response_body = ONVIF_SOAP_RESPONSES.get(soap_action)
 
-                response_body = ONVIF_SOAP_RESPONSES.get(soap_action)
+                    assert response_body is not None
+                    print(f"soap response: {soap_action}")
+                    http_response = [
+                        "HTTP/1.1 200 OK",
+                        f"Content-Type: application/soap+xml; charset=utf-8; action=\"{soap_action}\"",
+                        "Server: gSOAP/2.8",
+                        "Access-Control-Allow-Origin: *",
+                        f"Content-Length: {len(response_body)}",
+                        "Connection: close",
+                        "\r\n",
+                        f"{response_body}"
+                    ]
+                    bytes_to_send = "\r\n".join(http_response).encode('utf-8')
+                    total_sent = 0
+                    while total_sent < len(bytes_to_send):
+                        segment = bytes_to_send[total_sent : max(total_sent + BUFFER_SIZE,len(bytes_to_send))]
+                        sent = conn.send(segment)
+                        if sent == 0:
+                            raise RuntimeError("Socket connection broken")
+                        total_sent += sent
+                    print(f"sent bytes: {total_sent}")
+            except socket.timeout:
+                # don't let this thread run for more than 30 seconds as a safeguard
+                if time.time()-start_time>30:
+                    break
+                if quit_flag:
+                    break
 
-                assert response_body is not None
-                print(f"soap response: {soap_action}")
-                http_response = [
-                    "HTTP/1.1 200 OK",
-                    f"Content-Type: application/soap+xml; charset=utf-8; action=\"{soap_action}\"",
-                    "Server: gSOAP/2.8",
-                    "Access-Control-Allow-Origin: *",
-                    f"Content-Length: {len(response_body)}",
-                    "Connection: close",
-                    "\r\n",
-                    f"{response_body}"
-                ]
-                bytes_to_send = "\r\n".join(http_response).encode('utf-8')
-                total_sent = 0
-                while total_sent < len(bytes_to_send):
-                    segment = bytes_to_send[total_sent : max(total_sent + BUFFER_SIZE,len(bytes_to_send))]
-                    sent = conn.send(segment)
-                    if sent == 0:
-                        raise RuntimeError("Socket connection broken")
-                    total_sent += sent
-                print(f"sent: {total_sent}")
+def get_movement_from_request(req):
+    header_body_separator = "\r\n\r\n"
+    separator_index = req.find(header_body_separator)
+
+    if separator_index != -1:
+        # The body starts immediately after the separator
+        body_start_index = separator_index + len(header_body_separator)
+        xml_string = req[body_start_index:]
+
+        print(f"xml string: {xml_string}")
+        root = ET.fromstring(xml_string)
+        print(root)
+    else:
+        # No separator found, meaning there's no body or the string is malformed
+        return ""
 
 def get_capabilities() -> str:
     return "{}"
@@ -887,8 +1017,23 @@ def test_workflow_with_onvif(
     output = result[0].get("output")
     assert output is not None
 
+    print(output)
+
     assert output["tracker_id"]>0
     assert output["predictions"]
 
-    time.sleep(5)
+    global movement_event, quit_flag
+    movement_event.wait(timeout=1)
+
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": fruit_image,
+        }
+    )
+    quit_flag = True
+    output = result[0].get("output")
+    assert output is not None
+
     assert output["seeking"]
+
+    server_thread.join()

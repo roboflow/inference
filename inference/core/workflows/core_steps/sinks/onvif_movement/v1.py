@@ -651,7 +651,7 @@ class ONVIFSinkBlockV1(WorkflowBlock):
                     camera.set_stop_preset(stop_preset)
                 self.stop_camera_tracking(camera_ip, camera_port, stop_preset)
 
-                return {PREDICTIONS_OUTPUT_KEY:False,SEEKING_OUTPUT_KEY:camera.seeking() if camera else None,TRACKER_OUTPUT_KEY:camera.tracked_object if camera else None}
+                return {PREDICTIONS_OUTPUT_KEY:False,SEEKING_OUTPUT_KEY:camera.seeking() if camera else False,TRACKER_OUTPUT_KEY:camera.tracked_object if camera else -1}
 
             camera = get_camera(camera_ip,camera_port,camera_username,camera_password,camera_update_rate_limit,move_to_position_after_idle_seconds)
             tracked_object = camera.tracked_object
@@ -680,7 +680,7 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         elif movement_type=="Go To Preset":
             self.go_to_preset(camera_ip, camera_port, camera_username, camera_password, default_position_preset,camera_update_rate_limit,move_to_position_after_idle_seconds)
 
-        return {PREDICTIONS_OUTPUT_KEY:True,SEEKING_OUTPUT_KEY:camera.seeking() if camera else None,TRACKER_OUTPUT_KEY:camera.tracked_object if camera else None}
+        return {PREDICTIONS_OUTPUT_KEY:True,SEEKING_OUTPUT_KEY:camera.seeking() if camera else False,TRACKER_OUTPUT_KEY:camera.tracked_object if camera else -1}
 
     def stop_camera_tracking(self,camera_ip:str,camera_port:int,stop_preset:str):
         global cameras
