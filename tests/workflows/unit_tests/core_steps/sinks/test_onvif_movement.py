@@ -1,8 +1,10 @@
-import pytest
+# note most tests are in test_workflow_with_onvif due to need for camera interaction
 
 from inference.core.workflows.core_steps.sinks.onvif_movement import v1
 from inference.core.workflows.core_steps.sinks.onvif_movement.v1 import (
     BlockManifest,
+    CameraWrapper,
+    get_camera,
 )
 
 
@@ -51,3 +53,13 @@ def test_manifest_parsing_when_the_input_is_valid() -> None:
         camera_update_rate_limit=500,
         camera_port=1981,
     )
+
+
+# dummy camera definition for tests
+v1.cameras = {("1.1.1.1", 80): CameraWrapper(1, False)}
+
+
+def test_get_camera() -> None:
+    camera = get_camera("1.1.1.1", 80, "", "", 1, 1)
+    assert camera is not None
+    assert not camera.seeking()

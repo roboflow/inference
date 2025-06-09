@@ -9,10 +9,15 @@ import numpy as np
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.execution_engine.core import ExecutionEngine
-from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
-    add_to_workflows_gallery,
+from inference.core.workflows.core_steps.sinks.onvif_movement import v1
+from inference.core.workflows.core_steps.sinks.onvif_movement.v1 import (
+    Limits,
+    get_camera,
 )
+from inference.core.workflows.execution_engine.core import ExecutionEngine
+
+HOST = "127.0.0.1"  # Standard loopback interface address (localhost)
+PORT = 1981  # Port to listen on (non-privileged ports are > 1023)
 
 ONVIF_WORKFLOW = {
     "version": "1.0",
@@ -28,7 +33,7 @@ ONVIF_WORKFLOW = {
             "type": "roboflow_core/onvif_sink@v1",
             "name": "onvif_control",
             "predictions": "$steps.byte_tracker.tracked_detections",
-            "camera_ip": "localhost",
+            "camera_ip": HOST,
             "camera_username": "admin",
             "camera_password": "123456",
             "default_position_preset": "1",
@@ -41,7 +46,7 @@ ONVIF_WORKFLOW = {
             "dead_zone": 10,
             "movement_type": "Follow",
             "camera_update_rate_limit": 500,
-            "camera_port": 1981,
+            "camera_port": PORT,
         },
         {
             "type": "roboflow_core/detections_filter@v1",
@@ -879,8 +884,6 @@ ONVIF_SOAP_RESPONSES = {
 """,
 }
 
-HOST = "127.0.0.1"  # Standard loopback interface address (localhost)
-PORT = 1981  # Port to listen on (non-privileged ports are > 1023)
 BUFFER_SIZE = 1024
 
 movement_event = threading.Event()
@@ -890,6 +893,8 @@ quit_flag: bool = False
 # simulate an ONVIF device locally using canned responses
 def run_server():
     global movement_event, quit_flag
+    if quit_flag:
+        return
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
         server_socket.bind((HOST, PORT))
         server_socket.listen(1)  # Listen for one incoming connection at a time
@@ -986,6 +991,16 @@ def get_capabilities() -> str:
     return "{}"
 
 
+# equivalent to Range returned by ONVIF
+class RangeTest:
+    Min: float
+    Max: float
+
+    def __init__(self, min, max):
+        self.Min = min
+        self.Max = max
+
+
 def test_workflow_with_onvif(
     model_manager: ModelManager,
     fruit_image: np.ndarray,
@@ -1028,6 +1043,21 @@ def test_workflow_with_onvif(
     output = result[0].get("output")
 
     server_thread.join()
+
+    # get dummy camera
+    camera = get_camera(HOST, PORT, "", "", 1, False)
+    assert camera is not None
+    assert list(camera._presets.keys()) == ["1"]
+
+    # check config
+    x_lim = camera._velocity_limits.x
+    expected_x_lim = Limits(RangeTest(-1.0, 1.0))
+    assert x_lim.min == expected_x_lim.min
+    assert x_lim.max == expected_x_lim.max
+
+    # check speeds
+    assert camera._prev_x == -10.0
+    assert camera._prev_y == -10.0
 
     assert output is not None
     assert output["tracker_id"] > 0

@@ -13,6 +13,8 @@ from onvif import ONVIFCamera, ONVIFService
 from pydantic import ConfigDict, Field, PositiveInt
 from simple_pid import PID
 
+from inference.core import logger
+from inference.core.utils.function import experimental
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
     AllOperationsType,
@@ -57,7 +59,7 @@ The block returns three values:
 * seeking - boolean; indicates whether or not the camera is currently seeking an object (moving to center or zoom in)
 * tracker_id - integer; tracking id of object if applicable
 
-Note that since the camera runs independently of the block, both booleans might not be updated immediately
+Note that the values are set asynchronously and might not reflect the immediate action of the block.
 
 There are two modes:
 
@@ -74,8 +76,9 @@ Note that the tracking block uses the ONVIF continuous movement service. Trackin
 workflow execution. If workflow execution stops, and the camera is currently moving, the camera will continue
 moving until it reaches the limits and will no longer be following an object.
 
-In cases with significant RTSP lag, the camera can easily begin hunting. The speed might have to be
-reduced, and the tolerances might have to be increased.
+PID tuning is generally necessary for this block to avoid having the camera overshoot and hunt. Having a
+significant lag between the camera movement and video can make tuning extremely difficult. Using an eager
+buffer consumption strategy is recommended. Increasing the dead zone can also help, but can affect zooming.
 
 """
 
@@ -94,7 +97,6 @@ class BlockManifest(WorkflowBlockManifest):
                 "icon": "fal fa-camera-cctv",
                 "blockPriority": 1,
                 "popular": False,
-                "inDevelopment": True,
             },
         }
     )
@@ -168,7 +170,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     pid_kp: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
         default=0.25,
-        description="PID Kp constant.",
+        description="PID Kp constant. Decrease Kp to reduce hunting at the expense of speed.",
     )
     pid_ki: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
         default=0.0,
@@ -176,7 +178,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     pid_kd: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
         default=1,
-        description="PID Kd constant. Increase Kd if significant lag exists between video and movement.",
+        description="PID Kd constant. Increase Kd with lag between video and movement, but excessive Kd can also cause hunting.",
     )
 
     @classmethod
@@ -217,11 +219,9 @@ def get_camera(
     move_to_position_after_idle_seconds: int,
 ):
     global cameras
-    mycam = None
     camera_key = (camera_ip, camera_port)
     if camera_key not in cameras:
         try:
-            # "/usr/local/lib/python3.9/site-packages/onvif/wsdl"
             cameras[camera_key] = CameraWrapper(
                 max_update_rate, move_to_position_after_idle_seconds
             )
@@ -266,6 +266,9 @@ class Limits:
 
     def __repr__(self):
         return f"({self.min},{self.max})"
+
+    def __eq__(self, value):
+        value.min == self.min and value.max == self.max
 
 
 class VelocityLimits:
@@ -313,6 +316,12 @@ class CameraWrapper:
     _stop_preset: Union[str, None] = None
     _is_zoomed: bool = False
 
+    @classmethod
+    @experimental(
+        reason="Usage of CameraWrapper is an experimental feature. Please report any issues "
+        "here: https://github.com/roboflow/inference/issues"
+    )
+
     # create a new camera wrapper with an asyncio event loop
     def __init__(self, max_update_rate: int, move_to_position_after_idle_seconds: int):
         self._max_update_rate = max_update_rate
@@ -334,6 +343,7 @@ class CameraWrapper:
         self, camera_ip, camera_port, camera_username, camera_password
     ):
         if not self.camera:
+            # wsdls are in package directory, ex: "/usr/local/lib/python3.9/site-packages/onvif/wsdl"
             spec = importlib.util.find_spec("onvif")
             wdsl_path = f"{os.path.dirname(spec.origin)}/wsdl"
             self.camera = ONVIFCamera(
@@ -454,7 +464,7 @@ class CameraWrapper:
     def stop_camera(self):
         # don't stop if already stopped as stop commands aren't rate limited
         if self._seeking or self._seeking is None:
-            print("STOP CAMERA!!!!!!")
+            logger.debug("stop camera")
             self.continuous_move(0, 0, 0)
             self.schedule_next_reset()
             """
@@ -595,7 +605,7 @@ class CameraWrapper:
 
         request.Velocity = {"PanTilt": {"x": x, "y": y}, "Zoom": {"x": z}}
 
-        print(
+        logger.debug(
             f"ptz continuous move update: {x},{y},{z} in_zoom:{self._is_zoomed} tracker:{self.tracked_object}"
         )
 
@@ -810,7 +820,6 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         if camera.zooming() and zoom_delta < dead_zone and not box_at_edge:
             camera.stop_zoom()
 
-        # print(f"delta:{delta}")
         abs_delta = np.abs(delta)
 
         if np.all(abs_delta < dead_zone) or camera.zooming():
@@ -832,7 +841,9 @@ class ONVIFSinkBlockV1(WorkflowBlock):
                             control_output_z
                         )
 
-                    print(f"zdelta:{normalized_zoom_delta} output:{control_output_z}")
+                    logger.debug(
+                        f"zdelta:{normalized_zoom_delta} output:{control_output_z}"
+                    )
 
                     # in the case where we've overshot, there's no signal to use for PID
                     # back off slowly if the box is at the edge as we likely just missed it
@@ -858,9 +869,9 @@ class ONVIFSinkBlockV1(WorkflowBlock):
             if abs(control_output_y) < minimum_camera_speed:
                 control_output_y = minimum_camera_speed * np.sign(control_output_y)
 
-            print(
-                f"delta:{normalized_delta} output:{control_output_x} {control_output_y}"
-            )
+            # print(
+            #    f"delta:{normalized_delta} output:{control_output_x} {control_output_y}"
+            # )
 
             # larger axis moves at max speed, so normalize to 100%
             speeds = abs(delta / abs_delta.max())
