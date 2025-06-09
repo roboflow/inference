@@ -161,7 +161,7 @@ class BlockManifest(WorkflowBlockManifest):
         description="Flip Y movement if image is mirrored vertically",
     )
     minimum_camera_speed: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
-        default=10,
+        default=5,
         description="Minimum camera speed as percent (0-100). Some cameras won't honor speeds below a certain amount.",
         minimum=0,
         maximum=100
@@ -276,14 +276,14 @@ class CameraWrapper:
     run_loop = None
     media_profile = None
     configuration_options = None
-    media_profile_token = None
+    _media_profile_token = None
     tracked_object: Union[int, None] = None
-    velocity_limits:Union[VelocityLimits,None]
-    presets = None
-    last_update_ms:Union[int,None] = None
-    max_update_rate:int = 0
-    move_to_position_after_idle_seconds:int = 0
-    existing_preset_task:Union[None,asyncio.Task] = None
+    _velocity_limits:Union[VelocityLimits,None]
+    _presets:Union[List[str],None] = None
+    _last_update_ms:Union[int,None] = None
+    _max_update_rate:int = 0
+    _move_to_position_after_idle_seconds:int = 0
+    _existing_preset_task:Union[None,asyncio.Task] = None
     _seeking:Union[bool,None] = None
     _prev_x:float = 100
     _prev_y:float = 100
@@ -294,8 +294,8 @@ class CameraWrapper:
 
     # create a new camera wrapper with an asyncio event loop
     def __init__(self,max_update_rate:int,move_to_position_after_idle_seconds:int):
-        self.max_update_rate = max_update_rate
-        self.move_to_position_after_idle_seconds = move_to_position_after_idle_seconds
+        self._max_update_rate = max_update_rate
+        self._move_to_position_after_idle_seconds = move_to_position_after_idle_seconds
         self.run_loop = asyncio.new_event_loop()
         thread = threading.Thread(target=run_loop, args=(self.run_loop,))
         thread.daemon = True
@@ -323,23 +323,23 @@ class CameraWrapper:
             self.schedule(self.next_reset())
 
     def clear_next_reset(self):
-        if self.existing_preset_task:
-            self.existing_preset_task.cancel()
+        if self._existing_preset_task:
+            self._existing_preset_task.cancel()
 
     async def next_reset(self):
         self.clear_next_reset()
-        self.existing_preset_task = asyncio.create_task(self.reset_task())
-        await self.existing_preset_task
+        self._existing_preset_task = asyncio.create_task(self.reset_task())
+        await self._existing_preset_task
 
     async def reset_task(self):
-        await asyncio.sleep(self.move_to_position_after_idle_seconds)
-        print(f"camera is idle for {self.move_to_position_after_idle_seconds}s: moving to preset")
+        await asyncio.sleep(self._move_to_position_after_idle_seconds)
+        print(f"camera is idle for {self._move_to_position_after_idle_seconds}s: moving to preset")
         self.tracked_object = None
         await self.go_to_preset_async(self._stop_preset)
 
     # true if movement update hasn't happened within max_update_rate
     def _can_update(self) -> bool:
-        return self.last_update_ms is None or now()-self.last_update_ms>self.max_update_rate
+        return self._last_update_ms is None or now()-self._last_update_ms>self._max_update_rate
 
     # this is mainly used to allow stop commands through on new zero speeds
     def save_last_speeds(self,x,y,z) -> Tuple[bool,bool]:
@@ -386,22 +386,22 @@ class CameraWrapper:
         ptz = await self.ptz_service()
         config_request = ptz.create_type('GetConfigurationOptions')
         config_request.ConfigurationToken = self.media_profile.PTZConfiguration.token
-        self.configuration_options = ptz.GetConfigurationOptions(config_request)
-        config_options = (await self.configuration_options)
+        config_options = ptz.GetConfigurationOptions(config_request)
+        self.configuration_options = (await config_options)
 
         #print(config_options.Spaces.__dict__)
-        pan_tilt_space = config_options.Spaces.ContinuousPanTiltVelocitySpace[0]
-        zoom_space = config_options.Spaces.ContinuousZoomVelocitySpace[0] if hasattr(config_options.Spaces, 'ContinuousZoomVelocitySpace') else None
-        self.velocity_limits = VelocityLimits(
+        pan_tilt_space = self.configuration_options.Spaces.ContinuousPanTiltVelocitySpace[0]
+        zoom_space = self.configuration_options.Spaces.ContinuousZoomVelocitySpace[0] if hasattr(self.configuration_options.Spaces, 'ContinuousZoomVelocitySpace') else None
+        self._velocity_limits = VelocityLimits(
             x = Limits(pan_tilt_space.XRange),
             y = Limits(pan_tilt_space.YRange),
             z = Limits(zoom_space.XRange if zoom_space else None)
         )
 
-        self.media_profile_token = self.media_profile.token
-        presets = (await ptz.GetPresets({'ProfileToken':self.media_profile_token}))
+        self._media_profile_token = self.media_profile.token
+        presets = (await ptz.GetPresets({'ProfileToken':self._media_profile_token}))
         # reconfigure into a dict keyed by preset name
-        self.presets = {preset['Name']:preset for preset in presets}
+        self._presets = {preset['Name']:preset for preset in presets}
 
     def seeking(self):
         return self._seeking
@@ -440,20 +440,20 @@ class CameraWrapper:
         if limit_rate:
             if not self._can_update():
                 return
-            self.last_update_ms = now()
+            self._last_update_ms = now()
 
-        if self.media_profile_token is None:
+        if self._media_profile_token is None:
             await self.configure_async()
 
-        preset = self.presets.get(preset_name)
+        preset = self._presets.get(preset_name)
         if not preset:
             raise ValueError(
-                f"Camera does not have preset \"{preset_name}\" - valid presets are {list(self.presets.keys())}"
+                f"Camera does not have preset \"{preset_name}\" - valid presets are {list(self._presets.keys())}"
             )
 
         ptz = await self.ptz_service()
         request = ptz.create_type('GotoPreset')
-        request.ProfileToken = self.media_profile_token
+        request.ProfileToken = self._media_profile_token
         request.PresetToken = preset['token']
         request.Speed = {
             'PanTilt': {
@@ -506,7 +506,7 @@ class CameraWrapper:
 
         global ZOOM_MODE_SPEED_REDUCER
 
-        if self.media_profile_token is None:
+        if self._media_profile_token is None:
             await self.configure_async()
 
         # clear out any scheduled position resets
@@ -528,9 +528,9 @@ class CameraWrapper:
         #https://www.onvif.org/onvif/ver20/ptz/wsdl/ptz.wsdl#op.AbsoluteMove
 
         request = ptz.create_type('ContinuousMove')
-        request.ProfileToken = self.media_profile_token
+        request.ProfileToken = self._media_profile_token
 
-        limits = self.velocity_limits
+        limits = self._velocity_limits
 
         # normalize to camera's velocity limits
         x_limit = limits.x.min if x<0 else limits.x.max
@@ -559,7 +559,7 @@ class CameraWrapper:
 
         # Execute the movement
         await ptz.ContinuousMove(request)
-        self.last_update_ms = now()
+        self._last_update_ms = now()
 
         if z>0:
             self._is_zoomed = True
