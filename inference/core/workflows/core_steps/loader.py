@@ -654,7 +654,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         SmolVLM2BlockV1,
         Moondream2BlockV1,
         OverlapBlockV1,
-        ONVIFSinkBlockV1
+        ONVIFSinkBlockV1,
     ]
 
 

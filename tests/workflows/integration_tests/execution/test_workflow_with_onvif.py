@@ -2,8 +2,9 @@ import re
 import socket
 import threading
 import time
-import numpy as np
 import xml.etree.ElementTree as ET
+
+import numpy as np
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager

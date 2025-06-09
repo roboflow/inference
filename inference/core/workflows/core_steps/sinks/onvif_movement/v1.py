@@ -1,18 +1,17 @@
-from concurrent.futures import ThreadPoolExecutor
+import asyncio
 import importlib
 import os
-from threading import Thread
 import threading
 import time
-from typing import Dict, List, Literal, Optional, Type, Union, Tuple
-import supervision as sv
+from concurrent.futures import ThreadPoolExecutor
+from threading import Thread
+from typing import Dict, List, Literal, Optional, Tuple, Type, Union
+
 import numpy as np
-from simple_pid import PID
-
+import supervision as sv
 from onvif import ONVIFCamera, ONVIFService
-import asyncio
-
 from pydantic import ConfigDict, Field, PositiveInt
+from simple_pid import PID
 
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
@@ -25,13 +24,13 @@ from inference.core.workflows.errors import WorkflowError
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
-    INTEGER_KIND,
-    STRING_KIND,
-    SECRET_KIND,
-    OBJECT_DETECTION_PREDICTION_KIND,
-    INSTANCE_SEGMENTATION_PREDICTION_KIND,
     FLOAT_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    INTEGER_KIND,
+    OBJECT_DETECTION_PREDICTION_KIND,
+    SECRET_KIND,
+    STRING_KIND,
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
