@@ -12,7 +12,7 @@ from simple_pid import PID
 from onvif import ONVIFCamera, ONVIFService
 import asyncio
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, PositiveInt
 
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
@@ -106,16 +106,18 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["$steps.object_detection_model.predictions"],
     )
     camera_ip: Union[Selector(kind=[STRING_KIND]), str] = Field(
-        description="Camera IP Address",
+        description="Camera IP address or hostname",
     )
-    camera_port: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
-        description="Camera ONVIF Port",
+    camera_port: Union[Selector(kind=[INTEGER_KIND]), PositiveInt] = Field(
+        description="Camera ONVIF port",
+        ge=0,
+        le=65535
     )
     camera_username: Union[Selector(kind=[STRING_KIND]), str] = Field(
-        description="Camera Username",
+        description="Camera username",
     )
     camera_password: Union[Selector(kind=[SECRET_KIND]), str] = Field(
-        description="Camera Password",
+        description="Camera password",
     )
     movement_type: Literal["Follow", "Go To Preset"] = Field(
         default="Follow",
@@ -132,7 +134,7 @@ class BlockManifest(WorkflowBlockManifest):
         description="Lock to the tracking id of the highest confidence prediction until idle or reset. A tracker must be added to the workflow.",
         examples=[True,False,"$inputs.follow_tracker"],
     )
-    dead_zone: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
+    dead_zone: Union[Selector(kind=[INTEGER_KIND]), PositiveInt] = Field(
         default=50,
         description="Camera will stop once bounding box is within this many pixels of FoV center (or border for zoom). Increasing dead zone helps avoid pan/tilt hunting, but decreasing dead zone helps avoid hunting after zoom.",
         examples=[50,"$inputs.dead_zone"],
@@ -142,11 +144,11 @@ class BlockManifest(WorkflowBlockManifest):
         default="",
         examples=["","$inputs.default_position_preset"],
     )
-    move_to_position_after_idle_seconds: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
+    move_to_position_after_idle_seconds: Union[Selector(kind=[INTEGER_KIND]), PositiveInt] = Field(
         default=0,
         description="Move to the default position after this many seconds of not seeking (0 to disable)",
     )
-    camera_update_rate_limit: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
+    camera_update_rate_limit: Union[Selector(kind=[INTEGER_KIND]), PositiveInt] = Field(
         default=500,
         description="Minimum number of milliseconds between ONVIF movement updates",
     )
@@ -163,8 +165,8 @@ class BlockManifest(WorkflowBlockManifest):
     minimum_camera_speed: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
         default=5,
         description="Minimum camera speed as percent (0-100). Some cameras won't honor speeds below a certain amount.",
-        minimum=0,
-        maximum=100
+        ge=0,
+        le=100
     )
     pid_kp: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
         default=0.25,
@@ -333,7 +335,7 @@ class CameraWrapper:
 
     async def reset_task(self):
         await asyncio.sleep(self._move_to_position_after_idle_seconds)
-        print(f"camera is idle for {self._move_to_position_after_idle_seconds}s: moving to preset")
+        print(f"camera is idle for {self._move_to_position_after_idle_seconds}s: moving to preset {self._stop_preset}")
         self.tracked_object = None
         await self.go_to_preset_async(self._stop_preset)
 
@@ -447,6 +449,8 @@ class CameraWrapper:
 
         preset = self._presets.get(preset_name)
         if not preset:
+            # TODO: since this is thrown in another thread, it isn't getting thrown, print to logs
+            print(f"Camera does not have preset \"{preset_name}\" - valid presets are {list(self._presets.keys())}")
             raise ValueError(
                 f"Camera does not have preset \"{preset_name}\" - valid presets are {list(self._presets.keys())}"
             )
