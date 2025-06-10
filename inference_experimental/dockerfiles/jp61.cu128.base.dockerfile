@@ -22,7 +22,6 @@ RUN apt-get update -y && \
     && rm -rf /var/lib/apt/lists/*
 
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-RUN . $HOME/.local/bin/env
 
 WORKDIR /build
 
