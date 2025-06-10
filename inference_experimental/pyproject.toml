@@ -22,6 +22,7 @@ dependencies = [
   "pyvips>=3.0.0,<4.0.0",
   "rf-clip==1.1",
   "python-doctr[torch]>=0.10.0,<=0.11.0",
+  "pandas"
 ]
 
 [project.optional-dependencies]
@@ -144,6 +145,25 @@ explicit = true
 
 [tool.setuptools]
 packages = ["inference_exp"]
+
+[[tool.uv.dependency-metadata]]
+name = "tensorrt-cu12"
+version = "10.11.0.33"
+requires-dist = ["tensorrt-cu12-bindings", "tensorrt-cu12-libs"]
+
+[[tool.uv.dependency-metadata]]
+name = "tensorrt-cu12-libs"
+version = "10.11.0.33"
+requires-dist = ["nvidia-cuda-runtime-cu12"]
+
+[[tool.uv.dependency-metadata]]
+name = "nvidia-cuda-runtime-cu12"
+version = "12.8.57"
+
+[[tool.uv.dependency-metadata]]
+name = "tensorrt-cu12-bindings"
+version = "10.11.0.33"
+
 
 [tool.uv]
 conflicts = [
