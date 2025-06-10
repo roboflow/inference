@@ -54,7 +54,7 @@ pip install inference-cli && inference server start --dev
 
 This will pull the proper image for your machine and start it in development mode.
 
-In development mode, a Jupyter notebook server with a quickstart guide runs on 
+In development mode, a Jupyter notebook server with a quickstart guide runs on
 [http://localhost:9001/notebook/start](http://localhost:9001/notebook/start). Dive in there for a whirlwind tour
 of your new Inference Server's functionality!
 
@@ -86,7 +86,7 @@ Workflows allow you to extend simple model predictions to build computer vision 
     <!-- Left cell (thumbnail) -->
     <td width="300" valign="top">
       <a href="https://youtu.be/aPxlImNxj5A">
-        <img src="https://img.youtube.com/vi/aPxlImNxj5A/0.jpg" 
+        <img src="https://img.youtube.com/vi/aPxlImNxj5A/0.jpg"
              alt="Self Checkout with Workflows" width="300" />
       </a>
     </td>
@@ -104,7 +104,7 @@ Workflows allow you to extend simple model predictions to build computer vision 
   <tr>
     <td width="300" valign="top">
       <a href="https://youtu.be/r3Ke7ZEh2Qo">
-        <img src="https://img.youtube.com/vi/r3Ke7ZEh2Qo/0.jpg" 
+        <img src="https://img.youtube.com/vi/r3Ke7ZEh2Qo/0.jpg"
              alt="Workflows Tutorial" width="300" />
       </a>
     </td>
@@ -116,7 +116,7 @@ Workflows allow you to extend simple model predictions to build computer vision 
       </strong><br />
       <strong>Created: 6 Jan 2025</strong><br /><br />
       Learn how to build and deploy Workflows for common use-cases like detecting
-      vehicles, filtering detections, visualizing results, and calculating dwell 
+      vehicles, filtering detections, visualizing results, and calculating dwell
       time on a live video stream.
     </td>
   </tr>
@@ -125,7 +125,7 @@ Workflows allow you to extend simple model predictions to build computer vision 
     <!-- Left cell (thumbnail) -->
     <td width="300" valign="top">
       <a href="https://youtu.be/tZa-QgFn7jg">
-        <img src="https://img.youtube.com/vi/tZa-QgFn7jg/0.jpg" 
+        <img src="https://img.youtube.com/vi/tZa-QgFn7jg/0.jpg"
              alt="Smart Parking with AI" width="300" />
       </a>
     </td>
@@ -143,7 +143,7 @@ Workflows allow you to extend simple model predictions to build computer vision 
 </table>
 
 ## 📟 connecting via api
-  
+
 Once you've installed Inference, your machine is a fully-featured CV center.
 You can use its API to run models and workflows on images and video streams.
 By default, the server is running locally on
@@ -334,42 +334,36 @@ We would love your input to improve Roboflow Inference! Please see our [contribu
           <img
             src="https://media.roboflow.com/notebooks/template/icons/purple/youtube.png?ik-sdk-version=javascript-1.4.3&updatedAt=1672949634652"
             width="3%"
-          />
-      </a>
+          /></a>
       <img src="https://raw.githubusercontent.com/ultralytics/assets/main/social/logo-transparent.png" width="3%"/>
       <a href="https://roboflow.com">
           <img
             src="https://media.roboflow.com/notebooks/template/icons/purple/roboflow-app.png?ik-sdk-version=javascript-1.4.3&updatedAt=1672949746649"
             width="3%"
-          />
-      </a>
+          /></a>
       <img src="https://raw.githubusercontent.com/ultralytics/assets/main/social/logo-transparent.png" width="3%"/>
       <a href="https://www.linkedin.com/company/roboflow-ai/">
           <img
             src="https://media.roboflow.com/notebooks/template/icons/purple/linkedin.png?ik-sdk-version=javascript-1.4.3&updatedAt=1672949633691"
             width="3%"
-          />
-      </a>
+          /></a>
       <img src="https://raw.githubusercontent.com/ultralytics/assets/main/social/logo-transparent.png" width="3%"/>
       <a href="https://docs.roboflow.com">
           <img
             src="https://media.roboflow.com/notebooks/template/icons/purple/knowledge.png?ik-sdk-version=javascript-1.4.3&updatedAt=1672949634511"
             width="3%"
-          />
-      </a>
+          /></a>
       <img src="https://raw.githubusercontent.com/ultralytics/assets/main/social/logo-transparent.png" width="3%"/>
       <a href="https://disuss.roboflow.com">
           <img
             src="https://media.roboflow.com/notebooks/template/icons/purple/forum.png?ik-sdk-version=javascript-1.4.3&updatedAt=1672949633584"
             width="3%"
-          />
+          /></a>
       <img src="https://raw.githubusercontent.com/ultralytics/assets/main/social/logo-transparent.png" width="3%"/>
       <a href="https://blog.roboflow.com">
           <img
             src="https://media.roboflow.com/notebooks/template/icons/purple/blog.png?ik-sdk-version=javascript-1.4.3&updatedAt=1672949633605"
             width="3%"
-          />
-      </a>
-      </a>
+          /></a>
   </div>
 </div>
