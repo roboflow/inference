@@ -203,6 +203,9 @@ from inference.core.workflows.core_steps.models.foundation.openai.v2 import (
 from inference.core.workflows.core_steps.models.foundation.openai.v3 import (
     OpenAIBlockV3,
 )
+from inference.core.workflows.core_steps.models.foundation.perception_encoder.v1 import (
+    PerceptionEncoderModelBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.qwen.v1 import (
     Qwen25VLBlockV1,
 )
@@ -557,6 +560,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ClipComparisonBlockV1,
         ClipComparisonBlockV2,
         ClipModelBlockV1,
+        PerceptionEncoderModelBlockV1,
         CogVLMBlockV1,
         ColorVisualizationBlockV1,
         ConvertGrayscaleBlockV1,
