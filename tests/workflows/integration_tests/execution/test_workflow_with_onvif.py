@@ -1056,8 +1056,8 @@ def test_workflow_with_onvif(
     assert x_lim.max == expected_x_lim.max
 
     # check speeds
-    #assert camera._prev_x == -10.0
-    #assert camera._prev_y == -10.0
+    # assert camera._prev_x == -10.0
+    # assert camera._prev_y == -10.0
 
     assert output is not None
     assert output["tracker_id"] > 0

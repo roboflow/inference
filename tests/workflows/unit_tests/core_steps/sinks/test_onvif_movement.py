@@ -28,6 +28,8 @@ def test_manifest_parsing_when_the_input_is_valid() -> None:
         "movement_type": "Follow",
         "camera_update_rate_limit": "500",
         "camera_port": "1981",
+        "flip_x_movement": "True",
+        "flip_y_movement": "True",
     }
 
     # when
@@ -52,14 +54,16 @@ def test_manifest_parsing_when_the_input_is_valid() -> None:
         movement_type="Follow",
         camera_update_rate_limit=500,
         camera_port=1981,
+        flip_x_movement=True,
+        flip_y_movement=True
     )
 
 
 # dummy camera definition for tests
-v1.cameras = {("1.1.1.1", 80): CameraWrapper(1, False)}
+v1.cameras = {("127.0.0.1", 80): CameraWrapper(1, False)}
 
 
 def test_get_camera() -> None:
-    camera = get_camera("1.1.1.1", 80, "", "", 1, 1)
+    camera = get_camera("127.0.0.1", 80, "", "", 1, 1)
     assert camera is not None
     assert not camera.seeking()
