@@ -1,5 +1,26 @@
 # Install on NVIDIA Jetson
 
+## Overview
+
+Jetson is NVIDIA’s line of compact, power-efficient modules designed to run AI and deep learning workloads at the edge. They combine a GPU, CPU, and neural accelerators on a single board, making them ideal for robotics, drones, smart cameras, and other embedded applications where you need real-time computer vision or inference without a cloud connection. For more details, see NVIDIA’s official Jetson overview:  
+https://www.nvidia.com/en-us/autonomous-machines/embedded-systems/
+
+## Prerequisites
+
+**Disk Space**: Allocate at least 10 GB free for the Roboflow Jetson image (8.14 GB). 
+
+**JetPack Version**: Must be running a supported JetPack (4.5, 4.6, 5.x, or 6.x).
+
+**Recommended Hardware**: For best performance while running Inference, we recommend an NVIDIA Orin NX 16 GB or above. 
+
+ **Docker & NVIDIA Container Toolkit**  
+  - Requires Docker + NVIDIA runtime so containers can access the GPU.  
+  - Instead of detailing installation here, follow these instructions:  
+    - **Docker install:**  
+      https://docs.docker.com/engine/install/ubuntu/  
+    - **NVIDIA Container Toolkit:**  
+      https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html
+
 We have specialized containers built with support for hardware acceleration on JetPack L4T.
 To automatically detect your JetPack version and use the right container with good default settings
 run:

@@ -2,6 +2,7 @@ import gc
 import os
 from unittest.mock import MagicMock
 
+import numpy as np
 import pytest
 import torch
 
@@ -425,6 +426,53 @@ def test_owlv2_model_unloaded_when_garbage_collected():
     del model
     gc.collect()
     assert len(Owlv2Singleton._instances) == 0
+
+
+def test_infer_with_numpy_image_uses_image_after_sizing() -> None:
+    """Ensure numpy images persist through compute_image_size and embed_image."""
+
+    class DummyOwl:
+        def __init__(self):
+            self.image_size_cache = {}
+            self.class_embeddings_cache = {}
+            self.image_embed_cache = {}
+            self.cpu_image_embed_cache = {}
+            self.before_unload_image_none = False
+            self.after_unload = False
+
+        compute_image_size = OwlV2.compute_image_size
+        infer = OwlV2.infer
+        infer_from_embedding_dict = OwlV2.infer_from_embedding_dict
+
+        def embed_image(self, image):
+            # Image should still be loaded when embed_image is called
+            self.before_unload_image_none = (
+                image.image is None or image._image_as_numpy is None
+            )
+            # simulate embedding
+            _ = image.image_as_numpy
+            image.unload_numpy_image()
+            self.after_unload = image.image is None and image._image_as_numpy is None
+            return "hash"
+
+        def infer_from_embed(self, *args, **kwargs):
+            return []
+
+        def make_response(self, predictions, image_sizes, class_names):
+            return []
+
+        def make_class_embeddings_dict(self, *args, **kwargs):
+            return {}
+
+    owl = DummyOwl()
+    image_as_numpy = np.zeros((192, 168, 3), dtype=np.uint8)
+    result = owl.infer(
+        image_as_numpy, training_data=[{"image": image_as_numpy, "boxes": []}]
+    )
+
+    assert result == []
+    assert owl.before_unload_image_none is False
+    assert owl.after_unload is True
 
 
 if __name__ == "__main__":

@@ -221,7 +221,7 @@ There are two generations of routes in a Roboflow inference server To see what r
         1. `project_id`, `model_version`: Your project ID and model version number. <a href="https://docs.roboflow.com/api-reference/workspace-and-project-ids" target="_blank">Learn how to retrieve your project ID and model version number</a>.
         2. `confidence`: The confidence threshold for predictions. Predictions with a confidence score below this threshold will be filtered out.
         3. `api_key`: Your Roboflow API key. <a href="https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key" target="_blank">Learn how to retrieve your Roboflow API key</a>.
-        4. `task`: The type of task you want to run. Choose from `object_detection`, `classification`, or `segmentation`.
+        4. `task`: The type of task you want to run. Choose from `object_detection`, `classification`, or `instance_segmentation`.
         5. `filename`: The path to the image you want to run inference on.
 
         Then, run the Python script:
@@ -267,7 +267,7 @@ There are two generations of routes in a Roboflow inference server To see what r
         1. `project_id`, `model_version`: Your project ID and model version number. <a href="https://docs.roboflow.com/api-reference/workspace-and-project-ids" target="_blank">Learn how to retrieve your project ID and model version number</a>.
         2. `confidence`: The confidence threshold for predictions. Predictions with a confidence score below this threshold will be filtered out.
         3. `api_key`: Your Roboflow API key. <a href="https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key" target="_blank">Learn how to retrieve your Roboflow API key</a>.
-        4. `task`: The type of task you want to run. Choose from `object_detection`, `classification`, or `segmentation`.
+        4. `task`: The type of task you want to run. Choose from `object_detection`, `classification`, or `instance_segmentation`.
         5. `filename`: The path to the image you want to run inference on.
 
         Then, run the Python script:
@@ -317,7 +317,7 @@ There are two generations of routes in a Roboflow inference server To see what r
         1. `project_id`, `model_version`: Your project ID and model version number. <a href="https://docs.roboflow.com/api-reference/workspace-and-project-ids" target="_blank">Learn how to retrieve your project ID and model version number</a>.
         2. `confidence`: The confidence threshold for predictions. Predictions with a confidence score below this threshold will be filtered out.
         3. `api_key`: Your Roboflow API key. <a href="https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key" target="_blank">Learn how to retrieve your Roboflow API key</a>.
-        4. `task`: The type of task you want to run. Choose from `object_detection`, `classification`, or `segmentation`.
+        4. `task`: The type of task you want to run. Choose from `object_detection`, `classification`, or `instance_segmentation`.
         5. `filename`: The path to the image you want to run inference on.
 
         Then, run the Python script:
@@ -359,7 +359,7 @@ There are two generations of routes in a Roboflow inference server To see what r
         1. `project_id`, `model_version`: Your project ID and model version number. <a href="https://docs.roboflow.com/api-reference/workspace-and-project-ids" target="_blank">Learn how to retrieve your project ID and model version number</a>.
         2. `confidence`: The confidence threshold for predictions. Predictions with a confidence score below this threshold will be filtered out.
         3. `api_key`: Your Roboflow API key. <a href="https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key" target="_blank">Learn how to retrieve your Roboflow API key</a>.
-        4. `task`: The type of task you want to run. Choose from `object_detection`, `classification`, or `segmentation`.
+        4. `task`: The type of task you want to run. Choose from `object_detection`, `classification`, or `instance_segmentation`.
         5. `filename`: The path to the image you want to run inference on.
 
         Then, run the Python script:

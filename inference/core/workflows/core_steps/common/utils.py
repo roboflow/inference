@@ -14,6 +14,7 @@ from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
 from inference.core.entities.requests.sam2 import Sam2InferenceRequest
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 from inference.core.managers.base import ModelManager
+from inference.core.roboflow_api import ModelEndpointType
 from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
     HEIGHT_KEY,
@@ -30,6 +31,7 @@ from inference.core.workflows.execution_engine.constants import (
     PARENT_COORDINATES_KEY,
     PARENT_DIMENSIONS_KEY,
     PARENT_ID_KEY,
+    POLYGON_KEY_IN_SV_DETECTIONS,
     PREDICTION_TYPE_KEY,
     ROOT_PARENT_COORDINATES_KEY,
     ROOT_PARENT_DIMENSIONS_KEY,
@@ -65,7 +67,11 @@ def load_core_model(
     core_model_id = (
         f"{core_model}/{inference_request.__getattribute__(version_id_field)}"
     )
-    model_manager.add_model(core_model_id, inference_request.api_key)
+    model_manager.add_model(
+        core_model_id,
+        inference_request.api_key,
+        endpoint_type=ModelEndpointType.CORE_MODEL,
+    )
     return core_model_id
 
 
@@ -384,6 +390,12 @@ def scale_sv_detections(
             scaled_detection_mask = np.sum(polygon_masks, axis=0) > 0
             scaled_masks.append(scaled_detection_mask)
         detections_copy.mask = np.array(scaled_masks)
+    if POLYGON_KEY_IN_SV_DETECTIONS in detections_copy.data:
+        detections_copy.data[POLYGON_KEY_IN_SV_DETECTIONS] = (
+            (detections_copy.data[POLYGON_KEY_IN_SV_DETECTIONS] * scale)
+            .round()
+            .astype(np.int32)
+        )
     if SCALING_RELATIVE_TO_PARENT_KEY in detections_copy.data:
         detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] = (
             detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] * scale

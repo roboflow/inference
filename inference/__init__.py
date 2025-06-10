@@ -1,10 +1,10 @@
-from typing import Any, Callable, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
     from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
     from inference.core.interfaces.stream.stream import Stream
-    from inference.models.utils import get_model, get_roboflow_model
     from inference.core.models.base import Model
+    from inference.models.utils import get_model, get_roboflow_model
 
 _LAZY_ATTRIBUTES: dict[str, Callable[[], Any]] = {
     "Stream": lambda: _import_from("inference.core.interfaces.stream.stream", "Stream"),

@@ -50,6 +50,7 @@ COPY inference_cli inference_cli
 COPY docker/config/cpu_http.py cpu_http.py
 
 ENV CORE_MODEL_CLIP_ENABLED=false
+ENV CORE_MODEL_PE_ENABLED=false
 ENV CORE_MODEL_SAM_ENABLED=false
 ENV CORE_MODEL_GAZE_ENABLED=false
 ENV CORE_MODEL_DOCTR_ENABLED=false

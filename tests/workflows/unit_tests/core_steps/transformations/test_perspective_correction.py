@@ -138,7 +138,13 @@ def test_extend_rectangular_perspective_polygon_detections_within_polygon():
     )
 
     # when
-    extended_polygon = extend_perspective_polygon(
+    (
+        extended_polygon,
+        original_width,
+        original_height,
+        extended_width,
+        extended_height,
+    ) = extend_perspective_polygon(
         polygon=polygon,
         detections=detections,
         bbox_position=sv.Position.BOTTOM_CENTER,
@@ -148,6 +154,10 @@ def test_extend_rectangular_perspective_polygon_detections_within_polygon():
     assert np.array_equal(
         extended_polygon, np.array([[100, 110], [100, 100], [110, 100], [110, 110]])
     ), "Detections within polygon must not modify it"
+    assert original_width == 10, "Detections within polygon must not modify it"
+    assert original_height == 10, "Detections within polygon must not modify it"
+    assert extended_width == 0, "Detections within polygon must not modify it"
+    assert extended_height == 0, "Detections within polygon must not modify it"
 
 
 def test_extend_perspective_polygon_detections_within_polygon():
@@ -172,7 +182,7 @@ def test_extend_perspective_polygon_detections_within_polygon():
     )
 
     # when
-    extended_polygon = extend_perspective_polygon(
+    extended_polygon, *_ = extend_perspective_polygon(
         polygon=polygon,
         detections=detections,
         bbox_position=sv.Position.BOTTOM_CENTER,
@@ -209,7 +219,13 @@ def test_extend_rectangular_perspective_polygon_detections_outside_polygon():
     )
 
     # when
-    extended_polygon = extend_perspective_polygon(
+    (
+        extended_polygon,
+        original_width,
+        original_height,
+        extended_width,
+        extended_height,
+    ) = extend_perspective_polygon(
         polygon=polygon,
         detections=detections,
         bbox_position=sv.Position.BOTTOM_CENTER,
@@ -220,6 +236,10 @@ def test_extend_rectangular_perspective_polygon_detections_outside_polygon():
         extended_polygon,
         np.array([[91, 122], [91, 92], [121, 92], [121, 122]]),
     ), "Detections outside of polygon should extend it"
+    assert original_width == 10, "Detections outside of polygon should extend it"
+    assert original_height == 10, "Detections outside of polygon should extend it"
+    assert extended_width == 20, "Detections outside of polygon should extend it"
+    assert extended_height == 20, "Detections outside of polygon should extend it"
 
 
 def test_extend_perspective_polygon_detections_outside_polygon_edges():
@@ -237,7 +257,7 @@ def test_extend_perspective_polygon_detections_outside_polygon_edges():
     )
 
     # when
-    extended_polygon = extend_perspective_polygon(
+    extended_polygon, *_ = extend_perspective_polygon(
         polygon=polygon,
         detections=detections,
         bbox_position=sv.Position.BOTTOM_CENTER,
@@ -254,12 +274,14 @@ def test_generate_transformation_matrix():
     polygon = np.array([[100, 110], [100, 100], [110, 100], [110, 110]])
 
     # when
-    transformation_matrix = generate_transformation_matrix(
-        src_polygon=polygon,
-        detections=sv.Detections.empty(),
-        transformed_rect_width=1000,
-        transformed_rect_height=1000,
-        detections_anchor=sv.Position.BOTTOM_CENTER,
+    transformation_matrix, extended_width, extended_height = (
+        generate_transformation_matrix(
+            src_polygon=polygon,
+            detections=sv.Detections.empty(),
+            transformed_rect_width=1000,
+            transformed_rect_height=1000,
+            detections_anchor=sv.Position.BOTTOM_CENTER,
+        )
     )
 
     expected_transformation_matrix = np.array(
@@ -272,6 +294,8 @@ def test_generate_transformation_matrix():
     assert np.allclose(
         transformation_matrix, expected_transformation_matrix
     ), "Transformation matrix must match"
+    assert extended_width == 0, "Polygon must not be extended"
+    assert extended_height == 0, "Polygon must not be extended"
 
 
 def test_correct_detections_with_segmentation():
@@ -302,6 +326,8 @@ def test_correct_detections_with_segmentation():
     corrected_detections = correct_detections(
         detections=detections,
         perspective_transformer=transformer,
+        transformed_rect_width=100,
+        transformed_rect_height=100,
     )
 
     # then
@@ -311,12 +337,17 @@ def test_correct_detections_with_segmentation():
             [
                 sv.polygon_to_mask(
                     polygon=np.array([[50, 25], [25, 50], [50, 75], [75, 50]]),
-                    resolution_wh=(200, 200),
+                    resolution_wh=(100, 100),
                 )
             ]
         ),
     )
-    assert corrected_detections == expected_detections
+    assert np.array_equal(
+        corrected_detections.xyxy, expected_detections.xyxy
+    ), "Corrected detections must match"
+    assert np.array_equal(
+        corrected_detections.mask, expected_detections.mask
+    ), "Corrected detections must match"
 
 
 def test_correct_detections_with_keypoints():
@@ -341,6 +372,8 @@ def test_correct_detections_with_keypoints():
     corrected_detections = correct_detections(
         detections=detections,
         perspective_transformer=transformer,
+        transformed_rect_width=100,
+        transformed_rect_height=100,
     )
 
     # then

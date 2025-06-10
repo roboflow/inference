@@ -51,6 +51,13 @@ class AggregationMode(Enum):
     MIN = "min"
 
 
+class MaskAggregationMode(Enum):
+    INTERSECTION = "intersection"
+    UNION = "union"
+    MAX = "max"
+    MIN = "min"
+
+
 LONG_DESCRIPTION = """
 Combine detections from multiple detection-based models based on a majority vote 
 strategy.
@@ -144,13 +151,24 @@ class BlockManifest(WorkflowBlockManifest):
     )
     detections_merge_confidence_aggregation: AggregationMode = Field(
         default=AggregationMode.AVERAGE,
-        description="Mode dictating aggregation of confidence scores and classes both in case of boxes consensus procedure. One of `average`, `max`, `min`. Default: `average`. While using for merging overlapping boxes, against classes - `average` equals to majority vote, `max` - for the class of detection with max confidence, `min` - for the class of detection with min confidence.",
+        description="Mode dictating aggregation of confidence scores and classes both in case of boxes consensus procedure."
+        " One of `average`, `max`, `min`. Default: `average`. While using for merging overlapping boxes,"
+        " against classes - `average` equals to majority vote, `max` - for the class of detection with max confidence,"
+        " `min` - for the class of detection with min confidence.",
         examples=["min", "max"],
     )
     detections_merge_coordinates_aggregation: AggregationMode = Field(
         default=AggregationMode.AVERAGE,
-        description="Mode dictating aggregation of bounding boxes. One of `average`, `max`, `min`. Default: `average`. `average` means taking mean from all boxes coordinates, `min` - taking smallest box, `max` - taking largest box.",
+        description="Mode dictating aggregation of bounding boxes. One of `average`, `max`, `min`. Default: `average`."
+        " `average` means taking mean from all boxes coordinates, `min` - taking smallest box, `max` - taking largest box."
+        " This mode is not used for masks aggregation.",
         examples=["min", "max"],
+    )
+    detections_merge_mask_aggregation: MaskAggregationMode = Field(
+        default=MaskAggregationMode.UNION,
+        description="Mode dictating aggregation of masks. One of `union`, `intersection`, `max`, `min`. Default: `union`."
+        " `union` means taking union of all masks, `intersection` - taking intersection of all masks, `max` - taking largest mask, `min` - taking smallest mask.",
+        examples=["union", "intersection"],
     )
 
     @classmethod
@@ -162,7 +180,10 @@ class BlockManifest(WorkflowBlockManifest):
         return [
             OutputDefinition(
                 name="predictions",
-                kind=[OBJECT_DETECTION_PREDICTION_KIND],
+                kind=[
+                    OBJECT_DETECTION_PREDICTION_KIND,
+                    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                ],
             ),
             OutputDefinition(
                 name="object_present", kind=[BOOLEAN_KIND, DICTIONARY_KIND]
@@ -195,6 +216,7 @@ class DetectionsConsensusBlockV1(WorkflowBlock):
         presence_confidence_aggregation: AggregationMode,
         detections_merge_confidence_aggregation: AggregationMode,
         detections_merge_coordinates_aggregation: AggregationMode,
+        detections_merge_mask_aggregation: MaskAggregationMode,
     ) -> BlockResult:
         if len(predictions_batches) < 1:
             raise ValueError(
@@ -218,6 +240,7 @@ class DetectionsConsensusBlockV1(WorkflowBlock):
                 presence_confidence_aggregation=presence_confidence_aggregation,
                 detections_merge_confidence_aggregation=detections_merge_confidence_aggregation,
                 detections_merge_coordinates_aggregation=detections_merge_coordinates_aggregation,
+                detections_merge_mask_aggregation=detections_merge_mask_aggregation,
             )
             results.append(
                 {
@@ -332,6 +355,7 @@ def agree_on_consensus_for_all_detections_sources(
     presence_confidence_aggregation: AggregationMode,
     detections_merge_confidence_aggregation: AggregationMode,
     detections_merge_coordinates_aggregation: AggregationMode,
+    detections_merge_mask_aggregation: MaskAggregationMode,
 ) -> Tuple[str, bool, Dict[str, float], sv.Detections]:
     if does_not_detect_objects_in_any_source(
         detections_from_sources=detections_from_sources
@@ -346,6 +370,7 @@ def agree_on_consensus_for_all_detections_sources(
     )
     detections_already_considered = set()
     consensus_detections = []
+    i = 0
     for source_id, detection in enumerate_detections(
         detections_from_sources=detections_from_sources
     ):
@@ -362,9 +387,19 @@ def agree_on_consensus_for_all_detections_sources(
             confidence=confidence,
             detections_merge_confidence_aggregation=detections_merge_confidence_aggregation,
             detections_merge_coordinates_aggregation=detections_merge_coordinates_aggregation,
+            detections_merge_mask_aggregation=detections_merge_mask_aggregation,
             detections_already_considered=detections_already_considered,
         )
         consensus_detections += consensus_detections_update
+        print(
+            i,
+            (
+                consensus_detections_update[0].mask is None
+                if consensus_detections_update
+                else ""
+            ),
+        )
+        i += 1
     consensus_detections = sv.Detections.merge(consensus_detections)
     (
         object_present,
@@ -393,6 +428,7 @@ def get_consensus_for_single_detection(
     confidence: float,
     detections_merge_confidence_aggregation: AggregationMode,
     detections_merge_coordinates_aggregation: AggregationMode,
+    detections_merge_mask_aggregation: MaskAggregationMode,
     detections_already_considered: Set[str],
 ) -> Tuple[List[sv.Detections], Set[str]]:
     if detection and detection["detection_id"][0] in detections_already_considered:
@@ -412,6 +448,21 @@ def get_consensus_for_single_detection(
     if len(detections_with_max_overlap) < (required_votes - 1):
         # Returning empty sv.Detections
         return consensus_detections, detections_already_considered
+    if detection.mask is not None:
+        for matched_value in detections_with_max_overlap.values():
+            if matched_value[0].mask is None:
+                matched_value[0].mask = np.zeros(detection.mask.shape)
+    else:
+        shape = None
+        for d in detections_with_max_overlap.values():
+            if d[0].mask is not None:
+                shape = d[0].mask.shape
+                break
+        if shape:
+            for d in detections_with_max_overlap.values():
+                if d[0].mask is None:
+                    d[0].mask = np.zeros(shape)
+            detection.mask = np.zeros(shape)
     detections_to_merge = sv.Detections.merge(
         [detection]
         + [matched_value[0] for matched_value in detections_with_max_overlap.values()]
@@ -420,6 +471,7 @@ def get_consensus_for_single_detection(
         detections=detections_to_merge,
         confidence_aggregation_mode=detections_merge_confidence_aggregation,
         boxes_aggregation_mode=detections_merge_coordinates_aggregation,
+        mask_aggregation_mode=detections_merge_mask_aggregation,
     )
     if merged_detection.confidence[0] < confidence:
         # Returning empty sv.Detections
@@ -482,13 +534,21 @@ def merge_detections(
     detections: sv.Detections,
     confidence_aggregation_mode: AggregationMode,
     boxes_aggregation_mode: AggregationMode,
+    mask_aggregation_mode: MaskAggregationMode,
 ) -> sv.Detections:
     class_name, class_id = AGGREGATION_MODE2CLASS_SELECTOR[confidence_aggregation_mode](
         detections
     )
-    x1, y1, x2, y2 = AGGREGATION_MODE2BOXES_AGGREGATOR[boxes_aggregation_mode](
-        detections
-    )
+    if detections.mask is not None:
+        mask = np.array(
+            [AGGREGATION_MODE2MASKS_AGGREGATOR[mask_aggregation_mode](detections)]
+        )
+        x1, y1, x2, y2 = sv.mask_to_xyxy(mask)[0]
+    else:
+        mask = None
+        x1, y1, x2, y2 = AGGREGATION_MODE2BOXES_AGGREGATOR[boxes_aggregation_mode](
+            detections
+        )
     data = {
         "class_name": np.array([class_name]),
         PARENT_ID_KEY: np.array([detections[PARENT_ID_KEY][0]]),
@@ -531,6 +591,7 @@ def merge_detections(
             dtype=np.float64,
         ),
         data=data,
+        mask=mask,
     )
 
 
@@ -602,6 +663,37 @@ AGGREGATION_MODE2BOXES_AGGREGATOR = {
     AggregationMode.MIN: get_smallest_bounding_box,
     AggregationMode.AVERAGE: get_average_bounding_box,
 }
+
+
+def get_intersection_mask(detections: sv.Detections) -> np.ndarray:
+    return np.all(detections.mask, axis=0)
+
+
+def get_union_mask(detections: sv.Detections) -> np.ndarray:
+    return np.sum(detections.mask, axis=0)
+
+
+def get_smallest_mask(detections: sv.Detections) -> np.ndarray:
+    areas: List[float] = detections.area.astype(float).tolist()
+    min_area = min(areas)
+    min_area_index = areas.index(min_area)
+    return detections[min_area_index].mask[0]
+
+
+def get_largest_mask(detections: sv.Detections) -> np.ndarray:
+    areas: List[float] = detections.area.astype(float).tolist()
+    max_area = max(areas)
+    max_area_index = areas.index(max_area)
+    return detections[max_area_index].mask[0]
+
+
+AGGREGATION_MODE2MASKS_AGGREGATOR = {
+    MaskAggregationMode.MAX: get_largest_mask,
+    MaskAggregationMode.MIN: get_smallest_mask,
+    MaskAggregationMode.UNION: get_union_mask,
+    MaskAggregationMode.INTERSECTION: get_intersection_mask,
+}
+
 
 AGGREGATION_MODE2FIELD_AGGREGATOR = {
     AggregationMode.MAX: max,

@@ -35,10 +35,8 @@ from inference.core.env import (
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
 )
 from inference.core.logger import logger
+from inference.core.roboflow_api import build_roboflow_api_headers
 from inference.core.version import __version__ as inference_version
-from inference.core.workflows.execution_engine.v1.compiler.entities import (
-    CompiledWorkflow,
-)
 
 from .config import TelemetrySettings, get_telemetry_settings
 from .decorator_helpers import (
@@ -55,7 +53,6 @@ from .payload_helpers import (
     APIKeyHash,
     APIKeyUsage,
     ResourceCategory,
-    ResourceDetails,
     ResourceID,
     SystemDetails,
     UsagePayload,
@@ -536,6 +533,7 @@ class UsageCollector:
                 api_usage_endpoint_url=self._settings.api_usage_endpoint_url,
                 hashes_to_api_keys=hashes_to_api_keys,
                 ssl_verify=ssl_verify,
+                extra_headers=build_roboflow_api_headers(),
             )
             if api_keys_hashes_failed:
                 logger.debug(
@@ -691,6 +689,10 @@ class UsageCollector:
                 t1 = time.time()
                 res = func(*args, **kwargs)
                 t2 = time.time()
+                if GCP_SERVERLESS is True:
+                    execution_duration = max(t2 - t1, 0.1)
+                else:
+                    execution_duration = t2 - t1
                 self.record_usage(
                     **self._extract_usage_params_from_func_kwargs(
                         usage_fps=usage_fps,
@@ -699,7 +701,7 @@ class UsageCollector:
                         usage_workflow_preview=usage_workflow_preview,
                         usage_inference_test_run=usage_inference_test_run,
                         usage_billable=usage_billable,
-                        execution_duration=(t2 - t1),
+                        execution_duration=execution_duration,
                         func=func,
                         category=category,
                         args=args,
@@ -722,6 +724,10 @@ class UsageCollector:
                 t1 = time.time()
                 res = await func(*args, **kwargs)
                 t2 = time.time()
+                if GCP_SERVERLESS is True:
+                    execution_duration = max(t2 - t1, 0.1)
+                else:
+                    execution_duration = t2 - t1
                 await self.async_record_usage(
                     **self._extract_usage_params_from_func_kwargs(
                         usage_fps=usage_fps,
@@ -730,7 +736,7 @@ class UsageCollector:
                         usage_workflow_preview=usage_workflow_preview,
                         usage_inference_test_run=usage_inference_test_run,
                         usage_billable=usage_billable,
-                        execution_duration=(t2 - t1),
+                        execution_duration=execution_duration,
                         func=func,
                         category=category,
                         args=args,

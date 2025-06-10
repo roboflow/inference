@@ -1,14 +1,14 @@
 # How to Create and Run a Workflow
 
-In this example, we are going to build a Workflow from scratch that detects dogs, classifies their breeds and
-visualizes results.
+In this example, we are going to build a Workflow from scratch that detects dogs, classifies their breeds, and
+visualizes the results.
 
 <div><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoieWRacWhRRkhqbTRaZUpkYlVCeW4iLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiUjd3NWh0RFNDeU5teW4zOXIzbWJrS0ltYndyMSIsImlhdCI6MTcyNTQ4NDg5Mn0.fWL3rYMl8Bj9Oy1e9xpvy0FqLgPBEALldHBRVJsSkUU" loading="lazy" title="Roboflow Workflow for Create And Run Example" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
 
 ## Step 1: Create a Workflow
 
-Open [https://app.roboflow.com/](https://app.roboflow.com/) in your browser, and navigate to the Workflows tab to click 
-the Create Workflows button. Select Custom Workflow to start the creation process.
+Open [https://app.roboflow.com/](https://app.roboflow.com/) in your browser and navigate to the Workflows tab, then click
+the **Create Workflow** button. Select **Custom Workflow** to start the creation process.
 
 ![Workflow start](https://media.roboflow.com/inference/getting_started_workflows.png)
 
@@ -20,24 +20,23 @@ We need to add a block with an object detection model to the existing workflow. 
 
 ## Step 3: Crop each detected object to run breed classification
 
-Next, we are going to add a block to our Workflow that crops the objects that our first model detects.
+Next, we'll add a block to our Workflow that crops the objects detected by our first model.
 
 ![Add crop](https://media.roboflow.com/inference/adding_crop.png)
 
 ## Step 4: Classify dog breeds with second stage model
 
-We are then going to add a classification model that runs on each crop to classify its content. We will use
-Roboflow Universe model `dog-breed-xpaq6/1`. Please make sure that in the block configuration, the `Image` property
-points to the `crops` output of the  Dynamic Crop block.
+We will then add a classification model that runs on each crop to classify its content. We will use
+the Roboflow Universe model `dog-breed-xpaq6/1`. Ensure that in the block configuration the `Image` property
+points to the `crops` output of the Dynamic Crop block.
 
 
 ![Add OCR](https://media.roboflow.com/inference/adding_secondary_model.png)
 
 ## Step 5: Replace Bounding Box classes with classification model predictions
 
-When each crop is classified, we would like to assign the class predicted for each crop (dog breed) as a class 
-of the dog bounding boxes from the object detection model . To do this we use Detections Classes Replacement block, 
-which accepts a reference to predictions of a object detection model, as well as a reference to the classification 
+When each crop is classified, we want to assign the predicted class (dog breed) to the bounding boxes from the object detection model. To do this, we use the Detections Classes Replacement block,
+which accepts a reference to the object detection model predictions as well as a reference to the classification
 results on the crops.
 
 ![Add Classes Replacement](https://media.roboflow.com/inference/detections_classes_replacement.png)
@@ -45,39 +44,39 @@ results on the crops.
 
 ## Step 6: Visualise predictions
 
-As a final step of the workflow, we would like to visualize our predictions. We will use two 
+As a final step of the workflow, we want to visualize our predictions. We'll use two
 visualization blocks: Bounding Box Visualization and Label Visualization chained together.
-At first, add Bounding Box Visualization referring to `$inputs.image` for the Image property (that's the
-image sent as your input to workflow), the second step (Label Visualization) however, should point to 
-the output of Bounding Box Visualization step. Both visualization steps should refer to predictions 
+First, add Bounding Box Visualization and refer to `$inputs.image` for the Image property (that's the
+image sent as input to the workflow). The second step (Label Visualization) should point to
+the output of the Bounding Box Visualization step. Both visualization steps should refer to predictions
 from the Detections Classes Replacement step.
 
 ![Add Visualisation](https://media.roboflow.com/inference/adding_visualization.png)
 
 ## Step 7: Construct output
-You have everything ready to construct your workflow output. You can use any intermediate step output that you
-need, but in this example we will only select bounding boxes with replaced classes (output from Detections 
-Classes Replacement step) and visualisation (output from Label Visualization step).
+You now have everything ready to construct your workflow output. You can use any intermediate step output that you
+need, but in this example we will only select bounding boxes with replaced classes (output from the Detections
+Classes Replacement step) and visualization (output from the Label Visualization step).
 
 
 ## Step 8: Running the workflow
-Now your workflow, is ready. You can click the `Save` button and move to the `Run Preview` panel.
+Now your workflow is ready. You can click the `Save` button and move to the `Run Preview` panel.
 
-We will run our workflow against the following example image `https://media.roboflow.com/inference/dog.jpeg`.
-Here are the results
+We will run our workflow against the following example image: `https://media.roboflow.com/inference/dog.jpeg`.
+Here are the results:
 
 ![Results](https://media.roboflow.com/inference/workflow_preview.png)
 
-Clicking on the `Show Visual` button you will find results of our visualization efforts.
+Click the `Show Visual` button to see the results of our visualization efforts.
 <center><img src="https://media.roboflow.com/inference/workflow_visualisation_result.png" width="50%"/></center>
 
 
 ## Different ways of running your workflow
-Your workflow is now saved on the Roboflow Platform. This means you can run it in multiple different ways, including:
+Your workflow is now saved on the Roboflow platform. This means you can run it in several ways, including:
 
 - HTTP request to Roboflow Hosted API
 
-- HTTP request to your local instance of `inference server`
+- an HTTP request to your local instance of the `inference` server
 
 - on video
 
