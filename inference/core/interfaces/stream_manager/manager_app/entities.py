@@ -12,6 +12,7 @@ from inference.core.interfaces.camera.video_source import (
 STATUS_KEY = "status"
 STATE_KEY = "state"
 SOURCES_METADATA_KEY = "sources_metadata"
+VIDEO_SOURCE_STATUS_UPDATES_KEY = "video_source_status_updates"
 REPORT_KEY = "report"
 TYPE_KEY = "type"
 ERROR_TYPE_KEY = "error_type"
@@ -54,7 +55,7 @@ class VideoConfiguration(BaseModel):
         BufferFillingStrategy.DROP_OLDEST
     )
     source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy] = (
-        BufferConsumptionStrategy.EAGER
+        BufferConsumptionStrategy.LAZY
     )
     video_source_properties: Optional[Dict[str, float]] = None
     batch_collection_timeout: Optional[float] = None
@@ -107,6 +108,10 @@ class InitialiseWebRTCPipelinePayload(InitialisePipelinePayload):
     data_output: Optional[List[Optional[str]]] = Field(default_factory=list)
     webrtc_peer_timeout: float = 1
     webcam_fps: Optional[float] = None
+    processing_timeout: float = 0.005
+    fps_probe_frames: int = 10
+    max_consecutive_timeouts: int = 30
+    min_consecutive_on_time: int = 5
 
 
 class ConsumeResultsPayload(BaseModel):

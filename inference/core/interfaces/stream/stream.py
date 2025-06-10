@@ -227,8 +227,7 @@ class Stream(BaseInterface):
                         self.queue_control = True
 
         except Exception as e:
-            traceback.print_exc()
-            logger.error(e)
+            logger.exception(e)
 
     def inference_request_thread(self):
         """Manage the inference requests.

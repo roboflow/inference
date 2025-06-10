@@ -55,7 +55,9 @@ GENERIC_MODELS = {
     "yolo_world": ("object-detection", "yolo-world"),
     "owlv2": ("object-detection", "owlv2"),
     "smolvlm2": ("lmm", "smolvlm-2.2b-instruct"),
+    "depth-anything-v2": ("depth-estimation", "small"),
     "moondream2": ("lmm", "moondream2"),
+    "perception_encoder": ("embed", "perception_encoder"),
 }
 
 STUB_VERSION_ID = "0"
@@ -91,16 +93,18 @@ class RoboflowModelRegistry(ModelRegistry):
 def _check_if_api_key_has_access_to_model(
     api_key: str,
     model_id: str,
+    endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
 ) -> bool:
+    model_id = resolve_roboflow_model_alias(model_id=model_id)
     _, version_id = get_model_id_chunks(model_id=model_id)
     try:
         if version_id is not None:
             get_roboflow_model_data(
                 api_key=api_key,
                 model_id=model_id,
-                endpoint_type=ModelEndpointType.ORT,
+                endpoint_type=endpoint_type,
                 device_id=GLOBAL_DEVICE_ID,
-            ).get("ort")
+            )
         else:
             get_roboflow_instant_model_data(
                 api_key=api_key,

@@ -8,7 +8,7 @@ root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.append(root)
 from inference.core.version import __version__
 
-with open("README.md", "r") as fh:
+with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 
@@ -43,6 +43,11 @@ setuptools.setup(
             "development.*",
         ),
     ),
+    package_data={
+        "inference.models.perception_encoder.vision_encoder": [
+            "bpe_simple_vocab_16e6.txt.gz"
+        ],
+    },
     entry_points={
         "console_scripts": [
             "inference=inference_cli.main:app",

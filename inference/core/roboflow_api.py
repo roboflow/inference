@@ -26,7 +26,9 @@ from inference.core.entities.types import (
 )
 from inference.core.env import (
     API_BASE_URL,
+    INTERNAL_WEIGHTS_URL_SUFFIX,
     MODEL_CACHE_DIR,
+    MODELS_CACHE_AUTH_ENABLED,
     RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API,
     ROBOFLOW_API_EXTRA_HEADERS,
     ROBOFLOW_API_REQUEST_TIMEOUT,
@@ -238,7 +240,9 @@ def get_roboflow_model_data(
     device_id: str,
 ) -> dict:
     api_data_cache_key = f"roboflow_api_data:{endpoint_type.value}:{model_id}"
-    api_data = cache.get(api_data_cache_key)
+    api_data = None
+    if not MODELS_CACHE_AUTH_ENABLED:
+        api_data = cache.get(api_data_cache_key)
     if api_data is not None:
         logger.debug(f"Loaded model data from cache with key: {api_data_cache_key}.")
         return api_data
@@ -250,8 +254,9 @@ def get_roboflow_model_data(
         ]
         if api_key is not None:
             params.append(("api_key", api_key))
+        api_base_url = urllib.parse.urljoin(API_BASE_URL, INTERNAL_WEIGHTS_URL_SUFFIX)
         api_url = _add_params_to_url(
-            url=f"{API_BASE_URL}/{endpoint_type.value}/{model_id}",
+            url=f"{api_base_url}/{endpoint_type.value}/{model_id}",
             params=params,
         )
         api_data = _get_from_url(url=api_url)
@@ -273,7 +278,9 @@ def get_roboflow_instant_model_data(
     cache_prefix: str = "roboflow_api_data",
 ) -> dict:
     api_data_cache_key = f"{cache_prefix}:{model_id}"
-    api_data = cache.get(api_data_cache_key)
+    api_data = None
+    if not MODELS_CACHE_AUTH_ENABLED:
+        api_data = cache.get(api_data_cache_key)
     if api_data is not None:
         logger.debug(f"Loaded model data from cache with key: {api_data_cache_key}.")
         return api_data
@@ -283,8 +290,9 @@ def get_roboflow_instant_model_data(
         ]
         if api_key is not None:
             params.append(("api_key", api_key))
+        api_base_url = urllib.parse.urljoin(API_BASE_URL, INTERNAL_WEIGHTS_URL_SUFFIX)
         api_url = _add_params_to_url(
-            url=f"{API_BASE_URL}/getWeights",
+            url=f"{api_base_url}/getWeights",
             params=params,
         )
         api_data = _get_from_url(url=api_url)
@@ -305,7 +313,9 @@ def get_roboflow_base_lora(
 ) -> dict:
     full_path = f"{repo.strip('/')}/{revision.strip('/')}"
     api_data_cache_key = f"roboflow_api_data:lora-bases:{full_path}"
-    api_data = cache.get(api_data_cache_key)
+    api_data = None
+    if not MODELS_CACHE_AUTH_ENABLED:
+        api_data = cache.get(api_data_cache_key)
     if api_data is not None:
         logger.debug(f"Loaded model data from cache with key: {api_data_cache_key}.")
         return api_data
@@ -750,3 +760,34 @@ def build_roboflow_api_headers(
     except ValueError:
         logger.warning("Could not decode ROBOFLOW_API_EXTRA_HEADERS")
         return explicit_headers
+
+
+@wrap_roboflow_api_errors()
+def post_to_roboflow_api(
+    endpoint: str,
+    api_key: Optional[str],
+    payload: Optional[dict] = None,
+    params: Optional[List[Tuple[str, str]]] = None,
+) -> dict:
+    """Generic function to make a POST request to the Roboflow API."""
+    url_params = []
+    if api_key:
+        url_params.append(("api_key", api_key))
+    if params:
+        url_params.extend(params)
+
+    full_url = _add_params_to_url(
+        url=f"{API_BASE_URL}/{endpoint.strip('/')}", params=url_params
+    )
+    wrapped_url = wrap_url(full_url)
+
+    headers = build_roboflow_api_headers()
+
+    response = requests.post(
+        url=wrapped_url,
+        json=payload,
+        headers=headers,
+        timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
+    )
+    api_key_safe_raise_for_status(response=response)
+    return response.json()

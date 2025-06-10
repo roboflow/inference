@@ -23,7 +23,7 @@ FLORENCE_ALIASES = {
 }
 
 QWEN_ALIASES = {
-    "qwen25-vl-7b": "qwen_playground/69",
+    "qwen25-vl-7b": "qwen-pretrains/1",
 }
 
 YOLOV11_ALIASES = {

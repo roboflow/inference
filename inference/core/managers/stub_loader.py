@@ -1,13 +1,21 @@
 from inference.core.managers.base import ModelManager
+from inference.core.roboflow_api import ModelEndpointType
 
 
 class StubLoaderManager(ModelManager):
-    def add_model(self, model_id: str, api_key: str, model_id_alias=None) -> None:
+    def add_model(
+        self,
+        model_id: str,
+        api_key: str,
+        model_id_alias=None,
+        endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
+    ) -> None:
         """Adds a new model to the manager.
 
         Args:
             model_id (str): The identifier of the model.
             model (Model): The model instance.
+            endpoint_type (ModelEndpointType, optional): The endpoint type to use for the model.
         """
         if model_id in self._models:
             return

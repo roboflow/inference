@@ -1,5 +1,6 @@
 name: Build and Push Jetson 4.6.1 Container
-
+permissions:
+  contents: read
 on:
   release:
     types: [created]

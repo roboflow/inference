@@ -30,6 +30,8 @@ from inference.core.utils.preprocess import letterbox_image
 if USE_PYTORCH_FOR_PREPROCESSING:
     import torch
 
+ROBOFLOW_BACKGROUND_CLASS = "background_class83422"
+
 
 class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
     """Roboflow ONNX Object detection with the RFDETR model.
@@ -274,6 +276,14 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
             topk_boxes = sorted_indices // num_classes
             topk_labels = sorted_indices % num_classes
 
+            if self.is_one_indexed:
+                class_filter_mask = topk_labels != self.background_class_index
+
+                topk_labels[topk_labels > self.background_class_index] -= 1
+                topk_scores = topk_scores[class_filter_mask]
+                topk_labels = topk_labels[class_filter_mask]
+                topk_boxes = topk_boxes[class_filter_mask]
+
             selected_boxes = bboxes[batch_idx, topk_boxes]
 
             cxcy = selected_boxes[:, :2]
@@ -428,6 +438,17 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                     f"Model {self.endpoint} is loaded with dynamic batching disabled"
                 )
 
+        if ROBOFLOW_BACKGROUND_CLASS in self.class_names:
+            self.is_one_indexed = True
+            self.background_class_index = self.class_names.index(
+                ROBOFLOW_BACKGROUND_CLASS
+            )
+            self.class_names = (
+                self.class_names[: self.background_class_index]
+                + self.class_names[self.background_class_index + 1 :]
+            )
+        else:
+            self.is_one_indexed = False
         logger.debug("Model initialisation finished.")
 
     def validate_model_classes(self) -> None:

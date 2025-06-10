@@ -1,5 +1,5 @@
 import math
-from typing import List, Optional, Union
+from typing import List, Optional, Tuple, Union
 
 import cv2 as cv
 import numpy as np
@@ -33,6 +33,8 @@ from inference.core.workflows.prototypes.block import (
 
 OUTPUT_DETECTIONS_KEY: str = "corrected_coordinates"
 OUTPUT_IMAGE_KEY: str = "warped_image"
+OUTPUT_EXTENDED_TRANSFORMED_RECT_WIDTH_KEY: str = "extended_transformed_rect_width"
+OUTPUT_EXTENDED_TRANSFORMED_RECT_HEIGHT_KEY: str = "extended_transformed_rect_height"
 TYPE: str = "PerspectiveCorrection"
 SHORT_DESCRIPTION = (
     "Adjust detection coordinates from a polygon-defined plane "
@@ -44,6 +46,7 @@ coordinates of detections based on transformation defined by two polygons.
 This block is best suited when produced coordinates should be considered as if camera
 was placed directly above the scene and was not introducing distortions.
 """
+ALL_POSITIONS = "ALL"
 
 
 class PerspectiveCorrectionManifest(WorkflowBlockManifest):
@@ -93,7 +96,8 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
         description="Transformed rect height", default=1000, examples=[1000]
     )
     extend_perspective_polygon_by_detections_anchor: Union[str, Selector(kind=[STRING_KIND])] = Field(  # type: ignore
-        description=f"If set, perspective polygons will be extended to contain all bounding boxes. Allowed values: {', '.join(sv.Position.list())}",
+        description=f"If set, perspective polygons will be extended to contain all bounding boxes. Allowed values: {', '.join(sv.Position.list())}"
+        + f" and {ALL_POSITIONS} to extend to contain whole bounding box",
         default="",
         examples=["CENTER"],
     )
@@ -125,6 +129,18 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
                 name=OUTPUT_IMAGE_KEY,
                 kind=[
                     IMAGE_KIND,
+                ],
+            ),
+            OutputDefinition(
+                name=OUTPUT_EXTENDED_TRANSFORMED_RECT_WIDTH_KEY,
+                kind=[
+                    INTEGER_KIND,
+                ],
+            ),
+            OutputDefinition(
+                name=OUTPUT_EXTENDED_TRANSFORMED_RECT_HEIGHT_KEY,
+                kind=[
+                    INTEGER_KIND,
                 ],
             ),
         ]
@@ -216,32 +232,310 @@ def roll_polygon_vertices_to_start_from_leftmost_bottom(
     return closest
 
 
+def ccw(x1, y1, x2, y2, x3, y3):
+    return (x2 - x1) * (y3 - y1) - (y2 - y1) * (x3 - x1) > 0
+
+
+def calculate_line_coeffs(
+    x1: int, y1: int, x2: int, y2: int
+) -> Tuple[Optional[float], float]:
+    if x1 == x2:
+        return None, x1
+    # Solved a and b for ax + b = y
+    return (y2 - y1) / (x2 - x1), (y1 * x2 - y2 * x1) / (x2 - x1)
+
+
+def calculate_line_intercept_to_contain_point(
+    a: Optional[float],
+    x: int,
+    y: int,
+) -> float:
+    if a is None:
+        return x
+    return y - a * x
+
+
+def solve_line_intersection(
+    a1: Optional[float],
+    b1: float,
+    a2: Optional[float],
+    b2: float,
+) -> Tuple[float, float]:
+    if a1 is None and a2 is None:
+        raise ValueError("Both lines are vertical")
+    if a1 is None:
+        x = b1
+        y = a2 * x + b2
+    elif a2 is None:
+        x = b2
+        y = a1 * x + b1
+    else:
+        x = (b2 - b1) / (a1 - a2)
+        y = a1 * x + b1
+    return x, y
+
+
+def calculate_vertices_to_contain_point(
+    vertex_1: np.ndarray,
+    vertex_2: np.ndarray,
+    vertex_3_from_1: np.ndarray,
+    vertex_4_from_2: np.ndarray,
+    x: int,
+    y: int,
+) -> Tuple[np.ndarray, np.ndarray]:
+    a, _ = calculate_line_coeffs(
+        x1=vertex_1[0],
+        y1=vertex_1[1],
+        x2=vertex_2[0],
+        y2=vertex_2[1],
+    )
+    b = calculate_line_intercept_to_contain_point(
+        a=a,
+        x=x,
+        y=y,
+    )
+    a_3_1, b_3_1 = calculate_line_coeffs(
+        x1=vertex_1[0],
+        y1=vertex_1[1],
+        x2=vertex_3_from_1[0],
+        y2=vertex_3_from_1[1],
+    )
+    vertex_1 = (
+        np.array(
+            solve_line_intersection(
+                a1=a_3_1,
+                b1=b_3_1,
+                a2=a,
+                b2=b,
+            )
+        )
+        .round()
+        .astype(int)
+    )
+    a_4_2, b_4_2 = calculate_line_coeffs(
+        x1=vertex_2[0],
+        y1=vertex_2[1],
+        x2=vertex_4_from_2[0],
+        y2=vertex_4_from_2[1],
+    )
+    vertex_2 = (
+        np.array(
+            solve_line_intersection(
+                a1=a_4_2,
+                b1=b_4_2,
+                a2=a,
+                b2=b,
+            )
+        )
+        .round()
+        .astype(int)
+    )
+    return vertex_1, vertex_2
+
+
 def extend_perspective_polygon(
     polygon: List[np.ndarray],
     detections: sv.Detections,
-    bbox_position: Optional[sv.Position],
-) -> np.ndarray:
+    bbox_position: Union[sv.Position, Literal[ALL_POSITIONS]],
+) -> Tuple[np.ndarray, float, float, float, float]:
     if not bbox_position:
         return polygon
-    points = detections.get_anchors_coordinates(anchor=bbox_position)
     bottom_left, top_left, top_right, bottom_right = polygon
-    for x, y in points:
-        bottom_left = min(x, bottom_left[0]), bottom_left[1]
-        top_left = min(x, top_left[0]), top_left[1]
-        top_right = max(x, top_right[0]), top_right[1]
-        bottom_right = max(x, bottom_right[0]), bottom_right[1]
-
-        bottom_left = bottom_left[0], max(y, bottom_left[1])
-        bottom_right = bottom_right[0], max(y, bottom_right[1])
-        top_right = top_right[0], min(y, top_right[1])
-        top_left = top_left[0], min(y, top_left[1])
-    return np.array(
-        [
-            bottom_left,
-            top_left,
-            top_right,
-            bottom_right,
-        ]
+    extended_width = 0
+    extended_height = 0
+    original_width = max(
+        (
+            (bottom_left[0] - bottom_right[0]) ** 2
+            + (bottom_left[1] - bottom_right[1]) ** 2
+        )
+        ** 0.5,
+        ((top_left[0] - top_right[0]) ** 2 + (top_left[1] - top_right[1]) ** 2) ** 0.5,
+    )
+    original_height = max(
+        ((bottom_left[0] - top_left[0]) ** 2 + (bottom_left[1] - top_left[1]) ** 2)
+        ** 0.5,
+        ((bottom_right[0] - top_right[0]) ** 2 + (bottom_right[1] - top_right[1]) ** 2)
+        ** 0.5,
+    )
+    for i in range(len(detections)):
+        det = detections[i]
+        # extend to the left
+        points = []
+        if bbox_position == ALL_POSITIONS:
+            points.append(
+                det.get_anchors_coordinates(anchor=sv.Position.BOTTOM_LEFT)[0]
+            )
+            points.append(det.get_anchors_coordinates(anchor=sv.Position.TOP_LEFT)[0])
+        else:
+            points.append(det.get_anchors_coordinates(anchor=bbox_position)[0])
+        for x, y in points:
+            if (
+                cv.pointPolygonTest(
+                    np.array([bottom_left, top_left, top_right, bottom_right]),
+                    (x, y),
+                    False,
+                )
+                >= 0
+            ):
+                continue
+            if not ccw(
+                x1=bottom_left[0],
+                y1=bottom_left[1],
+                x2=top_left[0],
+                y2=top_left[1],
+                x3=x,
+                y3=y,
+            ):
+                original_bottom_left = bottom_left
+                original_top_left = top_left
+                bottom_left, top_left = calculate_vertices_to_contain_point(
+                    vertex_1=original_bottom_left,
+                    vertex_2=original_top_left,
+                    vertex_3_from_1=bottom_right,
+                    vertex_4_from_2=top_right,
+                    x=x,
+                    y=y,
+                )
+                extended_width += (
+                    (bottom_left[0] - original_bottom_left[0]) ** 2
+                    + (bottom_left[1] - original_bottom_left[1]) ** 2
+                ) ** 0.5
+        # extend to the right
+        points = []
+        if bbox_position == ALL_POSITIONS:
+            points.append(
+                det.get_anchors_coordinates(anchor=sv.Position.BOTTOM_RIGHT)[0]
+            )
+            points.append(det.get_anchors_coordinates(anchor=sv.Position.TOP_RIGHT)[0])
+        else:
+            points.append(det.get_anchors_coordinates(anchor=bbox_position)[0])
+        for x, y in points:
+            if (
+                cv.pointPolygonTest(
+                    np.array([bottom_left, top_left, top_right, bottom_right]),
+                    (x, y),
+                    False,
+                )
+                >= 0
+            ):
+                continue
+            if not ccw(
+                x1=top_right[0],
+                y1=top_right[1],
+                x2=bottom_right[0],
+                y2=bottom_right[1],
+                x3=x,
+                y3=y,
+            ):
+                original_bottom_right = bottom_right
+                original_top_right = top_right
+                top_right, bottom_right = calculate_vertices_to_contain_point(
+                    vertex_1=original_top_right,
+                    vertex_2=original_bottom_right,
+                    vertex_3_from_1=top_left,
+                    vertex_4_from_2=bottom_left,
+                    x=x,
+                    y=y,
+                )
+                extended_width += (
+                    (bottom_right[0] - original_bottom_right[0]) ** 2
+                    + (bottom_right[1] - original_bottom_right[1]) ** 2
+                ) ** 0.5
+        # extend to the bottom
+        points = []
+        if bbox_position == ALL_POSITIONS:
+            points.append(
+                det.get_anchors_coordinates(anchor=sv.Position.BOTTOM_RIGHT)[0]
+            )
+            points.append(
+                det.get_anchors_coordinates(anchor=sv.Position.BOTTOM_LEFT)[0]
+            )
+        else:
+            points.append(det.get_anchors_coordinates(anchor=bbox_position)[0])
+        for x, y in points:
+            if (
+                cv.pointPolygonTest(
+                    np.array([bottom_left, top_left, top_right, bottom_right]),
+                    (x, y),
+                    False,
+                )
+                >= 0
+            ):
+                continue
+            if not ccw(
+                x1=bottom_right[0],
+                y1=bottom_right[1],
+                x2=bottom_left[0],
+                y2=bottom_left[1],
+                x3=x,
+                y3=y,
+            ):
+                original_bottom_right = bottom_right
+                original_bottom_left = bottom_left
+                bottom_right, bottom_left = calculate_vertices_to_contain_point(
+                    vertex_1=original_bottom_right,
+                    vertex_2=original_bottom_left,
+                    vertex_3_from_1=top_right,
+                    vertex_4_from_2=top_left,
+                    x=x,
+                    y=y,
+                )
+                extended_height += (
+                    (bottom_left[0] - original_bottom_left[0]) ** 2
+                    + (bottom_left[1] - original_bottom_left[1]) ** 2
+                ) ** 0.5
+        # extend to the top
+        points = []
+        if bbox_position == ALL_POSITIONS:
+            points.append(det.get_anchors_coordinates(anchor=sv.Position.TOP_RIGHT)[0])
+            points.append(det.get_anchors_coordinates(anchor=sv.Position.TOP_LEFT)[0])
+        else:
+            points.append(det.get_anchors_coordinates(anchor=bbox_position)[0])
+        for x, y in points:
+            if (
+                cv.pointPolygonTest(
+                    np.array([bottom_left, top_left, top_right, bottom_right]),
+                    (x, y),
+                    False,
+                )
+                >= 0
+            ):
+                continue
+            if not ccw(
+                x1=top_left[0],
+                y1=top_left[1],
+                x2=top_right[0],
+                y2=top_right[1],
+                x3=x,
+                y3=y,
+            ):
+                original_top_left = top_left
+                original_top_right = top_right
+                top_left, top_right = calculate_vertices_to_contain_point(
+                    vertex_1=original_top_left,
+                    vertex_2=original_top_right,
+                    vertex_3_from_1=bottom_left,
+                    vertex_4_from_2=bottom_right,
+                    x=x,
+                    y=y,
+                )
+                extended_height += (
+                    (top_left[0] - original_top_left[0]) ** 2
+                    + (top_left[1] - original_top_left[1]) ** 2
+                ) ** 0.5
+    return (
+        np.array(
+            [
+                bottom_left,
+                top_left,
+                top_right,
+                bottom_right,
+            ]
+        ),
+        original_width,
+        original_height,
+        extended_width,
+        extended_height,
     )
 
 
@@ -250,38 +544,66 @@ def generate_transformation_matrix(
     transformed_rect_width: int,
     transformed_rect_height: int,
     detections: Optional[sv.Detections] = None,
-    detections_anchor: Optional[sv.Position] = None,
-) -> np.ndarray:
+    detections_anchor: Optional[Union[sv.Position, Literal[ALL_POSITIONS]]] = None,
+) -> Tuple[np.ndarray, float, float]:
     polygon_with_vertices_clockwise = sort_polygon_vertices_clockwise(
         polygon=src_polygon
     )
     src_polygon = roll_polygon_vertices_to_start_from_leftmost_bottom(
         polygon=polygon_with_vertices_clockwise
     )
+    original_width = transformed_rect_width
+    original_height = transformed_rect_height
+    extended_width = 0
+    extended_height = 0
     if detections and detections_anchor:
-        src_polygon = extend_perspective_polygon(
+        (
+            src_polygon,
+            original_width,
+            original_height,
+            extended_width,
+            extended_height,
+        ) = extend_perspective_polygon(
             polygon=src_polygon,
             detections=detections,
-            bbox_position=sv.Position(detections_anchor),
+            bbox_position=(
+                sv.Position(detections_anchor)
+                if detections_anchor != ALL_POSITIONS
+                else detections_anchor
+            ),
         )
+    extended_width = extended_width * transformed_rect_width / max(original_width, 1)
+    extended_height = (
+        extended_height * transformed_rect_height / max(original_height, 1)
+    )
     src_polygon = src_polygon.astype(np.float32)
     dst_polygon = np.array(
         [
-            [0, transformed_rect_height - 1],
+            [0, transformed_rect_height + int(round(extended_height)) - 1],
             [0, 0],
-            [transformed_rect_width - 1, 0],
-            [transformed_rect_width - 1, transformed_rect_height - 1],
+            [transformed_rect_width + int(round(extended_width)) - 1, 0],
+            [
+                transformed_rect_width + int(round(extended_width)) - 1,
+                transformed_rect_height + int(round(extended_height)) - 1,
+            ],
         ]
     ).astype(dtype=np.float32)
     # https://docs.opencv.org/4.9.0/da/d54/group__imgproc__transform.html#ga20f62aa3235d869c9956436c870893ae
-    return cv.getPerspectiveTransform(
-        src=src_polygon,
-        dst=dst_polygon,
+    return (
+        cv.getPerspectiveTransform(
+            src=src_polygon,
+            dst=dst_polygon,
+        ),
+        extended_width,
+        extended_height,
     )
 
 
 def correct_detections(
-    detections: sv.Detections, perspective_transformer: np.array
+    detections: sv.Detections,
+    perspective_transformer: np.array,
+    transformed_rect_width: float,
+    transformed_rect_height: float,
 ) -> sv.Detections:
     corrected_detections: List[sv.Detections] = []
     for i in range(len(detections)):
@@ -298,12 +620,14 @@ def correct_detections(
             corrected_polygon: np.ndarray = cv.perspectiveTransform(
                 src=polygon, m=perspective_transformer
             ).reshape(-1, 2)
-            h, w, *_ = detection.mask[0].shape
             detection.mask = np.array(
                 [
                     sv.polygon_to_mask(
                         polygon=np.around(corrected_polygon).astype(np.int32),
-                        resolution_wh=(w, h),
+                        resolution_wh=(
+                            int(round(transformed_rect_width)),
+                            int(round(transformed_rect_height)),
+                        ),
                     ).astype(bool)
                 ]
             )
@@ -348,7 +672,7 @@ def correct_detections(
 
 class PerspectiveCorrectionBlockV1(WorkflowBlock):
     def __init__(self):
-        self.perspective_transformers: List[np.array] = []
+        self.perspective_transformers: List[Tuple[np.ndarray, float, float]] = []
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -366,7 +690,9 @@ class PerspectiveCorrectionBlockV1(WorkflowBlock):
         ],
         transformed_rect_width: int,
         transformed_rect_height: int,
-        extend_perspective_polygon_by_detections_anchor: Optional[str],
+        extend_perspective_polygon_by_detections_anchor: Union[
+            sv.Position, Literal[ALL_POSITIONS]
+        ],
         warp_image: Optional[bool],
     ) -> BlockResult:
         if not predictions and not images:
@@ -380,7 +706,11 @@ class PerspectiveCorrectionBlockV1(WorkflowBlock):
         if not predictions:
             predictions = [None] * len(images)
 
-        if not self.perspective_transformers:
+        if (
+            not self.perspective_transformers
+            or extend_perspective_polygon_by_detections_anchor
+        ):
+            self.perspective_transformers = []
             largest_perspective_polygons = pick_largest_perspective_polygons(
                 perspective_polygons
             )
@@ -408,16 +738,22 @@ class PerspectiveCorrectionBlockV1(WorkflowBlock):
                 )
 
         result = []
-        for detections, perspective_transformer, image in zip(
+        for detections, perspective_transformer_w_h, image in zip(
             predictions, self.perspective_transformers, images
         ):
+            perspective_transformer, extended_width, extended_height = (
+                perspective_transformer_w_h
+            )
             result_image = image
             if warp_image:
                 # https://docs.opencv.org/4.9.0/da/d54/group__imgproc__transform.html#gaf73673a7e8e18ec6963e3774e6a94b87
                 warped_image = cv.warpPerspective(
                     src=image.numpy_image,
                     M=perspective_transformer,
-                    dsize=(transformed_rect_width, transformed_rect_height),
+                    dsize=(
+                        transformed_rect_width + int(round(extended_width)),
+                        transformed_rect_height + int(round(extended_height)),
+                    ),
                 )
                 result_image = WorkflowImageData.copy_and_replace(
                     origin_image_data=image,
@@ -426,19 +762,34 @@ class PerspectiveCorrectionBlockV1(WorkflowBlock):
 
             if detections is None:
                 result.append(
-                    {OUTPUT_DETECTIONS_KEY: None, OUTPUT_IMAGE_KEY: result_image}
+                    {
+                        OUTPUT_DETECTIONS_KEY: None,
+                        OUTPUT_IMAGE_KEY: result_image,
+                        OUTPUT_EXTENDED_TRANSFORMED_RECT_WIDTH_KEY: transformed_rect_width
+                        + int(round(extended_width)),
+                        OUTPUT_EXTENDED_TRANSFORMED_RECT_HEIGHT_KEY: transformed_rect_height
+                        + int(round(extended_height)),
+                    }
                 )
                 continue
 
             corrected_detections = correct_detections(
                 detections=detections,
                 perspective_transformer=perspective_transformer,
+                transformed_rect_width=transformed_rect_width
+                + int(round(extended_width)),
+                transformed_rect_height=transformed_rect_height
+                + int(round(extended_height)),
             )
 
             result.append(
                 {
                     OUTPUT_DETECTIONS_KEY: corrected_detections,
                     OUTPUT_IMAGE_KEY: result_image,
+                    OUTPUT_EXTENDED_TRANSFORMED_RECT_WIDTH_KEY: transformed_rect_width
+                    + int(round(extended_width)),
+                    OUTPUT_EXTENDED_TRANSFORMED_RECT_HEIGHT_KEY: transformed_rect_height
+                    + int(round(extended_height)),
                 }
             )
         return result

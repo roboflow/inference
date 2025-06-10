@@ -1,5 +1,6 @@
 name: Build and Push UDP GPU Container
-
+permissions:
+  contents: read
 on:
   release:
     types: [created]

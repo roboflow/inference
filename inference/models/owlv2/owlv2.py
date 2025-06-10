@@ -2,6 +2,7 @@ import gc
 import hashlib
 import os
 import pickle
+import time
 import weakref
 from collections import defaultdict
 from typing import Any, Dict, List, Literal, NewType, Optional, Tuple, Union
@@ -30,6 +31,7 @@ from inference.core.env import (
     OWLV2_IMAGE_CACHE_SIZE,
     OWLV2_MODEL_CACHE_SIZE,
     OWLV2_VERSION_ID,
+    PRELOAD_HF_IDS,
 )
 from inference.core.exceptions import InvalidModelIDError, ModelArtefactError
 from inference.core.models.roboflow import (
@@ -50,6 +52,7 @@ from inference.core.utils.image_utils import (
 )
 
 CPU_IMAGE_EMBED_CACHE_SIZE = OWLV2_CPU_IMAGE_CACHE_SIZE
+PRELOADED_HF_MODELS = {}
 
 # TYPES
 Hash = NewType("Hash", str)
@@ -92,14 +95,22 @@ class Owlv2Singleton:
     _instances = weakref.WeakValueDictionary()
 
     def __new__(cls, huggingface_id: str):
+        if huggingface_id in PRELOADED_HF_MODELS:
+            logger.info(f"Using preloaded OWLv2 instance for {huggingface_id}")
+            return PRELOADED_HF_MODELS[huggingface_id]
         if huggingface_id not in cls._instances:
             logger.info(f"Creating new OWLv2 instance for {huggingface_id}")
             instance = super().__new__(cls)
             instance.huggingface_id = huggingface_id
             # Load model directly in the instance
             logger.info(f"Loading OWLv2 model from {huggingface_id}")
+            # TODO: to further reduce GPU memory usage we could use torch.float16
+            # torch_dtype = torch.float16 if str(DEVICE).startswith("cuda") else torch.float32
             model = (
-                Owlv2ForObjectDetection.from_pretrained(huggingface_id)
+                Owlv2ForObjectDetection.from_pretrained(
+                    huggingface_id,
+                    device_map=DEVICE if str(DEVICE).startswith("cuda") else None,
+                )
                 .eval()
                 .to(DEVICE)
             )
@@ -155,6 +166,64 @@ def preprocess_image(
     padded_image_tensor = (padded_image_tensor - image_mean) / image_std
 
     return padded_image_tensor
+
+
+@torch.no_grad()
+def dummy_infer(hf_id: str):
+    # Below code is copied from Owlv2.__init__
+    singleton = Owlv2Singleton(hf_id)
+    model = singleton.model
+    processor = Owlv2Processor.from_pretrained(hf_id)
+    image_size = tuple(processor.image_processor.size.values())
+    image_mean = torch.tensor(processor.image_processor.image_mean, device=DEVICE).view(
+        1, 3, 1, 1
+    )
+    image_std = torch.tensor(processor.image_processor.image_std, device=DEVICE).view(
+        1, 3, 1, 1
+    )
+
+    np_image = np.zeros((image_size[0] // 2, image_size[1] // 2, 3))
+    pixel_values = preprocess_image(np_image, image_size, image_mean, image_std)
+
+    # Below code is copied from Owlv2.embed_image
+    device_str = "cuda" if str(DEVICE).startswith("cuda") else "cpu"
+    with torch.autocast(
+        device_type=device_str, dtype=torch.float16, enabled=device_str == "cuda"
+    ):
+        image_embeds, _ = model.image_embedder(pixel_values=pixel_values)
+    del pixel_values, np_image, image_embeds
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    return singleton
+
+
+if PRELOAD_HF_IDS:
+    hf_ids = PRELOAD_HF_IDS
+    if not isinstance(hf_ids, list):
+        hf_ids = [hf_ids]
+    for hf_id in hf_ids:
+        logger.info("Preloading OWLv2 model for %s (this may take a while)", hf_id)
+        try:
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                allocated_gpu_memory = torch.cuda.memory_allocated() / (1024**3)
+                logger.info(
+                    f"Allocated GPU memory before loading model: {allocated_gpu_memory:.2f} GB"
+                )
+            t1 = time.time()
+            singleton = dummy_infer(hf_id)
+            t2 = time.time()
+            logger.info("Preloaded OWLv2 model for %s in %0.2f seconds", hf_id, t2 - t1)
+            if torch.cuda.is_available():
+                allocated_gpu_memory = torch.cuda.memory_allocated() / (1024**3)
+                logger.info(
+                    f"Allocated GPU memory after loading model: {allocated_gpu_memory:.2f} GB"
+                )
+            # Store the singleton instance directly in PRELOADED_HF_MODELS
+            PRELOADED_HF_MODELS[hf_id] = singleton
+        except Exception as exc:
+            logger.error("Failed to preload OWLv2 model for %s: %s", hf_id, exc)
 
 
 def filter_tensors_by_objectness(
@@ -383,7 +452,6 @@ class OwlV2(RoboflowInferenceModel):
                 np_img = image.image_as_numpy
                 image_size = np_img.shape[:2][::-1]
                 self.image_size_cache[image.image_hash] = image_size
-                image.unload_numpy_image()  # free the huge numpy array immediately
             return image_size
         else:
             return image.shape[:2][::-1]
@@ -448,6 +516,9 @@ class OwlV2(RoboflowInferenceModel):
 
         # Explicitly delete temporary tensors to free memory.
         del pixel_values, np_image, image_features, image_embeds
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         if isinstance(image, LazyImageRetrievalWrapper):
             image.unload_numpy_image()  # Clears both _image_as_numpy and image if needed.
@@ -636,6 +707,7 @@ class OwlV2(RoboflowInferenceModel):
         return_image_embeds_dict = dict()
 
         for train_image in wrapped_training_data:
+            image_size = self.compute_image_size(train_image["image"])
             image_hash = self.embed_image(train_image["image"])
             if return_image_embeds:
                 if (image_embeds := self.get_image_embeds(image_hash)) is None:
@@ -643,8 +715,6 @@ class OwlV2(RoboflowInferenceModel):
                 return_image_embeds_dict[image_hash] = tuple(
                     t.to("cpu") for t in image_embeds
                 )
-
-            image_size = self.compute_image_size(train_image["image"])
             # grab and normalize box prompts for this image
             boxes = train_image["boxes"]
             coords = [[box["x"], box["y"], box["w"], box["h"]] for box in boxes]
@@ -748,9 +818,11 @@ class SerializedOwlV2(RoboflowInferenceModel):
 
         if previous_embeddings_file is not None:
             if DEVICE == "cpu":
-                model_data = torch.load(previous_embeddings_file, map_location="cpu")
+                model_data = torch.load(
+                    previous_embeddings_file, map_location="cpu", weights_only=False
+                )
             else:
-                model_data = torch.load(previous_embeddings_file)
+                model_data = torch.load(previous_embeddings_file, weights_only=False)
 
             train_data_dict = model_data["train_data_dict"]
             owlv2.cpu_image_embed_cache = model_data["image_embeds"]

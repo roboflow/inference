@@ -1,3 +1,6 @@
+import importlib
+from typing import Any
+
 from inference.core.env import (
     CORE_MODEL_CLIP_ENABLED,
     CORE_MODEL_DOCTR_ENABLED,
@@ -7,99 +10,100 @@ from inference.core.env import (
     CORE_MODEL_SAM_ENABLED,
     CORE_MODEL_YOLO_WORLD_ENABLED,
     CORE_MODELS_ENABLED,
+    DEPTH_ESTIMATION_ENABLED,
 )
 
-if CORE_MODELS_ENABLED:
-    if CORE_MODEL_CLIP_ENABLED:
-        try:
-            from inference.models.clip import Clip
-        except:
-            pass
+_MODEL_REGISTRY: dict[str, Any] = {}
 
-    if CORE_MODEL_GAZE_ENABLED:
-        try:
-            from inference.models.gaze import Gaze
-        except:
-            pass
+CORE_MODELS = {
+    "Clip": ("inference.models.clip", CORE_MODEL_CLIP_ENABLED),
+    "Gaze": ("inference.models.gaze", CORE_MODEL_GAZE_ENABLED),
+    "SegmentAnything": ("inference.models.sam", CORE_MODEL_SAM_ENABLED),
+    "SegmentAnything2": ("inference.models.sam2", CORE_MODEL_SAM2_ENABLED),
+    "DocTR": ("inference.models.doctr", CORE_MODEL_DOCTR_ENABLED),
+    "GroundingDINO": (
+        "inference.models.grounding_dino",
+        CORE_MODEL_GROUNDINGDINO_ENABLED,
+    ),
+    "YOLOWorld": ("inference.models.yolo_world", CORE_MODEL_YOLO_WORLD_ENABLED),
+    "DepthEstimator": (
+        "inference.models.depth_estimation.depthestimation",
+        DEPTH_ESTIMATION_ENABLED,
+    ),
+}
 
-    if CORE_MODEL_SAM_ENABLED:
-        try:
-            from inference.models.sam import SegmentAnything
-        except:
-            pass
+OPTIONAL_MODELS = {
+    "PaliGemma": "inference.models.paligemma",
+    "LoRAPaliGemma": "inference.models.paligemma",
+    "Florence2": "inference.models.florence2",
+    "LoRAFlorence2": "inference.models.florence2",
+    "Qwen25VL": "inference.models.qwen25vl",
+    "LoRAQwen25VL": "inference.models.qwen25vl",
+    "TrOCR": "inference.models.trocr",
+    "SmolVLM": "inference.models.smolvlm",
+    "LoRASmolVLM": "inference.models.smolvlm",
+    "Moondream2": "inference.models.moondream2",
+    "PerceptionEncoder": "inference.models.perception_encoder",
+}
 
-    if CORE_MODEL_SAM2_ENABLED:
-        try:
-            from inference.models.sam2 import SegmentAnything2
-        except:
-            pass
+STANDARD_MODELS = {
+    "ResNetClassification": "inference.models.resnet",
+    "RFDETRObjectDetection": "inference.models.rfdetr",
+    "VitClassification": "inference.models.vit",
+    "YOLACT": "inference.models.yolact",
+    "YOLONASObjectDetection": "inference.models.yolonas",
+    "YOLOv5InstanceSegmentation": "inference.models.yolov5",
+    "YOLOv5ObjectDetection": "inference.models.yolov5",
+    "YOLOv7InstanceSegmentation": "inference.models.yolov7",
+    "YOLOv8Classification": "inference.models.yolov8",
+    "YOLOv8InstanceSegmentation": "inference.models.yolov8",
+    "YOLOv8KeypointsDetection": "inference.models.yolov8",
+    "YOLOv8ObjectDetection": "inference.models.yolov8",
+    "YOLOv9ObjectDetection": "inference.models.yolov9",
+    "YOLOv10ObjectDetection": "inference.models.yolov10",
+    "YOLOv11InstanceSegmentation": "inference.models.yolov11",
+    "YOLOv11KeypointsDetection": "inference.models.yolov11",
+    "YOLOv11ObjectDetection": "inference.models.yolov11",
+    "YOLOv12ObjectDetection": "inference.models.yolov12",
+}
 
-    if CORE_MODEL_DOCTR_ENABLED:
-        try:
-            from inference.models.doctr import DocTR
-        except:
-            pass
 
-    if CORE_MODEL_GROUNDINGDINO_ENABLED:
-        try:
-            from inference.models.grounding_dino import GroundingDINO
-        except:
-            pass
+def get_model_class(name: str) -> Any:
+    """Lazily import and return a model class."""
+    if name in _MODEL_REGISTRY:
+        return _MODEL_REGISTRY[name]
 
-    if CORE_MODEL_YOLO_WORLD_ENABLED:
-        try:
-            from inference.models.yolo_world import YOLOWorld
-        except:
-            pass
+    # Handle core models with environment flags
+    if CORE_MODELS_ENABLED and name in CORE_MODELS:
+        module_path, flag_enabled = CORE_MODELS[name]
+        if flag_enabled:
+            module = importlib.import_module(module_path)
+            _MODEL_REGISTRY[name] = getattr(module, name)
 
-try:
-    from inference.models.paligemma import LoRAPaliGemma, PaliGemma
-except:
-    pass
+    # Handle optional models
+    elif name in OPTIONAL_MODELS:
+        module_path = OPTIONAL_MODELS[name]
+        module = importlib.import_module(module_path)
+        _MODEL_REGISTRY[name] = getattr(module, name)
 
-try:
-    from inference.models.florence2 import Florence2, LoRAFlorence2
-except:
-    pass
+    # Handle standard models
+    elif name in STANDARD_MODELS:
+        module_path = STANDARD_MODELS[name]
+        module = importlib.import_module(module_path)
+        _MODEL_REGISTRY[name] = getattr(module, name)
 
-try:
-    from inference.models.qwen25vl import LoRAQwen25VL, Qwen25VL
-except:
-    pass
+    return _MODEL_REGISTRY.get(name)
 
-try:
-    from inference.models.trocr import TrOCR
-except:
-    pass
 
-try:
-    from inference.models.smolvlm import SmolVLM
-except:
-    pass
+def __getattr__(name: str) -> Any:
+    """Implement lazy loading for model classes."""
+    if name in __all__:
+        return get_model_class(name)
+    raise AttributeError(f"module 'inference.models' has no attribute '{name}'")
 
-try:
-    from inference.models.moondream2 import Moondream2
-except:
-    pass
 
-from inference.models.resnet import ResNetClassification
-from inference.models.rfdetr import RFDETRObjectDetection
-from inference.models.vit import VitClassification
-from inference.models.yolact import YOLACT
-from inference.models.yolonas import YOLONASObjectDetection
-from inference.models.yolov5 import YOLOv5InstanceSegmentation, YOLOv5ObjectDetection
-from inference.models.yolov7 import YOLOv7InstanceSegmentation
-from inference.models.yolov8 import (
-    YOLOv8Classification,
-    YOLOv8InstanceSegmentation,
-    YOLOv8KeypointsDetection,
-    YOLOv8ObjectDetection,
+__all__ = (
+    list(CORE_MODELS.keys())
+    + list(OPTIONAL_MODELS.keys())
+    + list(STANDARD_MODELS.keys())
 )
-from inference.models.yolov9 import YOLOv9ObjectDetection
-from inference.models.yolov10 import YOLOv10ObjectDetection
-from inference.models.yolov11 import (
-    YOLOv11InstanceSegmentation,
-    YOLOv11KeypointsDetection,
-    YOLOv11ObjectDetection,
-)
-from inference.models.yolov12 import YOLOv12ObjectDetection
