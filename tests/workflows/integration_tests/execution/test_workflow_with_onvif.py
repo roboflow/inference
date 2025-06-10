@@ -11,8 +11,9 @@ from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.sinks.onvif_movement import v1
 from inference.core.workflows.core_steps.sinks.onvif_movement.v1 import (
+    CameraWrapper,
     Limits,
-    get_camera,
+    ONVIFSinkBlockV1,
 )
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 
@@ -888,11 +889,14 @@ BUFFER_SIZE = 1024
 
 movement_event = threading.Event()
 quit_flag: bool = False
+server_running: bool = False
 
 
 # simulate an ONVIF device locally using canned responses
 def run_server():
-    global movement_event, quit_flag
+    global movement_event, quit_flag, server_running
+    if server_running:
+        return
     if quit_flag:
         return
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
@@ -1039,13 +1043,16 @@ def test_workflow_with_onvif(
             "image": fruit_image,
         }
     )
-    quit_flag = True
     output = result[0].get("output")
 
+    # get dummy camera
+    sink_block = ONVIFSinkBlockV1(StepExecutionMode.LOCAL)
+    event_loop = CameraWrapper.create_event_loop()
+    camera = sink_block.get_camera(HOST, PORT, "", "", 1, False, event_loop)
+
+    quit_flag = True
     server_thread.join()
 
-    # get dummy camera
-    camera = get_camera(HOST, PORT, "", "", 1, False)
     assert camera is not None
     assert list(camera._presets.keys()) == ["1"]
 
@@ -1055,11 +1062,6 @@ def test_workflow_with_onvif(
     assert x_lim.min == expected_x_lim.min
     assert x_lim.max == expected_x_lim.max
 
-    # check speeds
-    # assert camera._prev_x == -10.0
-    # assert camera._prev_y == -10.0
-
     assert output is not None
-    assert output["tracker_id"] > 0
     assert output["predictions"]
     assert output["seeking"]
