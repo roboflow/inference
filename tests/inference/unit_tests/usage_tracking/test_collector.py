@@ -6,6 +6,7 @@ import pytest
 
 from inference.core.env import LAMBDA
 from inference.core.version import __version__ as inference_version
+from inference.core.devices.utils import GLOBAL_DEVICE_ID
 from inference.usage_tracking.collector import UsageCollector
 from inference.usage_tracking.payload_helpers import (
     get_api_key_usage_containing_resource,
@@ -35,6 +36,7 @@ def test_create_empty_usage_dict():
                     "exec_session_id": "exec_session_id",
                     "hostname": "",
                     "ip_address_hash": "",
+                    "device_id": "",
                     "processed_frames": 0,
                     "fps": 0,
                     "source_duration": 0,
@@ -890,6 +892,7 @@ def test_system_info_with_dedicated_deployment_id():
         "hostname": f"deployment01:hostname01",
         "ip_address_hash": hashlib.sha256("w.x.y.z".encode()).hexdigest()[:5],
         "is_gpu_available": False,
+        "device_id": GLOBAL_DEVICE_ID,
     }
     for k, v in expected_system_info.items():
         assert system_info[k] == v
@@ -906,6 +909,7 @@ def test_system_info_with_no_dedicated_deployment_id():
         "hostname": "5aacc",
         "ip_address_hash": hashlib.sha256("w.x.y.z".encode()).hexdigest()[:5],
         "is_gpu_available": False,
+        "device_id": GLOBAL_DEVICE_ID,
     }
     for k, v in expected_system_info.items():
         assert system_info[k] == v

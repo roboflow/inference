@@ -25,6 +25,7 @@ from uuid import uuid4
 
 from typing_extensions import ParamSpec
 
+from inference.core.devices.utils import GLOBAL_DEVICE_ID
 from inference.core.env import (
     API_KEY,
     DEDICATED_DEPLOYMENT_ID,
@@ -160,6 +161,7 @@ class UsageCollector:
             "exec_session_id": exec_session_id,
             "hostname": "",
             "ip_address_hash": "",
+            "device_id": "",
             "processed_frames": 0,
             "fps": 0,
             "source_duration": 0,
@@ -299,6 +301,7 @@ class UsageCollector:
             "hostname": hostname,
             "ip_address_hash": ip_address_hash_hex,
             "is_gpu_available": False,  # TODO
+            "device_id": GLOBAL_DEVICE_ID,
         }
 
     def record_system_info(
@@ -362,6 +365,7 @@ class UsageCollector:
         with self._system_info_lock:
             ip_address_hash = self._system_info["ip_address_hash"]
             is_gpu_available = self._system_info["is_gpu_available"]
+            device_id = self._system_info["device_id"]
             hostname = self._system_info["hostname"]
         with UsageCollector._lock:
             source_usage = self._usage[api_key_hash][f"{category}:{resource_id}"]
@@ -380,6 +384,7 @@ class UsageCollector:
             source_usage["hostname"] = hostname
             source_usage["ip_address_hash"] = ip_address_hash
             source_usage["is_gpu_available"] = is_gpu_available
+            source_usage["device_id"] = device_id
             source_usage["execution_duration"] += execution_duration
             if (
                 roboflow_service_name
