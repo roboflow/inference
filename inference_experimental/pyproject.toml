@@ -78,6 +78,13 @@ grounding-dino = [
 flash-attn = [
   "flash-attn==2.7.4.post1"
 ]
+trt10 = [
+  "tensorrt>=10.0.0,<11.0.0; platform_system == 'Linux' or platform_system == 'Windows'",
+  "tensorrt-cu12>=10.0.0,<11.0.0; platform_system == 'Linux' or platform_system == 'Windows'"
+]
+trt8 = [
+  "tensorrt>=8.0.0,<9.0.0; platform_system == 'Linux' or platform_system == 'Windows'",
+]
 
 [tool.uv.sources]
 torch = [
@@ -155,4 +162,8 @@ conflicts = [
     { extra = "onnx-jp6-cu128" },
     { extra = "onnx-jp5-cu114" },
   ],
+  [
+    { extra = "trt10" },
+    { extra = "trt8" },
+  ]
 ]

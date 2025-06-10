@@ -629,6 +629,9 @@ torch-jp6-cu128 = [
     { name = "torch", version = "2.7.0", source = { registry = "https://pypi.jetson-ai-lab.dev/jp6/cu128/+simple" } },
     { name = "torchvision", version = "0.22.0", source = { registry = "https://pypi.jetson-ai-lab.dev/jp6/cu128/+simple" } },
 ]
+trt8 = [
+    { name = "tensorrt", marker = "sys_platform == 'linux' or sys_platform == 'win32' or (extra == 'extra-13-inference-exp-onnx-cpu' and extra == 'extra-13-inference-exp-onnx-cu118') or (extra == 'extra-13-inference-exp-onnx-cpu' and extra == 'extra-13-inference-exp-onnx-cu12') or (extra == 'extra-13-inference-exp-onnx-cpu' and extra == 'extra-13-inference-exp-onnx-jp5-cu114') or (extra == 'extra-13-inference-exp-onnx-cpu' and extra == 'extra-13-inference-exp-onnx-jp6-cu128') or (extra == 'extra-13-inference-exp-onnx-cu118' and extra == 'extra-13-inference-exp-onnx-cu12') or (extra == 'extra-13-inference-exp-onnx-cu118' and extra == 'extra-13-inference-exp-onnx-jp5-cu114') or (extra == 'extra-13-inference-exp-onnx-cu118' and extra == 'extra-13-inference-exp-onnx-jp6-cu128') or (extra == 'extra-13-inference-exp-onnx-cu12' and extra == 'extra-13-inference-exp-onnx-jp5-cu114') or (extra == 'extra-13-inference-exp-onnx-cu12' and extra == 'extra-13-inference-exp-onnx-jp6-cu128') or (extra == 'extra-13-inference-exp-onnx-jp5-cu114' and extra == 'extra-13-inference-exp-onnx-jp6-cu128') or (extra == 'extra-13-inference-exp-torch-cpu' and extra == 'extra-13-inference-exp-torch-cu118') or (extra == 'extra-13-inference-exp-torch-cpu' and extra == 'extra-13-inference-exp-torch-cu126') or (extra == 'extra-13-inference-exp-torch-cpu' and extra == 'extra-13-inference-exp-torch-cu128') or (extra == 'extra-13-inference-exp-torch-cpu' and extra == 'extra-13-inference-exp-torch-jp5-cu114') or (extra == 'extra-13-inference-exp-torch-cpu' and extra == 'extra-13-inference-exp-torch-jp6-cu128') or (extra == 'extra-13-inference-exp-torch-cu118' and extra == 'extra-13-inference-exp-torch-cu126') or (extra == 'extra-13-inference-exp-torch-cu118' and extra == 'extra-13-inference-exp-torch-cu128') or (extra == 'extra-13-inference-exp-torch-cu118' and extra == 'extra-13-inference-exp-torch-jp5-cu114') or (extra == 'extra-13-inference-exp-torch-cu118' and extra == 'extra-13-inference-exp-torch-jp6-cu128') or (extra == 'extra-13-inference-exp-torch-cu126' and extra == 'extra-13-inference-exp-torch-cu128') or (extra == 'extra-13-inference-exp-torch-cu126' and extra == 'extra-13-inference-exp-torch-jp5-cu114') or (extra == 'extra-13-inference-exp-torch-cu126' and extra == 'extra-13-inference-exp-torch-jp6-cu128') or (extra == 'extra-13-inference-exp-torch-cu128' and extra == 'extra-13-inference-exp-torch-jp5-cu114') or (extra == 'extra-13-inference-exp-torch-cu128' and extra == 'extra-13-inference-exp-torch-jp6-cu128') or (extra == 'extra-13-inference-exp-torch-jp5-cu114' and extra == 'extra-13-inference-exp-torch-jp6-cu128')" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -658,6 +661,7 @@ requires-dist = [
     { name = "rf-clip", specifier = "==1.1" },
     { name = "rf-groundingdino", marker = "extra == 'grounding-dino'", specifier = "==0.2.0" },
     { name = "supervision", specifier = "==0.26.0rc7" },
+    { name = "tensorrt", marker = "(sys_platform == 'linux' and extra == 'trt8') or (sys_platform == 'win32' and extra == 'trt8')", specifier = ">=8.0.0,<9.0.0" },
     { name = "timm", specifier = ">=1.0.0,<2.0.0" },
     { name = "torch" },
     { name = "torch", marker = "extra == 'torch-cpu'", specifier = ">2.0.0", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "inference-exp", extra = "torch-cpu" } },
@@ -675,7 +679,7 @@ requires-dist = [
     { name = "torchvision", marker = "extra == 'torch-jp6-cu128'", index = "https://pypi.jetson-ai-lab.dev/jp6/cu128/+simple", conflict = { package = "inference-exp", extra = "torch-jp6-cu128" } },
     { name = "transformers", specifier = ">=4.50.0,<5.0.0" },
 ]
-provides-extras = ["torch-cpu", "torch-cu118", "torch-cu126", "torch-cu128", "torch-jp6-cu128", "torch-jp5-cu114", "onnx-cpu", "onnx-cu118", "onnx-cu12", "onnx-jp6-cu128", "onnx-jp5-cu114", "mediapipe", "grounding-dino", "flash-attn"]
+provides-extras = ["torch-cpu", "torch-cu118", "torch-cu126", "torch-cu128", "torch-jp6-cu128", "torch-jp5-cu114", "onnx-cpu", "onnx-cu118", "onnx-cu12", "onnx-jp6-cu128", "onnx-jp5-cu114", "mediapipe", "grounding-dino", "flash-attn", "trt8"]
 
 [[package]]
 name = "jax"
@@ -2352,6 +2356,12 @@ sdist = { url = "https://files.pythonhosted.org/packages/83/d3/803453b36afefb7c2
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a2/09/77d55d46fd61b4a135c444fc97158ef34a095e5681d0a6c10b75bf356191/sympy-1.14.0-py3-none-any.whl", hash = "sha256:e091cc3e99d2141a0ba2847328f5479b05d94a6635cb96148ccb3f34671bd8f5", size = 6299353, upload-time = "2025-04-27T18:04:59.103Z" },
 ]
+
+[[package]]
+name = "tensorrt"
+version = "8.6.1.post1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/46/08/da496b4f20890b6f717f159bbdda98e9248b560e712aa22cd9bb1daafe15/tensorrt-8.6.1.post1.tar.gz", hash = "sha256:0ca64da500480a2d204c18d7c6791ec462c163ae4fa1db574b8c211da1116ea2", size = 18270, upload-time = "2023-08-24T01:29:37.373Z" }
 
 [[package]]
 name = "timm"
