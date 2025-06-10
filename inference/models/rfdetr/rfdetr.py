@@ -316,7 +316,12 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
 
                 boxes_xyxy = boxes_input / scale
 
-            np.clip(boxes_xyxy, [0, 0, 0, 0], [orig_w, orig_h, orig_w, orig_h], out=boxes_xyxy)
+            np.clip(
+                boxes_xyxy,
+                [0, 0, 0, 0],
+                [orig_w, orig_h, orig_w, orig_h],
+                out=boxes_xyxy,
+            )
 
             batch_predictions = np.column_stack(
                 (
