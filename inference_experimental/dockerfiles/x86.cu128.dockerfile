@@ -13,15 +13,16 @@ RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1
 
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
-COPY inference_experimental /build
-
 WORKDIR /build
 
-RUN . $HOME/.local/bin/env
-RUN $HOME/.local/bin/uv build
+COPY inference_experimental/uv.locl uv.locl
+COPY inference_experimental/pyproject.toml pyproject.toml
 
-RUN WHEEL=$(ls dist/inference_exp-*.whl) && $HOME/.local/bin/uv pip install --system "${WHEEL}[torch-cu128,onnx-cu12,mediapipe,grounding-dino,trt10]"
-RUN WHEEL=$(ls dist/inference_exp-*.whl) && $HOME/.local/bin/uv pip install --system --no-build-isolation "${WHEEL}[flash-attn]"
+RUN . $HOME/.local/bin/env
+RUN $HOME/.local/bin/uv pip install --system -r pyproject.toml --extra torch-cu128 --extra onnx-cu12 --extra mediapipe --extra grounding-dino --extra trt10
+RUN MAX_JOBS=$(nproc) $HOME/.local/bin/uv pip install --system --no-build-isolation -r pyproject.toml --extra
+RUN $HOME/.local/bin/uv build
+RUN WHEEL=$(ls dist/inference_exp-*.whl) && $HOME/.local/bin/uv pip install --system "${WHEEL}"
 
 WORKDIR /
 RUN rm -r /build
