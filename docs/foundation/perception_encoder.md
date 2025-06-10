@@ -103,15 +103,6 @@ Perception Encoder can be used in Roboflow Workflows via the
 **Perception Encoder Embedding Model** block. This block lets you generate
 embeddings for images or text without writing code.
 
-Example workflow snippet:
-
-```yaml
-steps:
-  pe_embed:
-    type: roboflow_core/perception_encoder@v1
-    data: $inputs.image
-```
-
 ## API Compatibility
 
 The Perception Encoder model uses the **same API as CLIP**. This means you can use all the same methods and request/response formats as you would with CLIP, including `embed_text`, `embed_image`, and `compare`.
