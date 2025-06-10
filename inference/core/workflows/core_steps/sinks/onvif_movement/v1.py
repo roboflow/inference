@@ -45,9 +45,6 @@ from inference.core.workflows.prototypes.block import (
 # max number of seconds to switch to zoom only (no xy movement)
 ZOOM_MODE_SECONDS = 2
 
-# after the first zoom mode, multiply pan/tilt speed by this much
-ZOOM_MODE_SPEED_REDUCER = 0.5
-
 PREDICTIONS_OUTPUT_KEY: str = "predictions"
 SEEKING_OUTPUT_KEY: str = "seeking"
 
