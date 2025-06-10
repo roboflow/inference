@@ -1,15 +1,15 @@
 FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
 
 RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    python3 \
-    python3-pip \
+    software-properties-common \
     libopencv-dev \
     ffmpeg \
     libxext6 \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+    curl
+RUN add-apt-repository ppa:deadsnakes/ppa && apt update -y && apt install python3.12
+RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12
 
-RUN update-alternatives --install /usr/bin/python python /usr/bin/python3 1
+RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1
 
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
