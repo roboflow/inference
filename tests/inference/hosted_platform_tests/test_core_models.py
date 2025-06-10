@@ -9,7 +9,6 @@ from tests.inference.hosted_platform_tests.conftest import (
     PlatformEnvironment,
 )
 
-
 EXPECTED_AUTH_ERROR_FOR_ENVIRONMENT = {
     PlatformEnvironment.ROBOFLOW_STAGING_LAMBDA: 403,
     PlatformEnvironment.ROBOFLOW_PLATFORM_LAMBDA: 403,
@@ -35,7 +34,10 @@ def test_infer_from_core_model_without_api_key(
         _ = client.ocr_image(IMAGE_URL)
 
     # then
-    assert error.value.status_code == EXPECTED_AUTH_ERROR_FOR_ENVIRONMENT[platform_environment], "Expected to see unauthorised error"
+    assert (
+        error.value.status_code
+        == EXPECTED_AUTH_ERROR_FOR_ENVIRONMENT[platform_environment]
+    ), "Expected to see unauthorised error"
 
 
 @pytest.mark.flaky(retries=4, delay=1)
@@ -53,7 +55,10 @@ def test_infer_from_core_model_with_invalid_api_key(
         _ = client.ocr_image(IMAGE_URL)
 
     # then
-    assert error.value.status_code == EXPECTED_AUTH_ERROR_FOR_ENVIRONMENT[platform_environment], "Expected to see unauthorised error"
+    assert (
+        error.value.status_code
+        == EXPECTED_AUTH_ERROR_FOR_ENVIRONMENT[platform_environment]
+    ), "Expected to see unauthorised error"
 
 
 @pytest.mark.flaky(retries=4, delay=1)

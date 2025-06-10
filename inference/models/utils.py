@@ -3,6 +3,7 @@ import warnings
 from inference.core.env import (
     API_KEY,
     API_KEY_ENV_NAMES,
+    CORE_MODEL_PE_ENABLED,
     DEPTH_ESTIMATION_ENABLED,
     MOONDREAM2_ENABLED,
     QWEN_2_5_ENABLED,
@@ -401,9 +402,12 @@ except:
 
 try:
     if SMOLVLM2_ENABLED:
-        from inference.models.smolvlm.smolvlm import SmolVLM
+        from inference.models.smolvlm.smolvlm import LoRASmolVLM, SmolVLM
 
         ROBOFLOW_MODEL_TYPES[("lmm", "smolvlm-2.2b-instruct")] = SmolVLM
+        ROBOFLOW_MODEL_TYPES[("text-image-pairs", "smolvlm2-peft")] = LoRASmolVLM
+        ROBOFLOW_MODEL_TYPES[("text-image-pairs", "smolvlm-256m-peft")] = LoRASmolVLM
+
 except:
     warnings.warn(
         f"Your `inference` configuration does not support SmolVLM2."
@@ -474,6 +478,19 @@ except:
     warnings.warn(
         f"Your `inference` configuration does not support YoloWorld model. "
         f"Use pip install 'inference[yolo-world]' to install missing requirements.",
+        category=ModelDependencyMissing,
+    )
+
+
+try:
+    if CORE_MODEL_PE_ENABLED:
+        from inference.models import PerceptionEncoder
+
+        ROBOFLOW_MODEL_TYPES[("embed", "perception_encoder")] = PerceptionEncoder
+except:
+    warnings.warn(
+        f"Your `inference` configuration does not support Perception Encoder."
+        f"Use pip install 'inference[transformers]' to install missing requirements.",
         category=ModelDependencyMissing,
     )
 

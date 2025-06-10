@@ -10,8 +10,8 @@ from pydantic import ValidationError
 from inference.core.workflows.core_steps.fusion.detections_consensus import v1
 from inference.core.workflows.core_steps.fusion.detections_consensus.v1 import (
     AggregationMode,
-    MaskAggregationMode,
     BlockManifest,
+    MaskAggregationMode,
     aggregate_field_values,
     agree_on_consensus_for_all_detections_sources,
     calculate_iou,
@@ -24,13 +24,13 @@ from inference.core.workflows.core_steps.fusion.detections_consensus.v1 import (
     get_class_of_most_confident_detection,
     get_consensus_for_single_detection,
     get_detections_from_different_sources_with_max_overlap,
+    get_intersection_mask,
     get_largest_bounding_box,
+    get_largest_mask,
     get_majority_class,
     get_parent_id_of_detections_from_sources,
     get_smallest_bounding_box,
-    get_largest_mask,
     get_smallest_mask,
-    get_intersection_mask,
     get_union_mask,
     merge_detections,
 )
@@ -499,7 +499,9 @@ def test_get_largest_bounding_box_when_multiple_elements_provided() -> None:
 
 def test_get_largest_mask_when_single_element_provided() -> None:
     # given
-    polygon1 = np.array([[200, 200], [300, 150], [400, 210], [500, 500], [350, 400], [150, 350]])
+    polygon1 = np.array(
+        [[200, 200], [300, 150], [400, 210], [500, 500], [350, 400], [150, 350]]
+    )
     mask1 = sv.polygon_to_mask(polygon=polygon1, resolution_wh=(600, 600))
     xyxy1 = sv.mask_to_xyxy(np.array([mask1]))[0]
     detections = sv.Detections(
@@ -514,12 +516,16 @@ def test_get_largest_mask_when_single_element_provided() -> None:
     result = get_largest_mask(detections=detections)
 
     # then
-    assert np.allclose(sv.mask_to_xyxy(np.array([result])), [[150, 150, 500, 500]], atol=1e-5)
+    assert np.allclose(
+        sv.mask_to_xyxy(np.array([result])), [[150, 150, 500, 500]], atol=1e-5
+    )
 
 
 def test_get_largest_mask() -> None:
     # given
-    polygon1 = np.array([[200, 200], [300, 150], [400, 210], [500, 500], [350, 400], [150, 350]])
+    polygon1 = np.array(
+        [[200, 200], [300, 150], [400, 210], [500, 500], [350, 400], [150, 350]]
+    )
     mask1 = sv.polygon_to_mask(polygon=polygon1, resolution_wh=(600, 600))
     xyxy1 = sv.mask_to_xyxy(np.array([mask1]))[0]
     polygon2 = np.array([[100, 100], [300, 100], [300, 300], [200, 300]])
@@ -537,7 +543,9 @@ def test_get_largest_mask() -> None:
     result = get_largest_mask(detections=detections)
 
     # then
-    assert np.allclose(sv.mask_to_xyxy(np.array([result])), [[150, 150, 500, 500]], atol=1e-5)
+    assert np.allclose(
+        sv.mask_to_xyxy(np.array([result])), [[150, 150, 500, 500]], atol=1e-5
+    )
 
 
 def test_get_smallest_bounding_box_when_single_element_provided() -> None:
@@ -574,7 +582,9 @@ def test_get_smallest_bounding_box_when_multiple_elements_provided() -> None:
 
 def test_get_smallest_mask_when_single_element_provided() -> None:
     # given
-    polygon1 = np.array([[200, 200], [300, 150], [400, 210], [500, 500], [350, 400], [150, 350]])
+    polygon1 = np.array(
+        [[200, 200], [300, 150], [400, 210], [500, 500], [350, 400], [150, 350]]
+    )
     mask1 = sv.polygon_to_mask(polygon=polygon1, resolution_wh=(600, 600))
     xyxy1 = sv.mask_to_xyxy(np.array([mask1]))[0]
     detections = sv.Detections(
@@ -589,12 +599,16 @@ def test_get_smallest_mask_when_single_element_provided() -> None:
     result = get_smallest_mask(detections=detections)
 
     # then
-    assert np.allclose(sv.mask_to_xyxy(np.array([result])), [[150, 150, 500, 500]], atol=1e-5)
+    assert np.allclose(
+        sv.mask_to_xyxy(np.array([result])), [[150, 150, 500, 500]], atol=1e-5
+    )
 
 
 def test_get_smallest_mask() -> None:
     # given
-    polygon1 = np.array([[200, 200], [300, 150], [400, 210], [500, 500], [350, 400], [150, 350]])
+    polygon1 = np.array(
+        [[200, 200], [300, 150], [400, 210], [500, 500], [350, 400], [150, 350]]
+    )
     mask1 = sv.polygon_to_mask(polygon=polygon1, resolution_wh=(600, 600))
     xyxy1 = sv.mask_to_xyxy(np.array([mask1]))[0]
     polygon2 = np.array([[100, 100], [300, 100], [300, 300], [200, 300]])
@@ -612,7 +626,9 @@ def test_get_smallest_mask() -> None:
     result = get_smallest_mask(detections=detections)
 
     # then
-    assert np.allclose(sv.mask_to_xyxy(np.array([result])), [[100, 100, 300, 300]], atol=1e-5)
+    assert np.allclose(
+        sv.mask_to_xyxy(np.array([result])), [[100, 100, 300, 300]], atol=1e-5
+    )
 
 
 def test_get_average_bounding_box_when_single_element_provided() -> None:
@@ -649,7 +665,9 @@ def test_get_average_bounding_box_when_multiple_elements_provided() -> None:
 
 def test_get_union_mask_when_single_element_provided() -> None:
     # given
-    polygon1 = np.array([[200, 200], [300, 150], [400, 210], [500, 500], [350, 400], [150, 350]])
+    polygon1 = np.array(
+        [[200, 200], [300, 150], [400, 210], [500, 500], [350, 400], [150, 350]]
+    )
     mask1 = sv.polygon_to_mask(polygon=polygon1, resolution_wh=(600, 600))
     xyxy1 = sv.mask_to_xyxy(np.array([mask1]))[0]
     detections = sv.Detections(
@@ -664,12 +682,16 @@ def test_get_union_mask_when_single_element_provided() -> None:
     result = get_union_mask(detections=detections)
 
     # then
-    assert np.allclose(sv.mask_to_xyxy(np.array([result])), [[150, 150, 500, 500]], atol=1e-5)
+    assert np.allclose(
+        sv.mask_to_xyxy(np.array([result])), [[150, 150, 500, 500]], atol=1e-5
+    )
 
 
 def test_get_union_mask() -> None:
     # given
-    polygon1 = np.array([[200, 200], [300, 150], [400, 210], [500, 500], [350, 400], [150, 350]])
+    polygon1 = np.array(
+        [[200, 200], [300, 150], [400, 210], [500, 500], [350, 400], [150, 350]]
+    )
     mask1 = sv.polygon_to_mask(polygon=polygon1, resolution_wh=(600, 600))
     xyxy1 = sv.mask_to_xyxy(np.array([mask1]))[0]
     polygon2 = np.array([[100, 100], [300, 100], [300, 300], [200, 300]])
@@ -687,12 +709,16 @@ def test_get_union_mask() -> None:
     result = get_union_mask(detections=detections)
 
     # then
-    assert np.allclose(sv.mask_to_xyxy(np.array([result])), [[100, 100, 500, 500]], atol=1e-5)
+    assert np.allclose(
+        sv.mask_to_xyxy(np.array([result])), [[100, 100, 500, 500]], atol=1e-5
+    )
 
 
 def test_get_intersection_mask_when_single_element_provided() -> None:
     # given
-    polygon1 = np.array([[200, 200], [300, 150], [400, 210], [500, 500], [350, 400], [150, 350]])
+    polygon1 = np.array(
+        [[200, 200], [300, 150], [400, 210], [500, 500], [350, 400], [150, 350]]
+    )
     mask1 = sv.polygon_to_mask(polygon=polygon1, resolution_wh=(600, 600))
     xyxy1 = sv.mask_to_xyxy(np.array([mask1]))[0]
     detections = sv.Detections(
@@ -707,12 +733,16 @@ def test_get_intersection_mask_when_single_element_provided() -> None:
     result = get_intersection_mask(detections=detections)
 
     # then
-    assert np.allclose(sv.mask_to_xyxy(np.array([result])), [[150, 150, 500, 500]], atol=1e-5)
+    assert np.allclose(
+        sv.mask_to_xyxy(np.array([result])), [[150, 150, 500, 500]], atol=1e-5
+    )
 
 
 def test_get_intersection_mask() -> None:
     # given
-    polygon1 = np.array([[200, 200], [300, 150], [400, 210], [500, 500], [350, 400], [150, 350]])
+    polygon1 = np.array(
+        [[200, 200], [300, 150], [400, 210], [500, 500], [350, 400], [150, 350]]
+    )
     mask1 = sv.polygon_to_mask(polygon=polygon1, resolution_wh=(600, 600))
     xyxy1 = sv.mask_to_xyxy(np.array([mask1]))[0]
     polygon2 = np.array([[100, 100], [300, 100], [300, 300], [200, 300]])
@@ -730,7 +760,9 @@ def test_get_intersection_mask() -> None:
     result = get_intersection_mask(detections=detections)
 
     # then
-    assert np.allclose(sv.mask_to_xyxy(np.array([result])), [[180, 150, 300, 300]], atol=1e-5)
+    assert np.allclose(
+        sv.mask_to_xyxy(np.array([result])), [[180, 150, 300, 300]], atol=1e-5
+    )
 
 
 def test_get_majority_class() -> None:
@@ -835,7 +867,9 @@ def test_merge_detections_no_mask(uuid4_mock: MagicMock) -> None:
 @mock.patch.object(v1, "uuid4")
 def test_merge_detections_with_masks(uuid4_mock: MagicMock) -> None:
     # given
-    polygon1 = np.array([[200, 200], [300, 150], [400, 210], [500, 500], [350, 400], [100, 300]])
+    polygon1 = np.array(
+        [[200, 200], [300, 150], [400, 210], [500, 500], [350, 400], [100, 300]]
+    )
     mask1 = sv.polygon_to_mask(polygon=polygon1, resolution_wh=(600, 600))
     xyxy1 = sv.mask_to_xyxy(np.array([mask1]))[0]
     polygon2 = np.array([[100, 100], [300, 100], [300, 300], [100, 300]])
@@ -869,9 +903,24 @@ def test_merge_detections_with_masks(uuid4_mock: MagicMock) -> None:
     )
 
     # then
-    expected_mask = sv.polygon_to_mask(polygon=np.array([[350, 400], [500, 500], [400, 210], [300, 150], [300, 100], [100, 100], [100, 300]]), resolution_wh=(600, 600))
+    expected_mask = sv.polygon_to_mask(
+        polygon=np.array(
+            [
+                [350, 400],
+                [500, 500],
+                [400, 210],
+                [300, 150],
+                [300, 100],
+                [100, 100],
+                [100, 300],
+            ]
+        ),
+        resolution_wh=(600, 600),
+    )
     expected = sv.Detections(
-        xyxy=np.array([sv.mask_to_xyxy(np.array([expected_mask]))[0]], dtype=np.float64),
+        xyxy=np.array(
+            [sv.mask_to_xyxy(np.array([expected_mask]))[0]], dtype=np.float64
+        ),
         confidence=np.array([0.2], dtype=np.float64),
         class_id=np.array([0]),
         data={

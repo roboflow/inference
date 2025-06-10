@@ -10,7 +10,9 @@ def test_get_system_info_returns_info() -> None:
 
 
 @mock.patch.object(metrics.platform, "system", side_effect=RuntimeError("fail"))
-def test_get_system_info_returns_info_even_on_exception(system_mock: mock.MagicMock) -> None:
+def test_get_system_info_returns_info_even_on_exception(
+    system_mock: mock.MagicMock,
+) -> None:
     info = metrics.get_system_info()
     assert isinstance(info, dict)
     assert info == {}
