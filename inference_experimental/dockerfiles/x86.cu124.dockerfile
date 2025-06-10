@@ -18,8 +18,12 @@ COPY inference_experimental /build
 WORKDIR /build
 
 RUN . $HOME/.local/bin/env
-RUN uv build
+RUN $HOME/.local/bin/uv build
 
-RUN WHEEL=$(ls dist/inference_exp-*.whl) && python -m pip install "${WHEEL}[torch-cu126,onnx-cu12,mediapipe,grounding-dino,trt10,flash-attn]"
+RUN WHEEL=$(ls dist/inference_exp-*.whl) && python -m pip install "${WHEEL}[torch-cu126,onnx-cu12,mediapipe,grounding-dino,trt10]"
+RUN WHEEL=$(ls dist/inference_exp-*.whl) && python -m pip install --no-build-isolation "${WHEEL}[flash-attn]"
+
+WORKDIR /
+RUN rm -r /build
 
 ENTRYPOINT ["bash"]
