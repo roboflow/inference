@@ -17,7 +17,7 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
 WORKDIR /build
 
-COPY inference_experimental/uv.locl uv.locl
+COPY inference_experimental/uv.lock uv.lock
 COPY inference_experimental/pyproject.toml pyproject.toml
 
 RUN . $HOME/.local/bin/env
