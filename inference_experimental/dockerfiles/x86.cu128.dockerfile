@@ -6,7 +6,7 @@ RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_
     ffmpeg \
     libxext6 \
     curl
-RUN add-apt-repository ppa:deadsnakes/ppa && apt update -y && apt install python3.12
+RUN add-apt-repository -y ppa:deadsnakes/ppa && apt update -y && apt install -y python3.12
 RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12
 
 RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1
@@ -20,8 +20,8 @@ WORKDIR /build
 RUN . $HOME/.local/bin/env
 RUN $HOME/.local/bin/uv build
 
-RUN WHEEL=$(ls dist/inference_exp-*.whl) && python -m pip install "${WHEEL}[torch-cu128,onnx-cu12,mediapipe,grounding-dino,trt10]"
-RUN WHEEL=$(ls dist/inference_exp-*.whl) && python -m pip install --no-build-isolation "${WHEEL}[flash-attn]"
+RUN WHEEL=$(ls dist/inference_exp-*.whl) && $HOME/.local/bin/uv pip install --system "${WHEEL}[torch-cu128,onnx-cu12,mediapipe,grounding-dino,trt10]"
+RUN WHEEL=$(ls dist/inference_exp-*.whl) && $HOME/.local/bin/uv pip install --system --no-build-isolation "${WHEEL}[flash-attn]"
 
 WORKDIR /
 RUN rm -r /build
