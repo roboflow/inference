@@ -16,7 +16,7 @@ COPY inference_experimental /build
 
 WORKDIR /build
 
-RUN source $HOME/.local/bin/env
+RUN . $HOME/.local/bin/env
 RUN uv build
 
 RUN python3 -m pip install dist/inference_exp-*.whl
