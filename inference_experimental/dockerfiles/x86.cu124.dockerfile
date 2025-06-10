@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
 
 RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     python3 \
@@ -6,6 +6,7 @@ RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_
     libopencv-dev \
     ffmpeg \
     libxext6 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 RUN update-alternatives --install /usr/bin/python python /usr/bin/python3 1
@@ -19,6 +20,6 @@ WORKDIR /build
 RUN . $HOME/.local/bin/env
 RUN uv build
 
-RUN python3 -m pip install dist/inference_exp-*.whl
+RUN WHEEL=$(ls dist/inference_exp-*.whl) && python -m pip install "${WHEEL}[torch-cu126,onnx-cu12,mediapipe,grounding-dino,trt10,flash-attn]"
 
 ENTRYPOINT ["bash"]

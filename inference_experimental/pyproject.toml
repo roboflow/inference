@@ -19,7 +19,7 @@ dependencies = [
   "peft>=0.11.1,<0.16.0",
   "num2words~=0.5.14",
   "bitsandbytes>=0.42.0,<0.47.0; sys_platform != 'darwin'",
-  "pyvips>=3.0.0,<4.0.0",
+  "pyvips>=2.2.3,<3.0.0",
   "rf-clip==1.1",
   "python-doctr[torch]>=0.10.0,<=0.11.0",
   "pandas"
