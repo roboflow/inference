@@ -519,7 +519,7 @@ KINDS_DESERIALIZERS = {
 
 
 def load_blocks() -> List[Type[WorkflowBlock]]:
-    load_blocks._blocks = [
+    return [
         AbsoluteStaticCropBlockV1,
         DynamicCropBlockV1,
         DetectionsFilterBlockV1,
@@ -656,7 +656,6 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         OverlapBlockV1,
         ONVIFSinkBlockV1,
     ]
-    return load_blocks._blocks
 
 
 def load_kinds() -> List[Kind]:
