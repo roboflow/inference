@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.10,<3.13"
 dependencies = [
   "numpy",
-  "torch",
+  "torch>=2.0.0,<3.0.0",
   "torchvision",
   "opencv-python>=4.8.1.78",
   "requests>=2.32.0,<3.0.0",
@@ -27,30 +27,34 @@ dependencies = [
 
 [project.optional-dependencies]
 torch-cpu = [
-  "torch>2.0.0",
+  "torch>=2.0.0,<3.0.0",
   "torchvision"
 ]
 torch-cu118 = [
-  "torch>2.0.0",
+  "torch>=2.0.0,<3.0.0",
+  "torchvision"
+]
+torch-cu124 = [
+  "torch>=2.0.0,<3.0.0",
   "torchvision"
 ]
 torch-cu126 = [
-  "torch>=2.4.0",
+  "torch>=2.0.0,<3.0.0",
   "torchvision"
 ]
 torch-cu128 = [
-  "torch>=2.4.0",
+  "torch>=2.0.0,<3.0.0",
   "torchvision"
 ]
 torch-jp6-cu128 = [
   "numpy<2.0.0",
-  "torch>=2.0.0",
+  "torch>=2.0.0,<3.0.0",
   "torchvision",
   "flash-attn==2.7.4.post1"
 ]
 torch-jp5-cu114 = [
   "numpy<2.0.0",
-  "torch>=2.0.0",
+  "torch>=2.0.0,<3.0.0",
   "torchvision",
 ]
 onnx-cpu = [
@@ -91,6 +95,7 @@ trt8 = [
 torch = [
   { index = "torch-cpu", extra = "torch-cpu" },
   { index = "torch-cu118", extra = "torch-cu118" },
+  { index = "torch-cu124", extra = "torch-cu124" },
   { index = "torch-cu128", extra = "torch-cu128" },
   { index = "jp6-cu128", extra = "torch-jp6-cu128" },
   { index = "jp5-cu114", extra = "torch-jp5-cu114" },
@@ -98,6 +103,7 @@ torch = [
 torchvision = [
   { index = "torch-cpu", extra = "torch-cpu" },
   { index = "torch-cu118", extra = "torch-cu118" },
+  { index = "torch-cu124", extra = "torch-cu124" },
   { index = "torch-cu128", extra = "torch-cu128" },
   { index = "jp6-cu128", extra = "torch-jp6-cu128" },
   { index = "jp5-cu114", extra = "torch-jp5-cu114" },
@@ -116,6 +122,11 @@ flash-attn = [
 [[tool.uv.index]]
 name = "torch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "torch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
 explicit = true
 
 [[tool.uv.index]]
@@ -167,6 +178,7 @@ conflicts = [
   [
     { extra = "torch-cpu" },
     { extra = "torch-cu118" },
+    { extra = "torch-cu124" },
     { extra = "torch-cu126" },
     { extra = "torch-cu128" },
     { extra = "torch-jp6-cu128" },

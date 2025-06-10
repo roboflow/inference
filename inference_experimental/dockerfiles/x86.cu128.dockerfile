@@ -6,7 +6,7 @@ RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_
     ffmpeg \
     libxext6 \
     curl
-RUN add-apt-repository -y ppa:deadsnakes/ppa && apt update -y && apt install -y python3.12
+RUN add-apt-repository -y ppa:deadsnakes/ppa && apt update -y && apt install -y python3.12-devel
 RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12
 
 RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1
