@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04
+FROM nvidia/cuda:11.8.0-devel-ubuntu22.04
 
 RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     software-properties-common \
@@ -11,6 +11,8 @@ RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12
 
 RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1
 
+RUN rm -rf /var/lib/apt/lists/*
+
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
 WORKDIR /build
@@ -19,7 +21,7 @@ COPY inference_experimental/uv.lock uv.lock
 COPY inference_experimental/pyproject.toml pyproject.toml
 
 RUN . $HOME/.local/bin/env
-RUN $HOME/.local/bin/uv pip install --system -r pyproject.toml --extra torch-cu128 --extra onnx-cu12 --extra mediapipe --extra grounding-dino --extra trt10
+RUN $HOME/.local/bin/uv pip install --system -r pyproject.toml --extra torch-cu118 --extra onnx-cu118 --extra mediapipe --extra grounding-dino --extra trt10
 RUN MAX_JOBS=$(nproc) $HOME/.local/bin/uv pip install --system --no-build-isolation -r pyproject.toml --extra flash-attn
 RUN $HOME/.local/bin/uv build
 RUN WHEEL=$(ls dist/inference_exp-*.whl) && $HOME/.local/bin/uv pip install --system "${WHEEL}"

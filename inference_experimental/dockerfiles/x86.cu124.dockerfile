@@ -22,7 +22,7 @@ COPY inference_experimental/pyproject.toml pyproject.toml
 
 RUN . $HOME/.local/bin/env
 RUN $HOME/.local/bin/uv pip install --system -r pyproject.toml --extra torch-cu124 --extra onnx-cu12 --extra mediapipe --extra grounding-dino --extra trt10
-RUN MAX_JOBS=$(nproc) $HOME/.local/bin/uv pip install --system --no-build-isolation -r pyproject.toml --extra
+RUN MAX_JOBS=$(nproc) $HOME/.local/bin/uv pip install --system --no-build-isolation -r pyproject.toml --extra flash-attn
 RUN $HOME/.local/bin/uv build
 RUN WHEEL=$(ls dist/inference_exp-*.whl) && $HOME/.local/bin/uv pip install --system "${WHEEL}"
 
