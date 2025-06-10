@@ -45,12 +45,6 @@ from inference.core.workflows.prototypes.block import (
 # max number of seconds to switch to zoom only (no xy movement)
 ZOOM_MODE_SECONDS = 2
 
-# After the first zoom mode, multiply pan/tilt speed by this much to
-# help with control. Will revert once the camera goes back to the preset
-# This could be improved in the future by more accurately measuring
-# zoom level (note not all cameras can provide coordinates)
-ZOOM_MODE_SPEED_REDUCER = 0.5
-
 PREDICTIONS_OUTPUT_KEY: str = "predictions"
 SEEKING_OUTPUT_KEY: str = "seeking"
 
@@ -184,20 +178,8 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
-        return [
-            OutputDefinition(
-                name=PREDICTIONS_OUTPUT_KEY,
-                kind=[
-                    OBJECT_DETECTION_PREDICTION_KIND,
-                ],
-            ),
-            OutputDefinition(
-                name=SEEKING_OUTPUT_KEY,
-                kind=[
-                    BOOLEAN_KIND,
-                ],
-            ),
-        ]
+        # Return the pre-constructed, reusable outputs list for efficiency
+        return _OUTPUTS_LIST
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
@@ -896,3 +878,24 @@ class ONVIFSinkBlockV1(WorkflowBlock):
 
     def __del__(self):
         self.event_loop.stop()
+
+
+PREDICTIONS_OUTPUT_KEY = "predictions"
+
+SEEKING_OUTPUT_KEY = "seeking"
+
+_PREDICTIONS_OUTPUT_DEF = OutputDefinition(
+    name=PREDICTIONS_OUTPUT_KEY,
+    kind=[
+        OBJECT_DETECTION_PREDICTION_KIND,
+    ],
+)
+
+_SEEKING_OUTPUT_DEF = OutputDefinition(
+    name=SEEKING_OUTPUT_KEY,
+    kind=[
+        BOOLEAN_KIND,
+    ],
+)
+
+_OUTPUTS_LIST = [_PREDICTIONS_OUTPUT_DEF, _SEEKING_OUTPUT_DEF]
