@@ -45,6 +45,7 @@ docs/static/
 *.manifest
 *.spec
 
+
 # Installer logs
 pip-log.txt
 pip-delete-this-directory.txt
@@ -196,3 +197,9 @@ tests/inference_sdk/unit_tests/http/inference_profiling
 # System files
 .DS_Store
 *.pem
+
+
+
+!app_bundles/**/*.spec
+!app_bundles/**/*.png
+

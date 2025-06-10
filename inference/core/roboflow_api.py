@@ -760,3 +760,34 @@ def build_roboflow_api_headers(
     except ValueError:
         logger.warning("Could not decode ROBOFLOW_API_EXTRA_HEADERS")
         return explicit_headers
+
+
+@wrap_roboflow_api_errors()
+def post_to_roboflow_api(
+    endpoint: str,
+    api_key: Optional[str],
+    payload: Optional[dict] = None,
+    params: Optional[List[Tuple[str, str]]] = None,
+) -> dict:
+    """Generic function to make a POST request to the Roboflow API."""
+    url_params = []
+    if api_key:
+        url_params.append(("api_key", api_key))
+    if params:
+        url_params.extend(params)
+
+    full_url = _add_params_to_url(
+        url=f"{API_BASE_URL}/{endpoint.strip('/')}", params=url_params
+    )
+    wrapped_url = wrap_url(full_url)
+
+    headers = build_roboflow_api_headers()
+
+    response = requests.post(
+        url=wrapped_url,
+        json=payload,
+        headers=headers,
+        timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
+    )
+    api_key_safe_raise_for_status(response=response)
+    return response.json()

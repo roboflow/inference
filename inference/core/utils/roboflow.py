@@ -28,6 +28,7 @@ def get_model_id_chunks(
         "smolvlm2",
         "moondream2",
         "depth-anything-v2",
+        "perception_encoder",
     }:
         return dataset_id, version_id
 
