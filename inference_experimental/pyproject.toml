@@ -52,11 +52,6 @@ torch-jp6-cu128 = [
   "torchvision",
   "flash-attn==2.7.4.post1"
 ]
-torch-jp5-cu114 = [
-  "numpy<2.0.0",
-  "torch>=2.0.0,<3.0.0",
-  "torchvision",
-]
 onnx-cpu = [
   "onnxruntime>=1.15.1,<1.23.0"
 ]
@@ -70,10 +65,6 @@ onnx-jp6-cu128 = [
   "numpy<2.0.0",
   "onnxruntime-gpu>=1.17.0,<1.23.0; platform_system == 'linux' and platform_machine == 'arm64' and python_version < '3.12' "
 ]
-onnx-jp5-cu114 = [
-  "numpy<2.0.0",
-  "onnxruntime-gpu>=1.16.0,<1.23.0; platform_system == 'linux' and platform_machine == 'arm64' and python_version < '3.12' "
-]
 mediapipe = [
   "mediapipe>=0.9,<0.11"
 ]
@@ -81,6 +72,9 @@ grounding-dino = [
   "rf_groundingdino==0.2.0"
 ]
 flash-attn = [
+  "flash-attn==2.7.4.post1"
+]
+flash-attn-jp6 = [
   "flash-attn==2.7.4.post1"
 ]
 trt10 = [
@@ -98,7 +92,6 @@ torch = [
   { index = "torch-cu124", extra = "torch-cu124" },
   { index = "torch-cu128", extra = "torch-cu128" },
   { index = "jp6-cu128", extra = "torch-jp6-cu128" },
-  { index = "jp5-cu114", extra = "torch-jp5-cu114" },
 ]
 torchvision = [
   { index = "torch-cpu", extra = "torch-cpu" },
@@ -106,17 +99,15 @@ torchvision = [
   { index = "torch-cu124", extra = "torch-cu124" },
   { index = "torch-cu128", extra = "torch-cu128" },
   { index = "jp6-cu128", extra = "torch-jp6-cu128" },
-  { index = "jp5-cu114", extra = "torch-jp5-cu114" },
 ]
 
 onnxruntime-gpu = [
   { index = "onnx-cu118", extra = "onnx-cu118"},
   { index = "jp6-cu128", extra = "onnx-jp6-cu128" },
-  { index = "jp5-cu114", extra = "onnx-jp5-cu114" },
 ]
 
 flash-attn = [
-   { index = "jp6-cu128", extra = "torch-jp6-cu128" },
+   { index = "jp6-cu128", extra = "flash-attn-jp6" },
 ]
 
 [[tool.uv.index]]
@@ -142,11 +133,6 @@ explicit = true
 [[tool.uv.index]]
 name = "jp6-cu128"
 url = "https://pypi.jetson-ai-lab.dev/jp6/cu128/+simple"
-explicit = true
-
-[[tool.uv.index]]
-name = "jp5-cu114"
-url = "https://pypi.jetson-ai-lab.dev/jp5/cu114/+simple"
 explicit = true
 
 [[tool.uv.index]]
@@ -182,14 +168,12 @@ conflicts = [
     { extra = "torch-cu126" },
     { extra = "torch-cu128" },
     { extra = "torch-jp6-cu128" },
-    { extra = "torch-jp5-cu114" },
   ],
   [
     { extra = "onnx-cpu" },
     { extra = "onnx-cu118" },
     { extra = "onnx-cu12" },
     { extra = "onnx-jp6-cu128" },
-    { extra = "onnx-jp5-cu114" },
   ],
   [
     { extra = "trt10" },
