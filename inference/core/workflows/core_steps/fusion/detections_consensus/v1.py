@@ -2,6 +2,7 @@ import math
 import statistics
 from collections import Counter
 from enum import Enum
+from functools import lru_cache
 from typing import Dict, Generator, List, Literal, Optional, Set, Tuple, Type, Union
 from uuid import uuid4
 
@@ -43,7 +44,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-from functools import lru_cache
 
 
 class AggregationMode(Enum):
