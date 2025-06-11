@@ -270,6 +270,7 @@ from inference.core.workflows.core_steps.sinks.email_notification.v1 import (
     EmailNotificationBlockV1,
 )
 from inference.core.workflows.core_steps.sinks.local_file.v1 import LocalFileSinkBlockV1
+from inference.core.workflows.core_steps.sinks.onvif_movement.v1 import ONVIFSinkBlockV1
 from inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1 import (
     RoboflowCustomMetadataBlockV1,
 )
@@ -653,6 +654,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         SmolVLM2BlockV1,
         Moondream2BlockV1,
         OverlapBlockV1,
+        ONVIFSinkBlockV1,
     ]
 
 
