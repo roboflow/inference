@@ -18,6 +18,7 @@ RUN apt-get update -y && \
     libgdal-dev \
     rustc \
     cargo \
+    curl \
     python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
