@@ -2,6 +2,7 @@ import hashlib
 import json
 import os
 import re
+import time
 import urllib.parse
 from enum import Enum
 from hashlib import sha256
@@ -56,6 +57,10 @@ from inference.core.exceptions import (
 from inference.core.utils.file_system import sanitize_path_segment
 from inference.core.utils.requests import api_key_safe_raise_for_status
 from inference.core.utils.url_utils import wrap_url
+
+import io
+import threading
+from concurrent.futures import ThreadPoolExecutor, wait
 
 MODEL_TYPE_DEFAULTS = {
     "object-detection": "yolov5v2s",
@@ -791,3 +796,133 @@ def post_to_roboflow_api(
     )
     api_key_safe_raise_for_status(response=response)
     return response.json()
+
+
+def get_weights_from_url_optimally(url: str) -> Response:
+    """
+    Downloads weights from a URL in an optimized manner, using parallel chunks if possible.
+
+    Args:
+        url (str): The URL from which to download the weights.
+
+    Returns:
+        Response: A requests.Response object with the content of the downloaded file.
+    """
+    try:
+        head_response = requests.head(
+            wrap_url(url),
+            headers=build_roboflow_api_headers(),
+            timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
+            allow_redirects=True,
+        )
+        head_response.raise_for_status()
+        total_size = int(head_response.headers.get("content-length", 0))
+        accept_ranges = head_response.headers.get("accept-ranges", "none").lower()
+    except (requests.RequestException, ValueError) as e:
+        logger.warning(
+            f"Could not perform HEAD request or parse headers, falling back to serial download. Reason: {e}"
+        )
+        total_size = 0
+        accept_ranges = "none"
+
+    if "bytes" in accept_ranges and total_size > 10 * 1024 * 1024:  # Only parallelize for files > 10MB
+        return _parallel_download(url, total_size)
+    else:
+        return _serial_download(url, total_size)
+
+def _serial_download(url: str, total_size: int) -> Response:
+    """Downloads a file serially with progress logging."""
+    if total_size > 0:
+        logger.info(f"Downloading file of size: {total_size / (1024 * 1024):.2f} MB (serial). Set LOG_LEVEL_DEBUG for verbose download progress logging.")
+    else:
+        logger.info("Downloading file of unknown size (serial). Set LOG_LEVEL_DEBUG for verbose download progress logging.")
+    
+    response = requests.get(
+        wrap_url(url),
+        headers=build_roboflow_api_headers(),
+        timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
+        stream=True,
+    )
+    api_key_safe_raise_for_status(response=response)
+    
+    content = bytearray()
+    downloaded_size = 0
+    last_logged_percentage = -1
+    last_log_time = time.time()
+    bytes_since_last_log = 0
+
+    for chunk in response.iter_content(chunk_size=8192):
+        if chunk:
+            content.extend(chunk)
+            downloaded_size += len(chunk)
+            bytes_since_last_log += len(chunk)
+            if total_size > 0:
+                percentage = int((downloaded_size / total_size) * 100)
+                if percentage > last_logged_percentage:
+                    current_time = time.time()
+                    time_diff = current_time - last_log_time
+                    speed_mbps = ((bytes_since_last_log * 8) / (time_diff * 1024 * 1024)) if time_diff > 0 else 0
+                    logger.debug(f"Download progress: {percentage}%, Speed: {speed_mbps:.2f} Mbps")
+                    last_logged_percentage = percentage
+                    last_log_time = current_time
+                    bytes_since_last_log = 0
+
+
+    
+
+    final_response = Response()
+    final_response.status_code = response.status_code
+    final_response._content = bytes(content)
+    final_response.headers = response.headers
+    final_response.encoding = response.encoding
+    final_response.reason = response.reason
+    final_response.url = response.url
+    return final_response
+
+def _parallel_download(url: str, total_size: int) -> Response:
+    """Downloads a file in parallel chunks."""
+    logger.info(f"Downloading file of size: {total_size / (1024 * 1024):.2f} MB (parallel). Set LOG_LEVEL=DEBUG for verbose download progress logging.")
+    
+    num_workers = min((os.cpu_count() or 1) * 2, 16)
+    chunk_size = total_size // num_workers
+    ranges = [(i * chunk_size, (i + 1) * chunk_size - 1) for i in range(num_workers)]
+    ranges[-1] = (ranges[-1][0], total_size - 1)
+    
+    downloaded_chunks = [None] * num_workers
+
+    def download_chunk(idx, start, end):
+        headers = {'Range': f'bytes={start}-{end}'}
+        try:
+            response = requests.get(wrap_url(url), headers=headers, stream=True, timeout=ROBOFLOW_API_REQUEST_TIMEOUT)
+            response.raise_for_status()
+            downloaded_chunks[idx] = response.content
+        except requests.RequestException as e:
+            logger.error(f"Failed to download chunk {idx} ({start}-{end}): {e}")
+            raise
+
+    with ThreadPoolExecutor(max_workers=num_workers) as executor:
+        futures = {executor.submit(download_chunk, i, r[0], r[1]) for i, r in enumerate(ranges)}
+        
+        # Progress reporting
+        start_time = time.time()
+        last_logged_percentage = -1
+        while futures:
+            done, futures = wait(futures, timeout=0.1)
+
+            for f in done:
+                f.result() # Will raise an exception if the download_chunk failed
+
+            downloaded_bytes = sum(len(c) for c in downloaded_chunks if c is not None)
+            if total_size > 0:
+                percentage = int((downloaded_bytes / total_size) * 100)
+                if percentage > last_logged_percentage:
+                    elapsed_time = time.time() - start_time
+                    speed_mbps = (downloaded_bytes * 8) / (elapsed_time * 1024 * 1024) if elapsed_time > 0 else 0
+                    logger.debug(f"Download progress: {percentage}%, Speed: {speed_mbps:.2f} Mbps")
+                    last_logged_percentage = percentage
+
+    final_response = Response()
+    final_response.status_code = 200
+    final_response._content = b"".join(downloaded_chunks)
+    final_response.url = url
+    return final_response

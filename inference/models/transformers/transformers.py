@@ -27,6 +27,7 @@ from inference.core.roboflow_api import (
     get_roboflow_base_lora,
     get_roboflow_instant_model_data,
     get_roboflow_model_data,
+    get_weights_from_url_optimally,
 )
 from inference.core.utils.image_utils import load_image_rgb
 
@@ -228,7 +229,8 @@ class TransformerModel(RoboflowInferenceModel):
             filename = weights_url.split("?")[0].split("/")[-1]
             if filename.endswith(".npz"):
                 continue
-            model_weights_response = get_from_url(weights_url, json_response=False)
+            logger.info("Fetching transformer model weights from Roboflow API: %s", filename)
+            model_weights_response = get_weights_from_url_optimally(weights_url)
             save_bytes_in_cache(
                 content=model_weights_response.content,
                 file=filename,
@@ -342,10 +344,13 @@ class LoRATransformerModel(TransformerModel):
                 f"`weights` key not available in Roboflow API response while downloading model weights."
             )
 
-        weights_url = api_data["weights"]["model"]
-        model_weights_response = get_from_url(weights_url, json_response=False)
         filename = weights_url.split("?")[0].split("/")[-1]
         assert filename.endswith("tar.gz")
+
+        logger.info("Fetching transformer model weights from Roboflow API: %s", filename)
+        weights_url = api_data["weights"]["model"]
+        model_weights_response = get_weights_from_url_optimally(weights_url)
+        
         save_bytes_in_cache(
             content=model_weights_response.content,
             file=filename,
