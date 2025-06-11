@@ -229,7 +229,9 @@ class TransformerModel(RoboflowInferenceModel):
             filename = weights_url.split("?")[0].split("/")[-1]
             if filename.endswith(".npz"):
                 continue
-            logger.info("Fetching transformer model weights from Roboflow API: %s", filename)
+            logger.info(
+                "Fetching transformer model weights from Roboflow API: %s", filename
+            )
             model_weights_response = get_weights_from_url_optimally(weights_url)
             save_bytes_in_cache(
                 content=model_weights_response.content,
@@ -348,10 +350,12 @@ class LoRATransformerModel(TransformerModel):
         filename = weights_url.split("?")[0].split("/")[-1]
         assert filename.endswith("tar.gz")
 
-        logger.info("Fetching transformer model weights from Roboflow API: %s", filename)
-        
+        logger.info(
+            "Fetching transformer model weights from Roboflow API: %s", filename
+        )
+
         model_weights_response = get_weights_from_url_optimally(weights_url)
-        
+
         save_bytes_in_cache(
             content=model_weights_response.content,
             file=filename,

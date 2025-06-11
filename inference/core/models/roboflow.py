@@ -318,7 +318,9 @@ class RoboflowInferenceModel(Model):
                             "Could not find `environment` key in roboflow API model description response."
                         )
                     environment = get_from_url(api_data["environment"])
-                    logger.info("Fetching model weights from Roboflow API: %s", self.endpoint)
+                    logger.info(
+                        "Fetching model weights from Roboflow API: %s", self.endpoint
+                    )
                     model_weights_response = get_weights_from_url_optimally(
                         api_data["model"]
                     )
@@ -339,7 +341,9 @@ class RoboflowInferenceModel(Model):
                         raise ModelArtefactError(
                             "Could not find `environment` key in roboflow API model description response."
                         )
-                    logger.info("Fetching model weights from Roboflow API: %s", self.endpoint)
+                    logger.info(
+                        "Fetching model weights from Roboflow API: %s", self.endpoint
+                    )
                     model_weights_response = get_weights_from_url_optimally(
                         api_data["modelFiles"]["ort"]["model"]
                     )
@@ -637,7 +641,7 @@ class RoboflowCoreModel(RoboflowInferenceModel):
             raise ModelArtefactError(
                 f"`weights` key not available in Roboflow API response while downloading model weights."
             )
-        
+
         for weights_url_key in api_data["weights"]:
             weights_url = api_data["weights"][weights_url_key]
             t1 = perf_counter()
@@ -649,7 +653,7 @@ class RoboflowCoreModel(RoboflowInferenceModel):
                 file=filename,
                 model_id=self.endpoint,
             )
-            
+
             if perf_counter() - t1 > 120:
                 logger.debug(
                     "Weights download took longer than 120 seconds, refreshing API request"
