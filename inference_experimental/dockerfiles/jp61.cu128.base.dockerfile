@@ -32,8 +32,7 @@ RUN ./compile_opencv_jetpack_6.sh
 
 COPY inference_experimental/uv.lock uv.lock
 COPY inference_experimental/pyproject.toml pyproject.toml
-RUN $HOME/.local/bin/uv pip install --system -r pyproject.toml --extra torch-jp6-cu128 --extra onnx-jp6-cu128 --extra trt10
-RUN MAX_JOBS=$(nproc) $HOME/.local/bin/uv pip install -v --system --no-build-isolation -r pyproject.toml --extra flash-attn-jp6
+RUN $HOME/.local/bin/uv pip install --system -r pyproject.toml --extra torch-jp6-cu128 --extra onnx-jp6-cu128
 COPY inference_experimental/inference_exp inference_exp
 RUN $HOME/.local/bin/uv build
 RUN WHEEL=$(ls dist/inference_exp-*.whl) && $HOME/.local/bin/uv pip install --system "${WHEEL}"
