@@ -868,7 +868,7 @@ def _serial_download(url: str, total_size: int) -> Response:
                     bytes_since_last_log = 0
 
 
-    
+    logger.info("Download complete. Downloaded %d bytes in %d seconds. Speed: %d Mbps", downloaded_size, time.time() - start_time, downloaded_size * 8 / (time.time() - start_time) / 1024 / 1024)
 
     final_response = Response()
     final_response.status_code = response.status_code
@@ -920,6 +920,8 @@ def _parallel_download(url: str, total_size: int) -> Response:
                     speed_mbps = (downloaded_bytes * 8) / (elapsed_time * 1024 * 1024) if elapsed_time > 0 else 0
                     logger.debug(f"Download progress: {percentage}%, Speed: {speed_mbps:.2f} Mbps")
                     last_logged_percentage = percentage
+
+    logger.info("Download complete. Downloaded %d bytes in %d seconds. Speed: %d Mbps", downloaded_bytes, time.time() - start_time, downloaded_bytes * 8 / (time.time() - start_time) / 1024 / 1024)
 
     final_response = Response()
     final_response.status_code = 200
