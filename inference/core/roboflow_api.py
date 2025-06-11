@@ -834,9 +834,9 @@ def get_weights_from_url_optimally(url: str) -> Response:
 def _serial_download(url: str, total_size: int) -> Response:
     """Downloads a file serially with progress logging."""
     if total_size > 0:
-        logger.info(f"Downloading file of size: {total_size / (1024 * 1024):.2f} MB (serial). Set LOG_LEVEL_DEBUG for verbose download progress logging.")
+        logger.info(f"Downloading file of size: {total_size / (1024 * 1024):.2f} MB (serial). Set LOG_LEVEL=DEBUG for verbose download progress logging.")
     else:
-        logger.info("Downloading file of unknown size (serial). Set LOG_LEVEL_DEBUG for verbose download progress logging.")
+        logger.info("Downloading file of unknown size (serial). Set LOG_LEVEL=DEBUG for verbose download progress logging.")
     
     response = requests.get(
         wrap_url(url),
@@ -846,7 +846,7 @@ def _serial_download(url: str, total_size: int) -> Response:
     )
     api_key_safe_raise_for_status(response=response)
     
-    content = bytearray()
+    content_buffer = io.BytesIO()
     downloaded_size = 0
     last_logged_percentage = -1
     start_time = time.time()
@@ -855,7 +855,7 @@ def _serial_download(url: str, total_size: int) -> Response:
 
     for chunk in response.iter_content(chunk_size=8192):
         if chunk:
-            content.extend(chunk)
+            content_buffer.write(chunk)
             downloaded_size += len(chunk)
             bytes_since_last_log += len(chunk)
             if total_size > 0:
@@ -868,13 +868,14 @@ def _serial_download(url: str, total_size: int) -> Response:
                     last_logged_percentage = percentage
                     last_log_time = current_time
                     bytes_since_last_log = 0
-
-
-    logger.info("Download complete. Downloaded %d bytes in %d seconds. Speed: %d Mbps", downloaded_size, time.time() - start_time, downloaded_size * 8 / (time.time() - start_time) / 1024 / 1024)
-
+    
+    elapsed_time = time.time() - start_time
+    speed_mbps = (downloaded_size * 8) / (elapsed_time * 1024 * 1024) if elapsed_time > 0 else 0
+    logger.info(f"Download complete. Downloaded {downloaded_size} bytes in {elapsed_time:.2f} seconds. Speed: {speed_mbps:.2f} Mbps")
+    
     final_response = Response()
     final_response.status_code = response.status_code
-    final_response._content = bytes(content)
+    final_response._content = content_buffer.getvalue()
     final_response.headers = response.headers
     final_response.encoding = response.encoding
     final_response.reason = response.reason
@@ -890,43 +891,61 @@ def _parallel_download(url: str, total_size: int) -> Response:
     ranges = [(i * chunk_size, (i + 1) * chunk_size - 1) for i in range(num_workers)]
     ranges[-1] = (ranges[-1][0], total_size - 1)
     
-    downloaded_chunks = [None] * num_workers
+    content_buffer = io.BytesIO()
+    content_buffer.seek(total_size - 1)
+    content_buffer.write(b'\0') # Pre-allocate buffer
 
-    def download_chunk(idx, start, end):
+    progress_lock = threading.Lock()
+    downloaded_bytes = 0
+
+    def download_chunk(start, end):
+        nonlocal downloaded_bytes
         headers = {'Range': f'bytes={start}-{end}'}
+        current_pos = start
         try:
             response = requests.get(wrap_url(url), headers=headers, stream=True, timeout=ROBOFLOW_API_REQUEST_TIMEOUT)
             response.raise_for_status()
-            downloaded_chunks[idx] = response.content
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    with progress_lock:
+                        content_buffer.seek(current_pos)
+                        content_buffer.write(chunk)
+                        downloaded_bytes += len(chunk)
+                    current_pos += len(chunk)
         except requests.RequestException as e:
-            logger.error(f"Failed to download chunk {idx} ({start}-{end}): {e}")
+            logger.error(f"Failed to download chunk from {start} to {end}: {e}")
             raise
 
     with ThreadPoolExecutor(max_workers=num_workers) as executor:
-        futures = {executor.submit(download_chunk, i, r[0], r[1]) for i, r in enumerate(ranges)}
+        futures = {executor.submit(download_chunk, r[0], r[1]) for r in ranges}
         
-        # Progress reporting
         start_time = time.time()
         last_logged_percentage = -1
         while futures:
             done, futures = wait(futures, timeout=0.1)
 
             for f in done:
-                f.result() # Will raise an exception if the download_chunk failed
+                f.result()
 
-            downloaded_bytes = sum(len(c) for c in downloaded_chunks if c is not None)
+            with progress_lock:
+                current_downloaded = downloaded_bytes
+            
             if total_size > 0:
-                percentage = int((downloaded_bytes / total_size) * 100)
+                percentage = int((current_downloaded / total_size) * 100)
                 if percentage > last_logged_percentage:
                     elapsed_time = time.time() - start_time
-                    speed_mbps = (downloaded_bytes * 8) / (elapsed_time * 1024 * 1024) if elapsed_time > 0 else 0
+                    speed_mbps = (current_downloaded * 8) / (elapsed_time * 1024 * 1024) if elapsed_time > 0 else 0
                     logger.debug(f"Download progress: {percentage}%, Speed: {speed_mbps:.2f} Mbps")
                     last_logged_percentage = percentage
-
-    logger.info("Download complete. Downloaded %d bytes in %d seconds. Speed: %d Mbps", downloaded_bytes, time.time() - start_time, downloaded_bytes * 8 / (time.time() - start_time) / 1024 / 1024)
+        
+        elapsed_time = time.time() - start_time
+        with progress_lock:
+            final_downloaded_bytes = downloaded_bytes
+        speed_mbps = (final_downloaded_bytes * 8) / (elapsed_time * 1024 * 1024) if elapsed_time > 0 else 0
+        logger.info(f"Download complete. Downloaded {final_downloaded_bytes} bytes in {elapsed_time:.2f} seconds. Speed: {speed_mbps:.2f} Mbps")
 
     final_response = Response()
     final_response.status_code = 200
-    final_response._content = b"".join(downloaded_chunks)
+    final_response._content = content_buffer.getvalue()
     final_response.url = url
     return final_response
