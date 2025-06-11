@@ -2,7 +2,6 @@ from typing import List
 
 import tensorrt as trt
 import torch
-
 from inference_exp.errors import ModelRuntimeError
 from inference_exp.models.common.roboflow.model_packages import TRTConfig
 

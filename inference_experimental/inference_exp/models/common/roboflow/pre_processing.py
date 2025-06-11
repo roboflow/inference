@@ -4,9 +4,6 @@ import cv2
 import numpy as np
 import PIL
 import torch
-from PIL.Image import Image
-from torchvision.transforms import functional
-
 from inference_exp.entities import ColorFormat, ImageDimensions
 from inference_exp.errors import ModelRuntimeError
 from inference_exp.models.common.roboflow.model_packages import (
@@ -14,6 +11,8 @@ from inference_exp.models.common.roboflow.model_packages import (
     PreProcessingMetadata,
     PreProcessingMode,
 )
+from PIL.Image import Image
+from torchvision.transforms import functional
 
 
 def pre_process_network_input(

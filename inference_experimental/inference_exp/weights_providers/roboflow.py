@@ -1,12 +1,8 @@
 import json
-from typing import Callable, Dict, List, Literal, Optional, Union
+from typing import Annotated, Callable, Dict, List, Literal, Optional, Union
 
 import backoff
 import requests
-from packaging.version import Version
-from pydantic import BaseModel, Field, ValidationError
-from requests import Response, Timeout
-
 from inference_exp.configuration import (
     API_CALLS_MAX_RETRIES,
     API_CALLS_TIMEOUT,
@@ -16,6 +12,7 @@ from inference_exp.configuration import (
 )
 from inference_exp.errors import (
     ModelMetadataConsistencyError,
+    ModelMetadataHandlerNotImplementedError,
     ModelRetrievalError,
     RetryError,
     UnauthorizedModelAccessError,
@@ -27,9 +24,14 @@ from inference_exp.weights_providers.entities import (
     JetsonEnvironmentRequirements,
     ModelMetadata,
     ModelPackageMetadata,
+    ONNXPackageDetails,
     Quantization,
     ServerEnvironmentRequirements,
+    TRTPackageDetails,
 )
+from packaging.version import InvalidVersion, Version
+from pydantic import BaseModel, Discriminator, Field, ValidationError
+from requests import Response, Timeout
 
 MAX_MODEL_PACKAGE_PAGES = 10
 MODEL_PACKAGES_TO_IGNORE = {
@@ -205,6 +207,7 @@ class OnnxModelPackageV1(BaseModel):
     dynamic_batch_size: bool = Field(alias="dynamicBatchSize", default=False)
     static_batch_size: Optional[int] = Field(alias="staticBatchSize", default=None)
     quantization: Quantization
+    opset: int
 
 
 def parse_onnx_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageMetadata:
@@ -228,7 +231,21 @@ def parse_onnx_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageMe
         dynamic_batch_size_supported=parsed_manifest.dynamic_batch_size,
         static_batch_size=parsed_manifest.static_batch_size,
         package_artefacts=package_artefacts,
+        onnx_package_details=ONNXPackageDetails(opset=parsed_manifest.opset),
     )
+
+
+class JetsonMachineSpecsV1(BaseModel):
+    type: Literal["jetson-machine-specs-v1"]
+    l4t_version: str = Field(alias="l4tVersion")
+    device_name: str = Field(alias="deviceName")
+    driver_version: str = Field(alias="driverVersion")
+
+
+class GPUServerSpecsV1(BaseModel):
+    type: Literal["gpu-server-specs-v1"]
+    driver_version: str = Field(alias="driverVersion")
+    os_version: str = Field(alias="osVersion")
 
 
 class TrtModelPackageV1(BaseModel):
@@ -240,13 +257,16 @@ class TrtModelPackageV1(BaseModel):
     opt_batch_size: Optional[int] = Field(alias="optBatchSize", default=None)
     max_batch_size: Optional[int] = Field(alias="maxBatchSize", default=None)
     quantization: Quantization
-    gpu_type: Optional[str] = Field(alias="gpuType", default=None)
-    driver_version: Optional[str] = Field(alias="driverVersion", default=None)
-    jetson_type: Optional[str] = Field(alias="jetsonType", default=None)
-    jetpack_version: Optional[str] = Field(alias="jetpackVersion", default=None)
-    os_version: Optional[str] = Field(alias="osVersion", default=None)
+    cuda_device_type: str = Field(alias="cudaDeviceType")
+    cuda_device_cc: str = Field(alias="cudaDeviceCC")
     cuda_version: str = Field(alias="cudaVersion")
-    trt_version: str = Field(alias="tensorRTVersion")
+    trt_version: str = Field(alias="trtVersion")
+    same_cc_compatible: bool = Field(alias="sameCCCompatible", default=False)
+    machine_type: Literal["gpu-server", "jetson"] = Field(alias="machineType")
+    machine_specs: Annotated[
+        Union[JetsonMachineSpecsV1, GPUServerSpecsV1],
+        Discriminator(discriminator="type"),
+    ] = Field(alias="machineSpecs")
 
 
 def parse_trt_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageMetadata:
@@ -260,44 +280,59 @@ def parse_trt_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageMet
             "describing model package - ONNX package declared not to support dynamic batch size and "
             "supported static batch size not provided. Contact Roboflow to solve the problem."
         )
+    if parsed_manifest.machine_type == "gpu-server":
+        if not isinstance(parsed_manifest.machine_specs, GPUServerSpecsV1):
+            raise ModelMetadataConsistencyError(
+                "While downloading model weights, Roboflow API provided inconsistent metadata "
+                "describing model package - expected GPU Server specification for TRT model package registered as "
+                "compiled on gpu-server. Contact Roboflow to solve the problem."
+            )
+        environment_requirements = ServerEnvironmentRequirements(
+            cuda_device_cc=as_version(parsed_manifest.cuda_device_cc),
+            cuda_device_name=parsed_manifest.cuda_device_type,
+            driver_version=as_version(parsed_manifest.machine_specs.driver_version),
+            cuda_version=as_version(parsed_manifest.cuda_version),
+            trt_version=as_version(parsed_manifest.trt_version),
+            os_version=parsed_manifest.machine_specs.os_version,
+        )
+    elif parsed_manifest.machine_type == "jetson":
+        if not isinstance(parsed_manifest.machine_specs, JetsonMachineSpecsV1):
+            raise ModelMetadataConsistencyError(
+                "While downloading model weights, Roboflow API provided inconsistent metadata "
+                "describing model package - expected Jetson Device specification for TRT model package registered as "
+                "compiled on Jetson. Contact Roboflow to solve the problem."
+            )
+        environment_requirements = JetsonEnvironmentRequirements(
+            cuda_device_cc=as_version(parsed_manifest.cuda_device_cc),
+            cuda_device_name=parsed_manifest.cuda_device_type,
+            l4t_version=as_version(parsed_manifest.machine_specs.l4t_version),
+            jetson_product_name=parsed_manifest.machine_specs.device_name,
+            cuda_version=as_version(parsed_manifest.cuda_version),
+            trt_version=as_version(parsed_manifest.trt_version),
+            driver_version=as_version(parsed_manifest.machine_specs.driver_version),
+        )
+    else:
+        raise ModelMetadataHandlerNotImplementedError(
+            "While downloading model weights, Roboflow API provided metadata which are not handled by current version "
+            "of inference detected while parsing TRT model package. This problem may indicate that your inference "
+            "package is outdated. Try to upgrade - if that does not help, contact Roboflow to solve the problem."
+        )
     package_artefacts = parse_package_artefacts(
         package_artefacts=metadata.package_files
     )
-    if parsed_manifest.gpu_type is not None:
-        if parsed_manifest.driver_version is None:
-            raise ModelMetadataConsistencyError(
-                "Roboflow API provided TRT model package that does not specify compatible driver version."
-            )
-        environment_requirements = ServerEnvironmentRequirements(
-            gpu_type=parsed_manifest.gpu_type,
-            driver_version=Version(parsed_manifest.driver_version),
-            cuda_version=Version(parsed_manifest.cuda_version),
-            trt_version=Version(parsed_manifest.trt_version),
-            os_version=parsed_manifest.os_version,
-        )
-    else:
-        if (
-            parsed_manifest.jetson_type is None
-            or parsed_manifest.jetpack_version is None
-        ):
-            raise ModelMetadataConsistencyError(
-                "Roboflow API provided TRT model package that does not specify compatible Jetson device specification."
-            )
-        environment_requirements = JetsonEnvironmentRequirements(
-            jetson_type=parsed_manifest.jetson_type,
-            jetpack_version=parsed_manifest.jetpack_version,
-            cuda_version=Version(parsed_manifest.cuda_version),
-            trt_version=Version(parsed_manifest.trt_version),
-        )
+    trt_package_details = TRTPackageDetails(
+        min_dynamic_batch_size=parsed_manifest.min_batch_size,
+        opt_dynamic_batch_size=parsed_manifest.opt_batch_size,
+        max_dynamic_batch_size=parsed_manifest.max_batch_size,
+        same_cc_compatible=parsed_manifest.same_cc_compatible,
+    )
     return ModelPackageMetadata(
         package_id=metadata.package_id,
         backend=BackendType.TRT,
         quantization=parsed_manifest.quantization,
         dynamic_batch_size_supported=parsed_manifest.dynamic_batch_size,
         static_batch_size=parsed_manifest.static_batch_size,
-        min_dynamic_batch_size=parsed_manifest.min_batch_size,
-        opt_dynamic_batch_size=parsed_manifest.opt_batch_size,
-        max_dynamic_batch_size=parsed_manifest.max_batch_size,
+        trt_package_details=trt_package_details,
         package_artefacts=package_artefacts,
         environment_requirements=environment_requirements,
     )
@@ -386,3 +421,14 @@ MODEL_PACKAGE_PARSERS: Dict[
     "hf-model-package-v1": parse_hf_model_package,
     "ultralytics-model-package-v1": parse_ultralytics_model_package,
 }
+
+
+def as_version(value: str) -> Version:
+    try:
+        return Version(value)
+    except InvalidVersion as error:
+        raise ModelMetadataConsistencyError(
+            "Roboflow API returned model package manifest that is expected to provide valid version specification for "
+            "one of the field of package manifest, but instead provides value that cannot be parsed. This is most "
+            "likely Roboflow API bug - contact Roboflow to solve the problem."
+        ) from error

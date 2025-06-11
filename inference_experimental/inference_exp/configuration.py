@@ -1,8 +1,7 @@
 import os
 
 import torch
-
-from inference_exp.utils.environment import parse_comma_separated_values
+from inference_exp.utils.environment import parse_comma_separated_values, str2bool
 
 ONNXRUNTIME_EXECUTION_PROVIDERS = parse_comma_separated_values(
     values=os.getenv(
@@ -34,5 +33,8 @@ ROBOFLOW_API_HOST = os.getenv(
     ),
 )
 RUNNING_ON_JETSON = os.getenv("RUNNING_ON_JETSON")
-JETPACK_VERSION = os.getenv("JETSON_L4T")
+L4T_VERSION = os.getenv("L4T_VERSION")
 INFERENCE_HOME = os.getenv("INFERENCE_HOME", "/tmp/cache")
+DISABLE_INTERACTIVE_PROGRESS_BARS = str2bool(
+    os.getenv("DISABLE_INTERACTIVE_PROGRESS_BARS", "False")
+)

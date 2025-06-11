@@ -5,7 +5,6 @@ from typing import Generic, List, Optional, Tuple, Union
 import numpy as np
 import supervision as sv
 import torch
-
 from inference_exp.models.base.types import (
     PreprocessedInputs,
     PreprocessingMetadata,

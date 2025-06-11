@@ -22,7 +22,10 @@ dependencies = [
   "pyvips>=2.2.3,<3.0.0",
   "rf-clip==1.1",
   "python-doctr[torch]>=0.10.0,<=0.11.0",
-  "packaging>=24.0.0"
+  "packaging>=24.0.0",
+  "rich>=13.0.0,<15.0.0",
+  "pydantic>=2.0.0,<3.0.0",
+  "filelock>=3.12.0,<4.0.0"
 ]
 
 [project.optional-dependencies]

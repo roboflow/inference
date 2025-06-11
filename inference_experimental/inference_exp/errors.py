@@ -26,6 +26,10 @@ class ModelMetadataConsistencyError(ModelRetrievalError):
     pass
 
 
+class ModelMetadataHandlerNotImplementedError(ModelRetrievalError):
+    pass
+
+
 class InvalidEnvVariable(BaseInferenceError):
     pass
 

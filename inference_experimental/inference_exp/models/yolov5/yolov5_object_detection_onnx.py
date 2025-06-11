@@ -4,7 +4,6 @@ from typing import List, Optional, Tuple, Union
 import numpy as np
 import onnxruntime
 import torch
-
 from inference_exp import Detections, ObjectDetectionModel
 from inference_exp.configuration import DEFAULT_DEVICE, ONNXRUNTIME_EXECUTION_PROVIDERS
 from inference_exp.entities import ColorFormat
@@ -14,16 +13,16 @@ from inference_exp.models.common.onnx import (
     run_session_via_iobinding,
     set_execution_provider_defaults,
 )
-from inference_exp.models.common.post_processing import (
-    rescale_detections,
-)
+from inference_exp.models.common.post_processing import rescale_detections
 from inference_exp.models.common.roboflow.model_packages import (
     PreProcessingConfig,
     PreProcessingMetadata,
     parse_class_names_file,
     parse_pre_processing_config,
 )
-from inference_exp.models.common.roboflow.pre_processing import pre_process_network_input
+from inference_exp.models.common.roboflow.pre_processing import (
+    pre_process_network_input,
+)
 from inference_exp.models.yolov5.nms import run_nms_yolov5
 
 

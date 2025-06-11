@@ -4,7 +4,6 @@ from typing import Any, Generic, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
-
 from inference_exp.models.base.object_detection import Detections
 from inference_exp.models.base.types import (
     PreprocessedInputs,
@@ -43,7 +42,7 @@ class KeyPointsDetectionModel(
     def infer(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-        **kwargs
+        **kwargs,
     ) -> Tuple[List[KeyPoints], Optional[List[Detections]]]:
         pre_processed_images, pre_processing_meta = self.pre_process(images, **kwargs)
         model_results = self.forward(pre_processed_images, **kwargs)
@@ -53,7 +52,7 @@ class KeyPointsDetectionModel(
     def pre_process(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-        **kwargs
+        **kwargs,
     ) -> Tuple[PreprocessedInputs, PreprocessingMetadata]:
         pass
 
@@ -68,13 +67,13 @@ class KeyPointsDetectionModel(
         self,
         model_results: RawPrediction,
         pre_processing_meta: PreprocessingMetadata,
-        **kwargs
+        **kwargs,
     ) -> Tuple[List[KeyPoints], Optional[List[Detections]]]:
         pass
 
     def __call__(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-        **kwargs
+        **kwargs,
     ) -> Tuple[List[KeyPoints], Optional[List[Detections]]]:
         return self.infer(images, **kwargs)

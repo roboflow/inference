@@ -1,3 +1,3 @@
 import logging
 
-logger = logging.getLogger("inference")
+logger = logging.getLogger("inference-exp")

@@ -2,6 +2,9 @@ from typing import Optional
 
 import backoff
 import requests
+from inference_exp.constants import DOWNLOAD_CHUNK_SIZE, HTTP_CODES_TO_RETRY
+from inference_exp.errors import RetryError
+from inference_exp.utils.file_system import ensure_parent_dir_exists
 from requests import Response, Timeout
 from rich.progress import (
     BarColumn,
@@ -11,10 +14,6 @@ from rich.progress import (
     TimeRemainingColumn,
     TransferSpeedColumn,
 )
-
-from inference_exp.constants import DOWNLOAD_CHUNK_SIZE, HTTP_CODES_TO_RETRY
-from inference_exp.errors import RetryError
-from inference_exp.utils.file_system import ensure_parent_dir_exists
 
 
 @backoff.on_exception(

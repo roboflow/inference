@@ -6,7 +6,6 @@ import numpy as np
 import torch
 from doctr.io import Document
 from doctr.models import ocr_predictor
-
 from inference_exp import Detections
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat, ImageDimensions

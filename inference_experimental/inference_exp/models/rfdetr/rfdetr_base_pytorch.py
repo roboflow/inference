@@ -7,11 +7,10 @@ from typing import Callable, List, Literal, Optional, Union
 import torch
 import torch.nn.functional as F
 import torchvision
-from torch import Tensor, nn
-
 from inference_exp.models.rfdetr.backbone_builder import build_backbone
 from inference_exp.models.rfdetr.misc import NestedTensor
 from inference_exp.models.rfdetr.transformer import build_transformer
+from torch import Tensor, nn
 
 
 @dataclass
@@ -560,7 +559,7 @@ def populate_args(
     gradient_checkpointing=False,
     # Additional
     subcommand=None,
-    **extra_kwargs  # To handle any unexpected arguments
+    **extra_kwargs,  # To handle any unexpected arguments
 ):
     args = argparse.Namespace(
         num_classes=num_classes,
@@ -657,6 +656,6 @@ def populate_args(
         early_stopping_min_delta=early_stopping_min_delta,
         early_stopping_use_ema=early_stopping_use_ema,
         gradient_checkpointing=gradient_checkpointing,
-        **extra_kwargs
+        **extra_kwargs,
     )
     return args

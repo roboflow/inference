@@ -1,5 +1,7 @@
+from functools import cache
 from typing import List, Optional, Set, Tuple, Union
 
+import torch
 from inference_exp.errors import (
     AmbiguousModelPackageResolutionError,
     InvalidRequestedBatchSizeError,
@@ -9,6 +11,9 @@ from inference_exp.errors import (
     UnknownQuantizationError,
 )
 from inference_exp.models.auto_loaders.ranking import rank_model_packages
+from inference_exp.models.auto_loaders.utils import (
+    filter_available_devices_with_selected_device,
+)
 from inference_exp.runtime_introspection.core import (
     RuntimeXRayResult,
     x_ray_runtime_environment,
@@ -20,11 +25,13 @@ from inference_exp.weights_providers.entities import (
     Quantization,
     ServerEnvironmentRequirements,
 )
+from packaging.version import Version
 
 DEFAULT_ALLOWED_QUANTIZATION = [
     Quantization.UNKNOWN,
     Quantization.FP32,
     Quantization.FP16,
+    Quantization.BF16,
 ]
 
 
@@ -38,10 +45,9 @@ def negotiate_model_packages(
     requested_quantization: Optional[
         Union[str, Quantization, List[Union[str, Quantization]]]
     ] = None,
+    device: Optional[torch.device] = None,
     verbose: bool = False,
 ) -> List[ModelPackageMetadata]:
-    if requested_quantization is None:
-        requested_quantization = DEFAULT_ALLOWED_QUANTIZATION
     if verbose:
         print_model_packages(model_packages=model_packages)
     if not model_packages:
@@ -70,13 +76,15 @@ def negotiate_model_packages(
             requested_batch_size=requested_batch_size,
             verbose=verbose,
         )
+    if requested_quantization is None:
+        requested_quantization = determine_default_allowed_quantization(device=device)
     if requested_quantization:
         model_packages = filter_model_packages_by_requested_quantization(
             model_packages=model_packages,
             requested_quantization=requested_quantization,
             verbose=verbose,
         )
-    runtime_x_ray = x_ray_runtime_environment(verbose=verbose)
+    runtime_x_ray = x_ray_runtime_environment()
     if verbose:
         print("Selecting model packages matching to runtime")
     results = [
@@ -85,6 +93,7 @@ def negotiate_model_packages(
         if model_package_matches_runtime_environment(
             model_package=model_package,
             runtime_x_ray=runtime_x_ray,
+            device=device,
             verbose=verbose,
         )
     ]
@@ -95,6 +104,36 @@ def negotiate_model_packages(
             f"dependencies or the model is not registered with packages that would allow `inference` to run."
         )
     return rank_model_packages(model_packages=results)
+
+
+@cache
+def determine_default_allowed_quantization(
+    device: Optional[torch.device] = None,
+) -> List[Quantization]:
+    if device is not None:
+        if device.type == "cpu":
+            return [
+                Quantization.UNKNOWN,
+                Quantization.FP32,
+                Quantization.BF16,
+            ]
+        return [
+            Quantization.UNKNOWN,
+            Quantization.FP32,
+            Quantization.FP16,
+        ]
+    runtime_x_ray = x_ray_runtime_environment()
+    if runtime_x_ray.gpu_devices:
+        return [
+            Quantization.UNKNOWN,
+            Quantization.FP32,
+            Quantization.FP16,
+        ]
+    return [
+        Quantization.UNKNOWN,
+        Quantization.FP32,
+        Quantization.BF16,
+    ]
 
 
 def print_model_packages(model_packages: List[ModelPackageMetadata]) -> None:
@@ -255,6 +294,7 @@ def model_package_matches_batch_size_request(
 def model_package_matches_runtime_environment(
     model_package: ModelPackageMetadata,
     runtime_x_ray: RuntimeXRayResult,
+    device: Optional[torch.device] = None,
     verbose: bool = False,
 ) -> bool:
     if model_package.backend not in MODEL_TO_RUNTIME_COMPATIBILITY_MATCHERS:
@@ -263,25 +303,48 @@ def model_package_matches_runtime_environment(
             f"This is `inference` bug - raise issue: https://github.com/roboflow/inference/issues"
         )
     return MODEL_TO_RUNTIME_COMPATIBILITY_MATCHERS[model_package.backend](
-        model_package, runtime_x_ray, verbose
+        model_package, runtime_x_ray, device, verbose
     )
+
+
+ONNX_RUNTIME_OPSET_COMPATIBILITY = {
+    Version("1.15"): 19,
+    Version("1.16"): 19,
+    Version("1.17"): 20,
+    Version("1.18"): 21,
+    Version("1.19"): 21,
+    Version("1.20"): 21,
+    Version("1.21"): 22,
+    Version("1.22"): 23,
+}
 
 
 def onnx_package_matches_runtime_environment(
     model_package: ModelPackageMetadata,
     runtime_x_ray: RuntimeXRayResult,
+    device: Optional[torch.device] = None,
     verbose: bool = False,
 ) -> bool:
-    if verbose and not runtime_x_ray.onnxruntime_available:
+    if verbose and not runtime_x_ray.onnxruntime_version:
         print(
             f"Mode package with id '{model_package.package_id}' filtered out as onnxruntime not detected"
         )
-    return runtime_x_ray.onnxruntime_available
+    if not runtime_x_ray.onnxruntime_version:
+        return False
+    package_opset = model_package.onnx_package_details.opset
+    onnx_runtime_simple_version = Version(
+        f"{runtime_x_ray.onnxruntime_version.major}.{runtime_x_ray.onnxruntime_version.minor}"
+    )
+    if onnx_runtime_simple_version not in ONNX_RUNTIME_OPSET_COMPATIBILITY:
+        return package_opset <= ONNX_RUNTIME_OPSET_COMPATIBILITY[Version("1.15")]
+    max_supported_opset = ONNX_RUNTIME_OPSET_COMPATIBILITY[onnx_runtime_simple_version]
+    return package_opset <= max_supported_opset
 
 
 def torch_package_matches_runtime_environment(
     model_package: ModelPackageMetadata,
     runtime_x_ray: RuntimeXRayResult,
+    device: Optional[torch.device] = None,
     verbose: bool = False,
 ) -> bool:
     if verbose and not runtime_x_ray.torch_available:
@@ -294,6 +357,7 @@ def torch_package_matches_runtime_environment(
 def hf_transformers_package_matches_runtime_environment(
     model_package: ModelPackageMetadata,
     runtime_x_ray: RuntimeXRayResult,
+    device: Optional[torch.device] = None,
     verbose: bool = False,
 ) -> bool:
     if verbose and not runtime_x_ray.hf_transformers_available:
@@ -306,6 +370,7 @@ def hf_transformers_package_matches_runtime_environment(
 def ultralytics_package_matches_runtime_environment(
     model_package: ModelPackageMetadata,
     runtime_x_ray: RuntimeXRayResult,
+    device: Optional[torch.device] = None,
     verbose: bool = False,
 ) -> bool:
     if verbose and not runtime_x_ray.ultralytics_available:
@@ -318,6 +383,7 @@ def ultralytics_package_matches_runtime_environment(
 def trt_package_matches_runtime_environment(
     model_package: ModelPackageMetadata,
     runtime_x_ray: RuntimeXRayResult,
+    device: Optional[torch.device] = None,
     verbose: bool = False,
 ) -> bool:
     if not runtime_x_ray.trt_version:
@@ -345,6 +411,11 @@ def trt_package_matches_runtime_environment(
                 f"not provided by backend."
             )
         return False
+    trt_compiled_with_cc_compatibility = False
+    if model_package.trt_package_details is not None:
+        trt_compiled_with_cc_compatibility = (
+            model_package.trt_package_details.same_cc_compatible
+        )
     model_environment = model_package.environment_requirements
     if isinstance(model_environment, JetsonEnvironmentRequirements):
         if model_environment.trt_version is None:
@@ -353,25 +424,39 @@ def trt_package_matches_runtime_environment(
                     f"Mode package with id '{model_package.package_id}' filtered out as model TRT version not provided by backend"
                 )
             return False
-        if runtime_x_ray.jetson_type != model_environment.jetson_type:
+        device_compatibility = verify_trt_package_compatibility_with_cuda_device(
+            all_available_cuda_devices=runtime_x_ray.gpu_devices,
+            all_available_devices_cc=runtime_x_ray.gpu_devices_cc,
+            compilation_device=model_environment.cuda_device_name,
+            compilation_device_cc=model_environment.cuda_device_cc,
+            selected_device=device,
+            trt_compiled_with_cc_compatibility=trt_compiled_with_cc_compatibility,
+        )
+        if not device_compatibility:
             if verbose:
                 print(
-                    f"Mode package with id '{model_package.package_id}' filtered out as package jetson type {model_environment.jetson_type} does not match runtime jetson type: {runtime_x_ray.jetson_type}"
+                    f"Model package with id '{model_package.package_id}' filtered out due to device incompatibility."
                 )
             return False
-        if runtime_x_ray.jetpack_version != model_environment.jetpack_version:
+        if verify_versions_up_to_major_and_minor(
+            runtime_x_ray.l4t_version, model_environment.l4t_version
+        ):
             if verbose:
                 print(
-                    f"Mode package with id '{model_package.package_id}' filtered out as package jetpack {model_environment.jetpack_version} does not match runtime jetpack: {runtime_x_ray.jetpack_version}"
+                    f"Mode package with id '{model_package.package_id}' filtered out as package L4T {model_environment.l4t_version} does not match runtime L4T: {runtime_x_ray.l4t_version}"
                 )
             return False
-        if runtime_x_ray.trt_version < model_environment.trt_version:
+        if verify_versions_up_to_major_and_minor(
+            runtime_x_ray.trt_version, model_environment.trt_version
+        ):
             if verbose:
                 print(
                     f"Mode package with id '{model_package.package_id}' filtered out as package trt version {model_environment.trt_version} does not match runtime trt version: {runtime_x_ray.trt_version}"
                 )
             return False
-        if runtime_x_ray.cuda_version < model_environment.cuda_version:
+        if not verify_version_larger_equal_up_to_major_and_minor(
+            runtime_x_ray.cuda_version, model_environment.cuda_version
+        ):
             if verbose:
                 print(
                     f"Mode package with id '{model_package.package_id}' filtered out as package cuda version {model_environment.cuda_version} does not match runtime cuda version: {runtime_x_ray.cuda_version}"
@@ -389,37 +474,69 @@ def trt_package_matches_runtime_environment(
                 f"Mode package with id '{model_package.package_id}' filtered out as model TRT version not provided by backend"
             )
         return False
-    if not runtime_x_ray.driver_version:
+    device_compatibility = verify_trt_package_compatibility_with_cuda_device(
+        all_available_cuda_devices=runtime_x_ray.gpu_devices,
+        all_available_devices_cc=runtime_x_ray.gpu_devices_cc,
+        compilation_device=model_environment.cuda_device_name,
+        compilation_device_cc=model_environment.cuda_device_cc,
+        selected_device=device,
+        trt_compiled_with_cc_compatibility=trt_compiled_with_cc_compatibility,
+    )
+    if not device_compatibility:
         if verbose:
             print(
-                f"Mode package with id '{model_package.package_id}' filtered out as environment does not specify driver version: {runtime_x_ray.driver_version}"
+                f"Model package with id '{model_package.package_id}' filtered out due to device incompatibility."
             )
         return False
-    if model_environment.gpu_type not in runtime_x_ray.gpu_devices:
-        if verbose:
-            print(
-                f"Mode package with id '{model_package.package_id}' filtered out as model gpu type: {model_environment.gpu_type} differs from runtime gpu types: {runtime_x_ray.gpu_devices}"
-            )
-        return False
-    if runtime_x_ray.driver_version < model_environment.driver_version:
-        if verbose:
-            print(
-                f"Mode package with id '{model_package.package_id}' filtered out as model driver version: {model_environment.driver_version} does not match runtime driver version: {runtime_x_ray.driver_version}"
-            )
-        return False
-    if runtime_x_ray.trt_version < model_environment.trt_version:
+    if verify_versions_up_to_major_and_minor(
+        runtime_x_ray.trt_version, model_environment.trt_version
+    ):
         if verbose:
             print(
                 f"Mode package with id '{model_package.package_id}' filtered out as package trt version {model_environment.trt_version} does not match runtime trt version: {runtime_x_ray.trt_version}"
             )
         return False
-    if runtime_x_ray.cuda_version < model_environment.cuda_version:
+    if not verify_version_larger_equal_up_to_major_and_minor(
+        runtime_x_ray.cuda_version, model_environment.cuda_version
+    ):
         if verbose:
             print(
                 f"Mode package with id '{model_package.package_id}' filtered out as package cuda version {model_environment.cuda_version} does not match runtime cuda version: {runtime_x_ray.cuda_version}"
             )
         return False
     return True
+
+
+def verify_trt_package_compatibility_with_cuda_device(
+    selected_device: Optional[torch.device],
+    all_available_cuda_devices: List[str],
+    all_available_devices_cc: List[Version],
+    compilation_device: str,
+    compilation_device_cc: Version,
+    trt_compiled_with_cc_compatibility: bool,
+) -> bool:
+    all_available_cuda_devices, all_available_devices_cc = (
+        filter_available_devices_with_selected_device(
+            selected_device=selected_device,
+            all_available_cuda_devices=all_available_cuda_devices,
+            all_available_devices_cc=all_available_devices_cc,
+        )
+    )
+    if trt_compiled_with_cc_compatibility:
+        return any(cc == compilation_device_cc for cc in all_available_devices_cc)
+    return any(dev == compilation_device for dev in all_available_cuda_devices)
+
+
+def verify_versions_up_to_major_and_minor(x: Version, y: Version) -> bool:
+    x_simplified = Version(f"{x.major}.{x.minor}")
+    y_simplified = Version(f"{y.major}.{y.minor}")
+    return x_simplified == y_simplified
+
+
+def verify_version_larger_equal_up_to_major_and_minor(x: Version, y: Version) -> bool:
+    x_simplified = Version(f"{x.major}.{x.minor}")
+    y_simplified = Version(f"{y.major}.{y.minor}")
+    return x_simplified >= y_simplified
 
 
 MODEL_TO_RUNTIME_COMPATIBILITY_MATCHERS = {

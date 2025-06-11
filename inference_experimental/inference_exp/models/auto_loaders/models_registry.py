@@ -10,15 +10,15 @@ TaskType = Optional[str]
 
 REGISTERED_MODELS: Dict[Tuple[ModelArchitecture, TaskType, BackendType], LazyClass] = {
     ("yolov8", "object-detection", BackendType.ONNX): LazyClass(
-        module_name="inference.v1.models.yolov8.yolov8_object_detection_onnx",
+        module_name="inference_exp.models.yolov8.yolov8_object_detection_onnx",
         class_name="YOLOv8ForObjectDetectionOnnx",
     ),
     ("yolov8", "object-detection", BackendType.TRT): LazyClass(
-        module_name="inference.v1.models.yolov8.yolov8_object_detection_trt",
+        module_name="inference_exp.models.yolov8.yolov8_object_detection_trt",
         class_name="YOLOv8ForObjectDetectionTRT",
     ),
     ("paligemma", "vlm", BackendType.HF): LazyClass(
-        module_name="inference.v1.models.paligemma.paligemma_hf",
+        module_name="inference_exp.models.paligemma.paligemma_hf",
         class_name="PaliGemmaHF",
     ),
 }

@@ -21,9 +21,8 @@ from typing import Optional
 
 import torch
 import torch.nn.functional as F
-from torch import Tensor, nn
-
 from inference_exp.models.rfdetr.ms_deform_attn import MSDeformAttn
+from torch import Tensor, nn
 
 
 class MLP(nn.Module):

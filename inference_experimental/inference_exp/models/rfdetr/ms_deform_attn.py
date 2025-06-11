@@ -23,10 +23,9 @@ import warnings
 import numpy as np
 import torch
 import torch.nn.functional as F
+from inference_exp.models.rfdetr.ms_deform_attn_func import ms_deform_attn_core_pytorch
 from torch import nn
 from torch.nn.init import constant_, xavier_uniform_
-
-from inference_exp.models.rfdetr.ms_deform_attn_func import ms_deform_attn_core_pytorch
 
 
 def _is_power_of_2(n):

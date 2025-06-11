@@ -19,9 +19,8 @@ Various positional encodings for the transformer.
 import math
 
 import torch
-from torch import nn
-
 from inference_exp.models.rfdetr.misc import NestedTensor
+from torch import nn
 
 
 class PositionEmbeddingSine(nn.Module):

@@ -4,12 +4,11 @@ from typing import List, Optional, Tuple, Union
 import mediapipe as mp
 import numpy as np
 import torch
-from mediapipe.tasks.python.components.containers import Detection
-
 from inference_exp import Detections, KeyPoints, KeyPointsDetectionModel
 from inference_exp.entities import ColorFormat, ImageDimensions
 from inference_exp.errors import ModelRuntimeError
 from inference_exp.models.common.model_packages import get_model_package_contents
+from mediapipe.tasks.python.components.containers import Detection
 
 
 class MediaPipeFaceDetector(

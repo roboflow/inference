@@ -4,7 +4,6 @@ from typing import Generic, List, Optional, Union
 
 import numpy as np
 import torch
-
 from inference_exp.models.base.types import PreprocessedInputs, RawPrediction
 
 
@@ -32,7 +31,7 @@ class ClassificationModel(ABC, Generic[PreprocessedInputs, RawPrediction]):
     def infer(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-        **kwargs
+        **kwargs,
     ) -> ClassificationPrediction:
         pre_processed_images = self.pre_process(images, **kwargs)
         model_results = self.forward(pre_processed_images, **kwargs)
@@ -42,7 +41,7 @@ class ClassificationModel(ABC, Generic[PreprocessedInputs, RawPrediction]):
     def pre_process(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-        **kwargs
+        **kwargs,
     ) -> PreprocessedInputs:
         pass
 
@@ -61,7 +60,7 @@ class ClassificationModel(ABC, Generic[PreprocessedInputs, RawPrediction]):
     def __call__(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-        **kwargs
+        **kwargs,
     ) -> ClassificationPrediction:
         return self.infer(images, **kwargs)
 
@@ -89,7 +88,7 @@ class MultiLabelClassificationModel(ABC, Generic[PreprocessedInputs, RawPredicti
     def infer(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-        **kwargs
+        **kwargs,
     ) -> List[MultiLabelClassificationPrediction]:
         pre_processed_images = self.pre_process(images, **kwargs)
         model_results = self.forward(pre_processed_images, **kwargs)
@@ -99,7 +98,7 @@ class MultiLabelClassificationModel(ABC, Generic[PreprocessedInputs, RawPredicti
     def pre_process(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-        **kwargs
+        **kwargs,
     ) -> PreprocessedInputs:
         pass
 
@@ -118,6 +117,6 @@ class MultiLabelClassificationModel(ABC, Generic[PreprocessedInputs, RawPredicti
     def __call__(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-        **kwargs
+        **kwargs,
     ) -> List[MultiLabelClassificationPrediction]:
         return self.infer(images, **kwargs)

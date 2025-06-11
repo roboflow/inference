@@ -4,7 +4,6 @@ from typing import List, Optional, Tuple, Union
 import numpy as np
 import tensorrt as trt
 import torch
-
 from inference_exp import InstanceDetections, InstanceSegmentationModel
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
@@ -24,7 +23,9 @@ from inference_exp.models.common.roboflow.model_packages import (
     parse_pre_processing_config,
     parse_trt_config,
 )
-from inference_exp.models.common.roboflow.pre_processing import pre_process_network_input
+from inference_exp.models.common.roboflow.pre_processing import (
+    pre_process_network_input,
+)
 from inference_exp.models.common.trt import (
     get_output_tensor_names,
     infer_from_trt_engine,

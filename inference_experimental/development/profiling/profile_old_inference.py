@@ -28,24 +28,30 @@ def main() -> None:
     fps = E2E_CYCLES / (end - start)
     print(f"INFERENCE FPS={round(fps, 2)}")
     start = time.monotonic()
-    for _ in tqdm(range(PRE_PROCESS_CYCLES), total=PRE_PROCESS_CYCLES, desc="Preprocessing"):
+    for _ in tqdm(
+        range(PRE_PROCESS_CYCLES), total=PRE_PROCESS_CYCLES, desc="Preprocessing"
+    ):
         _ = model.preprocess(image)
     end = time.monotonic()
     fps = PRE_PROCESS_CYCLES / (end - start)
     print(f"PRE PROCESSING FPS={round(fps, 2)}")
     start = time.monotonic()
-    for _ in tqdm(range(PREDICT_PROCESS_CYCLES), total=PREDICT_PROCESS_CYCLES, desc="Prediction"):
+    for _ in tqdm(
+        range(PREDICT_PROCESS_CYCLES), total=PREDICT_PROCESS_CYCLES, desc="Prediction"
+    ):
         _ = model.predict(pre_processed_image)
     end = time.monotonic()
     fps = PREDICT_PROCESS_CYCLES / (end - start)
     print(f"PREDICTION FPS={round(fps, 2)}")
     start = time.monotonic()
-    for _ in tqdm(range(POST_PROCESS_CYCLES), total=POST_PROCESS_CYCLES, desc="Post processing"):
+    for _ in tqdm(
+        range(POST_PROCESS_CYCLES), total=POST_PROCESS_CYCLES, desc="Post processing"
+    ):
         _ = model.postprocess(raw_predictions, pre_processed_metadata)
     end = time.monotonic()
     fps = POST_PROCESS_CYCLES / (end - start)
     print(f"POST PROCESSING FPS={round(fps, 2)}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

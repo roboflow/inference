@@ -2,11 +2,10 @@ from typing import List, Optional, Union
 
 import numpy as np
 import torch
-from transformers import AutoModelForImageTextToText, AutoProcessor
-
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
 from inference_exp.models.common.roboflow.pre_processing import images_to_pillow
+from transformers import AutoModelForImageTextToText, AutoProcessor
 
 
 class SmolVLMHF:

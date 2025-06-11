@@ -5,14 +5,6 @@ import clip
 import numpy as np
 import onnxruntime
 import torch
-from torchvision.transforms import (
-    CenterCrop,
-    Compose,
-    InterpolationMode,
-    Normalize,
-    Resize,
-)
-
 from inference_exp.configuration import DEFAULT_DEVICE, ONNXRUNTIME_EXECUTION_PROVIDERS
 from inference_exp.entities import ColorFormat
 from inference_exp.errors import EnvironmentConfigurationError, ModelRuntimeError
@@ -21,6 +13,13 @@ from inference_exp.models.common.model_packages import get_model_package_content
 from inference_exp.models.common.onnx import (
     run_session_via_iobinding,
     set_execution_provider_defaults,
+)
+from torchvision.transforms import (
+    CenterCrop,
+    Compose,
+    InterpolationMode,
+    Normalize,
+    Resize,
 )
 
 MEAN = (0.48145466, 0.4578275, 0.40821073)

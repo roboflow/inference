@@ -4,7 +4,6 @@ from typing import List, Optional, Tuple, Union
 import numpy as np
 import onnxruntime
 import torch
-
 from inference_exp import InstanceDetections, InstanceSegmentationModel
 from inference_exp.configuration import DEFAULT_DEVICE, ONNXRUNTIME_EXECUTION_PROVIDERS
 from inference_exp.entities import ColorFormat
@@ -26,7 +25,9 @@ from inference_exp.models.common.roboflow.model_packages import (
     parse_class_names_file,
     parse_pre_processing_config,
 )
-from inference_exp.models.common.roboflow.pre_processing import pre_process_network_input
+from inference_exp.models.common.roboflow.pre_processing import (
+    pre_process_network_input,
+)
 
 
 class YOLOv8ForInstanceSegmentationOnnx(

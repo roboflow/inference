@@ -2,14 +2,13 @@ from typing import List, Tuple, Union
 
 import numpy as np
 import torch
-from transformers import AutoImageProcessor, AutoModelForDepthEstimation
-
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ImageDimensions
 from inference_exp.models.base.depth_estimation import DepthEstimationModel
 from inference_exp.models.common.roboflow.pre_processing import (
     extract_input_images_dimensions,
 )
+from transformers import AutoImageProcessor, AutoModelForDepthEstimation
 
 
 class DepthAnythingV2HF(

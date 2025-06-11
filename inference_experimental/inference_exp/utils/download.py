@@ -8,18 +8,10 @@ from uuid import uuid4
 import backoff
 import requests
 from filelock import FileLock
-from requests import Response, Session, Timeout
-from rich.progress import (
-    BarColumn,
-    DownloadColumn,
-    Progress,
-    TimeRemainingColumn,
-    TransferSpeedColumn,
-)
-
 from inference_exp.configuration import (
     API_CALLS_MAX_RETRIES,
     API_CALLS_TIMEOUT,
+    DISABLE_INTERACTIVE_PROGRESS_BARS,
     IDEMPOTENT_API_REQUEST_CODES_TO_RETRY,
 )
 from inference_exp.errors import RetryError
@@ -28,6 +20,14 @@ from inference_exp.utils.file_system import (
     ensure_parent_dir_exists,
     pre_allocate_file,
     remove_file_if_exists,
+)
+from requests import Response, Session, Timeout
+from rich.progress import (
+    BarColumn,
+    DownloadColumn,
+    Progress,
+    TimeRemainingColumn,
+    TransferSpeedColumn,
 )
 
 FileName = str
@@ -48,6 +48,8 @@ def download_files_to_directory(
     max_threads_per_download: int = 8,
     file_lock_acquire_timeout: int = 10,
 ) -> None:
+    if DISABLE_INTERACTIVE_PROGRESS_BARS:
+        verbose = False
     files_specs = exclude_existing_files(
         target_dir=target_path, files_specs=files_specs
     )

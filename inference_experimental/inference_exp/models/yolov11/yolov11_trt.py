@@ -1,10 +1,10 @@
-from inference_exp.models.yolov8 import (
+from inference_exp.models.yolov8.yolov8_instance_segmentation_trt import (
     YOLOv8ForInstanceSegmentationTRT,
 )
-from inference_exp.models.yolov8 import (
+from inference_exp.models.yolov8.yolov8_key_points_detection_trt import (
     YOLOv8ForKeyPointsDetectionTRT,
 )
-from inference_exp.models.yolov8 import (
+from inference_exp.models.yolov8.yolov8_object_detection_trt import (
     YOLOv8ForObjectDetectionTRT,
 )
 

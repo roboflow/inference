@@ -2,10 +2,9 @@ from typing import List, Literal, Tuple
 
 import torch
 import torchvision
-from torchvision.transforms import functional
-
 from inference_exp.entities import ImageDimensions
 from inference_exp.models.common.roboflow.model_packages import PreProcessingMetadata
+from torchvision.transforms import functional
 
 
 def run_nms_for_object_detection(

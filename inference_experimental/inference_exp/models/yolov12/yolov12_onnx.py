@@ -1,4 +1,4 @@
-from inference_exp.models.yolov8 import (
+from inference_exp.models.yolov8.yolov8_object_detection_onnx import (
     YOLOv8ForObjectDetectionOnnx,
 )
 

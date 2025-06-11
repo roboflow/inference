@@ -39,6 +39,7 @@ def run_session_via_iobinding(
     inputs: torch.Tensor,
 ) -> List[torch.Tensor]:
     if inputs.device.type == "cpu":
+        print(inputs)
         results = session.run(None, {input_name: inputs.numpy()})
         return [torch.from_numpy(element) for element in results]
     binding = session.io_binding()

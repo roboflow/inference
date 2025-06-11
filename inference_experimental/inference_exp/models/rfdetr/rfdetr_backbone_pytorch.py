@@ -5,16 +5,15 @@ import types
 
 import torch
 import torch.nn.functional as F
-from peft import PeftModel
-from torch import nn
-from transformers import AutoBackbone
-
 from inference_exp.models.rfdetr.dinov2_with_windowed_attn import (
     WindowedDinov2WithRegistersBackbone,
     WindowedDinov2WithRegistersConfig,
 )
 from inference_exp.models.rfdetr.misc import NestedTensor
 from inference_exp.models.rfdetr.projector import MultiScaleProjector
+from peft import PeftModel
+from torch import nn
+from transformers import AutoBackbone
 
 size_to_width = {
     "tiny": 192,

@@ -5,17 +5,18 @@ import numpy as np
 import torch
 import torchvision
 from groundingdino.util.inference import load_model, predict
-from torch import nn
-from torchvision import transforms
-from torchvision.ops import box_convert
-
 from inference_exp import Detections
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat, ImageDimensions
 from inference_exp.errors import ModelRuntimeError
-from inference_exp.models.base.object_detection import OpenVocabularyObjectDetectionModel
+from inference_exp.models.base.object_detection import (
+    OpenVocabularyObjectDetectionModel,
+)
 from inference_exp.models.common.model_packages import get_model_package_contents
 from inference_exp.utils.network import download_file
+from torch import nn
+from torchvision import transforms
+from torchvision.ops import box_convert
 
 DEFAULT_CONFIG_URL = "https://raw.githubusercontent.com/roboflow/GroundingDINO/main/groundingdino/config/GroundingDINO_SwinT_OGC.py"
 

@@ -2,7 +2,6 @@ from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
-
 from inference_exp import Detections, KeyPoints
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat

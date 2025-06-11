@@ -3,7 +3,6 @@ from typing import Any, List, Literal, Optional, Tuple, Union
 
 import numpy as np
 import torch
-
 from inference_exp import Detections
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat, ImageDimensions

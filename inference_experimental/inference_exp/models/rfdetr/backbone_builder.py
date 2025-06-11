@@ -1,11 +1,10 @@
 from typing import Callable
 
 import torch
-from torch import nn
-
 from inference_exp.models.rfdetr.misc import NestedTensor
 from inference_exp.models.rfdetr.position_encoding import build_position_encoding
 from inference_exp.models.rfdetr.rfdetr_backbone_pytorch import Backbone
+from torch import nn
 
 
 class Joiner(nn.Sequential):

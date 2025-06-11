@@ -2,7 +2,6 @@ import os.path
 from typing import List, Optional, Tuple, Union
 
 import torch
-
 from inference_exp.configuration import DEFAULT_DEVICE, INFERENCE_HOME
 from inference_exp.errors import ModelLoadingError
 from inference_exp.logger import logger
@@ -78,6 +77,7 @@ class AutoModel:
                 requested_backends=requested_backends,
                 requested_batch_size=requested_batch_size,
                 requested_quantization=requested_quantization,
+                device=device,
                 verbose=verbose,
             )
             model_init_kwargs = {

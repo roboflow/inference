@@ -2,9 +2,8 @@ from typing import List, Union
 
 import numpy as np
 import torch
-from transformers import AutoProcessor, PaliGemmaForConditionalGeneration
-
 from inference_exp.configuration import DEFAULT_DEVICE
+from transformers import AutoProcessor, PaliGemmaForConditionalGeneration
 
 
 class PaliGemmaHF:

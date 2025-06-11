@@ -5,8 +5,6 @@ from typing import List, Optional, Tuple, Union
 import numpy as np
 import onnxruntime
 import torch
-from torchvision import transforms
-
 from inference_exp.configuration import DEFAULT_DEVICE, ONNXRUNTIME_EXECUTION_PROVIDERS
 from inference_exp.entities import ColorFormat
 from inference_exp.errors import EnvironmentConfigurationError, ModelRuntimeError
@@ -16,6 +14,7 @@ from inference_exp.models.common.onnx import (
     run_session_via_iobinding,
     set_execution_provider_defaults,
 )
+from torchvision import transforms
 
 DEFAULT_GAZE_MAX_BATCH_SIZE = 8
 

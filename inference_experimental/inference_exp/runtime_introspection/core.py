@@ -7,11 +7,10 @@ from functools import cache
 from typing import List, Optional, Tuple
 
 import torch
-from packaging.version import Version
-
-from inference_exp.configuration import JETPACK_VERSION, RUNNING_ON_JETSON
+from inference_exp.configuration import L4T_VERSION, RUNNING_ON_JETSON
 from inference_exp.errors import JetsonTypeResolutionError
 from inference_exp.utils.environment import str2bool
+from packaging.version import Version
 
 JETSON_DEVICES_TABLE = [
     "NVIDIA Jetson Orin Nano",
@@ -30,14 +29,15 @@ JETSON_DEVICES_TABLE = [
 class RuntimeXRayResult:
     gpu_available: bool
     gpu_devices: List[str]
+    gpu_devices_cc: List[Version]
     driver_version: Optional[Version]
     cuda_version: Optional[Version]
     trt_version: Optional[Version]
     jetson_type: Optional[str]
-    jetpack_version: Optional[str]
+    l4t_version: Optional[Version]
     os_version: Optional[str]
     torch_available: bool
-    onnxruntime_available: bool
+    onnxruntime_version: Optional[Version]
     hf_transformers_available: bool
     ultralytics_available: bool
     trt_python_package_available: bool
@@ -45,52 +45,51 @@ class RuntimeXRayResult:
     def __str__(self) -> str:
         gpu_devices_str = ", ".join(self.gpu_devices)
         return (
-            f"Runtime X-Ray: gpu_available={self.gpu_available} gpu_devices=[{gpu_devices_str}] "
-            f"gpu_driver={self.driver_version} cuda_version={self.cuda_version} trt_version={self.trt_version} "
-            f"jetson_type={self.jetson_type} jetpack_version={self.jetpack_version} os_version={self.os_version} "
-            f"torch_available={self.torch_available} onnxruntime_available={self.onnxruntime_available} "
-            f"hf_transformers_available={self.hf_transformers_available} "
-            f"ultralytics_available={self.ultralytics_available} "
-            f"trt_python_package_available={self.trt_python_package_available}"
+            f"RuntimeXRayResult(gpu_available={self.gpu_available}, gpu_devices=[{gpu_devices_str}], "
+            f"gpu_devices_cc={self.gpu_devices_cc}, gpu_driver={self.driver_version}, "
+            f"cuda_version={self.cuda_version}, trt_version={self.trt_version}, "
+            f"jetson_type={self.jetson_type}, l4t_version={self.l4t_version}, os_version={self.os_version}, "
+            f"torch_available={self.torch_available}, onnxruntime_version={self.onnxruntime_version}, "
+            f"hf_transformers_available={self.hf_transformers_available}, "
+            f"ultralytics_available={self.ultralytics_available}, "
+            f"trt_python_package_available={self.trt_python_package_available})"
         )
 
 
 @cache
-def x_ray_runtime_environment(verbose: bool = False) -> RuntimeXRayResult:
+def x_ray_runtime_environment() -> RuntimeXRayResult:
     trt_version = get_trt_version()
     cuda_version = get_cuda_version()
-    jetson_type, jetpack_version, os_version, driver_version = None, None, None, None
+    jetson_type, l4t_version, os_version, driver_version = None, None, None, None
     if is_running_on_jetson():
         jetson_type = get_jetson_type()
-        jetpack_version = get_jetpack_version()
-        gpu_devices = get_available_gpu_devices()
+        l4t_version = get_l4t_version()
     else:
         os_version = get_os_version()
-        driver_version = get_driver_version()
-        gpu_devices = get_available_gpu_devices()
+    driver_version = get_driver_version()
+    gpu_devices = get_available_gpu_devices()
+    gpu_devices_cc = get_available_gpu_devices_cc()
     torch_available = is_torch_available()
-    onnxruntime_available = is_onnxruntime_available()
+    onnxruntime_version = get_onnxruntime_version()
     hf_transformers_available = is_hf_transformers_available()
     ultralytics_available = is_ultralytics_available()
     trt_python_package_available = is_trt_python_package_available()
-    result = RuntimeXRayResult(
+    return RuntimeXRayResult(
         gpu_available=len(gpu_devices) > 0,
         gpu_devices=gpu_devices,
+        gpu_devices_cc=gpu_devices_cc,
         driver_version=driver_version,
         cuda_version=cuda_version,
         trt_version=trt_version,
         jetson_type=jetson_type,
-        jetpack_version=jetpack_version,
+        l4t_version=l4t_version,
         os_version=os_version,
         torch_available=torch_available,
-        onnxruntime_available=onnxruntime_available,
+        onnxruntime_version=onnxruntime_version,
         hf_transformers_available=hf_transformers_available,
         ultralytics_available=ultralytics_available,
         trt_python_package_available=trt_python_package_available,
     )
-    if verbose:
-        print(result)
-    return result
 
 
 @cache
@@ -111,11 +110,27 @@ def get_available_gpu_devices() -> List[str]:
 
 
 @cache
+def get_available_gpu_devices_cc() -> List[Version]:
+    num_devices = torch.cuda.device_count()
+    result = []
+    for i in range(num_devices):
+        device_cc_raw = torch.cuda.get_device_capability(i)
+        result.append(Version(f"{device_cc_raw[0]}.{device_cc_raw[1]}"))
+    return result
+
+
+@cache
 def get_cuda_version() -> Optional[Version]:
-    _, cuda_version = get_trt_and_cuda_version_from_libnvinfer()
-    if cuda_version:
-        return cuda_version
-    return get_cuda_version_from_nvcc()
+    try:
+        result = subprocess.run(
+            "dpkg -l | grep cuda-cudart", shell=True, capture_output=True, text=True
+        )
+        if result.returncode != 0:
+            return None
+        result_chunks = result.stdout.strip().split(os.linesep)[0].split()
+        return Version(result_chunks[2])
+    except Exception:
+        return None
 
 
 def get_cuda_version_from_nvcc() -> Optional[Version]:
@@ -131,8 +146,8 @@ def get_cuda_version_from_nvcc() -> Optional[Version]:
 
 @cache
 def get_trt_version() -> Optional[Version]:
-    trt_version, _ = get_trt_and_cuda_version_from_libnvinfer()
-    if trt_version:
+    trt_version = get_trt_version_from_libnvinfer()
+    if trt_version is not None:
         return trt_version
     try:
         import tensorrt as trt
@@ -143,22 +158,18 @@ def get_trt_version() -> Optional[Version]:
 
 
 @cache
-def get_trt_and_cuda_version_from_libnvinfer() -> (
-    Tuple[Optional[Version], Optional[Version]]
-):
+def get_trt_version_from_libnvinfer() -> Optional[Version]:
     try:
         result = subprocess.run(
             "dpkg -l | grep libnvinfer-bin", shell=True, capture_output=True, text=True
         )
         if result.returncode != 0:
-            return None, None
+            return None
         result_chunks = result.stdout.strip().split()
         libraries_versions = result_chunks[2].split("+cuda")
-        if len(libraries_versions) != 2:
-            return Version(libraries_versions[0]), None
-        return Version(libraries_versions[0]), Version(libraries_versions[1])
+        return Version(libraries_versions[0])
     except Exception:
-        return None, None
+        return None
 
 
 @cache
@@ -188,13 +199,13 @@ def resolve_jetson_type(jetson_module_name: str) -> str:
 
 
 @cache
-def get_jetpack_version() -> Optional[str]:
-    if JETPACK_VERSION:
-        return JETPACK_VERSION
-    return get_jetpack_version_from_tegra_release()
+def get_l4t_version() -> Optional[Version]:
+    if L4T_VERSION:
+        return Version(L4T_VERSION)
+    return get_l4t_version_from_tegra_release()
 
 
-def get_jetpack_version_from_tegra_release() -> Optional[str]:
+def get_l4t_version_from_tegra_release() -> Optional[Version]:
     try:
         with open("/etc/nv_tegra_release") as f:
             file_header = f.readline()
@@ -202,7 +213,7 @@ def get_jetpack_version_from_tegra_release() -> Optional[str]:
             if match:
                 major = match.group(1)
                 minor_patch = match.group(2)
-                return f"{major}.{minor_patch}"
+                return Version(f"{major}.{minor_patch}")
             return None
     except Exception:
         return None
@@ -279,13 +290,13 @@ def is_torch_available() -> bool:
 
 
 @cache
-def is_onnxruntime_available() -> bool:
+def get_onnxruntime_version() -> Optional[Version]:
     try:
         import onnxruntime
 
-        return True
+        return Version(onnxruntime.__version__)
     except ImportError:
-        return False
+        return None
 
 
 @cache

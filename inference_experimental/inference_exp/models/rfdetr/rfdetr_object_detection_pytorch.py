@@ -3,7 +3,6 @@ from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
-
 from inference_exp import Detections, ObjectDetectionModel
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
@@ -17,7 +16,9 @@ from inference_exp.models.common.roboflow.model_packages import (
     parse_model_characteristics,
     parse_pre_processing_config,
 )
-from inference_exp.models.common.roboflow.pre_processing import pre_process_network_input
+from inference_exp.models.common.roboflow.pre_processing import (
+    pre_process_network_input,
+)
 from inference_exp.models.rfdetr.post_processor import PostProcess
 from inference_exp.models.rfdetr.rfdetr_base_pytorch import (
     LWDETR,
