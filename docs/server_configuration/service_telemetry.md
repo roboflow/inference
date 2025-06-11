@@ -14,11 +14,11 @@ Service telemetry provides essential real-time data on system health, performanc
 
 In `inference` server, we enabled:
 
-* [`prometeus`](https://prometheus.io/) metrics
+* [`prometheus`](https://prometheus.io/) metrics
 
 * docker container metrics provided by Docker daemon
 
-## 🔥 [`prometeus`](https://prometheus.io/) in `inference` server
+## 🔥 [`prometheus`](https://prometheus.io/) in `inference` server
 
 To enable metrics, set environmental variable `ENABLE_PROMETHEUS=True` in your docker container:
 
