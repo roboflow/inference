@@ -1,4 +1,4 @@
-<div align="center">
+.<div align="center">
   <p>
     <a align="center" href="" target="https://inference.roboflow.com/">
       <img
