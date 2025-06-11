@@ -617,7 +617,6 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         self,
         step_execution_mode: StepExecutionMode,
     ):
-        self.bacnet_app = None
         self._step_execution_mode = step_execution_mode
         # all commands will be send to the camera normalized to -1 to 1
         # all setpoints are 0, which represents the center of the frame
@@ -630,6 +629,7 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         self.event_loop = CameraWrapper.create_event_loop()
         # pool of camera services can can be used in block
         self.cameras: Dict[Tuple[str, int], CameraWrapper] = {}
+        self._lock = threading.Lock()
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -652,8 +652,7 @@ class ONVIFSinkBlockV1(WorkflowBlock):
     ) -> Optional[CameraWrapper]:
         cameras = self.cameras
         camera_key = (camera_ip, camera_port)
-        lock = threading.Lock()
-        with lock:
+        with self._lock:
             if camera_key not in cameras:
                 try:
                     cameras[camera_key] = CameraWrapper(
@@ -663,7 +662,8 @@ class ONVIFSinkBlockV1(WorkflowBlock):
                         camera_ip, camera_port, camera_username, camera_password
                     )
                 except Exception as e:
-                    del cameras[camera_key]
+                    if camera_key in cameras:
+                        del cameras[camera_key]
                     raise ValueError(
                         f"Error connecting to camera at {camera_ip}:{camera_port}: {e}"
                     )
