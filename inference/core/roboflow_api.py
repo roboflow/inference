@@ -808,6 +808,7 @@ def get_weights_from_url_optimally(url: str) -> Response:
     Returns:
         Response: A requests.Response object with the content of the downloaded file.
     """
+    logger.debug("Downloading weights from url: %s", url)
     try:
         head_response = requests.head(
             wrap_url(url),
@@ -848,6 +849,7 @@ def _serial_download(url: str, total_size: int) -> Response:
     content = bytearray()
     downloaded_size = 0
     last_logged_percentage = -1
+    start_time = time.time()
     last_log_time = time.time()
     bytes_since_last_log = 0
 
