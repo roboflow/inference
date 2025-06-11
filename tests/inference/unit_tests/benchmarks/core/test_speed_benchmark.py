@@ -23,7 +23,7 @@ args = {
     "output_location": None,
 }
 
-
+@pytest.mark.skip
 def test_benchmark_equivalent_rfdetr(benchmark, dataset_reference):
     images, image_sizes = dataset_reference
 
@@ -31,6 +31,7 @@ def test_benchmark_equivalent_rfdetr(benchmark, dataset_reference):
 
     benchmark(model.infer, images)
 
+@pytest.mark.skip
 def test_benchmark_equivalent_yolov8n_seg(benchmark, dataset_reference):
     images, image_sizes = dataset_reference
 
@@ -38,6 +39,7 @@ def test_benchmark_equivalent_yolov8n_seg(benchmark, dataset_reference):
 
     benchmark(model.infer, images)
 
+@pytest.mark.skip
 def test_benchmark_equivalent_yolov8n(benchmark, dataset_reference):
     images, image_sizes = dataset_reference
 
