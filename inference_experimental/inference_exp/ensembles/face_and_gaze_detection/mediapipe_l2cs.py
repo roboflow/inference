@@ -142,7 +142,7 @@ def crop_images_to_detections(
                 image = image[[2, 1, 0], :, :]
             prepared_images.append(image.to(device))
     else:
-        ModelRuntimeError(f"Detected unknown input batch element: {type(images)}")
+        raise ModelRuntimeError(f"Detected unknown input batch element: {type(images)}")
     crops = []
     crops_images_bounds = []
     for image, image_detections in zip(prepared_images, detections):
