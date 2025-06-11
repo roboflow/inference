@@ -1,7 +1,7 @@
-from models.base.classification import ClassificationPrediction, ClassificationModel, MultiLabelClassificationPrediction, MultiLabelClassificationModel
-from models.base.depth_estimation import DepthEstimationModel
-from models.base.documents_parsing import DocumentParsingModel
-from models.base.embeddings import TextImageEmbeddingModel
-from models.base.instance_segmentation import InstanceSegmentationModel, InstanceDetections
-from models.base.keypoints_detection import KeyPointsDetectionModel, KeyPoints
-from models.base.object_detection import ObjectDetectionModel, OpenVocabularyObjectDetectionModel, Detections
+from inference_exp.models.base.classification import ClassificationPrediction, ClassificationModel, MultiLabelClassificationPrediction, MultiLabelClassificationModel
+from inference_exp.models.base.depth_estimation import DepthEstimationModel
+from inference_exp.models.base.documents_parsing import DocumentParsingModel
+from inference_exp.models.base.embeddings import TextImageEmbeddingModel
+from inference_exp.models.base.instance_segmentation import InstanceSegmentationModel, InstanceDetections
+from inference_exp.models.base.keypoints_detection import KeyPointsDetectionModel, KeyPoints
+from inference_exp.models.base.object_detection import ObjectDetectionModel, OpenVocabularyObjectDetectionModel, Detections

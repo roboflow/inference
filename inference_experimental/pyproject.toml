@@ -46,7 +46,7 @@ torch-cu128 = [
   "torch>=2.0.0,<3.0.0",
   "torchvision"
 ]
-torch-jp6-cu128 = [
+torch-jp6-cu126 = [
   "numpy<2.0.0",
   "torch>=2.0.0,<3.0.0",
   "torchvision",
@@ -61,7 +61,7 @@ onnx-cu118 = [
 onnx-cu12 = [
   "onnxruntime-gpu>=1.17.0,<1.23.0; platform_system != 'darwin'"
 ]
-onnx-jp6-cu128 = [
+onnx-jp6-cu126 = [
   "numpy<2.0.0",
   "onnxruntime-gpu>=1.17.0,<1.23.0; platform_system == 'linux' and platform_machine == 'arm64' and python_version < '3.12' "
 ]
@@ -88,23 +88,23 @@ torch = [
   { index = "torch-cu118", extra = "torch-cu118" },
   { index = "torch-cu124", extra = "torch-cu124" },
   { index = "torch-cu128", extra = "torch-cu128" },
-  { index = "jp6-cu128", extra = "torch-jp6-cu128" },
+  { index = "jp6-cu126", extra = "torch-jp6-cu126" },
 ]
 torchvision = [
   { index = "torch-cpu", extra = "torch-cpu" },
   { index = "torch-cu118", extra = "torch-cu118" },
   { index = "torch-cu124", extra = "torch-cu124" },
   { index = "torch-cu128", extra = "torch-cu128" },
-  { index = "jp6-cu128", extra = "torch-jp6-cu128" },
+  { index = "jp6-cu126", extra = "torch-jp6-cu126" },
 ]
 
 onnxruntime-gpu = [
   { index = "onnx-cu118", extra = "onnx-cu118"},
-  { index = "jp6-cu128", extra = "onnx-jp6-cu128" },
+  { index = "jp6-cu126", extra = "onnx-jp6-cu126" },
 ]
 
 flash-attn = [
-   { index = "jp6-cu128", extra = "torch-jp6-cu128" },
+   { index = "jp6-cu126", extra = "torch-jp6-cu126" },
 ]
 
 [[tool.uv.index]]
@@ -128,8 +128,8 @@ url = "https://download.pytorch.org/whl/cu118"
 explicit = true
 
 [[tool.uv.index]]
-name = "jp6-cu128"
-url = "https://pypi.jetson-ai-lab.dev/jp6/cu128/+simple"
+name = "jp6-cu126"
+url = "https://pypi.jetson-ai-lab.dev/jp6/cu126/+simple"
 explicit = true
 
 [[tool.uv.index]]
@@ -164,13 +164,13 @@ conflicts = [
     { extra = "torch-cu124" },
     { extra = "torch-cu126" },
     { extra = "torch-cu128" },
-    { extra = "torch-jp6-cu128" },
+    { extra = "torch-jp6-cu126" },
   ],
   [
     { extra = "onnx-cpu" },
     { extra = "onnx-cu118" },
     { extra = "onnx-cu12" },
-    { extra = "onnx-jp6-cu128" },
+    { extra = "onnx-jp6-cu126" },
   ],
   [
     { extra = "trt10" },
