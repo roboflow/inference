@@ -74,9 +74,6 @@ grounding-dino = [
 flash-attn = [
   "flash-attn==2.7.4.post1"
 ]
-flash-attn-jp6 = [
-  "flash-attn==2.7.4.post1"
-]
 trt10 = [
   "tensorrt>=10.0.0,<11.0.0; platform_system == 'Linux' or platform_system == 'Windows'",
   "tensorrt-cu12>=10.0.0,<11.0.0; platform_system == 'Linux' or platform_system == 'Windows'"
@@ -107,7 +104,7 @@ onnxruntime-gpu = [
 ]
 
 flash-attn = [
-   { index = "jp6-cu128", extra = "flash-attn-jp6" },
+   { index = "jp6-cu128", extra = "torch-jp6-cu128" },
 ]
 
 [[tool.uv.index]]
