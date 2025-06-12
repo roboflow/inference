@@ -120,7 +120,7 @@ def serialise_sv_detections(detections: sv.Detections) -> dict:
             for infer_key, sv_key in bounding_rect_mapping.items():
                 detection_dict[infer_key] = data[sv_key]
 
-                if PARENT_ID_KEY in data:
+        if PARENT_ID_KEY in data:
             detection_dict[PARENT_ID_KEY] = str(data[PARENT_ID_KEY])
 
         if (
