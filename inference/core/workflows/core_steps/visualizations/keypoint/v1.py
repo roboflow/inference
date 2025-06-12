@@ -1,4 +1,4 @@
-from typing import Literal, Optional, Type, Union
+from typing import List, Literal, Optional, Tuple, Type, Union
 
 import numpy as np
 import supervision as sv
@@ -15,6 +15,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_KIND,
     INTEGER_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
+    LIST_OF_VALUES_KIND,
     STRING_KIND,
     Selector,
 )
@@ -145,6 +146,11 @@ class KeypointManifest(VisualizationManifest):
             },
         },
     )
+    edges: Union[list, Selector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
+        description="Mapping of keypoints to edges. List of pairs of indices.",
+        default=None,
+        examples=["$inputs.edges"],
+    )
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
@@ -170,6 +176,7 @@ class KeypointVisualizationBlockV1(VisualizationBlock):
         thickness: int,
         radius: int,
         annotator_type: str,
+        edges: List[Tuple[int, int]],
     ) -> sv.annotators.base.BaseAnnotator:
         key = "_".join(
             map(
@@ -195,6 +202,7 @@ class KeypointVisualizationBlockV1(VisualizationBlock):
                 self.annotatorCache[key] = sv.EdgeAnnotator(
                     color=color,
                     thickness=thickness,
+                    edges=edges,
                 )
             elif annotator_type == "vertex":
                 self.annotatorCache[key] = sv.VertexAnnotator(
@@ -243,8 +251,9 @@ class KeypointVisualizationBlockV1(VisualizationBlock):
         text_padding: Optional[int],
         thickness: Optional[int],
         radius: Optional[int],
+        edges: Optional[List[Tuple[int, int]]] = None,
     ) -> BlockResult:
-        annotator = self.getAnnotator(
+        annotator: sv.EdgeAnnotator = self.getAnnotator(
             color,
             text_color,
             text_scale,
@@ -253,6 +262,7 @@ class KeypointVisualizationBlockV1(VisualizationBlock):
             thickness,
             radius,
             annotator_type,
+            edges,
         )
 
         keypoints = self.convert_detections_to_keypoints(predictions)

@@ -1,8 +1,7 @@
 import pytest
 
-from inference.core.workflows.core_steps.analytics.overlap.v1 import (
-    OverlapBlockV1,
-)
+from inference.core.workflows.core_steps.analytics.overlap.v1 import OverlapBlockV1
+
 
 def test_coords_overlap():
     assert not OverlapBlockV1.coords_overlap(

@@ -1,5 +1,6 @@
 requests>=2.32.0,<3.0.0
 docker>=7.0.0,<8.0.0
+click<8.2.0  # temporary pin until fastapi/typer#1145 is released
 typer>=0.9.0,<=0.12.5
 rich>=13.0.0,<13.10.0
 PyYAML~=6.0.0
@@ -11,6 +12,5 @@ py-cpuinfo~=9.0.0
 aiohttp>=3.9.0,<=3.10.11
 backoff~=2.2.0
 pandas>=2.2.3,<3.0.0
-rich~=13.0.0
 pybase64~=1.0.0
 pydantic>=2.8.0,<2.12.0

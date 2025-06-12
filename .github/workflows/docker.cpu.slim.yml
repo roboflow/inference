@@ -1,5 +1,6 @@
 name: Build and Push CPU Slim Container
-
+permissions:
+  contents: read
 on:
   release:
     types: [created]

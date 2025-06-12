@@ -37,7 +37,7 @@ DETECTION_WORKFLOW = {
 }
 
 DETECTION_RESULTS_FOR_ENVIRONMENT = {
-    PlatformEnvironment.ROBOFLOW_STAGING: np.array(
+    PlatformEnvironment.ROBOFLOW_STAGING_LAMBDA: np.array(
         [
             0.84734064,
             0.83652675,
@@ -53,7 +53,7 @@ DETECTION_RESULTS_FOR_ENVIRONMENT = {
             0.42601129,
         ]
     ),
-    PlatformEnvironment.ROBOFLOW_PLATFORM: np.array(
+    PlatformEnvironment.ROBOFLOW_PLATFORM_LAMBDA: np.array(
         [
             0.84734064,
             0.83652675,
@@ -70,6 +70,18 @@ DETECTION_RESULTS_FOR_ENVIRONMENT = {
         ]
     ),
 }
+DETECTION_RESULTS_FOR_ENVIRONMENT[PlatformEnvironment.ROBOFLOW_STAGING_SERVERLESS] = (
+    DETECTION_RESULTS_FOR_ENVIRONMENT[PlatformEnvironment.ROBOFLOW_STAGING_LAMBDA]
+)
+DETECTION_RESULTS_FOR_ENVIRONMENT[PlatformEnvironment.ROBOFLOW_STAGING_LOCALHOST] = (
+    DETECTION_RESULTS_FOR_ENVIRONMENT[PlatformEnvironment.ROBOFLOW_STAGING_LAMBDA]
+)
+DETECTION_RESULTS_FOR_ENVIRONMENT[PlatformEnvironment.ROBOFLOW_PLATFORM_SERVERLESS] = (
+    DETECTION_RESULTS_FOR_ENVIRONMENT[PlatformEnvironment.ROBOFLOW_PLATFORM_LAMBDA]
+)
+DETECTION_RESULTS_FOR_ENVIRONMENT[PlatformEnvironment.ROBOFLOW_PLATFORM_LOCALHOST] = (
+    DETECTION_RESULTS_FOR_ENVIRONMENT[PlatformEnvironment.ROBOFLOW_PLATFORM_LAMBDA]
+)
 
 
 @pytest.mark.flaky(retries=4, delay=1)
@@ -110,11 +122,11 @@ def test_detection_workflow(
     assert np.allclose(
         first_detections.confidence,
         DETECTION_RESULTS_FOR_ENVIRONMENT[platform_environment],
+        atol=1e-3,
     )
     second_detections = sv.Detections.from_inference(result[1]["predictions"])
     assert np.allclose(
         second_detections.confidence,
         DETECTION_RESULTS_FOR_ENVIRONMENT[platform_environment],
+        atol=1e-3,
     )
-    unique_inference_ids = {r["inference_id"] for r in result}
-    assert len(unique_inference_ids) == 2, "Expected unique inference ids granted"

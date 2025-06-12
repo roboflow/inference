@@ -1,5 +1,6 @@
 name: Build and Push GPU Container Parallel
-
+permissions:
+  contents: read
 on:
   release:
     types: [created]

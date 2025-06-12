@@ -1,5 +1,6 @@
 name: Google Colab Environment Probe
-
+permissions:
+  contents: read
 on:
   schedule:
     - cron: "0 */6 * * *"

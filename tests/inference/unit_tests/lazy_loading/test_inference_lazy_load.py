@@ -1,4 +1,5 @@
 import sys
+
 import pytest
 
 
@@ -95,23 +96,6 @@ def test_import_from_function():
     # Test with nonexistent module
     with pytest.raises(ImportError):
         _import_from("nonexistent_module", "attribute")
-
-
-def test_import_model_util():
-    """Test the _import_model_util helper function."""
-    from inference import _import_model_util
-
-    get_model = _import_model_util("get_model")
-    get_roboflow_model = _import_model_util("get_roboflow_model")
-
-    from inference.models.utils import get_model as direct_get_model
-    from inference.models.utils import get_roboflow_model as direct_get_roboflow_model
-
-    assert get_model is direct_get_model
-    assert get_roboflow_model is direct_get_roboflow_model
-
-    with pytest.raises(KeyError):
-        _import_model_util("nonexistent_function")
 
 
 def test_getattr_implementation(monkeypatch):

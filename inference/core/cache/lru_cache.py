@@ -1,5 +1,7 @@
 import collections
 
+from inference.core.logger import logger
+
 
 class LRUCache:
     def __init__(self, capacity=128):
