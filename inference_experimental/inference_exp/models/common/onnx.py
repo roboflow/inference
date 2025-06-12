@@ -170,8 +170,9 @@ def auto_cast_session_inputs(
         if not can_torch_type_be_casted_safely(source=actual_type, target=expected_type):
             raise ModelRuntimeError(
                 "While performing forward pass through the model, library bug was discovered - "
-                f"required model input named '{ort_input.name}' is missing. Submit "
-                f"issue to help us solving this problem: https://github.com/roboflow/inference/issues"
+                f"model requires the input type to be {expected_type}, but the actual input type is {actual_type} - "
+                f"this is a bug in model implementation. Submit issue to help us solving this problem: "
+                f"https://github.com/roboflow/inference/issues"
             )
         inputs[ort_input.name] = inputs[ort_input.name].to(dtype=expected_type)
     return inputs
