@@ -121,8 +121,7 @@ class YOLOv5ForObjectDetectionOnnx(
             if self._input_batch_size is None:
                 return run_session_via_iobinding(
                     session=self._session,
-                    input_name="images",
-                    input_tensor=pre_processed_images,
+                    inputs={"images": pre_processed_images},
                 )[0]
             results = []
             for i in range(0, pre_processed_images.shape[0], self._input_batch_size):
@@ -130,7 +129,7 @@ class YOLOv5ForObjectDetectionOnnx(
                     i : i + self._input_batch_size
                 ].contiguous()
                 batch_results = run_session_via_iobinding(
-                    session=self._session, input_name="images", input_tensor=batch_input
+                    session=self._session, inputs={"images": batch_input},
                 )[0]
                 results.append(batch_results)
             return torch.cat(results, dim=0)

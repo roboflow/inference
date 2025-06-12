@@ -324,7 +324,7 @@ def onnx_package_matches_runtime_environment(
     onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
     verbose: bool = False,
 ) -> bool:
-    if verbose and not runtime_x_ray.onnxruntime_version or not not runtime_x_ray.available_onnx_execution_providers:
+    if verbose and not runtime_x_ray.onnxruntime_version or not runtime_x_ray.available_onnx_execution_providers:
         print(
             f"Mode package with id '{model_package.package_id}' filtered out as onnxruntime not detected"
         )

@@ -122,8 +122,7 @@ class ClipOnnx(TextImageEmbeddingModel):
             if pre_processed_images.shape[0] <= self._max_batch_size:
                 return run_session_via_iobinding(
                     session=self._visual_onnx_session,
-                    input_name=self._visual_input_name,
-                    input_tensor=pre_processed_images,
+                    inputs={self._visual_input_name: pre_processed_images},
                 )[0]
         results = []
         for i in range(0, pre_processed_images.shape[0], self._max_batch_size):
@@ -132,8 +131,7 @@ class ClipOnnx(TextImageEmbeddingModel):
             ].contiguous()
             batch_results = run_session_via_iobinding(
                 session=self._visual_onnx_session,
-                input_name=self._visual_input_name,
-                input_tensor=batch_input,
+                inputs={self._visual_input_name: batch_input},
             )[0]
             results.append(batch_results)
         return torch.cat(results, dim=0)
@@ -146,16 +144,14 @@ class ClipOnnx(TextImageEmbeddingModel):
             if tokenized_batch.shape[0] <= self._max_batch_size:
                 return run_session_via_iobinding(
                     session=self._textual_onnx_session,
-                    input_name=self._textual_input_name,
-                    input_tensor=tokenized_batch,
+                    inputs={self._textual_input_name: tokenized_batch},
                 )[0]
         results = []
         for i in range(0, tokenized_batch.shape[0], self._max_batch_size):
             batch_input = tokenized_batch[i : i + self._max_batch_size].contiguous()
             batch_results = run_session_via_iobinding(
                 session=self._textual_onnx_session,
-                input_name=self._textual_input_name,
-                input_tensor=batch_input,
+                inputs={self._textual_input_name: batch_input},
             )[0]
             results.append(batch_results)
         return torch.cat(results, dim=0)

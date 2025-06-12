@@ -30,6 +30,16 @@ ORT_TYPES_TO_TORCH_TYPES_MAPPING = {
     "tensor(bool)": torch.bool,
 }
 
+SAFE_TORCH_CASTING = {
+    torch.float16: {torch.float32, torch.float64},
+    torch.float32: {torch.float64},
+    torch.int8: {torch.int16, torch.int32, torch.int64, torch.float64, torch.float32, torch.float16},
+    torch.int16: {torch.int32, torch.int64, torch.float64, torch.float32},
+    torch.int32: {torch.int64, torch.float32, torch.float64},
+    torch.uint8: {torch.int16, torch.int32, torch.int64, torch.float64, torch.float32, torch.float16},
+    torch.bool: {torch.uint8, torch.int8},
+}
+
 
 def set_execution_provider_defaults(
     providers: List[Union[str, tuple]],
@@ -61,12 +71,17 @@ def set_execution_provider_defaults(
 
 def run_session_via_iobinding(
     session: onnxruntime.InferenceSession,
-    input_name: str,
-    input_tensor: torch.Tensor,
+    inputs: Dict[str, torch.Tensor],
     output_shape_mapping: Optional[Dict[str, tuple]] = None,
 ) -> List[torch.Tensor]:
-    if input_tensor.device.type != "cuda":
-        results = session.run(None, {input_name: input_tensor.numpy()})
+    inputs = auto_cast_session_inputs(
+        session=session,
+        inputs=inputs,
+    )
+    device = get_input_device(inputs=inputs)
+    if device.type != "cuda":
+        inputs_np = {name: value.numpy() for name, value in inputs.items()}
+        results = session.run(None, inputs_np)
         return [torch.from_numpy(element) for element in results]
     if output_shape_mapping is None:
         output_shape_mapping = {}
@@ -80,12 +95,12 @@ def run_session_via_iobinding(
                 pre_allocated_output = torch.empty(
                     output_shape_mapping[output.name],
                     dtype=torch.float32,
-                    device=input_tensor.device,
+                    device=device,
                 )
                 binding.bind_output(
                     name=output.name,
                     device_type="cuda",
-                    device_id=input_tensor.device.index or 0,
+                    device_id=device.index or 0,
                     element_type=torch_output_type,
                     shape=tuple(pre_allocated_output.shape),
                     buffer_ptr=pre_allocated_output.data_ptr(),
@@ -99,27 +114,28 @@ def run_session_via_iobinding(
             pre_allocated_output = torch.empty(
                 output.shape,
                 dtype=torch.float32,
-                device=input_tensor.device,
+                device=device,
             )
             binding.bind_output(
                 name=output.name,
                 device_type="cuda",
-                device_id=input_tensor.device.index or 0,
+                device_id=device.index or 0,
                 element_type=torch_output_type,
                 shape=tuple(pre_allocated_output.shape),
                 buffer_ptr=pre_allocated_output.data_ptr(),
             )
             pre_allocated_outputs.append(pre_allocated_output)
-    input_type = torch_tensor_type_to_onnx_type(tensor_dtype=input_tensor.dtype)
-    input_data = input_tensor.contiguous()
-    binding.bind_input(
-        name=input_name,
-        device_type=input_data.device.type,
-        device_id=input_data.device.index or 0,
-        element_type=input_type,
-        shape=input_data.shape,
-        buffer_ptr=input_data.data_ptr(),
-    )
+    for ort_input in session.get_inputs():
+        input_tensor = inputs[ort_input.name].contiguous()
+        input_type = torch_tensor_type_to_onnx_type(tensor_dtype=input_tensor.dtype)
+        binding.bind_input(
+            name=ort_input.name,
+            device_type=input_tensor.device.type,
+            device_id=input_tensor.device.index or 0,
+            element_type=input_type,
+            shape=input_tensor.shape,
+            buffer_ptr=input_tensor.data_ptr(),
+        )
     binding.synchronize_inputs()
     session.run_with_iobinding(binding)
     if not some_outputs_dynamically_allocated:
@@ -135,6 +151,30 @@ def run_session_via_iobinding(
         result.append(out_tensor)
     return result
 
+
+def auto_cast_session_inputs(
+    session: onnxruntime.InferenceSession,
+    inputs: Dict[str, torch.Tensor]
+) -> Dict[str, torch.Tensor]:
+    for ort_input in session.get_inputs():
+        expected_type = ort_tensor_type_to_torch_tensor_type(ort_input.type)
+        if ort_input.name not in inputs:
+            raise ModelRuntimeError(
+                "While performing forward pass through the model, library bug was discovered - "
+                f"required model input named '{ort_input.name}' is missing. Submit "
+                f"issue to help us solving this problem: https://github.com/roboflow/inference/issues"
+            )
+        actual_type = inputs[ort_input.name].dtype
+        if actual_type == expected_type:
+            continue
+        if not can_torch_type_be_casted_safely(source=actual_type, target=expected_type):
+            raise ModelRuntimeError(
+                "While performing forward pass through the model, library bug was discovered - "
+                f"required model input named '{ort_input.name}' is missing. Submit "
+                f"issue to help us solving this problem: https://github.com/roboflow/inference/issues"
+            )
+        inputs[ort_input.name] = inputs[ort_input.name].to(dtype=expected_type)
+    return inputs
 
 
 def torch_tensor_type_to_onnx_type(tensor_dtype: torch.dtype) -> Union[np.dtype, int]:
@@ -161,3 +201,30 @@ def ort_tensor_type_to_torch_tensor_type(ort_dtype: str) -> torch.dtype:
 
 def is_tensor_shape_dynamic(shape: tuple) -> bool:
     return any(isinstance(dim, str) for dim in shape)
+
+
+def can_torch_type_be_casted_safely(source: torch.dtype, target: torch.dtype) -> bool:
+    if source not in SAFE_TORCH_CASTING:
+        return False
+    return target in SAFE_TORCH_CASTING[source]
+
+
+def get_input_device(inputs: Dict[str, torch.Tensor]) -> torch.device:
+    device = None
+    for input_name, input_tensor in inputs.items():
+        if device is None:
+            device = input_tensor.device
+        elif input_tensor.device != device:
+            raise ModelRuntimeError(
+                "While performing forward pass through the model, library discovered the input tensor which is "
+                f"wrongly allocated on a different device that rest of the inputs - input named '{input_name}' "
+                f"is allocated on {input_tensor.device}, whereas rest of the inputs are allocated on {device}. "
+                f"This is a bug in model implementation. To help us fixing that, please submit new issue: "
+                f"https://github.com/roboflow/inference/issues"
+            )
+    if device is None:
+        raise ModelRuntimeError(
+            "No inputs detected for the model. Raise new issue to help us fixing the problem: "
+            "https://github.com/roboflow/inference/issues"
+        )
+    return device

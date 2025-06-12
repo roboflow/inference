@@ -129,8 +129,7 @@ class YOLOv5ForInstanceSegmentationOnnx(
             if self._input_batch_size is None:
                 instances, protos = run_session_via_iobinding(
                     session=self._session,
-                    input_name="images",
-                    input_tensor=pre_processed_images,
+                    inputs={"images": pre_processed_images},
                 )
                 return instances, protos
             instances, protos = [], []
@@ -139,7 +138,8 @@ class YOLOv5ForInstanceSegmentationOnnx(
                     i : i + self._input_batch_size
                 ].contiguous()
                 batch_instances, batch_protos = run_session_via_iobinding(
-                    session=self._session, input_name="images", input_tensor=batch_input
+                    session=self._session,
+                    inputs={"images": batch_input},
                 )
                 instances.append(batch_instances)
                 protos.append(batch_protos)

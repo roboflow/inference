@@ -169,8 +169,7 @@ class L2CSNetOnnx:
                 ].contiguous()
                 batch_yaw, batch_pitch = run_session_via_iobinding(
                     session=self._session,
-                    input_name=self._input_name,
-                    input_tensor=batch_input,
+                    inputs={self._input_name: batch_input}
                 )
                 yaw.append(batch_yaw)
                 pitch.append(batch_pitch)

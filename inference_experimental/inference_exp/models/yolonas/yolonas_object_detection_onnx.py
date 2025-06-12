@@ -121,8 +121,7 @@ class YOLONasForObjectDetectionOnnx(
             if self._input_batch_size is None:
                 results = run_session_via_iobinding(
                     session=self._session,
-                    input_name="input.1",
-                    input_tensor=pre_processed_images,
+                    inputs={"input.1": pre_processed_images},
                 )
                 return torch.cat(results, dim=-1)
             results = []
@@ -131,7 +130,8 @@ class YOLONasForObjectDetectionOnnx(
                     i : i + self._input_batch_size
                 ].contiguous()
                 batch_results = run_session_via_iobinding(
-                    session=self._session, input_name="input.1", input_tensor=batch_input
+                    session=self._session,
+                    inputs={"input.1": batch_input},
                 )
                 results.append(torch.cat(batch_results, dim=-1))
             return torch.cat(results, dim=0)
