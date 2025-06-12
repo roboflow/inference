@@ -30,14 +30,14 @@ ORT_TYPES_TO_TORCH_TYPES_MAPPING = {
     "tensor(bool)": torch.bool,
 }
 
-SAFE_TORCH_CASTING = {
-    torch.float16: {torch.float32, torch.float64},
-    torch.float32: {torch.float64},
-    torch.int8: {torch.int16, torch.int32, torch.int64, torch.float64, torch.float32, torch.float16},
-    torch.int16: {torch.int32, torch.int64, torch.float64, torch.float32},
-    torch.int32: {torch.int64, torch.float32, torch.float64},
-    torch.uint8: {torch.int16, torch.int32, torch.int64, torch.float64, torch.float32, torch.float16},
-    torch.bool: {torch.uint8, torch.int8},
+MODEL_INPUT_CASTING = {
+    torch.float16: {torch.float16, torch.float32, torch.float64},
+    torch.float32: {torch.float16, torch.float32, torch.float64},
+    torch.int8: {torch.int8, torch.int16, torch.int32, torch.int64, torch.float64, torch.float32, torch.float16},
+    torch.int16: {torch.int16, torch.int32, torch.int64, torch.float16, torch.float32, torch.float64},
+    torch.int32: {torch.int32, torch.int64, torch.float16, torch.float32, torch.float64},
+    torch.uint8: {torch.uint8, torch.int16, torch.int32, torch.int64, torch.float16, torch.float32, torch.float64},
+    torch.bool: {torch.uint8, torch.int8, torch.float16, torch.float32, torch.float64},
 }
 
 
@@ -167,7 +167,7 @@ def auto_cast_session_inputs(
         actual_type = inputs[ort_input.name].dtype
         if actual_type == expected_type:
             continue
-        if not can_torch_type_be_casted_safely(source=actual_type, target=expected_type):
+        if not can_model_input_be_casted(source=actual_type, target=expected_type):
             raise ModelRuntimeError(
                 "While performing forward pass through the model, library bug was discovered - "
                 f"model requires the input type to be {expected_type}, but the actual input type is {actual_type} - "
@@ -204,10 +204,10 @@ def is_tensor_shape_dynamic(shape: tuple) -> bool:
     return any(isinstance(dim, str) for dim in shape)
 
 
-def can_torch_type_be_casted_safely(source: torch.dtype, target: torch.dtype) -> bool:
-    if source not in SAFE_TORCH_CASTING:
+def can_model_input_be_casted(source: torch.dtype, target: torch.dtype) -> bool:
+    if source not in MODEL_INPUT_CASTING:
         return False
-    return target in SAFE_TORCH_CASTING[source]
+    return target in MODEL_INPUT_CASTING[source]
 
 
 def get_input_device(inputs: Dict[str, torch.Tensor]) -> torch.device:
