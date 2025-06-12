@@ -77,6 +77,7 @@ class TRTPackageDetails:
 @dataclass(frozen=True)
 class ONNXPackageDetails:
     opset: int
+    incompatible_providers: Optional[List[str]] = field(default=None)
 
 
 @dataclass(frozen=True)

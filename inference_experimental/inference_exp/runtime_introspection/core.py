@@ -4,7 +4,7 @@ import re
 import subprocess
 from dataclasses import dataclass
 from functools import cache
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Set
 
 import torch
 from inference_exp.configuration import L4T_VERSION, RUNNING_ON_JETSON
@@ -38,6 +38,7 @@ class RuntimeXRayResult:
     os_version: Optional[str]
     torch_available: bool
     onnxruntime_version: Optional[Version]
+    available_onnx_execution_providers: Optional[Set[str]]
     hf_transformers_available: bool
     ultralytics_available: bool
     trt_python_package_available: bool
@@ -70,7 +71,11 @@ def x_ray_runtime_environment() -> RuntimeXRayResult:
     gpu_devices = get_available_gpu_devices()
     gpu_devices_cc = get_available_gpu_devices_cc()
     torch_available = is_torch_available()
-    onnxruntime_version = get_onnxruntime_version()
+    onnx_info = get_onnxruntime_info()
+    if onnx_info:
+        onnxruntime_version, available_onnx_execution_providers = onnx_info
+    else:
+        onnxruntime_version, available_onnx_execution_providers = None, None
     hf_transformers_available = is_hf_transformers_available()
     ultralytics_available = is_ultralytics_available()
     trt_python_package_available = is_trt_python_package_available()
@@ -86,6 +91,7 @@ def x_ray_runtime_environment() -> RuntimeXRayResult:
         os_version=os_version,
         torch_available=torch_available,
         onnxruntime_version=onnxruntime_version,
+        available_onnx_execution_providers=available_onnx_execution_providers,
         hf_transformers_available=hf_transformers_available,
         ultralytics_available=ultralytics_available,
         trt_python_package_available=trt_python_package_available,
@@ -290,11 +296,12 @@ def is_torch_available() -> bool:
 
 
 @cache
-def get_onnxruntime_version() -> Optional[Version]:
+def get_onnxruntime_info() -> Optional[Tuple[Version, Set[str]]]:
     try:
         import onnxruntime
 
-        return Version(onnxruntime.__version__)
+        available_providers = onnxruntime.get_available_providers()
+        return Version(onnxruntime.__version__), available_providers
     except ImportError:
         return None
 

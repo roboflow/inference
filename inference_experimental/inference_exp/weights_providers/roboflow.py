@@ -208,6 +208,7 @@ class OnnxModelPackageV1(BaseModel):
     static_batch_size: Optional[int] = Field(alias="staticBatchSize", default=None)
     quantization: Quantization
     opset: int
+    incompatible_providers: Optional[List[str]] = Field(alias="incompatibleProviders", default=None)
 
 
 def parse_onnx_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageMetadata:
@@ -231,7 +232,10 @@ def parse_onnx_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageMe
         dynamic_batch_size_supported=parsed_manifest.dynamic_batch_size,
         static_batch_size=parsed_manifest.static_batch_size,
         package_artefacts=package_artefacts,
-        onnx_package_details=ONNXPackageDetails(opset=parsed_manifest.opset),
+        onnx_package_details=ONNXPackageDetails(
+            opset=parsed_manifest.opset,
+            incompatible_providers=parsed_manifest.incompatible_providers,
+        ),
     )
 
 

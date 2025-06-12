@@ -7,7 +7,7 @@ ONNXRUNTIME_EXECUTION_PROVIDERS = parse_comma_separated_values(
     values=os.getenv(
         "ONNXRUNTIME_EXECUTION_PROVIDERS",
         "CUDAExecutionProvider,OpenVINOExecutionProvider,CoreMLExecutionProvider,CPUExecutionProvider",
-    )
+    ).strip("[").strip("]")
 )
 DEFAULT_DEVICE_STR = os.getenv(
     "DEFAULT_DEVICE",

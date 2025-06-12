@@ -2,6 +2,8 @@ from functools import cache
 from typing import List, Optional, Set, Tuple, Union
 
 import torch
+
+from inference_exp.configuration import ONNXRUNTIME_EXECUTION_PROVIDERS
 from inference_exp.errors import (
     AmbiguousModelPackageResolutionError,
     InvalidRequestedBatchSizeError,
@@ -27,13 +29,6 @@ from inference_exp.weights_providers.entities import (
 )
 from packaging.version import Version
 
-DEFAULT_ALLOWED_QUANTIZATION = [
-    Quantization.UNKNOWN,
-    Quantization.FP32,
-    Quantization.FP16,
-    Quantization.BF16,
-]
-
 
 def negotiate_model_packages(
     model_packages: List[ModelPackageMetadata],
@@ -46,6 +41,7 @@ def negotiate_model_packages(
         Union[str, Quantization, List[Union[str, Quantization]]]
     ] = None,
     device: Optional[torch.device] = None,
+    onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
     verbose: bool = False,
 ) -> List[ModelPackageMetadata]:
     if verbose:
@@ -94,6 +90,7 @@ def negotiate_model_packages(
             model_package=model_package,
             runtime_x_ray=runtime_x_ray,
             device=device,
+            onnx_execution_providers=onnx_execution_providers,
             verbose=verbose,
         )
     ]
@@ -295,6 +292,7 @@ def model_package_matches_runtime_environment(
     model_package: ModelPackageMetadata,
     runtime_x_ray: RuntimeXRayResult,
     device: Optional[torch.device] = None,
+    onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
     verbose: bool = False,
 ) -> bool:
     if model_package.backend not in MODEL_TO_RUNTIME_COMPATIBILITY_MATCHERS:
@@ -303,7 +301,7 @@ def model_package_matches_runtime_environment(
             f"This is `inference` bug - raise issue: https://github.com/roboflow/inference/issues"
         )
     return MODEL_TO_RUNTIME_COMPATIBILITY_MATCHERS[model_package.backend](
-        model_package, runtime_x_ray, device, verbose
+        model_package, runtime_x_ray, device, onnx_execution_providers, verbose
     )
 
 
@@ -323,13 +321,48 @@ def onnx_package_matches_runtime_environment(
     model_package: ModelPackageMetadata,
     runtime_x_ray: RuntimeXRayResult,
     device: Optional[torch.device] = None,
+    onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
     verbose: bool = False,
 ) -> bool:
-    if verbose and not runtime_x_ray.onnxruntime_version:
+    if verbose and not runtime_x_ray.onnxruntime_version or not not runtime_x_ray.available_onnx_execution_providers:
         print(
             f"Mode package with id '{model_package.package_id}' filtered out as onnxruntime not detected"
         )
-    if not runtime_x_ray.onnxruntime_version:
+    if not runtime_x_ray.onnxruntime_version or not runtime_x_ray.available_onnx_execution_providers:
+        return False
+    if model_package.onnx_package_details is None:
+        # no restrictions raised by the backend
+        return True
+    if not onnx_execution_providers:
+        onnx_execution_providers = ONNXRUNTIME_EXECUTION_PROVIDERS
+    onnx_execution_providers = [
+        provider for provider in onnx_execution_providers
+        if provider in runtime_x_ray.available_onnx_execution_providers
+    ]
+    if not onnx_execution_providers:
+        # no actual providers capable of running the model
+        return False
+    incompatible_providers = model_package.onnx_package_details.incompatible_providers
+    if incompatible_providers is None:
+        incompatible_providers = []
+    incompatible_providers = set(incompatible_providers)
+    if onnx_execution_providers[0] in incompatible_providers:
+        # checking the first one only - this is kind of heuristic, as
+        # probably there may be a fallback - so theoretically it is possible
+        # for this function to claim that package is compatible, but specific
+        # operation in the graph may fall back to another EP - but that's
+        # rather a situation deeply specific for a model and if we see this be
+        # problematic, we will implement solution - so far - to counter-act errors
+        # which can only be determined in runtime we may either expect model implementation
+        # would run test inference in init or user to define specific model package ID
+        # to run. Not great, not terrible, yet I can expect this to be a basis of heated
+        # debate some time in the future :)
+        if verbose:
+            print(
+                f"Mode package with id '{model_package.package_id}' filtered out as execution provider "
+                f"which is selected as primary one ('{onnx_execution_providers[0]}') is enlisted as incompatible "
+                f"for model package."
+            )
         return False
     package_opset = model_package.onnx_package_details.opset
     onnx_runtime_simple_version = Version(
@@ -345,6 +378,7 @@ def torch_package_matches_runtime_environment(
     model_package: ModelPackageMetadata,
     runtime_x_ray: RuntimeXRayResult,
     device: Optional[torch.device] = None,
+    onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
     verbose: bool = False,
 ) -> bool:
     if verbose and not runtime_x_ray.torch_available:
@@ -358,6 +392,7 @@ def hf_transformers_package_matches_runtime_environment(
     model_package: ModelPackageMetadata,
     runtime_x_ray: RuntimeXRayResult,
     device: Optional[torch.device] = None,
+    onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
     verbose: bool = False,
 ) -> bool:
     if verbose and not runtime_x_ray.hf_transformers_available:
@@ -371,6 +406,7 @@ def ultralytics_package_matches_runtime_environment(
     model_package: ModelPackageMetadata,
     runtime_x_ray: RuntimeXRayResult,
     device: Optional[torch.device] = None,
+    onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
     verbose: bool = False,
 ) -> bool:
     if verbose and not runtime_x_ray.ultralytics_available:
@@ -384,6 +420,7 @@ def trt_package_matches_runtime_environment(
     model_package: ModelPackageMetadata,
     runtime_x_ray: RuntimeXRayResult,
     device: Optional[torch.device] = None,
+    onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
     verbose: bool = False,
 ) -> bool:
     if not runtime_x_ray.trt_version:

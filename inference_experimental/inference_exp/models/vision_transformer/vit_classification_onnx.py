@@ -120,7 +120,7 @@ class VITForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):
                 results = run_session_via_iobinding(
                     session=self._session,
                     input_name="input.1",
-                    inputs=pre_processed_images,
+                    input_tensor=pre_processed_images,
                 )[0]
                 return results
             all_results = []
@@ -129,7 +129,7 @@ class VITForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):
                     i : i + self._input_batch_size
                 ].contiguous()
                 results = run_session_via_iobinding(
-                    session=self._session, input_name="input.1", inputs=batch_input
+                    session=self._session, input_name="input.1", input_tensor=batch_input
                 )[0]
                 all_results.append(results)
             return torch.cat(all_results, dim=0)

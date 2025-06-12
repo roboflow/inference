@@ -170,7 +170,7 @@ class L2CSNetOnnx:
                 batch_yaw, batch_pitch = run_session_via_iobinding(
                     session=self._session,
                     input_name=self._input_name,
-                    inputs=batch_input,
+                    input_tensor=batch_input,
                 )
                 yaw.append(batch_yaw)
                 pitch.append(batch_pitch)

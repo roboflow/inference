@@ -123,7 +123,7 @@ class ClipOnnx(TextImageEmbeddingModel):
                 return run_session_via_iobinding(
                     session=self._visual_onnx_session,
                     input_name=self._visual_input_name,
-                    inputs=pre_processed_images,
+                    input_tensor=pre_processed_images,
                 )[0]
         results = []
         for i in range(0, pre_processed_images.shape[0], self._max_batch_size):
@@ -133,7 +133,7 @@ class ClipOnnx(TextImageEmbeddingModel):
             batch_results = run_session_via_iobinding(
                 session=self._visual_onnx_session,
                 input_name=self._visual_input_name,
-                inputs=batch_input,
+                input_tensor=batch_input,
             )[0]
             results.append(batch_results)
         return torch.cat(results, dim=0)
@@ -147,7 +147,7 @@ class ClipOnnx(TextImageEmbeddingModel):
                 return run_session_via_iobinding(
                     session=self._textual_onnx_session,
                     input_name=self._textual_input_name,
-                    inputs=tokenized_batch,
+                    input_tensor=tokenized_batch,
                 )[0]
         results = []
         for i in range(0, tokenized_batch.shape[0], self._max_batch_size):
@@ -155,7 +155,7 @@ class ClipOnnx(TextImageEmbeddingModel):
             batch_results = run_session_via_iobinding(
                 session=self._textual_onnx_session,
                 input_name=self._textual_input_name,
-                inputs=batch_input,
+                input_tensor=batch_input,
             )[0]
             results.append(batch_results)
         return torch.cat(results, dim=0)

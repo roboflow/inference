@@ -78,6 +78,7 @@ class AutoModel:
                 requested_batch_size=requested_batch_size,
                 requested_quantization=requested_quantization,
                 device=device,
+                onnx_execution_providers=onnx_execution_providers,
                 verbose=verbose,
             )
             model_init_kwargs = {
@@ -118,6 +119,8 @@ def attempt_loading_matching_model_packages(
         )
     failed_load_attempts: List[Tuple[str, Exception]] = []
     for model_package in matching_model_packages:
+        if verbose:
+            print(f"Attempt to load model package: {model_package.get_summary()}")
         try:
             return initialize_model(
                 model_id=model_id,
@@ -139,6 +142,7 @@ def attempt_loading_matching_model_packages(
                 f"the event. https://github.com/roboflow/inference/issues"
             )
             failed_load_attempts.append((model_package.package_id, error))
+
     summary_of_errors = "\n".join(
         f"\t* model_package_id={model_package_id} error={error} error_type={error.__class__.__name__}"
         for model_package_id, error in failed_load_attempts
