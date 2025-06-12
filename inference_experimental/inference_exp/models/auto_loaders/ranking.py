@@ -44,11 +44,13 @@ def rank_model_packages(
             if model_package.dynamic_batch_size_supported
             else STATIC_BATCH_SIZE_KEY
         )
+        static_batch_size_score = 0 if model_package.static_batch_size is None else -1 * model_package.static_batch_size
         sorting_features.append(
             (
                 BACKEND_PRIORITY.get(model_package.backend, 0),
                 QUANTIZATION_PRIORITY.get(model_package.quantization, 0),
                 BATCH_SIZE_PRIORITY[batch_mode],
+                static_batch_size_score,  # the bigger statis batch size, the worse - requires padding
                 retrieve_onnx_opset(model_package),  # the higher opset, the better
                 retrieve_cuda_device_match(
                     model_package
@@ -56,7 +58,7 @@ def rank_model_packages(
                 model_package,
             )
         )
-    sorted_features = sorted(sorting_features, key=lambda x: x[:5], reverse=True)
+    sorted_features = sorted(sorting_features, key=lambda x: x[:7], reverse=True)
     return [f[-1] for f in sorted_features]
 
 

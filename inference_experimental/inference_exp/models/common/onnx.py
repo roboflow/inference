@@ -68,6 +68,8 @@ def run_session_via_iobinding(
     if input_tensor.device.type != "cuda":
         results = session.run(None, {input_name: input_tensor.numpy()})
         return [torch.from_numpy(element) for element in results]
+    if output_shape_mapping is None:
+        output_shape_mapping = {}
     binding = session.io_binding()
     pre_allocated_outputs: List[Optional[torch.Tensor]] = []
     some_outputs_dynamically_allocated = False
