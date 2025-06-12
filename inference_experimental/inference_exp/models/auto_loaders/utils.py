@@ -24,3 +24,4 @@ def filter_available_devices_with_selected_device(
         all_available_cuda_devices = [all_available_cuda_devices[index]]
         all_available_devices_cc = [all_available_devices_cc[index]]
         return all_available_cuda_devices, all_available_devices_cc
+    return all_available_cuda_devices, all_available_devices_cc
