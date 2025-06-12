@@ -16,7 +16,7 @@ Simply download the latest installer for your operating system.  You can find th
  - [Download the Roboflow Inference DMG](https://github.com/roboflow/inference/releases) disk image
  - Mount hte disk image by double clicking it
  - Drag the Roboflow Inference App to the Application Folder
- - Go to your Application Folder and double click the Roboflow Infernce App to start the server
+ - Go to your Application Folder and double click the Roboflow Inference App to start the server
 
 
 
@@ -34,7 +34,7 @@ notifications).
 
 ## Run via Docker
 
-The preferred way to use Inference is via Docker 
+The preferred way to use Inference is via Docker
 (see [Why Docker](/understand/architecture.md#why-docker)).
 
 [Install Docker](https://docs.docker.com/engine/install/) (and
@@ -46,7 +46,7 @@ pip install inference-cli
 inference server start
 ```
 
-The `inference server start` command attempts to automatically choose 
+The `inference server start` command attempts to automatically choose
 and configure the optimal container to optimize performance on your machine.
 See [Using Your New Server](#using-your-new-server) for next steps.
 
@@ -57,7 +57,7 @@ See [Using Your New Server](#using-your-new-server) for next steps.
 ## Dev Mode
 
 The `--dev` parameter to `inference server start` starts in development mode.
-This spins up a companion Jupyter notebook server with a quickstart guide on 
+This spins up a companion Jupyter notebook server with a quickstart guide on
 [`localhost:9002`](http://localhost:9002). Dive in there for a whirlwind tour
 of your new Inference Server's functionality!
 
