@@ -84,7 +84,7 @@ class RoboflowModelRegistry(ModelRegistry):
         logger.debug(f"Model type: {model_type}")
 
         if model_type not in self.registry_dict:
-            raise ModelNotRecognisedError(f"Model type not supported: {model_type}")
+            raise ModelNotRecognisedError(f"Model type not supported, you may want to try a different inference server configuration or endpoint: {model_type}")
         return self.registry_dict[model_type]
 
 
