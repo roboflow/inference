@@ -83,6 +83,7 @@ def negotiate_model_packages(
     runtime_x_ray = x_ray_runtime_environment()
     if verbose:
         print("Selecting model packages matching to runtime")
+        print(runtime_x_ray)
     results = [
         model_package
         for model_package in model_packages
