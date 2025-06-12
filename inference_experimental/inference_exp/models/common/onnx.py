@@ -107,6 +107,11 @@ def run_session_via_iobinding(
                 )
                 pre_allocated_outputs.append(pre_allocated_output)
             else:
+                binding.bind_output(
+                    name=output.name,
+                    device_type="cuda",
+                    device_id=device.index or 0,
+                )
                 some_outputs_dynamically_allocated = True
                 pre_allocated_outputs.append(None)
         else:
