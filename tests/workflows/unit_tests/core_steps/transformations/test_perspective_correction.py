@@ -138,7 +138,13 @@ def test_extend_rectangular_perspective_polygon_detections_within_polygon():
     )
 
     # when
-    extended_polygon, original_width, original_height, extended_width, extended_height = extend_perspective_polygon(
+    (
+        extended_polygon,
+        original_width,
+        original_height,
+        extended_width,
+        extended_height,
+    ) = extend_perspective_polygon(
         polygon=polygon,
         detections=detections,
         bbox_position=sv.Position.BOTTOM_CENTER,
@@ -213,7 +219,13 @@ def test_extend_rectangular_perspective_polygon_detections_outside_polygon():
     )
 
     # when
-    extended_polygon, original_width, original_height, extended_width, extended_height = extend_perspective_polygon(
+    (
+        extended_polygon,
+        original_width,
+        original_height,
+        extended_width,
+        extended_height,
+    ) = extend_perspective_polygon(
         polygon=polygon,
         detections=detections,
         bbox_position=sv.Position.BOTTOM_CENTER,
@@ -262,12 +274,14 @@ def test_generate_transformation_matrix():
     polygon = np.array([[100, 110], [100, 100], [110, 100], [110, 110]])
 
     # when
-    transformation_matrix, extended_width, extended_height = generate_transformation_matrix(
-        src_polygon=polygon,
-        detections=sv.Detections.empty(),
-        transformed_rect_width=1000,
-        transformed_rect_height=1000,
-        detections_anchor=sv.Position.BOTTOM_CENTER,
+    transformation_matrix, extended_width, extended_height = (
+        generate_transformation_matrix(
+            src_polygon=polygon,
+            detections=sv.Detections.empty(),
+            transformed_rect_width=1000,
+            transformed_rect_height=1000,
+            detections_anchor=sv.Position.BOTTOM_CENTER,
+        )
     )
 
     expected_transformation_matrix = np.array(
