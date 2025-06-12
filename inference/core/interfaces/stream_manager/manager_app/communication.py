@@ -29,7 +29,7 @@ def receive_socket_data(
             private_message=f"Header is indicating non positive payload size: {payload_size}",
             public_message=f"Header is indicating non positive payload size: {payload_size}",
         )
-    received = b""
+    received = bytearray()
     while len(received) < payload_size:
         chunk = source.recv(buffer_size)
         if len(chunk) == 0:
@@ -37,7 +37,7 @@ def receive_socket_data(
                 private_message="Socket was closed to read before payload was decoded.",
                 public_message="Socket was closed to read before payload was decoded.",
             )
-        received += chunk
+        received.extend(chunk)
     try:
         return json.loads(received)
     except ValueError as error:
