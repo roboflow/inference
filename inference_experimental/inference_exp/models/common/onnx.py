@@ -94,14 +94,14 @@ def run_session_via_iobinding(
                 torch_output_type = ort_tensor_type_to_torch_tensor_type(output.type)
                 pre_allocated_output = torch.empty(
                     output_shape_mapping[output.name],
-                    dtype=torch.float32,
+                    dtype=torch_output_type,
                     device=device,
                 )
                 binding.bind_output(
                     name=output.name,
                     device_type="cuda",
                     device_id=device.index or 0,
-                    element_type=torch_output_type,
+                    element_type=torch_tensor_type_to_onnx_type(torch_output_type),
                     shape=tuple(pre_allocated_output.shape),
                     buffer_ptr=pre_allocated_output.data_ptr(),
                 )
@@ -118,14 +118,14 @@ def run_session_via_iobinding(
             torch_output_type = ort_tensor_type_to_torch_tensor_type(output.type)
             pre_allocated_output = torch.empty(
                 output.shape,
-                dtype=torch.float32,
+                dtype=torch_output_type,
                 device=device,
             )
             binding.bind_output(
                 name=output.name,
                 device_type="cuda",
                 device_id=device.index or 0,
-                element_type=torch_output_type,
+                element_type=torch_tensor_type_to_onnx_type(torch_output_type),
                 shape=tuple(pre_allocated_output.shape),
                 buffer_ptr=pre_allocated_output.data_ptr(),
             )
