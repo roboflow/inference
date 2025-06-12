@@ -148,6 +148,9 @@ def serialise_sv_detections(detections: sv.Detections) -> dict:
                 )
             ]
 
+        if DETECTED_CODE_KEY in data:
+            detection_dict[DETECTED_CODE_KEY] = data[DETECTED_CODE_KEY]
+
         serialized_detections.append(detection_dict)
 
     image_metadata = {
