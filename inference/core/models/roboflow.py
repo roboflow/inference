@@ -280,7 +280,7 @@ class RoboflowInferenceModel(Model):
     def model_artifact_bucket(self):
         return INFER_BUCKET
 
-    def download_model_artifacts_from_roboflow_api(self) -> None:
+    def download_model_artifacts_from_roboflow_api(self, countinference: bool = None, service_secret: str = None) -> None:
         logger.debug("Downloading model artifacts from Roboflow API")
 
         # Use the same lock file pattern as in clear_cache
@@ -296,6 +296,8 @@ class RoboflowInferenceModel(Model):
                         model_id=self.endpoint,
                         endpoint_type=ModelEndpointType.ORT,
                         device_id=self.device_id,
+                        countinference=countinference,
+                        service_secret=service_secret,
                     )
                     if "ort" not in api_data.keys():
                         raise ModelArtefactError(
@@ -324,6 +326,8 @@ class RoboflowInferenceModel(Model):
                     api_data = get_roboflow_instant_model_data(
                         api_key=self.api_key,
                         model_id=self.endpoint,
+                        countinference=countinference,
+                        service_secret=service_secret,
                     )
                     if (
                         "modelFiles" not in api_data
