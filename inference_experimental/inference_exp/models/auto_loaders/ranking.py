@@ -59,7 +59,7 @@ def rank_model_packages(
                 model_package,
             )
         )
-    sorted_features = sorted(sorting_features, key=lambda x: x[:8], reverse=True)
+    sorted_features = sorted(sorting_features, key=lambda x: x[:7], reverse=True)
     return [f[-1] for f in sorted_features]
 
 
