@@ -369,33 +369,47 @@ class InferencePipelineManager(Process):
             KeyError,
             NotImplementedError,
         ) as error:
+            error_message = "Could not decode InferencePipeline initialisation command payload."
+            peer_connection.video_transform_track.stop()
+            asyncio.run_coroutine_threadsafe(peer_connection.close(), loop)
+            loop.stop()
             self._handle_error(
                 request_id=request_id,
                 error=error,
-                public_error_message="Could not decode InferencePipeline initialisation command payload.",
+                public_error_message=error_message,
                 error_type=ErrorType.INVALID_PAYLOAD,
             )
         except RoboflowAPINotAuthorizedError as error:
+            error_message = "Invalid API key used or API key is missing. Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key"
+            peer_connection.video_transform_track.stop()
+            asyncio.run_coroutine_threadsafe(peer_connection.close(), loop)
+            loop.stop()
             self._handle_error(
                 request_id=request_id,
                 error=error,
-                public_error_message="Invalid API key used or API key is missing. "
-                "Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key",
+                public_error_message=error_message,
                 error_type=ErrorType.AUTHORISATION_ERROR,
             )
         except RoboflowAPINotNotFoundError as error:
+            error_message = "Requested Roboflow resources (models / workflows etc.) not available or wrong API key used."
+            peer_connection.video_transform_track.stop()
+            asyncio.run_coroutine_threadsafe(peer_connection.close(), loop)
+            loop.stop()
             self._handle_error(
                 request_id=request_id,
                 error=error,
-                public_error_message="Requested Roboflow resources (models / workflows etc.) not available or "
-                "wrong API key used.",
+                public_error_message=error_message,
                 error_type=ErrorType.NOT_FOUND,
             )
         except WorkflowSyntaxError as error:
+            error_message = "Provided workflow configuration is not valid."
+            peer_connection.video_transform_track.stop()
+            asyncio.run_coroutine_threadsafe(peer_connection.close(), loop)
+            loop.stop()
             self._handle_error(
                 request_id=request_id,
                 error=error,
-                public_error_message="Provided workflow configuration is not valid.",
+                public_error_message=error_message,
                 error_type=ErrorType.INVALID_PAYLOAD,
             )
 
