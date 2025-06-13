@@ -53,13 +53,14 @@ def rank_model_packages(
                 static_batch_size_score,  # the bigger statis batch size, the worse - requires padding
                 retrieve_onnx_opset(model_package),  # the higher opset, the better
                 retrieve_trt_forward_compatible_match(model_package),
+                retrieve_same_trt_cc_compatibility(model_package),
                 retrieve_cuda_device_match(
                     model_package
                 ),  # we like more direct matches
                 model_package,
             )
         )
-    sorted_features = sorted(sorting_features, key=lambda x: x[:7], reverse=True)
+    sorted_features = sorted(sorting_features, key=lambda x: x[:8], reverse=True)
     return [f[-1] for f in sorted_features]
 
 
@@ -88,6 +89,12 @@ def retrieve_cuda_device_match(
         return 0
     compilation_device = model_package.environment_requirements.cuda_device_name
     return int(any(dev == compilation_device for dev in all_available_cuda_devices))
+
+
+def retrieve_same_trt_cc_compatibility(model_package: ModelPackageMetadata) -> int:
+    if model_package.trt_package_details is None:
+        return 1
+    return int(not model_package.trt_package_details.same_cc_compatible)
 
 
 def retrieve_trt_forward_compatible_match(model_package: ModelPackageMetadata) -> int:
