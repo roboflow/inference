@@ -28,6 +28,7 @@ from typing_extensions import ParamSpec
 from inference.core.env import (
     API_KEY,
     DEDICATED_DEPLOYMENT_ID,
+    DEVICE_ID,
     GCP_SERVERLESS,
     LAMBDA,
     REDIS_HOST,
@@ -578,6 +579,8 @@ class UsageCollector:
         }
         if DEDICATED_DEPLOYMENT_ID:
             resource_details["dedicated_deployment_id"] = DEDICATED_DEPLOYMENT_ID
+        if DEVICE_ID:
+            resource_details["device_id"] = DEVICE_ID
         resource_id = ""
         # TODO: add requires_api_key, True if workflow definition comes from platform or model comes from workspace
         if category == "workflows":
