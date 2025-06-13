@@ -87,6 +87,7 @@ def select_matching_model_packages(
         model_packages=model_metadata.model_packages,
         requested_backends=BackendType.ONNX,
         requested_quantization=Quantization.FP32,
+        allow_untrusted_packages=True,
         verbose=True,
     )
     if dynamic_dimensions_in_use:

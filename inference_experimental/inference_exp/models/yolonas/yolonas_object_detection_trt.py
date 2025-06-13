@@ -34,6 +34,7 @@ class YOLONasForObjectDetectionTRT(
         cls,
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
+        engine_host_code_allowed: bool = False,
         **kwargs,
     ) -> "YOLONasForObjectDetectionTRT":
         if device.type != "cuda":
@@ -58,7 +59,10 @@ class YOLONasForObjectDetectionTRT(
         trt_config = parse_trt_config(
             config_path=model_package_content["trt_config.json"]
         )
-        engine = load_model(model_path=model_package_content["engine.plan"])
+        engine = load_model(
+            model_path=model_package_content["engine.plan"],
+            engine_host_code_allowed=engine_host_code_allowed,
+        )
         context = engine.create_execution_context()
         return cls(
             engine=engine,

@@ -212,10 +212,11 @@ def trt_dtype_to_torch(trt_dtype):
     }[trt_dtype]
 
 
-def load_model(model_path: str) -> trt.ICudaEngine:
+def load_model(model_path: str, engine_host_code_allowed: bool = False) -> trt.ICudaEngine:
     try:
         local_logger = InferenceTRTLogger(with_memory=True)
         with open(model_path, "rb") as f, trt.Runtime(local_logger) as runtime:
+            runtime.engine_host_code_allowed = engine_host_code_allowed
             engine = runtime.deserialize_cuda_engine(f.read())
             if engine is None:
                 logger_traces = local_logger.get_memory()

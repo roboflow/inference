@@ -37,6 +37,7 @@ class YOLOv8ForKeyPointsDetectionTRT(
         cls,
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
+        engine_host_code_allowed: bool = False,
         **kwargs,
     ) -> "YOLOv8ForKeyPointsDetectionTRT":
         if device.type != "cuda":
@@ -65,7 +66,10 @@ class YOLOv8ForKeyPointsDetectionTRT(
         parsed_key_points_metadata = parse_key_points_metadata(
             key_points_metadata_path=model_package_content["keypoints_metadata.json"]
         )
-        engine = load_model(model_path=model_package_content["engine.plan"])
+        engine = load_model(
+            model_path=model_package_content["engine.plan"],
+            engine_host_code_allowed=engine_host_code_allowed,
+        )
         context = engine.create_execution_context()
         return cls(
             engine=engine,

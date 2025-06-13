@@ -1,5 +1,5 @@
 import os.path
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union, Literal
 
 import torch
 from inference_exp.configuration import DEFAULT_DEVICE, INFERENCE_HOME
@@ -63,6 +63,8 @@ class AutoModel:
         max_package_loading_attempts: Optional[int] = None,
         verbose: bool = False,
         model_download_file_lock_acquire_timeout: int = 10,
+        allow_untrusted_packages: bool = False,
+        trt_engine_host_code_allowed: bool = True,
         **kwargs,
     ) -> AnyModel:
         if not os.path.isdir(model_name_or_path):
@@ -79,12 +81,15 @@ class AutoModel:
                 requested_quantization=requested_quantization,
                 device=device,
                 onnx_execution_providers=onnx_execution_providers,
+                allow_untrusted_packages=allow_untrusted_packages,
+                trt_engine_host_code_allowed=trt_engine_host_code_allowed,
                 verbose=verbose,
             )
             model_init_kwargs = {
                 "onnx_execution_providers": onnx_execution_providers,
                 "device": device,
                 "default_onnx_trt_options": default_onnx_trt_options,
+                "engine_host_code_allowed": trt_engine_host_code_allowed,
             }
             model_init_kwargs.update(kwargs)
             return attempt_loading_matching_model_packages(

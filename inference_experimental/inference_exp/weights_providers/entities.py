@@ -96,6 +96,7 @@ class ModelPackageMetadata:
     static_batch_size: Optional[int] = field(default=None)
     trt_package_details: Optional[TRTPackageDetails] = field(default=None)
     onnx_package_details: Optional[ONNXPackageDetails] = field(default=None)
+    trusted_source: bool = field(default=False)
     environment_requirements: Optional[
         Union[ServerEnvironmentRequirements, JetsonEnvironmentRequirements]
     ] = field(default=None)

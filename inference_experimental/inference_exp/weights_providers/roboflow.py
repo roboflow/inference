@@ -50,6 +50,7 @@ class RoboflowModelPackageV1(BaseModel):
     package_id: str = Field(alias="packageId")
     package_manifest: dict = Field(alias="packageManifest")
     package_files: List[RoboflowModelPackageFile] = Field(alias="packageFiles")
+    trusted_source: bool = Field(alias="trustedSource", default=False)
 
 
 class RoboflowModelMetadata(BaseModel):
@@ -236,6 +237,7 @@ def parse_onnx_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageMe
             opset=parsed_manifest.opset,
             incompatible_providers=parsed_manifest.incompatible_providers,
         ),
+        trusted_source=metadata.trusted_source,
     )
 
 
@@ -343,6 +345,7 @@ def parse_trt_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageMet
         trt_package_details=trt_package_details,
         package_artefacts=package_artefacts,
         environment_requirements=environment_requirements,
+        trusted_source=metadata.trusted_source,
     )
 
 
@@ -375,6 +378,7 @@ def parse_torch_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageM
         dynamic_batch_size_supported=parsed_manifest.dynamic_batch_size,
         static_batch_size=parsed_manifest.static_batch_size,
         package_artefacts=package_artefacts,
+        trusted_source=metadata.trusted_source,
     )
 
 
@@ -394,6 +398,7 @@ def parse_hf_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageMeta
         backend=BackendType.HF,
         quantization=parsed_manifest.quantization,
         package_artefacts=package_artefacts,
+        trusted_source=metadata.trusted_source,
     )
 
 
@@ -408,6 +413,7 @@ def parse_ultralytics_model_package(
         backend=BackendType.ULTRALYTICS,
         package_artefacts=package_artefacts,
         quantization=Quantization.UNKNOWN,
+        trusted_source=metadata.trusted_source,
     )
 
 

@@ -1,5 +1,5 @@
 from functools import cache
-from typing import List, Optional, Set, Tuple, Union
+from typing import List, Optional, Set, Tuple, Union, Literal
 
 import torch
 
@@ -42,15 +42,23 @@ def negotiate_model_packages(
     ] = None,
     device: Optional[torch.device] = None,
     onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
+    allow_untrusted_packages: bool = False,
+    trt_engine_host_code_allowed: bool = True,
     verbose: bool = False,
 ) -> List[ModelPackageMetadata]:
     if verbose:
+        print("The following model packages were exposed by weights provider:")
         print_model_packages(model_packages=model_packages)
     if not model_packages:
         raise NoModelPackagesAvailableError(
             f"Could not select model package to load among ones announced by weights provider. "
             f"That may indicate that the 'inference' installation lacks additional dependencies or "
             f"the backend does not provide expected model packages."
+        )
+    if not allow_untrusted_packages:
+        model_packages = remove_untrusted_packages(
+            model_packages=model_packages,
+            verbose=verbose,
         )
     if requested_model_package_id is not None:
         return [
@@ -92,6 +100,7 @@ def negotiate_model_packages(
             runtime_x_ray=runtime_x_ray,
             device=device,
             onnx_execution_providers=onnx_execution_providers,
+            trt_engine_host_code_allowed=trt_engine_host_code_allowed,
             verbose=verbose,
         )
     ]
@@ -139,11 +148,26 @@ def determine_default_allowed_quantization(
 
 
 def print_model_packages(model_packages: List[ModelPackageMetadata]) -> None:
-    print("The following model packages were exposed by weights provider:")
     for i, model_package in enumerate(model_packages):
         print(f"{i+1}. {model_package.get_summary()}")
     if not model_packages:
         print("No model packages!")
+
+
+def remove_untrusted_packages(
+    model_packages: List[ModelPackageMetadata],
+    verbose: bool = False,
+) -> List[ModelPackageMetadata]:
+    result = []
+    for model_package in model_packages:
+        if not model_package.trusted_source:
+            if verbose:
+                print(
+                    f"Model package with id `{model_package.package_id}` is filtered out as come from untrusted source"
+                )
+            continue
+        result.append(model_package)
+    return result
 
 
 def select_model_package_by_id(
@@ -300,6 +324,7 @@ def model_package_matches_runtime_environment(
     runtime_x_ray: RuntimeXRayResult,
     device: Optional[torch.device] = None,
     onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
+    trt_engine_host_code_allowed: bool = True,
     verbose: bool = False,
 ) -> bool:
     if model_package.backend not in MODEL_TO_RUNTIME_COMPATIBILITY_MATCHERS:
@@ -308,7 +333,7 @@ def model_package_matches_runtime_environment(
             f"This is `inference` bug - raise issue: https://github.com/roboflow/inference/issues"
         )
     return MODEL_TO_RUNTIME_COMPATIBILITY_MATCHERS[model_package.backend](
-        model_package, runtime_x_ray, device, onnx_execution_providers, verbose
+        model_package, runtime_x_ray, device, onnx_execution_providers, trt_engine_host_code_allowed, verbose
     )
 
 
@@ -329,6 +354,7 @@ def onnx_package_matches_runtime_environment(
     runtime_x_ray: RuntimeXRayResult,
     device: Optional[torch.device] = None,
     onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
+    trt_engine_host_code_allowed: bool = True,
     verbose: bool = False,
 ) -> bool:
     if verbose and not runtime_x_ray.onnxruntime_version or not runtime_x_ray.available_onnx_execution_providers:
@@ -386,6 +412,7 @@ def torch_package_matches_runtime_environment(
     runtime_x_ray: RuntimeXRayResult,
     device: Optional[torch.device] = None,
     onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
+    trt_engine_host_code_allowed: bool = True,
     verbose: bool = False,
 ) -> bool:
     if verbose and not runtime_x_ray.torch_available:
@@ -400,6 +427,7 @@ def hf_transformers_package_matches_runtime_environment(
     runtime_x_ray: RuntimeXRayResult,
     device: Optional[torch.device] = None,
     onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
+    trt_engine_host_code_allowed: bool = True,
     verbose: bool = False,
 ) -> bool:
     if verbose and not runtime_x_ray.hf_transformers_available:
@@ -414,6 +442,7 @@ def ultralytics_package_matches_runtime_environment(
     runtime_x_ray: RuntimeXRayResult,
     device: Optional[torch.device] = None,
     onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
+    trt_engine_host_code_allowed: bool = True,
     verbose: bool = False,
 ) -> bool:
     if verbose and not runtime_x_ray.ultralytics_available:
@@ -428,6 +457,7 @@ def trt_package_matches_runtime_environment(
     runtime_x_ray: RuntimeXRayResult,
     device: Optional[torch.device] = None,
     onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
+    trt_engine_host_code_allowed: bool = True,
     verbose: bool = False,
 ) -> bool:
     if not runtime_x_ray.trt_version:
@@ -502,6 +532,8 @@ def trt_package_matches_runtime_environment(
             if trt_lean_runtime_excluded:
                 # not supported for now
                 return False
+            if not trt_engine_host_code_allowed:
+                return False
         elif not verify_versions_up_to_major_minor_and_micro(
             runtime_x_ray.trt_version, model_environment.trt_version
         ):
@@ -549,6 +581,8 @@ def trt_package_matches_runtime_environment(
             return False
         if trt_lean_runtime_excluded:
             # not supported for now
+            return False
+        if not trt_engine_host_code_allowed:
             return False
     elif not verify_versions_up_to_major_minor_and_micro(
         runtime_x_ray.trt_version, model_environment.trt_version
