@@ -196,7 +196,7 @@ def compile_model_to_trt(
         if isinstance(model_input_size, int):
             model_input_size = (model_input_size, model_input_size)
     else:
-        model_input_size = session.get_inputs()[0][2:4]
+        model_input_size = session.get_inputs()[0].shape[2:4]
     dynamic_batch_sizes = None
     dynamic_dimensions_in_use = all(
         e is not None for e in [min_batch_size, opt_batch_size, max_batch_size]
