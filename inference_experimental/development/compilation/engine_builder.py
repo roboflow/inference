@@ -68,6 +68,7 @@ class EngineBuilder:
         self,
         engine_path: str,
         precision: Literal["fp32", "fp16", "int8"],
+        input_name: str,
         input_size: Tuple[int, int],
         dynamic_batch_sizes: Optional[Tuple[int, int, int]] = None,
         trt_version_compatible: bool = False,
@@ -96,7 +97,7 @@ class EngineBuilder:
         if dynamic_batch_sizes:
             bs_min, bs_opt, bs_max = dynamic_batch_sizes
             h, w = input_size
-            profile.set_shape(inputs[0].name, (bs_min, 3, h, w),  (bs_opt, 3, h, w),  (bs_max, 3, h, w))
+            profile.set_shape(input_name, (bs_min, 3, h, w),  (bs_opt, 3, h, w),  (bs_max, 3, h, w))
         self.config.add_optimization_profile(profile)
         engine_bytes = self.builder.build_serialized_network(self.network, self.config)
         if engine_bytes is None:

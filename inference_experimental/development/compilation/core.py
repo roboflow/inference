@@ -229,6 +229,7 @@ def compile_model_to_trt(
     engine_builder.create_network(onnx_path=onnx_path)
     engine_builder.create_engine(
         engine_path=engine_path,
+        input_name=session.get_inputs()[0].name,
         precision=precision,
         input_size=model_input_size,
         dynamic_batch_sizes=dynamic_batch_sizes,
