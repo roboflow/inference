@@ -1,4 +1,5 @@
-from typing import Dict, List, Literal, Optional, Tuple, Type
+import sys
+from typing import Dict, List, Literal, Optional, Tuple, Type, Union
 from uuid import uuid4
 
 import numpy as np
@@ -17,8 +18,10 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.core.workflows.execution_engine.entities.types import (
     CLASSIFICATION_PREDICTION_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    INTEGER_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    STRING_KIND,
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -75,6 +78,19 @@ class BlockManifest(WorkflowBlockManifest):
         description="The output of classification model for crops taken based on RoIs pointed as the other parameter",
         examples=["$steps.my_classification_model.predictions"],
     )
+    fallback_class_name: Union[Optional[str], Selector(kind=[STRING_KIND])] = Field(
+        default=None,
+        title="Fallback class name",
+        description="The class name to be used as a fallback if no class is predicted for a bounding box",
+        examples=["unknown"],
+    )
+    fallback_class_id: Union[Optional[int], Selector(kind=[INTEGER_KIND])] = Field(
+        default=None,
+        title="Fallback class id",
+        description="The class id to be used as a fallback if no class is predicted for a bounding box;"
+                    f"if not specified or negative, the class id will be set to {sys.maxsize}",
+        examples=[77],
+    )
 
     @classmethod
     def accepts_empty_values(cls) -> bool:
@@ -119,6 +135,8 @@ class DetectionsClassesReplacementBlockV1(WorkflowBlock):
         self,
         object_detection_predictions: Optional[sv.Detections],
         classification_predictions: Optional[Batch[Optional[dict]]],
+        fallback_class_name: Optional[str],
+        fallback_class_id: Optional[int],
     ) -> BlockResult:
         if object_detection_predictions is None:
             return {"predictions": None}
@@ -131,7 +149,9 @@ class DetectionsClassesReplacementBlockV1(WorkflowBlock):
             return {"predictions": sv.Detections.empty()}
         detection_id_by_class: Dict[str, Optional[Tuple[str, int]]] = {
             prediction[PARENT_ID_KEY]: extract_leading_class_from_prediction(
-                prediction=prediction
+                prediction=prediction,
+                fallback_class_name=fallback_class_name,
+                fallback_class_id=fallback_class_id,
             )
             for prediction in classification_predictions
             if prediction is not None
@@ -180,10 +200,20 @@ class DetectionsClassesReplacementBlockV1(WorkflowBlock):
 
 def extract_leading_class_from_prediction(
     prediction: dict,
+    fallback_class_name: Optional[str] = None,
+    fallback_class_id: Optional[int] = None,
 ) -> Optional[Tuple[str, int, float]]:
     if "top" in prediction:
-        if not prediction.get("predictions"):
+        if not prediction.get("predictions") and not fallback_class_name:
             return None
+        elif not prediction.get("predictions") and fallback_class_name:
+            try:
+                fallback_class_id = int(fallback_class_id)
+            except ValueError:
+                fallback_class_id = None
+            if fallback_class_id is None or fallback_class_id < 0:
+                fallback_class_id = sys.maxsize
+            return fallback_class_name, fallback_class_id, 0
         class_name = prediction["top"]
         matching_class_ids = [
             (p["class_id"], p["confidence"])
