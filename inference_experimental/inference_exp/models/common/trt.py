@@ -1,11 +1,37 @@
-from typing import List
+from typing import List, Tuple
 
 import tensorrt as trt
 import torch
-from inference_exp.errors import ModelRuntimeError
+from inference_exp.errors import ModelRuntimeError, CorruptedModelPackageError
+from inference_exp.logger import logger
 from inference_exp.models.common.roboflow.model_packages import TRTConfig
 
-TRT_LOGGER = trt.Logger(trt.Logger.WARNING)
+
+class InferenceTRTLogger(trt.ILogger):
+
+    def __init__(self, with_memory: bool = False):
+        super().__init__()
+        self._memory: List[Tuple[trt.ILogger.Severity, str]] = []
+        self._with_memory = with_memory
+
+    def log(self, severity: trt.ILogger.Severity, msg: str) -> None:
+        if self._with_memory:
+            self._memory.append((severity, msg))
+        if severity is trt.Logger.VERBOSE:
+            log_function = logger.debug
+        elif severity is trt.Logger.INFO:
+            log_function = logger.info
+        elif severity is trt.Logger.WARNING:
+            log_function = logger.warning
+        else:
+            log_function = logger.error
+        log_function(msg)
+
+    def get_memory(self) -> List[Tuple[trt.ILogger.Severity, str]]:
+        return self._memory
+
+
+TRT_LOGGER = InferenceTRTLogger()
 
 
 def infer_from_trt_engine(
@@ -185,9 +211,32 @@ def trt_dtype_to_torch(trt_dtype):
     }[trt_dtype]
 
 
-def load_model(model_path: str, logger: trt.Logger = TRT_LOGGER) -> trt.ICudaEngine:
-    with open(model_path, "rb") as f, trt.Runtime(logger) as runtime:
-        return runtime.deserialize_cuda_engine(f.read())
+def load_model(model_path: str) -> trt.ICudaEngine:
+    try:
+        local_logger = InferenceTRTLogger(with_memory=True)
+        with open(model_path, "rb") as f, trt.Runtime(local_logger) as runtime:
+            engine = runtime.deserialize_cuda_engine(f.read())
+            if engine is None:
+                logger_traces = local_logger.get_memory()
+                logger_traces_str = "\n".join(f"[{severity}] {msg}" for severity, msg in logger_traces)
+                raise CorruptedModelPackageError(
+                    "Could not load TRT engine due to runtime error. This error is usually caused "
+                    "by model package incompatibility with runtime environment. If you selected model with "
+                    "specific model package to be run - verify that your environment is compatible with your "
+                    "package. If the package was selected automatically by the library - this error indicate bug. "
+                    "You can help us solving this problem describing the issue: "
+                    "https://github.com/roboflow/inference/issues\nBelow you can find debug information provided "
+                    f"by TRT runtime, which may be helpful:\n{logger_traces_str}"
+                )
+            return engine
+    except OSError as error:
+        raise CorruptedModelPackageError(
+            "Could not load TRT engine - file not found. This error may be caused by "
+            "corrupted model package or invalid model path that was provided. If you "
+            "initialized the model manually, running the code locally - make sure that provided "
+            "path is correct. Otherwise, contact Roboflow to solve the problem: "
+            "https://github.com/roboflow/inference/issues"
+        ) from error
 
 
 def get_output_tensor_names(engine: trt.ICudaEngine) -> List[str]:

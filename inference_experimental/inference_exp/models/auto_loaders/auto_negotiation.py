@@ -287,6 +287,8 @@ def model_package_matches_batch_size_request(
                 f"specifying bounds - including into results."
             )
         return True
+    else:
+        return min_batch_size <= model_package.static_batch_size <= max_batch_size
 
 
 def model_package_matches_runtime_environment(
