@@ -7,7 +7,7 @@ import tensorrt as trt
 from inference_exp.logger import logger
 from inference_exp.models.common.trt import InferenceTRTLogger
 
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 
 class EngineBuilder:
