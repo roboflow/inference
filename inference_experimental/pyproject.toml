@@ -79,10 +79,9 @@ flash-attn = [
 ]
 trt10 = [
   "tensorrt>=10.0.0,<11.0.0; platform_system == 'Linux' or platform_system == 'Windows'",
-  "tensorrt-cu12>=10.0.0,<11.0.0; platform_system == 'Linux' or platform_system == 'Windows'"
-]
-trt8 = [
-  "tensorrt>=8.0.0,<9.0.0; platform_system == 'Linux' or platform_system == 'Windows'",
+  "tensorrt-cu12>=10.0.0,<11.0.0; platform_system == 'Linux' or platform_system == 'Windows'",
+  "tensorrt-lean>=10.0.0,<11.0.0; platform_system == 'Linux' or platform_system == 'Windows'",
+  "tensorrt-lean-cu12>=10.0.0,<11.0.0; platform_system == 'Linux' or platform_system == 'Windows'",
 ]
 
 [tool.uv.sources]
@@ -148,6 +147,10 @@ name = "tensorrt-cu12"
 requires-dist = ["tensorrt-cu12-bindings", "tensorrt-cu12-libs"]
 
 [[tool.uv.dependency-metadata]]
+name = "tensorrt-lean-cu12"
+requires-dist = ["tensorrt-lean-cu12-bindings", "tensorrt-cu12-libs"]
+
+[[tool.uv.dependency-metadata]]
 name = "tensorrt-cu12-libs"
 requires-dist = ["nvidia-cuda-runtime-cu12"]
 
@@ -175,8 +178,4 @@ conflicts = [
     { extra = "onnx-cu12" },
     { extra = "onnx-jp6-cu126" },
   ],
-  [
-    { extra = "trt10" },
-    { extra = "trt8" },
-  ]
 ]
