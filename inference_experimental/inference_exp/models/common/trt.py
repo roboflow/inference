@@ -17,13 +17,14 @@ class InferenceTRTLogger(trt.ILogger):
     def log(self, severity: trt.ILogger.Severity, msg: str) -> None:
         if self._with_memory:
             self._memory.append((severity, msg))
-        if severity is trt.Logger.VERBOSE:
+        severity_str = str(severity)
+        if severity_str == str(trt.Logger.VERBOSE):
             print("a")
             log_function = logger.debug
-        elif severity is trt.Logger.INFO:
+        elif severity_str is str(trt.Logger.INFO):
             print("b")
             log_function = logger.info
-        elif severity is trt.Logger.WARNING:
+        elif severity_str is str(trt.Logger.WARNING):
             print("c")
             log_function = logger.warning
         else:
