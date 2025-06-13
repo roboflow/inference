@@ -1389,6 +1389,44 @@ class InferenceHTTPClient:
                 response.raise_for_status()
                 return await response.json()
 
+    @wrap_errors
+    def get_perception_encoder_image_embeddings(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        perception_encoder_version: Optional[str] = None,
+    ) -> Union[dict, List[dict]]:
+        """Get Perception Encoder embeddings for input image(s)."""
+        extra_payload = {}
+        if perception_encoder_version is not None:
+            extra_payload["perception_encoder_version_id"] = perception_encoder_version
+        result = self._post_images(
+            inference_input=inference_input,
+            endpoint="/perception_encoder/embed_image",
+            extra_payload=extra_payload,
+        )
+        return unwrap_single_element_list(result)
+
+    @wrap_errors
+    def get_perception_encoder_text_embeddings(
+        self,
+        text: Union[str, List[str]],
+        perception_encoder_version: Optional[str] = None,
+    ) -> Union[dict, List[dict]]:
+        """Get Perception Encoder embeddings for input text(s)."""
+        payload = self.__initialise_payload()
+        payload["text"] = text
+        if perception_encoder_version is not None:
+            payload["perception_encoder_version_id"] = perception_encoder_version
+        response = requests.post(
+            self.__wrap_url_with_api_key(
+                f"{self.__api_url}/perception_encoder/embed_text"
+            ),
+            json=payload,
+            headers=DEFAULT_HEADERS,
+        )
+        api_key_safe_raise_for_status(response=response)
+        return unwrap_single_element_list(sequence=response.json())
+
     @deprecated(
         reason="Please use run_workflow(...) method. This method will be removed end of Q2 2024"
     )
