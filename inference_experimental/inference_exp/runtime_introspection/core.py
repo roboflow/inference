@@ -51,7 +51,7 @@ class RuntimeXRayResult:
             f"cuda_version={self.cuda_version}, trt_version={self.trt_version}, "
             f"jetson_type={self.jetson_type}, l4t_version={self.l4t_version}, os_version={self.os_version}, "
             f"torch_available={self.torch_available}, onnxruntime_version={self.onnxruntime_version}, "
-            f"hf_transformers_available={self.hf_transformers_available}, "
+            f"available_onnx_execution_providers={self.available_onnx_execution_providers}, hf_transformers_available={self.hf_transformers_available}, "
             f"ultralytics_available={self.ultralytics_available}, "
             f"trt_python_package_available={self.trt_python_package_available})"
         )

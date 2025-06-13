@@ -169,7 +169,26 @@ def compile_model_to_trt(
     print(f"Compiling model in {model_dir}")
     runtime_xray = x_ray_runtime_environment()
     xray_path = os.path.join(model_dir, "env-x-ray.json")
-    dump_json(path=xray_path, contents=asdict(runtime_xray))
+    dump_json(
+        path=xray_path,
+        contents={
+            "gpu_available": runtime_xray.gpu_available,
+            "gpu_devices": runtime_xray.gpu_devices,
+            "gpu_devices_cc": [str(e) for e in runtime_xray.gpu_devices_cc],
+            "driver_version": str(runtime_xray.driver_version) if runtime_xray.driver_version else None,
+            "cuda_version": str(runtime_xray.cuda_version) if runtime_xray.cuda_version else None,
+            "trt_version": str(runtime_xray.trt_version) if runtime_xray.trt_version else None,
+            "jetson_type": runtime_xray.jetson_type,
+            "l4t_version": str(runtime_xray.l4t_version) if runtime_xray.l4t_version else None,
+            "os_version": runtime_xray.os_version,
+            "torch_available": runtime_xray.torch_available,
+            "onnxruntime_version": str(runtime_xray.onnxruntime_version) if runtime_xray.onnxruntime_version else None,
+            "available_onnx_execution_providers": list(runtime_xray.available_onnx_execution_providers) if runtime_xray.available_onnx_execution_providers else None,
+            "hf_transformers_available": runtime_xray.hf_transformers_available,
+            "ultralytics_available": runtime_xray.ultralytics_available,
+            "trt_python_package_available": runtime_xray.trt_python_package_available
+        }
+    )
     onnx_path = os.path.join(model_dir, WEIGHTS_FILE_NAME)
     session = onnxruntime.InferenceSession(onnx_path)
     if model_input_size is not None:
