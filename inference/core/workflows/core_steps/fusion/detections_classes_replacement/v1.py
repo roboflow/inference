@@ -182,6 +182,8 @@ def extract_leading_class_from_prediction(
     prediction: dict,
 ) -> Optional[Tuple[str, int, float]]:
     if "top" in prediction:
+        if not prediction.get("predictions"):
+            return None
         class_name = prediction["top"]
         matching_class_ids = [
             (p["class_id"], p["confidence"])
