@@ -101,7 +101,11 @@ def negotiate_model_packages(
             f"detected runtime environment. That may indicate that the 'inference' installation lacks additional "
             f"dependencies or the model is not registered with packages that would allow `inference` to run."
         )
-    return rank_model_packages(model_packages=results)
+    results = rank_model_packages(model_packages=results)
+    if verbose:
+        print("Eligible packages ranked:")
+        print_model_packages(model_packages=results)
+    return results
 
 
 @cache
