@@ -18,15 +18,20 @@ class InferenceTRTLogger(trt.ILogger):
         if self._with_memory:
             self._memory.append((severity, msg))
         if severity is trt.Logger.VERBOSE:
+            print("a")
             log_function = logger.debug
         elif severity is trt.Logger.INFO:
+            print("b")
             log_function = logger.info
         elif severity is trt.Logger.WARNING:
+            print("c")
             log_function = logger.warning
         else:
+            print("d")
             log_function = logger.error
-        print(severity)
+        print(severity, type(severity))
         log_function(msg)
+        raise Exception()
 
     def get_memory(self) -> List[Tuple[trt.ILogger.Severity, str]]:
         return self._memory
