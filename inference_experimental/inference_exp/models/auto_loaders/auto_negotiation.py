@@ -502,7 +502,7 @@ def trt_package_matches_runtime_environment(
             if trt_lean_runtime_excluded:
                 # not supported for now
                 return False
-        elif verify_versions_up_to_major_minor_and_micro(
+        elif not verify_versions_up_to_major_minor_and_micro(
             runtime_x_ray.trt_version, model_environment.trt_version
         ):
             if verbose:
@@ -550,7 +550,7 @@ def trt_package_matches_runtime_environment(
         if trt_lean_runtime_excluded:
             # not supported for now
             return False
-    elif verify_versions_up_to_major_minor_and_micro(
+    elif not verify_versions_up_to_major_minor_and_micro(
         runtime_x_ray.trt_version, model_environment.trt_version
     ):
         if verbose:
