@@ -1,9 +1,13 @@
+import logging
 import os
 from typing import Optional, Tuple, Literal
 
 import tensorrt as trt
 
 from inference_exp.logger import logger
+from inference_exp.models.common.trt import InferenceTRTLogger
+
+logger.setLevel(logging.DEBUG)
 
 
 class EngineBuilder:
@@ -11,17 +15,9 @@ class EngineBuilder:
     Parses an ONNX graph and builds a TensorRT engine from it.
     """
 
-    def __init__(self, verbose: bool = True, workspace: int = 8):
-        """
-        :param verbose: If enabled, a higher verbosity level will be set on the TensorRT logger.
-        :param workspace: Max memory workspace to allow, in Gb.
-        """
-        self.trt_logger = trt.Logger(trt.Logger.INFO)
-        if verbose:
-            self.trt_logger.min_severity = trt.Logger.Severity.VERBOSE
-
+    def __init__(self, workspace: int = 8):
+        self.trt_logger = InferenceTRTLogger()
         trt.init_libnvinfer_plugins(self.trt_logger, namespace="")
-
         self.builder = trt.Builder(self.trt_logger)
         self.config = self.builder.create_builder_config()
         self.config.set_memory_pool_limit(

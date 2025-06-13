@@ -1,7 +1,6 @@
 import json
 import os.path
 import shutil
-from dataclasses import asdict
 from typing import Optional, Union, Tuple, List, Literal
 
 import onnxruntime
