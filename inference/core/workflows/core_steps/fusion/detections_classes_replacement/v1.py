@@ -88,7 +88,7 @@ class BlockManifest(WorkflowBlockManifest):
         default=None,
         title="Fallback class id",
         description="The class id to be used as a fallback if no class is predicted for a bounding box;"
-                    f"if not specified or negative, the class id will be set to {sys.maxsize}",
+        f"if not specified or negative, the class id will be set to {sys.maxsize}",
         examples=[77],
     )
 
