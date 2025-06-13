@@ -1,3 +1,8 @@
+// this is the source code for the binary checked in to the repo.  
+// renamed to .txt to make code scanning ignore it 
+// TODO:  change CodeQL config to advanced mode in github and make it explicitly ignore this file or figure out how to tell it to build it
+// it currently complains that: Exit code was 32 and last log line was: CodeQL detected code written in C/C++ but could not automatically build any of it
+
 #include <stdlib.h>
 #include <unistd.h>
 #include <libgen.h>

@@ -7,7 +7,7 @@ if __name__ == "__main__":
     multiprocessing.freeze_support()   
 
 
-print("=== Inference Launcher Debug ===") 
+print("=== Inference Launcher ===") 
 
 print("importing system libraries")
 import os

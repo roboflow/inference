@@ -1,9 +1,11 @@
+import traceback
 from typing import Any, Callable, Dict, List, Optional, Union
 
 import numpy as np
 import supervision as sv
 from networkx import DiGraph
 
+from inference.core import logger
 from inference.core.workflows.core_steps.common.utils import (
     sv_detections_to_root_coordinates,
 )
@@ -224,6 +226,7 @@ def serialize_single_workflow_result_field(
     if value is None:
         return None
     kinds_without_serializer = set()
+    encountered_errors = []
     for single_kind in kind:
         kind_name = single_kind.name if isinstance(single_kind, Kind) else kind
         serializer = kinds_serializers.get(kind_name)
@@ -232,11 +235,24 @@ def serialize_single_workflow_result_field(
             continue
         try:
             return serializer(value)
-        except Exception:
+        except Exception as error:
             # silent exception passing, as it is enough for one serializer to be applied
             # for union of kinds
-            pass
+            formatted_traceback = traceback.format_exc()
+            encountered_errors.append(
+                (kind_name, serializer, error, formatted_traceback)
+            )
     if not kinds_without_serializer:
+        error_details = "\n\n".join(
+            f"Attempted to use serializer `{serializer}` for kind `{kind_name}` but got "
+            f"error of type `{error.__class__.__name__}`: {error}\n"
+            f"{formatted_traceback}"
+            for kind_name, serializer, error, formatted_traceback in encountered_errors
+        )
+        logger.error(
+            f"Could not serialize workflow output `{output_name}` which evaluates into Python type: {type(value)}. "
+            f"The following errors were encountered: \n{error_details}"
+        )
         raise ExecutionEngineRuntimeError(
             public_message=f"Requested Workflow output serialization, but for output `{output_name}` which "
             f"evaluates into Python type: {type(value)} cannot successfully apply any of "
