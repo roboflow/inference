@@ -69,9 +69,15 @@ class TRTPackageDetails:
     opt_dynamic_batch_size: Optional[int] = field(default=None)
     max_dynamic_batch_size: Optional[int] = field(default=None)
     same_cc_compatible: bool = field(default=False)
+    trt_forward_compatible: bool = field(default=False)
+    trt_lean_runtime_excluded: bool = field(default=False)
 
     def __str__(self):
-        return f"TRTPackageDetails(dynamic_batch=({self.min_dynamic_batch_size}/{self.opt_dynamic_batch_size}/{self.max_dynamic_batch_size}), same_cc_compatible={self.same_cc_compatible})"
+        return (f"TRTPackageDetails("
+                f"dynamic_batch=({self.min_dynamic_batch_size}/{self.opt_dynamic_batch_size}/{self.max_dynamic_batch_size}), "
+                f"same_cc_compatible={self.same_cc_compatible}, "
+                f"trt_forward_compatible={self.trt_forward_compatible}, "
+                f"trt_lean_runtime_excluded={self.trt_lean_runtime_excluded})")
 
 
 @dataclass(frozen=True)

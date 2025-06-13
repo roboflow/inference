@@ -456,6 +456,12 @@ def trt_package_matches_runtime_environment(
         trt_compiled_with_cc_compatibility = (
             model_package.trt_package_details.same_cc_compatible
         )
+    trt_forward_compatible = False
+    if model_package.trt_package_details is not None:
+        trt_forward_compatible = model_package.trt_package_details.trt_forward_compatible
+    trt_lean_runtime_excluded = False
+    if model_package.trt_package_details is not None:
+        trt_lean_runtime_excluded = model_package.trt_package_details.trt_lean_runtime_excluded
     model_environment = model_package.environment_requirements
     if isinstance(model_environment, JetsonEnvironmentRequirements):
         if model_environment.trt_version is None:
@@ -486,7 +492,13 @@ def trt_package_matches_runtime_environment(
                     f"Mode package with id '{model_package.package_id}' filtered out as package L4T {model_environment.l4t_version} does not match runtime L4T: {runtime_x_ray.l4t_version}"
                 )
             return False
-        if verify_versions_up_to_major_minor_and_micro(
+        if trt_forward_compatible:
+            if not verify_version_larger_equal_up_to_major_and_minor(runtime_x_ray.trt_version, model_environment.trt_version):
+                return False
+            if trt_lean_runtime_excluded:
+                # not supported for now
+                return False
+        elif verify_versions_up_to_major_minor_and_micro(
             runtime_x_ray.trt_version, model_environment.trt_version
         ):
             if verbose:
@@ -528,7 +540,13 @@ def trt_package_matches_runtime_environment(
                 f"Model package with id '{model_package.package_id}' filtered out due to device incompatibility."
             )
         return False
-    if verify_versions_up_to_major_minor_and_micro(
+    if trt_forward_compatible:
+        if not verify_version_larger_equal_up_to_major_and_minor(runtime_x_ray.trt_version, model_environment.trt_version):
+            return False
+        if trt_lean_runtime_excluded:
+            # not supported for now
+            return False
+    elif verify_versions_up_to_major_minor_and_micro(
         runtime_x_ray.trt_version, model_environment.trt_version
     ):
         if verbose:

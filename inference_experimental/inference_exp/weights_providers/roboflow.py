@@ -266,6 +266,8 @@ class TrtModelPackageV1(BaseModel):
     cuda_version: str = Field(alias="cudaVersion")
     trt_version: str = Field(alias="trtVersion")
     same_cc_compatible: bool = Field(alias="sameCCCompatible", default=False)
+    trt_forward_compatible: bool = Field(alias="trtForwardCompatible", default=False)
+    trt_lean_runtime_excluded: bool = Field(alias="trtLeanRuntimeExcluded", default=False)
     machine_type: Literal["gpu-server", "jetson"] = Field(alias="machineType")
     machine_specs: Annotated[
         Union[JetsonMachineSpecsV1, GPUServerSpecsV1],
@@ -329,6 +331,8 @@ def parse_trt_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageMet
         opt_dynamic_batch_size=parsed_manifest.opt_batch_size,
         max_dynamic_batch_size=parsed_manifest.max_batch_size,
         same_cc_compatible=parsed_manifest.same_cc_compatible,
+        trt_forward_compatible=parsed_manifest.trt_forward_compatible,
+        trt_lean_runtime_excluded=parsed_manifest.trt_lean_runtime_excluded,
     )
     return ModelPackageMetadata(
         package_id=metadata.package_id,
