@@ -2,16 +2,16 @@
 
 ## OSX Native App (Apple Silicon)
 
-You can now run Roboflow Inference Server on your Apple Silicon Mac using our native desktop app! 
+You can now run Roboflow Inference Server on your Apple Silicon Mac using our native desktop app!
 
-Simply download the latest DMS disk image from the latest release on Github.  
+Simply download the latest DMS disk image from the latest release on Github.
 ➡️ **[View Latest Release and Download Installers on Github](https://github.com/roboflow/inference/releases)**
 
-### OSX Installation Steps 
+### OSX Installation Steps
  - [Download the Roboflow Inference DMG](https://github.com/roboflow/inference/releases) disk image
  - Mount hte disk image by double clicking it
  - Drag the Roboflow Inference App to the Application Folder
- - Go to your Application Folder and double click the Roboflow Infernce App to start the server
+ - Go to your Application Folder and double click the Roboflow Inference App to start the server
 
 ## Using Docker
 === "CPU"

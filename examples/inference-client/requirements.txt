@@ -1,2 +1,2 @@
 supervision[desktop]==0.13.0
-requests==2.32.0
+requests==2.32.4

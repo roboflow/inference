@@ -2,6 +2,7 @@ import math
 import statistics
 from collections import Counter
 from enum import Enum
+from functools import lru_cache
 from typing import Dict, Generator, List, Literal, Optional, Set, Tuple, Type, Union
 from uuid import uuid4
 
@@ -176,6 +177,7 @@ class BlockManifest(WorkflowBlockManifest):
         return ["predictions_batches"]
 
     @classmethod
+    @lru_cache(maxsize=None)
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
