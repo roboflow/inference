@@ -148,10 +148,14 @@ requires-dist = ["tensorrt-cu12-bindings", "tensorrt-cu12-libs"]
 
 [[tool.uv.dependency-metadata]]
 name = "tensorrt-lean-cu12"
-requires-dist = ["tensorrt-lean-cu12-bindings", "tensorrt-cu12-libs"]
+requires-dist = ["tensorrt-lean-cu12-bindings", "tensorrt-lean-cu12-libs"]
 
 [[tool.uv.dependency-metadata]]
 name = "tensorrt-cu12-libs"
+requires-dist = ["nvidia-cuda-runtime-cu12"]
+
+[[tool.uv.dependency-metadata]]
+name = "tensorrt-lean-cu12-libs"
 requires-dist = ["nvidia-cuda-runtime-cu12"]
 
 [[tool.uv.dependency-metadata]]
@@ -159,6 +163,9 @@ name = "nvidia-cuda-runtime-cu12"
 
 [[tool.uv.dependency-metadata]]
 name = "tensorrt-cu12-bindings"
+
+[[tool.uv.dependency-metadata]]
+name = "tensorrt-lean-cu12-bindings"
 
 
 [tool.uv]
