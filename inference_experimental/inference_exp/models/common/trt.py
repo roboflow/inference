@@ -25,6 +25,7 @@ class InferenceTRTLogger(trt.ILogger):
             log_function = logger.warning
         else:
             log_function = logger.error
+        print(severity)
         log_function(msg)
 
     def get_memory(self) -> List[Tuple[trt.ILogger.Severity, str]]:
