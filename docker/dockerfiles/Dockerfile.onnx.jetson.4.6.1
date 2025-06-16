@@ -15,8 +15,6 @@ RUN apt-get update -y && apt-get upgrade -y && apt-get install -y \
     curl \
     libbz2-dev \
     software-properties-common \
-    rustc \
-    cargo \
     && rm -rf /var/lib/apt/lists/*
 
 RUN curl https://sh.rustup.rs -sSfy | sh
