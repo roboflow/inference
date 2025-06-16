@@ -54,6 +54,9 @@ def deserialize_image_kind(
 ) -> WorkflowImageData:
     if isinstance(image, WorkflowImageData):
         return image
+    parent_id = parameter
+    if isinstance(image, dict) and "parent_id" in image:
+        parent_id = image["parent_id"]
     video_metadata = None
     if isinstance(image, dict) and "video_metadata" in image:
         video_metadata = deserialize_video_metadata_kind(
@@ -62,7 +65,7 @@ def deserialize_image_kind(
     if isinstance(image, dict) and isinstance(image.get("value"), np.ndarray):
         image = image["value"]
     if isinstance(image, np.ndarray):
-        parent_metadata = ImageParentMetadata(parent_id=parameter)
+        parent_metadata = ImageParentMetadata(parent_id=parent_id)
         return WorkflowImageData(
             parent_metadata=parent_metadata,
             numpy_image=image,
@@ -86,7 +89,7 @@ def deserialize_image_kind(
             else:
                 base64_image = image
                 image = attempt_loading_image_from_string(image)[0]
-            parent_metadata = ImageParentMetadata(parent_id=parameter)
+            parent_metadata = ImageParentMetadata(parent_id=parent_id)
             return WorkflowImageData(
                 parent_metadata=parent_metadata,
                 numpy_image=image,
