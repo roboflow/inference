@@ -35,25 +35,30 @@ torch-cpu = [
 ]
 torch-cu118 = [
   "torch>=2.0.0,<3.0.0",
-  "torchvision"
+  "torchvision",
+  "pycuda>=2025.0.0,<2026.0.0",
 ]
 torch-cu124 = [
   "torch>=2.0.0,<3.0.0",
-  "torchvision"
+  "torchvision",
+  "pycuda>=2025.0.0,<2026.0.0",
 ]
 torch-cu126 = [
   "torch>=2.0.0,<3.0.0",
-  "torchvision"
+  "torchvision",
+  "pycuda>=2025.0.0,<2026.0.0",
 ]
 torch-cu128 = [
   "torch>=2.0.0,<3.0.0",
-  "torchvision"
+  "torchvision",
+  "pycuda>=2025.0.0,<2026.0.0",
 ]
 torch-jp6-cu126 = [
   "numpy<2.0.0",
   "torch>=2.0.0,<3.0.0",
   "torchvision",
-  "flash-attn==2.7.4.post1"
+  "flash-attn==2.7.4.post1",
+  "pycuda>=2025.0.0,<2026.0.0",
 ]
 onnx-cpu = [
   "onnxruntime>=1.15.1,<1.23.0"
