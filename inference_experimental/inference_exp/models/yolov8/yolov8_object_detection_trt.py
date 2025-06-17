@@ -87,12 +87,19 @@ class YOLOv8ForObjectDetectionTRT(
                 model_path=model_package_content["engine.plan"],
                 engine_host_code_allowed=engine_host_code_allowed,
             )
+            execution_context = engine.create_execution_context()
+            thread_local_storage = create_trt_model_thread_storage(
+                execution_context=execution_context,
+                cuda_device=cuda_device,
+                cuda_context=cuda_context,
+            )
         return cls(
             engine=engine,
             class_names=class_names,
             pre_processing_config=pre_processing_config,
             trt_config=trt_config,
             device=device,
+            thread_local_storage=thread_local_storage,
         )
 
     def __init__(
@@ -102,13 +109,14 @@ class YOLOv8ForObjectDetectionTRT(
         pre_processing_config: PreProcessingConfig,
         trt_config: TRTConfig,
         device: torch.device,
+        thread_local_storage: threading.local,
     ):
         self._engine = engine
         self._class_names = class_names
         self._pre_processing_config = pre_processing_config
         self._trt_config = trt_config
         self._device = device
-        self._thread_local_storage = threading.local()
+        self._thread_local_storage = thread_local_storage
 
     @property
     def class_names(self) -> List[str]:
