@@ -183,7 +183,29 @@ def get_jetson_type() -> Optional[str]:
     declared_json_module = os.getenv("JETSON_MODULE")
     if declared_json_module:
         return resolve_jetson_type(jetson_module_name=declared_json_module)
+    jetson_type_from_hardware_inspection = get_jetson_type_from_hardware_inspection()
+    if jetson_type_from_hardware_inspection:
+        return jetson_type_from_hardware_inspection
     return get_jetson_type_from_device_tree()
+
+
+def get_jetson_type_from_hardware_inspection() -> Optional[str]:
+    try:
+        result = subprocess.run(
+            "lshw | grep 'product: NVIDIA Jetson'", shell=True, capture_output=True, text=True
+        )
+        if result.returncode != 0:
+            return None
+        for result_line in result.stdout.strip().split("\n"):
+            start_idx = result_line.find("NVIDIA")
+            end_idx = result_line.find("HDA")
+            if start_idx < 0 or end_idx < 0:
+                continue
+            jetson_type = result_line[start_idx:end_idx].strip()
+            return resolve_jetson_type(jetson_module_name=jetson_type)
+        return None
+    except Exception:
+        return None
 
 
 def get_jetson_type_from_device_tree() -> Optional[str]:
