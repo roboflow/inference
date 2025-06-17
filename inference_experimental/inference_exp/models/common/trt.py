@@ -1,4 +1,5 @@
-from typing import List, Tuple, Optional
+import contextlib
+from typing import List, Tuple, Optional, Generator
 
 import torch
 from inference_exp.errors import ModelRuntimeError, CorruptedModelPackageError, MissingDependencyError
@@ -193,7 +194,7 @@ def execute_trt_engine(
     input_name: str,
     outputs: List[str],
 ) -> List[torch.Tensor]:
-    with torch.device(device):
+    with set_default_cuda_device(device):
         batch_size = pre_processed_images.shape[0]
         results = []
         for output in outputs:
@@ -231,7 +232,7 @@ def load_model(
     device: torch.device,
     engine_host_code_allowed: bool = False,
 ) -> trt.ICudaEngine:
-    with torch.device(device):
+    with set_default_cuda_device(device):
         try:
             local_logger = InferenceTRTLogger(with_memory=True)
             with open(model_path, "rb") as f, trt.Runtime(local_logger) as runtime:
@@ -267,3 +268,13 @@ def get_output_tensor_names(engine: trt.ICudaEngine) -> List[str]:
         if engine.get_tensor_mode(name) == trt.TensorIOMode.OUTPUT:
             output_names.append(name)
     return output_names
+
+
+@contextlib.contextmanager
+def set_default_cuda_device(device: torch.device) -> Generator[torch.device, None, None]:
+    current_device = torch.cuda.current_device()
+    try:
+        torch.cuda.set_device(device)
+        yield device
+    finally:
+        torch.cuda.set_device(current_device)
