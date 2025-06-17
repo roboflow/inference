@@ -186,3 +186,7 @@ conflicts = [
     { extra = "onnx-jp6-cu126" },
   ],
 ]
+
+[tool.setuptools.packages.find]
+include = ["inference_exp*"]
+exclude = ["development*", "dockerfiles*", "tests*"]
