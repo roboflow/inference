@@ -289,20 +289,20 @@ def use_trt_model_thread_storage(
 ) -> Generator[Tuple[trt.IExecutionContext, cuda.Stream], None, None]:
     if is_trt_model_thread_storage_initialised(thread_local_storage=thread_local_storage):
         with use_cuda_context(context=thread_local_storage.cuda_context):
-            yield thread_local_storage.execution_context, thread_local_storage.cuda_stream
+            cuda_stream = cuda.Stream()
+            yield thread_local_storage.execution_context, cuda_stream
         return None
     cuda_device = cuda.Device(device.index or 0)
     with initialise_cuda_context(cuda_device=cuda_device) as cuda_context:
         execution_context = engine.create_execution_context()
-        cuda_stream = cuda.Stream()
         _ = create_trt_model_thread_storage(
             execution_context=execution_context,
             cuda_device=cuda_device,
             cuda_context=cuda_context,
-            cuda_stream=cuda_stream,
             thread_local_storage=thread_local_storage,
         )
-        yield thread_local_storage.execution_context, thread_local_storage.cuda_stream
+        cuda_stream = cuda.Stream()
+        yield thread_local_storage.execution_context, cuda_stream
 
 
 @contextlib.contextmanager
@@ -317,8 +317,7 @@ def use_cuda_context(context: cuda.Context) -> Generator[cuda.Context, None, Non
 def is_trt_model_thread_storage_initialised(thread_local_storage: threading.local) -> bool:
     return hasattr(thread_local_storage, "execution_context") and \
         hasattr(thread_local_storage, "cuda_device") and \
-        hasattr(thread_local_storage, "cuda_context") and \
-        hasattr(thread_local_storage, "cuda_stream")
+        hasattr(thread_local_storage, "cuda_context")
 
 
 @contextlib.contextmanager
@@ -334,7 +333,6 @@ def create_trt_model_thread_storage(
     execution_context: trt.IExecutionContext,
     cuda_device: cuda.Device,
     cuda_context: cuda.Context,
-    cuda_stream: cuda.Stream,
     thread_local_storage: Optional[threading.local] = None,
 ) -> threading.local:
     if thread_local_storage is None:
@@ -342,5 +340,4 @@ def create_trt_model_thread_storage(
     thread_local_storage.execution_context = execution_context
     thread_local_storage.cuda_device = cuda_device
     thread_local_storage.cuda_context = cuda_context
-    thread_local_storage.cuda_stream = cuda_stream
     return thread_local_storage
