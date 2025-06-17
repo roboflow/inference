@@ -318,7 +318,7 @@ def download_chunk(
         raise RetryError(f"Image hosting returned {response.status_code}")
     response.raise_for_status()
     try:
-        with open(target_path, "wb") as file:
+        with open(target_path, "r+b") as file:
             file.seek(start)
             for chunk in response.iter_content(file_chunk):
                 file.write(chunk)

@@ -1,4 +1,6 @@
 import os
+import shutil
+from glob import glob
 
 from compilation.core import compile_model
 
@@ -19,6 +21,12 @@ for model_id in MODELS_TO_COMPILE:
         target_path = os.path.join(MODELS_OUTPUT_DIR, f"{model_id}-{precision}")
         model_input_size = (640, 640) if "-640" in model_id else (1280, 1280)
         try:
+            engine_files = glob(os.path.join(target_path, "*.plan"))
+            if len(engine_files):
+                continue
+            if os.path.isdir(target_path):
+                print(f"Clean-up {target_path}")
+                shutil.rmtree(target_path)
             compile_model(
               model_id,
               target_path=target_path,

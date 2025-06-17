@@ -191,7 +191,7 @@ def select_model_package_by_id(
             f"error, as it is supposed to provide unique identifiers for each model package."
         )
     if verbose:
-        print(f"Model package matching requested package id: {matching_packages[0]}")
+        print(f"Model package matching requested package id: {matching_packages[0].get_summary()}")
     return matching_packages[0]
 
 

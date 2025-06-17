@@ -17,6 +17,22 @@ REGISTERED_MODELS: Dict[Tuple[ModelArchitecture, TaskType, BackendType], LazyCla
         module_name="inference_exp.models.yolov8.yolov8_object_detection_trt",
         class_name="YOLOv8ForObjectDetectionTRT",
     ),
+    ("yolov8", "keypoint-detection", BackendType.ONNX): LazyClass(
+        module_name="inference_exp.models.yolov8.yolov8_key_points_detection_onnx",
+        class_name="YOLOv8ForKeyPointsDetectionOnnx",
+    ),
+    ("yolov8", "keypoint-detection", BackendType.TRT): LazyClass(
+        module_name="inference_exp.models.yolov8.yolov8_key_points_detection_trt",
+        class_name="YOLOv8ForKeyPointsDetectionTRT",
+    ),
+    ("yolov8", "instance-segmentation", BackendType.ONNX): LazyClass(
+        module_name="inference_exp.models.yolov8.yolov8_instance_segmentation_onnx",
+        class_name="YOLOv8ForInstanceSegmentationOnnx",
+    ),
+    ("yolov8", "kinstance-segmentation", BackendType.TRT): LazyClass(
+        module_name="inference_exp.models.yolov8.yolov8_instance_segmentation_trt",
+        class_name="YOLOv8ForInstanceSegmentationTRT",
+    ),
     ("paligemma", "vlm", BackendType.HF): LazyClass(
         module_name="inference_exp.models.paligemma.paligemma_hf",
         class_name="PaliGemmaHF",
