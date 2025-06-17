@@ -310,7 +310,8 @@ def use_trt_model_thread_storage(
 def use_cuda_context(context: cuda.Context) -> Generator[cuda.Context, None, None]:
     context.push()
     try:
-        yield context
+        cuda_stream = cuda.Stream()
+        yield cuda_stream
     finally:
         context.pop()
 

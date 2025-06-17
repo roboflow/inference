@@ -138,8 +138,7 @@ class YOLOv8ForObjectDetectionTRT(
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
         with self._access_lock:
-            with use_cuda_context(context=self._cuda_context):
-                cuda_stream = cuda.Stream()
+            with use_cuda_context(context=self._cuda_context) as cuda_stream:
                 return infer_from_trt_engine(
                     pre_processed_images=pre_processed_images,
                     trt_config=self._trt_config,
