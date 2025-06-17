@@ -80,7 +80,6 @@ class YOLOv8ForInstanceSegmentationTRT(
         engine = load_model(
             model_path=model_package_content["engine.plan"],
             engine_host_code_allowed=engine_host_code_allowed,
-            device=device,
         )
         context = engine.create_execution_context()
         return cls(

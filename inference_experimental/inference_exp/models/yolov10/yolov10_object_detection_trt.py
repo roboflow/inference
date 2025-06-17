@@ -71,7 +71,7 @@ class YOLOv10ForObjectDetectionTRT(
         trt_config = parse_trt_config(
             config_path=model_package_content["trt_config.json"]
         )
-        engine = load_model(model_path=model_package_content["engine.plan"], device=device)
+        engine = load_model(model_path=model_package_content["engine.plan"])
         context = engine.create_execution_context()
         return cls(
             engine=engine,

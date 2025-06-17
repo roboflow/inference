@@ -1,3 +1,4 @@
+import threading
 from threading import Lock
 from typing import List, Optional, Tuple, Union
 
@@ -23,8 +24,8 @@ from inference_exp.models.common.roboflow.model_packages import (
 from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
-from inference_exp.models.common.trt import infer_from_trt_engine, load_model
-
+from inference_exp.models.common.trt import infer_from_trt_engine, load_model, initialise_cuda_context, \
+    create_trt_model_thread_storage, use_trt_model_thread_storage
 
 try:
     import tensorrt as trt
@@ -38,6 +39,11 @@ except ImportError:
         f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
         f"You can also contact Roboflow to get support."
     )
+
+try:
+    import pycuda.driver as cuda
+except ImportError:
+    raise MissingDependencyError("TODO")
 
 
 class YOLOv8ForObjectDetectionTRT(
@@ -74,15 +80,23 @@ class YOLOv8ForObjectDetectionTRT(
         trt_config = parse_trt_config(
             config_path=model_package_content["trt_config.json"]
         )
-        engine = load_model(
-            model_path=model_package_content["engine.plan"],
-            engine_host_code_allowed=engine_host_code_allowed,
-            device=device,
-        )
-        context = engine.create_execution_context()
+        cuda.init()
+        cuda_device = cuda.Device(device.index or 0)
+        with initialise_cuda_context(cuda_device=cuda_device) as cuda_context:
+            engine = load_model(
+                model_path=model_package_content["engine.plan"],
+                engine_host_code_allowed=engine_host_code_allowed,
+            )
+            execution_context = engine.create_execution_context()
+            cuda_stream = cuda.Stream()
+            thread_local_storage = create_trt_model_thread_storage(
+                execution_context=execution_context,
+                cuda_device=cuda_device,
+                cuda_context=cuda_context,
+                cuda_stream=cuda_stream,
+            )
         return cls(
             engine=engine,
-            context=context,
             class_names=class_names,
             pre_processing_config=pre_processing_config,
             trt_config=trt_config,
@@ -92,19 +106,19 @@ class YOLOv8ForObjectDetectionTRT(
     def __init__(
         self,
         engine: trt.ICudaEngine,
-        context: trt.IExecutionContext,
         class_names: List[str],
         pre_processing_config: PreProcessingConfig,
         trt_config: TRTConfig,
         device: torch.device,
+        thread_local_storage: threading.local,
     ):
         self._engine = engine
-        self._context = context
+        self._thread_local_storage = threading.local()
         self._class_names = class_names
         self._pre_processing_config = pre_processing_config
         self._trt_config = trt_config
         self._device = device
-        self._session_thread_lock = Lock()
+        self._thread_local_storage = thread_local_storage
 
     @property
     def class_names(self) -> List[str]:
@@ -125,22 +139,18 @@ class YOLOv8ForObjectDetectionTRT(
         )
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
-        with self._session_thread_lock:
-            """
-            TensorRT objects are generally not thread-safe; the client must serialize access to objects
-            from different threads.
-            The expected runtime concurrency model is that different threads operate in different execution
-            contexts. The context contains the network state (activation values and so on) during execution,
-            so using a context concurrently in different threads results in undefined behavior.
-
-            Nvidia 21, 37 (https://docs.nvidia.com/deeplearning/tensorrt/10.8.0/architecture/how-trt-works.html)
-            """
+        with use_trt_model_thread_storage(
+            engine=self._engine,
+            thread_local_storage=self._thread_local_storage,
+            device=self._device,
+        ) as (execution_context, cuda_stream):
             return infer_from_trt_engine(
                 pre_processed_images=pre_processed_images,
                 trt_config=self._trt_config,
                 engine=self._engine,
-                context=self._context,
+                context=execution_context,
                 device=self._device,
+                cuda_stream=cuda_stream,
                 input_name="images",
                 outputs=["output0"],
             )[0]

@@ -1,4 +1,5 @@
 import contextlib
+import threading
 from typing import List, Tuple, Optional, Generator
 
 import torch
@@ -19,6 +20,11 @@ except ImportError:
         f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
         f"You can also contact Roboflow to get support."
     )
+
+try:
+    import pycuda.driver as cuda
+except ImportError:
+    raise MissingDependencyError("TODO")
 
 
 class InferenceTRTLogger(trt.ILogger):
@@ -55,6 +61,7 @@ def infer_from_trt_engine(
     engine: trt.ICudaEngine,
     context: trt.IExecutionContext,
     device: torch.device,
+    cuda_stream: cuda.Stream,
     input_name: str,
     outputs: List[str],
 ) -> List[torch.Tensor]:
@@ -65,6 +72,7 @@ def infer_from_trt_engine(
             engine=engine,
             context=context,
             device=device,
+            cuda_stream=cuda_stream,
             input_name=input_name,
             outputs=outputs,
         )
@@ -74,6 +82,7 @@ def infer_from_trt_engine(
         engine=engine,
         context=context,
         device=device,
+        cuda_stream=cuda_stream,
         input_name=input_name,
         outputs=outputs,
     )
@@ -85,6 +94,7 @@ def infer_from_trt_engine_with_static_batch_size(
     engine: trt.ICudaEngine,
     context: trt.IExecutionContext,
     device: torch.device,
+    cuda_stream: cuda.Stream,
     input_name: str,
     outputs: List[str],
 ) -> List[torch.Tensor]:
@@ -109,6 +119,7 @@ def infer_from_trt_engine_with_static_batch_size(
         engine=engine,
         context=context,
         device=device,
+        cuda_stream=cuda_stream,
         input_name=input_name,
         outputs=outputs,
     )
@@ -123,6 +134,7 @@ def infer_from_trt_engine_with_dynamic_batch_size(
     engine: trt.ICudaEngine,
     context: trt.IExecutionContext,
     device: torch.device,
+    cuda_stream: cuda.Stream,
     input_name: str,
     outputs: List[str],
 ) -> List[torch.Tensor]:
@@ -145,6 +157,7 @@ def infer_from_trt_engine_with_dynamic_batch_size(
             engine=engine,
             context=context,
             device=device,
+            cuda_stream=cuda_stream,
             input_name=input_name,
             outputs=outputs,
         )
@@ -176,6 +189,7 @@ def infer_from_trt_engine_with_dynamic_batch_size(
             engine=engine,
             context=context,
             device=device,
+            cuda_stream=cuda_stream,
             input_name=input_name,
             outputs=outputs,
         )
@@ -191,30 +205,29 @@ def execute_trt_engine(
     engine: trt.ICudaEngine,
     context: trt.IExecutionContext,
     device: torch.device,
+    cuda_stream: cuda.Stream,
     input_name: str,
     outputs: List[str],
 ) -> List[torch.Tensor]:
-    with set_default_cuda_device(device):
-        batch_size = pre_processed_images.shape[0]
-        results = []
-        for output in outputs:
-            output_tensor_shape = engine.get_tensor_shape(output)
-            output_tensor_type = trt_dtype_to_torch(engine.get_tensor_dtype(output))
-            result = torch.empty(
-                (batch_size,) + output_tensor_shape[1:],
-                dtype=output_tensor_type,
-                device=device,
-            )
-            context.set_tensor_address(output, result.data_ptr())
-            results.append(result)
-        context.set_input_shape(input_name, tuple(pre_processed_images.shape))
-        context.set_tensor_address(input_name, pre_processed_images.data_ptr())
-        stream = torch.cuda.Stream(device=device)
-        status = context.execute_async_v3(stream_handle=stream.cuda_stream)
-        if not status:
-            raise ModelRuntimeError("Failed to complete inference from TRT model")
-        stream.synchronize()
-        return results
+    batch_size = pre_processed_images.shape[0]
+    results = []
+    for output in outputs:
+        output_tensor_shape = engine.get_tensor_shape(output)
+        output_tensor_type = trt_dtype_to_torch(engine.get_tensor_dtype(output))
+        result = torch.empty(
+            (batch_size,) + output_tensor_shape[1:],
+            dtype=output_tensor_type,
+            device=device,
+        )
+        context.set_tensor_address(output, result.data_ptr())
+        results.append(result)
+    context.set_input_shape(input_name, tuple(pre_processed_images.shape))
+    context.set_tensor_address(input_name, pre_processed_images.data_ptr())
+    status = context.execute_async_v3(stream_handle=cuda_stream.handle)
+    if not status:
+        raise ModelRuntimeError("Failed to complete inference from TRT model")
+    cuda_stream.synchronize()
+    return results
 
 
 def trt_dtype_to_torch(trt_dtype):
@@ -229,36 +242,34 @@ def trt_dtype_to_torch(trt_dtype):
 
 def load_model(
     model_path: str,
-    device: torch.device,
     engine_host_code_allowed: bool = False,
 ) -> trt.ICudaEngine:
-    with set_default_cuda_device(device):
-        try:
-            local_logger = InferenceTRTLogger(with_memory=True)
-            with open(model_path, "rb") as f, trt.Runtime(local_logger) as runtime:
-                runtime.engine_host_code_allowed = engine_host_code_allowed
-                engine = runtime.deserialize_cuda_engine(f.read())
-                if engine is None:
-                    logger_traces = local_logger.get_memory()
-                    logger_traces_str = "\n".join(f"[{severity}] {msg}" for severity, msg in logger_traces)
-                    raise CorruptedModelPackageError(
-                        "Could not load TRT engine due to runtime error. This error is usually caused "
-                        "by model package incompatibility with runtime environment. If you selected model with "
-                        "specific model package to be run - verify that your environment is compatible with your "
-                        "package. If the package was selected automatically by the library - this error indicate bug. "
-                        "You can help us solving this problem describing the issue: "
-                        "https://github.com/roboflow/inference/issues\nBelow you can find debug information provided "
-                        f"by TRT runtime, which may be helpful:\n{logger_traces_str}"
-                    )
-                return engine
-        except OSError as error:
-            raise CorruptedModelPackageError(
-                "Could not load TRT engine - file not found. This error may be caused by "
-                "corrupted model package or invalid model path that was provided. If you "
-                "initialized the model manually, running the code locally - make sure that provided "
-                "path is correct. Otherwise, contact Roboflow to solve the problem: "
-                "https://github.com/roboflow/inference/issues"
-            ) from error
+    try:
+        local_logger = InferenceTRTLogger(with_memory=True)
+        with open(model_path, "rb") as f, trt.Runtime(local_logger) as runtime:
+            runtime.engine_host_code_allowed = engine_host_code_allowed
+            engine = runtime.deserialize_cuda_engine(f.read())
+            if engine is None:
+                logger_traces = local_logger.get_memory()
+                logger_traces_str = "\n".join(f"[{severity}] {msg}" for severity, msg in logger_traces)
+                raise CorruptedModelPackageError(
+                    "Could not load TRT engine due to runtime error. This error is usually caused "
+                    "by model package incompatibility with runtime environment. If you selected model with "
+                    "specific model package to be run - verify that your environment is compatible with your "
+                    "package. If the package was selected automatically by the library - this error indicate bug. "
+                    "You can help us solving this problem describing the issue: "
+                    "https://github.com/roboflow/inference/issues\nBelow you can find debug information provided "
+                    f"by TRT runtime, which may be helpful:\n{logger_traces_str}"
+                )
+            return engine
+    except OSError as error:
+        raise CorruptedModelPackageError(
+            "Could not load TRT engine - file not found. This error may be caused by "
+            "corrupted model package or invalid model path that was provided. If you "
+            "initialized the model manually, running the code locally - make sure that provided "
+            "path is correct. Otherwise, contact Roboflow to solve the problem: "
+            "https://github.com/roboflow/inference/issues"
+        ) from error
 
 
 def get_output_tensor_names(engine: trt.ICudaEngine) -> List[str]:
@@ -271,10 +282,64 @@ def get_output_tensor_names(engine: trt.ICudaEngine) -> List[str]:
 
 
 @contextlib.contextmanager
-def set_default_cuda_device(device: torch.device) -> Generator[torch.device, None, None]:
-    current_device = torch.cuda.current_device()
+def use_trt_model_thread_storage(
+    engine: trt.ICudaEngine,
+    thread_local_storage: threading.local,
+    device: torch.device,
+) -> Generator[Tuple[trt.IExecutionContext, cuda.Stream]]:
+    if is_trt_model_thread_storage_initialised(thread_local_storage=thread_local_storage):
+        with use_cuda_context(context=thread_local_storage.cuda_context):
+            yield thread_local_storage.execution_context, thread_local_storage.cuda_stream
+        return None
+    cuda_device = cuda.Device(device.index or 0)
+    with initialise_cuda_context(cuda_device=cuda_device) as cuda_context:
+        execution_context = engine.create_execution_context()
+        cuda_stream = cuda.Stream()
+        _ = create_trt_model_thread_storage(
+            execution_context=execution_context,
+            cuda_device=cuda_device,
+            cuda_context=cuda_context,
+            cuda_stream=cuda_stream,
+            thread_local_storage=thread_local_storage,
+        )
+
+
+@contextlib.contextmanager
+def use_cuda_context(context: cuda.Context) -> Generator[cuda.Context, None, None]:
+    context.push()
     try:
-        torch.cuda.set_device(device)
-        yield device
+        yield context
     finally:
-        torch.cuda.set_device(current_device)
+        context.pop()
+
+
+def is_trt_model_thread_storage_initialised(thread_local_storage: threading.local) -> bool:
+    return hasattr(thread_local_storage, "execution_context") and \
+        hasattr(thread_local_storage, "cuda_device") and \
+        hasattr(thread_local_storage, "cuda_context") and \
+        hasattr(thread_local_storage, "cuda_stream")
+
+
+@contextlib.contextmanager
+def initialise_cuda_context(cuda_device: cuda.Device) -> Generator[cuda.Context, None, None]:
+    context = cuda_device.make_context()
+    try:
+        yield context
+    finally:
+        context.pop()
+
+
+def create_trt_model_thread_storage(
+    execution_context: trt.IExecutionContext,
+    cuda_device: cuda.Device,
+    cuda_context: cuda.Context,
+    cuda_stream: cuda.Stream,
+    thread_local_storage: Optional[threading.local] = None,
+) -> threading.local:
+    if thread_local_storage is None:
+        thread_local_storage = threading.local()
+    thread_local_storage.execution_context = execution_context
+    thread_local_storage.cuda_device = cuda_device
+    thread_local_storage.cuda_context = cuda_context
+    thread_local_storage.cuda_stream = cuda_stream
+    return thread_local_storage

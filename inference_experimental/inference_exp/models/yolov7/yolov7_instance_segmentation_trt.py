@@ -84,7 +84,6 @@ class YOLOv7ForInstanceSegmentationTRT(
         engine = load_model(
             model_path=model_package_content["engine.plan"],
             engine_host_code_allowed=engine_host_code_allowed,
-            device=device,
         )
         all_output_tensors = get_output_tensor_names(engine=engine)
         output_tensors = [all_output_tensors[0], all_output_tensors[4]]
