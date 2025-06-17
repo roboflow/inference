@@ -15,7 +15,7 @@ The block supports two execution modes:
 - No local GPU required
 
 ### Local Mode
-- Runs Stable Diffusion Inpainting v1.5 locally
+- Runs Stable Diffusion Inpainting v1.5 locally using `stable-diffusion-v1-5/stable-diffusion-inpainting`
 - Requires transformers dependencies
 - Better for batch processing
 - Requires GPU for optimal performance

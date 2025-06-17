@@ -329,23 +329,37 @@ class StabilityAIInpaintingBlockV2(WorkflowBlock):
         if '_CACHED_SD_PIPELINE' not in globals() or _CACHED_SD_PIPELINE is None:
             logger.info(f"Loading Stable Diffusion Inpainting model on {device}...")
             
-            # Model ID - will be changed to load from Roboflow backend later
-            model_id = "runwayml/stable-diffusion-inpainting"
-            
-            # Use MODEL_CACHE_DIR for consistency with other models
-            from inference.core.env import MODEL_CACHE_DIR
-            cache_dir = os.path.join(MODEL_CACHE_DIR, "stable-diffusion-inpainting")
+            # Use the correct model ID with actual model files
+            model_id = "stable-diffusion-v1-5/stable-diffusion-inpainting"
             
             try:
-                _CACHED_SD_PIPELINE = StableDiffusionInpaintPipeline.from_pretrained(
-                    model_id,
-                    cache_dir=cache_dir,
-                    torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-                    safety_checker=None,
-                    requires_safety_checker=False,
-                    use_safetensors=True,
-                    local_files_only=False,  # Allow downloading if needed
-                )
+                # First attempt with local files only to check if already downloaded
+                try:
+                    _CACHED_SD_PIPELINE = StableDiffusionInpaintPipeline.from_pretrained(
+                        model_id,
+                        torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+                        safety_checker=None,
+                        requires_safety_checker=False,
+                        variant="fp16" if device == "cuda" else None,  # Use fp16 variant
+                        use_safetensors=True,
+                        local_files_only=True,  # Try local first
+                    )
+                    logger.info("Loaded model from local cache")
+                except Exception as local_error:
+                    # If local loading fails, allow downloading
+                    logger.info("Model not found locally, downloading from HuggingFace...")
+                    _CACHED_SD_PIPELINE = StableDiffusionInpaintPipeline.from_pretrained(
+                        model_id,
+                        torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+                        safety_checker=None,
+                        requires_safety_checker=False,
+                        variant="fp16" if device == "cuda" else None,  # Use fp16 variant
+                        use_safetensors=True,
+                        local_files_only=False,  # Allow downloading
+                        resume_download=True,  # Resume if partially downloaded
+                    )
+                    logger.info("Model downloaded successfully")
+                
                 _CACHED_SD_PIPELINE = _CACHED_SD_PIPELINE.to(device)
                 
                 # Enable memory optimizations
@@ -355,10 +369,14 @@ class StabilityAIInpaintingBlockV2(WorkflowBlock):
                 logger.info("Stable Diffusion model loaded successfully!")
                 
             except Exception as e:
-                if "no file named" in str(e).lower():
+                error_msg = str(e).lower()
+                if "no file named" in error_msg or "not found" in error_msg:
                     raise RuntimeError(
                         f"Failed to load Stable Diffusion model. The model files may not be "
-                        f"fully downloaded. Please ensure the model is downloaded first.\n"
+                        f"fully downloaded. This model requires approximately 4-5GB of disk space.\n\n"
+                        f"To download the model, run this Python code:\n"
+                        f"from diffusers import StableDiffusionInpaintPipeline\n"
+                        f"pipe = StableDiffusionInpaintPipeline.from_pretrained('{model_id}')\n\n"
                         f"Original error: {str(e)}"
                     )
                 else:
