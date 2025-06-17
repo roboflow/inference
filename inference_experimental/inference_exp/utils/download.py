@@ -167,27 +167,34 @@ def safe_execute_download(
         with progress_task_lock:
             progress.advance(progress_task, bytes_num)
 
-    if (
-        expected_file_size is None
-        or expected_file_size < MIN_SIZE_FOR_THREADED_DOWNLOAD
-    ):
-        stream_download(
-            url=download_url,
-            target_path=tmp_download_file,
-            timeout=request_timeout,
-            response_codes_to_retry=response_codes_to_retry,
-            on_chunk_downloaded=on_chunk_downloaded,
-        )
-    else:
-        threaded_download_file(
-            url=download_url,
-            target_path=tmp_download_file,
-            file_size=expected_file_size,
-            response_codes_to_retry=response_codes_to_retry,
-            request_timeout=request_timeout,
-            max_threads_per_download=max_threads_per_download,
-            on_chunk_downloaded=on_chunk_downloaded,
-        )
+    stream_download(
+        url=download_url,
+        target_path=tmp_download_file,
+        timeout=request_timeout,
+        response_codes_to_retry=response_codes_to_retry,
+        on_chunk_downloaded=on_chunk_downloaded,
+    )
+    # if (
+    #     expected_file_size is None
+    #     or expected_file_size < MIN_SIZE_FOR_THREADED_DOWNLOAD
+    # ):
+    #     stream_download(
+    #         url=download_url,
+    #         target_path=tmp_download_file,
+    #         timeout=request_timeout,
+    #         response_codes_to_retry=response_codes_to_retry,
+    #         on_chunk_downloaded=on_chunk_downloaded,
+    #     )
+    # else:
+    #     threaded_download_file(
+    #         url=download_url,
+    #         target_path=tmp_download_file,
+    #         file_size=expected_file_size,
+    #         response_codes_to_retry=response_codes_to_retry,
+    #         request_timeout=request_timeout,
+    #         max_threads_per_download=max_threads_per_download,
+    #         on_chunk_downloaded=on_chunk_downloaded,
+    #     )
     os.rename(tmp_download_file, target_file_path)
 
 
