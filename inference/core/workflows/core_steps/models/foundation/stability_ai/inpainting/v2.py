@@ -333,32 +333,16 @@ class StabilityAIInpaintingBlockV2(WorkflowBlock):
             model_id = "stable-diffusion-v1-5/stable-diffusion-inpainting"
             
             try:
-                # First attempt with local files only to check if already downloaded
-                try:
-                    _CACHED_SD_PIPELINE = StableDiffusionInpaintPipeline.from_pretrained(
-                        model_id,
-                        torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-                        safety_checker=None,
-                        requires_safety_checker=False,
-                        variant="fp16" if device == "cuda" else None,  # Use fp16 variant
-                        use_safetensors=True,
-                        local_files_only=True,  # Try local first
-                    )
-                    logger.info("Loaded model from local cache")
-                except Exception as local_error:
-                    # If local loading fails, allow downloading
-                    logger.info("Model not found locally, downloading from HuggingFace...")
-                    _CACHED_SD_PIPELINE = StableDiffusionInpaintPipeline.from_pretrained(
-                        model_id,
-                        torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-                        safety_checker=None,
-                        requires_safety_checker=False,
-                        variant="fp16" if device == "cuda" else None,  # Use fp16 variant
-                        use_safetensors=True,
-                        local_files_only=False,  # Allow downloading
-                        resume_download=True,  # Resume if partially downloaded
-                    )
-                    logger.info("Model downloaded successfully")
+                # Always use fp16 variant since that's what's available in the repo
+                _CACHED_SD_PIPELINE = StableDiffusionInpaintPipeline.from_pretrained(
+                    model_id,
+                    torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+                    safety_checker=None,
+                    requires_safety_checker=False,
+                    variant="fp16",  # Always use fp16 variant - the repo only has .fp16.safetensors files
+                    use_safetensors=True,
+                    resume_download=True,  # Resume if partially downloaded
+                )
                 
                 _CACHED_SD_PIPELINE = _CACHED_SD_PIPELINE.to(device)
                 
@@ -369,14 +353,14 @@ class StabilityAIInpaintingBlockV2(WorkflowBlock):
                 logger.info("Stable Diffusion model loaded successfully!")
                 
             except Exception as e:
-                error_msg = str(e).lower()
-                if "no file named" in error_msg or "not found" in error_msg:
+                error_msg = str(e)
+                if "no file named" in error_msg.lower() or "not found" in error_msg.lower():
                     raise RuntimeError(
-                        f"Failed to load Stable Diffusion model. The model files may not be "
-                        f"fully downloaded. This model requires approximately 4-5GB of disk space.\n\n"
-                        f"To download the model, run this Python code:\n"
+                        f"Failed to load Stable Diffusion model.\n\n"
+                        f"The stable-diffusion-v1-5/stable-diffusion-inpainting repository uses .fp16.safetensors files.\n"
+                        f"Make sure the model is fully downloaded. You can manually download it with:\n\n"
                         f"from diffusers import StableDiffusionInpaintPipeline\n"
-                        f"pipe = StableDiffusionInpaintPipeline.from_pretrained('{model_id}')\n\n"
+                        f"pipe = StableDiffusionInpaintPipeline.from_pretrained('{model_id}', variant='fp16')\n\n"
                         f"Original error: {str(e)}"
                     )
                 else:
