@@ -213,6 +213,8 @@ def compile_model_to_trt(
     if same_compute_compatibility:
         engine_name_postfix += "-same-cc"
     engine_path = os.path.join(model_dir, f"engine-{precision}{engine_name_postfix}.plan")
+    if os.path.exists(engine_path):
+        return None
     trt_config_path = os.path.join(model_dir, f"trt-config-{precision}{engine_name_postfix}.json")
     dump_json(
         path=trt_config_path,
