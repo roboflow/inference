@@ -8,8 +8,7 @@ import cv2
 import numpy as np
 import requests
 import supervision as sv
-from pydantic import ConfigDict, Field, model_validator
-from supervision import Color
+from pydantic import ConfigDict, Field
 
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
@@ -170,12 +169,6 @@ class BlockManifest(WorkflowBlockManifest):
         },
     )
 
-    @model_validator(mode="after")
-    def validate_api_key_for_cloud(self):
-        if self.execution_mode == "cloud" and not self.api_key:
-            raise ValueError("API key is required when execution_mode is 'cloud'")
-        return self
-
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
@@ -205,11 +198,27 @@ class StabilityAIInpaintingBlockV2(WorkflowBlock):
         guidance_scale: Optional[float],
         seed: Optional[int],
     ) -> BlockResult:
+        # Validate API key for cloud mode
+        if execution_mode == "cloud" and not api_key:
+            raise ValueError("API key is required when execution_mode is 'cloud'")
+        
         # Create mask from segmentation
         black_image = np.zeros_like(image.numpy_image)
-        mask_annotator = sv.MaskAnnotator(color=Color.WHITE, opacity=1.0)
-        mask = mask_annotator.annotate(black_image, segmentation_mask)
-        mask = cv2.GaussianBlur(mask, (15, 15), 0)
+        # Create a simple mask without using MaskAnnotator to avoid class_id issues
+        full_mask = np.zeros((image.numpy_image.shape[0], image.numpy_image.shape[1]), dtype=np.uint8)
+        
+        if segmentation_mask.mask is not None and len(segmentation_mask.mask) > 0:
+            # Combine all masks
+            for single_mask in segmentation_mask.mask:
+                full_mask = np.logical_or(full_mask, single_mask).astype(np.uint8) * 255
+        else:
+            # Fallback to bounding boxes if no masks
+            for xyxy in segmentation_mask.xyxy:
+                x1, y1, x2, y2 = map(int, xyxy)
+                full_mask[y1:y2, x1:x2] = 255
+        
+        # Apply Gaussian blur to soften edges
+        mask = cv2.GaussianBlur(full_mask, (15, 15), 0)
         
         if execution_mode == "cloud":
             result_image = self._run_cloud_inference(

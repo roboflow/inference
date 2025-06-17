@@ -19,6 +19,7 @@ class TestStabilityAIInpaintingBlockV2:
         """Test that the manifest can be parsed successfully."""
         manifest = BlockManifest(
             type="roboflow_core/stability_ai_inpainting@v2",
+            name="test_step",
             execution_mode="cloud",
             image="$inputs.image",
             segmentation_mask="$steps.segmentation.predictions",
@@ -29,21 +30,39 @@ class TestStabilityAIInpaintingBlockV2:
         assert manifest.prompt == "Replace with flowers"
 
     def test_cloud_mode_requires_api_key(self):
-        """Test that cloud mode requires an API key."""
+        """Test that cloud mode requires an API key in run method."""
+        # The validation now happens in the run method, not in manifest
+        block = StabilityAIInpaintingBlockV2()
+        test_image = np.zeros((100, 100, 3), dtype=np.uint8)
+        workflow_image = WorkflowImageData(
+            numpy_image=test_image,
+            parent_metadata={"parent_id": "test"}
+        )
+        
+        mask = np.zeros((100, 100), dtype=bool)
+        segmentation = sv.Detections(
+            xyxy=np.array([[0, 0, 100, 100]]),
+            mask=np.array([mask]),
+        )
+        
         with pytest.raises(ValueError, match="API key is required"):
-            BlockManifest(
-                type="roboflow_core/stability_ai_inpainting@v2",
-                execution_mode="cloud",
-                image="$inputs.image",
-                segmentation_mask="$steps.segmentation.predictions",
+            block.run(
+                image=workflow_image,
+                segmentation_mask=segmentation,
                 prompt="test",
+                negative_prompt=None,
+                execution_mode="cloud",
                 api_key=None,
+                num_inference_steps=None,
+                guidance_scale=None,
+                seed=None,
             )
 
     def test_local_mode_does_not_require_api_key(self):
         """Test that local mode doesn't require an API key."""
         manifest = BlockManifest(
             type="roboflow_core/stability_ai_inpainting@v2",
+            name="test_step",
             execution_mode="local",
             image="$inputs.image",
             segmentation_mask="$steps.segmentation.predictions",
