@@ -1,14 +1,25 @@
 from threading import Lock
 from typing import List, Optional, Tuple, Union
 
-import mediapipe as mp
+
 import numpy as np
 import torch
 from inference_exp import Detections, KeyPoints, KeyPointsDetectionModel
 from inference_exp.entities import ColorFormat, ImageDimensions
-from inference_exp.errors import ModelRuntimeError
+from inference_exp.errors import ModelRuntimeError, MissingDependencyError
 from inference_exp.models.common.model_packages import get_model_package_contents
-from mediapipe.tasks.python.components.containers import Detection
+
+try:
+    import mediapipe as mp
+    from mediapipe.tasks.python.components.containers import Detection
+except ImportError:
+    raise MissingDependencyError(
+        f"Could not import face detection model from MediaPipe - this error means that some additional dependencies "
+        f"are not installed in the environment. If you run the `inference` library directly in your Python "
+        f"program, make sure the following extras of the package are installed: `mediapipe`."
+        f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
+        f"You can also contact Roboflow to get support."
+    )
 
 
 class MediaPipeFaceDetector(

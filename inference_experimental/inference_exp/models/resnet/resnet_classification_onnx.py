@@ -2,12 +2,11 @@ from threading import Lock
 from typing import List, Optional, Union
 
 import numpy as np
-import onnxruntime
 import torch
 from inference_exp import ClassificationModel, ClassificationPrediction
 from inference_exp.configuration import DEFAULT_DEVICE, ONNXRUNTIME_EXECUTION_PROVIDERS
 from inference_exp.entities import ColorFormat, ImageDimensions
-from inference_exp.errors import EnvironmentConfigurationError
+from inference_exp.errors import EnvironmentConfigurationError, MissingDependencyError
 from inference_exp.models.base.types import PreprocessedInputs
 from inference_exp.models.common.model_packages import get_model_package_contents
 from inference_exp.models.common.onnx import (
@@ -22,6 +21,23 @@ from inference_exp.models.common.roboflow.model_packages import (
 from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
+
+try:
+    import onnxruntime
+except ImportError:
+    raise MissingDependencyError(
+        f"Could not import ResNet model with ONNX backend - this error means that some additional dependencies "
+        f"are not installed in the environment. If you run the `inference` library directly in your Python "
+        f"program, make sure the following extras of the package are installed: \n"
+        f"\t* `onnx-cpu` - when you wish to use library with CPU support only\n"
+        f"\t* `onnx-cu12` - for running on GPU with Cuda 12 installed\n"
+        f"\t* `onnx-cu118` - for running on GPU with Cuda 11.8 installed\n"
+        f"\t* `onnx-jp6-cu126` - for running on Jetson with Jetpack 6\n"
+        f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
+        f"You can also contact Roboflow to get support."
+    )
+
+
 
 
 class ResNetForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):

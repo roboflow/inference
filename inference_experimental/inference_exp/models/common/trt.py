@@ -1,10 +1,23 @@
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
-import tensorrt as trt
 import torch
-from inference_exp.errors import ModelRuntimeError, CorruptedModelPackageError
+from inference_exp.errors import ModelRuntimeError, CorruptedModelPackageError, MissingDependencyError
 from inference_exp.logger import logger
 from inference_exp.models.common.roboflow.model_packages import TRTConfig
+
+
+try:
+    import tensorrt as trt
+except ImportError:
+    raise MissingDependencyError(
+        f"Could not TRT tools required to run models with TRT backend - this error means that some additional "
+        f"dependencies are not installed in the environment. If you run the `inference` library directly in your "
+        f"Python program, make sure the following extras of the package are installed: `trt10` - installation can only "
+        f"succeed for Linux and Windows machines with Cuda 12 installed. Jetson devices, should have TRT 10.x "
+        f"installed for all builds with Jetpack 6. "
+        f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
+        f"You can also contact Roboflow to get support."
+    )
 
 
 class InferenceTRTLogger(trt.ILogger):
@@ -180,6 +193,7 @@ def execute_trt_engine(
     input_name: str,
     outputs: List[str],
 ) -> List[torch.Tensor]:
+    torch.cuda.set_device(device)
     batch_size = pre_processed_images.shape[0]
     results = []
     for output in outputs:
@@ -212,7 +226,13 @@ def trt_dtype_to_torch(trt_dtype):
     }[trt_dtype]
 
 
-def load_model(model_path: str, engine_host_code_allowed: bool = False) -> trt.ICudaEngine:
+def load_model(
+    model_path: str,
+    engine_host_code_allowed: bool = False,
+    device: Optional[torch.device] = None,
+) -> trt.ICudaEngine:
+    if device:
+        torch.cuda.set_device(device)
     try:
         local_logger = InferenceTRTLogger(with_memory=True)
         with open(model_path, "rb") as f, trt.Runtime(local_logger) as runtime:

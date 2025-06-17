@@ -2,12 +2,11 @@ from threading import Lock
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
-import tensorrt as trt
 import torch
 from inference_exp import InstanceDetections, InstanceSegmentationModel
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
-from inference_exp.errors import ModelRuntimeError
+from inference_exp.errors import ModelRuntimeError, MissingDependencyError
 from inference_exp.models.common.model_packages import get_model_package_contents
 from inference_exp.models.common.post_processing import (
     align_instance_segmentation_results,
@@ -27,6 +26,20 @@ from inference_exp.models.common.roboflow.pre_processing import (
 )
 from inference_exp.models.common.trt import infer_from_trt_engine, load_model
 from inference_exp.models.yolov5.nms import run_yolov5_nms_for_instance_segmentation
+
+
+try:
+    import tensorrt as trt
+except ImportError:
+    raise MissingDependencyError(
+        f"Could not import YOLOv5 model with TRT backend - this error means that some additional dependencies "
+        f"are not installed in the environment. If you run the `inference` library directly in your Python "
+        f"program, make sure the following extras of the package are installed: `trt10` - installation can only "
+        f"succeed for Linux and Windows machines with Cuda 12 installed. Jetson devices, should have TRT 10.x "
+        f"installed for all builds with Jetpack 6. "
+        f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
+        f"You can also contact Roboflow to get support."
+    )
 
 
 class YOLOv5ForInstanceSegmentationTRT(
@@ -68,6 +81,7 @@ class YOLOv5ForInstanceSegmentationTRT(
         engine = load_model(
             model_path=model_package_content["engine.plan"],
             engine_host_code_allowed=engine_host_code_allowed,
+            device=device,
         )
         context = engine.create_execution_context()
         return cls(

@@ -4,11 +4,10 @@ from typing import List, Optional, Tuple, Union
 import numpy as np
 import torch
 import torchvision
-from groundingdino.util.inference import load_model, predict
 from inference_exp import Detections
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat, ImageDimensions
-from inference_exp.errors import ModelRuntimeError
+from inference_exp.errors import ModelRuntimeError, MissingDependencyError
 from inference_exp.models.base.object_detection import (
     OpenVocabularyObjectDetectionModel,
 )
@@ -17,6 +16,18 @@ from inference_exp.utils.network import download_file
 from torch import nn
 from torchvision import transforms
 from torchvision.ops import box_convert
+
+try:
+    from groundingdino.util.inference import load_model, predict
+except ImportError:
+    raise MissingDependencyError(
+        f"Could not import GroundingDino model - this error means that some additional dependencies "
+        f"are not installed in the environment. If you run the `inference` library directly in your Python "
+        f"program, make sure the following extras of the package are installed: `grounding-dino`."
+        f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
+        f"You can also contact Roboflow to get support."
+    )
+
 
 DEFAULT_CONFIG_URL = "https://raw.githubusercontent.com/roboflow/GroundingDINO/main/groundingdino/config/GroundingDINO_SwinT_OGC.py"
 
