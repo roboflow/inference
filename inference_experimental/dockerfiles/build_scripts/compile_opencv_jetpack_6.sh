@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 
-version="4.10.0"
+version="4.11.0"
 folder="opencv_compilation"
 apt -y purge *libopencv*
 apt-get update

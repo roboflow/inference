@@ -1,6 +1,4 @@
 import os
-import shutil
-from glob import glob
 
 from compilation.core import compile_model
 

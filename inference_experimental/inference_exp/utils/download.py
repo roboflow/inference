@@ -21,7 +21,7 @@ from inference_exp.utils.file_system import (
     pre_allocate_file,
     remove_file_if_exists,
 )
-from requests import Response, Session, Timeout
+from requests import Response, Timeout
 from rich.progress import (
     BarColumn,
     DownloadColumn,
@@ -248,28 +248,26 @@ def threaded_download_file(
     futures = []
     max_workers = min(len(chunks_boundaries), max_threads_per_download)
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        with Session() as session:
-            for start, end in chunks_boundaries:
-                future = executor.submit(
-                    download_chunk,
-                    url=url,
-                    start=start,
-                    end=end,
-                    target_path=target_path,
-                    timeout=request_timeout,
-                    response_codes_to_retry=response_codes_to_retry,
-                    on_chunk_downloaded=on_chunk_downloaded,
-                    session=session,
-                )
-                futures.append(future)
-            done_futures, pending_futures = wait(futures, return_when=FIRST_EXCEPTION)
-            for pending_future in pending_futures:
-                pending_future.cancel()
-            _ = wait(pending_futures)
-            for future in done_futures:
-                future_exception = future.exception()
-                if future_exception:
-                    raise future_exception
+        for start, end in chunks_boundaries:
+            future = executor.submit(
+                download_chunk,
+                url=url,
+                start=start,
+                end=end,
+                target_path=target_path,
+                timeout=request_timeout,
+                response_codes_to_retry=response_codes_to_retry,
+                on_chunk_downloaded=on_chunk_downloaded,
+            )
+            futures.append(future)
+        done_futures, pending_futures = wait(futures, return_when=FIRST_EXCEPTION)
+        for pending_future in pending_futures:
+            pending_future.cancel()
+        _ = wait(pending_futures)
+        for future in done_futures:
+            future_exception = future.exception()
+            if future_exception:
+                raise future_exception
 
 
 def generate_chunks_boundaries(
@@ -306,24 +304,22 @@ def download_chunk(
     response_codes_to_retry: Set[int],
     file_chunk: int = DEFAULT_STREAM_DOWNLOAD_CHUNK,
     on_chunk_downloaded: Optional[Callable[[int], None]] = None,
-    session: Optional[Session] = None,
 ) -> None:
     headers = {"Range": f"bytes={start}-{end}"}
-    transport = session if session else requests
     try:
-        response = transport.get(url, headers=headers, stream=True, timeout=timeout)
+        with requests.get(url, headers=headers, stream=True, timeout=timeout) as response:
+            if response.status_code in response_codes_to_retry:
+                raise RetryError(f"File hosting returned {response.status_code}")
+            response.raise_for_status()
+            _handle_stream_download(
+                response=response,
+                target_path=target_path,
+                file_chunk=file_chunk,
+                on_chunk_downloaded=on_chunk_downloaded,
+                file_open_mode="r+b",
+                offset=start,
+            )
     except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
-        raise RetryError(f"Connectivity error")
-    if response.status_code in response_codes_to_retry:
-        raise RetryError(f"Image hosting returned {response.status_code}")
-    response.raise_for_status()
-    try:
-        with open(target_path, "r+b") as file:
-            file.seek(start)
-            for chunk in response.iter_content(file_chunk):
-                file.write(chunk)
-                on_chunk_downloaded(len(chunk))
-    except requests.exceptions.ConnectionError:
         raise RetryError(f"Connectivity error")
 
 
@@ -345,7 +341,7 @@ def stream_download(
     try:
         with requests.get(url, stream=True, timeout=timeout) as response:
             if response.status_code in response_codes_to_retry:
-                raise RetryError(f"Image hosting returned {response.status_code}")
+                raise RetryError(f"File hosting returned {response.status_code}")
             response.raise_for_status()
             _handle_stream_download(
                 response=response,
@@ -362,8 +358,12 @@ def _handle_stream_download(
     target_path: str,
     file_chunk: int,
     on_chunk_downloaded: Optional[Callable[[int], None]] = None,
+    file_open_mode: str = "wb",
+    offset: Optional[int] = None,
 ) -> None:
-    with open(target_path, "wb") as file:
+    with open(target_path, file_open_mode) as file:
+        if offset:
+            file.seek(offset)
         for chunk in response.iter_content(file_chunk):
             file.write(chunk)
             if on_chunk_downloaded:
