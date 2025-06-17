@@ -139,9 +139,6 @@ name = "onnx-cu118"
 url = "https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-11/pypi/simple/"
 explicit = true
 
-[tool.setuptools]
-packages = ["inference_exp"]
-
 [tool.setuptools.packages.find]
 include = ["inference_exp*"]
 exclude = ["development*", "dockerfiles*", "tests*"]
