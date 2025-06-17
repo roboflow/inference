@@ -193,7 +193,7 @@ def execute_trt_engine(
     input_name: str,
     outputs: List[str],
 ) -> List[torch.Tensor]:
-    with torch.cuda.device(device):
+    with torch.device(device):
         batch_size = pre_processed_images.shape[0]
         results = []
         for output in outputs:
@@ -231,7 +231,7 @@ def load_model(
     device: torch.device,
     engine_host_code_allowed: bool = False,
 ) -> trt.ICudaEngine:
-    with torch.cuda.device(device):
+    with torch.device(device):
         try:
             local_logger = InferenceTRTLogger(with_memory=True)
             with open(model_path, "rb") as f, trt.Runtime(local_logger) as runtime:
