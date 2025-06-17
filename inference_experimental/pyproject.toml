@@ -142,6 +142,10 @@ explicit = true
 [tool.setuptools]
 packages = ["inference_exp"]
 
+[tool.setuptools.packages.find]
+include = ["inference_exp*"]
+exclude = ["development*", "dockerfiles*", "tests*"]
+
 [[tool.uv.dependency-metadata]]
 name = "tensorrt-cu12"
 requires-dist = ["tensorrt-cu12-bindings", "tensorrt-cu12-libs"]
@@ -186,7 +190,3 @@ conflicts = [
     { extra = "onnx-jp6-cu126" },
   ],
 ]
-
-[tool.setuptools.packages.find]
-include = ["inference_exp*"]
-exclude = ["development*", "dockerfiles*", "tests*"]
