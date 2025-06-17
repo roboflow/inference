@@ -28,6 +28,8 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference.core.managers.base import ModelManager
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 
 LONG_DESCRIPTION = """
 Use segmentation masks to inpaint objects within an image using Stable Diffusion.
@@ -181,6 +183,20 @@ class BlockManifest(WorkflowBlockManifest):
 
 
 class StabilityAIInpaintingBlockV2(WorkflowBlock):
+    def __init__(
+        self,
+        model_manager: Optional[ModelManager] = None,
+        api_key: Optional[str] = None,
+        step_execution_mode: Optional[StepExecutionMode] = None,
+    ):
+        self._model_manager = model_manager
+        self._api_key = api_key
+        self._step_execution_mode = step_execution_mode
+        self._cached_pipeline = None
+
+    @classmethod
+    def get_init_parameters(cls) -> List[str]:
+        return ["model_manager", "api_key", "step_execution_mode"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -304,13 +320,45 @@ class StabilityAIInpaintingBlockV2(WorkflowBlock):
                 "Please install with: pip install inference[transformers]"
             )
         
-        # Initialize pipeline (could be cached in a real implementation)
+        # Initialize pipeline with better error handling
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        pipe = StableDiffusionInpaintPipeline.from_pretrained(
-            LOCAL_MODEL_ID,
-            torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-        )
-        pipe = pipe.to(device)
+        
+        # Use cached pipeline if available
+        if self._cached_pipeline is not None:
+            pipe = self._cached_pipeline
+        else:
+            try:
+                # Try to load the model with proper settings
+                print(f"Loading Stable Diffusion Inpainting model on {device}...")
+                pipe = StableDiffusionInpaintPipeline.from_pretrained(
+                    LOCAL_MODEL_ID,
+                    torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+                    safety_checker=None,  # Disable safety checker to reduce memory
+                    requires_safety_checker=False,
+                    local_files_only=False,  # Allow downloading if not cached
+                    use_safetensors=True,  # Prefer safetensors format
+                )
+                pipe = pipe.to(device)
+                
+                # Enable memory efficient attention if available
+                if hasattr(pipe, "enable_attention_slicing"):
+                    pipe.enable_attention_slicing()
+                
+                # Cache the pipeline for future use
+                self._cached_pipeline = pipe
+                print("Model loaded successfully!")
+                    
+            except Exception as e:
+                if "no file named" in str(e).lower():
+                    raise RuntimeError(
+                        f"Failed to load Stable Diffusion model. The model files may not be "
+                        f"fully downloaded. Please try running this Python code to download the model first:\n\n"
+                        f"from diffusers import StableDiffusionInpaintPipeline\n"
+                        f"pipe = StableDiffusionInpaintPipeline.from_pretrained('{LOCAL_MODEL_ID}')\n\n"
+                        f"Original error: {str(e)}"
+                    )
+                else:
+                    raise RuntimeError(f"Failed to initialize Stable Diffusion pipeline: {str(e)}")
         
         # Convert images to PIL format
         pil_image = PILImage.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
