@@ -27,4 +27,4 @@ echo 'export PYTHONPATH=/usr/local/lib/python3.10/site-packages/:$PYTHONPATH' >>
 source ~/.bashrc
 cd python_loader
 python setup.py bdist_wheel
-python -m pip install dist/opencv-${version}-py3-none-any.whl
+$HOME/.local/bin/uv pip install --system dist/opencv-${version}-py3-none-any.whl
