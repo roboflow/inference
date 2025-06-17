@@ -288,6 +288,7 @@ def use_trt_model_thread_storage(
     device: torch.device,
 ) -> Generator[Tuple[trt.IExecutionContext, cuda.Stream], None, None]:
     if is_trt_model_thread_storage_initialised(thread_local_storage=thread_local_storage):
+        print(threading.get_ident(), "Re-using pre-initialised ")
         with use_cuda_context(context=thread_local_storage.cuda_context):
             cuda_stream = cuda.Stream()
             yield thread_local_storage.execution_context, cuda_stream

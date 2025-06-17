@@ -25,7 +25,7 @@ from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
 from inference_exp.models.common.trt import infer_from_trt_engine, load_model, initialise_cuda_context, \
-    create_trt_model_thread_storage, use_trt_model_thread_storage
+    create_trt_model_thread_storage, use_trt_model_thread_storage, use_cuda_context
 
 try:
     import tensorrt as trt
@@ -88,18 +88,15 @@ class YOLOv8ForObjectDetectionTRT(
                 engine_host_code_allowed=engine_host_code_allowed,
             )
             execution_context = engine.create_execution_context()
-            thread_local_storage = create_trt_model_thread_storage(
-                execution_context=execution_context,
-                cuda_device=cuda_device,
-                cuda_context=cuda_context,
-            )
+
         return cls(
             engine=engine,
             class_names=class_names,
             pre_processing_config=pre_processing_config,
             trt_config=trt_config,
             device=device,
-            thread_local_storage=thread_local_storage,
+            cuda_context=cuda_context,
+            execution_context=execution_context,
         )
 
     def __init__(
@@ -109,14 +106,17 @@ class YOLOv8ForObjectDetectionTRT(
         pre_processing_config: PreProcessingConfig,
         trt_config: TRTConfig,
         device: torch.device,
-        thread_local_storage: threading.local,
+        cuda_context: cuda.Context,
+        execution_context: trt.IExecutionContext,
     ):
         self._engine = engine
         self._class_names = class_names
         self._pre_processing_config = pre_processing_config
         self._trt_config = trt_config
         self._device = device
-        self._thread_local_storage = thread_local_storage
+        self._cuda_context = cuda_context
+        self._execution_context = execution_context
+        self._access_lock = threading.Lock()
 
     @property
     def class_names(self) -> List[str]:
@@ -137,21 +137,19 @@ class YOLOv8ForObjectDetectionTRT(
         )
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
-        with use_trt_model_thread_storage(
-            engine=self._engine,
-            thread_local_storage=self._thread_local_storage,
-            device=self._device,
-        ) as (execution_context, cuda_stream):
-            return infer_from_trt_engine(
-                pre_processed_images=pre_processed_images,
-                trt_config=self._trt_config,
-                engine=self._engine,
-                context=execution_context,
-                device=self._device,
-                cuda_stream=cuda_stream,
-                input_name="images",
-                outputs=["output0"],
-            )[0]
+        with self._access_lock:
+            with use_cuda_context(context=self._cuda_context):
+                cuda_stream = cuda.Stream()
+                return infer_from_trt_engine(
+                    pre_processed_images=pre_processed_images,
+                    trt_config=self._trt_config,
+                    engine=self._engine,
+                    context=self._execution_context,
+                    device=self._device,
+                    cuda_stream=cuda_stream,
+                    input_name="images",
+                    outputs=["output0"],
+                )[0]
 
     def post_process(
         self,
