@@ -101,6 +101,7 @@ class YOLOv8ForObjectDetectionTRT(
             pre_processing_config=pre_processing_config,
             trt_config=trt_config,
             device=device,
+            thread_local_storage=thread_local_storage,
         )
 
     def __init__(
