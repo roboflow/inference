@@ -286,7 +286,7 @@ def use_trt_model_thread_storage(
     engine: trt.ICudaEngine,
     thread_local_storage: threading.local,
     device: torch.device,
-) -> Generator[Tuple[trt.IExecutionContext, cuda.Stream]]:
+) -> Generator[Tuple[trt.IExecutionContext, cuda.Stream], None, None]:
     if is_trt_model_thread_storage_initialised(thread_local_storage=thread_local_storage):
         with use_cuda_context(context=thread_local_storage.cuda_context):
             yield thread_local_storage.execution_context, thread_local_storage.cuda_stream
@@ -302,6 +302,7 @@ def use_trt_model_thread_storage(
             cuda_stream=cuda_stream,
             thread_local_storage=thread_local_storage,
         )
+        yield thread_local_storage.execution_context, thread_local_storage.cuda_stream
 
 
 @contextlib.contextmanager
