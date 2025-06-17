@@ -83,7 +83,10 @@ class TestStabilityAIInpaintingBlockV2:
         # Create test data
         block = StabilityAIInpaintingBlockV2()
         test_image = np.zeros((100, 100, 3), dtype=np.uint8)
-        workflow_image = WorkflowImageData(numpy_image=test_image)
+        workflow_image = WorkflowImageData(
+            numpy_image=test_image,
+            parent_metadata={"parent_id": "test"}
+        )
         
         # Create mock segmentation mask
         mock_mask = np.zeros((100, 100), dtype=bool)
