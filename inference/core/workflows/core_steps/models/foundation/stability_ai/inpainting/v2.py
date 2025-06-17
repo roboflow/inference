@@ -2,6 +2,7 @@
 Stability AI Inpainting v2 - supports both cloud API and local execution
 """
 
+import os
 from typing import List, Literal, Optional, Type, Union
 
 import cv2
@@ -10,6 +11,7 @@ import requests
 import supervision as sv
 from pydantic import ConfigDict, Field
 
+from inference.core.logger import logger
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
@@ -31,6 +33,9 @@ from inference.core.workflows.prototypes.block import (
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 
+# Global cache for the Stable Diffusion pipeline
+_CACHED_SD_PIPELINE = None
+
 LONG_DESCRIPTION = """
 Use segmentation masks to inpaint objects within an image using Stable Diffusion.
 
@@ -46,9 +51,6 @@ SHORT_DESCRIPTION = "Use segmentation masks to inpaint objects within an image."
 
 API_HOST = "https://api.stability.ai"
 ENDPOINT = "/v2beta/stable-image/edit/inpaint"
-
-# Model ID for local execution
-LOCAL_MODEL_ID = "runwayml/stable-diffusion-inpainting"
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -192,7 +194,6 @@ class StabilityAIInpaintingBlockV2(WorkflowBlock):
         self._model_manager = model_manager
         self._api_key = api_key
         self._step_execution_mode = step_execution_mode
-        self._cached_pipeline = None
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
@@ -320,45 +321,50 @@ class StabilityAIInpaintingBlockV2(WorkflowBlock):
                 "Please install with: pip install inference[transformers]"
             )
         
-        # Initialize pipeline with better error handling
+        # Model caching is handled at module level to avoid reloading
+        global _CACHED_SD_PIPELINE
+        
         device = "cuda" if torch.cuda.is_available() else "cpu"
         
-        # Use cached pipeline if available
-        if self._cached_pipeline is not None:
-            pipe = self._cached_pipeline
-        else:
+        if '_CACHED_SD_PIPELINE' not in globals() or _CACHED_SD_PIPELINE is None:
+            logger.info(f"Loading Stable Diffusion Inpainting model on {device}...")
+            
+            # Model ID - will be changed to load from Roboflow backend later
+            model_id = "runwayml/stable-diffusion-inpainting"
+            
+            # Use MODEL_CACHE_DIR for consistency with other models
+            from inference.core.env import MODEL_CACHE_DIR
+            cache_dir = os.path.join(MODEL_CACHE_DIR, "stable-diffusion-inpainting")
+            
             try:
-                # Try to load the model with proper settings
-                print(f"Loading Stable Diffusion Inpainting model on {device}...")
-                pipe = StableDiffusionInpaintPipeline.from_pretrained(
-                    LOCAL_MODEL_ID,
+                _CACHED_SD_PIPELINE = StableDiffusionInpaintPipeline.from_pretrained(
+                    model_id,
+                    cache_dir=cache_dir,
                     torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-                    safety_checker=None,  # Disable safety checker to reduce memory
+                    safety_checker=None,
                     requires_safety_checker=False,
-                    local_files_only=False,  # Allow downloading if not cached
-                    use_safetensors=True,  # Prefer safetensors format
+                    use_safetensors=True,
+                    local_files_only=False,  # Allow downloading if needed
                 )
-                pipe = pipe.to(device)
+                _CACHED_SD_PIPELINE = _CACHED_SD_PIPELINE.to(device)
                 
-                # Enable memory efficient attention if available
-                if hasattr(pipe, "enable_attention_slicing"):
-                    pipe.enable_attention_slicing()
+                # Enable memory optimizations
+                if hasattr(_CACHED_SD_PIPELINE, "enable_attention_slicing"):
+                    _CACHED_SD_PIPELINE.enable_attention_slicing()
                 
-                # Cache the pipeline for future use
-                self._cached_pipeline = pipe
-                print("Model loaded successfully!")
-                    
+                logger.info("Stable Diffusion model loaded successfully!")
+                
             except Exception as e:
                 if "no file named" in str(e).lower():
                     raise RuntimeError(
                         f"Failed to load Stable Diffusion model. The model files may not be "
-                        f"fully downloaded. Please try running this Python code to download the model first:\n\n"
-                        f"from diffusers import StableDiffusionInpaintPipeline\n"
-                        f"pipe = StableDiffusionInpaintPipeline.from_pretrained('{LOCAL_MODEL_ID}')\n\n"
+                        f"fully downloaded. Please ensure the model is downloaded first.\n"
                         f"Original error: {str(e)}"
                     )
                 else:
                     raise RuntimeError(f"Failed to initialize Stable Diffusion pipeline: {str(e)}")
+        
+        pipe = _CACHED_SD_PIPELINE
         
         # Convert images to PIL format
         pil_image = PILImage.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
@@ -373,15 +379,16 @@ class StabilityAIInpaintingBlockV2(WorkflowBlock):
             generator = torch.Generator(device=device).manual_seed(seed)
         
         # Run inference
-        result = pipe(
-            prompt=prompt,
-            negative_prompt=negative_prompt,
-            image=pil_image,
-            mask_image=pil_mask,
-            num_inference_steps=num_inference_steps,
-            guidance_scale=guidance_scale,
-            generator=generator,
-        ).images[0]
+        with torch.inference_mode():
+            result = pipe(
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                image=pil_image,
+                mask_image=pil_mask,
+                num_inference_steps=num_inference_steps,
+                guidance_scale=guidance_scale,
+                generator=generator,
+            ).images[0]
         
         # Convert back to OpenCV format
         result_array = np.array(result)
