@@ -166,7 +166,7 @@ def safe_execute_download(
     def on_chunk_downloaded(bytes_num: int) -> None:
         with progress_task_lock:
             progress.advance(progress_task, bytes_num)
-
+    print(f"Downloading from {download_url} -- to --> {tmp_download_file} (size: {expected_file_size}B)")
     stream_download(
         url=download_url,
         target_path=tmp_download_file,
