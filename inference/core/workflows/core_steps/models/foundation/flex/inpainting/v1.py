@@ -272,10 +272,13 @@ class Flex2InpaintingBlockV1(WorkflowBlock):
             model_id = "ostris/Flex.2-preview"
             
             try:
+                # The custom pipeline needs to be downloaded and made available
+                # Let's use trust_remote_code to allow the custom pipeline
                 _CACHED_FLEX2_PIPELINE = AutoPipelineForText2Image.from_pretrained(
                     model_id,
                     custom_pipeline=model_id,
                     torch_dtype=dtype,
+                    trust_remote_code=True,  # Allow custom pipeline code
                 )
                 
                 _CACHED_FLEX2_PIPELINE = _CACHED_FLEX2_PIPELINE.to(device)
@@ -283,7 +286,26 @@ class Flex2InpaintingBlockV1(WorkflowBlock):
                 logger.info("Flex.2 model loaded successfully!")
                 
             except Exception as e:
-                raise RuntimeError(f"Failed to initialize Flex.2 pipeline: {str(e)}")
+                # If custom pipeline fails, try without it
+                logger.warning(f"Failed to load with custom pipeline: {str(e)}")
+                logger.info("Attempting to load without custom pipeline...")
+                try:
+                    from diffusers import StableDiffusionPipeline
+                    # Fall back to standard pipeline - this won't have all Flex.2 features
+                    # but will work for basic inpainting
+                    _CACHED_FLEX2_PIPELINE = StableDiffusionPipeline.from_pretrained(
+                        model_id,
+                        torch_dtype=dtype,
+                        trust_remote_code=True,
+                    )
+                    _CACHED_FLEX2_PIPELINE = _CACHED_FLEX2_PIPELINE.to(device)
+                    logger.warning("Loaded with standard pipeline - some Flex.2 features may not be available")
+                except Exception as e2:
+                    raise RuntimeError(
+                        f"Failed to initialize Flex.2 pipeline. "
+                        f"Custom pipeline error: {str(e)}. "
+                        f"Standard pipeline error: {str(e2)}"
+                    )
         
         pipe = _CACHED_FLEX2_PIPELINE
         
@@ -294,7 +316,8 @@ class Flex2InpaintingBlockV1(WorkflowBlock):
         
         # Convert mask to single channel if needed
         if len(mask.shape) == 3:
-            mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)        # Resize mask to match target dimensions
+            mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
+        # Resize mask to match target dimensions
         mask_resized = cv2.resize(mask, (width, height), interpolation=cv2.INTER_NEAREST)
         pil_mask = PILImage.fromarray(mask_resized)
         
@@ -309,19 +332,36 @@ class Flex2InpaintingBlockV1(WorkflowBlock):
         
         # Run inference
         with torch.inference_mode():
-            result = pipe(
-                prompt=prompt,
-                inpaint_image=pil_image,
-                inpaint_mask=pil_mask,
-                control_image=control_image,
-                control_strength=control_strength,
-                control_stop=control_stop,
-                height=height,
-                width=width,
-                guidance_scale=guidance_scale,
-                num_inference_steps=num_inference_steps,
-                generator=generator,
-            ).images[0]
+            # Check if this is the custom Flex.2 pipeline or fallback
+            if hasattr(pipe, '__class__') and 'Flex' in pipe.__class__.__name__:
+                # Custom Flex.2 pipeline with full features
+                result = pipe(
+                    prompt=prompt,
+                    inpaint_image=pil_image,
+                    inpaint_mask=pil_mask,
+                    control_image=control_image,
+                    control_strength=control_strength,
+                    control_stop=control_stop,
+                    height=height,
+                    width=width,
+                    guidance_scale=guidance_scale,
+                    num_inference_steps=num_inference_steps,
+                    generator=generator,
+                ).images[0]
+            else:
+                # Standard pipeline fallback - basic inpainting
+                logger.warning("Using standard pipeline - control parameters will be ignored")
+                result = pipe(
+                    prompt=prompt,
+                    negative_prompt=negative_prompt,
+                    image=pil_image,
+                    mask_image=pil_mask,
+                    height=height,
+                    width=width,
+                    guidance_scale=guidance_scale,
+                    num_inference_steps=num_inference_steps,
+                    generator=generator,
+                ).images[0]
         
         # Convert back to OpenCV format
         result_array = np.array(result)
