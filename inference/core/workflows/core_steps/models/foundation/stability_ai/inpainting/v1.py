@@ -19,8 +19,8 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     IMAGE_KIND,
-    INTEGER_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    INTEGER_KIND,
     SECRET_KIND,
     STRING_KIND,
     Selector,
