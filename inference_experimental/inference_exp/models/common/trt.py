@@ -223,8 +223,9 @@ def execute_trt_engine(
         results.append(result)
     context.set_input_shape(input_name, tuple(pre_processed_images.shape))
     context.set_tensor_address(input_name, pre_processed_images.data_ptr())
-    stream = torch.cuda.Stream(device=device)
-    status = context.execute_async_v3(stream_handle=stream.cuda_stream)
+    # stream = torch.cuda.Stream(device=device)
+    stream = cuda.Stream()
+    status = context.execute_async_v3(stream_handle=stream.handle)
     if not status:
         raise ModelRuntimeError("Failed to complete inference from TRT model")
     stream.synchronize()
