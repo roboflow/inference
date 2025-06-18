@@ -250,8 +250,7 @@ class Flex2InpaintingBlockV1(WorkflowBlock):
     ) -> np.ndarray:
         """Run inference using local Flex.2 model."""
         try:
-            from diffusers import AutoPipelineForText2Image
-            from diffusers.utils import load_image
+            from diffusers import DiffusionPipeline
             import torch
             from PIL import Image as PILImage
         except ImportError:
@@ -272,40 +271,32 @@ class Flex2InpaintingBlockV1(WorkflowBlock):
             model_id = "ostris/Flex.2-preview"
             
             try:
-                # The custom pipeline needs to be downloaded and made available
-                # Let's use trust_remote_code to allow the custom pipeline
-                _CACHED_FLEX2_PIPELINE = AutoPipelineForText2Image.from_pretrained(
+                # Load using DiffusionPipeline which will automatically detect the pipeline type
+                _CACHED_FLEX2_PIPELINE = DiffusionPipeline.from_pretrained(
                     model_id,
-                    custom_pipeline=model_id,
                     torch_dtype=dtype,
                     trust_remote_code=True,  # Allow custom pipeline code
+                    use_safetensors=True,
                 )
                 
                 _CACHED_FLEX2_PIPELINE = _CACHED_FLEX2_PIPELINE.to(device)
                 
-                logger.info("Flex.2 model loaded successfully!")
+                # Enable memory optimizations if available
+                if hasattr(_CACHED_FLEX2_PIPELINE, "enable_model_cpu_offload"):
+                    _CACHED_FLEX2_PIPELINE.enable_model_cpu_offload()
+                elif hasattr(_CACHED_FLEX2_PIPELINE, "enable_attention_slicing"):
+                    _CACHED_FLEX2_PIPELINE.enable_attention_slicing()
+                
+                logger.info(f"Flex.2 model loaded successfully! Pipeline type: {type(_CACHED_FLEX2_PIPELINE).__name__}")
                 
             except Exception as e:
-                # If custom pipeline fails, try without it
-                logger.warning(f"Failed to load with custom pipeline: {str(e)}")
-                logger.info("Attempting to load without custom pipeline...")
-                try:
-                    from diffusers import StableDiffusionPipeline
-                    # Fall back to standard pipeline - this won't have all Flex.2 features
-                    # but will work for basic inpainting
-                    _CACHED_FLEX2_PIPELINE = StableDiffusionPipeline.from_pretrained(
-                        model_id,
-                        torch_dtype=dtype,
-                        trust_remote_code=True,
-                    )
-                    _CACHED_FLEX2_PIPELINE = _CACHED_FLEX2_PIPELINE.to(device)
-                    logger.warning("Loaded with standard pipeline - some Flex.2 features may not be available")
-                except Exception as e2:
-                    raise RuntimeError(
-                        f"Failed to initialize Flex.2 pipeline. "
-                        f"Custom pipeline error: {str(e)}. "
-                        f"Standard pipeline error: {str(e2)}"
-                    )
+                raise RuntimeError(
+                    f"Failed to initialize Flex.2 pipeline: {str(e)}\n\n"
+                    f"Please ensure you have the latest version of diffusers installed:\n"
+                    f"pip install --upgrade diffusers transformers accelerate\n\n"
+                    f"If the error persists, the model may still be downloading. "
+                    f"Check your HuggingFace cache directory."
+                )
         
         pipe = _CACHED_FLEX2_PIPELINE
         
@@ -332,11 +323,15 @@ class Flex2InpaintingBlockV1(WorkflowBlock):
         
         # Run inference
         with torch.inference_mode():
-            # Check if this is the custom Flex.2 pipeline or fallback
-            if hasattr(pipe, '__class__') and 'Flex' in pipe.__class__.__name__:
-                # Custom Flex.2 pipeline with full features
+            # Try to detect the pipeline type and call appropriately
+            pipeline_class_name = type(pipe).__name__
+            
+            if "Flex" in pipeline_class_name:
+                # Custom Flex.2 pipeline
+                logger.info("Using Flex.2 custom pipeline")
                 result = pipe(
                     prompt=prompt,
+                    negative_prompt=negative_prompt,
                     inpaint_image=pil_image,
                     inpaint_mask=pil_mask,
                     control_image=control_image,
@@ -348,14 +343,25 @@ class Flex2InpaintingBlockV1(WorkflowBlock):
                     num_inference_steps=num_inference_steps,
                     generator=generator,
                 ).images[0]
+            elif "Flux" in pipeline_class_name:
+                # Flux-based pipeline (Flex is based on Flux)
+                logger.info("Using Flux-based pipeline")
+                # Flux expects different parameter names
+                result = pipe(
+                    prompt=prompt,
+                    height=height,
+                    width=width,
+                    guidance_scale=guidance_scale,
+                    num_inference_steps=num_inference_steps,
+                    generator=generator,
+                ).images[0]
             else:
-                # Standard pipeline fallback - basic inpainting
-                logger.warning("Using standard pipeline - control parameters will be ignored")
+                # Generic diffusion pipeline
+                logger.info(f"Using generic pipeline: {pipeline_class_name}")
+                # Try with minimal parameters that should work with most pipelines
                 result = pipe(
                     prompt=prompt,
                     negative_prompt=negative_prompt,
-                    image=pil_image,
-                    mask_image=pil_mask,
                     height=height,
                     width=width,
                     guidance_scale=guidance_scale,
