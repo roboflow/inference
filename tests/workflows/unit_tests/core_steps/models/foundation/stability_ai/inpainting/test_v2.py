@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 import supervision as sv
 from unittest.mock import MagicMock, patch
+from urllib.parse import urlparse
 
 from inference.core.workflows.core_steps.models.foundation.stability_ai.inpainting.v2 import (
     StabilityAIInpaintingBlockV2,
@@ -114,7 +115,8 @@ class TestStabilityAIInpaintingBlockV2:
         # Verify API call
         mock_post.assert_called_once()
         call_args = mock_post.call_args
-        assert "https://api.stability.ai" in call_args[0][0]
+        parsed_url = urlparse(call_args[0][0])
+        assert parsed_url.hostname == "api.stability.ai"
         assert call_args[1]["headers"]["authorization"] == "Bearer test_key"
 
     def test_describe_outputs(self):
