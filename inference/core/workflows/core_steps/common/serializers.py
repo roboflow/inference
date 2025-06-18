@@ -33,9 +33,17 @@ from inference.core.workflows.execution_engine.constants import (
     POLYGON_KEY,
     POLYGON_KEY_IN_INFERENCE_RESPONSE,
     POLYGON_KEY_IN_SV_DETECTIONS,
+    SMOOTHED_SPEED_KEY_IN_INFERENCE_RESPONSE,
+    SMOOTHED_SPEED_KEY_IN_SV_DETECTIONS,
+    SMOOTHED_VELOCITY_KEY_IN_INFERENCE_RESPONSE,
+    SMOOTHED_VELOCITY_KEY_IN_SV_DETECTIONS,
+    SPEED_KEY_IN_INFERENCE_RESPONSE,
+    SPEED_KEY_IN_SV_DETECTIONS,
     TIME_IN_ZONE_KEY_IN_INFERENCE_RESPONSE,
     TIME_IN_ZONE_KEY_IN_SV_DETECTIONS,
     TRACKER_ID_KEY,
+    VELOCITY_KEY_IN_INFERENCE_RESPONSE,
+    VELOCITY_KEY_IN_SV_DETECTIONS,
     WIDTH_KEY,
     X_KEY,
     Y_KEY,
@@ -153,6 +161,22 @@ def serialise_sv_detections(detections: sv.Detections) -> dict:
                 )
         if DETECTED_CODE_KEY in data:
             detection_dict[DETECTED_CODE_KEY] = data[DETECTED_CODE_KEY]
+        if VELOCITY_KEY_IN_SV_DETECTIONS in data:
+            detection_dict[VELOCITY_KEY_IN_INFERENCE_RESPONSE] = data[
+                VELOCITY_KEY_IN_SV_DETECTIONS
+            ].tolist()
+        if SPEED_KEY_IN_SV_DETECTIONS in data:
+            detection_dict[SPEED_KEY_IN_INFERENCE_RESPONSE] = data[
+                SPEED_KEY_IN_SV_DETECTIONS
+            ].astype(float)
+        if SMOOTHED_VELOCITY_KEY_IN_SV_DETECTIONS in data:
+            detection_dict[SMOOTHED_VELOCITY_KEY_IN_INFERENCE_RESPONSE] = data[
+                SMOOTHED_VELOCITY_KEY_IN_SV_DETECTIONS
+            ].tolist()
+        if SMOOTHED_SPEED_KEY_IN_SV_DETECTIONS in data:
+            detection_dict[SMOOTHED_SPEED_KEY_IN_INFERENCE_RESPONSE] = data[
+                SMOOTHED_SPEED_KEY_IN_SV_DETECTIONS
+            ].astype(float)
         serialized_detections.append(detection_dict)
     image_metadata = {
         "width": None,

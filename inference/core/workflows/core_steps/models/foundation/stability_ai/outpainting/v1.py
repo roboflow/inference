@@ -17,9 +17,8 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BOOLEAN_KIND,
+    FLOAT_ZERO_TO_ONE_KIND,
     IMAGE_KIND,
-    INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
     SECRET_KIND,
     STRING_KIND,
@@ -33,14 +32,18 @@ from inference.core.workflows.prototypes.block import (
 
 LONG_DESCRIPTION = """
 The block wraps 
-[Stability AI inpainting API](https://platform.stability.ai/docs/legacy/grpc-api/features/inpainting#Python) and 
-let users use instance segmentation results to change the content of images in a creative way.
+[Stability AI outpainting API](https://platform.stability.ai/docs/api-reference#tag/Edit/paths/~1v2beta~1stable-image~1edit~1outpaint/post) and 
+let users use object detection results to change the content of images in a creative way.
+
+The block sends crop of the image to the API together with directions where to outpaint.
+As a result, the API returns the image with outpainted regions.
+At least one of `left`, `right`, `up`, `down` must be provided, otherwise original image is returned.
 """
 
-SHORT_DESCRIPTION = "Use segmentation masks to inpaint objects within an image."
+SHORT_DESCRIPTION = "Use object detection bounding box to crop the image and to outpaint within given directions."
 
 API_HOST = "https://api.stability.ai"
-ENDPOINT = "/v2beta/stable-image/edit/inpaint"
+ENDPOINT = "/v2beta/stable-image/edit/outpaint"
 
 
 class StabilityAIPresets(Enum):
@@ -66,7 +69,7 @@ class StabilityAIPresets(Enum):
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Stability AI Inpainting",
+            "name": "Stability AI Outpainting",
             "version": "v1",
             "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,
@@ -75,7 +78,7 @@ class BlockManifest(WorkflowBlockManifest):
             "search_keywords": [
                 "Stability AI",
                 "stability.ai",
-                "inpainting",
+                "outpainting",
                 "image generation",
             ],
             "ui_manifest": {
@@ -85,47 +88,72 @@ class BlockManifest(WorkflowBlockManifest):
             },
         }
     )
-    type: Literal["roboflow_core/stability_ai_inpainting@v1"]
+    type: Literal["roboflow_core/stability_ai_outpainting@v1"]
     image: Selector(kind=[IMAGE_KIND]) = Field(
-        description="The image to inpaint.",
+        description="The image to outpaint.",
         examples=["$inputs.image", "$steps.cropping.crops"],
     )
-    segmentation_mask: Selector(kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND]) = Field(
-        name="Segmentation Mask",
-        description="Model predictions from segmentation model.",
-        examples=["$steps.model.predictions"],
-    )
-    prompt: Union[
-        Selector(kind=[STRING_KIND]),
-        str,
+    creativity: Union[
+        Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+        float,
     ] = Field(
-        description="Prompt to inpainting model (what you wish to see).",
-        examples=["my prompt", "$inputs.prompt"],
-        json_schema_extra={
-            "multiline": True,
-        },
+        default=0.5,
+        description="Creativity parameter for outpainting. Higher values result in more creative outpainting.",
+        examples=[0.5],
     )
-    negative_prompt: Optional[
+    left: Optional[
+        Union[
+            Selector(kind=[INTEGER_KIND]),
+            int,
+        ]
+    ] = Field(
+        default=None,
+        description="Number of pixels to outpaint on the left side of the image. Max value is 2000.",
+        examples=[200],
+    )
+    right: Optional[
+        Union[
+            Selector(kind=[INTEGER_KIND]),
+            int,
+        ]
+    ] = Field(
+        default=None,
+        description="Number of pixels to outpaint on the right side of the image. Max value is 2000.",
+        examples=[200],
+    )
+    up: Optional[
+        Union[
+            Selector(kind=[INTEGER_KIND]),
+            int,
+        ]
+    ] = Field(
+        default=None,
+        description="Number of pixels to outpaint on the top side of the image. Max value is 2000.",
+        examples=[200],
+    )
+    down: Optional[
+        Union[
+            Selector(kind=[INTEGER_KIND]),
+            int,
+        ]
+    ] = Field(
+        default=None,
+        description="Number of pixels to outpaint on the bottom side of the image. Max value is 2000.",
+        examples=[200],
+    )
+    prompt: Optional[
         Union[
             Selector(kind=[STRING_KIND]),
             str,
         ]
     ] = Field(
         default=None,
-        description="Negative prompt to inpainting model (what you do not wish to see).",
+        description="Optional prompt to apply when outpainting the image (what you wish to see)."
+        " If not provided, the image will be outpainted without any prompt.",
         examples=["my prompt", "$inputs.prompt"],
-    )
-    api_key: Union[Selector(kind=[STRING_KIND, SECRET_KIND]), str] = Field(
-        description="Your Stability AI API key.",
-        examples=["xxx-xxx", "$inputs.stability_ai_api_key"],
-        private=True,
-    )
-    invert_segmentation_mask: Union[
-        Selector(kind=[BOOLEAN_KIND]),
-        bool,
-    ] = Field(
-        default=False,
-        description="Invert segmentation mask to inpaint background instead of foreground.",
+        json_schema_extra={
+            "multiline": True,
+        },
     )
     preset: Optional[StabilityAIPresets] = Field(
         default=None,
@@ -146,6 +174,11 @@ class BlockManifest(WorkflowBlockManifest):
         " Must be a number between 0 and 4294967294",
         examples=[200],
     )
+    api_key: Union[Selector(kind=[STRING_KIND, SECRET_KIND]), str] = Field(
+        description="Your Stability AI API key.",
+        examples=["xxx-xxx", "$inputs.stability_ai_api_key"],
+        private=True,
+    )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -158,7 +191,7 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.4.0,<2.0.0"
 
 
-class StabilityAIInpaintingBlockV1(WorkflowBlock):
+class StabilityAIOutpaintingBlockV1(WorkflowBlock):
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -167,40 +200,57 @@ class StabilityAIInpaintingBlockV1(WorkflowBlock):
     def run(
         self,
         image: WorkflowImageData,
-        segmentation_mask: sv.Detections,
-        prompt: str,
-        negative_prompt: str,
         api_key: str,
-        invert_segmentation_mask: bool,
-        preset: Optional[StabilityAIPresets] = None,
+        creativity: float,
+        left: Optional[int] = None,
+        right: Optional[int] = None,
+        up: Optional[int] = None,
+        down: Optional[int] = None,
+        prompt: Optional[str] = None,
         seed: Optional[int] = None,
+        preset: Optional[StabilityAIPresets] = None,
     ) -> BlockResult:
-        black_image = np.zeros_like(image.numpy_image)
-        mask_annotator = sv.MaskAnnotator(color=Color.WHITE, opacity=1.0)
-        mask = mask_annotator.annotate(black_image, segmentation_mask)
-        mask = cv2.GaussianBlur(mask, (15, 15), 0)
-        encoded_image = numpy_array_to_jpeg_bytes(image=image.numpy_image)
-        if invert_segmentation_mask:
-            mask = cv2.bitwise_not(mask)
-        encoded_mask = numpy_array_to_jpeg_bytes(image=mask)
-        request_data = {
-            "prompt": prompt,
-            "output_format": "jpeg",
-        }
+        if not any([left, right, up, down]):
+            return {
+                "image": WorkflowImageData.copy_and_replace(
+                    origin_image_data=image,
+                    numpy_image=image.numpy_image.copy(),
+                ),
+            }
+        left = min(2000, left) if left else 0
+        right = min(2000, right) if right else 0
+        up = min(2000, up) if up else 0
+        down = min(2000, down) if down else 0
+        creativity = max(0, min(1, creativity))
+        seed = max(0, min(4294967294, seed)) if seed else None
         preset = (
             preset.value if preset in set(e.value for e in StabilityAIPresets) else None
         )
+
+        request_data = {
+            "output_format": "jpeg",
+            "creativity": creativity,
+        }
+        if left:
+            request_data["left"] = left
+        if right:
+            request_data["right"] = right
+        if up:
+            request_data["up"] = up
+        if down:
+            request_data["down"] = down
         if preset:
             request_data["preset"] = preset
-        seed = max(0, min(4294967294, seed)) if seed else None
+        if prompt:
+            request_data["prompt"] = prompt
         if seed:
             request_data["seed"] = seed
+
         response = requests.post(
             f"{API_HOST}{ENDPOINT}",
             headers={"authorization": f"Bearer {api_key}", "accept": "image/*"},
             files={
-                "image": encoded_image,
-                "mask": encoded_mask,
+                "image": numpy_array_to_jpeg_bytes(image=image.numpy_image),
             },
             data=request_data,
         )
