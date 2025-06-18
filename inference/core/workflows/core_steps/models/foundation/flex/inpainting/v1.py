@@ -324,4 +324,5 @@ class Flex2InpaintingBlockV1(WorkflowBlock):
             ).images[0]
         
         # Convert back to OpenCV format
-        result_array = np.array(result)        return cv2.cvtColor(result_array, cv2.COLOR_RGB2BGR)
+        result_array = np.array(result)
+        return cv2.cvtColor(result_array, cv2.COLOR_RGB2BGR)
