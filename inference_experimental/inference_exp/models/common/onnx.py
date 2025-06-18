@@ -4,6 +4,7 @@ import numpy as np
 import torch
 
 from inference_exp.errors import ModelRuntimeError, MissingDependencyError
+from inference_exp.models.common.trt import initialise_cuda_context
 
 try:
     import onnxruntime
@@ -97,17 +98,49 @@ def run_session_via_iobinding(
         inputs_np = {name: value.numpy() for name, value in inputs.items()}
         results = session.run(None, inputs_np)
         return [torch.from_numpy(element) for element in results]
-    if output_shape_mapping is None:
-        output_shape_mapping = {}
-    binding = session.io_binding()
-    pre_allocated_outputs: List[Optional[torch.Tensor]] = []
-    some_outputs_dynamically_allocated = False
-    for output in session.get_outputs():
-        if is_tensor_shape_dynamic(output.shape):
-            if output.name in output_shape_mapping:
+
+    try:
+        import pycuda.driver as cuda
+    except ImportError:
+        raise MissingDependencyError("TODO")
+    cuda.init()
+    cuda_device = cuda.Device(device.index or 0)
+    with initialise_cuda_context(cuda_device=cuda_device):
+        if output_shape_mapping is None:
+            output_shape_mapping = {}
+        binding = session.io_binding()
+        pre_allocated_outputs: List[Optional[torch.Tensor]] = []
+        some_outputs_dynamically_allocated = False
+        for output in session.get_outputs():
+            if is_tensor_shape_dynamic(output.shape):
+                if output.name in output_shape_mapping:
+                    torch_output_type = ort_tensor_type_to_torch_tensor_type(output.type)
+                    pre_allocated_output = torch.empty(
+                        output_shape_mapping[output.name],
+                        dtype=torch_output_type,
+                        device=device,
+                    )
+                    binding.bind_output(
+                        name=output.name,
+                        device_type="cuda",
+                        device_id=device.index or 0,
+                        element_type=torch_tensor_type_to_onnx_type(torch_output_type),
+                        shape=tuple(pre_allocated_output.shape),
+                        buffer_ptr=pre_allocated_output.data_ptr(),
+                    )
+                    pre_allocated_outputs.append(pre_allocated_output)
+                else:
+                    binding.bind_output(
+                        name=output.name,
+                        device_type="cuda",
+                        device_id=device.index or 0,
+                    )
+                    some_outputs_dynamically_allocated = True
+                    pre_allocated_outputs.append(None)
+            else:
                 torch_output_type = ort_tensor_type_to_torch_tensor_type(output.type)
                 pre_allocated_output = torch.empty(
-                    output_shape_mapping[output.name],
+                    output.shape,
                     dtype=torch_output_type,
                     device=device,
                 )
@@ -120,55 +153,31 @@ def run_session_via_iobinding(
                     buffer_ptr=pre_allocated_output.data_ptr(),
                 )
                 pre_allocated_outputs.append(pre_allocated_output)
-            else:
-                binding.bind_output(
-                    name=output.name,
-                    device_type="cuda",
-                    device_id=device.index or 0,
-                )
-                some_outputs_dynamically_allocated = True
-                pre_allocated_outputs.append(None)
-        else:
-            torch_output_type = ort_tensor_type_to_torch_tensor_type(output.type)
-            pre_allocated_output = torch.empty(
-                output.shape,
-                dtype=torch_output_type,
-                device=device,
+        for ort_input in session.get_inputs():
+            input_tensor = inputs[ort_input.name].contiguous()
+            input_type = torch_tensor_type_to_onnx_type(tensor_dtype=input_tensor.dtype)
+            binding.bind_input(
+                name=ort_input.name,
+                device_type=input_tensor.device.type,
+                device_id=input_tensor.device.index or 0,
+                element_type=input_type,
+                shape=input_tensor.shape,
+                buffer_ptr=input_tensor.data_ptr(),
             )
-            binding.bind_output(
-                name=output.name,
-                device_type="cuda",
-                device_id=device.index or 0,
-                element_type=torch_tensor_type_to_onnx_type(torch_output_type),
-                shape=tuple(pre_allocated_output.shape),
-                buffer_ptr=pre_allocated_output.data_ptr(),
-            )
-            pre_allocated_outputs.append(pre_allocated_output)
-    for ort_input in session.get_inputs():
-        input_tensor = inputs[ort_input.name].contiguous()
-        input_type = torch_tensor_type_to_onnx_type(tensor_dtype=input_tensor.dtype)
-        binding.bind_input(
-            name=ort_input.name,
-            device_type=input_tensor.device.type,
-            device_id=input_tensor.device.index or 0,
-            element_type=input_type,
-            shape=input_tensor.shape,
-            buffer_ptr=input_tensor.data_ptr(),
-        )
-    binding.synchronize_inputs()
-    session.run_with_iobinding(binding)
-    if not some_outputs_dynamically_allocated:
-        return pre_allocated_outputs
-    bound_outputs = binding.get_outputs()
-    result = []
-    for pre_allocated_output, bound_output in zip(pre_allocated_outputs, bound_outputs):
-        if pre_allocated_output is not None:
-            result.append(pre_allocated_output)
-            continue
-        dlpack_tensor = bound_output._ortvalue.to_dlpack()
-        out_tensor = torch.utils.dlpack.from_dlpack(dlpack_tensor)
-        result.append(out_tensor)
-    return result
+        binding.synchronize_inputs()
+        session.run_with_iobinding(binding)
+        if not some_outputs_dynamically_allocated:
+            return pre_allocated_outputs
+        bound_outputs = binding.get_outputs()
+        result = []
+        for pre_allocated_output, bound_output in zip(pre_allocated_outputs, bound_outputs):
+            if pre_allocated_output is not None:
+                result.append(pre_allocated_output)
+                continue
+            dlpack_tensor = bound_output._ortvalue.to_dlpack()
+            out_tensor = torch.utils.dlpack.from_dlpack(dlpack_tensor)
+            result.append(out_tensor)
+        return result
 
 
 def auto_cast_session_inputs(
