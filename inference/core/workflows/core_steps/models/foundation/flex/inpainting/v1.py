@@ -49,6 +49,13 @@ Model features:
 - 512 token length input
 - 16 channel latent space
 
+**IMPORTANT: Memory Requirements**
+- GPU: 16-24GB VRAM recommended
+- CPU: 40-80GB RAM required (not recommended)
+- The model files are ~30GB on disk
+
+For production use, a GPU with sufficient VRAM is strongly recommended.
+
 Based on [Flex.2-preview](https://huggingface.co/ostris/Flex.2-preview) by ostris.
 """
 
@@ -337,6 +344,15 @@ class Flex2InpaintingBlockV1(WorkflowBlock):
         device = "cuda" if torch.cuda.is_available() else "cpu"
         dtype = torch.bfloat16 if device == "cuda" else torch.float32
         
+        # For CPU, we need to be more careful about memory
+        if device == "cpu":
+            logger.warning(
+                "Running Flex.2 on CPU requires significant memory (40-80GB). "
+                "Consider using a GPU or a smaller model."
+            )
+            # Use float16 on CPU to reduce memory usage
+            dtype = torch.float16
+        
         if '_CACHED_FLEX2_PIPELINE' not in globals() or _CACHED_FLEX2_PIPELINE is None:
             logger.info(f"Loading Flex.2-preview model on {device}...")
             
@@ -349,14 +365,21 @@ class Flex2InpaintingBlockV1(WorkflowBlock):
             except Exception as e:
                 logger.warning(f"Manual loading failed: {str(e)}")
                 
-                # Fallback to standard loading
+                # Fallback to standard loading with memory optimizations
                 try:
-                    logger.info("Attempting standard loading...")
+                    logger.info("Attempting standard loading with memory optimizations...")
+                    
+                    # For CPU, use sequential loading to reduce peak memory
+                    if device == "cpu":
+                        os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:512"
+                        
                     _CACHED_FLEX2_PIPELINE = DiffusionPipeline.from_pretrained(
                         model_id,
                         torch_dtype=dtype,
                         trust_remote_code=True,
                         use_safetensors=True,
+                        low_cpu_mem_usage=True,  # This helps reduce memory usage during loading
+                        device_map="auto" if device == "cuda" else None,  # Auto device mapping for GPU
                     )
                 except Exception as e2:
                     raise RuntimeError(
@@ -366,7 +389,9 @@ class Flex2InpaintingBlockV1(WorkflowBlock):
                         f"Please ensure:\n"
                         f"1. You have the latest diffusers version\n"
                         f"2. The model is fully downloaded\n"
-                        f"3. You have sufficient disk space"
+                        f"3. You have sufficient disk space\n\n"
+                        f"For CPU execution, Flex.2 requires 40-80GB of RAM.\n"
+                        f"Consider using a GPU or a smaller model for CPU inference."
                     )                
             _CACHED_FLEX2_PIPELINE = _CACHED_FLEX2_PIPELINE.to(device)
             
