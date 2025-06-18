@@ -312,6 +312,7 @@ def use_cuda_context(context: cuda.Context) -> Generator[cuda.Context, None, Non
     try:
         cuda_stream = cuda.Stream()
         yield cuda_stream
+        del cuda_stream
     finally:
         context.pop()
 
@@ -343,3 +344,13 @@ def create_trt_model_thread_storage(
     thread_local_storage.cuda_device = cuda_device
     thread_local_storage.cuda_context = cuda_context
     return thread_local_storage
+
+
+def get_or_create_execution_context(
+    engine: trt.ICudaEngine,
+    thread_local_storage: threading.local,
+) -> trt.IExecutionContext:
+    if not hasattr(thread_local_storage, "execution_context"):
+        execution_context = engine.create_execution_context()
+        thread_local_storage.execution_context = execution_context
+    return thread_local_storage.execution_context

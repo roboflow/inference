@@ -25,7 +25,7 @@ from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
 from inference_exp.models.common.trt import infer_from_trt_engine, load_model, initialise_cuda_context, \
-    create_trt_model_thread_storage, use_trt_model_thread_storage, use_cuda_context
+    use_cuda_context, get_or_create_execution_context
 
 try:
     import tensorrt as trt
@@ -87,8 +87,6 @@ class YOLOv8ForObjectDetectionTRT(
                 model_path=model_package_content["engine.plan"],
                 engine_host_code_allowed=engine_host_code_allowed,
             )
-            execution_context = engine.create_execution_context()
-
         return cls(
             engine=engine,
             class_names=class_names,
@@ -96,7 +94,6 @@ class YOLOv8ForObjectDetectionTRT(
             trt_config=trt_config,
             device=device,
             cuda_context=cuda_context,
-            execution_context=execution_context,
         )
 
     def __init__(
@@ -107,7 +104,6 @@ class YOLOv8ForObjectDetectionTRT(
         trt_config: TRTConfig,
         device: torch.device,
         cuda_context: cuda.Context,
-        execution_context: trt.IExecutionContext,
     ):
         self._engine = engine
         self._class_names = class_names
@@ -115,8 +111,7 @@ class YOLOv8ForObjectDetectionTRT(
         self._trt_config = trt_config
         self._device = device
         self._cuda_context = cuda_context
-        self._execution_context = execution_context
-        self._access_lock = threading.Lock()
+        self._thread_local_storage = threading.local()
 
     @property
     def class_names(self) -> List[str]:
@@ -137,18 +132,21 @@ class YOLOv8ForObjectDetectionTRT(
         )
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
-        with self._access_lock:
-            with use_cuda_context(context=self._cuda_context) as cuda_stream:
-                return infer_from_trt_engine(
-                    pre_processed_images=pre_processed_images,
-                    trt_config=self._trt_config,
-                    engine=self._engine,
-                    context=self._execution_context,
-                    device=self._device,
-                    cuda_stream=cuda_stream,
-                    input_name="images",
-                    outputs=["output0"],
-                )[0]
+        with use_cuda_context(context=self._cuda_context) as cuda_stream:
+            execution_context = get_or_create_execution_context(
+                engine=self._engine,
+                thread_local_storage=self._thread_local_storage
+            )
+            return infer_from_trt_engine(
+                pre_processed_images=pre_processed_images,
+                trt_config=self._trt_config,
+                engine=self._engine,
+                context=execution_context,
+                device=self._device,
+                cuda_stream=cuda_stream,
+                input_name="images",
+                outputs=["output0"],
+            )[0]
 
     def post_process(
         self,
