@@ -263,7 +263,8 @@ class Flex2InpaintingBlockV1(WorkflowBlock):
         # Model caching is handled at module level to avoid reloading
         global _CACHED_FLEX2_PIPELINE
         
-        device = "cuda" if torch.cuda.is_available() else "cpu"        dtype = torch.bfloat16 if device == "cuda" else torch.float32
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        dtype = torch.bfloat16 if device == "cuda" else torch.float32
         
         if '_CACHED_FLEX2_PIPELINE' not in globals() or _CACHED_FLEX2_PIPELINE is None:
             logger.info(f"Loading Flex.2-preview model on {device}...")
