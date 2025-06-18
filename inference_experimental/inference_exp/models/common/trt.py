@@ -325,7 +325,8 @@ def is_trt_model_thread_storage_initialised(thread_local_storage: threading.loca
 
 @contextlib.contextmanager
 def initialise_cuda_context(cuda_device: cuda.Device) -> Generator[cuda.Context, None, None]:
-    context = cuda_device.make_context()
+    context = cuda_device.retain_primary_context()
+    context.push()
     try:
         yield context
     finally:
