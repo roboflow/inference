@@ -135,7 +135,7 @@ class YOLOv8ForObjectDetectionTRT(
         )
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
-        with use_cuda_context(context=self._cuda_context) as cuda_stream:
+        with use_cuda_context(context=self._cuda_context):
             # execution_context = get_or_create_execution_context(
             #     engine=self._engine,
             #     thread_local_storage=self._thread_local_storage
@@ -146,7 +146,7 @@ class YOLOv8ForObjectDetectionTRT(
                 engine=self._engine,
                 context=self._execution_context,
                 device=self._device,
-                cuda_stream=cuda_stream,
+                # cuda_stream=cuda_stream,
                 input_name="images",
                 outputs=["output0"],
             )[0]

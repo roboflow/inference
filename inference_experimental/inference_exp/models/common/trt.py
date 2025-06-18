@@ -61,7 +61,7 @@ def infer_from_trt_engine(
     engine: trt.ICudaEngine,
     context: trt.IExecutionContext,
     device: torch.device,
-    cuda_stream: cuda.Stream,
+    # cuda_stream: cuda.Stream,
     input_name: str,
     outputs: List[str],
 ) -> List[torch.Tensor]:
@@ -72,7 +72,7 @@ def infer_from_trt_engine(
             engine=engine,
             context=context,
             device=device,
-            cuda_stream=cuda_stream,
+            # cuda_stream=cuda_stream,
             input_name=input_name,
             outputs=outputs,
         )
@@ -82,7 +82,7 @@ def infer_from_trt_engine(
         engine=engine,
         context=context,
         device=device,
-        cuda_stream=cuda_stream,
+        # cuda_stream=cuda_stream,
         input_name=input_name,
         outputs=outputs,
     )
@@ -94,7 +94,7 @@ def infer_from_trt_engine_with_static_batch_size(
     engine: trt.ICudaEngine,
     context: trt.IExecutionContext,
     device: torch.device,
-    cuda_stream: cuda.Stream,
+    # cuda_stream: cuda.Stream,
     input_name: str,
     outputs: List[str],
 ) -> List[torch.Tensor]:
@@ -119,7 +119,7 @@ def infer_from_trt_engine_with_static_batch_size(
         engine=engine,
         context=context,
         device=device,
-        cuda_stream=cuda_stream,
+        # cuda_stream=cuda_stream,
         input_name=input_name,
         outputs=outputs,
     )
@@ -134,7 +134,7 @@ def infer_from_trt_engine_with_dynamic_batch_size(
     engine: trt.ICudaEngine,
     context: trt.IExecutionContext,
     device: torch.device,
-    cuda_stream: cuda.Stream,
+    # cuda_stream: cuda.Stream,
     input_name: str,
     outputs: List[str],
 ) -> List[torch.Tensor]:
@@ -157,7 +157,7 @@ def infer_from_trt_engine_with_dynamic_batch_size(
             engine=engine,
             context=context,
             device=device,
-            cuda_stream=cuda_stream,
+            # cuda_stream=cuda_stream,
             input_name=input_name,
             outputs=outputs,
         )
@@ -189,7 +189,7 @@ def infer_from_trt_engine_with_dynamic_batch_size(
             engine=engine,
             context=context,
             device=device,
-            cuda_stream=cuda_stream,
+            # cuda_stream=cuda_stream,
             input_name=input_name,
             outputs=outputs,
         )
@@ -205,7 +205,7 @@ def execute_trt_engine(
     engine: trt.ICudaEngine,
     context: trt.IExecutionContext,
     device: torch.device,
-    cuda_stream: cuda.Stream,
+    # cuda_stream: cuda.Stream,
     input_name: str,
     outputs: List[str],
 ) -> List[torch.Tensor]:
@@ -223,10 +223,11 @@ def execute_trt_engine(
         results.append(result)
     context.set_input_shape(input_name, tuple(pre_processed_images.shape))
     context.set_tensor_address(input_name, pre_processed_images.data_ptr())
-    status = context.execute_async_v3(stream_handle=cuda_stream.handle)
+    stream = torch.cuda.Stream(device=device)
+    status = context.execute_async_v3(stream_handle=stream.cuda_stream)
     if not status:
         raise ModelRuntimeError("Failed to complete inference from TRT model")
-    cuda_stream.synchronize()
+    stream.synchronize()
     return results
 
 
@@ -310,9 +311,9 @@ def use_trt_model_thread_storage(
 def use_cuda_context(context: cuda.Context) -> Generator[cuda.Context, None, None]:
     context.push()
     try:
-        cuda_stream = cuda.Stream()
-        yield cuda_stream
-        del cuda_stream
+        # cuda_stream = cuda.Stream()
+        yield context
+        # del cuda_stream
     finally:
         context.pop()
 
