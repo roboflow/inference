@@ -137,7 +137,7 @@ COPY . .
 RUN ln -s /usr/bin/python3 /usr/bin/python
 RUN ls -R /usr/local/lib/python3.12
 RUN find /usr/local/lib/python3.12 -name "onnxruntime*"
-RUN /bin/make create_wheels_for_gpu_notebook#RUN pip3 install --break-system-packages --no-cache-dir --no-deps dist/inference_cli*.whl dist/inference_core*.whl dist/inference_gpu*.whl dist/inference_sdk*.whl "setuptools<=75.5.0"
+RUN /bin/make create_wheels_for_gpu_notebook
 # First install the GPU wheel with no dependencies to avoid re-installing onnxruntime-gpu
 RUN pip install --break-system-packages --no-deps dist/inference_gpu*.whl
 
