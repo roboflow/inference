@@ -1,6 +1,5 @@
 import contextlib
-import threading
-from typing import List, Tuple, Optional, Generator
+from typing import List, Tuple, Generator
 
 import torch
 from inference_exp.errors import ModelRuntimeError, CorruptedModelPackageError, MissingDependencyError
@@ -61,7 +60,6 @@ def infer_from_trt_engine(
     engine: trt.ICudaEngine,
     context: trt.IExecutionContext,
     device: torch.device,
-    # cuda_stream: cuda.Stream,
     input_name: str,
     outputs: List[str],
 ) -> List[torch.Tensor]:
@@ -72,7 +70,6 @@ def infer_from_trt_engine(
             engine=engine,
             context=context,
             device=device,
-            # cuda_stream=cuda_stream,
             input_name=input_name,
             outputs=outputs,
         )
@@ -82,7 +79,6 @@ def infer_from_trt_engine(
         engine=engine,
         context=context,
         device=device,
-        # cuda_stream=cuda_stream,
         input_name=input_name,
         outputs=outputs,
     )
@@ -94,7 +90,6 @@ def infer_from_trt_engine_with_static_batch_size(
     engine: trt.ICudaEngine,
     context: trt.IExecutionContext,
     device: torch.device,
-    # cuda_stream: cuda.Stream,
     input_name: str,
     outputs: List[str],
 ) -> List[torch.Tensor]:
@@ -119,7 +114,6 @@ def infer_from_trt_engine_with_static_batch_size(
         engine=engine,
         context=context,
         device=device,
-        # cuda_stream=cuda_stream,
         input_name=input_name,
         outputs=outputs,
     )
@@ -134,7 +128,6 @@ def infer_from_trt_engine_with_dynamic_batch_size(
     engine: trt.ICudaEngine,
     context: trt.IExecutionContext,
     device: torch.device,
-    # cuda_stream: cuda.Stream,
     input_name: str,
     outputs: List[str],
 ) -> List[torch.Tensor]:
@@ -157,7 +150,6 @@ def infer_from_trt_engine_with_dynamic_batch_size(
             engine=engine,
             context=context,
             device=device,
-            # cuda_stream=cuda_stream,
             input_name=input_name,
             outputs=outputs,
         )
@@ -189,7 +181,6 @@ def infer_from_trt_engine_with_dynamic_batch_size(
             engine=engine,
             context=context,
             device=device,
-            # cuda_stream=cuda_stream,
             input_name=input_name,
             outputs=outputs,
         )
@@ -205,7 +196,6 @@ def execute_trt_engine(
     engine: trt.ICudaEngine,
     context: trt.IExecutionContext,
     device: torch.device,
-    # cuda_stream: cuda.Stream,
     input_name: str,
     outputs: List[str],
 ) -> List[torch.Tensor]:
@@ -283,76 +273,16 @@ def get_output_tensor_names(engine: trt.ICudaEngine) -> List[str]:
 
 
 @contextlib.contextmanager
-def use_trt_model_thread_storage(
-    engine: trt.ICudaEngine,
-    thread_local_storage: threading.local,
-    device: torch.device,
-) -> Generator[Tuple[trt.IExecutionContext, cuda.Stream], None, None]:
-    if is_trt_model_thread_storage_initialised(thread_local_storage=thread_local_storage):
-        print(threading.get_ident(), "Re-using pre-initialised ")
-        with use_cuda_context(context=thread_local_storage.cuda_context):
-            cuda_stream = cuda.Stream()
-            yield thread_local_storage.execution_context, cuda_stream
-        return None
-    cuda_device = cuda.Device(device.index or 0)
-    with initialise_cuda_context(cuda_device=cuda_device) as cuda_context:
-        execution_context = engine.create_execution_context()
-        _ = create_trt_model_thread_storage(
-            execution_context=execution_context,
-            cuda_device=cuda_device,
-            cuda_context=cuda_context,
-            thread_local_storage=thread_local_storage,
-        )
-        cuda_stream = cuda.Stream()
-        yield thread_local_storage.execution_context, cuda_stream
+def use_primary_cuda_context(cuda_device: cuda.Device) -> Generator[cuda.Context, None, None]:
+    context = cuda_device.retain_primary_context()
+    with use_cuda_context(context) as ctx:
+        yield ctx
 
 
 @contextlib.contextmanager
 def use_cuda_context(context: cuda.Context) -> Generator[cuda.Context, None, None]:
     context.push()
     try:
-        # cuda_stream = cuda.Stream()
-        yield context
-        # del cuda_stream
-    finally:
-        context.pop()
-
-
-def is_trt_model_thread_storage_initialised(thread_local_storage: threading.local) -> bool:
-    return hasattr(thread_local_storage, "execution_context") and \
-        hasattr(thread_local_storage, "cuda_device") and \
-        hasattr(thread_local_storage, "cuda_context")
-
-
-@contextlib.contextmanager
-def initialise_cuda_context(cuda_device: cuda.Device) -> Generator[cuda.Context, None, None]:
-    context = cuda_device.retain_primary_context()
-    context.push()
-    try:
         yield context
     finally:
         context.pop()
-
-
-def create_trt_model_thread_storage(
-    execution_context: trt.IExecutionContext,
-    cuda_device: cuda.Device,
-    cuda_context: cuda.Context,
-    thread_local_storage: Optional[threading.local] = None,
-) -> threading.local:
-    if thread_local_storage is None:
-        thread_local_storage = threading.local()
-    thread_local_storage.execution_context = execution_context
-    thread_local_storage.cuda_device = cuda_device
-    thread_local_storage.cuda_context = cuda_context
-    return thread_local_storage
-
-
-def get_or_create_execution_context(
-    engine: trt.ICudaEngine,
-    thread_local_storage: threading.local,
-) -> trt.IExecutionContext:
-    if not hasattr(thread_local_storage, "execution_context"):
-        execution_context = engine.create_execution_context()
-        thread_local_storage.execution_context = execution_context
-    return thread_local_storage.execution_context

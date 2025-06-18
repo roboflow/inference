@@ -4,7 +4,7 @@ import numpy as np
 import torch
 
 from inference_exp.errors import ModelRuntimeError, MissingDependencyError
-from inference_exp.models.common.trt import initialise_cuda_context
+from inference_exp.models.common.trt import use_primary_cuda_context
 
 try:
     import onnxruntime
@@ -98,14 +98,13 @@ def run_session_via_iobinding(
         inputs_np = {name: value.numpy() for name, value in inputs.items()}
         results = session.run(None, inputs_np)
         return [torch.from_numpy(element) for element in results]
-
     try:
         import pycuda.driver as cuda
     except ImportError:
         raise MissingDependencyError("TODO")
     cuda.init()
     cuda_device = cuda.Device(device.index or 0)
-    with initialise_cuda_context(cuda_device=cuda_device):
+    with use_primary_cuda_context(cuda_device=cuda_device):
         if output_shape_mapping is None:
             output_shape_mapping = {}
         binding = session.io_binding()

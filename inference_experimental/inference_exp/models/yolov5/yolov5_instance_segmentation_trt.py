@@ -24,7 +24,8 @@ from inference_exp.models.common.roboflow.model_packages import (
 from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
-from inference_exp.models.common.trt import infer_from_trt_engine, load_model
+from inference_exp.models.common.trt import infer_from_trt_engine, load_model, use_primary_cuda_context, \
+    use_cuda_context
 from inference_exp.models.yolov5.nms import run_yolov5_nms_for_instance_segmentation
 
 
@@ -40,6 +41,11 @@ except ImportError:
         f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
         f"You can also contact Roboflow to get support."
     )
+
+try:
+    import pycuda.driver as cuda
+except ImportError:
+    raise MissingDependencyError("TODO")
 
 
 class YOLOv5ForInstanceSegmentationTRT(
@@ -78,35 +84,41 @@ class YOLOv5ForInstanceSegmentationTRT(
         trt_config = parse_trt_config(
             config_path=model_package_content["trt_config.json"]
         )
-        engine = load_model(
-            model_path=model_package_content["engine.plan"],
-            engine_host_code_allowed=engine_host_code_allowed,
-        )
-        context = engine.create_execution_context()
+        cuda.init()
+        cuda_device = cuda.Device(device.index or 0)
+        with use_primary_cuda_context(cuda_device=cuda_device) as cuda_context:
+            engine = load_model(
+                model_path=model_package_content["engine.plan"],
+                engine_host_code_allowed=engine_host_code_allowed,
+            )
+            execution_context = engine.create_execution_context()
         return cls(
             engine=engine,
-            context=context,
             class_names=class_names,
             pre_processing_config=pre_processing_config,
             trt_config=trt_config,
             device=device,
+            cuda_context=cuda_context,
+            execution_context=execution_context,
         )
 
     def __init__(
         self,
         engine: trt.ICudaEngine,
-        context: trt.IExecutionContext,
         class_names: List[str],
         pre_processing_config: PreProcessingConfig,
         trt_config: TRTConfig,
         device: torch.device,
+        cuda_context: cuda.Context,
+        execution_context: trt.IExecutionContext,
     ):
         self._engine = engine
-        self._context = context
         self._class_names = class_names
         self._pre_processing_config = pre_processing_config
         self._trt_config = trt_config
         self._device = device
+        self._cuda_context = cuda_context
+        self._execution_context = execution_context
         self._session_thread_lock = Lock()
 
     @property
@@ -131,25 +143,17 @@ class YOLOv5ForInstanceSegmentationTRT(
         self, pre_processed_images: torch.Tensor, **kwargs
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         with self._session_thread_lock:
-            """
-            TensorRT objects are generally not thread-safe; the client must serialize access to objects
-            from different threads.
-            The expected runtime concurrency model is that different threads operate in different execution
-            contexts. The context contains the network state (activation values and so on) during execution,
-            so using a context concurrently in different threads results in undefined behavior.
-
-            Nvidia 21, 37 (https://docs.nvidia.com/deeplearning/tensorrt/10.8.0/architecture/how-trt-works.html)
-            """
-            instances, protos = infer_from_trt_engine(
-                pre_processed_images=pre_processed_images,
-                trt_config=self._trt_config,
-                engine=self._engine,
-                context=self._context,
-                device=self._device,
-                input_name="images",
-                outputs=["output0", "output1"],
-            )
-            return instances, protos
+            with use_cuda_context(context=self._cuda_context):
+                instances, protos = infer_from_trt_engine(
+                    pre_processed_images=pre_processed_images,
+                    trt_config=self._trt_config,
+                    engine=self._engine,
+                    context=self._execution_context,
+                    device=self._device,
+                    input_name="images",
+                    outputs=["output0", "output1"],
+                )
+                return instances, protos
 
     def post_process(
         self,

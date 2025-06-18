@@ -64,14 +64,17 @@ onnx-cpu = [
   "onnxruntime>=1.15.1,<1.23.0"
 ]
 onnx-cu118 = [
-  "onnxruntime-gpu>=1.15.1,<1.23.0; platform_system != 'darwin'"
+  "onnxruntime-gpu>=1.15.1,<1.23.0; platform_system != 'darwin'",
+  "pycuda>=2025.0.0,<2026.0.0",
 ]
 onnx-cu12 = [
-  "onnxruntime-gpu>=1.17.0,<1.23.0; platform_system != 'darwin'"
+  "onnxruntime-gpu>=1.17.0,<1.23.0; platform_system != 'darwin'",
+  "pycuda>=2025.0.0,<2026.0.0",
 ]
 onnx-jp6-cu126 = [
   "numpy<2.0.0",
-  "onnxruntime-gpu>=1.17.0,<1.23.0; platform_system == 'linux' and platform_machine == 'arm64' and python_version < '3.12' "
+  "onnxruntime-gpu>=1.17.0,<1.23.0; platform_system == 'linux' and platform_machine == 'arm64' and python_version < '3.12' ",
+   "pycuda>=2025.0.0,<2026.0.0",
 ]
 mediapipe = [
   "mediapipe>=0.9,<0.11"
@@ -87,6 +90,7 @@ trt10 = [
   "tensorrt-cu12>=10.0.0,<11.0.0; platform_system == 'Linux' or platform_system == 'Windows'",
   "tensorrt-lean>=10.0.0,<11.0.0; platform_system == 'Linux' or platform_system == 'Windows'",
   "tensorrt-lean-cu12>=10.0.0,<11.0.0; platform_system == 'Linux' or platform_system == 'Windows'",
+   "pycuda>=2025.0.0,<2026.0.0",
 ]
 
 [tool.uv.sources]
