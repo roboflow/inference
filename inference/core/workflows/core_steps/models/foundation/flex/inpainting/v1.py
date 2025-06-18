@@ -282,7 +282,12 @@ class Flex2InpaintingBlockV1(WorkflowBlock):
                 _CACHED_FLEX2_PIPELINE = _CACHED_FLEX2_PIPELINE.to(device)
                 
                 # Enable memory optimizations if available
-                if hasattr(_CACHED_FLEX2_PIPELINE, "enable_model_cpu_offload"):
+                if device == "cpu":
+                    # For CPU, we need to ensure all components are on CPU
+                    for component_name, component in _CACHED_FLEX2_PIPELINE.components.items():
+                        if hasattr(component, "to"):
+                            _CACHED_FLEX2_PIPELINE.components[component_name] = component.to(device)
+                elif hasattr(_CACHED_FLEX2_PIPELINE, "enable_model_cpu_offload"):
                     _CACHED_FLEX2_PIPELINE.enable_model_cpu_offload()
                 elif hasattr(_CACHED_FLEX2_PIPELINE, "enable_attention_slicing"):
                     _CACHED_FLEX2_PIPELINE.enable_attention_slicing()
@@ -326,42 +331,48 @@ class Flex2InpaintingBlockV1(WorkflowBlock):
             # Try to detect the pipeline type and call appropriately
             pipeline_class_name = type(pipe).__name__
             
-            if "Flex" in pipeline_class_name:
-                # Custom Flex.2 pipeline
-                logger.info("Using Flex.2 custom pipeline")
+            logger.info(f"Running inference with pipeline: {pipeline_class_name}")
+            
+            # Since Flex.2 appears to load as FluxPipeline but we need inpainting,
+            # let's first try with inpainting parameters, then fall back if needed
+            try:
+                if "Flex" in pipeline_class_name:
+                    # Custom Flex.2 pipeline with full inpainting support
+                    logger.info("Using Flex.2 custom pipeline with inpainting")
+                    result = pipe(
+                        prompt=prompt,
+                        negative_prompt=negative_prompt,
+                        inpaint_image=pil_image,
+                        inpaint_mask=pil_mask,
+                        control_image=control_image,
+                        control_strength=control_strength,
+                        control_stop=control_stop,
+                        height=height,
+                        width=width,
+                        guidance_scale=guidance_scale,
+                        num_inference_steps=num_inference_steps,
+                        generator=generator,
+                    ).images[0]
+                else:
+                    # Try with inpainting parameters first (in case it's supported)
+                    logger.info(f"Attempting inpainting with {pipeline_class_name}")
+                    result = pipe(
+                        prompt=prompt,
+                        negative_prompt=negative_prompt,
+                        image=pil_image,
+                        mask_image=pil_mask,
+                        height=height,
+                        width=width,
+                        guidance_scale=guidance_scale,
+                        num_inference_steps=num_inference_steps,
+                        generator=generator,
+                    ).images[0]
+            except (TypeError, ValueError) as e:
+                # Fallback to text-to-image if inpainting not supported
+                logger.warning(f"Inpainting not supported, falling back to text-to-image: {str(e)}")
+                logger.warning("Generated image will not respect the mask")
                 result = pipe(
                     prompt=prompt,
-                    negative_prompt=negative_prompt,
-                    inpaint_image=pil_image,
-                    inpaint_mask=pil_mask,
-                    control_image=control_image,
-                    control_strength=control_strength,
-                    control_stop=control_stop,
-                    height=height,
-                    width=width,
-                    guidance_scale=guidance_scale,
-                    num_inference_steps=num_inference_steps,
-                    generator=generator,
-                ).images[0]
-            elif "Flux" in pipeline_class_name:
-                # Flux-based pipeline (Flex is based on Flux)
-                logger.info("Using Flux-based pipeline")
-                # Flux expects different parameter names
-                result = pipe(
-                    prompt=prompt,
-                    height=height,
-                    width=width,
-                    guidance_scale=guidance_scale,
-                    num_inference_steps=num_inference_steps,
-                    generator=generator,
-                ).images[0]
-            else:
-                # Generic diffusion pipeline
-                logger.info(f"Using generic pipeline: {pipeline_class_name}")
-                # Try with minimal parameters that should work with most pipelines
-                result = pipe(
-                    prompt=prompt,
-                    negative_prompt=negative_prompt,
                     height=height,
                     width=width,
                     guidance_scale=guidance_scale,
