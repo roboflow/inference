@@ -5,6 +5,12 @@ import supervision as sv
 from pydantic import ConfigDict, Field
 from typing_extensions import Literal, Type
 
+from inference.core.workflows.execution_engine.constants import (
+    SMOOTHED_SPEED_KEY_IN_SV_DETECTIONS,
+    SMOOTHED_VELOCITY_KEY_IN_SV_DETECTIONS,
+    SPEED_KEY_IN_SV_DETECTIONS,
+    VELOCITY_KEY_IN_SV_DETECTIONS,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
@@ -34,10 +40,6 @@ The velocities are calculated based on the displacement of object centers over t
 Note: due to perspective and camera distortions calculated velocity will be different depending on object position in relation to the camera.
 
 """
-VELOCITY_KEY_IN_SV_DETECTIONS = "velocity"
-SPEED_KEY_IN_SV_DETECTIONS = "speed"
-SMOOTHED_VELOCITY_KEY_IN_SV_DETECTIONS = "smoothed_velocity"
-SMOOTHED_SPEED_KEY_IN_SV_DETECTIONS = "smoothed_speed"
 
 
 class VelocityManifest(WorkflowBlockManifest):
@@ -200,33 +202,11 @@ class VelocityBlockV1(WorkflowBlock):
             smoothed_velocities_arr[i] = smoothed_velocity_m_s
             smoothed_speeds[i] = smoothed_speed_m_s
 
-            # Add velocity and speed to detections.data
-            # Ensure that 'data' is a dictionary for each detection
-            if detections.data is None:
-                detections.data = {}
-
-            # Initialize dictionaries if not present
-            if VELOCITY_KEY_IN_SV_DETECTIONS not in detections.data:
-                detections.data[VELOCITY_KEY_IN_SV_DETECTIONS] = {}
-            if SPEED_KEY_IN_SV_DETECTIONS not in detections.data:
-                detections.data[SPEED_KEY_IN_SV_DETECTIONS] = {}
-            if SMOOTHED_VELOCITY_KEY_IN_SV_DETECTIONS not in detections.data:
-                detections.data[SMOOTHED_VELOCITY_KEY_IN_SV_DETECTIONS] = {}
-            if SMOOTHED_SPEED_KEY_IN_SV_DETECTIONS not in detections.data:
-                detections.data[SMOOTHED_SPEED_KEY_IN_SV_DETECTIONS] = {}
-
-            # Assign velocity data to the corresponding tracker_id
-            detections.data[VELOCITY_KEY_IN_SV_DETECTIONS][
-                tracker_id
-            ] = velocity_m_s.tolist()  # [vx, vy]
-            detections.data[SPEED_KEY_IN_SV_DETECTIONS][
-                tracker_id
-            ] = speed_m_s  # Scalar
-            detections.data[SMOOTHED_VELOCITY_KEY_IN_SV_DETECTIONS][
-                tracker_id
-            ] = smoothed_velocity_m_s.tolist()  # [vx, vy]
-            detections.data[SMOOTHED_SPEED_KEY_IN_SV_DETECTIONS][
-                tracker_id
-            ] = smoothed_speed_m_s  # Scalar
+        detections.data[VELOCITY_KEY_IN_SV_DETECTIONS] = np.array(velocities)
+        detections.data[SPEED_KEY_IN_SV_DETECTIONS] = np.array(speeds)
+        detections.data[SMOOTHED_VELOCITY_KEY_IN_SV_DETECTIONS] = np.array(
+            smoothed_velocities_arr
+        )
+        detections.data[SMOOTHED_SPEED_KEY_IN_SV_DETECTIONS] = np.array(smoothed_speeds)
 
         return {OUTPUT_KEY: detections}
