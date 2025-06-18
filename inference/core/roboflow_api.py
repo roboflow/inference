@@ -757,7 +757,8 @@ def build_roboflow_api_headers(
     if not ROBOFLOW_API_EXTRA_HEADERS:
         return explicit_headers
     try:
-        extra_headers: dict = json.loads(ROBOFLOW_API_EXTRA_HEADERS)
+        # Avoid unnecessary type annotation here, and don't parse twice
+        extra_headers = json.loads(ROBOFLOW_API_EXTRA_HEADERS)
         if explicit_headers:
             extra_headers.update(explicit_headers)
         return extra_headers
@@ -835,9 +836,10 @@ def get_weights_from_url_optimally(url: str) -> Response:
 
 def _serial_download(url: str, total_size: int) -> Response:
     """Downloads a file serially with progress logging."""
+    MB = 1024 * 1024
     if total_size > 0:
         logger.info(
-            f"Downloading file of size: {total_size / (1024 * 1024):.2f} MB (serial). Set LOG_LEVEL=DEBUG for verbose download progress logging."
+            f"Downloading file of size: {total_size / MB:.2f} MB (serial). Set LOG_LEVEL=DEBUG for verbose download progress logging."
         )
     else:
         logger.info(
@@ -856,39 +858,53 @@ def _serial_download(url: str, total_size: int) -> Response:
     downloaded_size = 0
     last_logged_percentage = -1
     start_time = time.time()
-    last_log_time = time.time()
+    last_log_time = start_time
     bytes_since_last_log = 0
 
-    for chunk in response.iter_content(chunk_size=8192):
-        if chunk:
-            content_buffer.write(chunk)
-            downloaded_size += len(chunk)
-            bytes_since_last_log += len(chunk)
-            if total_size > 0:
-                percentage = int((downloaded_size / total_size) * 100)
-                if percentage > last_logged_percentage:
+    chunk_size = 8192
+
+    # Determine if debug logging is enabled to skip string formatting
+    is_debug_enabled = logger.isEnabledFor(getattr(logger, "DEBUG", 10))
+
+    if total_size > 0:
+        # Pre-calculate value for performance in tight loop
+        percentage_mult = 100 / total_size
+
+    for chunk in response.iter_content(chunk_size=chunk_size):
+        if not chunk:
+            continue
+        chunk_len = len(chunk)
+        content_buffer.write(chunk)
+        downloaded_size += chunk_len
+        bytes_since_last_log += chunk_len
+        if total_size > 0:
+            # INT-Mult for fast calculation
+            percentage = int(downloaded_size * percentage_mult)
+            if percentage > last_logged_percentage:
+                if is_debug_enabled:
                     current_time = time.time()
                     time_diff = current_time - last_log_time
                     speed_mbps = (
-                        ((bytes_since_last_log * 8) / (time_diff * 1024 * 1024))
+                        ((bytes_since_last_log * 8) / (time_diff * MB))
                         if time_diff > 0
                         else 0
                     )
                     logger.debug(
                         f"Download progress: {percentage}%, Speed: {speed_mbps:.2f} Mbps"
                     )
-                    last_logged_percentage = percentage
                     last_log_time = current_time
                     bytes_since_last_log = 0
+                last_logged_percentage = percentage
 
     elapsed_time = time.time() - start_time
     speed_mbps = (
-        (downloaded_size * 8) / (elapsed_time * 1024 * 1024) if elapsed_time > 0 else 0
+        ((downloaded_size * 8) / (elapsed_time * MB)) if elapsed_time > 0 else 0
     )
     logger.info(
         f"Download complete. Downloaded {downloaded_size} bytes in {elapsed_time:.2f} seconds. Speed: {speed_mbps:.2f} Mbps"
     )
 
+    # Construct final response object efficiently
     final_response = Response()
     final_response.status_code = response.status_code
     final_response._content = content_buffer.getvalue()
