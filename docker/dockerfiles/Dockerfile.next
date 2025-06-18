@@ -1,0 +1,173 @@
+FROM nvcr.io/nvidia/cuda:12.9.0-cudnn-devel-ubuntu24.04 as builder
+
+WORKDIR /app
+
+RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    libxext6 \
+    libopencv-dev \
+    uvicorn \
+    python3-pip \
+    git \
+    libgdal-dev \
+    libvips-dev \
+    wget \
+    rustc \
+    cargo \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements/requirements.sam.txt \
+    requirements/requirements.clip.txt \
+    requirements/requirements.http.txt \
+    requirements/requirements.gpu.txt \
+    requirements/requirements.waf.txt \
+    requirements/requirements.gaze.txt \
+    requirements/requirements.doctr.txt \
+    requirements/requirements.groundingdino.txt \
+    requirements/requirements.yolo_world.txt \
+    requirements/_requirements.txt \
+    requirements/requirements.transformers.txt \
+    requirements/requirements.pali.flash_attn.txt \
+    ./
+
+#RUN python3 -m pip install -U pip --break-system-packages
+RUN python3 -m pip install \
+    -r _requirements.txt \
+    -r requirements.sam.txt \
+    -r requirements.clip.txt \
+    -r requirements.http.txt \
+    -r requirements.waf.txt \
+    -r requirements.gaze.txt \
+    -r requirements.groundingdino.txt \
+    -r requirements.doctr.txt \
+    -r requirements.yolo_world.txt \
+    -r requirements.transformers.txt \
+    jupyterlab \
+    "setuptools<=75.5.0" \
+    --upgrade \
+    --break-system-packages \
+    && rm -rf ~/.cache/pip
+
+# Set workdir and clone ONNX Runtime
+WORKDIR /tmp
+RUN git clone --recursive https://github.com/Microsoft/onnxruntime.git
+
+# Set specific CMake version (required by ORT build system)
+RUN python3 -m pip install cmake==3.28.3 --break-system-packages
+
+WORKDIR /tmp/onnxruntime
+
+# Build ONNX Runtime with CUDA
+RUN ./build.sh \
+    --config RelWithDebInfo \
+    --build_shared_lib \
+    --parallel \
+    --compile_no_warning_as_error \
+    --skip_submodule_sync \
+    --use_cuda \
+    --cuda_home /usr/local/cuda \
+    --cudnn_home /usr/local/cuda \
+    --cuda_version=12.9 \
+    --build_wheel \
+    --skip_tests \
+    --allow_running_as_root \
+    --cmake_extra_defines 'CMAKE_CUDA_ARCHITECTURES=120;121' \
+    --parallel 16 
+
+# Install the resulting wheel
+RUN python3 -m pip install /tmp/onnxruntime/build/Linux/RelWithDebInfo/dist/onnxruntime_gpu-*.whl --break-system-packages
+# Install setup.py requirements for flash_attn
+#RUN python3 -m pip install packaging==24.1 --break-system-packages && rm -rf ~/.cache/pip
+
+# Install flash_attn required for Paligemma and Florence2
+#RUN python3 -m pip install -r requirements.pali.flash_attn.txt --no-dependencies --no-build-isolation --break-system-packages && rm -rf ~/.cache/pip
+
+# Install build tools
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    ninja-build \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install GPU-enabled PyTorch stack (CUDA 12.8)
+RUN pip uninstall -y torch torchvision torchaudio || true && \
+    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128 --break-system-packages
+
+# Remove any existing install and clone fresh
+RUN pip uninstall -y xformers || true && \
+    rm -rf /tmp/xformers && \
+    git clone --recursive https://github.com/facebookresearch/xformers.git /tmp/xformers
+
+WORKDIR /tmp/xformers
+RUN MAX_JOBS=8 CMAKE_BUILD_PARALLEL_LEVEL=8 pip install . --no-build-isolation -v --break-system-packages
+
+ENV CMAKE_BUILD_PARALLEL_LEVEL=4
+ENV MAX_JOBS=4
+ENV SETUPTOOLS_BUILD_PARALLEL=1
+# Clone and build FlashAttention from source
+WORKDIR /tmp
+RUN git clone https://github.com/Dao-AILab/flash-attention.git
+WORKDIR /tmp/flash-attention
+RUN MAX_JOBS=4 CMAKE_BUILD_PARALLEL_LEVEL=4 pip install . --no-build-isolation -v --break-system-packages
+RUN ls -R /usr/local/lib/python3.12
+
+# Start runtime stage
+FROM nvcr.io/nvidia/cuda:12.9.0-cudnn-runtime-ubuntu24.04 as runtime
+
+WORKDIR /app
+
+# Copy Python and installed packages from builder
+#COPY --from=builder /usr/local/lib/python3.10 /usr/local/lib/python3.10
+COPY --from=builder /usr/local/lib/python3.12 /usr/local/lib/python3.12
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Install runtime dependencies
+RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    libxext6 \
+    libopencv-dev \
+    uvicorn \
+    python3-pip \
+    git \
+    libgdal-dev \
+    wget \
+    rustc \
+    cargo \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+COPY . .
+RUN ln -s /usr/bin/python3 /usr/bin/python
+RUN ls -R /usr/local/lib/python3.12
+RUN find /usr/local/lib/python3.12 -name "onnxruntime*"
+RUN /bin/make create_wheels_for_gpu_notebook#RUN pip3 install --break-system-packages --no-cache-dir --no-deps dist/inference_cli*.whl dist/inference_core*.whl dist/inference_gpu*.whl dist/inference_sdk*.whl "setuptools<=75.5.0"
+# First install the GPU wheel with no dependencies to avoid re-installing onnxruntime-gpu
+RUN pip install --break-system-packages --no-deps dist/inference_gpu*.whl
+
+# Then install the rest with dependency resolution enabled
+RUN pip install --break-system-packages \
+    dist/inference_cli*.whl \
+    dist/inference_core*.whl \
+    dist/inference_sdk*.whl \
+    "setuptools<=75.5.0"
+
+
+WORKDIR /notebooks
+COPY examples/notebooks .
+
+WORKDIR /app/
+COPY inference inference
+COPY docker/config/gpu_http.py gpu_http.py
+
+ENV VERSION_CHECK_MODE=continuous
+ENV PROJECT=roboflow-platform
+ENV NUM_WORKERS=1
+ENV HOST=0.0.0.0
+ENV PORT=9001
+ENV WORKFLOWS_STEP_EXECUTION_MODE=local
+ENV WORKFLOWS_MAX_CONCURRENT_STEPS=4
+ENV API_LOGGING_ENABLED=True
+ENV LMM_ENABLED=True
+ENV CORE_MODEL_SAM2_ENABLED=True
+ENV CORE_MODEL_OWLV2_ENABLED=True
+ENV ENABLE_STREAM_API=True
+ENV ENABLE_PROMETHEUS=True
+ENV STREAM_API_PRELOADED_PROCESSES=2
+
+ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT
