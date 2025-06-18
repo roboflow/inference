@@ -350,8 +350,8 @@ class Flex2InpaintingBlockV1(WorkflowBlock):
                 "Running Flex.2 on CPU requires significant memory (40-80GB). "
                 "Consider using a GPU or a smaller model."
             )
-            # Use float16 on CPU to reduce memory usage
-            dtype = torch.float16
+            # Keep float32 on CPU - float16 is not supported on CPU
+            dtype = torch.float32
         
         if '_CACHED_FLEX2_PIPELINE' not in globals() or _CACHED_FLEX2_PIPELINE is None:
             logger.info(f"Loading Flex.2-preview model on {device}...")
