@@ -35,8 +35,16 @@ from inference.core.workflows.execution_engine.constants import (
     PATH_DEVIATION_KEY_IN_SV_DETECTIONS,
     POLYGON_KEY_IN_INFERENCE_RESPONSE,
     POLYGON_KEY_IN_SV_DETECTIONS,
+    SMOOTHED_SPEED_KEY_IN_INFERENCE_RESPONSE,
+    SMOOTHED_SPEED_KEY_IN_SV_DETECTIONS,
+    SMOOTHED_VELOCITY_KEY_IN_INFERENCE_RESPONSE,
+    SMOOTHED_VELOCITY_KEY_IN_SV_DETECTIONS,
+    SPEED_KEY_IN_INFERENCE_RESPONSE,
+    SPEED_KEY_IN_SV_DETECTIONS,
     TIME_IN_ZONE_KEY_IN_INFERENCE_RESPONSE,
     TIME_IN_ZONE_KEY_IN_SV_DETECTIONS,
+    VELOCITY_KEY_IN_INFERENCE_RESPONSE,
+    VELOCITY_KEY_IN_SV_DETECTIONS,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
@@ -190,6 +198,13 @@ def deserialize_detections_kind(
             BOUNDING_RECT_WIDTH_KEY_IN_SV_DETECTIONS,
         ),
         (DETECTED_CODE_KEY, DETECTED_CODE_KEY),
+        (SPEED_KEY_IN_INFERENCE_RESPONSE, SPEED_KEY_IN_SV_DETECTIONS),
+        (SMOOTHED_SPEED_KEY_IN_INFERENCE_RESPONSE, SMOOTHED_SPEED_KEY_IN_SV_DETECTIONS),
+        (
+            SMOOTHED_VELOCITY_KEY_IN_INFERENCE_RESPONSE,
+            SMOOTHED_VELOCITY_KEY_IN_SV_DETECTIONS,
+        ),
+        (VELOCITY_KEY_IN_INFERENCE_RESPONSE, VELOCITY_KEY_IN_SV_DETECTIONS),
     ]
     for raw_detection_key, parsed_detection_key in optional_elements_keys:
         parsed_detections = _attach_optional_detection_element(

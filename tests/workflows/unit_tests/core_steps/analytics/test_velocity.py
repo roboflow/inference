@@ -49,39 +49,47 @@ def test_velocity_block_basic_calculation() -> None:
 
     # Since this is the first frame, velocities should be zero
     expected_data_frame1 = {
-        "velocity": {
-            1: [0.0, 0.0],
-            2: [0.0, 0.0],
-        },
-        "speed": {
-            1: 0.0,
-            2: 0.0,
-        },
-        "smoothed_velocity": {
-            1: [0.0, 0.0],
-            2: [0.0, 0.0],
-        },
-        "smoothed_speed": {
-            1: 0.0,
-            2: 0.0,
-        },
+        "velocity": np.array(
+            [
+                [0.0, 0.0],
+                [0.0, 0.0],
+            ]
+        ),
+        "speed": np.array(
+            [
+                0.0,
+                0.0,
+            ]
+        ),
+        "smoothed_velocity": np.array(
+            [
+                [0.0, 0.0],
+                [0.0, 0.0],
+            ]
+        ),
+        "smoothed_speed": np.array(
+            [
+                0.0,
+                0.0,
+            ]
+        ),
     }
     assert frame1_result == {"velocity_detections": frame1_detections}
-    assert (
-        frame1_result["velocity_detections"].data["velocity"]
-        == expected_data_frame1["velocity"]
+    assert np.allclose(
+        frame1_result["velocity_detections"].data["velocity"],
+        expected_data_frame1["velocity"],
     )
-    assert (
-        frame1_result["velocity_detections"].data["speed"]
-        == expected_data_frame1["speed"]
+    assert np.allclose(
+        frame1_result["velocity_detections"].data["speed"],
+        expected_data_frame1["speed"],
     )
-    assert (
-        frame1_result["velocity_detections"].data["smoothed_velocity"]
-        == expected_data_frame1["smoothed_velocity"]
+    assert np.allclose(
+        frame1_result["velocity_detections"].data["smoothed_velocity"],
+        expected_data_frame1["smoothed_velocity"],
     )
-    assert (
-        frame1_result["velocity_detections"].data["smoothed_speed"]
-        == expected_data_frame1["smoothed_speed"]
+    assert np.allclose(
+        frame1_result["velocity_detections"].data["smoothed_speed"],
+        expected_data_frame1["smoothed_speed"],
     )
 
     # Second frame detections with movement
@@ -125,39 +133,47 @@ def test_velocity_block_basic_calculation() -> None:
     # Object 2: 0.5 * [0.0, 0.005] + 0.5 * [0.0, 0.0] = [0.0, 0.0025]
 
     expected_data_frame2 = {
-        "velocity": {
-            1: [0.005, 0.0],
-            2: [0.0, 0.005],
-        },
-        "speed": {
-            1: 0.005,
-            2: 0.005,
-        },
-        "smoothed_velocity": {
-            1: [0.0025, 0.0],
-            2: [0.0, 0.0025],
-        },
-        "smoothed_speed": {
-            1: 0.0025,
-            2: 0.0025,
-        },
+        "velocity": np.array(
+            [
+                [0.005, 0.0],
+                [0.0, 0.005],
+            ]
+        ),
+        "speed": np.array(
+            [
+                0.005,
+                0.005,
+            ]
+        ),
+        "smoothed_velocity": np.array(
+            [
+                [0.0025, 0.0],
+                [0.0, 0.0025],
+            ]
+        ),
+        "smoothed_speed": np.array(
+            [
+                0.0025,
+                0.0025,
+            ]
+        ),
     }
     assert frame2_result == {"velocity_detections": frame2_detections}
-    assert (
-        frame2_result["velocity_detections"].data["velocity"]
-        == expected_data_frame2["velocity"]
+    assert np.allclose(
+        frame2_result["velocity_detections"].data["velocity"],
+        expected_data_frame2["velocity"],
     )
-    assert (
-        frame2_result["velocity_detections"].data["speed"]
-        == expected_data_frame2["speed"]
+    assert np.allclose(
+        frame2_result["velocity_detections"].data["speed"],
+        expected_data_frame2["speed"],
     )
-    assert (
-        frame2_result["velocity_detections"].data["smoothed_velocity"]
-        == expected_data_frame2["smoothed_velocity"]
+    assert np.allclose(
+        frame2_result["velocity_detections"].data["smoothed_velocity"],
+        expected_data_frame2["smoothed_velocity"],
     )
-    assert (
-        frame2_result["velocity_detections"].data["smoothed_speed"]
-        == expected_data_frame2["smoothed_speed"]
+    assert np.allclose(
+        frame2_result["velocity_detections"].data["smoothed_speed"],
+        expected_data_frame2["smoothed_speed"],
     )
 
 
@@ -237,38 +253,46 @@ def test_velocity_block_new_tracker_id() -> None:
     # Object 2: [0.0, 0.0] (first appearance)
 
     expected_data_frame2 = {
-        "velocity": {
-            1: [0.005, 0.0],
-            2: [0.0, 0.0],
-        },
-        "speed": {
-            1: 0.005,
-            2: 0.0,
-        },
-        "smoothed_velocity": {
-            1: [0.0025, 0.0],
-            2: [0.0, 0.0],
-        },
-        "smoothed_speed": {
-            1: 0.0025,
-            2: 0.0,
-        },
+        "velocity": np.array(
+            [
+                [0.005, 0.0],
+                [0.0, 0.0],
+            ]
+        ),
+        "speed": np.array(
+            [
+                0.005,
+                0.0,
+            ]
+        ),
+        "smoothed_velocity": np.array(
+            [
+                [0.0025, 0.0],
+                [0.0, 0.0],
+            ]
+        ),
+        "smoothed_speed": np.array(
+            [
+                0.0025,
+                0.0,
+            ]
+        ),
     }
-    assert (
-        frame2_result["velocity_detections"].data["velocity"]
-        == expected_data_frame2["velocity"]
+    assert np.allclose(
+        frame2_result["velocity_detections"].data["velocity"],
+        expected_data_frame2["velocity"],
     )
-    assert (
-        frame2_result["velocity_detections"].data["speed"]
-        == expected_data_frame2["speed"]
+    assert np.allclose(
+        frame2_result["velocity_detections"].data["speed"],
+        expected_data_frame2["speed"],
     )
-    assert (
-        frame2_result["velocity_detections"].data["smoothed_velocity"]
-        == expected_data_frame2["smoothed_velocity"]
+    assert np.allclose(
+        frame2_result["velocity_detections"].data["smoothed_velocity"],
+        expected_data_frame2["smoothed_velocity"],
     )
-    assert (
-        frame2_result["velocity_detections"].data["smoothed_speed"]
-        == expected_data_frame2["smoothed_speed"]
+    assert np.allclose(
+        frame2_result["velocity_detections"].data["smoothed_speed"],
+        expected_data_frame2["smoothed_speed"],
     )
 
 
@@ -460,34 +484,42 @@ def test_velocity_block_zero_delta_time() -> None:
     # Smoothed velocities: remains [0.0, 0.0]
 
     expected_data_frame2 = {
-        "velocity": {
-            1: [0.0, 0.0],
-        },
-        "speed": {
-            1: 0.0,
-        },
-        "smoothed_velocity": {
-            1: [0.0, 0.0],
-        },
-        "smoothed_speed": {
-            1: 0.0,
-        },
+        "velocity": np.array(
+            [
+                [0.0, 0.0],
+            ]
+        ),
+        "speed": np.array(
+            [
+                0.0,
+            ]
+        ),
+        "smoothed_velocity": np.array(
+            [
+                [0.0, 0.0],
+            ]
+        ),
+        "smoothed_speed": np.array(
+            [
+                0.0,
+            ]
+        ),
     }
-    assert (
-        frame2_result["velocity_detections"].data["velocity"]
-        == expected_data_frame2["velocity"]
+    assert np.allclose(
+        frame2_result["velocity_detections"].data["velocity"],
+        expected_data_frame2["velocity"],
     )
-    assert (
-        frame2_result["velocity_detections"].data["speed"]
-        == expected_data_frame2["speed"]
+    assert np.allclose(
+        frame2_result["velocity_detections"].data["speed"],
+        expected_data_frame2["speed"],
     )
-    assert (
-        frame2_result["velocity_detections"].data["smoothed_velocity"]
-        == expected_data_frame2["smoothed_velocity"]
+    assert np.allclose(
+        frame2_result["velocity_detections"].data["smoothed_velocity"],
+        expected_data_frame2["smoothed_velocity"],
     )
-    assert (
-        frame2_result["velocity_detections"].data["smoothed_speed"]
-        == expected_data_frame2["smoothed_speed"]
+    assert np.allclose(
+        frame2_result["velocity_detections"].data["smoothed_speed"],
+        expected_data_frame2["smoothed_speed"],
     )
 
 
@@ -571,39 +603,66 @@ def test_velocity_block_multiple_objects_with_movement() -> None:
     # Object 3: 0.3 * [-0.005, -0.005] + 0.7 * [0.0, 0.0] = [-0.0015, -0.0015]
 
     expected_data_frame2 = {
-        "velocity": {
-            1: [0.005, 0.0],
-            2: [0.0, 0.005],
-            3: [-0.005, -0.005],
-        },
-        "speed": {
-            1: 0.005,
-            2: 0.005,
-            3: 0.0070710678118654755,  # sqrt(0.005^2 + 0.005^2)
-        },
-        "smoothed_velocity": {
-            1: [0.0015, 0.0],
-            2: [0.0, 0.0015],
-            3: [-0.0015, -0.0015],
-        },
-        "smoothed_speed": {
-            1: 0.0015,
-            2: 0.0015,
-            3: 0.002121320343559643,  # sqrt(0.0015^2 + 0.0015^2)
-        },
+        "velocity": np.array(
+            [
+                [0.005, 0.0],
+                [0.0, 0.005],
+                [-0.005, -0.005],
+            ]
+        ),
+        "speed": np.array(
+            [
+                0.005,
+                0.005,
+                0.0070710678118654755,  # sqrt(0.005^2 + 0.005^2)
+            ]
+        ),
+        "smoothed_velocity": np.array(
+            [
+                [0.0015, 0.0],
+                [0.0, 0.0015],
+                [-0.0015, -0.0015],
+            ]
+        ),
+        "smoothed_speed": np.array(
+            [
+                0.0015,
+                0.0015,
+                0.002121320343559643,  # sqrt(0.0015^2 + 0.0015^2)
+            ]
+        ),
     }
-    assert (
-        frame2_result["velocity_detections"].data["velocity"]
-        == expected_data_frame2["velocity"]
+    assert np.allclose(
+        frame2_result["velocity_detections"].data["velocity"],
+        expected_data_frame2["velocity"],
     )
-    assert frame2_result["velocity_detections"].data["speed"] == pytest.approx(
-        expected_data_frame2["speed"], rel=1e-5
+    assert np.allclose(
+        frame2_result["velocity_detections"].data["speed"],
+        expected_data_frame2["speed"],
     )
-    assert frame2_result["velocity_detections"].data[
-        "smoothed_velocity"
-    ] == pytest.approx(expected_data_frame2["smoothed_velocity"], rel=1e-5)
-    assert frame2_result["velocity_detections"].data["smoothed_speed"] == pytest.approx(
-        expected_data_frame2["smoothed_speed"], rel=1e-5
+    assert np.allclose(
+        frame2_result["velocity_detections"].data["smoothed_velocity"],
+        expected_data_frame2["smoothed_velocity"],
+    )
+    assert np.allclose(
+        frame2_result["velocity_detections"].data["smoothed_speed"],
+        expected_data_frame2["smoothed_speed"],
+    )
+    assert np.allclose(
+        frame2_result["velocity_detections"].data["velocity"],
+        expected_data_frame2["velocity"],
+    )
+    assert np.allclose(
+        frame2_result["velocity_detections"].data["speed"],
+        expected_data_frame2["speed"],
+    )
+    assert np.allclose(
+        frame2_result["velocity_detections"].data["smoothed_velocity"],
+        expected_data_frame2["smoothed_velocity"],
+    )
+    assert np.allclose(
+        frame2_result["velocity_detections"].data["smoothed_speed"],
+        expected_data_frame2["smoothed_speed"],
     )
 
 
@@ -678,38 +737,46 @@ def test_velocity_block_inconsistent_tracker_ids() -> None:
     # Object 3: [0 px/s, 0 px/s] => [0.0 m/s, 0.0 m/s] (first appearance)
 
     expected_data_frame2 = {
-        "velocity": {
-            1: [0.005, 0.0],
-            3: [0.0, 0.0],
-        },
-        "speed": {
-            1: 0.005,
-            3: 0.0,
-        },
-        "smoothed_velocity": {
-            1: [0.0025, 0.0],
-            3: [0.0, 0.0],
-        },
-        "smoothed_speed": {
-            1: 0.0025,
-            3: 0.0,
-        },
+        "velocity": np.array(
+            [
+                [0.005, 0.0],
+                [0.0, 0.0],
+            ]
+        ),
+        "speed": np.array(
+            [
+                0.005,
+                0.0,
+            ]
+        ),
+        "smoothed_velocity": np.array(
+            [
+                [0.0025, 0.0],
+                [0.0, 0.0],
+            ]
+        ),
+        "smoothed_speed": np.array(
+            [
+                0.0025,
+                0.0,
+            ]
+        ),
     }
-    assert (
-        frame2_result["velocity_detections"].data["velocity"]
-        == expected_data_frame2["velocity"]
+    assert np.allclose(
+        frame2_result["velocity_detections"].data["velocity"],
+        expected_data_frame2["velocity"],
     )
-    assert (
-        frame2_result["velocity_detections"].data["speed"]
-        == expected_data_frame2["speed"]
+    assert np.allclose(
+        frame2_result["velocity_detections"].data["speed"],
+        expected_data_frame2["speed"],
     )
-    assert (
-        frame2_result["velocity_detections"].data["smoothed_velocity"]
-        == expected_data_frame2["smoothed_velocity"]
+    assert np.allclose(
+        frame2_result["velocity_detections"].data["smoothed_velocity"],
+        expected_data_frame2["smoothed_velocity"],
     )
-    assert (
-        frame2_result["velocity_detections"].data["smoothed_speed"]
-        == expected_data_frame2["smoothed_speed"]
+    assert np.allclose(
+        frame2_result["velocity_detections"].data["smoothed_speed"],
+        expected_data_frame2["smoothed_speed"],
     )
 
 
@@ -777,29 +844,40 @@ def test_velocity_block_large_movement() -> None:
     # 0.5 * [1.9, 1.9] + 0.5 * [0.0, 0.0] = [0.95, 0.95]
 
     expected_data_frame2 = {
-        "velocity": {
-            1: [1.9, 1.9],
-        },
-        "speed": {
-            1: 2.68675135,  # sqrt(1.9^2 + 1.9^2)
-        },
-        "smoothed_velocity": {
-            1: [0.95, 0.95],
-        },
-        "smoothed_speed": {
-            1: 1.343375675,  # sqrt(0.95^2 + 0.95^2)
-        },
+        "velocity": np.array(
+            [
+                [1.9, 1.9],
+            ]
+        ),
+        "speed": np.array(
+            [
+                2.68700577,  # sqrt(1.9^2 + 1.9^2)
+            ]
+        ),
+        "smoothed_velocity": np.array(
+            [
+                [0.95, 0.95],
+            ]
+        ),
+        "smoothed_speed": np.array(
+            [
+                1.34350288,  # sqrt(0.95^2 + 0.95^2)
+            ]
+        ),
     }
-    assert (
-        frame2_result["velocity_detections"].data["velocity"]
-        == expected_data_frame2["velocity"]
+    assert np.allclose(
+        frame2_result["velocity_detections"].data["velocity"],
+        expected_data_frame2["velocity"],
     )
-    assert frame2_result["velocity_detections"].data["speed"] == pytest.approx(
-        expected_data_frame2["speed"], rel=1e-4
+    assert np.allclose(
+        frame2_result["velocity_detections"].data["speed"],
+        expected_data_frame2["speed"],
     )
-    assert frame2_result["velocity_detections"].data[
-        "smoothed_velocity"
-    ] == pytest.approx(expected_data_frame2["smoothed_velocity"], rel=1e-4)
-    assert frame2_result["velocity_detections"].data["smoothed_speed"] == pytest.approx(
-        expected_data_frame2["smoothed_speed"], rel=1e-4
+    assert np.allclose(
+        frame2_result["velocity_detections"].data["smoothed_velocity"],
+        expected_data_frame2["smoothed_velocity"],
+    )
+    assert np.allclose(
+        frame2_result["velocity_detections"].data["smoothed_speed"],
+        expected_data_frame2["smoothed_speed"],
     )
