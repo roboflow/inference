@@ -11,6 +11,7 @@ from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_classification_prediction_kind,
     deserialize_detections_kind,
     deserialize_float_zero_to_one_kind,
+    deserialize_image_kind,
     deserialize_integer_kind,
     deserialize_list_of_values_kind,
     deserialize_numpy_array,
@@ -21,6 +22,10 @@ from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_zone_kind,
 )
 from inference.core.workflows.errors import RuntimeInputError
+from inference.core.workflows.execution_engine.entities.base import (
+    ImageParentMetadata,
+    WorkflowImageData,
+)
 
 
 def test_deserialize_detections_kind_when_sv_detections_given() -> None:
@@ -700,3 +705,97 @@ def test_deserialize_timestamp_when_invalid_input_provided() -> None:
     # when
     with pytest.raises(RuntimeInputError):
         _ = deserialize_timestamp(parameter="some", value="invalid")
+
+
+def test_deserialize_image_kind_when_workflow_image_data_given() -> None:
+    # given
+    workflow_image_data = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="original_parent"),
+        numpy_image=np.zeros((100, 100, 3), dtype=np.uint8),
+    )
+
+    # when
+    result = deserialize_image_kind(parameter="test_param", image=workflow_image_data)
+
+    # then
+    assert result is workflow_image_data, "Expected object not to be touched"
+
+
+def test_deserialize_image_kind_when_numpy_array_given() -> None:
+    # given
+    image_array = np.zeros((100, 100, 3), dtype=np.uint8)
+
+    # when
+    result = deserialize_image_kind(parameter="test_param", image=image_array)
+
+    # then
+    assert isinstance(result, WorkflowImageData)
+    assert np.array_equal(result.numpy_image, image_array)
+
+
+def test_deserialize_image_kind_when_dict_with_numpy_value_given() -> None:
+    # given
+    image_array = np.zeros((100, 100, 3), dtype=np.uint8)
+    image_dict = {"value": image_array}
+
+    # when
+    result = deserialize_image_kind(parameter="test_param", image=image_dict)
+
+    # then
+    assert isinstance(result, WorkflowImageData)
+    assert np.array_equal(result.numpy_image, image_array)
+
+
+def test_deserialize_image_kind_when_dict_with_base64_value_given() -> None:
+    # given
+    # simple 1x1 pixel base64 encoded image
+    base64_image = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    image_dict = {"value": base64_image}
+
+    # when
+    result = deserialize_image_kind(parameter="test_param", image=image_dict)
+
+    # then
+    assert isinstance(result, WorkflowImageData)
+    assert result.base64_image == base64_image
+
+
+def test_deserialize_image_kind_when_base64_string_given() -> None:
+    # given
+    # simple 1x1 pixel base64 encoded image
+    base64_image = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+
+    # when
+    result = deserialize_image_kind(parameter="test_param", image=base64_image)
+
+    # then
+    assert isinstance(result, WorkflowImageData)
+    assert result.base64_image == base64_image
+
+
+def test_deserialize_image_kind_when_parent_id_given() -> None:
+    # given
+    image_array = np.zeros((100, 100, 3), dtype=np.uint8)
+    image_dict = {"value": image_array, "parent_id": "custom_parent"}
+
+    # when
+    result = deserialize_image_kind(parameter="test_param", image=image_dict)
+
+    # then
+    assert isinstance(result, WorkflowImageData)
+    assert result.parent_metadata.parent_id == "custom_parent"
+    assert np.array_equal(result.numpy_image, image_array)
+
+
+def test_deserialize_image_kind_when_parent_id_not_given() -> None:
+    # given
+    image_array = np.zeros((100, 100, 3), dtype=np.uint8)
+    image_dict = {"value": image_array}
+
+    # when
+    result = deserialize_image_kind(parameter="test_param", image=image_dict)
+
+    # then
+    assert isinstance(result, WorkflowImageData)
+    assert result.parent_metadata.parent_id == "test_param"
+    assert np.array_equal(result.numpy_image, image_array)
