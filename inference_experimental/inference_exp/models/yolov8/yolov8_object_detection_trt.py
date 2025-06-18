@@ -1,5 +1,4 @@
 import threading
-from threading import Lock
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
@@ -179,3 +178,9 @@ class YOLOv8ForObjectDetectionTRT(
                 )
             )
         return results
+
+    def __del__(self):
+        with use_cuda_context(context=self._cuda_context):
+            del self._thread_local_storage
+            del self._engine
+
