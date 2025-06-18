@@ -45,6 +45,7 @@ RUN python3 -m pip install \
     "setuptools<=75.5.0" \
     --upgrade \
     --break-system-packages \
+    --ignore-installed wheel \
     && rm -rf ~/.cache/pip
 
 # Set workdir and clone ONNX Runtime
