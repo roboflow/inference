@@ -85,7 +85,7 @@ class ModelManager:
         logger.debug("ModelManager - model initialisation...")
 
         try:
-            model_class = self.model_registry.get_model(resolved_identifier, api_key)
+            model_class = self.model_registry.get_model(resolved_identifier, api_key, countinference=countinference, service_secret=service_secret)
             model = model_class(
                 model_id=model_id,
                 api_key=api_key,

@@ -17,7 +17,7 @@ class ModelRegistry:
         """
         self.registry_dict = registry_dict
 
-    def get_model(self, model_type: str, model_id: str) -> Model:
+    def get_model(self, model_type: str, model_id: str, countinference: bool = None, service_secret: str = None) -> Model:
         """Returns the model class based on the given model type.
 
         Args:

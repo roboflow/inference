@@ -68,7 +68,7 @@ class RoboflowModelRegistry(ModelRegistry):
     then returns a model class based on the model type.
     """
 
-    def get_model(self, model_id: ModelID, api_key: str) -> Model:
+    def get_model(self, model_id: ModelID, api_key: str, countinference: bool = None, service_secret: str = None) -> Model:
         """Returns the model class based on the given model id and API key.
 
         Args:
@@ -81,7 +81,7 @@ class RoboflowModelRegistry(ModelRegistry):
         Raises:
             ModelNotRecognisedError: If the model type is not supported or found.
         """
-        model_type = get_model_type(model_id, api_key)
+        model_type = get_model_type(model_id, api_key, countinference=countinference, service_secret=service_secret)
         logger.debug(f"Model type: {model_type}")
 
         if model_type not in self.registry_dict:
@@ -120,6 +120,8 @@ def _check_if_api_key_has_access_to_model(
 def get_model_type(
     model_id: ModelID,
     api_key: Optional[str] = None,
+    countinference: Optional[bool] = None,
+    service_secret: Optional[str] = None,
 ) -> Tuple[TaskType, ModelType]:
     """Retrieves the model type based on the given model ID and API key.
 
@@ -179,6 +181,8 @@ def get_model_type(
         api_data = get_roboflow_model_data(
             api_key=api_key,
             model_id=model_id,
+            countinference=countinference,
+            service_secret=service_secret,
             endpoint_type=ModelEndpointType.ORT,
             device_id=GLOBAL_DEVICE_ID,
         ).get("ort")
@@ -187,6 +191,8 @@ def get_model_type(
         api_data = get_roboflow_instant_model_data(
             api_key=api_key,
             model_id=model_id,
+            countinference=countinference,
+            service_secret=service_secret,
         )
         project_task_type = api_data.get("taskType", "object-detection")
     if api_data is None:
