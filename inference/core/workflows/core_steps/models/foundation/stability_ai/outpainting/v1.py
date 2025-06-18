@@ -182,9 +182,8 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
-        return [
-            OutputDefinition(name="image", kind=[IMAGE_KIND]),
-        ]
+        # Return a pre-allocated list instance to avoid repeated allocations.
+        return _IMAGE_OUTPUT_DEF
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
@@ -282,3 +281,6 @@ def bytes_to_opencv_image(
     if decoding_result is None:
         raise ValueError("Could not encode bytes to OpenCV image.")
     return decoding_result
+
+
+_IMAGE_OUTPUT_DEF = [OutputDefinition(name="image", kind=[IMAGE_KIND])]
