@@ -50,8 +50,8 @@ create_wheels:
 	python .release/pypi/inference.cli.setup.py bdist_wheel
 
 create_wheels_for_gpu_notebook:
-	python -m pip install --upgrade pip
-	python -m pip install wheel twine requests 
+	#python -m pip install --break-system-packages --upgrade pip
+	python -m pip install --break-system-packages wheel twine requests 
 	rm -f dist/*
 	python .release/pypi/inference.core.setup.py bdist_wheel
 	python .release/pypi/inference.gpu.setup.py bdist_wheel
