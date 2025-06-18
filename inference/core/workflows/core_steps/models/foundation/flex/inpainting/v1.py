@@ -422,13 +422,23 @@ class Flex2InpaintingBlockV1(WorkflowBlock):
         pil_image = pil_image.resize((width, height), PILImage.LANCZOS)
         
         # Convert mask to single channel if needed
-        if len(mask.shape) == 3:            mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
+        if len(mask.shape) == 3:
+            mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
         # Resize mask to match target dimensions
         mask_resized = cv2.resize(mask, (width, height), interpolation=cv2.INTER_NEAREST)
         pil_mask = PILImage.fromarray(mask_resized)
         
         # For Flex.2, we don't need a control image for basic inpainting
         control_image = None
+        
+        # Check the pipeline type
+        pipeline_class_name = type(pipe).__name__
+        
+        # Workaround for bug in Flex2Pipeline where it tries to access control_image.shape
+        if "Flex2Pipeline" in pipeline_class_name:
+            # Create a zero-filled control image as a workaround
+            control_image = PILImage.new('RGB', (width, height), color=(0, 0, 0))
+            logger.info("Created placeholder control image to work around pipeline bug")
         
         # Set up generator for reproducibility
         generator = None
@@ -437,7 +447,6 @@ class Flex2InpaintingBlockV1(WorkflowBlock):
         
         # Run inference
         with torch.inference_mode():
-            pipeline_class_name = type(pipe).__name__
             logger.info(f"Running inference with pipeline: {pipeline_class_name}")
             
             try:
