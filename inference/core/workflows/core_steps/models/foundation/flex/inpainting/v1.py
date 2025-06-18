@@ -250,7 +250,7 @@ class Flex2InpaintingBlockV1(WorkflowBlock):
     ) -> np.ndarray:
         """Run inference using local Flex.2 model."""
         try:
-            from diffusers import DiffusionPipeline
+            from diffusers import AutoPipelineForText2Image
             import torch
             from PIL import Image as PILImage
         except ImportError:
@@ -271,9 +271,11 @@ class Flex2InpaintingBlockV1(WorkflowBlock):
             model_id = "ostris/Flex.2-preview"
             
             try:
-                # Load using DiffusionPipeline which will automatically detect the pipeline type
-                _CACHED_FLEX2_PIPELINE = DiffusionPipeline.from_pretrained(
+                # Load using AutoPipelineForText2Image with custom_pipeline
+                # This is how the Flex.2 docs show to load it
+                _CACHED_FLEX2_PIPELINE = AutoPipelineForText2Image.from_pretrained(
                     model_id,
+                    custom_pipeline=model_id,  # This loads the custom pipeline.py from the repo
                     torch_dtype=dtype,
                     trust_remote_code=True,  # Allow custom pipeline code
                     use_safetensors=True,
@@ -294,6 +296,14 @@ class Flex2InpaintingBlockV1(WorkflowBlock):
                 
                 logger.info(f"Flex.2 model loaded successfully! Pipeline type: {type(_CACHED_FLEX2_PIPELINE).__name__}")
                 
+                # Check if this is actually the custom pipeline
+                if not hasattr(_CACHED_FLEX2_PIPELINE, 'inpaint_image'):
+                    logger.warning(
+                        "Loaded pipeline doesn't appear to support inpainting. "
+                        "The custom pipeline may not have loaded correctly. "
+                        "Ensure you have the latest diffusers version."
+                    )
+                
             except Exception as e:
                 raise RuntimeError(
                     f"Failed to initialize Flex.2 pipeline: {str(e)}\n\n"
@@ -304,6 +314,14 @@ class Flex2InpaintingBlockV1(WorkflowBlock):
                 )
         
         pipe = _CACHED_FLEX2_PIPELINE
+        
+        # Ensure dimensions are compatible with the model
+        # Flux/Flex models need specific resolutions
+        if height % 16 != 0 or width % 16 != 0:
+            logger.warning(f"Dimensions {width}x{height} not divisible by 16, adjusting...")
+            height = (height // 16) * 16
+            width = (width // 16) * 16
+            logger.info(f"Adjusted dimensions to {width}x{height}")
         
         # Convert images to PIL format
         pil_image = PILImage.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
@@ -328,57 +346,36 @@ class Flex2InpaintingBlockV1(WorkflowBlock):
         
         # Run inference
         with torch.inference_mode():
-            # Try to detect the pipeline type and call appropriately
             pipeline_class_name = type(pipe).__name__
-            
             logger.info(f"Running inference with pipeline: {pipeline_class_name}")
             
-            # Since Flex.2 appears to load as FluxPipeline but we need inpainting,
-            # let's first try with inpainting parameters, then fall back if needed
+            # The Flex.2 custom pipeline should support these parameters
             try:
-                if "Flex" in pipeline_class_name:
-                    # Custom Flex.2 pipeline with full inpainting support
-                    logger.info("Using Flex.2 custom pipeline with inpainting")
-                    result = pipe(
-                        prompt=prompt,
-                        negative_prompt=negative_prompt,
-                        inpaint_image=pil_image,
-                        inpaint_mask=pil_mask,
-                        control_image=control_image,
-                        control_strength=control_strength,
-                        control_stop=control_stop,
-                        height=height,
-                        width=width,
-                        guidance_scale=guidance_scale,
-                        num_inference_steps=num_inference_steps,
-                        generator=generator,
-                    ).images[0]
-                else:
-                    # Try with inpainting parameters first (in case it's supported)
-                    logger.info(f"Attempting inpainting with {pipeline_class_name}")
-                    result = pipe(
-                        prompt=prompt,
-                        negative_prompt=negative_prompt,
-                        image=pil_image,
-                        mask_image=pil_mask,
-                        height=height,
-                        width=width,
-                        guidance_scale=guidance_scale,
-                        num_inference_steps=num_inference_steps,
-                        generator=generator,
-                    ).images[0]
-            except (TypeError, ValueError) as e:
-                # Fallback to text-to-image if inpainting not supported
-                logger.warning(f"Inpainting not supported, falling back to text-to-image: {str(e)}")
-                logger.warning("Generated image will not respect the mask")
                 result = pipe(
                     prompt=prompt,
+                    negative_prompt=negative_prompt,
+                    inpaint_image=pil_image,
+                    inpaint_mask=pil_mask,
+                    control_image=control_image,
+                    control_strength=control_strength,
+                    control_stop=control_stop,
                     height=height,
                     width=width,
                     guidance_scale=guidance_scale,
                     num_inference_steps=num_inference_steps,
                     generator=generator,
                 ).images[0]
+                logger.info("Successfully generated image with inpainting")
+            except Exception as e:
+                logger.error(f"Failed to run inference: {str(e)}")
+                raise RuntimeError(
+                    f"Pipeline execution failed: {str(e)}\n\n"
+                    f"This may be due to:\n"
+                    f"1. The custom pipeline not loading correctly\n"
+                    f"2. Incompatible model dimensions (try 1024x1024)\n" 
+                    f"3. Missing dependencies\n\n"
+                    f"Pipeline type: {pipeline_class_name}"
+                )
         
         # Convert back to OpenCV format
         result_array = np.array(result)
