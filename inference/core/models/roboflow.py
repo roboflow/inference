@@ -280,7 +280,9 @@ class RoboflowInferenceModel(Model):
     def model_artifact_bucket(self):
         return INFER_BUCKET
 
-    def download_model_artifacts_from_roboflow_api(self, countinference: bool = None, service_secret: str = None) -> None:
+    def download_model_artifacts_from_roboflow_api(
+        self, countinference: bool = None, service_secret: str = None
+    ) -> None:
         logger.debug("Downloading model artifacts from Roboflow API")
 
         # Use the same lock file pattern as in clear_cache

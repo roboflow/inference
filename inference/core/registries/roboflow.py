@@ -68,7 +68,13 @@ class RoboflowModelRegistry(ModelRegistry):
     then returns a model class based on the model type.
     """
 
-    def get_model(self, model_id: ModelID, api_key: str, countinference: bool = None, service_secret: str = None) -> Model:
+    def get_model(
+        self,
+        model_id: ModelID,
+        api_key: str,
+        countinference: bool = None,
+        service_secret: str = None,
+    ) -> Model:
         """Returns the model class based on the given model id and API key.
 
         Args:
@@ -81,7 +87,12 @@ class RoboflowModelRegistry(ModelRegistry):
         Raises:
             ModelNotRecognisedError: If the model type is not supported or found.
         """
-        model_type = get_model_type(model_id, api_key, countinference=countinference, service_secret=service_secret)
+        model_type = get_model_type(
+            model_id,
+            api_key,
+            countinference=countinference,
+            service_secret=service_secret,
+        )
         logger.debug(f"Model type: {model_type}")
 
         if model_type not in self.registry_dict:

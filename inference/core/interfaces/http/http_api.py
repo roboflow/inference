@@ -776,10 +776,14 @@ class HttpInterface(BaseInterface):
                 model_id=inference_request.model_id
             )
             # Extract countinference and service_secret from kwargs if available
-            countinference = kwargs.get('countinference', None)
-            service_secret = kwargs.get('service_secret', None)
-            self.model_manager.add_model(de_aliased_model_id, inference_request.api_key,
-                                         countinference=countinference, service_secret=service_secret)
+            countinference = kwargs.get("countinference", None)
+            service_secret = kwargs.get("service_secret", None)
+            self.model_manager.add_model(
+                de_aliased_model_id,
+                inference_request.api_key,
+                countinference=countinference,
+                service_secret=service_secret,
+            )
             resp = await self.model_manager.infer_from_request(
                 de_aliased_model_id, inference_request, **kwargs
             )
@@ -1015,7 +1019,11 @@ class HttpInterface(BaseInterface):
                 description="Load the model with the given model ID",
             )
             @with_route_exceptions
-            async def model_add(request: AddModelRequest, countinference: Optional[bool] = None, service_secret: Optional[str] = None):
+            async def model_add(
+                request: AddModelRequest,
+                countinference: Optional[bool] = None,
+                service_secret: Optional[str] = None,
+            ):
                 """Load the model with the given model ID into the model manager.
 
                 Args:
@@ -1029,7 +1037,12 @@ class HttpInterface(BaseInterface):
                     model_id=request.model_id
                 )
                 logger.info(f"Loading model: {de_aliased_model_id}")
-                self.model_manager.add_model(de_aliased_model_id, request.api_key, countinference=countinference, service_secret=service_secret)
+                self.model_manager.add_model(
+                    de_aliased_model_id,
+                    request.api_key,
+                    countinference=countinference,
+                    service_secret=service_secret,
+                )
                 models_descriptions = self.model_manager.describe_models()
                 return ModelsDescriptions.from_models_descriptions(
                     models_descriptions=models_descriptions
@@ -2651,8 +2664,11 @@ class HttpInterface(BaseInterface):
                     f"State of model registry: {self.model_manager.describe_models()}"
                 )
                 self.model_manager.add_model(
-                    request_model_id, api_key, model_id_alias=model_id,
-                    countinference=countinference, service_secret=service_secret
+                    request_model_id,
+                    api_key,
+                    model_id_alias=model_id,
+                    countinference=countinference,
+                    service_secret=service_secret,
                 )
 
                 task_type = self.model_manager.get_task_type(model_id, api_key=api_key)
@@ -2726,8 +2742,11 @@ class HttpInterface(BaseInterface):
             # Legacy add model endpoint for backwards compatibility
             @app.get("/start/{dataset_id}/{version_id}")
             async def model_add_legacy(
-                dataset_id: str, version_id: str, api_key: str = None,
-                countinference: Optional[bool] = None, service_secret: Optional[str] = None
+                dataset_id: str,
+                version_id: str,
+                api_key: str = None,
+                countinference: Optional[bool] = None,
+                service_secret: Optional[str] = None,
             ):
                 """
                 Starts a model inference session.
@@ -2746,7 +2765,12 @@ class HttpInterface(BaseInterface):
                     f"Reached /start/{dataset_id}/{version_id} with {dataset_id}/{version_id}"
                 )
                 model_id = f"{dataset_id}/{version_id}"
-                self.model_manager.add_model(model_id, api_key, countinference=countinference, service_secret=service_secret)
+                self.model_manager.add_model(
+                    model_id,
+                    api_key,
+                    countinference=countinference,
+                    service_secret=service_secret,
+                )
 
                 return JSONResponse(
                     {
