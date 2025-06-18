@@ -250,9 +250,11 @@ class Flex2InpaintingBlockV1(WorkflowBlock):
     ) -> np.ndarray:
         """Run inference using local Flex.2 model."""
         try:
-            from diffusers import AutoPipelineForText2Image
+            from diffusers import AutoPipelineForText2Image, DiffusionPipeline
             import torch
             from PIL import Image as PILImage
+            import os
+            from pathlib import Path
         except ImportError:
             raise ImportError(
                 "Local execution requires 'diffusers' and 'torch'. "
@@ -271,8 +273,8 @@ class Flex2InpaintingBlockV1(WorkflowBlock):
             model_id = "ostris/Flex.2-preview"
             
             try:
-                # Load using AutoPipelineForText2Image with custom_pipeline
-                # This is how the Flex.2 docs show to load it
+                # First attempt: Try loading with AutoPipelineForText2Image
+                logger.info("Attempting to load Flex.2 with AutoPipelineForText2Image...")
                 _CACHED_FLEX2_PIPELINE = AutoPipelineForText2Image.from_pretrained(
                     model_id,
                     custom_pipeline=model_id,  # This loads the custom pipeline.py from the repo
@@ -280,6 +282,30 @@ class Flex2InpaintingBlockV1(WorkflowBlock):
                     trust_remote_code=True,  # Allow custom pipeline code
                     use_safetensors=True,
                 )
+            except Exception as e:
+                logger.warning(f"AutoPipelineForText2Image failed: {str(e)}")
+                logger.info("Attempting alternative loading method with DiffusionPipeline...")
+                
+                try:
+                    # Second attempt: Try DiffusionPipeline which might handle custom pipelines better
+                    _CACHED_FLEX2_PIPELINE = DiffusionPipeline.from_pretrained(
+                        model_id,
+                        custom_pipeline=model_id,
+                        torch_dtype=dtype,
+                        trust_remote_code=True,
+                        use_safetensors=True,
+                    )
+                except Exception as e2:
+                    logger.warning(f"DiffusionPipeline with custom_pipeline failed: {str(e2)}")
+                    
+                    # Final attempt: Load without custom_pipeline and let it figure out the pipeline
+                    logger.info("Attempting to load without custom_pipeline parameter...")
+                    _CACHED_FLEX2_PIPELINE = DiffusionPipeline.from_pretrained(
+                        model_id,
+                        torch_dtype=dtype,
+                        trust_remote_code=True,
+                        use_safetensors=True,
+                    )
                 
                 _CACHED_FLEX2_PIPELINE = _CACHED_FLEX2_PIPELINE.to(device)
                 
@@ -297,12 +323,19 @@ class Flex2InpaintingBlockV1(WorkflowBlock):
                 logger.info(f"Flex.2 model loaded successfully! Pipeline type: {type(_CACHED_FLEX2_PIPELINE).__name__}")
                 
                 # Check if this is actually the custom pipeline
-                if not hasattr(_CACHED_FLEX2_PIPELINE, 'inpaint_image'):
-                    logger.warning(
-                        "Loaded pipeline doesn't appear to support inpainting. "
-                        "The custom pipeline may not have loaded correctly. "
-                        "Ensure you have the latest diffusers version."
-                    )
+                if hasattr(_CACHED_FLEX2_PIPELINE, '__call__'):
+                    # Check for expected method signature
+                    import inspect
+                    sig = inspect.signature(_CACHED_FLEX2_PIPELINE.__call__)
+                    params = list(sig.parameters.keys())
+                    
+                    if 'inpaint_image' in params and 'control_image' in params:
+                        logger.info("✓ Custom Flex2Pipeline loaded successfully with inpainting support")
+                    else:
+                        logger.warning(
+                            f"Pipeline loaded but may not support full Flex.2 features. "
+                            f"Available parameters: {params[:10]}..."  # Show first 10 params
+                        )
                 
             except Exception as e:
                 raise RuntimeError(
@@ -349,33 +382,58 @@ class Flex2InpaintingBlockV1(WorkflowBlock):
             pipeline_class_name = type(pipe).__name__
             logger.info(f"Running inference with pipeline: {pipeline_class_name}")
             
-            # The Flex.2 custom pipeline should support these parameters
+            # Based on the pipeline.py, Flex2Pipeline expects these parameters
             try:
-                result = pipe(
-                    prompt=prompt,
-                    negative_prompt=negative_prompt,
-                    inpaint_image=pil_image,
-                    inpaint_mask=pil_mask,
-                    control_image=control_image,
-                    control_strength=control_strength,
-                    control_stop=control_stop,
-                    height=height,
-                    width=width,
-                    guidance_scale=guidance_scale,
-                    num_inference_steps=num_inference_steps,
-                    generator=generator,
-                ).images[0]
+                # Check if this is a Flex2Pipeline or similar
+                if hasattr(pipe, 'inpaint_image') or 'Flex' in pipeline_class_name:
+                    logger.info("Using Flex2Pipeline parameters")
+                    result = pipe(
+                        prompt=prompt,
+                        prompt_2=prompt if negative_prompt is None else negative_prompt,  # Use negative_prompt as prompt_2
+                        inpaint_image=pil_image,
+                        inpaint_mask=pil_mask,
+                        control_image=control_image,
+                        control_strength=control_strength,
+                        control_stop=control_stop,
+                        height=height,
+                        width=width,
+                        guidance_scale=guidance_scale,
+                        num_inference_steps=num_inference_steps,
+                        generator=generator,
+                    ).images[0]
+                else:
+                    # For FluxPipeline or other pipelines
+                    logger.info(f"Using standard pipeline parameters for {pipeline_class_name}")
+                    # FluxPipeline doesn't support inpainting directly
+                    # We'll need to implement inpainting logic ourselves or fail
+                    raise RuntimeError(
+                        f"Pipeline {pipeline_class_name} does not support inpainting. "
+                        f"The Flex.2 custom pipeline may not have loaded correctly. "
+                        f"Please ensure you have the latest version of diffusers installed."
+                    )
+                    
                 logger.info("Successfully generated image with inpainting")
             except Exception as e:
                 logger.error(f"Failed to run inference: {str(e)}")
-                raise RuntimeError(
-                    f"Pipeline execution failed: {str(e)}\n\n"
-                    f"This may be due to:\n"
-                    f"1. The custom pipeline not loading correctly\n"
-                    f"2. Incompatible model dimensions (try 1024x1024)\n" 
-                    f"3. Missing dependencies\n\n"
-                    f"Pipeline type: {pipeline_class_name}"
-                )
+                
+                # If it's a dimension mismatch, provide helpful info
+                if "tensor a" in str(e) and "must match the size of tensor b" in str(e):
+                    raise RuntimeError(
+                        f"Dimension mismatch error: {str(e)}\n\n"
+                        f"This typically happens when the model expects specific resolutions.\n"
+                        f"Current dimensions: {width}x{height}\n"
+                        f"Try using standard Flux dimensions like 1024x1024 or 512x512.\n"
+                        f"Pipeline type: {pipeline_class_name}"
+                    )
+                else:
+                    raise RuntimeError(
+                        f"Pipeline execution failed: {str(e)}\n\n"
+                        f"Pipeline type: {pipeline_class_name}\n"
+                        f"This may be due to:\n"
+                        f"1. The custom pipeline not loading correctly\n"
+                        f"2. Incompatible parameters\n"
+                        f"3. Missing dependencies"
+                    )
         
         # Convert back to OpenCV format
         result_array = np.array(result)
