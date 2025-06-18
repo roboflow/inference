@@ -269,7 +269,6 @@ def get_roboflow_model_data(
             url=f"{api_base_url}/{endpoint_type.value}/{model_id}",
             params=params,
         )
-        logger.debug(f"Fetching model data from Roboflow API with URL: {api_url}.")
         api_data = _get_from_url(url=api_url)
         cache.set(
             api_data_cache_key,
@@ -315,9 +314,6 @@ def get_roboflow_instant_model_data(
         api_url = _add_params_to_url(
             url=f"{api_base_url}/getWeights",
             params=params,
-        )
-        logger.debug(
-            f"Fetching instant model data from Roboflow API with URL: {api_url}."
         )
         api_data = _get_from_url(url=api_url)
         cache.set(

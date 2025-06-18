@@ -280,6 +280,8 @@ def test_get_model_type_when_roboflow_api_is_called_for_specific_model(
     get_roboflow_model_data_mock.assert_called_once_with(
         api_key="my_api_key",
         model_id="some/1",
+        countinference=None,
+        service_secret=None,
         endpoint_type=ModelEndpointType.ORT,
         device_id=GLOBAL_DEVICE_ID,
     )
@@ -317,6 +319,8 @@ def test_get_model_type_when_roboflow_api_is_called_for_specific_model_and_model
     get_roboflow_model_data_mock.assert_called_once_with(
         api_key="my_api_key",
         model_id="some/1",
+        countinference=None,
+        service_secret=None,
         endpoint_type=ModelEndpointType.ORT,
         device_id=GLOBAL_DEVICE_ID,
     )
@@ -353,6 +357,8 @@ def test_get_model_type_when_roboflow_api_is_called_for_specific_model_and_model
     get_roboflow_model_data_mock.assert_called_once_with(
         api_key="my_api_key",
         model_id="some/1",
+        countinference=None,
+        service_secret=None,
         endpoint_type=ModelEndpointType.ORT,
         device_id=GLOBAL_DEVICE_ID,
     )
@@ -385,6 +391,8 @@ def test_get_model_type_when_roboflow_api_is_called_for_specific_model_and_proje
     get_roboflow_model_data_mock.assert_called_once_with(
         api_key="my_api_key",
         model_id="some/1",
+        countinference=None,
+        service_secret=None,
         endpoint_type=ModelEndpointType.ORT,
         device_id=GLOBAL_DEVICE_ID,
     )
@@ -422,6 +430,8 @@ def test_get_model_type_when_roboflow_api_is_called_for_specific_model_without_a
     get_roboflow_model_data_mock.assert_called_once_with(
         api_key=None,
         model_id="some/1",
+        countinference=None,
+        service_secret=None,
         endpoint_type=ModelEndpointType.ORT,
         device_id=GLOBAL_DEVICE_ID,
     )
