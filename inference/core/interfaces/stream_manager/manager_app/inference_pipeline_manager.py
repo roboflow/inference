@@ -45,6 +45,7 @@ from inference.core.interfaces.stream_manager.manager_app.serialisation import (
 )
 from inference.core.interfaces.stream_manager.manager_app.webrtc import (
     RTCPeerConnectionWithFPS,
+    WebRTCPipelineWatchDog,
     WebRTCVideoFrameProducer,
     init_rtc_peer_connection,
 )
@@ -240,7 +241,6 @@ class InferencePipelineManager(Process):
 
     def _start_webrtc(self, request_id: str, payload: dict):
         try:
-            self._watchdog = BasePipelineWatchDog()
             parsed_payload = InitialiseWebRTCPipelinePayload.model_validate(payload)
 
             def start_loop(loop: asyncio.AbstractEventLoop):
@@ -276,6 +276,7 @@ class InferencePipelineManager(Process):
                 loop,
             )
             peer_connection: RTCPeerConnectionWithFPS = future.result()
+            self._watchdog = WebRTCPipelineWatchDog(webrtc_peer_connection=peer_connection)
 
             self._responses_queue.put(
                 (
@@ -373,6 +374,7 @@ class InferencePipelineManager(Process):
             peer_connection.video_transform_track.stop()
             asyncio.run_coroutine_threadsafe(peer_connection.close(), loop)
             loop.stop()
+            t.join()
             self._handle_error(
                 request_id=request_id,
                 error=error,
@@ -384,6 +386,7 @@ class InferencePipelineManager(Process):
             peer_connection.video_transform_track.stop()
             asyncio.run_coroutine_threadsafe(peer_connection.close(), loop)
             loop.stop()
+            t.join()
             self._handle_error(
                 request_id=request_id,
                 error=error,
@@ -395,6 +398,7 @@ class InferencePipelineManager(Process):
             peer_connection.video_transform_track.stop()
             asyncio.run_coroutine_threadsafe(peer_connection.close(), loop)
             loop.stop()
+            t.join()
             self._handle_error(
                 request_id=request_id,
                 error=error,
@@ -406,6 +410,7 @@ class InferencePipelineManager(Process):
             peer_connection.video_transform_track.stop()
             asyncio.run_coroutine_threadsafe(peer_connection.close(), loop)
             loop.stop()
+            t.join()
             self._handle_error(
                 request_id=request_id,
                 error=error,

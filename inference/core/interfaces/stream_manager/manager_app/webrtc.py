@@ -14,6 +14,7 @@ from aiortc import (
     VideoStreamTrack,
 )
 from aiortc.contrib.media import MediaRelay
+from aiortc.mediastreams import MediaStreamError
 from aiortc.rtcrtpreceiver import RemoteStreamTrack
 from av import VideoFrame
 from av import logging as av_logging
@@ -21,8 +22,11 @@ from av import logging as av_logging
 from inference.core import logger
 from inference.core.interfaces.camera.entities import (
     SourceProperties,
+    StatusUpdate,
+    UpdateSeverity,
     VideoFrameProducer,
 )
+from inference.core.interfaces.stream.watchdog import BasePipelineWatchDog
 from inference.core.interfaces.stream_manager.manager_app.entities import (
     WebRTCOffer,
     WebRTCTURNConfig,
@@ -101,6 +105,8 @@ class VideoTransformTrack(VideoStreamTrack):
         if not self._av_logging_set:
             av_logging.set_libav_level(av_logging.ERROR)
             self._av_logging_set = True
+        if not self._track_active:
+            raise MediaStreamError("Track was set inactive, shutting down.")
         frame: VideoFrame = await self.track.recv()
         self._processed += 1
         if not self.incoming_stream_fps:
@@ -257,6 +263,20 @@ class RTCPeerConnectionWithFPS(RTCPeerConnection):
     def __init__(self, video_transform_track: VideoTransformTrack, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.video_transform_track: VideoTransformTrack = video_transform_track
+
+
+class WebRTCPipelineWatchDog(BasePipelineWatchDog):
+    def __init__(self, webrtc_peer_connection: RTCPeerConnectionWithFPS):
+        super().__init__()
+        self._webrtc_peer_connection = webrtc_peer_connection
+
+    def on_status_update(self, status_update: StatusUpdate) -> None:
+        if status_update.severity.value >= UpdateSeverity.ERROR.value:
+            self._webrtc_peer_connection.close()
+            self._webrtc_peer_connection.video_transform_track.close()
+        if status_update.severity.value <= UpdateSeverity.DEBUG.value:
+            return None
+        self._stream_updates.append(status_update)
 
 
 async def init_rtc_peer_connection(
