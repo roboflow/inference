@@ -518,7 +518,7 @@ def trt_package_matches_runtime_environment(
                     f"Model package with id '{model_package.package_id}' filtered out due to device incompatibility."
                 )
             return False
-        if verify_versions_up_to_major_and_minor(
+        if not verify_versions_up_to_major_and_minor(
             runtime_x_ray.l4t_version, model_environment.l4t_version
         ):
             if verbose:
