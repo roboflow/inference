@@ -20,7 +20,7 @@ WORKDIR /build
 COPY inference_experimental/uv.lock uv.lock
 COPY inference_experimental/pyproject.toml pyproject.toml
 
-RUN $HOME/.local/bin/uv pip install --system -r pyproject.toml --extra torch-cu126 --extra onnx-cu12 --extra mediapipe --extra grounding-dino --extra trt10
+RUN UV_PROJECT_ENVIRONMENT=/usr $HOME/.local/bin/uv sync --locked --extra torch-cu126 --extra onnx-cu12 --extra mediapipe --extra grounding-dino --extra trt10
 COPY inference_experimental/inference_exp inference_exp
 RUN $HOME/.local/bin/uv build
 RUN WHEEL=$(ls dist/inference_exp-*.whl) && $HOME/.local/bin/uv pip install --system "${WHEEL}"
