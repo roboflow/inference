@@ -38,7 +38,7 @@ RUN UV_PROJECT_ENVIRONMENT=/usr $HOME/.local/bin/uv sync --locked --no-install-p
 RUN $HOME/.local/bin/uv pip install --system /build/opencv_compilation/opencv-4.11.0/release/python_loader/dist/opencv-4.11.0-py3-none-any.whl
 COPY inference_experimental/inference_exp inference_exp
 RUN $HOME/.local/bin/uv build
-RUN WHEEL=$(ls dist/inference_exp-*.whl) && $HOME/.local/bin/uv pip install --system "${WHEEL}"
+RUN WHEEL=$(ls dist/inference_exp-*.whl) && $HOME/.local/bin/uv pip install --system --no-deps "${WHEEL}"
 
 WORKDIR /
 RUN rm -r /build/inference_experimental
