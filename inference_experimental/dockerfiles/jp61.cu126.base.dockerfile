@@ -34,7 +34,7 @@ WORKDIR /build/inference_experimental
 
 COPY inference_experimental/uv.lock uv.lock
 COPY inference_experimental/pyproject.toml pyproject.toml
-RUN $HOME/.local/bin/uv pip install --system -r pyproject.toml --extra torch-jp6-cu126 --extra onnx-jp6-cu126
+RUN UV_PROJECT_ENVIRONMENT=$(which python) $HOME/.local/bin/uv sync --locked --no-install-package opencv-python --extra torch-jp6-cu126 --extra onnx-jp6-cu126
 COPY inference_experimental/inference_exp inference_exp
 RUN $HOME/.local/bin/uv build
 RUN WHEEL=$(ls dist/inference_exp-*.whl) && $HOME/.local/bin/uv pip install --system "${WHEEL}"
