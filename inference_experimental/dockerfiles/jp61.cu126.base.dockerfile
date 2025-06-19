@@ -30,6 +30,8 @@ COPY inference_experimental/dockerfiles/build_scripts/compile_opencv_jetpack_6.s
 RUN chmod ugo+x compile_opencv_jetpack_6.sh
 RUN ./compile_opencv_jetpack_6.sh
 
+WORKDIR /build/inference_experimental
+
 COPY inference_experimental/uv.lock uv.lock
 COPY inference_experimental/pyproject.toml pyproject.toml
 RUN $HOME/.local/bin/uv pip install --system -r pyproject.toml --extra torch-jp6-cu126 --extra onnx-jp6-cu126
@@ -38,6 +40,6 @@ RUN $HOME/.local/bin/uv build
 RUN WHEEL=$(ls dist/inference_exp-*.whl) && $HOME/.local/bin/uv pip install --system "${WHEEL}"
 
 WORKDIR /
-RUN rm -r /build
+RUN rm -r /build/inference_experimental
 
 ENTRYPOINT ["bash"]
