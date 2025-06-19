@@ -10,6 +10,7 @@ RUN add-apt-repository -y ppa:deadsnakes/ppa && apt update -y && apt install -y 
 RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12
 
 RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1
 
 RUN rm -rf /var/lib/apt/lists/*
 
@@ -21,6 +22,7 @@ COPY inference_experimental/uv.lock uv.lock
 COPY inference_experimental/pyproject.toml pyproject.toml
 
 RUN UV_PROJECT_ENVIRONMENT=/usr $HOME/.local/bin/uv sync --locked --extra torch-cu124 --extra onnx-cu12 --extra mediapipe --extra grounding-dino --extra trt10
+
 COPY inference_experimental/inference_exp inference_exp
 RUN $HOME/.local/bin/uv build
 RUN WHEEL=$(ls dist/inference_exp-*.whl) && $HOME/.local/bin/uv pip install --system "${WHEEL}"

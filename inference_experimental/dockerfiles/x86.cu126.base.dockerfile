@@ -10,6 +10,7 @@ RUN add-apt-repository -y ppa:deadsnakes/ppa && apt update -y && apt install -y 
 RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12
 
 RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1
 
 RUN rm -rf /var/lib/apt/lists/*
 
