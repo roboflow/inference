@@ -13,12 +13,9 @@ WORKDIR /build
 
 COPY inference_experimental/uv.lock uv.lock
 COPY inference_experimental/pyproject.toml pyproject.toml
-
-RUN . $HOME/.local/bin/env
-RUN $HOME/.local/bin/uv pip install --system -r pyproject.toml --extra torch-cpu --extra onnx-cpu --extra mediapipe --extra grounding-dino
+RUN UV_PROJECT_ENVIRONMENT=/usr/local $HOME/.local/bin/uv sync --locked --extra torch-cpu --extra onnx-cpu --extra mediapipe --extra grounding-dino
 COPY inference_experimental/inference_exp inference_exp
-RUN $HOME/.local/bin/uv build
-RUN WHEEL=$(ls dist/inference_exp-*.whl) && $HOME/.local/bin/uv pip install --system "${WHEEL}"
+RUN $HOME/.local/bin/uv pip install --system --no-deps .
 
 WORKDIR /
 RUN rm -r /build
