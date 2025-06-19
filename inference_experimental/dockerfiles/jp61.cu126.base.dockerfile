@@ -36,7 +36,7 @@ COPY inference_experimental/uv.lock uv.lock
 COPY inference_experimental/pyproject.toml pyproject.toml
 RUN UV_PROJECT_ENVIRONMENT=/usr $HOME/.local/bin/uv sync --locked --no-install-package opencv-python --extra torch-jp6-cu126 --extra onnx-jp6-cu126
 COPY inference_experimental/inference_exp inference_exp
-RUN $HOME/.local/bin/uv pip install . --no-install-project
+RUN $HOME/.local/bin/uv pip install --no-deps .
 
 WORKDIR /
 RUN rm -r /build/inference_experimental
