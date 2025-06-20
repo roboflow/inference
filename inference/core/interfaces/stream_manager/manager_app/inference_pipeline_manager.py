@@ -45,6 +45,7 @@ from inference.core.interfaces.stream_manager.manager_app.serialisation import (
 )
 from inference.core.interfaces.stream_manager.manager_app.webrtc import (
     RTCPeerConnectionWithFPS,
+    WebRTCPipelineWatchDog,
     WebRTCVideoFrameProducer,
     init_rtc_peer_connection,
 )
@@ -240,7 +241,6 @@ class InferencePipelineManager(Process):
 
     def _start_webrtc(self, request_id: str, payload: dict):
         try:
-            self._watchdog = BasePipelineWatchDog()
             parsed_payload = InitialiseWebRTCPipelinePayload.model_validate(payload)
 
             def start_loop(loop: asyncio.AbstractEventLoop):
@@ -257,15 +257,12 @@ class InferencePipelineManager(Process):
             to_inference_queue = SyncAsyncQueue(loop=loop, maxsize=10)
             from_inference_queue = SyncAsyncQueue(loop=loop, maxsize=10)
 
-            stop_event = Event()
-
             future = asyncio.run_coroutine_threadsafe(
                 init_rtc_peer_connection(
                     webrtc_offer=webrtc_offer,
                     webrtc_turn_config=webrtc_turn_config,
                     to_inference_queue=to_inference_queue,
                     from_inference_queue=from_inference_queue,
-                    feedback_stop_event=stop_event,
                     asyncio_loop=loop,
                     webcam_fps=webcam_fps,
                     max_consecutive_timeouts=parsed_payload.max_consecutive_timeouts,
@@ -291,9 +288,21 @@ class InferencePipelineManager(Process):
             webrtc_producer = partial(
                 WebRTCVideoFrameProducer,
                 to_inference_queue=to_inference_queue,
-                stop_event=stop_event,
                 webrtc_video_transform_track=peer_connection.video_transform_track,
             )
+
+            self._watchdog = WebRTCPipelineWatchDog(
+                webrtc_peer_connection=peer_connection, asyncio_loop=loop
+            )
+
+            def close_peer_connection():
+                asyncio.run_coroutine_threadsafe(peer_connection.close(), loop)
+                while not peer_connection._consumers_signalled:
+                    time.sleep(0.1)
+                self._stop = True
+                logger.debug(
+                    "peer_connection closed and associated async loop terminated"
+                )
 
             def webrtc_sink(
                 prediction: Dict[str, WorkflowImageData], video_frame: VideoFrame
@@ -369,6 +378,7 @@ class InferencePipelineManager(Process):
             KeyError,
             NotImplementedError,
         ) as error:
+            close_peer_connection()
             self._handle_error(
                 request_id=request_id,
                 error=error,
@@ -376,22 +386,23 @@ class InferencePipelineManager(Process):
                 error_type=ErrorType.INVALID_PAYLOAD,
             )
         except RoboflowAPINotAuthorizedError as error:
+            close_peer_connection()
             self._handle_error(
                 request_id=request_id,
                 error=error,
-                public_error_message="Invalid API key used or API key is missing. "
-                "Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key",
+                public_error_message="Invalid API key used or API key is missing. Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key",
                 error_type=ErrorType.AUTHORISATION_ERROR,
             )
         except RoboflowAPINotNotFoundError as error:
+            close_peer_connection()
             self._handle_error(
                 request_id=request_id,
                 error=error,
-                public_error_message="Requested Roboflow resources (models / workflows etc.) not available or "
-                "wrong API key used.",
+                public_error_message="Requested Roboflow resources (models / workflows etc.) not available or wrong API key used.",
                 error_type=ErrorType.NOT_FOUND,
             )
         except WorkflowSyntaxError as error:
+            close_peer_connection()
             self._handle_error(
                 request_id=request_id,
                 error=error,
