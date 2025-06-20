@@ -98,30 +98,29 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/stability_ai_inpainting@v2"]
-    
-    execution_mode: Union[
-        Literal["cloud", "local"],
-        Selector(kind=[STRING_KIND])
-    ] = Field(
-        default="cloud",
-        description="Execution mode - 'cloud' uses Stability AI API, 'local' runs locally",
-        examples=["cloud", "local"],
-        json_schema_extra={
-            "always_visible": True,
-        },
+
+    execution_mode: Union[Literal["cloud", "local"], Selector(kind=[STRING_KIND])] = (
+        Field(
+            default="cloud",
+            description="Execution mode - 'cloud' uses Stability AI API, 'local' runs locally",
+            examples=["cloud", "local"],
+            json_schema_extra={
+                "always_visible": True,
+            },
+        )
     )
-    
+
     image: Selector(kind=[IMAGE_KIND]) = Field(
         description="The image to inpaint.",
         examples=["$inputs.image", "$steps.cropping.crops"],
     )
-    
+
     segmentation_mask: Selector(kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND]) = Field(
         name="Segmentation Mask",
         description="Model predictions from segmentation model.",
         examples=["$steps.model.predictions"],
     )
-    
+
     prompt: Union[
         Selector(kind=[STRING_KIND]),
         str,
@@ -132,7 +131,7 @@ class BlockManifest(WorkflowBlockManifest):
             "multiline": True,
         },
     )
-    
+
     negative_prompt: Optional[
         Union[
             Selector(kind=[STRING_KIND]),
@@ -146,7 +145,7 @@ class BlockManifest(WorkflowBlockManifest):
             "multiline": True,
         },
     )
-    
+
     # Cloud-specific parameters
     api_key: Optional[Union[Selector(kind=[STRING_KIND, SECRET_KIND]), str]] = Field(
         default=None,
@@ -159,7 +158,7 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
-    
+
     # Local-specific parameters
     num_inference_steps: Optional[Union[int, Selector(kind=[INTEGER_KIND])]] = Field(
         default=50,
@@ -171,7 +170,7 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
-    
+
     guidance_scale: Optional[Union[float, Selector(kind=[FLOAT_KIND])]] = Field(
         default=7.5,
         description="Guidance scale for local execution. Higher values produce images more closely linked to the prompt.",
@@ -257,12 +256,14 @@ class StabilityAIInpaintingBlockV2(WorkflowBlock):
         # Validate API key for cloud mode
         if execution_mode == "cloud" and not api_key:
             raise ValueError("API key is required when execution_mode is 'cloud'")
-        
+
         # Create mask from segmentation
         black_image = np.zeros_like(image.numpy_image)
         # Create a simple mask without using MaskAnnotator to avoid class_id issues
-        full_mask = np.zeros((image.numpy_image.shape[0], image.numpy_image.shape[1]), dtype=np.uint8)
-        
+        full_mask = np.zeros(
+            (image.numpy_image.shape[0], image.numpy_image.shape[1]), dtype=np.uint8
+        )
+
         if segmentation_mask.mask is not None and len(segmentation_mask.mask) > 0:
             # Combine all masks
             for single_mask in segmentation_mask.mask:
@@ -272,12 +273,12 @@ class StabilityAIInpaintingBlockV2(WorkflowBlock):
             for xyxy in segmentation_mask.xyxy:
                 x1, y1, x2, y2 = map(int, xyxy)
                 full_mask[y1:y2, x1:x2] = 255
-        
+
         if invert_segmentation_mask:
             full_mask = cv2.bitwise_not(full_mask)
         # Apply Gaussian blur to soften edges
         mask = cv2.GaussianBlur(full_mask, (15, 15), 0)
-        
+
         preset = (
             preset.value if preset in set(e.value for e in StabilityAIPresets) else None
         )
@@ -302,7 +303,7 @@ class StabilityAIInpaintingBlockV2(WorkflowBlock):
                 guidance_scale=guidance_scale,
                 seed=seed,
             )
-        
+
         return {
             "image": WorkflowImageData.copy_and_replace(
                 origin_image_data=image,
@@ -323,18 +324,18 @@ class StabilityAIInpaintingBlockV2(WorkflowBlock):
         """Run inference using Stability AI cloud API."""
         encoded_image = numpy_array_to_jpeg_bytes(image=image)
         encoded_mask = numpy_array_to_jpeg_bytes(image=mask)
-        
+
         request_data = {
             "prompt": prompt,
             "output_format": "jpeg",
         }
-        
+
         if negative_prompt:
             request_data["negative_prompt"] = negative_prompt
-        
+
         if seed is not None:
             request_data["seed"] = seed
-        
+
         if preset:
             request_data["preset"] = preset
 
@@ -347,12 +348,12 @@ class StabilityAIInpaintingBlockV2(WorkflowBlock):
             },
             data=request_data,
         )
-        
+
         if response.status_code != 200:
             raise RuntimeError(
                 f"Request to StabilityAI API failed: {str(response.json())}"
             )
-        
+
         return bytes_to_opencv_image(payload=response.content)
 
     def _run_local_inference(
@@ -375,18 +376,18 @@ class StabilityAIInpaintingBlockV2(WorkflowBlock):
                 "Local execution requires 'diffusers' and 'torch'. "
                 "Please install with: pip install inference[transformers]"
             )
-        
+
         # Model caching is handled at module level to avoid reloading
         global _CACHED_SD_PIPELINE
-        
+
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        
-        if '_CACHED_SD_PIPELINE' not in globals() or _CACHED_SD_PIPELINE is None:
+
+        if "_CACHED_SD_PIPELINE" not in globals() or _CACHED_SD_PIPELINE is None:
             logger.info(f"Loading Stable Diffusion Inpainting model on {device}...")
-            
+
             # Use the correct model ID with actual model files
             model_id = "stable-diffusion-v1-5/stable-diffusion-inpainting"
-            
+
             try:
                 # Always use fp16 variant since that's what's available in the repo
                 _CACHED_SD_PIPELINE = StableDiffusionInpaintPipeline.from_pretrained(
@@ -398,18 +399,21 @@ class StabilityAIInpaintingBlockV2(WorkflowBlock):
                     use_safetensors=True,
                     resume_download=True,  # Resume if partially downloaded
                 )
-                
+
                 _CACHED_SD_PIPELINE = _CACHED_SD_PIPELINE.to(device)
-                
+
                 # Enable memory optimizations
                 if hasattr(_CACHED_SD_PIPELINE, "enable_attention_slicing"):
                     _CACHED_SD_PIPELINE.enable_attention_slicing()
-                
+
                 logger.info("Stable Diffusion model loaded successfully!")
-                
+
             except Exception as e:
                 error_msg = str(e)
-                if "no file named" in error_msg.lower() or "not found" in error_msg.lower():
+                if (
+                    "no file named" in error_msg.lower()
+                    or "not found" in error_msg.lower()
+                ):
                     raise RuntimeError(
                         f"Failed to load Stable Diffusion model.\n\n"
                         f"The stable-diffusion-v1-5/stable-diffusion-inpainting repository uses .fp16.safetensors files.\n"
@@ -419,22 +423,24 @@ class StabilityAIInpaintingBlockV2(WorkflowBlock):
                         f"Original error: {str(e)}"
                     )
                 else:
-                    raise RuntimeError(f"Failed to initialize Stable Diffusion pipeline: {str(e)}")
-        
+                    raise RuntimeError(
+                        f"Failed to initialize Stable Diffusion pipeline: {str(e)}"
+                    )
+
         pipe = _CACHED_SD_PIPELINE
-        
+
         # Convert images to PIL format
         pil_image = PILImage.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
         # Convert mask to single channel if needed
         if len(mask.shape) == 3:
             mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
         pil_mask = PILImage.fromarray(mask)
-        
+
         # Set up generator for reproducibility
         generator = None
         if seed is not None:
             generator = torch.Generator(device=device).manual_seed(seed)
-        
+
         # Run inference
         with torch.inference_mode():
             result = pipe(
@@ -446,11 +452,10 @@ class StabilityAIInpaintingBlockV2(WorkflowBlock):
                 guidance_scale=guidance_scale,
                 generator=generator,
             ).images[0]
-        
+
         # Convert back to OpenCV format
         result_array = np.array(result)
         return cv2.cvtColor(result_array, cv2.COLOR_RGB2BGR)
-
 
 
 def numpy_array_to_jpeg_bytes(

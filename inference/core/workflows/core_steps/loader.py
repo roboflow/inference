@@ -220,6 +220,7 @@ from inference.core.workflows.core_steps.models.foundation.stability_ai.inpainti
 )
 from inference.core.workflows.core_steps.models.foundation.stability_ai.inpainting.v2 import (
     StabilityAIInpaintingBlockV2,
+)
 from inference.core.workflows.core_steps.models.foundation.stability_ai.outpainting.v1 import (
     StabilityAIOutpaintingBlockV1,
 )
