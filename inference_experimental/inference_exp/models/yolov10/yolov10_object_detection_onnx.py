@@ -26,7 +26,7 @@ from inference_exp.models.common.roboflow.pre_processing import (
 
 try:
     import onnxruntime
-except ImportError:
+except ImportError as import_error:
     raise MissingDependencyError(
         f"Could not import YOLOv10 model with ONNX backend - this error means that some additional dependencies "
         f"are not installed in the environment. If you run the `inference` library directly in your Python "
@@ -37,7 +37,7 @@ except ImportError:
         f"\t* `onnx-jp6-cu126` - for running on Jetson with Jetpack 6\n"
         f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
         f"You can also contact Roboflow to get support."
-    )
+    ) from import_error
 
 
 class YOLOv10ForObjectDetectionOnnx(

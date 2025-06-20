@@ -18,8 +18,8 @@ def main(
     model = YOLO(f"{model_id}.pt")
     results = []
     for image_id, image in tqdm(dataset, desc="Making predictions..."):
-        predictions = model(image, imgsz=image_size, verbose=False)
-        if getattr(predictions, "keypoints") is not None:
+        predictions = model(image, imgsz=image_size, conf=0.25, iou=0.45, max_det=100, verbose=False)
+        if getattr(predictions[0], "keypoints", None) is not None:
             predictions = sv.KeyPoints.from_ultralytics(predictions[0])
         else:
             predictions = sv.Detections.from_ultralytics(predictions[0])

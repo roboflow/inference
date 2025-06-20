@@ -4,11 +4,10 @@ import numpy as np
 import torch
 
 from inference_exp.errors import ModelRuntimeError, MissingDependencyError
-from inference_exp.models.common.trt import use_primary_cuda_context
 
 try:
     import onnxruntime
-except ImportError:
+except ImportError as import_error:
     raise MissingDependencyError(
         f"Could not import onnx tools required to run models with ONNX backend - this error means that some additional "
         f"dependencies are not installed in the environment. If you run the `inference` library directly in your "
@@ -19,7 +18,7 @@ except ImportError:
         f"\t* `onnx-jp6-cu126` - for running on Jetson with Jetpack 6\n"
         f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
         f"You can also contact Roboflow to get support."
-    )
+    ) from import_error
 
 
 TORCH_TYPES_MAPPING = {
@@ -100,8 +99,9 @@ def run_session_via_iobinding(
         return [torch.from_numpy(element) for element in results]
     try:
         import pycuda.driver as cuda
-    except ImportError:
-        raise MissingDependencyError("TODO")
+        from inference_exp.models.common.cuda import use_primary_cuda_context
+    except ImportError as import_error:
+        raise MissingDependencyError("TODO") from import_error
     cuda.init()
     cuda_device = cuda.Device(device.index or 0)
     with use_primary_cuda_context(cuda_device=cuda_device):

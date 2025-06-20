@@ -24,12 +24,12 @@ from inference_exp.models.common.roboflow.model_packages import (
 from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
-from inference_exp.models.common.trt import infer_from_trt_engine, load_model, use_primary_cuda_context, \
-    use_cuda_context
+from inference_exp.models.common.trt import infer_from_trt_engine, load_model
+from inference_exp.models.common.cuda import use_primary_cuda_context, use_cuda_context
 
 try:
     import tensorrt as trt
-except ImportError:
+except ImportError as import_error:
     raise MissingDependencyError(
         f"Could not import YOLOv8 model with TRT backend - this error means that some additional dependencies "
         f"are not installed in the environment. If you run the `inference` library directly in your Python "
@@ -38,12 +38,12 @@ except ImportError:
         f"installed for all builds with Jetpack 6. "
         f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
         f"You can also contact Roboflow to get support."
-    )
+    ) from import_error
 
 try:
     import pycuda.driver as cuda
-except ImportError:
-    raise MissingDependencyError("TODO")
+except ImportError as import_error:
+    raise MissingDependencyError("TODO") from import_error
 
 
 class YOLOv8ForKeyPointsDetectionTRT(

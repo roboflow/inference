@@ -1,5 +1,4 @@
-import contextlib
-from typing import List, Tuple, Generator
+from typing import List, Tuple
 
 import torch
 from inference_exp.errors import ModelRuntimeError, CorruptedModelPackageError, MissingDependencyError
@@ -9,7 +8,7 @@ from inference_exp.models.common.roboflow.model_packages import TRTConfig
 
 try:
     import tensorrt as trt
-except ImportError:
+except ImportError as import_error:
     raise MissingDependencyError(
         f"Could not TRT tools required to run models with TRT backend - this error means that some additional "
         f"dependencies are not installed in the environment. If you run the `inference` library directly in your "
@@ -18,12 +17,12 @@ except ImportError:
         f"installed for all builds with Jetpack 6. "
         f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
         f"You can also contact Roboflow to get support."
-    )
+    ) from import_error
 
 try:
     import pycuda.driver as cuda
-except ImportError:
-    raise MissingDependencyError("TODO")
+except ImportError as import_error:
+    raise MissingDependencyError("TODO") from import_error
 
 
 class InferenceTRTLogger(trt.ILogger):
@@ -272,17 +271,3 @@ def get_output_tensor_names(engine: trt.ICudaEngine) -> List[str]:
     return output_names
 
 
-@contextlib.contextmanager
-def use_primary_cuda_context(cuda_device: cuda.Device) -> Generator[cuda.Context, None, None]:
-    context = cuda_device.retain_primary_context()
-    with use_cuda_context(context) as ctx:
-        yield ctx
-
-
-@contextlib.contextmanager
-def use_cuda_context(context: cuda.Context) -> Generator[cuda.Context, None, None]:
-    context.push()
-    try:
-        yield context
-    finally:
-        context.pop()

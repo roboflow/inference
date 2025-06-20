@@ -172,6 +172,7 @@ def initialize_model(
     model_download_file_lock_acquire_timeout: int = 10,
     verbose: bool = True,
 ) -> AnyModel:
+    print(model_architecture, task_type, model_package.backend)
     model_class = resolve_model_class(
         model_architecture=model_architecture,
         task_type=task_type,
