@@ -16,17 +16,17 @@ def serialize_results(predictions: Any) -> dict:
 def sv_detections_to_json(detections: sv.Detections) -> dict:
     return {
         "xyxy": detections.xyxy.tolist(),
-        "mask": detections.mask.tolist() if detections.mask else None,
-        "confidence": detections.confidence.tolist() if detections.confidence else None,
-        "class_id": detections.class_id.tolist() if detections.class_id else None,
+        "mask": detections.mask.tolist() if detections.mask is not None else None,
+        "confidence": detections.confidence.tolist() if detections.confidence is not None else None,
+        "class_id": detections.class_id.tolist() if detections.class_id is not None else None,
     }
 
 
 def sv_key_points_to_json(key_points: sv.KeyPoints) -> dict:
     return {
         "xy": key_points.xy.tolist(),
-        "class_id": key_points.class_id.tolist() if key_points.class_id else None,
-        "confidence": key_points.confidence.tolist() if key_points.confidence else None,
+        "class_id": key_points.class_id.tolist() if key_points.class_id is not None else None,
+        "confidence": key_points.confidence.tolist() if key_points.confidence is not None else None,
     }
 
 
