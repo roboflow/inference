@@ -2,6 +2,7 @@
 Stability AI Inpainting v2 - supports both cloud API and local execution
 """
 
+from enum import Enum
 import os
 from typing import List, Literal, Optional, Type, Union
 
@@ -51,6 +52,26 @@ SHORT_DESCRIPTION = "Use segmentation masks to inpaint objects within an image."
 
 API_HOST = "https://api.stability.ai"
 ENDPOINT = "/v2beta/stable-image/edit/inpaint"
+
+
+class StabilityAIPresets(Enum):
+    THREE_D_MODEL = "3d-model"
+    ANALOG_FILM = "analog-film"
+    ANIME = "anime"
+    CINEMATIC = "cinematic"
+    COMIC_BOOK = "comic-book"
+    DIGITAL_ART = "digital-art"
+    ENHANCE = "enhance"
+    FANTASY_ART = "fantasy-art"
+    ISOMETRIC = "isometric"
+    LINE_ART = "line-art"
+    LOW_POLY = "low-poly"
+    MODELING_COMPOUND = "modeling-compound"
+    NEON_PUNK = "neon-punk"
+    ORIGAMI = "origami"
+    PHOTOGRAPHIC = "photographic"
+    PIXEL_ART = "pixel-art"
+    TILE_TEXTURE = "tile-texture"
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -161,7 +182,23 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
-    
+
+    invert_segmentation_mask: Union[
+        Selector(kind=[BOOLEAN_KIND]),
+        bool,
+    ] = Field(
+        default=False,
+        description="Invert segmentation mask to inpaint background instead of foreground.",
+    )
+
+    preset: Optional[StabilityAIPresets] = Field(
+        default=None,
+        description="Optional preset to apply when outpainting the image (what you wish to see)."
+        " If not provided, the image will be outpainted without any preset."
+        f" Avaliable presets: {', '.join(m.value for m in StabilityAIPresets)}",
+        examples=[StabilityAIPresets.THREE_D_MODEL],
+    )
+
     seed: Optional[Union[int, Selector(kind=[INTEGER_KIND])]] = Field(
         default=None,
         description="Random seed for reproducible generation in local execution.",
@@ -213,7 +250,9 @@ class StabilityAIInpaintingBlockV2(WorkflowBlock):
         api_key: Optional[str],
         num_inference_steps: Optional[int],
         guidance_scale: Optional[float],
-        seed: Optional[int],
+        invert_segmentation_mask: bool,
+        preset: Optional[StabilityAIPresets] = None,
+        seed: Optional[int] = None,
     ) -> BlockResult:
         # Validate API key for cloud mode
         if execution_mode == "cloud" and not api_key:
@@ -234,9 +273,15 @@ class StabilityAIInpaintingBlockV2(WorkflowBlock):
                 x1, y1, x2, y2 = map(int, xyxy)
                 full_mask[y1:y2, x1:x2] = 255
         
+        if invert_segmentation_mask:
+            full_mask = cv2.bitwise_not(full_mask)
         # Apply Gaussian blur to soften edges
         mask = cv2.GaussianBlur(full_mask, (15, 15), 0)
         
+        preset = (
+            preset.value if preset in set(e.value for e in StabilityAIPresets) else None
+        )
+
         if execution_mode == "cloud":
             result_image = self._run_cloud_inference(
                 image=image.numpy_image,
@@ -244,6 +289,8 @@ class StabilityAIInpaintingBlockV2(WorkflowBlock):
                 prompt=prompt,
                 negative_prompt=negative_prompt,
                 api_key=api_key,
+                seed=seed,
+                preset=preset,
             )
         else:  # local
             result_image = self._run_local_inference(
@@ -270,6 +317,8 @@ class StabilityAIInpaintingBlockV2(WorkflowBlock):
         prompt: str,
         negative_prompt: Optional[str],
         api_key: str,
+        seed: Optional[int] = None,
+        preset: Optional[str] = None,
     ) -> np.ndarray:
         """Run inference using Stability AI cloud API."""
         encoded_image = numpy_array_to_jpeg_bytes(image=image)
@@ -283,6 +332,12 @@ class StabilityAIInpaintingBlockV2(WorkflowBlock):
         if negative_prompt:
             request_data["negative_prompt"] = negative_prompt
         
+        if seed is not None:
+            request_data["seed"] = seed
+        
+        if preset:
+            request_data["preset"] = preset
+
         response = requests.post(
             f"{API_HOST}{ENDPOINT}",
             headers={"authorization": f"Bearer {api_key}", "accept": "image/*"},
