@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Any, Deque, Dict, Iterable, List, Optional, TypeVar
 
 import supervision as sv
+from aiortc import RTCPeerConnection
 
 from inference.core.interfaces.camera.entities import (
     StatusUpdate,
@@ -254,3 +255,14 @@ class BasePipelineWatchDog(PipelineWatchDog):
             inference_throughput=_inference_throughput_fps,
             sources_metadata=sources_metadata,
         )
+
+
+class WebRTCPipelineWatchDog(BasePipelineWatchDog):
+    def __init__(self, webrtc_peer_connection: RTCPeerConnection):
+        super().__init__()
+        self._webrtc_peer_connection = webrtc_peer_connection
+
+    def on_status_update(self, status_update: StatusUpdate) -> None:
+        if status_update.severity.value <= UpdateSeverity.DEBUG.value:
+            return None
+        self._stream_updates.append(status_update)
