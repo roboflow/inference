@@ -19,7 +19,7 @@ def main(
     results = []
     for image_id, image in tqdm(dataset, desc="Making predictions..."):
         predictions = model(image)
-        serialized = serialize_results(predictions=predictions)
+        serialized = serialize_results(predictions=predictions[0].to_supervision())
         results.append((image_id, serialized))
     for image_id, serialized in tqdm(results, desc="Saving results"):
         target_path = os.path.join(output_dir, f"{image_id}.json")
