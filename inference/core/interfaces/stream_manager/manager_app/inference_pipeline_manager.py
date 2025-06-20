@@ -257,15 +257,12 @@ class InferencePipelineManager(Process):
             to_inference_queue = SyncAsyncQueue(loop=loop, maxsize=10)
             from_inference_queue = SyncAsyncQueue(loop=loop, maxsize=10)
 
-            stop_event = Event()
-
             future = asyncio.run_coroutine_threadsafe(
                 init_rtc_peer_connection(
                     webrtc_offer=webrtc_offer,
                     webrtc_turn_config=webrtc_turn_config,
                     to_inference_queue=to_inference_queue,
                     from_inference_queue=from_inference_queue,
-                    feedback_stop_event=stop_event,
                     asyncio_loop=loop,
                     webcam_fps=webcam_fps,
                     max_consecutive_timeouts=parsed_payload.max_consecutive_timeouts,
@@ -276,7 +273,6 @@ class InferencePipelineManager(Process):
                 loop,
             )
             peer_connection: RTCPeerConnectionWithFPS = future.result()
-            self._watchdog = WebRTCPipelineWatchDog(webrtc_peer_connection=peer_connection)
 
             self._responses_queue.put(
                 (
@@ -292,9 +288,21 @@ class InferencePipelineManager(Process):
             webrtc_producer = partial(
                 WebRTCVideoFrameProducer,
                 to_inference_queue=to_inference_queue,
-                stop_event=stop_event,
                 webrtc_video_transform_track=peer_connection.video_transform_track,
             )
+
+            self._watchdog = WebRTCPipelineWatchDog(
+                webrtc_peer_connection=peer_connection, asyncio_loop=loop
+            )
+
+            def close_peer_connection():
+                asyncio.run_coroutine_threadsafe(peer_connection.close(), loop)
+                while not peer_connection._consumers_signalled:
+                    time.sleep(0.1)
+                self._stop = True
+                logger.debug(
+                    "peer_connection closed and associated async loop terminated"
+                )
 
             def webrtc_sink(
                 prediction: Dict[str, WorkflowImageData], video_frame: VideoFrame
@@ -370,51 +378,35 @@ class InferencePipelineManager(Process):
             KeyError,
             NotImplementedError,
         ) as error:
-            error_message = "Could not decode InferencePipeline initialisation command payload."
-            peer_connection.video_transform_track.stop()
-            asyncio.run_coroutine_threadsafe(peer_connection.close(), loop)
-            loop.stop()
-            t.join()
+            close_peer_connection()
             self._handle_error(
                 request_id=request_id,
                 error=error,
-                public_error_message=error_message,
+                public_error_message="Could not decode InferencePipeline initialisation command payload.",
                 error_type=ErrorType.INVALID_PAYLOAD,
             )
         except RoboflowAPINotAuthorizedError as error:
-            error_message = "Invalid API key used or API key is missing. Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key"
-            peer_connection.video_transform_track.stop()
-            asyncio.run_coroutine_threadsafe(peer_connection.close(), loop)
-            loop.stop()
-            t.join()
+            close_peer_connection()
             self._handle_error(
                 request_id=request_id,
                 error=error,
-                public_error_message=error_message,
+                public_error_message="Invalid API key used or API key is missing. Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key",
                 error_type=ErrorType.AUTHORISATION_ERROR,
             )
         except RoboflowAPINotNotFoundError as error:
-            error_message = "Requested Roboflow resources (models / workflows etc.) not available or wrong API key used."
-            peer_connection.video_transform_track.stop()
-            asyncio.run_coroutine_threadsafe(peer_connection.close(), loop)
-            loop.stop()
-            t.join()
+            close_peer_connection()
             self._handle_error(
                 request_id=request_id,
                 error=error,
-                public_error_message=error_message,
+                public_error_message="Requested Roboflow resources (models / workflows etc.) not available or wrong API key used.",
                 error_type=ErrorType.NOT_FOUND,
             )
         except WorkflowSyntaxError as error:
-            error_message = "Provided workflow configuration is not valid."
-            peer_connection.video_transform_track.stop()
-            asyncio.run_coroutine_threadsafe(peer_connection.close(), loop)
-            loop.stop()
-            t.join()
+            close_peer_connection()
             self._handle_error(
                 request_id=request_id,
                 error=error,
-                public_error_message=error_message,
+                public_error_message="Provided workflow configuration is not valid.",
                 error_type=ErrorType.INVALID_PAYLOAD,
             )
 

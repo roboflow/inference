@@ -1,7 +1,7 @@
 import asyncio
 import concurrent.futures
+import datetime
 import time
-from threading import Event
 from typing import Dict, List, Optional, Tuple
 
 import cv2 as cv
@@ -25,6 +25,9 @@ from inference.core.interfaces.camera.entities import (
     StatusUpdate,
     UpdateSeverity,
     VideoFrameProducer,
+)
+from inference.core.interfaces.stream.inference_pipeline import (
+    INFERENCE_THREAD_FINISHED_EVENT,
 )
 from inference.core.interfaces.stream.watchdog import BasePipelineWatchDog
 from inference.core.interfaces.stream_manager.manager_app.entities import (
@@ -105,8 +108,6 @@ class VideoTransformTrack(VideoStreamTrack):
         if not self._av_logging_set:
             av_logging.set_libav_level(av_logging.ERROR)
             self._av_logging_set = True
-        if not self._track_active:
-            raise MediaStreamError("Track was set inactive, shutting down.")
         frame: VideoFrame = await self.track.recv()
         self._processed += 1
         if not self.incoming_stream_fps:
@@ -201,37 +202,25 @@ class WebRTCVideoFrameProducer(VideoFrameProducer):
     def __init__(
         self,
         to_inference_queue: "SyncAsyncQueue[VideoFrame]",
-        stop_event: Event,
         webrtc_video_transform_track: VideoTransformTrack,
     ):
         self.to_inference_queue: "SyncAsyncQueue[VideoFrame]" = to_inference_queue
-        self._stop_event = stop_event
         self._w: Optional[int] = None
         self._h: Optional[int] = None
         self._video_transform_track = webrtc_video_transform_track
         self._is_opened = True
 
     def grab(self) -> bool:
-        if self._stop_event.is_set():
-            logger.info("Received termination signal, closing.")
-            self._is_opened = False
-            return False
-
         res = self.to_inference_queue.sync_get()
         if res is None:
-            self._stop_event.set()
+            logger.debug("Received termination signal")
             return False
         return True
 
     def retrieve(self) -> Tuple[bool, Optional[np.ndarray]]:
-        if self._stop_event.is_set():
-            logger.info("Received termination signal, closing.")
-            self._is_opened = False
-            return False, None
-
         frame: VideoFrame = self.to_inference_queue.sync_get()
         if frame is None:
-            self._stop_event.set()
+            logger.debug("Received termination signal")
             return False, None
         img = frame.to_ndarray(format="bgr24")
 
@@ -263,17 +252,27 @@ class RTCPeerConnectionWithFPS(RTCPeerConnection):
     def __init__(self, video_transform_track: VideoTransformTrack, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.video_transform_track: VideoTransformTrack = video_transform_track
+        self._consumers_signalled: bool = False
 
 
 class WebRTCPipelineWatchDog(BasePipelineWatchDog):
-    def __init__(self, webrtc_peer_connection: RTCPeerConnectionWithFPS):
+    def __init__(
+        self,
+        webrtc_peer_connection: RTCPeerConnectionWithFPS,
+        asyncio_loop: asyncio.AbstractEventLoop,
+    ):
         super().__init__()
         self._webrtc_peer_connection = webrtc_peer_connection
+        self._asyncio_loop = asyncio_loop
 
     def on_status_update(self, status_update: StatusUpdate) -> None:
-        if status_update.severity.value >= UpdateSeverity.ERROR.value:
-            self._webrtc_peer_connection.close()
-            self._webrtc_peer_connection.video_transform_track.close()
+        if status_update.event_type == INFERENCE_THREAD_FINISHED_EVENT:
+            logger.debug(
+                "InferencePipeline thread finished, closing WebRTC peer connection"
+            )
+            asyncio.run_coroutine_threadsafe(
+                self._webrtc_peer_connection.close(), self._asyncio_loop
+            )
         if status_update.severity.value <= UpdateSeverity.DEBUG.value:
             return None
         self._stream_updates.append(status_update)
@@ -283,7 +282,6 @@ async def init_rtc_peer_connection(
     webrtc_offer: WebRTCOffer,
     to_inference_queue: "SyncAsyncQueue[VideoFrame]",
     from_inference_queue: "SyncAsyncQueue[np.ndarray]",
-    feedback_stop_event: Event,
     asyncio_loop: asyncio.AbstractEventLoop,
     processing_timeout: float,
     fps_probe_frames: int,
@@ -330,11 +328,15 @@ async def init_rtc_peer_connection(
         logger.debug("Connection state is %s", peer_connection.connectionState)
         if peer_connection.connectionState in {"failed", "closed"}:
             logger.info("Stopping WebRTC peer")
-            video_transform_track.close()
-            logger.info("Signalling WebRTC termination to the caller")
-            feedback_stop_event.set()
-            await to_inference_queue.async_put(None)
             await peer_connection.close()
+            logger.debug("Signalling WebRTC termination to frames consumer")
+            if not await to_inference_queue.async_full():
+                await to_inference_queue.async_put(None)
+            else:
+                await to_inference_queue.async_get_nowait()
+                await to_inference_queue.async_put_nowait(None)
+            peer_connection._consumers_signalled = True
+            logger.debug("'connectionstatechange' event handler finished")
 
     await peer_connection.setRemoteDescription(
         RTCSessionDescription(sdp=webrtc_offer.sdp, type=webrtc_offer.type)

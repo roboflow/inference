@@ -8,8 +8,8 @@ from collections import deque
 from datetime import datetime
 from typing import Any, Deque, Dict, Iterable, List, Optional, TypeVar
 
-from aiortc import RTCPeerConnection
 import supervision as sv
+from aiortc import RTCPeerConnection
 
 from inference.core.interfaces.camera.entities import (
     StatusUpdate,
