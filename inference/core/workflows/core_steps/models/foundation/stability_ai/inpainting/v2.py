@@ -20,6 +20,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    BOOLEAN_KIND,
     FLOAT_KIND,
     IMAGE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -249,7 +250,7 @@ class StabilityAIInpaintingBlockV2(WorkflowBlock):
         api_key: Optional[str],
         num_inference_steps: Optional[int],
         guidance_scale: Optional[float],
-        invert_segmentation_mask: bool,
+        invert_segmentation_mask: bool = False,
         preset: Optional[StabilityAIPresets] = None,
         seed: Optional[int] = None,
     ) -> BlockResult:
