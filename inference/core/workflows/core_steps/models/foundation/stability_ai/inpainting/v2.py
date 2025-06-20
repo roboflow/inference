@@ -2,8 +2,8 @@
 Stability AI Inpainting v2 - supports both cloud API and local execution
 """
 
-from enum import Enum
 import os
+from enum import Enum
 from typing import List, Literal, Optional, Type, Union
 
 import cv2
@@ -13,6 +13,8 @@ import supervision as sv
 from pydantic import ConfigDict, Field
 
 from inference.core.logger import logger
+from inference.core.managers.base import ModelManager
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
@@ -31,8 +33,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-from inference.core.managers.base import ModelManager
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 
 # Global cache for the Stable Diffusion pipeline
 _CACHED_SD_PIPELINE = None
@@ -368,8 +368,8 @@ class StabilityAIInpaintingBlockV2(WorkflowBlock):
     ) -> np.ndarray:
         """Run inference using local Stable Diffusion model."""
         try:
-            from diffusers import StableDiffusionInpaintPipeline
             import torch
+            from diffusers import StableDiffusionInpaintPipeline
             from PIL import Image as PILImage
         except ImportError:
             raise ImportError(
