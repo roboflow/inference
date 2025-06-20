@@ -921,10 +921,14 @@ class SerializedOwlV2(RoboflowInferenceModel):
     def load_model_artifacts_from_cache(self):
         if DEVICE == "cpu":
             self.model_data = torch.load(
-                self.cache_file(self.weights_file), map_location="cpu"
+                self.cache_file(self.weights_file),
+                map_location="cpu",
+                weights_only=False,
             )
         else:
-            self.model_data = torch.load(self.cache_file(self.weights_file))
+            self.model_data = torch.load(
+                self.cache_file(self.weights_file), weights_only=False
+            )
         self.class_names = self.model_data["class_names"]
         self.train_data_dict = self.model_data["train_data_dict"]
         self.huggingface_id = self.model_data["huggingface_id"]
