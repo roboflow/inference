@@ -69,7 +69,6 @@ class VITForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):
             model_package_dir=model_name_or_path,
             elements=[
                 "environment.json",
-                "model_type.json",
                 "best.onnx",
             ],
         )
