@@ -8,6 +8,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from functools import partial
 from multiprocessing import Process, Queue
+from queue import Empty
 from socketserver import BaseRequestHandler, BaseServer
 from threading import Lock, Thread
 from types import FrameType
@@ -297,7 +298,10 @@ def get_response_ignoring_thrash(
     responses_queue: Queue, matching_request_id: str
 ) -> dict:
     while True:
-        response = responses_queue.get()
+        try:
+            response = responses_queue.get(timeout=SOCKET_TIMEOUT)
+        except Empty:
+            return {}
         if response[0] == matching_request_id:
             return response[1]
         logger.warning(
@@ -410,6 +414,7 @@ def check_process_health() -> None:
                         == INFERENCE_THREAD_FINISHED_EVENT
                     ):
                         # pipeline was already terminated
+                        process.terminate()
                         process.join()
                         del PROCESSES_TABLE[pipeline_id]
                         continue
