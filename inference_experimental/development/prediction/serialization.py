@@ -1,6 +1,6 @@
 import json
 import os.path
-from typing import Any
+from typing import Any, Union
 
 import supervision as sv
 
@@ -30,7 +30,7 @@ def sv_key_points_to_json(key_points: sv.KeyPoints) -> dict:
     }
 
 
-def dump_json(path: str, content: dict) -> None:
+def dump_json(path: str, content: Union[dict, list]) -> None:
     prent_dir = os.path.dirname(path)
     os.makedirs(prent_dir, exist_ok=True)
     with open(path, "w") as f:
