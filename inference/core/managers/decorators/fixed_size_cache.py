@@ -38,6 +38,8 @@ class WithFixedSizeCache(ModelManagerDecorator):
         api_key: str,
         model_id_alias: Optional[str] = None,
         endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
+        countinference: bool = None,
+        service_secret: str = None,
     ) -> None:
         """Adds a model to the manager and evicts the least recently used if the cache is full.
 
@@ -95,6 +97,8 @@ class WithFixedSizeCache(ModelManagerDecorator):
                 api_key,
                 model_id_alias=model_id_alias,
                 endpoint_type=endpoint_type,
+                countinference=countinference,
+                service_secret=service_secret,
             )
         except Exception as error:
             logger.debug(
