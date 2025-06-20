@@ -147,7 +147,7 @@ class YOLOv8ForInstanceSegmentationTRT(
                     pre_processed_images=pre_processed_images,
                     trt_config=self._trt_config,
                     engine=self._engine,
-                    context=self._cuda_context,
+                    context=self._execution_context,
                     device=self._device,
                     input_name="images",
                     outputs=["output0", "output1"],
