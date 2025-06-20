@@ -1,8 +1,9 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Generic, List, Optional, Tuple, Union
+from typing import Generic, List, Optional, Tuple, Union
 
 import numpy as np
+import supervision as sv
 import torch
 from inference_exp.models.base.object_detection import Detections
 from inference_exp.models.base.types import (
@@ -21,6 +22,13 @@ class KeyPoints:
     key_points_metadata: Optional[List[dict]] = (
         None  # if given, list of size equal to # of instances
     )
+
+    def to_supervision(self) -> sv.KeyPoints:
+        return sv.KeyPoints(
+            xy=self.xy.cpu().numpy(),
+            class_id=self.class_id.cpu().numpy(),
+            confidence=self.confidence.cpu().numpy(),
+        )
 
 
 class KeyPointsDetectionModel(

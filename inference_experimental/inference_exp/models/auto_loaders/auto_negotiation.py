@@ -472,12 +472,6 @@ def trt_package_matches_runtime_environment(
                 f"Mode package with id '{model_package.package_id}' filtered out as TRT python package not available"
             )
         return False
-    if not runtime_x_ray.cuda_version:
-        if verbose:
-            print(
-                f"Mode package with id '{model_package.package_id}' filtered out as cuda libraries not detected"
-            )
-        return False
     if model_package.environment_requirements is None:
         if verbose:
             print(
@@ -542,15 +536,6 @@ def trt_package_matches_runtime_environment(
                     f"Mode package with id '{model_package.package_id}' filtered out as package trt version {model_environment.trt_version} does not match runtime trt version: {runtime_x_ray.trt_version}"
                 )
             return False
-        if not verify_version_larger_equal_up_to_major_and_minor(
-            runtime_x_ray.cuda_version, model_environment.cuda_version
-        ):
-            if verbose:
-                print(
-                    f"Mode package with id '{model_package.package_id}' filtered out as package cuda version {model_environment.cuda_version} does not match runtime cuda version: {runtime_x_ray.cuda_version}"
-                )
-            return False
-        return True
     if not isinstance(model_environment, ServerEnvironmentRequirements):
         raise ModelPackageNegotiationError(
             f"Model package negotiation protocol not implemented for environment specification detected "
@@ -590,14 +575,6 @@ def trt_package_matches_runtime_environment(
         if verbose:
             print(
                 f"Mode package with id '{model_package.package_id}' filtered out as package trt version {model_environment.trt_version} does not match runtime trt version: {runtime_x_ray.trt_version}"
-            )
-        return False
-    if not verify_version_larger_equal_up_to_major_and_minor(
-        runtime_x_ray.cuda_version, model_environment.cuda_version
-    ):
-        if verbose:
-            print(
-                f"Mode package with id '{model_package.package_id}' filtered out as package cuda version {model_environment.cuda_version} does not match runtime cuda version: {runtime_x_ray.cuda_version}"
             )
         return False
     return True

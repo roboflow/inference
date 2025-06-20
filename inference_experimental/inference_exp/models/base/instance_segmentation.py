@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import Generic, List, Optional, Tuple, Union
 
 import numpy as np
+import supervision as sv
 import torch
 from inference_exp.models.base.types import (
     PreprocessedInputs,
@@ -21,6 +22,14 @@ class InstanceDetections:
     bboxes_metadata: Optional[List[dict]] = (
         None  # if given, list of size equal to # of bboxes
     )
+
+    def to_supervision(self) -> sv.Detections:
+        return sv.Detections(
+            xyxy=self.xyxy.cpu().numpy(),
+            class_id=self.class_id.cpu().numpy(),
+            confidence=self.confidence.cpu().numpy(),
+            mask=self.mask.cpu().numpy(),
+        )
 
 
 class InstanceSegmentationModel(

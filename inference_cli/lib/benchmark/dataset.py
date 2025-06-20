@@ -36,7 +36,7 @@ def load_dataset_images(dataset_reference: str) -> List[np.ndarray]:
     return download_images(urls=PREDEFINED_DATASETS[dataset_reference])
 
 
-def load_images(
+def load_images(2
     directory: str, max_images_to_load: int = MAX_IMAGES_TO_LOAD
 ) -> List[np.ndarray]:
     file_paths = sorted(
