@@ -60,8 +60,7 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/perception_encoder@v1"]
     name: str = Field(description="Unique name of step in workflows")
     data: Union[
-        Selector(kind=[IMAGE_KIND]),
-        Selector(kind=[STRING_KIND]),
+        Selector(kind=[IMAGE_KIND, STRING_KIND]),
         str,
     ] = Field(
         title="Data",
