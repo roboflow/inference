@@ -19,6 +19,9 @@ def main(
     model_package_id: Optional[str] = None,
 ) -> None:
     print(f"Testing model speed: {model_id}")
+    results_path = os.path.join(output_dir, "benchmark.json")
+    if os.path.exists(results_path):
+        print("Skipping the tests, results exist.")
     dataset = download_dataset()
     images = [e[1] for e in dataset]
     model = AutoModel.from_pretrained(model_name_or_path=model_id, requested_model_package_id=model_package_id)
@@ -34,7 +37,6 @@ def main(
             batch_size=batch_size,
         )
         results.append(result)
-    results_path = os.path.join(output_dir, "benchmark.json")
     dump_json(path=results_path, content=results)
 
 
