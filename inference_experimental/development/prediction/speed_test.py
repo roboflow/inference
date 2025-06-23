@@ -22,6 +22,7 @@ def main(
     results_path = os.path.join(output_dir, "benchmark.json")
     if os.path.exists(results_path):
         print("Skipping the tests, results exist.")
+        return None
     dataset = download_dataset()
     images = [e[1] for e in dataset]
     model = AutoModel.from_pretrained(model_name_or_path=model_id, requested_model_package_id=model_package_id)
