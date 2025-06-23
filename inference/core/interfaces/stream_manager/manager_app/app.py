@@ -8,7 +8,6 @@ from collections import deque
 from dataclasses import dataclass, field
 from functools import partial
 from multiprocessing import Process, Queue
-from queue import Empty
 from socketserver import BaseRequestHandler, BaseServer
 from threading import Lock, Thread
 from types import FrameType
@@ -298,10 +297,7 @@ def get_response_ignoring_thrash(
     responses_queue: Queue, matching_request_id: str
 ) -> dict:
     while True:
-        try:
-            response = responses_queue.get(timeout=SOCKET_TIMEOUT)
-        except Empty:
-            return {}
+        response = responses_queue.get(timeout=SOCKET_TIMEOUT)
         if response[0] == matching_request_id:
             return response[1]
         logger.warning(
