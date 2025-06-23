@@ -169,7 +169,6 @@ class YOLOv7ForInstanceSegmentationTRT(
         conf_thresh: float = 0.25,
         iou_thresh: float = 0.45,
         max_detections: int = 100,
-        mask_threshold: float = 0.5,
         class_agnostic: bool = False,
         **kwargs,
     ) -> List[InstanceDetections]:
@@ -188,7 +187,6 @@ class YOLOv7ForInstanceSegmentationTRT(
             pre_processed_masks = preprocess_segmentation_masks(
                 protos=image_protos,
                 masks_in=image_bboxes[:, 6:],
-                mask_threshold=mask_threshold,
             )
             cropped_masks = crop_masks_to_boxes(
                 image_bboxes[:, :4], pre_processed_masks

@@ -243,11 +243,8 @@ def rescale_key_points_detections(
 def preprocess_segmentation_masks(
     protos: torch.Tensor,
     masks_in: torch.Tensor,
-    mask_threshold: float,
 ) -> torch.Tensor:
-    masks_sum = torch.einsum("chw,nc->nhw", protos, masks_in)
-    masks_sigmoid = torch.sigmoid(masks_sum)
-    return masks_sigmoid > mask_threshold
+    return torch.einsum("chw,nc->nhw", protos, masks_in)
 
 
 def crop_masks_to_boxes(
@@ -306,5 +303,5 @@ def align_instance_segmentation_results(
         masks,
         [original_size.height, original_size.width],
         interpolation=functional.InterpolationMode.BILINEAR,
-    )
+    ).gt_(0.0)
     return image_bboxes, masks
