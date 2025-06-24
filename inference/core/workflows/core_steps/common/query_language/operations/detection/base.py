@@ -46,10 +46,10 @@ DETECTION_PROPERTY_EXTRACTION = {
         x[0][0] + (x[0][2] - x[0][0]) / 2,
         x[0][1] + (x[0][3] - x[0][1]) / 2,
     ),
-    DetectionsProperty.TOP_LEFT: lambda xyxy: (xyxy[0], xyxy[1]),
-    DetectionsProperty.TOP_RIGHT: lambda xyxy: (xyxy[2], xyxy[1]),
-    DetectionsProperty.BOTTOM_LEFT: lambda xyxy: (xyxy[0], xyxy[3]),
-    DetectionsProperty.BOTTOM_RIGHT: lambda xyxy: (xyxy[2], xyxy[3]),
+    DetectionsProperty.TOP_LEFT: lambda x: (x[0][0].item(), x[0][1].item()),
+    DetectionsProperty.TOP_RIGHT: lambda x: (x[0][2].item(), x[0][1].item()),
+    DetectionsProperty.BOTTOM_LEFT: lambda x: (x[0][0].item(), x[0][3].item()),
+    DetectionsProperty.BOTTOM_RIGHT: lambda x: (x[0][2].item(), x[0][3].item()),
     DetectionsProperty.IN_OUT: lambda x: x[5].get(DETECTIONS_IN_OUT_PARAM),
     DetectionsProperty.PATH_DEVIATION: lambda x: x[5].get(
         PATH_DEVIATION_KEY_IN_SV_DETECTIONS

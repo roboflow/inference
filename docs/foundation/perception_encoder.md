@@ -97,8 +97,15 @@ Run the code to use Perception Encoder on your webcam.
 
 **Note:** The model will take a minute or two to load. You will not see output while the model is loading.
 
+## Using PE in Workflows
+
+Perception Encoder can be used in Roboflow Workflows via the
+**Perception Encoder Embedding Model** block. This block lets you generate
+embeddings for images or text without writing code.
+
 ## API Compatibility
 
 The Perception Encoder model uses the **same API as CLIP**. This means you can use all the same methods and request/response formats as you would with CLIP, including `embed_text`, `embed_image`, and `compare`.
 
 For more details and advanced usage, see the [CLIP documentation](./clip.md).
+
