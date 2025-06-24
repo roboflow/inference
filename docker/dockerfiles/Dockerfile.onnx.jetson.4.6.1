@@ -12,6 +12,7 @@ RUN apt-get update -y && apt-get upgrade -y && apt-get install -y \
     libssl-dev \ 
     libreadline-dev \
     libffi-dev \
+    libsqlite3-dev \
     curl \
     libbz2-dev \
     software-properties-common \
@@ -29,7 +30,6 @@ RUN apt-get update -y && apt-get upgrade -y && apt-get install -y \
     python3-pip \
     python3-matplotlib \
     gfortran \
-    build-essential \
     libatlas-base-dev \
     libsm6 \
     libxext6 \
