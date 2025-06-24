@@ -102,7 +102,7 @@ class WorkflowParameter(WorkflowInput):
     type: Literal["WorkflowParameter", "InferenceParameter"]
     name: str
     kind: List[Union[str, Kind]] = Field(default_factory=lambda: [WILDCARD_KIND])
-    default_value: Optional[Union[float, int, str, bool, list, set]] = Field(
+    default_value: Optional[Union[float, int, str, bool, list, set, dict]] = Field(
         default=None
     )
     dimensionality: int = Field(default=0, ge=0, le=0)

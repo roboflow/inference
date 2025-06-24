@@ -87,7 +87,7 @@ zone can also help, but can affect zooming.
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "ONVIF Control",
+            "name": "PTZ Tracking (ONVIF)",
             "version": "v1",
             "short_description": "Control an ONVIF compatible PTZ camera to follow an object",
             "long_description": LONG_DESCRIPTION,

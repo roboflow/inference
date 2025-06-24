@@ -297,7 +297,7 @@ def get_response_ignoring_thrash(
     responses_queue: Queue, matching_request_id: str
 ) -> dict:
     while True:
-        response = responses_queue.get()
+        response = responses_queue.get(timeout=SOCKET_TIMEOUT)
         if response[0] == matching_request_id:
             return response[1]
         logger.warning(
@@ -410,6 +410,7 @@ def check_process_health() -> None:
                         == INFERENCE_THREAD_FINISHED_EVENT
                     ):
                         # pipeline was already terminated
+                        process.terminate()
                         process.join()
                         del PROCESSES_TABLE[pipeline_id]
                         continue

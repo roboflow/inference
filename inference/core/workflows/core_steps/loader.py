@@ -203,6 +203,9 @@ from inference.core.workflows.core_steps.models.foundation.openai.v2 import (
 from inference.core.workflows.core_steps.models.foundation.openai.v3 import (
     OpenAIBlockV3,
 )
+from inference.core.workflows.core_steps.models.foundation.perception_encoder.v1 import (
+    PerceptionEncoderModelBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.qwen.v1 import (
     Qwen25VLBlockV1,
 )
@@ -217,6 +220,9 @@ from inference.core.workflows.core_steps.models.foundation.stability_ai.image_ge
 )
 from inference.core.workflows.core_steps.models.foundation.stability_ai.inpainting.v1 import (
     StabilityAIInpaintingBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.stability_ai.outpainting.v1 import (
+    StabilityAIOutpaintingBlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.yolo_world.v1 import (
     YoloWorldModelBlockV1,
@@ -558,6 +564,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ClipComparisonBlockV1,
         ClipComparisonBlockV2,
         ClipModelBlockV1,
+        PerceptionEncoderModelBlockV1,
         CogVLMBlockV1,
         ColorVisualizationBlockV1,
         ConvertGrayscaleBlockV1,
@@ -615,6 +622,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         SegmentAnything2BlockV1,
         StabilityAIInpaintingBlockV1,
         StabilityAIImageGenBlockV1,
+        StabilityAIOutpaintingBlockV1,
         StabilizeTrackedDetectionsBlockV1,
         StitchImagesBlockV1,
         StitchOCRDetectionsBlockV1,
