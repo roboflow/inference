@@ -26,7 +26,6 @@ from inference.core.models.utils.onnx import has_trt
 from inference.core.utils.image_utils import load_image
 from inference.core.utils.onnx import ImageMetaType, run_session_via_iobinding
 from inference.core.utils.preprocess import letterbox_image
-from inference.core.entities.responses.inference import ObjectDetectionInferenceResponse
 
 if USE_PYTORCH_FOR_PREPROCESSING:
     import torch
