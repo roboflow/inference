@@ -26,6 +26,7 @@ from inference.core.models.utils.onnx import has_trt
 from inference.core.utils.image_utils import load_image
 from inference.core.utils.onnx import ImageMetaType, run_session_via_iobinding
 from inference.core.utils.preprocess import letterbox_image
+from inference.core.entities.responses.inference import ObjectDetectionInferenceResponse
 
 if USE_PYTORCH_FOR_PREPROCESSING:
     import torch
@@ -240,7 +241,9 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         return (bboxes, logits)
 
     def sigmoid_stable(self, x):
-        return np.where(x >= 0, 1 / (1 + np.exp(-x)), np.exp(x) / (1 + np.exp(x)))
+        # More efficient, branchless, numerically stable sigmoid computation
+        z = np.exp(-np.abs(x))
+        return np.where(x >= 0, 1 / (1 + z), z / (1 + z))
 
     def postprocess(
         self,
@@ -266,7 +269,13 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
 
             logits_flat = logits_sigmoid[batch_idx].reshape(-1)
 
-            sorted_indices = np.argsort(-logits_flat)[:max_detections]
+            # Use argpartition for better performance when max_detections is smaller than logits_flat
+            partition_indices = np.argpartition(-logits_flat, max_detections)[
+                :max_detections
+            ]
+            sorted_indices = partition_indices[
+                np.argsort(-logits_flat[partition_indices])
+            ]
             topk_scores = logits_flat[sorted_indices]
 
             conf_mask = topk_scores > confidence
