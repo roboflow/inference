@@ -54,8 +54,8 @@ class ModelManager:
         api_key: str,
         model_id_alias: Optional[str] = None,
         endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
-        countinference: bool = None,
-        service_secret: str = None,
+        countinference: Optional[bool] = None,
+        service_secret: Optional[str] = None,
     ) -> None:
         """Adds a new model to the manager.
 
@@ -66,7 +66,11 @@ class ModelManager:
         """
         if MODELS_CACHE_AUTH_ENABLED:
             if not _check_if_api_key_has_access_to_model(
-                api_key=api_key, model_id=model_id, endpoint_type=endpoint_type
+                api_key=api_key,
+                model_id=model_id,
+                endpoint_type=endpoint_type,
+                countinference=countinference,
+                service_secret=service_secret,
             ):
                 raise RoboflowAPINotAuthorizedError(
                     f"API key {api_key} does not have access to model {model_id}"

@@ -1,7 +1,6 @@
 import asyncio
 import base64
 import os
-import traceback
 from functools import partial, wraps
 from time import sleep
 from typing import Any, Dict, List, Optional, Union
@@ -762,12 +761,17 @@ class HttpInterface(BaseInterface):
             )
 
         async def process_inference_request(
-            inference_request: InferenceRequest, **kwargs
+            inference_request: InferenceRequest,
+            countinference: Optional[bool] = None,
+            service_secret: Optional[str] = None,
+            **kwargs,
         ) -> InferenceResponse:
             """Processes an inference request by calling the appropriate model.
 
             Args:
                 inference_request (InferenceRequest): The request containing model ID and other inference details.
+                countinference (Optional[bool]): Whether to count inference for usage.
+                service_secret (Optional[str]): The service secret.
 
             Returns:
                 InferenceResponse: The response containing the inference results.
@@ -775,9 +779,6 @@ class HttpInterface(BaseInterface):
             de_aliased_model_id = resolve_roboflow_model_alias(
                 model_id=inference_request.model_id
             )
-            # Extract countinference and service_secret from kwargs if available
-            countinference = kwargs.get("countinference", None)
-            service_secret = kwargs.get("service_secret", None)
             self.model_manager.add_model(
                 de_aliased_model_id,
                 inference_request.api_key,
@@ -869,12 +870,7 @@ class HttpInterface(BaseInterface):
         """Loads the CLIP model into the model manager.
 
         Args:
-            inference_request: The request containing version and other details.
-            api_key: The API key for the request.
-            countinference: Whether to count inference or not.
-            service_secret: The service secret for the request.
-        inference_request: The request containing version and other details.
-        api_key: The API key for the request.
+        Same as `load_core_model`.
 
         Returns:
         The CLIP model ID.
@@ -884,8 +880,7 @@ class HttpInterface(BaseInterface):
         """Loads the Perception Encoder model into the model manager.
 
         Args:
-        inference_request: The request containing version and other details.
-        api_key: The API key for the request.
+        Same as `load_core_model`.
 
         Returns:
         The Perception Encoder model ID.
@@ -895,8 +890,7 @@ class HttpInterface(BaseInterface):
         """Loads the SAM model into the model manager.
 
         Args:
-        inference_request: The request containing version and other details.
-        api_key: The API key for the request.
+        Same as `load_core_model`.
 
         Returns:
         The SAM model ID.
@@ -905,8 +899,7 @@ class HttpInterface(BaseInterface):
         """Loads the SAM2 model into the model manager.
 
         Args:
-        inference_request: The request containing version and other details.
-        api_key: The API key for the request.
+        Same as `load_core_model`.
 
         Returns:
         The SAM2 model ID.
@@ -916,8 +909,7 @@ class HttpInterface(BaseInterface):
         """Loads the GAZE model into the model manager.
 
         Args:
-        inference_request: The request containing version and other details.
-        api_key: The API key for the request.
+        Same as `load_core_model`.
 
         Returns:
         The GAZE model ID.
@@ -927,8 +919,7 @@ class HttpInterface(BaseInterface):
         """Loads the DocTR model into the model manager.
 
         Args:
-        inference_request: The request containing version and other details.
-        api_key: The API key for the request.
+        Same as `load_core_model`.
 
         Returns:
         The DocTR model ID.
@@ -941,8 +932,7 @@ class HttpInterface(BaseInterface):
         """Loads the Grounding DINO model into the model manager.
 
         Args:
-        inference_request: The request containing version and other details.
-        api_key: The API key for the request.
+        Same as `load_core_model`.
 
         Returns:
         The Grounding DINO model ID.
@@ -953,8 +943,7 @@ class HttpInterface(BaseInterface):
         """Loads the YOLO World model into the model manager.
 
         Args:
-        inference_request: The request containing version and other details.
-        api_key: The API key for the request.
+        Same as `load_core_model`.
 
         Returns:
         The YOLO World model ID.
@@ -963,11 +952,8 @@ class HttpInterface(BaseInterface):
         load_trocr_model = partial(load_core_model, core_model="trocr")
         """Loads the TrOCR model into the model manager.
 
-        
-
         Args:
-        inference_request: The request containing version and other details.
-        api_key: The API key for the request.
+        Same as `load_core_model`.
 
         Returns:
         The TrOCR model ID.
@@ -1028,6 +1014,8 @@ class HttpInterface(BaseInterface):
 
                 Args:
                     request (AddModelRequest): The request containing the model ID and optional API key.
+                    countinference (Optional[bool]): Whether to count inference or not.
+                    service_secret (Optional[str]): The service secret for the request.
 
                 Returns:
                     ModelsDescriptions: The object containing models descriptions
@@ -2757,6 +2745,8 @@ class HttpInterface(BaseInterface):
                     dataset_id (str): ID of a Roboflow dataset corresponding to the model.
                     version_id (str): ID of a Roboflow dataset version corresponding to the model.
                     api_key (str, optional): Roboflow API Key for artifact retrieval.
+                    countinference (Optional[bool]): Whether to count inference or not.
+                    service_secret (Optional[str]): The service secret for the request.
 
                 Returns:
                     JSONResponse: A response object containing the status and a success message.

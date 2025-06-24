@@ -107,6 +107,8 @@ def _check_if_api_key_has_access_to_model(
     api_key: str,
     model_id: str,
     endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
+    countinference: Optional[bool] = None,
+    service_secret: Optional[str] = None,
 ) -> bool:
     model_id = resolve_roboflow_model_alias(model_id=model_id)
     _, version_id = get_model_id_chunks(model_id=model_id)
@@ -117,11 +119,15 @@ def _check_if_api_key_has_access_to_model(
                 model_id=model_id,
                 endpoint_type=endpoint_type,
                 device_id=GLOBAL_DEVICE_ID,
+                countinference=countinference,
+                service_secret=service_secret,
             )
         else:
             get_roboflow_instant_model_data(
                 api_key=api_key,
                 model_id=model_id,
+                countinference=countinference,
+                service_secret=service_secret,
             )
     except RoboflowAPINotAuthorizedError:
         return False
@@ -158,7 +164,10 @@ def get_model_type(
 
     if MODELS_CACHE_AUTH_ENABLED:
         if not _check_if_api_key_has_access_to_model(
-            api_key=api_key, model_id=model_id
+            api_key=api_key,
+            model_id=model_id,
+            countinference=countinference,
+            service_secret=service_secret,
         ):
             raise RoboflowAPINotAuthorizedError(
                 f"API key {api_key} does not have access to model {model_id}"

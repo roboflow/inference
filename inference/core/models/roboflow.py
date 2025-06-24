@@ -281,7 +281,9 @@ class RoboflowInferenceModel(Model):
         return INFER_BUCKET
 
     def download_model_artifacts_from_roboflow_api(
-        self, countinference: bool = None, service_secret: str = None
+        self,
+        countinference: Optional[bool] = None,
+        service_secret: Optional[str] = None,
     ) -> None:
         logger.debug("Downloading model artifacts from Roboflow API")
 
