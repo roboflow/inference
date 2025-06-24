@@ -1,3 +1,5 @@
+from typing import Optional
+
 from inference.core.exceptions import ModelNotRecognisedError
 from inference.core.models.base import Model
 
@@ -21,8 +23,7 @@ class ModelRegistry:
         self,
         model_type: str,
         model_id: str,
-        countinference: bool = None,
-        service_secret: str = None,
+        **kwargs,
     ) -> Model:
         """Returns the model class based on the given model type.
 
