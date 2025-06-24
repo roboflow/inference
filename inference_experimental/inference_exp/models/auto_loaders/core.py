@@ -1,10 +1,10 @@
 import os.path
-from typing import List, Optional, Tuple, Union, Literal
+from typing import List, Optional, Tuple, Union
 
 import torch
 from inference_exp.configuration import DEFAULT_DEVICE, INFERENCE_HOME
 from inference_exp.errors import ModelLoadingError
-from inference_exp.logger import logger
+from inference_exp.logger import LOGGER, verbose_info
 from inference_exp.models.auto_loaders.auto_negotiation import negotiate_model_packages
 from inference_exp.models.auto_loaders.models_registry import (
     ModelArchitecture,
@@ -49,12 +49,12 @@ class AutoModel:
         model_name_or_path: str,
         weights_provider: str = "roboflow",
         api_key: Optional[str] = None,
-        requested_model_package_id: Optional[str] = None,
-        requested_backends: Optional[
+        model_package_id: Optional[str] = None,
+        backends: Optional[
             Union[str, BackendType, List[Union[str, BackendType]]]
         ] = None,
-        requested_batch_size: Optional[Union[int, Tuple[int, int]]] = None,
-        requested_quantization: Optional[
+        batch_size: Optional[Union[int, Tuple[int, int]]] = None,
+        quantization: Optional[
             Union[str, Quantization, List[Union[str, Quantization]]]
         ] = None,
         onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
@@ -75,10 +75,10 @@ class AutoModel:
             )
             matching_model_packages = negotiate_model_packages(
                 model_packages=model_metadata.model_packages,
-                requested_model_package_id=requested_model_package_id,
-                requested_backends=requested_backends,
-                requested_batch_size=requested_batch_size,
-                requested_quantization=requested_quantization,
+                requested_model_package_id=model_package_id,
+                requested_backends=backends,
+                requested_batch_size=batch_size,
+                requested_quantization=quantization,
                 device=device,
                 onnx_execution_providers=onnx_execution_providers,
                 allow_untrusted_packages=allow_untrusted_packages,
@@ -119,13 +119,16 @@ def attempt_loading_matching_model_packages(
         matching_model_packages = matching_model_packages[:max_package_loading_attempts]
     if not matching_model_packages:
         raise ModelLoadingError(
-            f"Cannot load model {model_id} - no matching model package candidates for given model "
-            f"running in this environment."
+            message=f"Cannot load model {model_id} - no matching model package candidates for given model "
+            f"running in this environment.",
+            help_url="https://todo",
         )
     failed_load_attempts: List[Tuple[str, Exception]] = []
     for model_package in matching_model_packages:
-        if verbose:
-            print(f"Attempt to load model package: {model_package.get_summary()}")
+        verbose_info(
+            message=f"Attempt to load model package: {model_package.get_summary()}",
+            verbose_requested=verbose,
+        )
         try:
             return initialize_model(
                 model_id=model_id,
@@ -134,10 +137,9 @@ def attempt_loading_matching_model_packages(
                 model_package=model_package,
                 model_download_file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
                 model_init_kwargs=model_init_kwargs,
-                verbose=verbose,
             )
         except Exception as error:
-            logger.warning(
+            LOGGER.warning(
                 f"Model package with id {model_package.package_id} that was selected to be loaded "
                 f"failed to load with error: {error} of type {error.__class__.__name__}. This may "
                 f"be caused several issues. If you see this warning after manually specifying model "
@@ -153,13 +155,14 @@ def attempt_loading_matching_model_packages(
         for model_package_id, error in failed_load_attempts
     )
     raise ModelLoadingError(
-        f"Could not load any of model package candidate for model {model_id}. This may "
+        message=f"Could not load any of model package candidate for model {model_id}. This may "
         f"be caused several issues. If you see this warning after manually specifying model "
         f"package to be loaded - make sure that all required dependencies are installed. If "
         f"that warning is displayed when the model package was auto-selected - there is most "
         f"likely a bug in `inference` and you should raise an issue providing full context of "
         f"the event. https://github.com/roboflow/inference/issues\n\n"
-        f"Here is the summary of errors for specific model packages:\n{summary_of_errors}"
+        f"Here is the summary of errors for specific model packages:\n{summary_of_errors}",
+        help_url="https://todo",
     )
 
 
@@ -170,9 +173,7 @@ def initialize_model(
     model_package: ModelPackageMetadata,
     model_init_kwargs: dict,
     model_download_file_lock_acquire_timeout: int = 10,
-    verbose: bool = True,
 ) -> AnyModel:
-    print(model_architecture, task_type, model_package.backend)
     model_class = resolve_model_class(
         model_architecture=model_architecture,
         task_type=task_type,
@@ -188,6 +189,5 @@ def initialize_model(
         target_path=model_package_cache_dir,
         files_specs=files_specs,
         file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
-        verbose=verbose,
     )
     return model_class.from_pretrained(model_package_cache_dir, **model_init_kwargs)

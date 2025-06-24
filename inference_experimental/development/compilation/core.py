@@ -6,7 +6,7 @@ from typing import Optional, Union, Tuple, List, Literal
 import onnxruntime
 
 from inference_exp.configuration import ROBOFLOW_API_KEY
-from inference_exp.logger import logger
+from inference_exp.logger import LOGGER
 from inference_exp.models.auto_loaders.auto_negotiation import negotiate_model_packages
 from inference_exp.runtime_introspection.core import x_ray_runtime_environment
 from inference_exp.utils.download import download_files_to_directory
@@ -70,7 +70,7 @@ def compile_model(
                 same_compute_compatibility=same_compute_compatibility,
             )
         except Exception as e:
-            logger.exception(f"Failed to create engine: {e}")
+            LOGGER.exception(f"Failed to create engine: {e}")
 
 
 def select_matching_model_packages(

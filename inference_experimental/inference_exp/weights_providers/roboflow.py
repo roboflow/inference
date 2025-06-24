@@ -17,7 +17,7 @@ from inference_exp.errors import (
     RetryError,
     UnauthorizedModelAccessError,
 )
-from inference_exp.logger import logger
+from inference_exp.logger import LOGGER
 from inference_exp.weights_providers.entities import (
     BackendType,
     FileDownloadSpecs,
@@ -96,8 +96,9 @@ def get_model_metadata(model_id: str, api_key: Optional[str]) -> RoboflowModelMe
         all_model_packages.extend(page.model_packages)
     if not fetched_pages or not all_model_packages:
         raise ModelRetrievalError(
-            f"Could not retrieve model {model_id} from Roboflow API. Backend provided empty list of model "
-            f"packages `inference` library could load. Contact Roboflow to solve the problem."
+            message=f"Could not retrieve model {model_id} from Roboflow API. Backend provided empty list of model "
+            f"packages `inference` library could load. Contact Roboflow to solve the problem.",
+            help_url="https://todo",
         )
     fetched_pages[-1].model_packages = all_model_packages
     return fetched_pages[-1]
@@ -130,36 +131,40 @@ def get_one_page_of_model_metadata(
             timeout=API_CALLS_TIMEOUT,
         )
     except (OSError, Timeout, requests.exceptions.ConnectionError):
-        raise RetryError(f"Connectivity error")
+        raise RetryError(message=f"Connectivity error", help_url="https://todo",)
     if response.status_code in IDEMPOTENT_API_REQUEST_CODES_TO_RETRY:
-        raise RetryError(f"Roboflow API responded with {response.status_code}")
+        raise RetryError(message=f"Roboflow API responded with {response.status_code}", help_url="https://todo")
     handle_response_errors(response=response, operation_name="get model weights")
     try:
         return RoboflowModelMetadata.model_validate(response.json()["modelMetadata"])
     except (ValueError, ValidationError, KeyError) as error:
         raise ModelRetrievalError(
-            f"Could not decode Roboflow API response when trying to retrieve model {model_id}. If that problem "
-            f"is not ephemeral - contact Roboflow."
+            message=f"Could not decode Roboflow API response when trying to retrieve model {model_id}. If that problem "
+            f"is not ephemeral - contact Roboflow.",
+            help_url="https://todo",
         ) from error
 
 
 def handle_response_errors(response: Response, operation_name: str) -> None:
     if response.status_code in IDEMPOTENT_API_REQUEST_CODES_TO_RETRY:
         raise RetryError(
-            f"Roboflow API returned invalid response code for {operation_name} operation "
-            f"{response.status_code}. If that problem is not ephemeral - contact Roboflow."
+            message=f"Roboflow API returned invalid response code for {operation_name} operation "
+            f"{response.status_code}. If that problem is not ephemeral - contact Roboflow.",
+            help_url="https://todo",
         )
     if response.status_code == 401:
         raise UnauthorizedModelAccessError(
-            f"Could not {operation_name}. Request unauthorised. Are you sure you use valid Roboflow API key? "
+            message=f"Could not {operation_name}. Request unauthorised. Are you sure you use valid Roboflow API key? "
             "See details here: https://docs.roboflow.com/api-reference/authentication and "
-            "export key to `ROBOFLOW_API_KEY` environment variable"
+            "export key to `ROBOFLOW_API_KEY` environment variable",
+            help_url="https://todo",
         )
     if response.status_code >= 400:
         response_payload = get_error_response_payload(response=response)
         raise ModelRetrievalError(
-            f"Roboflow API returned invalid response code for {operation_name} operation "
-            f"{response.status_code}.\n\nResponse:\n{response_payload}"
+            message=f"Roboflow API returned invalid response code for {operation_name} operation "
+            f"{response.status_code}.\n\nResponse:\n{response_payload}",
+            help_url="https://todo",
         )
 
 
@@ -177,7 +182,7 @@ def parse_model_package_metadata(
         print(metadata)
         metadata_type = metadata.get("type", "unknown")
         model_package_id = metadata.get("packageId", "unknown")
-        logger.warning(
+        LOGGER.warning(
             "Roboflow API returned entity describing model package which cannot be parsed. This may indicate that "
             f"your `inference` package is outdated. "
             f"Debug info - entity type: `{metadata_type}`, model package id: {model_package_id}"
@@ -187,7 +192,7 @@ def parse_model_package_metadata(
     if manifest_type in MODEL_PACKAGES_TO_IGNORE:
         return None
     if manifest_type not in MODEL_PACKAGE_PARSERS:
-        logger.warning(
+        LOGGER.warning(
             "Roboflow API returned entity describing model package which cannot be parsed. This may indicate that "
             f"your `inference` package is outdated. "
             f"Debug info - package manifest type: `{manifest_type}`."
@@ -197,8 +202,9 @@ def parse_model_package_metadata(
         return MODEL_PACKAGE_PARSERS[manifest_type](metadata)
     except Exception as error:
         raise ModelMetadataConsistencyError(
-            "Roboflow API returned model package metadata which cannot be parsed. Contact Roboflow to "
-            f"solve the problem. Error details: {error}. Error type: {error.__class__.__name__}"
+            message="Roboflow API returned model package metadata which cannot be parsed. Contact Roboflow to "
+            f"solve the problem. Error details: {error}. Error type: {error.__class__.__name__}",
+            help_url="https://todo",
         ) from error
 
 
@@ -219,9 +225,10 @@ def parse_onnx_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageMe
         and parsed_manifest.static_batch_size is None
     ):
         raise ModelMetadataConsistencyError(
-            "While downloading model weights, Roboflow API provided inconsistent metadata "
+            message="While downloading model weights, Roboflow API provided inconsistent metadata "
             "describing model package - ONNX package declared not to support dynamic batch size and "
-            "supported static batch size not provided. Contact Roboflow to solve the problem."
+            "supported static batch size not provided. Contact Roboflow to solve the problem.",
+            help_url="https://todo",
         )
     package_artefacts = parse_package_artefacts(
         package_artefacts=metadata.package_files
@@ -284,16 +291,18 @@ def parse_trt_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageMet
         and parsed_manifest.static_batch_size is None
     ):
         raise ModelMetadataConsistencyError(
-            "While downloading model weights, Roboflow API provided inconsistent metadata "
+            message="While downloading model weights, Roboflow API provided inconsistent metadata "
             "describing model package - ONNX package declared not to support dynamic batch size and "
-            "supported static batch size not provided. Contact Roboflow to solve the problem."
+            "supported static batch size not provided. Contact Roboflow to solve the problem.",
+            help_url="https://todo",
         )
     if parsed_manifest.machine_type == "gpu-server":
         if not isinstance(parsed_manifest.machine_specs, GPUServerSpecsV1):
             raise ModelMetadataConsistencyError(
-                "While downloading model weights, Roboflow API provided inconsistent metadata "
+                message="While downloading model weights, Roboflow API provided inconsistent metadata "
                 "describing model package - expected GPU Server specification for TRT model package registered as "
-                "compiled on gpu-server. Contact Roboflow to solve the problem."
+                "compiled on gpu-server. Contact Roboflow to solve the problem.",
+                help_url="https://todo",
             )
         environment_requirements = ServerEnvironmentRequirements(
             cuda_device_cc=as_version(parsed_manifest.cuda_device_cc),
@@ -306,9 +315,10 @@ def parse_trt_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageMet
     elif parsed_manifest.machine_type == "jetson":
         if not isinstance(parsed_manifest.machine_specs, JetsonMachineSpecsV1):
             raise ModelMetadataConsistencyError(
-                "While downloading model weights, Roboflow API provided inconsistent metadata "
+                message="While downloading model weights, Roboflow API provided inconsistent metadata "
                 "describing model package - expected Jetson Device specification for TRT model package registered as "
-                "compiled on Jetson. Contact Roboflow to solve the problem."
+                "compiled on Jetson. Contact Roboflow to solve the problem.",
+                help_url="https://todo",
             )
         environment_requirements = JetsonEnvironmentRequirements(
             cuda_device_cc=as_version(parsed_manifest.cuda_device_cc),
@@ -321,9 +331,10 @@ def parse_trt_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageMet
         )
     else:
         raise ModelMetadataHandlerNotImplementedError(
-            "While downloading model weights, Roboflow API provided metadata which are not handled by current version "
+            message="While downloading model weights, Roboflow API provided metadata which are not handled by current version "
             "of inference detected while parsing TRT model package. This problem may indicate that your inference "
-            "package is outdated. Try to upgrade - if that does not help, contact Roboflow to solve the problem."
+            "package is outdated. Try to upgrade - if that does not help, contact Roboflow to solve the problem.",
+            help_url="https://todo",
         )
     package_artefacts = parse_package_artefacts(
         package_artefacts=metadata.package_files

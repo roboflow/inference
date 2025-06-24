@@ -15,7 +15,7 @@ def main(
     model_package_id: Optional[str] = None,
 ) -> None:
     dataset = download_dataset()
-    model = AutoModel.from_pretrained(model_name_or_path=model_id, requested_model_package_id=model_package_id)
+    model = AutoModel.from_pretrained(model_name_or_path=model_id, model_package_id=model_package_id)
     results = []
     for image_id, image in tqdm(dataset, desc="Making predictions..."):
         predictions = model(image)

@@ -14,9 +14,10 @@ def parse_class_names_file(class_names_path: str) -> List[str]:
         return list(stream_file_lines(path=class_names_path))
     except OSError as error:
         raise CorruptedModelPackageError(
-            f"Could not decode file {class_names_path} which is supposed to provide list of model class names. "
+            message=f"Could not decode file {class_names_path} which is supposed to provide list of model class names. "
             f"If you created model package manually, please verify its consistency in docs. In case that the "
-            f"weights are hosted on the Roboflow platform - contact support."
+            f"weights are hosted on the Roboflow platform - contact support.",
+            help_url="https://todo",
         ) from error
 
 
@@ -83,10 +84,11 @@ def parse_pre_processing_config(environment_file_path: str) -> PreProcessingConf
         raise ValueError("could not determine resize method or padding color")
     except (IOError, OSError, ValueError) as error:
         raise CorruptedModelPackageError(
-            f"Environment file located under path {environment_file_path} is malformed: "
+            message=f"Environment file located under path {environment_file_path} is malformed: "
             f"{error}. In case that the package is "
             f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
-            f"verify its consistency in docs."
+            f"verify its consistency in docs.",
+            help_url="https://todo",
         ) from error
 
 
@@ -114,10 +116,11 @@ def parse_model_characteristics(config_path: str) -> ModelCharacteristics:
             )
     except (IOError, OSError, ValueError) as error:
         raise CorruptedModelPackageError(
-            f"Model type config file located under path {config_path} is malformed: "
+            message=f"Model type config file located under path {config_path} is malformed: "
             f"{error}. In case that the package is "
             f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
-            f"verify its consistency in docs."
+            f"verify its consistency in docs.",
+            help_url="https://todo",
         ) from error
 
 
@@ -148,10 +151,11 @@ def parse_key_points_metadata(key_points_metadata_path: str) -> List[List[str]]:
             return result
     except (IOError, OSError, ValueError) as error:
         raise CorruptedModelPackageError(
-            f"Key points config file located under path {key_points_metadata_path} is malformed: "
+            message=f"Key points config file located under path {key_points_metadata_path} is malformed: "
             f"{error}. In case that the package is "
             f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
-            f"verify its consistency in docs."
+            f"verify its consistency in docs.",
+            help_url="https://todo",
         ) from error
 
 
@@ -202,10 +206,11 @@ def parse_trt_config(config_path: str) -> TRTConfig:
             return config
     except (IOError, OSError, ValueError) as error:
         raise CorruptedModelPackageError(
-            f"TRT config file located under path {config_path} is malformed: "
+            message=f"TRT config file located under path {config_path} is malformed: "
             f"{error}. In case that the package is "
             f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
-            f"verify its consistency in docs."
+            f"verify its consistency in docs.",
+            help_url="https://todo",
         ) from error
 
 
@@ -226,8 +231,9 @@ def parse_class_map_from_environment_file(environment_file_path: str) -> List[st
             return class_map
     except (IOError, OSError, ValueError) as error:
         raise CorruptedModelPackageError(
-            f"Environment file located under path {environment_file_path} is malformed: "
+            message=f"Environment file located under path {environment_file_path} is malformed: "
             f"{error}. In case that the package is "
             f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
-            f"verify its consistency in docs."
+            f"verify its consistency in docs.",
+            help_url="https://todo",
         ) from error

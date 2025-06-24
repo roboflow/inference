@@ -52,7 +52,7 @@ def rank_model_packages(
                 BATCH_SIZE_PRIORITY[batch_mode],
                 static_batch_size_score,  # the bigger statis batch size, the worse - requires padding
                 retrieve_onnx_opset(model_package),  # the higher opset, the better
-                retrieve_trt_forward_compatible_match(model_package),
+                retrieve_trt_forward_compatible_match(model_package),  # exact matches first
                 retrieve_same_trt_cc_compatibility(model_package),
                 retrieve_cuda_device_match(
                     model_package

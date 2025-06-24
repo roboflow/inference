@@ -222,7 +222,8 @@ def resolve_jetson_type(jetson_module_name: str) -> str:
         if jetson_module_name.startswith(jetson_device):
             return jetson_device.replace(" ", "-").lower()
     raise JetsonTypeResolutionError(
-        f"Could not resolve jetson type. Value found in environment: {jetson_module_name}"
+        message=f"Could not resolve jetson type. Value found in environment: {jetson_module_name}",
+        help_url="https://todo",
     )
 
 

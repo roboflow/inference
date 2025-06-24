@@ -21,11 +21,12 @@ try:
     from groundingdino.util.inference import load_model, predict
 except ImportError as import_error:
     raise MissingDependencyError(
-        f"Could not import GroundingDino model - this error means that some additional dependencies "
+        message=f"Could not import GroundingDino model - this error means that some additional dependencies "
         f"are not installed in the environment. If you run the `inference` library directly in your Python "
         f"program, make sure the following extras of the package are installed: `grounding-dino`."
         f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
-        f"You can also contact Roboflow to get support."
+        f"You can also contact Roboflow to get support.",
+        help_url="https://todo",
     ) from import_error
 
 
@@ -122,10 +123,14 @@ class GroundingDinoForObjectDetectionTorch(
             )
         if not isinstance(images, list):
             raise ModelRuntimeError(
-                "Pre-processing supports only np.array or torch.Tensor or list of above."
+                message="Pre-processing supports only np.array or torch.Tensor or list of above.",
+                help_url="https://todo",
             )
         if not len(images):
-            raise ModelRuntimeError("Detected empty input to the model")
+            raise ModelRuntimeError(
+                message="Detected empty input to the model",
+                help_url="https://todo",
+            )
         if isinstance(images[0], np.ndarray):
             input_color_format = input_color_format or "bgr"
             pre_processed, image_dimensions = [], []
@@ -151,7 +156,8 @@ class GroundingDinoForObjectDetectionTorch(
                 pre_processed.append(self._tensors_transformations(image.float()))
             return torch.cat(pre_processed, dim=0).to(self._device), image_dimensions
         raise ModelRuntimeError(
-            f"Detected unknown input batch element: {type(images[0])}"
+            message=f"Detected unknown input batch element: {type(images[0])}",
+            help_url="https://todo",
         )
 
     def forward(

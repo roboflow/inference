@@ -12,7 +12,8 @@ def str2bool(value: Any) -> bool:
         return value
     if not issubclass(type(value), str):
         raise InvalidEnvVariable(
-            f"Expected a boolean environment variable (true or false) but got '{value}'"
+            message=f"Expected a boolean environment variable (true or false) but got '{value}'",
+            help_url="https://todo",
         )
     if value.lower() == "true":
         return True
@@ -20,5 +21,6 @@ def str2bool(value: Any) -> bool:
         return False
     else:
         raise InvalidEnvVariable(
-            f"Expected a boolean environment variable (true or false) but got '{value}'"
+            message=f"Expected a boolean environment variable (true or false) but got '{value}'",
+            help_url="https://todo",
         )

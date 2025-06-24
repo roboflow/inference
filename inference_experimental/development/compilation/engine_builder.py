@@ -4,10 +4,10 @@ from typing import Optional, Tuple, Literal
 
 import tensorrt as trt
 
-from inference_exp.logger import logger
+from inference_exp.logger import LOGGER
 from inference_exp.models.common.trt import InferenceTRTLogger
 
-logger.setLevel(logging.INFO)
+LOGGER.setLevel(logging.INFO)
 
 
 class EngineBuilder:
@@ -38,23 +38,23 @@ class EngineBuilder:
         onnx_path = os.path.realpath(onnx_path)
         with open(onnx_path, "rb") as f:
             if not self.parser.parse(f.read()):
-                logger.error("Failed to load ONNX file: {}".format(onnx_path))
+                LOGGER.error("Failed to load ONNX file: {}".format(onnx_path))
                 for error in range(self.parser.num_errors):
-                    logger.error(self.parser.get_error(error))
+                    LOGGER.error(self.parser.get_error(error))
                 raise RuntimeError("Could not parse ONNX file")
 
         inputs = [self.network.get_input(i) for i in range(self.network.num_inputs)]
         outputs = [self.network.get_output(i) for i in range(self.network.num_outputs)]
 
-        logger.info("Network Description")
+        LOGGER.info("Network Description")
         for input in inputs:
-            logger.info(
+            LOGGER.info(
                 "Input '{}' with shape {} and dtype {}".format(
                     input.name, input.shape, input.dtype
                 )
             )
         for output in outputs:
-            logger.info(
+            LOGGER.info(
                 "Output '{}' with shape {} and dtype {}".format(
                     output.name, output.shape, output.dtype
                 )
@@ -73,17 +73,17 @@ class EngineBuilder:
         engine_path = os.path.abspath(engine_path)
         engine_dir = os.path.dirname(engine_path)
         os.makedirs(engine_dir, exist_ok=True)
-        logger.info("Building {} Engine in {}".format(precision, engine_path))
+        LOGGER.info("Building {} Engine in {}".format(precision, engine_path))
         inputs = [self.network.get_input(i) for i in range(self.network.num_inputs)]
         if len(inputs) != 1:
             raise ValueError("Detected network with multiple inputs")
         if precision in ["fp16", "int8"]:
             if not self.builder.platform_has_fast_fp16:
-                logger.warning("FP16 is not supported natively on this platform/device")
+                LOGGER.warning("FP16 is not supported natively on this platform/device")
             self.config.set_flag(trt.BuilderFlag.FP16)
         if precision in ["int8"]:
             if not self.builder.platform_has_fast_int8:
-                logger.warning("INT8 is not supported natively on this platform/device")
+                LOGGER.warning("INT8 is not supported natively on this platform/device")
             self.config.set_flag(trt.BuilderFlag.INT8)
         if trt_version_compatible:
             self.config.set_flag(trt.BuilderFlag.VERSION_COMPATIBLE)
@@ -99,5 +99,5 @@ class EngineBuilder:
         if engine_bytes is None:
             raise ValueError("Failed to create image")
         with open(engine_path, "wb") as f:
-            logger.info("Serializing engine to file: {:}".format(engine_path))
+            LOGGER.info("Serializing engine to file: {:}".format(engine_path))
             f.write(engine_bytes)

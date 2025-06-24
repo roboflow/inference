@@ -46,10 +46,11 @@ def pre_process_network_input(
         )
     if not isinstance(images, list):
         raise ModelRuntimeError(
-            "Pre-processing supports only np.array or torch.Tensor or list of above."
+            message="Pre-processing supports only np.array or torch.Tensor or list of above.",
+            help_url="https://todo",
         )
     if not len(images):
-        raise ModelRuntimeError("Detected empty input to the model")
+        raise ModelRuntimeError(message="Detected empty input to the model", help_url="https://todo")
     if isinstance(images[0], np.ndarray):
         return pre_process_numpy_images_list(
             images=images,
@@ -70,7 +71,7 @@ def pre_process_network_input(
             rescaling_constant=rescaling_constant,
             normalization=normalization,
         )
-    raise ModelRuntimeError(f"Detected unknown input batch element: {type(images[0])}")
+    raise ModelRuntimeError(message=f"Detected unknown input batch element: {type(images[0])}", help_url="https://todo")
 
 
 @torch.inference_mode()
@@ -88,8 +89,9 @@ def pre_process_images_tensor(
         or pre_processing_config.target_size is None
     ):
         raise ModelRuntimeError(
-            "Could not pre-process data before model inference - pre-processing configuration "
-            "does not specify input resizing."
+            message="Could not pre-process data before model inference - pre-processing configuration "
+            "does not specify input resizing.",
+            help_url="https://todo",
         )
     if input_color_format is None:
         input_color_format = "rgb"
@@ -133,7 +135,8 @@ def pre_process_images_tensor(
         return images.contiguous(), [metadata] * images.shape[0]
     if pre_processing_config.mode is not PreProcessingMode.LETTERBOX:
         raise ModelRuntimeError(
-            f"Cannot find implementation for pre-processing operation: {pre_processing_config.mode}"
+            message=f"Cannot find implementation for pre-processing operation: {pre_processing_config.mode}",
+            help_url="https://todo",
         )
     original_height, original_width = images.shape[2], images.shape[3]
     scale_w = pre_processing_config.target_size.width / original_width
@@ -202,8 +205,9 @@ def pre_process_images_tensor_list(
         or pre_processing_config.target_size is None
     ):
         raise ModelRuntimeError(
-            "Could not pre-process data before model inference - pre-processing configuration "
-            "does not specify input resizing."
+            message="Could not pre-process data before model inference - pre-processing configuration "
+            "does not specify input resizing.",
+            help_url="https://todo",
         )
     if input_color_format is None:
         input_color_format = "rgb"
@@ -215,7 +219,8 @@ def pre_process_images_tensor_list(
         for img in images:
             if len(img.shape) != 3:
                 raise ModelRuntimeError(
-                    "When providing List[torch.Tensor] as input, model requires tensors to have 3 dimensions."
+                    message="When providing List[torch.Tensor] as input, model requires tensors to have 3 dimensions.",
+                    help_url="https://todo",
                 )
             if img.device != target_device:
                 img = img.to(target_device)
@@ -316,7 +321,8 @@ def pre_process_images_tensor_list(
             )
         return final_batch.contiguous(), images_metadata
     raise ModelRuntimeError(
-        f"Unsupported pre-processing mode: {pre_processing_config.mode}"
+        message=f"Unsupported pre-processing mode: {pre_processing_config.mode}",
+        help_url="https://todo",
     )
 
 
@@ -360,8 +366,9 @@ def pre_process_numpy_image(
         or pre_processing_config.target_size is None
     ):
         raise ModelRuntimeError(
-            "Could not pre-process data before model inference - pre-processing configuration "
-            "does not specify input resizing."
+            message="Could not pre-process data before model inference - pre-processing configuration "
+            "does not specify input resizing.",
+            help_url="https://todo",
         )
     if input_color_format is None:
         input_color_format = "bgr"
@@ -445,7 +452,8 @@ def pre_process_numpy_image(
             )
         return final_batch.contiguous(), [image_metadata]
     raise ModelRuntimeError(
-        f"Unsupported pre-processing mode: {pre_processing_config.mode}"
+        message=f"Unsupported pre-processing mode: {pre_processing_config.mode}",
+        help_url="https://todo",
     )
 
 
@@ -465,10 +473,11 @@ def extract_input_images_dimensions(
         return image_dimensions
     if not isinstance(images, list):
         raise ModelRuntimeError(
-            "Pre-processing supports only np.array or torch.Tensor or list of above."
+            message="Pre-processing supports only np.array or torch.Tensor or list of above.",
+            help_url="https://todo",
         )
     if not len(images):
-        raise ModelRuntimeError("Detected empty input to the model")
+        raise ModelRuntimeError(message="Detected empty input to the model", help_url="https://todo")
     if isinstance(images[0], np.ndarray):
         return [ImageDimensions(height=i.shape[0], width=i.shape[1]) for i in images]
     if isinstance(images[0], torch.Tensor):
@@ -478,7 +487,7 @@ def extract_input_images_dimensions(
                 ImageDimensions(height=image.shape[2], width=image.shape[3])
             )
         return image_dimensions
-    raise ModelRuntimeError(f"Detected unknown input batch element: {type(images[0])}")
+    raise ModelRuntimeError(message=f"Detected unknown input batch element: {type(images[0])}", help_url="https://todo")
 
 
 def images_to_pillow(
@@ -509,10 +518,11 @@ def images_to_pillow(
         return result, dimensions
     if not isinstance(images, list):
         raise ModelRuntimeError(
-            "Pre-processing supports only np.array or torch.Tensor or list of above."
+            message="Pre-processing supports only np.array or torch.Tensor or list of above.",
+            help_url="https://todo",
         )
     if not len(images):
-        raise ModelRuntimeError("Detected empty input to the model")
+        raise ModelRuntimeError(message="Detected empty input to the model", help_url="https://todo")
     if isinstance(images[0], np.ndarray):
         input_color_format = input_color_format or "bgr"
         if input_color_format != model_color_format:
@@ -535,4 +545,4 @@ def images_to_pillow(
                 ImageDimensions(height=np_image.shape[0], width=np_image.shape[1])
             )
         return result, dimensions
-    raise ModelRuntimeError(f"Detected unknown input batch element: {type(images[0])}")
+    raise ModelRuntimeError(message=f"Detected unknown input batch element: {type(images[0])}", help_url="https://todo")

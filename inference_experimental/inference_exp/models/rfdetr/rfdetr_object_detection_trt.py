@@ -27,19 +27,20 @@ try:
     import tensorrt as trt
 except ImportError as import_error:
     raise MissingDependencyError(
-        f"Could not import RFDetr model with TRT backend - this error means that some additional dependencies "
+        message=f"Could not import RFDetr model with TRT backend - this error means that some additional dependencies "
         f"are not installed in the environment. If you run the `inference` library directly in your Python "
         f"program, make sure the following extras of the package are installed: `trt10` - installation can only "
         f"succeed for Linux and Windows machines with Cuda 12 installed. Jetson devices, should have TRT 10.x "
         f"installed for all builds with Jetpack 6. "
         f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
-        f"You can also contact Roboflow to get support."
+        f"You can also contact Roboflow to get support.",
+        help_url="https://todo",
     ) from import_error
 
 try:
     import pycuda.driver as cuda
 except ImportError as import_error:
-    raise MissingDependencyError("TODO") from import_error
+    raise MissingDependencyError(message="TODO", help_url="https://todo") from import_error
 
 
 class RFDetrForObjectDetectionTRT(
@@ -60,7 +61,8 @@ class RFDetrForObjectDetectionTRT(
     ) -> "RFDetrForObjectDetectionTRT":
         if device.type != "cuda":
             raise ModelRuntimeError(
-                f"TRT engine only runs on CUDA device - {device} device detected."
+                message="TRT engine only runs on CUDA device - {device} device detected.",
+                help_url="https://todo",
             )
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,

@@ -136,8 +136,9 @@ def resolve_model_class(
         backend=backend,
     ):
         raise ModelImplementationLoaderError(
-            f"Did not find implementation for model with architecture: {model_architecture}, "
-            f"task type: {task_type} and backend: {backend}"
+            message=f"Did not find implementation for model with architecture: {model_architecture}, "
+            f"task type: {task_type} and backend: {backend}",
+            help_url="https://todo",
         )
     return REGISTERED_MODELS[(model_architecture, task_type, backend)].resolve()
 

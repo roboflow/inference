@@ -346,7 +346,8 @@ class Florence2HF:
         if isinstance(prompt, list):
             if len(prompt) != len(image_dimensions):
                 raise ModelRuntimeError(
-                    "Provided prompt as list, but the number of prompt elements does not match number of input images."
+                    message="Provided prompt as list, but the number of prompt elements does not match number of input images.",
+                    help_url="https://todo",
                 )
         else:
             prompt = [prompt] * len(image_dimensions)
@@ -413,14 +414,15 @@ def region_to_loc_phrase(
         xyxy = xyxy.tolist()
     image_dimensions = extract_input_images_dimensions(images=images)
     if not xyxy:
-        raise ModelRuntimeError("Provided empty region grounding.")
+        raise ModelRuntimeError(message="Provided empty region grounding.", help_url="https://todo")
     nested = isinstance(xyxy[0], list)
     if not nested:
         xyxy = [xyxy] * len(image_dimensions)
     if len(xyxy) != len(image_dimensions):
         raise ModelRuntimeError(
-            "Provided multiple regions - it is expected to provide a single region for each image, but number "
-            "of regions does not match number of input images."
+            message="Provided multiple regions - it is expected to provide a single region for each image, but number "
+            "of regions does not match number of input images.",
+            help_url="https://todo",
         )
     result = []
     for image_xyxy, single_image_dimensions in zip(xyxy, image_dimensions):

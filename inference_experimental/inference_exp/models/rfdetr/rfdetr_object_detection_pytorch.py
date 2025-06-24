@@ -7,7 +7,7 @@ from inference_exp import Detections, ObjectDetectionModel
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
 from inference_exp.errors import CorruptedModelPackageError, ModelRuntimeError
-from inference_exp.logger import logger
+from inference_exp.logger import LOGGER
 from inference_exp.models.common.model_packages import get_model_package_contents
 from inference_exp.models.common.roboflow.model_packages import (
     PreProcessingConfig,
@@ -74,8 +74,9 @@ class RFDetrForObjectDetectionTorch(
         )
         if model_characteristics.model_type not in CONFIG_FOR_MODEL_TYPE:
             raise CorruptedModelPackageError(
-                f"Model package describes model_type as '{model_characteristics.model_type}' which is not supported. "
-                f"Supported model types: {list(CONFIG_FOR_MODEL_TYPE.keys())}."
+                message=f"Model package describes model_type as '{model_characteristics.model_type}' which is not supported. "
+                f"Supported model types: {list(CONFIG_FOR_MODEL_TYPE.keys())}.",
+                help_url="https://todo",
             )
         model_config = CONFIG_FOR_MODEL_TYPE[model_characteristics.model_type](
             device=device
@@ -172,7 +173,7 @@ class RFDetrForObjectDetectionTorch(
             self._inference_model is None
             and not self._has_warned_about_not_being_optimized_for_inference
         ):
-            logger.warning(
+            LOGGER.warning(
                 "Model is not optimized for inference. "
                 "Latency may be higher than expected. "
                 "You can optimize the model for inference by calling model.optimize_for_inference()."
@@ -183,18 +184,20 @@ class RFDetrForObjectDetectionTorch(
                 pre_processed_images.shape[2:]
             ):
                 raise ModelRuntimeError(
-                    f"Resolution mismatch. Model was optimized for resolution {self._resolution}, "
+                    message=f"Resolution mismatch. Model was optimized for resolution {self._resolution}, "
                     f"but got {tuple(pre_processed_images.shape[2:])}. "
-                    "You can explicitly remove the optimized model by calling model.remove_optimized_model()."
+                    "You can explicitly remove the optimized model by calling model.remove_optimized_model().",
+                    help_url="https://todo",
                 )
             if self._optimized_has_been_compiled:
                 if self._optimized_batch_size != pre_processed_images.shape[0]:
                     raise ModelRuntimeError(
-                        "Batch size mismatch. Optimized model was compiled for batch size "
+                        message="Batch size mismatch. Optimized model was compiled for batch size "
                         f"{self._optimized_batch_size}, but got {pre_processed_images.shape[0]}. "
                         "You can explicitly remove the optimized model by calling model.remove_optimized_model(). "
                         "Alternatively, you can recompile the optimized model for a different batch size "
-                        "by calling model.optimize_for_inference(batch_size=<new_batch_size>)."
+                        "by calling model.optimize_for_inference(batch_size=<new_batch_size>).",
+                        help_url="https://todo",
                     )
         with torch.inference_mode():
             if self._inference_model:

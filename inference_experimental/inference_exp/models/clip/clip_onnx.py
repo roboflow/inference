@@ -25,7 +25,7 @@ try:
     import onnxruntime
 except ImportError as import_error:
     raise MissingDependencyError(
-        f"Could not import CLIP model with ONNX backend - this error means that some additional dependencies "
+        message=f"Could not import CLIP model with ONNX backend - this error means that some additional dependencies "
         f"are not installed in the environment. If you run the `inference` library directly in your Python "
         f"program, make sure the following extras of the package are installed: \n"
         f"\t* `onnx-cpu` - when you wish to use library with CPU support only\n"
@@ -33,7 +33,8 @@ except ImportError as import_error:
         f"\t* `onnx-cu118` - for running on GPU with Cuda 11.8 installed\n"
         f"\t* `onnx-jp6-cu126` - for running on Jetson with Jetpack 6\n"
         f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
-        f"You can also contact Roboflow to get support."
+        f"You can also contact Roboflow to get support.",
+        help_url="https://todo",
     ) from import_error
 
 
@@ -57,10 +58,11 @@ class ClipOnnx(TextImageEmbeddingModel):
             onnx_execution_providers = ONNXRUNTIME_EXECUTION_PROVIDERS
         if not onnx_execution_providers:
             raise EnvironmentConfigurationError(
-                f"Could not initialize model - selected backend is ONNX which requires execution provider to "
+                message=f"Could not initialize model - selected backend is ONNX which requires execution provider to "
                 f"be specified - explicitly in `from_pretrained(...)` method or via env variable "
                 f"`ONNXRUNTIME_EXECUTION_PROVIDERS`. If you run model locally - adjust your setup, otherwise "
-                f"contact the platform support."
+                f"contact the platform support.",
+                help_url="https://todo",
             )
         onnx_execution_providers = set_execution_provider_defaults(
             providers=onnx_execution_providers,
@@ -189,7 +191,10 @@ class ClipOnnx(TextImageEmbeddingModel):
             images = torch.from_numpy(images).permute(2, 0, 1).to(self._device)
             return self._torch_transforms(images).unsqueeze(dim=0)
         if not len(images):
-            raise ModelRuntimeError("Detected empty input to the model")
+            raise ModelRuntimeError(
+                message="Detected empty input to the model",
+                help_url="https://todo",
+            )
         if isinstance(images[0], np.ndarray):
             input_color_format = input_color_format or "bgr"
             results = []
@@ -211,5 +216,6 @@ class ClipOnnx(TextImageEmbeddingModel):
                 results.append(preprocessed_image)
             return torch.cat(results, dim=0).contiguous()
         raise ModelRuntimeError(
-            f"Detected unknown input batch element: {type(images[0])}"
+            message=f"Detected unknown input batch element: {type(images[0])}",
+            help_url="https://todo",
         )

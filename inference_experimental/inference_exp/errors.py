@@ -1,5 +1,20 @@
+from typing import Optional
+
+
 class BaseInferenceError(Exception):
-    pass
+
+    def __init__(self, message: str, help_url: Optional[str] = None):
+        super().__init__(message)
+        self._help_url = help_url
+
+    @property
+    def help_url(self) -> Optional[str]:
+        return self._help_url
+
+    def __str__(self) -> str:
+        if self._help_url is None:
+            return super().__str__()
+        return f"{super().__str__()} VISIT {self._help_url} FOR FURTHER SUPPORT"
 
 
 class EnvironmentConfigurationError(BaseInferenceError):

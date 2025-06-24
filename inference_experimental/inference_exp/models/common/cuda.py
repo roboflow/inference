@@ -6,7 +6,7 @@ from inference_exp.errors import MissingDependencyError
 try:
     import pycuda.driver as cuda
 except ImportError as import_error:
-    raise MissingDependencyError("TODO") from import_error
+    raise MissingDependencyError(message="TODO", help_url="https://todo",) from import_error
 
 
 @contextlib.contextmanager

@@ -13,12 +13,13 @@ def get_model_package_contents(
     for element in elements:
         if element not in model_package_content:
             raise CorruptedModelPackageError(
-                f"Model package saved under path {model_package_dir} is incomplete. Could not find element {element}. "
+                message="Model package saved under path {model_package_dir} is incomplete. Could not find element {element}. "
                 f"If you attempt to run `inference` locally - inspect the contents of local directory to check for "
                 f"completeness of model package download - lack of files may indicate network issues. Verification "
                 f"of connectivity may be a good first step. If you prepared the model package manually - examine the "
                 f"correctness of the setup. If you run on managed serving - contact support if the issue is "
-                f"not ephemeral."
+                f"not ephemeral.",
+                help_url="https://todo",
             )
         result[element] = model_package_content[element]
     return result

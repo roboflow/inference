@@ -2,7 +2,7 @@ from typing import List, Tuple
 
 import torch
 from inference_exp.errors import ModelRuntimeError, CorruptedModelPackageError, MissingDependencyError
-from inference_exp.logger import logger
+from inference_exp.logger import LOGGER
 from inference_exp.models.common.roboflow.model_packages import TRTConfig
 
 
@@ -10,19 +10,20 @@ try:
     import tensorrt as trt
 except ImportError as import_error:
     raise MissingDependencyError(
-        f"Could not TRT tools required to run models with TRT backend - this error means that some additional "
+        message=f"Could not TRT tools required to run models with TRT backend - this error means that some additional "
         f"dependencies are not installed in the environment. If you run the `inference` library directly in your "
         f"Python program, make sure the following extras of the package are installed: `trt10` - installation can only "
         f"succeed for Linux and Windows machines with Cuda 12 installed. Jetson devices, should have TRT 10.x "
         f"installed for all builds with Jetpack 6. "
         f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
-        f"You can also contact Roboflow to get support."
+        f"You can also contact Roboflow to get support.",
+        help_url="https://todo",
     ) from import_error
 
 try:
     import pycuda.driver as cuda
 except ImportError as import_error:
-    raise MissingDependencyError("TODO") from import_error
+    raise MissingDependencyError(message="TODO", help_url="https://todo",) from import_error
 
 
 class InferenceTRTLogger(trt.ILogger):
@@ -37,13 +38,13 @@ class InferenceTRTLogger(trt.ILogger):
             self._memory.append((severity, msg))
         severity_str = str(severity)
         if severity_str == str(trt.Logger.VERBOSE):
-            log_function = logger.debug
+            log_function = LOGGER.debug
         elif severity_str is str(trt.Logger.INFO):
-            log_function = logger.info
+            log_function = LOGGER.info
         elif severity_str is str(trt.Logger.WARNING):
-            log_function = logger.warning
+            log_function = LOGGER.warning
         else:
-            log_function = logger.error
+            log_function = LOGGER.error
         log_function(msg)
 
     def get_memory(self) -> List[Tuple[trt.ILogger.Severity, str]]:
@@ -215,7 +216,7 @@ def execute_trt_engine(
     stream = torch.cuda.Stream(device=device)
     status = context.execute_async_v3(stream_handle=stream.cuda_stream)
     if not status:
-        raise ModelRuntimeError("Failed to complete inference from TRT model")
+        raise ModelRuntimeError(message="Failed to complete inference from TRT model", help_url="https://todo")
     stream.synchronize()
     return results
 
@@ -243,22 +244,24 @@ def load_model(
                 logger_traces = local_logger.get_memory()
                 logger_traces_str = "\n".join(f"[{severity}] {msg}" for severity, msg in logger_traces)
                 raise CorruptedModelPackageError(
-                    "Could not load TRT engine due to runtime error. This error is usually caused "
+                    message="Could not load TRT engine due to runtime error. This error is usually caused "
                     "by model package incompatibility with runtime environment. If you selected model with "
                     "specific model package to be run - verify that your environment is compatible with your "
                     "package. If the package was selected automatically by the library - this error indicate bug. "
                     "You can help us solving this problem describing the issue: "
                     "https://github.com/roboflow/inference/issues\nBelow you can find debug information provided "
-                    f"by TRT runtime, which may be helpful:\n{logger_traces_str}"
+                    f"by TRT runtime, which may be helpful:\n{logger_traces_str}",
+                    help_url="https://todo",
                 )
             return engine
     except OSError as error:
         raise CorruptedModelPackageError(
-            "Could not load TRT engine - file not found. This error may be caused by "
+            message="Could not load TRT engine - file not found. This error may be caused by "
             "corrupted model package or invalid model path that was provided. If you "
             "initialized the model manually, running the code locally - make sure that provided "
             "path is correct. Otherwise, contact Roboflow to solve the problem: "
-            "https://github.com/roboflow/inference/issues"
+            "https://github.com/roboflow/inference/issues",
+            help_url="https://todo",
         ) from error
 
 

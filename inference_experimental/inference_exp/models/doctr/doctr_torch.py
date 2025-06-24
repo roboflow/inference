@@ -49,19 +49,23 @@ class DocTR(DocumentParsingModel[List[np.ndarray], ImageDimensions, Document]):
         )
         if not os.path.exists(det_model_source_path):
             raise CorruptedModelPackageError(
-                "Could not initialize DocTR model - could not find detection model weights."
+                message="Could not initialize DocTR model - could not find detection model weights.",
+                help_url="https://todo",
             )
         if not os.path.exists(rec_model_source_path):
             raise CorruptedModelPackageError(
-                "Could not initialize DocTR model - could not find recognition model weights."
+                message="Could not initialize DocTR model - could not find recognition model weights.",
+                help_url="https://todo",
             )
         if config.det_model not in WEIGHTS_NAMES_MAPPING:
             raise CorruptedModelPackageError(
-                f"{config.det_model} model denoted in configuration not supported as DocTR detection model."
+                message=f"{config.det_model} model denoted in configuration not supported as DocTR detection model.",
+                help_url="https://todo",
             )
         if config.rec_model not in WEIGHTS_NAMES_MAPPING:
             raise CorruptedModelPackageError(
-                f"{config.det_model} model denoted in configuration not supported as DocTR recognition model."
+                message=f"{config.det_model} model denoted in configuration not supported as DocTR recognition model.",
+                help_url="https://todo",
             )
         det_model_target_path = os.path.join(
             model_name_or_path, "models", WEIGHTS_NAMES_MAPPING[config.det_model]
@@ -123,10 +127,11 @@ class DocTR(DocumentParsingModel[List[np.ndarray], ImageDimensions, Document]):
             return result, dimensions
         if not isinstance(images, list):
             raise ModelRuntimeError(
-                "Pre-processing supports only np.array or torch.Tensor or list of above."
+                message="Pre-processing supports only np.array or torch.Tensor or list of above.",
+                help_url="https://todo",
             )
         if not len(images):
-            raise ModelRuntimeError("Detected empty input to the model")
+            raise ModelRuntimeError(message="Detected empty input to the model", help_url="https://todo")
         if isinstance(images[0], np.ndarray):
             input_color_format = input_color_format or "bgr"
             if input_color_format != "bgr":
@@ -149,7 +154,8 @@ class DocTR(DocumentParsingModel[List[np.ndarray], ImageDimensions, Document]):
                 )
             return result, dimensions
         raise ModelRuntimeError(
-            f"Detected unknown input batch element: {type(images[0])}"
+            message=f"Detected unknown input batch element: {type(images[0])}",
+            help_url="https://todo",
         )
 
     def forward(
@@ -277,8 +283,9 @@ def parse_model_config(config_path: str) -> DocTRConfig:
         )
     except (IOError, OSError, ValueError) as error:
         raise CorruptedModelPackageError(
-            f"Config file located under path {config_path} is malformed: "
+            message=f"Config file located under path {config_path} is malformed: "
             f"{error}. In case that the package is "
             f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
-            f"verify its consistency in docs."
+            f"verify its consistency in docs.",
+            help_url="https://todo",
         ) from error

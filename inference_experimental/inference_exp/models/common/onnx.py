@@ -9,7 +9,7 @@ try:
     import onnxruntime
 except ImportError as import_error:
     raise MissingDependencyError(
-        f"Could not import onnx tools required to run models with ONNX backend - this error means that some additional "
+        message=f"Could not import onnx tools required to run models with ONNX backend - this error means that some additional "
         f"dependencies are not installed in the environment. If you run the `inference` library directly in your "
         f"Python program, make sure the following extras of the package are installed: \n"
         f"\t* `onnx-cpu` - when you wish to use library with CPU support only\n"
@@ -17,7 +17,8 @@ except ImportError as import_error:
         f"\t* `onnx-cu118` - for running on GPU with Cuda 11.8 installed\n"
         f"\t* `onnx-jp6-cu126` - for running on Jetson with Jetpack 6\n"
         f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
-        f"You can also contact Roboflow to get support."
+        f"You can also contact Roboflow to get support.",
+        help_url="https://todo",
     ) from import_error
 
 
@@ -101,7 +102,7 @@ def run_session_via_iobinding(
         import pycuda.driver as cuda
         from inference_exp.models.common.cuda import use_primary_cuda_context
     except ImportError as import_error:
-        raise MissingDependencyError("TODO") from import_error
+        raise MissingDependencyError(message="TODO", help_url="https://todo") from import_error
     cuda.init()
     cuda_device = cuda.Device(device.index or 0)
     with use_primary_cuda_context(cuda_device=cuda_device):
@@ -187,19 +188,21 @@ def auto_cast_session_inputs(
         expected_type = ort_tensor_type_to_torch_tensor_type(ort_input.type)
         if ort_input.name not in inputs:
             raise ModelRuntimeError(
-                "While performing forward pass through the model, library bug was discovered - "
+                message="While performing forward pass through the model, library bug was discovered - "
                 f"required model input named '{ort_input.name}' is missing. Submit "
-                f"issue to help us solving this problem: https://github.com/roboflow/inference/issues"
+                f"issue to help us solving this problem: https://github.com/roboflow/inference/issues",
+                help_url="https://todo",
             )
         actual_type = inputs[ort_input.name].dtype
         if actual_type == expected_type:
             continue
         if not can_model_input_be_casted(source=actual_type, target=expected_type):
             raise ModelRuntimeError(
-                "While performing forward pass through the model, library bug was discovered - "
+                message="While performing forward pass through the model, library bug was discovered - "
                 f"model requires the input type to be {expected_type}, but the actual input type is {actual_type} - "
                 f"this is a bug in model implementation. Submit issue to help us solving this problem: "
-                f"https://github.com/roboflow/inference/issues"
+                f"https://github.com/roboflow/inference/issues",
+                help_url="https://todo",
             )
         inputs[ort_input.name] = inputs[ort_input.name].to(dtype=expected_type)
     return inputs
@@ -208,10 +211,11 @@ def auto_cast_session_inputs(
 def torch_tensor_type_to_onnx_type(tensor_dtype: torch.dtype) -> Union[np.dtype, int]:
     if tensor_dtype not in TORCH_TYPES_MAPPING:
         raise ModelRuntimeError(
-            f"While performing forward pass through the model, library discovered tensor of type {tensor_dtype} "
+            message=f"While performing forward pass through the model, library discovered tensor of type {tensor_dtype} "
             f"which needs to be passed to onnxruntime session. Conversion of this type is currently not "
             f"supported in inference. At the moment you shall assume your model incompatible with the library. "
-            f"To change that state - please submit new issue: https://github.com/roboflow/inference/issues"
+            f"To change that state - please submit new issue: https://github.com/roboflow/inference/issues",
+            help_url="https://todo",
         )
     return TORCH_TYPES_MAPPING[tensor_dtype]
 
@@ -219,10 +223,11 @@ def torch_tensor_type_to_onnx_type(tensor_dtype: torch.dtype) -> Union[np.dtype,
 def ort_tensor_type_to_torch_tensor_type(ort_dtype: str) -> torch.dtype:
     if ort_dtype not in ORT_TYPES_TO_TORCH_TYPES_MAPPING:
         raise ModelRuntimeError(
-            f"While performing forward pass through the model, library discovered ORT tensor of type {ort_dtype} "
+            message=f"While performing forward pass through the model, library discovered ORT tensor of type {ort_dtype} "
             f"which needs to be casted into torch.Tensor. Conversion of this type is currently not "
             f"supported in inference. At the moment you shall assume your model incompatible with the library. "
-            f"To change that state - please submit new issue: https://github.com/roboflow/inference/issues"
+            f"To change that state - please submit new issue: https://github.com/roboflow/inference/issues",
+            help_url="https://todo",
         )
     return ORT_TYPES_TO_TORCH_TYPES_MAPPING[ort_dtype]
 
@@ -244,15 +249,17 @@ def get_input_device(inputs: Dict[str, torch.Tensor]) -> torch.device:
             device = input_tensor.device
         elif input_tensor.device != device:
             raise ModelRuntimeError(
-                "While performing forward pass through the model, library discovered the input tensor which is "
+                message="While performing forward pass through the model, library discovered the input tensor which is "
                 f"wrongly allocated on a different device that rest of the inputs - input named '{input_name}' "
                 f"is allocated on {input_tensor.device}, whereas rest of the inputs are allocated on {device}. "
                 f"This is a bug in model implementation. To help us fixing that, please submit new issue: "
-                f"https://github.com/roboflow/inference/issues"
+                f"https://github.com/roboflow/inference/issues",
+                help_url="https://todo",
             )
     if device is None:
         raise ModelRuntimeError(
-            "No inputs detected for the model. Raise new issue to help us fixing the problem: "
-            "https://github.com/roboflow/inference/issues"
+            message="No inputs detected for the model. Raise new issue to help us fixing the problem: "
+            "https://github.com/roboflow/inference/issues",
+            help_url="https://todo",
         )
     return device

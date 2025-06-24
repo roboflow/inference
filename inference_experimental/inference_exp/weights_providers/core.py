@@ -14,6 +14,7 @@ def get_model_from_provider(
 ) -> ModelMetadata:
     if provider not in WEIGHTS_PROVIDERS:
         raise ModelRetrievalError(
-            f"Requested model to be retrieved using '{provider}' provider which is not implemented."
+            message=f"Requested model to be retrieved using '{provider}' provider which is not implemented.",
+            help_url="https://todo",
         )
     return WEIGHTS_PROVIDERS[provider](model_id=model_id, api_key=api_key)
