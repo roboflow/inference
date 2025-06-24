@@ -1101,6 +1101,8 @@ class HttpInterface(BaseInterface):
             async def infer_object_detection(
                 inference_request: ObjectDetectionInferenceRequest,
                 background_tasks: BackgroundTasks,
+                countinference: Optional[bool] = None,
+                service_secret: Optional[str] = None,
             ):
                 """Run inference with the specified object detection model.
 
@@ -1116,6 +1118,8 @@ class HttpInterface(BaseInterface):
                     inference_request,
                     active_learning_eligible=True,
                     background_tasks=background_tasks,
+                    countinference=countinference,
+                    service_secret=service_secret,
                 )
 
             @app.post(
@@ -1131,6 +1135,8 @@ class HttpInterface(BaseInterface):
             async def infer_instance_segmentation(
                 inference_request: InstanceSegmentationInferenceRequest,
                 background_tasks: BackgroundTasks,
+                countinference: Optional[bool] = None,
+                service_secret: Optional[str] = None,
             ):
                 """Run inference with the specified instance segmentation model.
 
@@ -1146,6 +1152,8 @@ class HttpInterface(BaseInterface):
                     inference_request,
                     active_learning_eligible=True,
                     background_tasks=background_tasks,
+                    countinference=countinference,
+                    service_secret=service_secret,
                 )
 
             @app.post(
@@ -1163,6 +1171,8 @@ class HttpInterface(BaseInterface):
             async def infer_classification(
                 inference_request: ClassificationInferenceRequest,
                 background_tasks: BackgroundTasks,
+                countinference: Optional[bool] = None,
+                service_secret: Optional[str] = None,
             ):
                 """Run inference with the specified classification model.
 
@@ -1178,6 +1188,8 @@ class HttpInterface(BaseInterface):
                     inference_request,
                     active_learning_eligible=True,
                     background_tasks=background_tasks,
+                    countinference=countinference,
+                    service_secret=service_secret,
                 )
 
             @app.post(
@@ -1190,6 +1202,8 @@ class HttpInterface(BaseInterface):
             @usage_collector("request")
             async def infer_keypoints(
                 inference_request: KeypointsDetectionInferenceRequest,
+                countinference: Optional[bool] = None,
+                service_secret: Optional[str] = None,
             ):
                 """Run inference with the specified keypoints detection model.
 
@@ -1200,7 +1214,11 @@ class HttpInterface(BaseInterface):
                     Union[ClassificationInferenceResponse, MultiLabelClassificationInferenceResponse]: The response containing the inference results.
                 """
                 logger.debug(f"Reached /infer/keypoints_detection")
-                return await process_inference_request(inference_request)
+                return await process_inference_request(
+                    inference_request,
+                    countinference=countinference,
+                    service_secret=service_secret,
+                )
 
             if LMM_ENABLED:
 
@@ -1219,6 +1237,8 @@ class HttpInterface(BaseInterface):
                 @usage_collector("request")
                 async def infer_lmm(
                     inference_request: LMMInferenceRequest,
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
                 ):
                     """Run inference with the specified object detection model.
 
@@ -1230,7 +1250,11 @@ class HttpInterface(BaseInterface):
                         Union[ObjectDetectionInferenceResponse, List[ObjectDetectionInferenceResponse]]: The response containing the inference results.
                     """
                     logger.debug(f"Reached /infer/lmm")
-                    return await process_inference_request(inference_request)
+                    return await process_inference_request(
+                        inference_request,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
 
         if not DISABLE_WORKFLOW_ENDPOINTS:
 
@@ -1691,6 +1715,8 @@ class HttpInterface(BaseInterface):
                         None,
                         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                     ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
                 ):
                     """
                     Embeds image data using the OpenAI CLIP model.
@@ -1704,7 +1730,12 @@ class HttpInterface(BaseInterface):
                         ClipEmbeddingResponse: The response containing the embedded image.
                     """
                     logger.debug(f"Reached /clip/embed_image")
-                    clip_model_id = load_clip_model(inference_request, api_key=api_key)
+                    clip_model_id = load_clip_model(
+                        inference_request,
+                        api_key=api_key,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
                     response = await self.model_manager.infer_from_request(
                         clip_model_id, inference_request
                     )
@@ -1730,6 +1761,8 @@ class HttpInterface(BaseInterface):
                         None,
                         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                     ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
                 ):
                     """
                     Embeds text data using the OpenAI CLIP model.
@@ -1743,7 +1776,12 @@ class HttpInterface(BaseInterface):
                         ClipEmbeddingResponse: The response containing the embedded text.
                     """
                     logger.debug(f"Reached /clip/embed_text")
-                    clip_model_id = load_clip_model(inference_request, api_key=api_key)
+                    clip_model_id = load_clip_model(
+                        inference_request,
+                        api_key=api_key,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
                     response = await self.model_manager.infer_from_request(
                         clip_model_id, inference_request
                     )
@@ -1769,6 +1807,8 @@ class HttpInterface(BaseInterface):
                         None,
                         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                     ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
                 ):
                     """
                     Computes similarity scores using the OpenAI CLIP model.
@@ -1782,7 +1822,12 @@ class HttpInterface(BaseInterface):
                         ClipCompareResponse: The response containing the similarity scores.
                     """
                     logger.debug(f"Reached /clip/compare")
-                    clip_model_id = load_clip_model(inference_request, api_key=api_key)
+                    clip_model_id = load_clip_model(
+                        inference_request,
+                        api_key=api_key,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
                     response = await self.model_manager.infer_from_request(
                         clip_model_id, inference_request
                     )
@@ -1810,6 +1855,8 @@ class HttpInterface(BaseInterface):
                         None,
                         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                     ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
                 ):
                     """
                     Embeds image data using the Perception Encoder PE model.
@@ -1823,7 +1870,12 @@ class HttpInterface(BaseInterface):
                         PerceptionEncoderEmbeddingResponse: The response containing the embedded image.
                     """
                     logger.debug(f"Reached /perception_encoder/embed_image")
-                    pe_model_id = load_pe_model(inference_request, api_key=api_key)
+                    pe_model_id = load_pe_model(
+                        inference_request,
+                        api_key=api_key,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
                     response = await self.model_manager.infer_from_request(
                         pe_model_id, inference_request
                     )
@@ -1849,6 +1901,8 @@ class HttpInterface(BaseInterface):
                         None,
                         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                     ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
                 ):
                     """
                     Embeds text data using the Meta Perception Encoder model.
@@ -1862,7 +1916,12 @@ class HttpInterface(BaseInterface):
                         PerceptionEncoderEmbeddingResponse: The response containing the embedded text.
                     """
                     logger.debug(f"Reached /perception_encoder/embed_text")
-                    pe_model_id = load_pe_model(inference_request, api_key=api_key)
+                    pe_model_id = load_pe_model(
+                        inference_request,
+                        api_key=api_key,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
                     response = await self.model_manager.infer_from_request(
                         pe_model_id, inference_request
                     )
@@ -1888,6 +1947,8 @@ class HttpInterface(BaseInterface):
                         None,
                         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                     ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
                 ):
                     """
                     Computes similarity scores using the Meta Perception Encoder model.
@@ -1901,7 +1962,12 @@ class HttpInterface(BaseInterface):
                         PerceptionEncoderCompareResponse: The response containing the similarity scores.
                     """
                     logger.debug(f"Reached /perception_encoder/compare")
-                    pe_model_id = load_pe_model(inference_request, api_key=api_key)
+                    pe_model_id = load_pe_model(
+                        inference_request,
+                        api_key=api_key,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
                     response = await self.model_manager.infer_from_request(
                         pe_model_id, inference_request
                     )
@@ -1929,6 +1995,8 @@ class HttpInterface(BaseInterface):
                         None,
                         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                     ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
                 ):
                     """
                     Embeds image data using the Grounding DINO model.
@@ -1943,7 +2011,10 @@ class HttpInterface(BaseInterface):
                     """
                     logger.debug(f"Reached /grounding_dino/infer")
                     grounding_dino_model_id = load_grounding_dino_model(
-                        inference_request, api_key=api_key
+                        inference_request,
+                        api_key=api_key,
+                        countinference=countinference,
+                        service_secret=service_secret,
                     )
                     response = await self.model_manager.infer_from_request(
                         grounding_dino_model_id, inference_request
@@ -1973,6 +2044,8 @@ class HttpInterface(BaseInterface):
                         None,
                         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                     ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
                 ):
                     """
                     Runs the YOLO-World zero-shot object detection model.
@@ -1987,7 +2060,10 @@ class HttpInterface(BaseInterface):
                     """
                     logger.debug(f"Reached /yolo_world/infer. Loading model")
                     yolo_world_model_id = load_yolo_world_model(
-                        inference_request, api_key=api_key
+                        inference_request,
+                        api_key=api_key,
+                        countinference=countinference,
+                        service_secret=service_secret,
                     )
                     logger.debug("YOLOWorld model loaded. Staring the inference.")
                     response = await self.model_manager.infer_from_request(
@@ -2019,6 +2095,8 @@ class HttpInterface(BaseInterface):
                         None,
                         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                     ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
                 ):
                     """
                     Embeds image data using the DocTR model.
@@ -2033,7 +2111,10 @@ class HttpInterface(BaseInterface):
                     """
                     logger.debug(f"Reached /doctr/ocr")
                     doctr_model_id = load_doctr_model(
-                        inference_request, api_key=api_key
+                        inference_request,
+                        api_key=api_key,
+                        countinference=countinference,
+                        service_secret=service_secret,
                     )
                     response = await self.model_manager.infer_from_request(
                         doctr_model_id, inference_request
@@ -2062,6 +2143,8 @@ class HttpInterface(BaseInterface):
                         None,
                         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                     ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
                 ):
                     """
                     Embeds image data using the Meta AI Segmant Anything Model (SAM).
@@ -2075,7 +2158,12 @@ class HttpInterface(BaseInterface):
                         M.SamEmbeddingResponse or Response: The response containing the embedded image.
                     """
                     logger.debug(f"Reached /sam/embed_image")
-                    sam_model_id = load_sam_model(inference_request, api_key=api_key)
+                    sam_model_id = load_sam_model(
+                        inference_request,
+                        api_key=api_key,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
                     model_response = await self.model_manager.infer_from_request(
                         sam_model_id, inference_request
                     )
@@ -2106,6 +2194,8 @@ class HttpInterface(BaseInterface):
                         None,
                         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                     ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
                 ):
                     """
                     Generates segmentations for image data using the Meta AI Segmant Anything Model (SAM).
@@ -2119,7 +2209,12 @@ class HttpInterface(BaseInterface):
                         M.SamSegmentationResponse or Response: The response containing the segmented image.
                     """
                     logger.debug(f"Reached /sam/segment_image")
-                    sam_model_id = load_sam_model(inference_request, api_key=api_key)
+                    sam_model_id = load_sam_model(
+                        inference_request,
+                        api_key=api_key,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
                     model_response = await self.model_manager.infer_from_request(
                         sam_model_id, inference_request
                     )
@@ -2152,6 +2247,8 @@ class HttpInterface(BaseInterface):
                         None,
                         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                     ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
                 ):
                     """
                     Embeds image data using the Meta AI Segment Anything Model (SAM).
@@ -2165,7 +2262,12 @@ class HttpInterface(BaseInterface):
                         M.Sam2EmbeddingResponse or Response: The response affirming the image has been embedded
                     """
                     logger.debug(f"Reached /sam2/embed_image")
-                    sam2_model_id = load_sam2_model(inference_request, api_key=api_key)
+                    sam2_model_id = load_sam2_model(
+                        inference_request,
+                        api_key=api_key,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
                     model_response = await self.model_manager.infer_from_request(
                         sam2_model_id, inference_request
                     )
@@ -2186,6 +2288,8 @@ class HttpInterface(BaseInterface):
                         None,
                         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                     ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
                 ):
                     """
                     Generates segmentations for image data using the Meta AI Segment Anything Model (SAM).
@@ -2199,7 +2303,12 @@ class HttpInterface(BaseInterface):
                         M.SamSegmentationResponse or Response: The response containing the segmented image.
                     """
                     logger.debug(f"Reached /sam2/segment_image")
-                    sam2_model_id = load_sam2_model(inference_request, api_key=api_key)
+                    sam2_model_id = load_sam2_model(
+                        inference_request,
+                        api_key=api_key,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
                     model_response = await self.model_manager.infer_from_request(
                         sam2_model_id, inference_request
                     )
@@ -2227,6 +2336,8 @@ class HttpInterface(BaseInterface):
                         None,
                         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                     ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
                 ):
                     """
                     Embeds image data using the Meta AI Segmant Anything Model (SAM).
@@ -2240,7 +2351,12 @@ class HttpInterface(BaseInterface):
                         M.Sam2EmbeddingResponse or Response: The response affirming the image has been embedded
                     """
                     logger.debug(f"Reached /owlv2/infer")
-                    owl2_model_id = load_owlv2_model(inference_request, api_key=api_key)
+                    owl2_model_id = load_owlv2_model(
+                        inference_request,
+                        api_key=api_key,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
                     model_response = await self.model_manager.infer_from_request(
                         owl2_model_id, inference_request
                     )
@@ -2263,6 +2379,8 @@ class HttpInterface(BaseInterface):
                         None,
                         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                     ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
                 ):
                     """
                     Detect gaze using the gaze detection model.
@@ -2276,7 +2394,12 @@ class HttpInterface(BaseInterface):
                         M.GazeDetectionResponse: The response containing all the detected faces and the corresponding gazes.
                     """
                     logger.debug(f"Reached /gaze/gaze_detection")
-                    gaze_model_id = load_gaze_model(inference_request, api_key=api_key)
+                    gaze_model_id = load_gaze_model(
+                        inference_request,
+                        api_key=api_key,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
                     response = await self.model_manager.infer_from_request(
                         gaze_model_id, inference_request
                     )
@@ -2304,6 +2427,8 @@ class HttpInterface(BaseInterface):
                         None,
                         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                     ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
                 ):
                     """
                     Generate a depth map using the depth estimation model.
@@ -2319,7 +2444,10 @@ class HttpInterface(BaseInterface):
                     logger.debug(f"Reached /infer/depth-estimation")
                     depth_model_id = inference_request.model_id
                     self.model_manager.add_model(
-                        depth_model_id, inference_request.api_key
+                        depth_model_id,
+                        inference_request.api_key,
+                        countinference=countinference,
+                        service_secret=service_secret,
                     )
                     response = await self.model_manager.infer_from_request(
                         depth_model_id, inference_request
@@ -2355,6 +2483,8 @@ class HttpInterface(BaseInterface):
                         None,
                         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
                     ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
                 ):
                     """
                     Retrieves text from image data using the TrOCR model.
@@ -2369,7 +2499,10 @@ class HttpInterface(BaseInterface):
                     """
                     logger.debug(f"Reached /trocr/ocr")
                     trocr_model_id = load_trocr_model(
-                        inference_request, api_key=api_key
+                        inference_request,
+                        api_key=api_key,
+                        countinference=countinference,
+                        service_secret=service_secret,
                     )
                     response = await self.model_manager.infer_from_request(
                         trocr_model_id, inference_request
