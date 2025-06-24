@@ -1,9 +1,8 @@
 import logging
 import os
-from typing import Optional, Tuple, Literal
+from typing import Literal, Optional, Tuple
 
 import tensorrt as trt
-
 from inference_exp.logger import LOGGER
 from inference_exp.models.common.trt import InferenceTRTLogger
 
@@ -88,12 +87,16 @@ class EngineBuilder:
         if trt_version_compatible:
             self.config.set_flag(trt.BuilderFlag.VERSION_COMPATIBLE)
         if same_compute_compatibility:
-            self.config.hardware_compatibility_level = trt.HardwareCompatibilityLevel.SAME_COMPUTE_CAPABILITY
+            self.config.hardware_compatibility_level = (
+                trt.HardwareCompatibilityLevel.SAME_COMPUTE_CAPABILITY
+            )
         profile = self.builder.create_optimization_profile()
         if dynamic_batch_sizes:
             bs_min, bs_opt, bs_max = dynamic_batch_sizes
             h, w = input_size
-            profile.set_shape(input_name, (bs_min, 3, h, w),  (bs_opt, 3, h, w),  (bs_max, 3, h, w))
+            profile.set_shape(
+                input_name, (bs_min, 3, h, w), (bs_opt, 3, h, w), (bs_max, 3, h, w)
+            )
         self.config.add_optimization_profile(profile)
         engine_bytes = self.builder.build_serialized_network(self.network, self.config)
         if engine_bytes is None:

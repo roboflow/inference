@@ -28,7 +28,6 @@ from inference_exp.models.common.roboflow.pre_processing import (
 )
 from inference_exp.models.yolov5.nms import run_yolov5_nms_for_instance_segmentation
 
-
 try:
     import onnxruntime
 except ImportError as import_error:

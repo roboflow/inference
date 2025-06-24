@@ -2,7 +2,6 @@ from functools import cache
 from typing import List, Optional, Set, Tuple, Union
 
 import torch
-
 from inference_exp.configuration import ONNXRUNTIME_EXECUTION_PROVIDERS
 from inference_exp.errors import (
     AmbiguousModelPackageResolutionError,
@@ -47,7 +46,10 @@ def negotiate_model_packages(
     trt_engine_host_code_allowed: bool = True,
     verbose: bool = False,
 ) -> List[ModelPackageMetadata]:
-    verbose_info("The following model packages were exposed by weights provider:", verbose_requested=verbose)
+    verbose_info(
+        "The following model packages were exposed by weights provider:",
+        verbose_requested=verbose,
+    )
     print_model_packages(model_packages=model_packages, verbose=verbose)
     if not model_packages:
         raise NoModelPackagesAvailableError(
@@ -90,7 +92,10 @@ def negotiate_model_packages(
             verbose=verbose,
         )
     runtime_x_ray = x_ray_runtime_environment()
-    verbose_info(message=f"Selecting model packages matching to runtime: {runtime_x_ray}", verbose_requested=verbose)
+    verbose_info(
+        message=f"Selecting model packages matching to runtime: {runtime_x_ray}",
+        verbose_requested=verbose,
+    )
     results = [
         model_package
         for model_package in model_packages
@@ -146,7 +151,9 @@ def determine_default_allowed_quantization(
     ]
 
 
-def print_model_packages(model_packages: List[ModelPackageMetadata], verbose: bool) -> None:
+def print_model_packages(
+    model_packages: List[ModelPackageMetadata], verbose: bool
+) -> None:
     if not model_packages:
         verbose_info(message="No model packages.", verbose_requested=verbose)
         return None
@@ -194,7 +201,10 @@ def select_model_package_by_id(
             f"error, as it is supposed to provide unique identifiers for each model package.",
             help_url="https://todo",
         )
-    verbose_info(message=f"Model package matching requested package id: {matching_packages[0].get_summary()}", verbose_requested=verbose)
+    verbose_info(
+        message=f"Model package matching requested package id: {matching_packages[0].get_summary()}",
+        verbose_requested=verbose,
+    )
     return matching_packages[0]
 
 
@@ -210,7 +220,10 @@ def filter_model_packages_by_requested_backend(
         if isinstance(requested_backend, str):
             requested_backend = _parse_backend_type(value=requested_backend)
         requested_backends_set.add(requested_backend)
-    verbose_info(message=f"Filtering model packages by requested backends: {requested_backends}", verbose_requested=verbose)
+    verbose_info(
+        message=f"Filtering model packages by requested backends: {requested_backends}",
+        verbose_requested=verbose,
+    )
     filtered_packages = []
     for model_package in model_packages:
         if model_package.backend not in requested_backends_set:
@@ -317,7 +330,7 @@ def model_package_matches_batch_size_request(
         verbose_info(
             message=f"Model package with id `{model_package.package_id}` supports dynamic batches without "
             f"specifying bounds - including into results.",
-            verbose_requested=verbose
+            verbose_requested=verbose,
         )
         return True
     else:
@@ -339,7 +352,12 @@ def model_package_matches_runtime_environment(
             help_url="https://todo",
         )
     return MODEL_TO_RUNTIME_COMPATIBILITY_MATCHERS[model_package.backend](
-        model_package, runtime_x_ray, device, onnx_execution_providers, trt_engine_host_code_allowed, verbose
+        model_package,
+        runtime_x_ray,
+        device,
+        onnx_execution_providers,
+        trt_engine_host_code_allowed,
+        verbose,
     )
 
 
@@ -363,12 +381,18 @@ def onnx_package_matches_runtime_environment(
     trt_engine_host_code_allowed: bool = True,
     verbose: bool = False,
 ) -> bool:
-    if not runtime_x_ray.onnxruntime_version or not runtime_x_ray.available_onnx_execution_providers:
+    if (
+        not runtime_x_ray.onnxruntime_version
+        or not runtime_x_ray.available_onnx_execution_providers
+    ):
         verbose_info(
             message=f"Mode package with id '{model_package.package_id}' filtered out as onnxruntime not detected",
             verbose_requested=verbose,
         )
-    if not runtime_x_ray.onnxruntime_version or not runtime_x_ray.available_onnx_execution_providers:
+    if (
+        not runtime_x_ray.onnxruntime_version
+        or not runtime_x_ray.available_onnx_execution_providers
+    ):
         return False
     if model_package.onnx_package_details is None:
         # no restrictions raised by the backend
@@ -376,7 +400,8 @@ def onnx_package_matches_runtime_environment(
     if not onnx_execution_providers:
         onnx_execution_providers = ONNXRUNTIME_EXECUTION_PROVIDERS
     onnx_execution_providers = [
-        provider for provider in onnx_execution_providers
+        provider
+        for provider in onnx_execution_providers
         if provider in runtime_x_ray.available_onnx_execution_providers
     ]
     if not onnx_execution_providers:
@@ -496,10 +521,14 @@ def trt_package_matches_runtime_environment(
         )
     trt_forward_compatible = False
     if model_package.trt_package_details is not None:
-        trt_forward_compatible = model_package.trt_package_details.trt_forward_compatible
+        trt_forward_compatible = (
+            model_package.trt_package_details.trt_forward_compatible
+        )
     trt_lean_runtime_excluded = False
     if model_package.trt_package_details is not None:
-        trt_lean_runtime_excluded = model_package.trt_package_details.trt_lean_runtime_excluded
+        trt_lean_runtime_excluded = (
+            model_package.trt_package_details.trt_lean_runtime_excluded
+        )
     model_environment = model_package.environment_requirements
     if isinstance(model_environment, JetsonEnvironmentRequirements):
         if model_environment.trt_version is None:
@@ -531,7 +560,9 @@ def trt_package_matches_runtime_environment(
             )
             return False
         if trt_forward_compatible:
-            if not verify_version_larger_equal_up_to_major_and_minor(runtime_x_ray.trt_version, model_environment.trt_version):
+            if not verify_version_larger_equal_up_to_major_and_minor(
+                runtime_x_ray.trt_version, model_environment.trt_version
+            ):
                 return False
             if trt_lean_runtime_excluded:
                 # not supported for now
@@ -574,7 +605,9 @@ def trt_package_matches_runtime_environment(
         )
         return False
     if trt_forward_compatible:
-        if not verify_version_larger_equal_up_to_major_and_minor(runtime_x_ray.trt_version, model_environment.trt_version):
+        if not verify_version_larger_equal_up_to_major_and_minor(
+            runtime_x_ray.trt_version, model_environment.trt_version
+        ):
             return False
         if trt_lean_runtime_excluded:
             # not supported for now

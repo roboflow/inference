@@ -7,7 +7,7 @@ import torchvision
 from inference_exp import Detections
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat, ImageDimensions
-from inference_exp.errors import ModelRuntimeError, MissingDependencyError
+from inference_exp.errors import MissingDependencyError, ModelRuntimeError
 from inference_exp.models.base.object_detection import (
     OpenVocabularyObjectDetectionModel,
 )

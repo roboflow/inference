@@ -1,11 +1,9 @@
-from typing import Dict, Optional, Tuple
+from typing import Dict, Tuple
 
 from inference_exp.errors import ModelImplementationLoaderError
+from inference_exp.models.auto_loaders.entities import ModelArchitecture, TaskType
 from inference_exp.utils.imports import LazyClass
 from inference_exp.weights_providers.entities import BackendType
-
-ModelArchitecture = str
-TaskType = Optional[str]
 
 OBJECT_DETECTION_TASK = "object-detection"
 INSTANCE_SEGMENTATION_TASK = "instance-segmentation"

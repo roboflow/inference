@@ -1,9 +1,15 @@
 import logging
 
-from inference_exp.configuration import LOG_LEVEL, VERBOSE_LOG_LEVEL, DISABLE_VERBOSE_LOGGER
+from inference_exp.configuration import (
+    DISABLE_VERBOSE_LOGGER,
+    LOG_LEVEL,
+    VERBOSE_LOG_LEVEL,
+)
 
 
-def configure_log_level(logger: logging.Logger, log_level: str, fallback_level: int) -> None:
+def configure_log_level(
+    logger: logging.Logger, log_level: str, fallback_level: int
+) -> None:
     log_level = getattr(logging, log_level, fallback_level)
     logger.setLevel(log_level)
     if not logger.handlers:
@@ -18,7 +24,9 @@ def configure_log_level(logger: logging.Logger, log_level: str, fallback_level: 
 LOGGER = logging.getLogger("inference-exp")
 configure_log_level(logger=LOGGER, log_level=LOG_LEVEL, fallback_level=logging.WARNING)
 VERBOSE_LOGGER = logging.getLogger("inference-exp-verbose")
-configure_log_level(logger=VERBOSE_LOGGER, log_level=VERBOSE_LOG_LEVEL, fallback_level=logging.INFO)
+configure_log_level(
+    logger=VERBOSE_LOGGER, log_level=VERBOSE_LOG_LEVEL, fallback_level=logging.INFO
+)
 
 
 def verbose_info(

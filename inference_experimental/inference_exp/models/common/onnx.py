@@ -1,9 +1,8 @@
-from typing import List, Union, Optional, Dict
+from typing import Dict, List, Optional, Union
 
 import numpy as np
 import torch
-
-from inference_exp.errors import ModelRuntimeError, MissingDependencyError
+from inference_exp.errors import MissingDependencyError, ModelRuntimeError
 
 try:
     import onnxruntime
@@ -27,7 +26,7 @@ TORCH_TYPES_MAPPING = {
     torch.float16: np.float16,
     torch.int64: np.int64,
     torch.int32: np.int32,
-    torch.uint8: np.uint8
+    torch.uint8: np.uint8,
 }
 
 ORT_TYPES_TO_TORCH_TYPES_MAPPING = {
@@ -48,10 +47,39 @@ ORT_TYPES_TO_TORCH_TYPES_MAPPING = {
 MODEL_INPUT_CASTING = {
     torch.float16: {torch.float16, torch.float32, torch.float64},
     torch.float32: {torch.float16, torch.float32, torch.float64},
-    torch.int8: {torch.int8, torch.int16, torch.int32, torch.int64, torch.float64, torch.float32, torch.float16},
-    torch.int16: {torch.int16, torch.int32, torch.int64, torch.float16, torch.float32, torch.float64},
-    torch.int32: {torch.int32, torch.int64, torch.float16, torch.float32, torch.float64},
-    torch.uint8: {torch.uint8, torch.int16, torch.int32, torch.int64, torch.float16, torch.float32, torch.float64},
+    torch.int8: {
+        torch.int8,
+        torch.int16,
+        torch.int32,
+        torch.int64,
+        torch.float64,
+        torch.float32,
+        torch.float16,
+    },
+    torch.int16: {
+        torch.int16,
+        torch.int32,
+        torch.int64,
+        torch.float16,
+        torch.float32,
+        torch.float64,
+    },
+    torch.int32: {
+        torch.int32,
+        torch.int64,
+        torch.float16,
+        torch.float32,
+        torch.float64,
+    },
+    torch.uint8: {
+        torch.uint8,
+        torch.int16,
+        torch.int32,
+        torch.int64,
+        torch.float16,
+        torch.float32,
+        torch.float64,
+    },
     torch.bool: {torch.uint8, torch.int8, torch.float16, torch.float32, torch.float64},
 }
 
@@ -102,7 +130,9 @@ def run_session_via_iobinding(
         import pycuda.driver as cuda
         from inference_exp.models.common.cuda import use_primary_cuda_context
     except ImportError as import_error:
-        raise MissingDependencyError(message="TODO", help_url="https://todo") from import_error
+        raise MissingDependencyError(
+            message="TODO", help_url="https://todo"
+        ) from import_error
     cuda.init()
     cuda_device = cuda.Device(device.index or 0)
     with use_primary_cuda_context(cuda_device=cuda_device):
@@ -114,7 +144,9 @@ def run_session_via_iobinding(
         for output in session.get_outputs():
             if is_tensor_shape_dynamic(output.shape):
                 if output.name in output_shape_mapping:
-                    torch_output_type = ort_tensor_type_to_torch_tensor_type(output.type)
+                    torch_output_type = ort_tensor_type_to_torch_tensor_type(
+                        output.type
+                    )
                     pre_allocated_output = torch.empty(
                         output_shape_mapping[output.name],
                         dtype=torch_output_type,
@@ -170,7 +202,9 @@ def run_session_via_iobinding(
             return pre_allocated_outputs
         bound_outputs = binding.get_outputs()
         result = []
-        for pre_allocated_output, bound_output in zip(pre_allocated_outputs, bound_outputs):
+        for pre_allocated_output, bound_output in zip(
+            pre_allocated_outputs, bound_outputs
+        ):
             if pre_allocated_output is not None:
                 result.append(pre_allocated_output)
                 continue
@@ -181,8 +215,7 @@ def run_session_via_iobinding(
 
 
 def auto_cast_session_inputs(
-    session: onnxruntime.InferenceSession,
-    inputs: Dict[str, torch.Tensor]
+    session: onnxruntime.InferenceSession, inputs: Dict[str, torch.Tensor]
 ) -> Dict[str, torch.Tensor]:
     for ort_input in session.get_inputs():
         expected_type = ort_tensor_type_to_torch_tensor_type(ort_input.type)

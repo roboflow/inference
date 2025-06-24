@@ -1,15 +1,14 @@
 import argparse
 import os.path
 import time
-from typing import Optional, List
+from typing import List, Optional
 
 import numpy as np
+from inference_exp import AutoModel
+from inference_exp.models.auto_loaders.core import AnyModel
 from tqdm import tqdm
 
-from inference_exp.models.auto_loaders.core import AnyModel
 from .dataset import download_dataset
-
-from inference_exp import AutoModel
 from .serialization import dump_json
 
 
@@ -25,7 +24,9 @@ def main(
         return None
     dataset = download_dataset()
     images = [e[1] for e in dataset]
-    model = AutoModel.from_pretrained(model_name_or_path=model_id, model_package_id=model_package_id)
+    model = AutoModel.from_pretrained(
+        model_name_or_path=model_id, model_package_id=model_package_id
+    )
     for _ in tqdm(range(20), desc="Model warm-up...", total=20):
         _ = model(images[0])
     batch_sizes = [1, 4, 8, 16]
@@ -54,7 +55,9 @@ def run_test_with_batch_size(
         images = images[0]
     iterations = round(1000 / batch_size)
     start = time.monotonic()
-    for _ in tqdm(range(iterations), desc=f"Benchmarking bs={batch_size}...", total=iterations):
+    for _ in tqdm(
+        range(iterations), desc=f"Benchmarking bs={batch_size}...", total=iterations
+    ):
         _ = model(images)
     end = time.monotonic()
     total_time = end - start
@@ -70,7 +73,7 @@ def run_test_with_batch_size(
     }
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_id", type=str, required=True)
     parser.add_argument("--output_dir", type=str, required=True)

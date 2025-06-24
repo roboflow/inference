@@ -1,12 +1,11 @@
 from threading import Lock
 from typing import List, Optional, Tuple, Union
 
-
 import numpy as np
 import torch
 from inference_exp import Detections, KeyPoints, KeyPointsDetectionModel
 from inference_exp.entities import ColorFormat, ImageDimensions
-from inference_exp.errors import ModelRuntimeError, MissingDependencyError
+from inference_exp.errors import MissingDependencyError, ModelRuntimeError
 from inference_exp.models.common.model_packages import get_model_package_contents
 
 try:
@@ -101,7 +100,9 @@ class MediaPipeFaceDetector(
                 help_url="https://todo",
             )
         if not len(images):
-            raise ModelRuntimeError(message="Detected empty input to the model", help_url="https://todo")
+            raise ModelRuntimeError(
+                message="Detected empty input to the model", help_url="https://todo"
+            )
         if isinstance(images[0], np.ndarray):
             input_color_format = input_color_format or "bgr"
             preprocessed_images, dimensions = [], []

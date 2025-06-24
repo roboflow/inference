@@ -131,7 +131,9 @@ class DocTR(DocumentParsingModel[List[np.ndarray], ImageDimensions, Document]):
                 help_url="https://todo",
             )
         if not len(images):
-            raise ModelRuntimeError(message="Detected empty input to the model", help_url="https://todo")
+            raise ModelRuntimeError(
+                message="Detected empty input to the model", help_url="https://todo"
+            )
         if isinstance(images[0], np.ndarray):
             input_color_format = input_color_format or "bgr"
             if input_color_format != "bgr":

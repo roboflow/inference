@@ -131,9 +131,15 @@ def get_one_page_of_model_metadata(
             timeout=API_CALLS_TIMEOUT,
         )
     except (OSError, Timeout, requests.exceptions.ConnectionError):
-        raise RetryError(message=f"Connectivity error", help_url="https://todo",)
+        raise RetryError(
+            message=f"Connectivity error",
+            help_url="https://todo",
+        )
     if response.status_code in IDEMPOTENT_API_REQUEST_CODES_TO_RETRY:
-        raise RetryError(message=f"Roboflow API responded with {response.status_code}", help_url="https://todo")
+        raise RetryError(
+            message=f"Roboflow API responded with {response.status_code}",
+            help_url="https://todo",
+        )
     handle_response_errors(response=response, operation_name="get model weights")
     try:
         return RoboflowModelMetadata.model_validate(response.json()["modelMetadata"])
@@ -215,7 +221,9 @@ class OnnxModelPackageV1(BaseModel):
     static_batch_size: Optional[int] = Field(alias="staticBatchSize", default=None)
     quantization: Quantization
     opset: int
-    incompatible_providers: Optional[List[str]] = Field(alias="incompatibleProviders", default=None)
+    incompatible_providers: Optional[List[str]] = Field(
+        alias="incompatibleProviders", default=None
+    )
 
 
 def parse_onnx_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageMetadata:
@@ -276,7 +284,9 @@ class TrtModelPackageV1(BaseModel):
     trt_version: str = Field(alias="trtVersion")
     same_cc_compatible: bool = Field(alias="sameCCCompatible", default=False)
     trt_forward_compatible: bool = Field(alias="trtForwardCompatible", default=False)
-    trt_lean_runtime_excluded: bool = Field(alias="trtLeanRuntimeExcluded", default=False)
+    trt_lean_runtime_excluded: bool = Field(
+        alias="trtLeanRuntimeExcluded", default=False
+    )
     machine_type: Literal["gpu-server", "jetson"] = Field(alias="machineType")
     machine_specs: Annotated[
         Union[JetsonMachineSpecsV1, GPUServerSpecsV1],

@@ -24,7 +24,6 @@ from inference_exp.models.common.roboflow.pre_processing import (
 )
 from inference_exp.models.yolonas.nms import run_yolonas_nms_for_object_detection
 
-
 try:
     import onnxruntime
 except ImportError as import_error:

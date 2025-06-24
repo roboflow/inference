@@ -1,10 +1,13 @@
 from typing import List, Tuple
 
 import torch
-from inference_exp.errors import ModelRuntimeError, CorruptedModelPackageError, MissingDependencyError
+from inference_exp.errors import (
+    CorruptedModelPackageError,
+    MissingDependencyError,
+    ModelRuntimeError,
+)
 from inference_exp.logger import LOGGER
 from inference_exp.models.common.roboflow.model_packages import TRTConfig
-
 
 try:
     import tensorrt as trt
@@ -23,7 +26,10 @@ except ImportError as import_error:
 try:
     import pycuda.driver as cuda
 except ImportError as import_error:
-    raise MissingDependencyError(message="TODO", help_url="https://todo",) from import_error
+    raise MissingDependencyError(
+        message="TODO",
+        help_url="https://todo",
+    ) from import_error
 
 
 class InferenceTRTLogger(trt.ILogger):
@@ -216,7 +222,10 @@ def execute_trt_engine(
     stream = torch.cuda.Stream(device=device)
     status = context.execute_async_v3(stream_handle=stream.cuda_stream)
     if not status:
-        raise ModelRuntimeError(message="Failed to complete inference from TRT model", help_url="https://todo")
+        raise ModelRuntimeError(
+            message="Failed to complete inference from TRT model",
+            help_url="https://todo",
+        )
     stream.synchronize()
     return results
 
@@ -242,7 +251,9 @@ def load_model(
             engine = runtime.deserialize_cuda_engine(f.read())
             if engine is None:
                 logger_traces = local_logger.get_memory()
-                logger_traces_str = "\n".join(f"[{severity}] {msg}" for severity, msg in logger_traces)
+                logger_traces_str = "\n".join(
+                    f"[{severity}] {msg}" for severity, msg in logger_traces
+                )
                 raise CorruptedModelPackageError(
                     message="Could not load TRT engine due to runtime error. This error is usually caused "
                     "by model package incompatibility with runtime environment. If you selected model with "
@@ -272,5 +283,3 @@ def get_output_tensor_names(engine: trt.ICudaEngine) -> List[str]:
         if engine.get_tensor_mode(name) == trt.TensorIOMode.OUTPUT:
             output_names.append(name)
     return output_names
-
-

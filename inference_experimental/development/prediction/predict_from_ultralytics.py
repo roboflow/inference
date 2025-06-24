@@ -1,12 +1,12 @@
 import argparse
 import os
 
+import supervision as sv
 from tqdm import tqdm
 from ultralytics import YOLO
-import supervision as sv
 
 from .dataset import download_dataset
-from .serialization import serialize_results, dump_json
+from .serialization import dump_json, serialize_results
 
 
 def main(
@@ -18,7 +18,9 @@ def main(
     model = YOLO(f"{model_id}.pt")
     results = []
     for image_id, image in tqdm(dataset, desc="Making predictions..."):
-        predictions = model(image, imgsz=image_size, conf=0.25, iou=0.45, max_det=100, verbose=False)
+        predictions = model(
+            image, imgsz=image_size, conf=0.25, iou=0.45, max_det=100, verbose=False
+        )
         if getattr(predictions[0], "keypoints", None) is not None:
             predictions = sv.KeyPoints.from_ultralytics(predictions[0])
         else:
@@ -30,7 +32,7 @@ def main(
         dump_json(path=target_path, content=serialized)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_id", type=str, required=True)
     parser.add_argument("--output_dir", type=str, required=True)

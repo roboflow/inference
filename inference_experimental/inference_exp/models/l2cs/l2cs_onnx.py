@@ -6,7 +6,11 @@ import numpy as np
 import torch
 from inference_exp.configuration import DEFAULT_DEVICE, ONNXRUNTIME_EXECUTION_PROVIDERS
 from inference_exp.entities import ColorFormat
-from inference_exp.errors import EnvironmentConfigurationError, ModelRuntimeError, MissingDependencyError
+from inference_exp.errors import (
+    EnvironmentConfigurationError,
+    MissingDependencyError,
+    ModelRuntimeError,
+)
 from inference_exp.models.base.types import PreprocessedInputs
 from inference_exp.models.common.model_packages import get_model_package_contents
 from inference_exp.models.common.onnx import (
@@ -151,7 +155,9 @@ class L2CSNetOnnx:
                 help_url="https://todo",
             )
         if not len(images):
-            raise ModelRuntimeError(message="Detected empty input to the model", help_url="https://todo")
+            raise ModelRuntimeError(
+                message="Detected empty input to the model", help_url="https://todo"
+            )
         if isinstance(images[0], np.ndarray):
             input_color_format = input_color_format or "bgr"
             pre_processed = []
@@ -187,8 +193,7 @@ class L2CSNetOnnx:
                     i : i + self._max_batch_size
                 ].contiguous()
                 batch_yaw, batch_pitch = run_session_via_iobinding(
-                    session=self._session,
-                    inputs={self._input_name: batch_input}
+                    session=self._session, inputs={self._input_name: batch_input}
                 )
                 yaw.append(batch_yaw)
                 pitch.append(batch_pitch)

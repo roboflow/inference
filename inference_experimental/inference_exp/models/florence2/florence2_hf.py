@@ -414,7 +414,9 @@ def region_to_loc_phrase(
         xyxy = xyxy.tolist()
     image_dimensions = extract_input_images_dimensions(images=images)
     if not xyxy:
-        raise ModelRuntimeError(message="Provided empty region grounding.", help_url="https://todo")
+        raise ModelRuntimeError(
+            message="Provided empty region grounding.", help_url="https://todo"
+        )
     nested = isinstance(xyxy[0], list)
     if not nested:
         xyxy = [xyxy] * len(image_dimensions)

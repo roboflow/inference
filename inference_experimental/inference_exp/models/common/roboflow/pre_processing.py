@@ -50,7 +50,9 @@ def pre_process_network_input(
             help_url="https://todo",
         )
     if not len(images):
-        raise ModelRuntimeError(message="Detected empty input to the model", help_url="https://todo")
+        raise ModelRuntimeError(
+            message="Detected empty input to the model", help_url="https://todo"
+        )
     if isinstance(images[0], np.ndarray):
         return pre_process_numpy_images_list(
             images=images,
@@ -71,7 +73,10 @@ def pre_process_network_input(
             rescaling_constant=rescaling_constant,
             normalization=normalization,
         )
-    raise ModelRuntimeError(message=f"Detected unknown input batch element: {type(images[0])}", help_url="https://todo")
+    raise ModelRuntimeError(
+        message=f"Detected unknown input batch element: {type(images[0])}",
+        help_url="https://todo",
+    )
 
 
 @torch.inference_mode()
@@ -477,7 +482,9 @@ def extract_input_images_dimensions(
             help_url="https://todo",
         )
     if not len(images):
-        raise ModelRuntimeError(message="Detected empty input to the model", help_url="https://todo")
+        raise ModelRuntimeError(
+            message="Detected empty input to the model", help_url="https://todo"
+        )
     if isinstance(images[0], np.ndarray):
         return [ImageDimensions(height=i.shape[0], width=i.shape[1]) for i in images]
     if isinstance(images[0], torch.Tensor):
@@ -487,7 +494,10 @@ def extract_input_images_dimensions(
                 ImageDimensions(height=image.shape[2], width=image.shape[3])
             )
         return image_dimensions
-    raise ModelRuntimeError(message=f"Detected unknown input batch element: {type(images[0])}", help_url="https://todo")
+    raise ModelRuntimeError(
+        message=f"Detected unknown input batch element: {type(images[0])}",
+        help_url="https://todo",
+    )
 
 
 def images_to_pillow(
@@ -522,7 +532,9 @@ def images_to_pillow(
             help_url="https://todo",
         )
     if not len(images):
-        raise ModelRuntimeError(message="Detected empty input to the model", help_url="https://todo")
+        raise ModelRuntimeError(
+            message="Detected empty input to the model", help_url="https://todo"
+        )
     if isinstance(images[0], np.ndarray):
         input_color_format = input_color_format or "bgr"
         if input_color_format != model_color_format:
@@ -545,4 +557,7 @@ def images_to_pillow(
                 ImageDimensions(height=np_image.shape[0], width=np_image.shape[1])
             )
         return result, dimensions
-    raise ModelRuntimeError(message=f"Detected unknown input batch element: {type(images[0])}", help_url="https://todo")
+    raise ModelRuntimeError(
+        message=f"Detected unknown input batch element: {type(images[0])}",
+        help_url="https://todo",
+    )

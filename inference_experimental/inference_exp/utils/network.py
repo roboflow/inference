@@ -32,7 +32,10 @@ def download_file(
     try:
         with requests.get(url, stream=True) as response:
             if response.status_code in HTTP_CODES_TO_RETRY:
-                raise RetryError(message=f"Image hosting returned {response.status_code}", help_url="https://todo",)
+                raise RetryError(
+                    message=f"Image hosting returned {response.status_code}",
+                    help_url="https://todo",
+                )
             response.raise_for_status()
             _handle_stream_download(
                 response=response,
@@ -41,7 +44,10 @@ def download_file(
                 verbose=verbose,
             )
     except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
-        raise RetryError(message=f"Connectivity error", help_url="https://todo",)
+        raise RetryError(
+            message=f"Connectivity error",
+            help_url="https://todo",
+        )
 
 
 def _handle_stream_download(

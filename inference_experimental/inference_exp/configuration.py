@@ -7,7 +7,9 @@ ONNXRUNTIME_EXECUTION_PROVIDERS = parse_comma_separated_values(
     values=os.getenv(
         "ONNXRUNTIME_EXECUTION_PROVIDERS",
         "CUDAExecutionProvider,OpenVINOExecutionProvider,CoreMLExecutionProvider,CPUExecutionProvider",
-    ).strip("[").strip("]")
+    )
+    .strip("[")
+    .strip("]")
 )
 DEFAULT_DEVICE_STR = os.getenv(
     "DEFAULT_DEVICE",
@@ -41,4 +43,3 @@ DISABLE_INTERACTIVE_PROGRESS_BARS = str2bool(
 LOG_LEVEL = os.getenv("LOG_LEVEL", "WARNING")
 VERBOSE_LOG_LEVEL = os.getenv("VERBOSE_LOG_LEVEL", "INFO")
 DISABLE_VERBOSE_LOGGER = str2bool(os.getenv("DISABLE_VERBOSE_LOGGER", "False"))
-

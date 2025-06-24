@@ -7,14 +7,38 @@ import requests
 from tqdm import tqdm
 
 REFERENCE_IMAGES_URL = [
-    ("tennis", "https://source.roboflow.com/BTRTpB7nxxjUchrOQ9vT/3iCH40NuJxcf8l2tXgQn/original.jpg"),
-    ("beach", "https://source.roboflow.com/BTRTpB7nxxjUchrOQ9vT/TAnwdBgfDCoPH2jT1ghx/original.jpg"),
-    ("giraffe", "https://source.roboflow.com/BTRTpB7nxxjUchrOQ9vT/T4nrLKwEA0vHp8aJFPTt/original.jpg"),
-    ("car", "https://source.roboflow.com/BTRTpB7nxxjUchrOQ9vT/aFq7tthQAK6d4pvtupX7/original.jpg"),
-    ("crowd", "https://source.roboflow.com/BTRTpB7nxxjUchrOQ9vT/3FBCYL5SX7VPrg0OVkdN/original.jpg"),
-    ("food", "https://source.roboflow.com/BTRTpB7nxxjUchrOQ9vT/XzDB9zVrIxJm17iVKleP/original.jpg"),
-    ("animals", "https://source.roboflow.com/BTRTpB7nxxjUchrOQ9vT/0fsReHjmHk3hBadXdNk4/original.jpg"),
-    ("elephants", "https://source.roboflow.com/BTRTpB7nxxjUchrOQ9vT/t23lZ0inksJwRRLd3J1b/original.jpg"),
+    (
+        "tennis",
+        "https://source.roboflow.com/BTRTpB7nxxjUchrOQ9vT/3iCH40NuJxcf8l2tXgQn/original.jpg",
+    ),
+    (
+        "beach",
+        "https://source.roboflow.com/BTRTpB7nxxjUchrOQ9vT/TAnwdBgfDCoPH2jT1ghx/original.jpg",
+    ),
+    (
+        "giraffe",
+        "https://source.roboflow.com/BTRTpB7nxxjUchrOQ9vT/T4nrLKwEA0vHp8aJFPTt/original.jpg",
+    ),
+    (
+        "car",
+        "https://source.roboflow.com/BTRTpB7nxxjUchrOQ9vT/aFq7tthQAK6d4pvtupX7/original.jpg",
+    ),
+    (
+        "crowd",
+        "https://source.roboflow.com/BTRTpB7nxxjUchrOQ9vT/3FBCYL5SX7VPrg0OVkdN/original.jpg",
+    ),
+    (
+        "food",
+        "https://source.roboflow.com/BTRTpB7nxxjUchrOQ9vT/XzDB9zVrIxJm17iVKleP/original.jpg",
+    ),
+    (
+        "animals",
+        "https://source.roboflow.com/BTRTpB7nxxjUchrOQ9vT/0fsReHjmHk3hBadXdNk4/original.jpg",
+    ),
+    (
+        "elephants",
+        "https://source.roboflow.com/BTRTpB7nxxjUchrOQ9vT/t23lZ0inksJwRRLd3J1b/original.jpg",
+    ),
 ]
 
 

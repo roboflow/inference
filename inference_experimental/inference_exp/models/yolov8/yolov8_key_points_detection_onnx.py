@@ -165,7 +165,8 @@ class YOLOv8ForKeyPointsDetectionOnnx(
                     i : i + self._input_batch_size
                 ].contiguous()
                 batch_results = run_session_via_iobinding(
-                    session=self._session, inputs={"images": batch_input},
+                    session=self._session,
+                    inputs={"images": batch_input},
                 )[0]
                 results.append(batch_results)
             return torch.cat(results, dim=0)

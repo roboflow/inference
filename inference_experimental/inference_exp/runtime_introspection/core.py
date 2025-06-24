@@ -4,7 +4,7 @@ import re
 import subprocess
 from dataclasses import dataclass
 from functools import cache
-from typing import List, Optional, Tuple, Set
+from typing import List, Optional, Set, Tuple
 
 import torch
 from inference_exp.configuration import L4T_VERSION, RUNNING_ON_JETSON
@@ -192,7 +192,10 @@ def get_jetson_type() -> Optional[str]:
 def get_jetson_type_from_hardware_inspection() -> Optional[str]:
     try:
         result = subprocess.run(
-            "lshw | grep 'product: NVIDIA Jetson'", shell=True, capture_output=True, text=True
+            "lshw | grep 'product: NVIDIA Jetson'",
+            shell=True,
+            capture_output=True,
+            text=True,
         )
         if result.returncode != 0:
             return None

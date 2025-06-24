@@ -6,7 +6,11 @@ import numpy as np
 import torch
 from inference_exp.configuration import DEFAULT_DEVICE, ONNXRUNTIME_EXECUTION_PROVIDERS
 from inference_exp.entities import ColorFormat
-from inference_exp.errors import EnvironmentConfigurationError, ModelRuntimeError, MissingDependencyError
+from inference_exp.errors import (
+    EnvironmentConfigurationError,
+    MissingDependencyError,
+    ModelRuntimeError,
+)
 from inference_exp.models.base.embeddings import TextImageEmbeddingModel
 from inference_exp.models.common.model_packages import get_model_package_contents
 from inference_exp.models.common.onnx import (

@@ -125,7 +125,10 @@ def crop_images_to_detections(
             images = images[:, [2, 1, 0], :, :]
         prepared_images = [i for i in images]
     elif isinstance(images, list) and len(images) == 0:
-        raise ModelRuntimeError(message="Detected empty input to the model", help_url="https://todo",)
+        raise ModelRuntimeError(
+            message="Detected empty input to the model",
+            help_url="https://todo",
+        )
     elif isinstance(images, list) and isinstance(images[0], np.ndarray):
         prepared_images = []
         input_color_format = input_color_format or "bgr"

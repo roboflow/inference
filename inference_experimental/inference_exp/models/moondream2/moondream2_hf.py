@@ -218,7 +218,9 @@ def are_images_encoded(
 ) -> bool:
     if isinstance(images, list):
         if not len(images):
-            raise ModelRuntimeError(message="Detected empty input to the model", help_url="https://todo")
+            raise ModelRuntimeError(
+                message="Detected empty input to the model", help_url="https://todo"
+            )
         return isinstance(images[0], EncodedImage)
     return isinstance(images, EncodedImage)
 

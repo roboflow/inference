@@ -4,22 +4,21 @@ from glob import glob
 
 from compilation.core import compile_model
 
-
 MODELS_TO_COMPILE = [
-    'yolov8l-pose-640',
-    'yolov8x-pose-640',
-    'yolov8x-pose-1280',
-    'yolov8x-seg-640',
-    'yolov8l-seg-640',
-    'yolov8l-seg-1280',
-    'yolov8x-seg-1280',
-    'yolov8l-640',
-    'yolov8l-1280',
-    'yolov8x-1280',
-    'yolov8x-640',
-    'yolov10b-640',
-    'yolov10l-640',
-    'yolov10x-640'
+    "yolov8l-pose-640",
+    "yolov8x-pose-640",
+    "yolov8x-pose-1280",
+    "yolov8x-seg-640",
+    "yolov8l-seg-640",
+    "yolov8l-seg-1280",
+    "yolov8x-seg-1280",
+    "yolov8l-640",
+    "yolov8l-1280",
+    "yolov8x-1280",
+    "yolov8x-640",
+    "yolov10b-640",
+    "yolov10l-640",
+    "yolov10x-640",
 ]
 
 MODELS_OUTPUT_DIR = "/model-compilation"
@@ -31,14 +30,14 @@ for model_id in MODELS_TO_COMPILE:
         model_input_size = (640, 640) if "-640" in model_id else (1280, 1280)
         try:
             compile_model(
-              model_id,
-              target_path=target_path,
-              precision=precision,
-              min_batch_size=1,
-              opt_batch_size=8,
-              max_batch_size=16,
-              workspace_size_gb=WORKSPACE_SIZE_IN_GB,
-              model_input_size=model_input_size,
+                model_id,
+                target_path=target_path,
+                precision=precision,
+                min_batch_size=1,
+                opt_batch_size=8,
+                max_batch_size=16,
+                workspace_size_gb=WORKSPACE_SIZE_IN_GB,
+                model_input_size=model_input_size,
             )
         except Exception as error:
             print(f"Could not finish compilation: {error}")

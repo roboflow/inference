@@ -26,7 +26,6 @@ from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
 
-
 try:
     import onnxruntime
 except ImportError as import_error:

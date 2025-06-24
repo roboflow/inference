@@ -6,7 +6,8 @@ import torch
 from inference_exp import Detections, ObjectDetectionModel
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
-from inference_exp.errors import ModelRuntimeError, MissingDependencyError
+from inference_exp.errors import MissingDependencyError, ModelRuntimeError
+from inference_exp.models.common.cuda import use_cuda_context, use_primary_cuda_context
 from inference_exp.models.common.model_packages import get_model_package_contents
 from inference_exp.models.common.post_processing import rescale_image_detections
 from inference_exp.models.common.roboflow.model_packages import (
@@ -21,7 +22,6 @@ from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
 from inference_exp.models.common.trt import infer_from_trt_engine, load_model
-from inference_exp.models.common.cuda import use_primary_cuda_context, use_cuda_context
 
 try:
     import tensorrt as trt
@@ -40,7 +40,10 @@ except ImportError as import_error:
 try:
     import pycuda.driver as cuda
 except ImportError as import_error:
-    raise MissingDependencyError(message="TODO", help_url="https://todo",) from import_error
+    raise MissingDependencyError(
+        message="TODO",
+        help_url="https://todo",
+    ) from import_error
 
 
 class YOLOv10ForObjectDetectionTRT(
@@ -89,7 +92,7 @@ class YOLOv10ForObjectDetectionTRT(
             trt_config=trt_config,
             device=device,
             cuda_context=cuda_context,
-            execution_context=execution_context
+            execution_context=execution_context,
         )
 
     def __init__(

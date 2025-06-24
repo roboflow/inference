@@ -2,11 +2,11 @@ import argparse
 import os.path
 from typing import Optional
 
+from inference_exp import AutoModel
 from tqdm import tqdm
 
-from inference_exp import AutoModel
 from .dataset import download_dataset
-from .serialization import serialize_results, dump_json
+from .serialization import dump_json, serialize_results
 
 
 def main(
@@ -15,7 +15,9 @@ def main(
     model_package_id: Optional[str] = None,
 ) -> None:
     dataset = download_dataset()
-    model = AutoModel.from_pretrained(model_name_or_path=model_id, model_package_id=model_package_id)
+    model = AutoModel.from_pretrained(
+        model_name_or_path=model_id, model_package_id=model_package_id
+    )
     results = []
     for image_id, image in tqdm(dataset, desc="Making predictions..."):
         predictions = model(image)
@@ -26,7 +28,7 @@ def main(
         dump_json(path=target_path, content=serialized)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_id", type=str, required=True)
     parser.add_argument("--output_dir", type=str, required=True)
@@ -37,4 +39,3 @@ if __name__ == '__main__':
         output_dir=args.output_dir,
         model_package_id=args.model_package_id,
     )
-

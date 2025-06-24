@@ -1,19 +1,22 @@
 import json
 import os.path
 import shutil
-from typing import Optional, Union, Tuple, List, Literal
+from typing import List, Literal, Optional, Tuple, Union
 
 import onnxruntime
-
 from inference_exp.configuration import ROBOFLOW_API_KEY
 from inference_exp.logger import LOGGER
 from inference_exp.models.auto_loaders.auto_negotiation import negotiate_model_packages
 from inference_exp.runtime_introspection.core import x_ray_runtime_environment
 from inference_exp.utils.download import download_files_to_directory
 from inference_exp.weights_providers.core import get_model_from_provider
-from inference_exp.weights_providers.entities import Quantization, BackendType, ModelPackageMetadata
-from .engine_builder import EngineBuilder
+from inference_exp.weights_providers.entities import (
+    BackendType,
+    ModelPackageMetadata,
+    Quantization,
+)
 
+from .engine_builder import EngineBuilder
 
 WEIGHTS_FILE_NAME = "weights.onnx"
 
@@ -91,14 +94,8 @@ def select_matching_model_packages(
         verbose=True,
     )
     if dynamic_dimensions_in_use:
-        return [
-            p for p in matching_model_packages
-            if p.dynamic_batch_size_supported
-        ]
-    return [
-        p for p in matching_model_packages
-        if not p.dynamic_batch_size_supported
-    ]
+        return [p for p in matching_model_packages if p.dynamic_batch_size_supported]
+    return [p for p in matching_model_packages if not p.dynamic_batch_size_supported]
 
 
 def download_model_packages(
@@ -108,7 +105,7 @@ def download_model_packages(
     result = []
     for model_package in matching_model_packages:
         print(f"Downloading package: {model_package.package_id}")
-        package_dir = os.path.join(target_path,  model_package.package_id)
+        package_dir = os.path.join(target_path, model_package.package_id)
         os.makedirs(package_dir, exist_ok=True)
         files_specs = [
             (a.file_name, a.download_url) for a in model_package.package_artefacts
@@ -131,7 +128,8 @@ def find_model_packages_matching_by_size(
     if isinstance(model_input_size, int):
         model_input_size = (model_input_size, model_input_size)
     return [
-        p for p in model_packages_dirs
+        p
+        for p in model_packages_dirs
         if model_matches_input_size(
             onnx_path=os.path.join(p, WEIGHTS_FILE_NAME),
             model_input_size=model_input_size,
@@ -146,8 +144,9 @@ def model_matches_input_size(
     session = onnxruntime.InferenceSession(onnx_path)
     input_shape = session.get_inputs()[0].shape
     h, w = input_shape[2], input_shape[3]
-    return dimension_matches(actual=h, expected=model_input_size[0]) \
-        and dimension_matches(actual=w, expected=model_input_size[1])
+    return dimension_matches(
+        actual=h, expected=model_input_size[0]
+    ) and dimension_matches(actual=w, expected=model_input_size[1])
 
 
 def dimension_matches(actual: Union[str, int], expected: int) -> bool:
@@ -176,19 +175,37 @@ def compile_model_to_trt(
             "gpu_available": runtime_xray.gpu_available,
             "gpu_devices": runtime_xray.gpu_devices,
             "gpu_devices_cc": [str(e) for e in runtime_xray.gpu_devices_cc],
-            "driver_version": str(runtime_xray.driver_version) if runtime_xray.driver_version else None,
-            "cuda_version": str(runtime_xray.cuda_version) if runtime_xray.cuda_version else None,
-            "trt_version": str(runtime_xray.trt_version) if runtime_xray.trt_version else None,
+            "driver_version": (
+                str(runtime_xray.driver_version)
+                if runtime_xray.driver_version
+                else None
+            ),
+            "cuda_version": (
+                str(runtime_xray.cuda_version) if runtime_xray.cuda_version else None
+            ),
+            "trt_version": (
+                str(runtime_xray.trt_version) if runtime_xray.trt_version else None
+            ),
             "jetson_type": runtime_xray.jetson_type,
-            "l4t_version": str(runtime_xray.l4t_version) if runtime_xray.l4t_version else None,
+            "l4t_version": (
+                str(runtime_xray.l4t_version) if runtime_xray.l4t_version else None
+            ),
             "os_version": runtime_xray.os_version,
             "torch_available": runtime_xray.torch_available,
-            "onnxruntime_version": str(runtime_xray.onnxruntime_version) if runtime_xray.onnxruntime_version else None,
-            "available_onnx_execution_providers": list(runtime_xray.available_onnx_execution_providers) if runtime_xray.available_onnx_execution_providers else None,
+            "onnxruntime_version": (
+                str(runtime_xray.onnxruntime_version)
+                if runtime_xray.onnxruntime_version
+                else None
+            ),
+            "available_onnx_execution_providers": (
+                list(runtime_xray.available_onnx_execution_providers)
+                if runtime_xray.available_onnx_execution_providers
+                else None
+            ),
             "hf_transformers_available": runtime_xray.hf_transformers_available,
             "ultralytics_available": runtime_xray.ultralytics_available,
-            "trt_python_package_available": runtime_xray.trt_python_package_available
-        }
+            "trt_python_package_available": runtime_xray.trt_python_package_available,
+        },
     )
     onnx_path = os.path.join(model_dir, WEIGHTS_FILE_NAME)
     session = onnxruntime.InferenceSession(onnx_path)
@@ -212,10 +229,14 @@ def compile_model_to_trt(
         engine_name_postfix += "-trt-version-compatible"
     if same_compute_compatibility:
         engine_name_postfix += "-same-cc"
-    engine_path = os.path.join(model_dir, f"engine-{precision}{engine_name_postfix}.plan")
+    engine_path = os.path.join(
+        model_dir, f"engine-{precision}{engine_name_postfix}.plan"
+    )
     if os.path.exists(engine_path):
         return None
-    trt_config_path = os.path.join(model_dir, f"trt-config-{precision}{engine_name_postfix}.json")
+    trt_config_path = os.path.join(
+        model_dir, f"trt-config-{precision}{engine_name_postfix}.json"
+    )
     dump_json(
         path=trt_config_path,
         contents={
@@ -226,7 +247,7 @@ def compile_model_to_trt(
             "trt_version_compatible": trt_version_compatible,
             "same_compute_compatibility": same_compute_compatibility,
             "precision": precision,
-        }
+        },
     )
     engine_builder = EngineBuilder(workspace=workspace_size_gb)
     engine_builder.create_network(onnx_path=onnx_path)

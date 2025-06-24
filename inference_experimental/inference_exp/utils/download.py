@@ -166,6 +166,7 @@ def safe_execute_download(
     def on_chunk_downloaded(bytes_num: int) -> None:
         with progress_task_lock:
             progress.advance(progress_task, bytes_num)
+
     if (
         expected_file_size is None
         or expected_file_size < MIN_SIZE_FOR_THREADED_DOWNLOAD
@@ -214,7 +215,9 @@ def check_range_download_option(
     try:
         response = requests.head(url, timeout=timeout)
     except (OSError, Timeout, requests.exceptions.ConnectionError):
-        raise RetryError(message=f"Connectivity error for URL: {url}", help_url="https://todo")
+        raise RetryError(
+            message=f"Connectivity error for URL: {url}", help_url="https://todo"
+        )
     if response.status_code in response_codes_to_retry:
         raise RetryError(
             message=f"Remote server returned response code {response.status_code} for URL {url}",
@@ -307,9 +310,14 @@ def download_chunk(
 ) -> None:
     headers = {"Range": f"bytes={start}-{end}"}
     try:
-        with requests.get(url, headers=headers, stream=True, timeout=timeout) as response:
+        with requests.get(
+            url, headers=headers, stream=True, timeout=timeout
+        ) as response:
             if response.status_code in response_codes_to_retry:
-                raise RetryError(message=f"File hosting returned {response.status_code}", help_url="https://todo")
+                raise RetryError(
+                    message=f"File hosting returned {response.status_code}",
+                    help_url="https://todo",
+                )
             response.raise_for_status()
             _handle_stream_download(
                 response=response,
@@ -320,7 +328,10 @@ def download_chunk(
                 offset=start,
             )
     except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
-        raise RetryError(message=f"Connectivity error", help_url="https://todo",)
+        raise RetryError(
+            message=f"Connectivity error",
+            help_url="https://todo",
+        )
 
 
 @backoff.on_exception(
@@ -341,7 +352,10 @@ def stream_download(
     try:
         with requests.get(url, stream=True, timeout=timeout) as response:
             if response.status_code in response_codes_to_retry:
-                raise RetryError(message=f"File hosting returned {response.status_code}", help_url="https://todo",)
+                raise RetryError(
+                    message=f"File hosting returned {response.status_code}",
+                    help_url="https://todo",
+                )
             response.raise_for_status()
             _handle_stream_download(
                 response=response,
@@ -350,7 +364,10 @@ def stream_download(
                 on_chunk_downloaded=on_chunk_downloaded,
             )
     except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
-        raise RetryError(message=f"Connectivity error", help_url="https://todo",)
+        raise RetryError(
+            message=f"Connectivity error",
+            help_url="https://todo",
+        )
 
 
 def _handle_stream_download(
