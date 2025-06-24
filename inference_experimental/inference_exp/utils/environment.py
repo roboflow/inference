@@ -4,7 +4,9 @@ from inference_exp.errors import InvalidEnvVariable
 
 
 def parse_comma_separated_values(values: str) -> List[str]:
-    return [v.strip() for v in values.split(",")]
+    if not values:
+        return []
+    return [v.strip() for v in values.split(",") if v.strip()]
 
 
 def str2bool(value: Any) -> bool:

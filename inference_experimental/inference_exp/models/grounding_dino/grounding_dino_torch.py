@@ -12,7 +12,7 @@ from inference_exp.models.base.object_detection import (
     OpenVocabularyObjectDetectionModel,
 )
 from inference_exp.models.common.model_packages import get_model_package_contents
-from inference_exp.utils.network import download_file
+from inference_exp.utils.download import download_files_to_directory
 from torch import nn
 from torchvision import transforms
 from torchvision.ops import box_convert
@@ -45,7 +45,6 @@ class GroundingDinoForObjectDetectionTorch(
         cls,
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
-        verbose: bool = True,
         **kwargs,
     ) -> "GroundingDinoForObjectDetectionTorch":
         model_package_content = get_model_package_contents(
@@ -54,11 +53,9 @@ class GroundingDinoForObjectDetectionTorch(
         )
         config_path = os.path.join(model_name_or_path, "GroundingDINO_SwinT_OGC.py")
         if not os.path.exists(config_path):
-            download_file(
-                url=DEFAULT_CONFIG_URL,
-                target_path=config_path,
-                description="Fetching default Grounding Dino config.",
-                verbose=verbose,
+            download_files_to_directory(
+                target_path=model_name_or_path,
+                files_specs=[("GroundingDINO_SwinT_OGC.py", DEFAULT_CONFIG_URL)],
             )
         model = load_model(
             model_config_path=config_path,
