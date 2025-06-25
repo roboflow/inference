@@ -9,7 +9,7 @@ import backoff
 import requests
 from filelock import FileLock
 from inference_exp.configuration import (
-    API_CALLS_MAX_RETRIES,
+    API_CALLS_MAX_TRIES,
     API_CALLS_TIMEOUT,
     DISABLE_INTERACTIVE_PROGRESS_BARS,
     IDEMPOTENT_API_REQUEST_CODES_TO_RETRY,
@@ -206,7 +206,7 @@ def safe_check_range_download_option(
 @backoff.on_exception(
     backoff.constant,
     exception=RetryError,
-    max_tries=API_CALLS_MAX_RETRIES,
+    max_tries=API_CALLS_MAX_TRIES,
     interval=1,
 )
 def check_range_download_option(
@@ -295,7 +295,7 @@ def generate_chunks_boundaries(
 @backoff.on_exception(
     backoff.constant,
     exception=RetryError,
-    max_tries=API_CALLS_MAX_RETRIES,
+    max_tries=API_CALLS_MAX_TRIES,
     interval=1,
 )
 def download_chunk(
@@ -337,7 +337,7 @@ def download_chunk(
 @backoff.on_exception(
     backoff.constant,
     exception=RetryError,
-    max_tries=API_CALLS_MAX_RETRIES,
+    max_tries=API_CALLS_MAX_TRIES,
     interval=1,
 )
 def stream_download(

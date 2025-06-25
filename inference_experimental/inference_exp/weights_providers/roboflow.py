@@ -4,13 +4,14 @@ from typing import Annotated, Callable, Dict, List, Literal, Optional, Union
 import backoff
 import requests
 from inference_exp.configuration import (
-    API_CALLS_MAX_RETRIES,
+    API_CALLS_MAX_TRIES,
     API_CALLS_TIMEOUT,
     IDEMPOTENT_API_REQUEST_CODES_TO_RETRY,
     ROBOFLOW_API_HOST,
     ROBOFLOW_API_KEY,
 )
 from inference_exp.errors import (
+    BaseInferenceError,
     ModelMetadataConsistencyError,
     ModelMetadataHandlerNotImplementedError,
     ModelRetrievalError,
@@ -61,7 +62,7 @@ class RoboflowModelMetadata(BaseModel):
     model_packages: List[Union[RoboflowModelPackageV1, dict]] = Field(
         alias="modelPackages",
     )
-    next_page: Optional[str] = Field(alias="nextPage")
+    next_page: Optional[str] = Field(alias="nextPage", default=None)
 
 
 def get_roboflow_model(model_id: str, api_key: Optional[str] = None) -> ModelMetadata:
@@ -69,6 +70,8 @@ def get_roboflow_model(model_id: str, api_key: Optional[str] = None) -> ModelMet
     parsed_model_packages = []
     for model_package in model_metadata.model_packages:
         parsed_model_package = parse_model_package_metadata(metadata=model_package)
+        if parsed_model_package is None:
+            continue
         parsed_model_packages.append(parsed_model_package)
     return ModelMetadata(
         model_id=model_metadata.model_id,
@@ -78,12 +81,16 @@ def get_roboflow_model(model_id: str, api_key: Optional[str] = None) -> ModelMet
     )
 
 
-def get_model_metadata(model_id: str, api_key: Optional[str]) -> RoboflowModelMetadata:
+def get_model_metadata(
+    model_id: str,
+    api_key: Optional[str],
+    max_pages: int = MAX_MODEL_PACKAGE_PAGES,
+) -> RoboflowModelMetadata:
     if api_key is None:
         api_key = ROBOFLOW_API_KEY
     fetched_pages = []
     start_after = None
-    while len(fetched_pages) < MAX_MODEL_PACKAGE_PAGES:
+    while len(fetched_pages) < max_pages:
         pagination_result = get_one_page_of_model_metadata(
             model_id=model_id, api_key=api_key, start_after=start_after
         )
@@ -107,7 +114,7 @@ def get_model_metadata(model_id: str, api_key: Optional[str]) -> RoboflowModelMe
 @backoff.on_exception(
     backoff.expo,
     exception=RetryError,
-    max_tries=API_CALLS_MAX_RETRIES,
+    max_tries=API_CALLS_MAX_TRIES,
 )
 def get_one_page_of_model_metadata(
     model_id: str,
@@ -135,11 +142,6 @@ def get_one_page_of_model_metadata(
             message=f"Connectivity error",
             help_url="https://todo",
         )
-    if response.status_code in IDEMPOTENT_API_REQUEST_CODES_TO_RETRY:
-        raise RetryError(
-            message=f"Roboflow API responded with {response.status_code}",
-            help_url="https://todo",
-        )
     handle_response_errors(response=response, operation_name="get model weights")
     try:
         return RoboflowModelMetadata.model_validate(response.json()["modelMetadata"])
@@ -152,17 +154,17 @@ def get_one_page_of_model_metadata(
 
 
 def handle_response_errors(response: Response, operation_name: str) -> None:
-    if response.status_code in IDEMPOTENT_API_REQUEST_CODES_TO_RETRY:
-        raise RetryError(
-            message=f"Roboflow API returned invalid response code for {operation_name} operation "
-            f"{response.status_code}. If that problem is not ephemeral - contact Roboflow.",
-            help_url="https://todo",
-        )
     if response.status_code == 401:
         raise UnauthorizedModelAccessError(
             message=f"Could not {operation_name}. Request unauthorised. Are you sure you use valid Roboflow API key? "
             "See details here: https://docs.roboflow.com/api-reference/authentication and "
             "export key to `ROBOFLOW_API_KEY` environment variable",
+            help_url="https://todo",
+        )
+    if response.status_code in IDEMPOTENT_API_REQUEST_CODES_TO_RETRY:
+        raise RetryError(
+            message=f"Roboflow API returned invalid response code for {operation_name} operation "
+            f"{response.status_code}. If that problem is not ephemeral - contact Roboflow.",
             help_url="https://todo",
         )
     if response.status_code >= 400:
@@ -182,7 +184,7 @@ def get_error_response_payload(response: Response) -> str:
 
 
 def parse_model_package_metadata(
-    metadata: Union[Union[RoboflowModelPackageV1, dict]]
+    metadata: Union[RoboflowModelPackageV1, dict],
 ) -> Optional[ModelPackageMetadata]:
     if isinstance(metadata, dict):
         metadata_type = metadata.get("type", "unknown")
@@ -195,6 +197,10 @@ def parse_model_package_metadata(
         return None
     manifest_type = metadata.package_manifest.get("type", "unknown")
     if manifest_type in MODEL_PACKAGES_TO_IGNORE:
+        LOGGER.debug(
+            "Ignoring model package with manifest incompatible with inference."
+            f"Debug info - model package id: {metadata.package_id}, manifest type: {manifest_type}."
+        )
         return None
     if manifest_type not in MODEL_PACKAGE_PARSERS:
         LOGGER.warning(
@@ -205,6 +211,8 @@ def parse_model_package_metadata(
         return None
     try:
         return MODEL_PACKAGE_PARSERS[manifest_type](metadata)
+    except BaseInferenceError as error:
+        raise error
     except Exception as error:
         raise ModelMetadataConsistencyError(
             message="Roboflow API returned model package metadata which cannot be parsed. Contact Roboflow to "
@@ -301,8 +309,22 @@ def parse_trt_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageMet
     ):
         raise ModelMetadataConsistencyError(
             message="While downloading model weights, Roboflow API provided inconsistent metadata "
-            "describing model package - ONNX package declared not to support dynamic batch size and "
+            "describing model package - TRT package declared not to support dynamic batch size and "
             "supported static batch size not provided. Contact Roboflow to solve the problem.",
+            help_url="https://todo",
+        )
+    if parsed_manifest.dynamic_batch_size is True and any(
+        e is None
+        for e in [
+            parsed_manifest.min_batch_size,
+            parsed_manifest.opt_batch_size,
+            parsed_manifest.max_batch_size,
+        ]
+    ):
+        raise ModelMetadataConsistencyError(
+            message="While downloading model weights, Roboflow API provided inconsistent metadata "
+            "describing model package - TRT package declared support for dynamic batch size, but did not "
+            "specify min / opt / max batch size supported which is required.",
             help_url="https://todo",
         )
     if parsed_manifest.machine_type == "gpu-server":
@@ -462,7 +484,8 @@ def as_version(value: str) -> Version:
         return Version(value)
     except InvalidVersion as error:
         raise ModelMetadataConsistencyError(
-            "Roboflow API returned model package manifest that is expected to provide valid version specification for "
+            message="Roboflow API returned model package manifest that is expected to provide valid version specification for "
             "one of the field of package manifest, but instead provides value that cannot be parsed. This is most "
-            "likely Roboflow API bug - contact Roboflow to solve the problem."
+            "likely Roboflow API bug - contact Roboflow to solve the problem.",
+            help_url="https://todo",
         ) from error

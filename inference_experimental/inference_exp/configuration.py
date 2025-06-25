@@ -18,7 +18,7 @@ DEFAULT_DEVICE_STR = os.getenv(
 DEFAULT_DEVICE = torch.device(DEFAULT_DEVICE_STR)
 ROBOFLOW_API_KEY = os.getenv("ROBOFLOW_API_KEY")
 API_CALLS_TIMEOUT = int(os.getenv("API_CALLS_TIMEOUT", "5"))
-API_CALLS_MAX_RETRIES = int(os.getenv("API_CALLS_MAX_RETRIES", "3"))
+API_CALLS_MAX_TRIES = int(os.getenv("API_CALLS_MAX_TRIES", "3"))
 IDEMPOTENT_API_REQUEST_CODES_TO_RETRY = set(
     int(e.strip())
     for e in os.getenv(

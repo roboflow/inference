@@ -20,6 +20,7 @@ from inference_exp.runtime_introspection.core import (
     get_trt_version,
     get_trt_version_from_libnvinfer,
     is_hf_transformers_available,
+    is_running_on_jetson,
     is_torch_available,
     is_trt_python_package_available,
     is_ultralytics_available,
@@ -28,6 +29,63 @@ from inference_exp.runtime_introspection.core import (
 from packaging.version import Version
 
 """I mock your mocks :)"""
+
+
+@mock.patch.object(core, "RUNNING_ON_JETSON", "true")
+def test_is_running_on_jetson_when_env_variable_is_set() -> None:
+    # when
+    is_running_on_jetson.cache_clear()
+    get_jetson_type.cache_clear()
+    try:
+        result = is_running_on_jetson()
+    finally:
+        is_running_on_jetson.cache_clear()
+        get_jetson_type.cache_clear()
+
+    # then
+    assert result is True
+
+
+@mock.patch.object(core, "get_jetson_type")
+@mock.patch.object(core, "RUNNING_ON_JETSON", None)
+def test_is_running_on_jetson_when_get_jetson_type_fallback_is_needed(
+    get_jetson_type_mock: MagicMock,
+) -> None:
+    # given
+    get_jetson_type_mock.return_value = "jetson-orin-nx"
+
+    # when
+    is_running_on_jetson.cache_clear()
+    get_jetson_type.cache_clear()
+    try:
+        result = is_running_on_jetson()
+    finally:
+        is_running_on_jetson.cache_clear()
+        get_jetson_type.cache_clear()
+
+    # then
+    assert result is True
+
+
+@mock.patch.object(core, "get_jetson_type")
+@mock.patch.object(core, "RUNNING_ON_JETSON", None)
+def test_is_running_on_jetson_when_cannot_determine_jetson_characteristics(
+    get_jetson_type_mock: MagicMock,
+) -> None:
+    # given
+    get_jetson_type_mock.return_value = None
+
+    # when
+    is_running_on_jetson.cache_clear()
+    get_jetson_type.cache_clear()
+    try:
+        result = is_running_on_jetson()
+    finally:
+        is_running_on_jetson.cache_clear()
+        get_jetson_type.cache_clear()
+
+    # then
+    assert result is False
 
 
 @mock.patch.object(core, "torch")
