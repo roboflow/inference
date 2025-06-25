@@ -180,6 +180,10 @@ SMOLVLM2_ENABLED = str2bool(os.getenv("SMOLVLM2_ENABLED", True))
 
 MOONDREAM2_ENABLED = str2bool(os.getenv("MOONDREAM2_ENABLED", True))
 
+PALIGEMMA_ENABLED = str2bool(os.getenv("PALIGEMMA_ENABLED", True))
+
+FLORENCE2_ENABLED = str2bool(os.getenv("FLORENCE2_ENABLED", True))
+
 # Flag to enable YOLO-World core model, default is True
 CORE_MODEL_YOLO_WORLD_ENABLED = str2bool(
     os.getenv("CORE_MODEL_YOLO_WORLD_ENABLED", True)
