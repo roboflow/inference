@@ -251,41 +251,42 @@ ROBOFLOW_MODEL_TYPES = {
 }
 
 try:
-    from inference.models import LoRAPaliGemma, PaliGemma
+    if PALIGEMMA_ENABLED:
+        from inference.models import LoRAPaliGemma, PaliGemma
 
-    paligemma_models = {
-        (
-            "object-detection",
-            "paligemma-3b-pt-224",
-        ): PaliGemma,  # TODO: change when we have a new project type
-        ("object-detection", "paligemma-3b-pt-448"): PaliGemma,
-        ("object-detection", "paligemma-3b-pt-896"): PaliGemma,
-        (
-            "instance-segmentation",
-            "paligemma-3b-pt-224",
-        ): PaliGemma,  # TODO: change when we have a new project type
-        ("instance-segmentation", "paligemma-3b-pt-448"): PaliGemma,
-        ("instance-segmentation", "paligemma-3b-pt-896"): PaliGemma,
-        (
-            "object-detection",
-            "paligemma-3b-pt-224-peft",
-        ): LoRAPaliGemma,  # TODO: change when we have a new project type
-        ("object-detection", "paligemma-3b-pt-448-peft"): LoRAPaliGemma,
-        ("object-detection", "paligemma-3b-pt-896-peft"): LoRAPaliGemma,
-        (
-            "instance-segmentation",
-            "paligemma-3b-pt-224-peft",
-        ): LoRAPaliGemma,  # TODO: change when we have a new project type
-        ("instance-segmentation", "paligemma-3b-pt-448-peft"): LoRAPaliGemma,
-        ("instance-segmentation", "paligemma-3b-pt-896-peft"): LoRAPaliGemma,
-        ("text-image-pairs", "paligemma2-3b-pt-224"): PaliGemma,
-        ("text-image-pairs", "paligemma2-3b-pt-448"): PaliGemma,
-        ("text-image-pairs", "paligemma2-3b-pt-896"): PaliGemma,
-        ("text-image-pairs", "paligemma2-3b-pt-224-peft"): LoRAPaliGemma,
-        ("text-image-pairs", "paligemma2-3b-pt-448-peft"): LoRAPaliGemma,
-        ("text-image-pairs", "paligemma2-3b-pt-896-peft"): LoRAPaliGemma,
-    }
-    ROBOFLOW_MODEL_TYPES.update(paligemma_models)
+        paligemma_models = {
+            (
+                "object-detection",
+                "paligemma-3b-pt-224",
+            ): PaliGemma,  # TODO: change when we have a new project type
+            ("object-detection", "paligemma-3b-pt-448"): PaliGemma,
+            ("object-detection", "paligemma-3b-pt-896"): PaliGemma,
+            (
+                "instance-segmentation",
+                "paligemma-3b-pt-224",
+            ): PaliGemma,  # TODO: change when we have a new project type
+            ("instance-segmentation", "paligemma-3b-pt-448"): PaliGemma,
+            ("instance-segmentation", "paligemma-3b-pt-896"): PaliGemma,
+            (
+                "object-detection",
+                "paligemma-3b-pt-224-peft",
+            ): LoRAPaliGemma,  # TODO: change when we have a new project type
+            ("object-detection", "paligemma-3b-pt-448-peft"): LoRAPaliGemma,
+            ("object-detection", "paligemma-3b-pt-896-peft"): LoRAPaliGemma,
+            (
+                "instance-segmentation",
+                "paligemma-3b-pt-224-peft",
+            ): LoRAPaliGemma,  # TODO: change when we have a new project type
+            ("instance-segmentation", "paligemma-3b-pt-448-peft"): LoRAPaliGemma,
+            ("instance-segmentation", "paligemma-3b-pt-896-peft"): LoRAPaliGemma,
+            ("text-image-pairs", "paligemma2-3b-pt-224"): PaliGemma,
+            ("text-image-pairs", "paligemma2-3b-pt-448"): PaliGemma,
+            ("text-image-pairs", "paligemma2-3b-pt-896"): PaliGemma,
+            ("text-image-pairs", "paligemma2-3b-pt-224-peft"): LoRAPaliGemma,
+            ("text-image-pairs", "paligemma2-3b-pt-448-peft"): LoRAPaliGemma,
+            ("text-image-pairs", "paligemma2-3b-pt-896-peft"): LoRAPaliGemma,
+        }
+        ROBOFLOW_MODEL_TYPES.update(paligemma_models)
 except:
     warnings.warn(
         "Your `inference` configuration does not support PaliGemma model. "
@@ -295,41 +296,42 @@ except:
     )
 
 try:
-    from inference.models import Florence2, LoRAFlorence2
+    if FLORENCE2_ENABLED:
+        from inference.models import Florence2, LoRAFlorence2
 
-    florence2_models = {
-        (
-            "object-detection",
-            "florence-2-base",
-        ): Florence2,  # TODO: change when we have a new project type
-        ("object-detection", "florence-2-large"): Florence2,
-        (
-            "instance-segmentation",
-            "florence-2-base",
-        ): Florence2,  # TODO: change when we have a new project type
-        ("instance-segmentation", "florence-2-large"): Florence2,
-        (
-            "object-detection",
-            "florence-2-base-peft",
-        ): LoRAFlorence2,  # TODO: change when we have a new project type
-        (
-            "text-image-pairs",
-            "florence-2-base",
-        ): Florence2,  # TODO: change when we have a new project type
-        ("text-image-pairs", "florence-2-large"): Florence2,
-        ("object-detection", "florence-2-large-peft"): LoRAFlorence2,
-        (
-            "instance-segmentation",
-            "florence-2-base-peft",
-        ): LoRAFlorence2,  # TODO: change when we have a new project type
-        ("instance-segmentation", "florence-2-large-peft"): LoRAFlorence2,
-        (
-            "text-image-pairs",
-            "florence-2-base-peft",
-        ): LoRAFlorence2,
-        ("text-image-pairs", "florence-2-large-peft"): LoRAFlorence2,
-    }
-    ROBOFLOW_MODEL_TYPES.update(florence2_models)
+        florence2_models = {
+            (
+                "object-detection",
+                "florence-2-base",
+            ): Florence2,  # TODO: change when we have a new project type
+            ("object-detection", "florence-2-large"): Florence2,
+            (
+                "instance-segmentation",
+                "florence-2-base",
+            ): Florence2,  # TODO: change when we have a new project type
+            ("instance-segmentation", "florence-2-large"): Florence2,
+            (
+                "object-detection",
+                "florence-2-base-peft",
+            ): LoRAFlorence2,  # TODO: change when we have a new project type
+            (
+                "text-image-pairs",
+                "florence-2-base",
+            ): Florence2,  # TODO: change when we have a new project type
+            ("text-image-pairs", "florence-2-large"): Florence2,
+            ("object-detection", "florence-2-large-peft"): LoRAFlorence2,
+            (
+                "instance-segmentation",
+                "florence-2-base-peft",
+            ): LoRAFlorence2,  # TODO: change when we have a new project type
+            ("instance-segmentation", "florence-2-large-peft"): LoRAFlorence2,
+            (
+                "text-image-pairs",
+                "florence-2-base-peft",
+            ): LoRAFlorence2,
+            ("text-image-pairs", "florence-2-large-peft"): LoRAFlorence2,
+        }
+        ROBOFLOW_MODEL_TYPES.update(florence2_models)
 except:
     warnings.warn(
         "Your `inference` configuration does not support Florence2 model. "
