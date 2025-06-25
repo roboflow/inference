@@ -12,6 +12,7 @@ RUN apt-get update -y && apt-get upgrade -y && apt-get install -y \
     libssl-dev \ 
     libreadline-dev \
     libffi-dev \
+    libsqlite3-dev \
     curl \
     libbz2-dev \
     software-properties-common \
@@ -29,7 +30,6 @@ RUN apt-get update -y && apt-get upgrade -y && apt-get install -y \
     python3-pip \
     python3-matplotlib \
     gfortran \
-    build-essential \
     libatlas-base-dev \
     libsm6 \
     libxext6 \
@@ -61,6 +61,7 @@ RUN python3.9 -m pip install --upgrade pip "h5py<=3.10.0" && python3.9 -m pip in
     -r requirements.yolo_world.txt \
     jupyterlab \
     "setuptools<=75.5.0" \
+    "pydantic<=2.10.6" \
     --upgrade \
     && rm -rf ~/.cache/pip
 
