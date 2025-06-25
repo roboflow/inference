@@ -115,7 +115,7 @@ def negotiate_model_packages(
             f"dependencies or the model is not registered with packages that would allow `inference` to run.",
             help_url="https://todo",
         )
-    results = rank_model_packages(model_packages=results)
+    results = rank_model_packages(model_packages=results, selected_device=device)
     verbose_info("Eligible packages ranked:", verbose_requested=verbose)
     print_model_packages(model_packages=results, verbose=verbose)
     return results

@@ -36,7 +36,10 @@ BATCH_SIZE_PRIORITY = {
 
 def rank_model_packages(
     model_packages: List[ModelPackageMetadata],
+    selected_device: Optional[torch.device] = None,
 ) -> List[ModelPackageMetadata]:
+    # I feel like this will be the biggest liability of new inference :)
+    # Some dimensions are just hard to rank arbitrarily and reasonably
     sorting_features = []
     # ordering TRT and Cu versions from older to newest -
     # with the assumption that incompatible versions are eliminated earlier, and
@@ -46,7 +49,7 @@ def rank_model_packages(
     # discarded in the previous stage.
     cuda_ranking = rank_cuda_versions(model_packages=model_packages)
     trt_ranking = rank_trt_versions(model_packages=model_packages)
-    for model_package, cu_rank, trt_rank in zip(
+    for model_package, package_cu_rank, package_trt_rank in zip(
         model_packages, cuda_ranking, trt_ranking
     ):
         batch_mode = (
@@ -65,30 +68,39 @@ def rank_model_packages(
                 QUANTIZATION_PRIORITY.get(model_package.quantization, 0),
                 BATCH_SIZE_PRIORITY[batch_mode],
                 static_batch_size_score,  # the bigger statis batch size, the worse - requires padding
-                retrieve_onnx_opset(model_package),  # the higher opset, the better
-                retrieve_trt_forward_compatible_match(
+                retrieve_onnx_opset_score(
+                    model_package
+                ),  # the higher opset, the better
+                retrieve_trt_forward_compatible_match_score(
                     model_package
                 ),  # exact matches first
-                retrieve_same_trt_cc_compatibility(model_package),
-                retrieve_cuda_device_match(
-                    model_package
+                retrieve_same_trt_cc_compatibility_score(model_package),
+                retrieve_cuda_device_match_score(
+                    model_package, selected_device
                 ),  # we like more direct matches
-                cu_rank,
-                trt_rank,
+                package_cu_rank,
+                package_trt_rank,
+                retrieve_onnx_incompatible_providers_score(model_package),
+                retrieve_trt_dynamic_batch_size_score(model_package),
+                retrieve_trt_lean_runtime_excluded_score(model_package),
+                retrieve_jetson_device_name_match_score(model_package),
+                retrieve_os_version_match_score(model_package),
+                retrieve_l4t_version_match_score(model_package),
+                retrieve_driver_version_match_score(model_package),
                 model_package,
             )
         )
-    sorted_features = sorted(sorting_features, key=lambda x: x[:10], reverse=True)
+    sorted_features = sorted(sorting_features, key=lambda x: x[:17], reverse=True)
     return [f[-1] for f in sorted_features]
 
 
-def retrieve_onnx_opset(model_package: ModelPackageMetadata) -> int:
+def retrieve_onnx_opset_score(model_package: ModelPackageMetadata) -> int:
     if model_package.onnx_package_details is None:
         return -1
     return model_package.onnx_package_details.opset
 
 
-def retrieve_cuda_device_match(
+def retrieve_cuda_device_match_score(
     model_package: ModelPackageMetadata,
     selected_device: Optional[torch.device] = None,
 ) -> int:
@@ -109,22 +121,142 @@ def retrieve_cuda_device_match(
     return int(any(dev == compilation_device for dev in all_available_cuda_devices))
 
 
-def retrieve_same_trt_cc_compatibility(model_package: ModelPackageMetadata) -> int:
+def retrieve_same_trt_cc_compatibility_score(
+    model_package: ModelPackageMetadata,
+) -> int:
     if model_package.trt_package_details is None:
         return 1
     return int(not model_package.trt_package_details.same_cc_compatible)
 
 
-def retrieve_trt_forward_compatible_match(model_package: ModelPackageMetadata) -> int:
+def retrieve_trt_forward_compatible_match_score(
+    model_package: ModelPackageMetadata,
+) -> int:
     if model_package.trt_package_details is None:
         return 1
     return int(not model_package.trt_package_details.trt_forward_compatible)
 
 
+def retrieve_onnx_incompatible_providers_score(
+    model_package: ModelPackageMetadata,
+) -> int:
+    if model_package.onnx_package_details is None:
+        return 0
+    if not model_package.onnx_package_details.incompatible_providers:
+        return 0
+    runtime_x_ray = x_ray_runtime_environment()
+    available_onnx_execution_providers = set(
+        runtime_x_ray.available_onnx_execution_providers or []
+    )
+    return -len(
+        available_onnx_execution_providers.intersection(
+            model_package.onnx_package_details.incompatible_providers
+        )
+    )
+
+
+def retrieve_trt_dynamic_batch_size_score(model_package: ModelPackageMetadata) -> int:
+    if model_package.trt_package_details is None:
+        return 0
+    if any(
+        bs is None
+        for bs in [
+            model_package.trt_package_details.min_dynamic_batch_size,
+            model_package.trt_package_details.opt_dynamic_batch_size,
+            model_package.trt_package_details.max_dynamic_batch_size,
+        ]
+    ):
+        return 0
+    return (
+        model_package.trt_package_details.max_dynamic_batch_size
+        - model_package.trt_package_details.min_dynamic_batch_size
+    )
+
+
+def retrieve_trt_lean_runtime_excluded_score(
+    model_package: ModelPackageMetadata,
+) -> int:
+    if model_package.trt_package_details is None:
+        return 0
+    return int(not model_package.trt_package_details.trt_lean_runtime_excluded)
+
+
+def retrieve_os_version_match_score(model_package: ModelPackageMetadata) -> int:
+    if model_package.trt_package_details is None:
+        # irrelevant for not trt
+        return 0
+    if model_package.environment_requirements is None:
+        return 0
+    if not isinstance(
+        model_package.environment_requirements, ServerEnvironmentRequirements
+    ):
+        return 0
+    if not model_package.environment_requirements.os_version:
+        return 0
+    runtime_x_ray = x_ray_runtime_environment()
+    return int(
+        runtime_x_ray.os_version == model_package.environment_requirements.os_version
+    )
+
+
+def retrieve_l4t_version_match_score(model_package: ModelPackageMetadata) -> int:
+    if model_package.trt_package_details is None:
+        # irrelevant for not trt
+        return 0
+    if model_package.environment_requirements is None:
+        return 0
+    if not isinstance(
+        model_package.environment_requirements, JetsonEnvironmentRequirements
+    ):
+        return 0
+    runtime_x_ray = x_ray_runtime_environment()
+    return int(
+        runtime_x_ray.l4t_version == model_package.environment_requirements.l4t_version
+    )
+
+
+def retrieve_driver_version_match_score(model_package: ModelPackageMetadata) -> int:
+    if model_package.trt_package_details is None:
+        # irrelevant for not trt
+        return 0
+    if model_package.environment_requirements is None:
+        return 0
+    if not isinstance(
+        model_package.environment_requirements, JetsonEnvironmentRequirements
+    ) and not isinstance(
+        model_package.environment_requirements, ServerEnvironmentRequirements
+    ):
+        return 0
+    if not model_package.environment_requirements.driver_version:
+        return 0
+    runtime_x_ray = x_ray_runtime_environment()
+    return int(
+        runtime_x_ray.driver_version
+        == model_package.environment_requirements.driver_version
+    )
+
+
+def retrieve_jetson_device_name_match_score(model_package: ModelPackageMetadata) -> int:
+    if model_package.trt_package_details is None:
+        # irrelevant for not trt
+        return 0
+    if model_package.environment_requirements is None:
+        return 0
+    if not isinstance(
+        model_package.environment_requirements, JetsonEnvironmentRequirements
+    ):
+        return 0
+    runtime_x_ray = x_ray_runtime_environment()
+    return int(
+        runtime_x_ray.jetson_type
+        == model_package.environment_requirements.jetson_product_name
+    )
+
+
 def rank_cuda_versions(model_packages: List[ModelPackageMetadata]) -> List[int]:
     cuda_versions = []
     package_id_to_cuda_version = {}
-    last_ranking = -len(model_packages)
+    last_ranking = -len(model_packages) + 1
     for package in model_packages:
         if isinstance(package.environment_requirements, ServerEnvironmentRequirements):
             cuda_versions.append(package.environment_requirements.cuda_version)
@@ -132,7 +264,7 @@ def rank_cuda_versions(model_packages: List[ModelPackageMetadata]) -> List[int]:
                 package.environment_requirements.cuda_version
             )
         elif isinstance(
-            package.environment_requirements, ServerEnvironmentRequirements
+            package.environment_requirements, JetsonEnvironmentRequirements
         ):
             cuda_versions.append(package.environment_requirements.cuda_version)
             package_id_to_cuda_version[package.package_id] = (
@@ -151,7 +283,7 @@ def rank_cuda_versions(model_packages: List[ModelPackageMetadata]) -> List[int]:
 def rank_trt_versions(model_packages: List[ModelPackageMetadata]) -> List[int]:
     trt_versions = []
     package_id_to_trt_version = {}
-    last_ranking = -len(model_packages)
+    last_ranking = -len(model_packages) + 1
     for package in model_packages:
         if isinstance(package.environment_requirements, ServerEnvironmentRequirements):
             trt_versions.append(package.environment_requirements.trt_version)
@@ -159,7 +291,7 @@ def rank_trt_versions(model_packages: List[ModelPackageMetadata]) -> List[int]:
                 package.environment_requirements.trt_version
             )
         elif isinstance(
-            package.environment_requirements, ServerEnvironmentRequirements
+            package.environment_requirements, JetsonEnvironmentRequirements
         ):
             trt_versions.append(package.environment_requirements.trt_version)
             package_id_to_trt_version[package.package_id] = (
