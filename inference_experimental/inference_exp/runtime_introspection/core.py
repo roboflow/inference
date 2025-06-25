@@ -139,17 +139,6 @@ def get_cuda_version() -> Optional[Version]:
         return None
 
 
-def get_cuda_version_from_nvcc() -> Optional[Version]:
-    try:
-        output = subprocess.check_output(["nvcc", "--version"]).decode()
-        for line in output.splitlines():
-            match = re.search(r"release\s+([0-9.]+),", line)
-            if match:
-                return Version(match.group(1))
-    except Exception:
-        return None
-
-
 @cache
 def get_trt_version() -> Optional[Version]:
     trt_version = get_trt_version_from_libnvinfer()
@@ -253,13 +242,13 @@ def get_l4t_version_from_tegra_release() -> Optional[Version]:
 
 @cache
 def get_os_version() -> Optional[str]:
-    system = platform.system()
-    if system == "Linux":
+    system = platform.system().lower()
+    if system == "linux":
         return get_linux_os_version()
-    elif system == "Darwin":
-        return get_mac_os_version()
-    elif system == "Windows":
-        return get_windows_os_version()
+    elif system == "darwin":
+        return platform.platform().lower()
+    elif system == "windows":
+        return platform.platform().lower()
     return None
 
 
@@ -279,14 +268,6 @@ def get_linux_os_from_os_release() -> Optional[str]:
         return f"{distro_name}-{version_id}".lower()
     except Exception:
         return None
-
-
-def get_mac_os_version() -> Optional[str]:
-    return platform.platform().lower()
-
-
-def get_windows_os_version() -> Optional[str]:
-    return platform.platform().lower()
 
 
 @cache

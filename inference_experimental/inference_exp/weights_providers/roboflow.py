@@ -185,7 +185,6 @@ def parse_model_package_metadata(
     metadata: Union[Union[RoboflowModelPackageV1, dict]]
 ) -> Optional[ModelPackageMetadata]:
     if isinstance(metadata, dict):
-        print(metadata)
         metadata_type = metadata.get("type", "unknown")
         model_package_id = metadata.get("packageId", "unknown")
         LOGGER.warning(
