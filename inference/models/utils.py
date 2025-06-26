@@ -2,14 +2,23 @@ import warnings
 
 from inference.core.env import (
     API_KEY,
-    API_KEY_ENV_NAMES,
+    CORE_MODEL_CLIP_ENABLED,
+    CORE_MODEL_DOCTR_ENABLED,
+    CORE_MODEL_GAZE_ENABLED,
+    CORE_MODEL_GROUNDINGDINO_ENABLED,
+    CORE_MODEL_OWLV2_ENABLED,
     CORE_MODEL_PE_ENABLED,
+    CORE_MODEL_SAM2_ENABLED,
+    CORE_MODEL_SAM_ENABLED,
+    CORE_MODEL_TROCR_ENABLED,
+    CORE_MODEL_YOLO_WORLD_ENABLED,
     DEPTH_ESTIMATION_ENABLED,
+    FLORENCE2_ENABLED,
     MOONDREAM2_ENABLED,
+    PALIGEMMA_ENABLED,
     QWEN_2_5_ENABLED,
     SMOLVLM2_ENABLED,
 )
-from inference.core.exceptions import MissingApiKeyError
 from inference.core.models.base import Model
 from inference.core.models.stubs import (
     ClassificationModelStub,
@@ -18,7 +27,6 @@ from inference.core.models.stubs import (
     ObjectDetectionModelStub,
 )
 from inference.core.registries.roboflow import get_model_type
-from inference.core.utils.function import deprecated
 from inference.core.warnings import ModelDependencyMissing
 from inference.models import (
     YOLACT,
@@ -243,88 +251,92 @@ ROBOFLOW_MODEL_TYPES = {
 }
 
 try:
-    from inference.models import LoRAPaliGemma, PaliGemma
+    if PALIGEMMA_ENABLED:
+        from inference.models import LoRAPaliGemma, PaliGemma
 
-    paligemma_models = {
-        (
-            "object-detection",
-            "paligemma-3b-pt-224",
-        ): PaliGemma,  # TODO: change when we have a new project type
-        ("object-detection", "paligemma-3b-pt-448"): PaliGemma,
-        ("object-detection", "paligemma-3b-pt-896"): PaliGemma,
-        (
-            "instance-segmentation",
-            "paligemma-3b-pt-224",
-        ): PaliGemma,  # TODO: change when we have a new project type
-        ("instance-segmentation", "paligemma-3b-pt-448"): PaliGemma,
-        ("instance-segmentation", "paligemma-3b-pt-896"): PaliGemma,
-        (
-            "object-detection",
-            "paligemma-3b-pt-224-peft",
-        ): LoRAPaliGemma,  # TODO: change when we have a new project type
-        ("object-detection", "paligemma-3b-pt-448-peft"): LoRAPaliGemma,
-        ("object-detection", "paligemma-3b-pt-896-peft"): LoRAPaliGemma,
-        (
-            "instance-segmentation",
-            "paligemma-3b-pt-224-peft",
-        ): LoRAPaliGemma,  # TODO: change when we have a new project type
-        ("instance-segmentation", "paligemma-3b-pt-448-peft"): LoRAPaliGemma,
-        ("instance-segmentation", "paligemma-3b-pt-896-peft"): LoRAPaliGemma,
-        ("text-image-pairs", "paligemma2-3b-pt-224"): PaliGemma,
-        ("text-image-pairs", "paligemma2-3b-pt-448"): PaliGemma,
-        ("text-image-pairs", "paligemma2-3b-pt-896"): PaliGemma,
-        ("text-image-pairs", "paligemma2-3b-pt-224-peft"): LoRAPaliGemma,
-        ("text-image-pairs", "paligemma2-3b-pt-448-peft"): LoRAPaliGemma,
-        ("text-image-pairs", "paligemma2-3b-pt-896-peft"): LoRAPaliGemma,
-    }
-    ROBOFLOW_MODEL_TYPES.update(paligemma_models)
+        paligemma_models = {
+            (
+                "object-detection",
+                "paligemma-3b-pt-224",
+            ): PaliGemma,  # TODO: change when we have a new project type
+            ("object-detection", "paligemma-3b-pt-448"): PaliGemma,
+            ("object-detection", "paligemma-3b-pt-896"): PaliGemma,
+            (
+                "instance-segmentation",
+                "paligemma-3b-pt-224",
+            ): PaliGemma,  # TODO: change when we have a new project type
+            ("instance-segmentation", "paligemma-3b-pt-448"): PaliGemma,
+            ("instance-segmentation", "paligemma-3b-pt-896"): PaliGemma,
+            (
+                "object-detection",
+                "paligemma-3b-pt-224-peft",
+            ): LoRAPaliGemma,  # TODO: change when we have a new project type
+            ("object-detection", "paligemma-3b-pt-448-peft"): LoRAPaliGemma,
+            ("object-detection", "paligemma-3b-pt-896-peft"): LoRAPaliGemma,
+            (
+                "instance-segmentation",
+                "paligemma-3b-pt-224-peft",
+            ): LoRAPaliGemma,  # TODO: change when we have a new project type
+            ("instance-segmentation", "paligemma-3b-pt-448-peft"): LoRAPaliGemma,
+            ("instance-segmentation", "paligemma-3b-pt-896-peft"): LoRAPaliGemma,
+            ("text-image-pairs", "paligemma2-3b-pt-224"): PaliGemma,
+            ("text-image-pairs", "paligemma2-3b-pt-448"): PaliGemma,
+            ("text-image-pairs", "paligemma2-3b-pt-896"): PaliGemma,
+            ("text-image-pairs", "paligemma2-3b-pt-224-peft"): LoRAPaliGemma,
+            ("text-image-pairs", "paligemma2-3b-pt-448-peft"): LoRAPaliGemma,
+            ("text-image-pairs", "paligemma2-3b-pt-896-peft"): LoRAPaliGemma,
+        }
+        ROBOFLOW_MODEL_TYPES.update(paligemma_models)
 except:
     warnings.warn(
-        f"Your `inference` configuration does not support PaliGemma model. "
-        f"Use pip install 'inference[transformers]' to install missing requirements.",
+        "Your `inference` configuration does not support PaliGemma model. "
+        "Use pip install 'inference[transformers]' to install missing requirements."
+        "To suppress this warning, set PALIGEMMA_ENABLED to False.",
         category=ModelDependencyMissing,
     )
 
 try:
-    from inference.models import Florence2, LoRAFlorence2
+    if FLORENCE2_ENABLED:
+        from inference.models import Florence2, LoRAFlorence2
 
-    florence2_models = {
-        (
-            "object-detection",
-            "florence-2-base",
-        ): Florence2,  # TODO: change when we have a new project type
-        ("object-detection", "florence-2-large"): Florence2,
-        (
-            "instance-segmentation",
-            "florence-2-base",
-        ): Florence2,  # TODO: change when we have a new project type
-        ("instance-segmentation", "florence-2-large"): Florence2,
-        (
-            "object-detection",
-            "florence-2-base-peft",
-        ): LoRAFlorence2,  # TODO: change when we have a new project type
-        (
-            "text-image-pairs",
-            "florence-2-base",
-        ): Florence2,  # TODO: change when we have a new project type
-        ("text-image-pairs", "florence-2-large"): Florence2,
-        ("object-detection", "florence-2-large-peft"): LoRAFlorence2,
-        (
-            "instance-segmentation",
-            "florence-2-base-peft",
-        ): LoRAFlorence2,  # TODO: change when we have a new project type
-        ("instance-segmentation", "florence-2-large-peft"): LoRAFlorence2,
-        (
-            "text-image-pairs",
-            "florence-2-base-peft",
-        ): LoRAFlorence2,
-        ("text-image-pairs", "florence-2-large-peft"): LoRAFlorence2,
-    }
-    ROBOFLOW_MODEL_TYPES.update(florence2_models)
+        florence2_models = {
+            (
+                "object-detection",
+                "florence-2-base",
+            ): Florence2,  # TODO: change when we have a new project type
+            ("object-detection", "florence-2-large"): Florence2,
+            (
+                "instance-segmentation",
+                "florence-2-base",
+            ): Florence2,  # TODO: change when we have a new project type
+            ("instance-segmentation", "florence-2-large"): Florence2,
+            (
+                "object-detection",
+                "florence-2-base-peft",
+            ): LoRAFlorence2,  # TODO: change when we have a new project type
+            (
+                "text-image-pairs",
+                "florence-2-base",
+            ): Florence2,  # TODO: change when we have a new project type
+            ("text-image-pairs", "florence-2-large"): Florence2,
+            ("object-detection", "florence-2-large-peft"): LoRAFlorence2,
+            (
+                "instance-segmentation",
+                "florence-2-base-peft",
+            ): LoRAFlorence2,  # TODO: change when we have a new project type
+            ("instance-segmentation", "florence-2-large-peft"): LoRAFlorence2,
+            (
+                "text-image-pairs",
+                "florence-2-base-peft",
+            ): LoRAFlorence2,
+            ("text-image-pairs", "florence-2-large-peft"): LoRAFlorence2,
+        }
+        ROBOFLOW_MODEL_TYPES.update(florence2_models)
 except:
     warnings.warn(
-        f"Your `inference` configuration does not support Florence2 model. "
-        f"Use pip install 'inference[transformers]' to install missing requirements.",
+        "Your `inference` configuration does not support Florence2 model. "
+        "Use pip install 'inference[transformers]' to install missing requirements."
+        "To suppress this warning, set FLORENCE2_ENABLED to False.",
         category=ModelDependencyMissing,
     )
 
@@ -339,64 +351,75 @@ try:
         ROBOFLOW_MODEL_TYPES.update(qwen25vl_models)
 except:
     warnings.warn(
-        f"Your `inference` configuration does not support Qwen2.5-VL model. "
-        f"Use pip install 'inference[transformers]' to install missing requirements.",
+        "Your `inference` configuration does not support Qwen2.5-VL model. "
+        "Use pip install 'inference[transformers]' to install missing requirements."
+        "To suppress this warning, set QWEN_2_5_ENABLED to False.",
         category=ModelDependencyMissing,
     )
 
 
 try:
-    from inference.models import SegmentAnything
+    if CORE_MODEL_SAM_ENABLED:
+        from inference.models import SegmentAnything
 
-    ROBOFLOW_MODEL_TYPES[("embed", "sam")] = SegmentAnything
+        ROBOFLOW_MODEL_TYPES[("embed", "sam")] = SegmentAnything
 except:
     warnings.warn(
-        f"Your `inference` configuration does not support SAM model. "
-        f"Use pip install 'inference[sam]' to install missing requirements.",
+        "Your `inference` configuration does not support SAM model. "
+        "Use pip install 'inference[sam]' to install missing requirements."
+        "To suppress this warning, set CORE_MODEL_SAM_ENABLED to False.",
         category=ModelDependencyMissing,
     )
 try:
-    from inference.models import SegmentAnything2
+    if CORE_MODEL_SAM2_ENABLED:
+        from inference.models import SegmentAnything2
 
-    ROBOFLOW_MODEL_TYPES[("embed", "sam2")] = SegmentAnything2
+        ROBOFLOW_MODEL_TYPES[("embed", "sam2")] = SegmentAnything2
 except:
     warnings.warn(
-        f"Your `inference` configuration does not support SAM model. "
-        f"Use pip install 'inference[sam]' to install missing requirements.",
-        category=ModelDependencyMissing,
-    )
-
-try:
-    from inference.models import Clip
-
-    ROBOFLOW_MODEL_TYPES[("embed", "clip")] = Clip
-except:
-    warnings.warn(
-        f"Your `inference` configuration does not support SAM model. "
-        f"Use pip install 'inference[clip]' to install missing requirements.",
+        "Your `inference` configuration does not support SAM2 model. "
+        "Use pip install 'inference[sam]' to install missing requirements."
+        "To suppress this warning, set CORE_MODEL_SAM2_ENABLED to False.",
         category=ModelDependencyMissing,
     )
 
 try:
-    from inference.models.owlv2.owlv2 import OwlV2, SerializedOwlV2
+    if CORE_MODEL_CLIP_ENABLED:
+        from inference.models import Clip
 
-    ROBOFLOW_MODEL_TYPES[("object-detection", "owlv2")] = OwlV2
-    ROBOFLOW_MODEL_TYPES[("object-detection", "owlv2-finetuned")] = SerializedOwlV2
+        ROBOFLOW_MODEL_TYPES[("embed", "clip")] = Clip
 except:
     warnings.warn(
-        f"Your `inference` configuration does not support OWLv2 model. "
-        f"Use pip install 'inference[transformers]' to install missing requirements.",
+        "Your `inference` configuration does not support CLIP model. "
+        "Use pip install 'inference[clip]' to install missing requirements."
+        "To suppress this warning, set CORE_MODEL_CLIP_ENABLED to False.",
         category=ModelDependencyMissing,
     )
 
 try:
-    from inference.models import Gaze
+    if CORE_MODEL_OWLV2_ENABLED:
+        from inference.models.owlv2.owlv2 import OwlV2, SerializedOwlV2
 
-    ROBOFLOW_MODEL_TYPES[("gaze", "l2cs")] = Gaze
+        ROBOFLOW_MODEL_TYPES[("object-detection", "owlv2")] = OwlV2
+        ROBOFLOW_MODEL_TYPES[("object-detection", "owlv2-finetuned")] = SerializedOwlV2
 except:
     warnings.warn(
-        f"Your `inference` configuration does not support Gaze Detection model. "
-        f"Use pip install 'inference[gaze]' to install missing requirements.",
+        "Your `inference` configuration does not support OWLv2 model. "
+        "Use pip install 'inference[transformers]' to install missing requirements."
+        "To suppress this warning, set CORE_MODEL_OWLV2_ENABLED to False.",
+        category=ModelDependencyMissing,
+    )
+
+try:
+    if CORE_MODEL_GAZE_ENABLED:
+        from inference.models import Gaze
+
+        ROBOFLOW_MODEL_TYPES[("gaze", "l2cs")] = Gaze
+except:
+    warnings.warn(
+        "Your `inference` configuration does not support Gaze Detection model. "
+        "Use pip install 'inference[gaze]' to install missing requirements."
+        "To suppress this warning, set CORE_MODEL_GAZE_ENABLED to False.",
         category=ModelDependencyMissing,
     )
 
@@ -410,8 +433,9 @@ try:
 
 except:
     warnings.warn(
-        f"Your `inference` configuration does not support SmolVLM2."
-        f"Use pip install 'inference[transformers]' to install missing requirements.",
+        "Your `inference` configuration does not support SmolVLM2."
+        "Use pip install 'inference[transformers]' to install missing requirements."
+        "To suppress this warning, set SMOLVLM2_ENABLED to False.",
         category=ModelDependencyMissing,
     )
 
@@ -423,8 +447,9 @@ try:
         ROBOFLOW_MODEL_TYPES[("depth-estimation", "small")] = DepthEstimator
 except:
     warnings.warn(
-        f"Your `inference` configuration does not support Depth Estimation."
-        f"Use pip install 'inference[transformers]' to install missing requirements.",
+        "Your `inference` configuration does not support Depth Estimation."
+        "Use pip install 'inference[transformers]' to install missing requirements."
+        "To suppress this warning, set DEPTH_ESTIMATION_ENABLED to False.",
         category=ModelDependencyMissing,
     )
 
@@ -436,48 +461,56 @@ try:
         ROBOFLOW_MODEL_TYPES[("lmm", "moondream2")] = Moondream2
 except:
     warnings.warn(
-        f"Your `inference` configuration does not support Moondream2."
-        f"Use pip install 'inference[transformers]' to install missing requirements.",
+        "Your `inference` configuration does not support Moondream2."
+        "Use pip install 'inference[transformers]' to install missing requirements."
+        "To suppress this warning, set MOONDREAM2_ENABLED to False.",
         category=ModelDependencyMissing,
     )
 
 try:
-    from inference.models import DocTR
+    if CORE_MODEL_DOCTR_ENABLED:
+        from inference.models import DocTR
 
-    ROBOFLOW_MODEL_TYPES[("ocr", "doctr")] = DocTR
+        ROBOFLOW_MODEL_TYPES[("ocr", "doctr")] = DocTR
 except:
     pass
 
 try:
-    from inference.models import TrOCR
+    if CORE_MODEL_TROCR_ENABLED:
+        from inference.models import TrOCR
 
-    ROBOFLOW_MODEL_TYPES[("ocr", "trocr")] = TrOCR
+        ROBOFLOW_MODEL_TYPES[("ocr", "trocr")] = TrOCR
 except:
     warnings.warn(
-        f"Your `inference` configuration does not support TrOCR model. "
-        f"Use pip install 'inference[transformers]' to install missing requirements.",
+        "Your `inference` configuration does not support TrOCR model. "
+        "Use pip install 'inference[transformers]' to install missing requirements."
+        "To suppress this warning, set CORE_MODEL_TROCR_ENABLED to False.",
         category=ModelDependencyMissing,
     )
 
 try:
-    from inference.models import GroundingDINO
+    if CORE_MODEL_GROUNDINGDINO_ENABLED:
+        from inference.models import GroundingDINO
 
-    ROBOFLOW_MODEL_TYPES[("object-detection", "grounding-dino")] = GroundingDINO
+        ROBOFLOW_MODEL_TYPES[("object-detection", "grounding-dino")] = GroundingDINO
 except:
     warnings.warn(
-        f"Your `inference` configuration does not support GroundingDINO model. "
-        f"Use pip install 'inference[grounding-dino]' to install missing requirements.",
+        "Your `inference` configuration does not support GroundingDINO model. "
+        "Use pip install 'inference[grounding-dino]' to install missing requirements."
+        "To suppress this warning, set CORE_MODEL_GROUNDINGDINO_ENABLED to False.",
         category=ModelDependencyMissing,
     )
 
 try:
-    from inference.models import YOLOWorld
+    if CORE_MODEL_YOLO_WORLD_ENABLED:
+        from inference.models import YOLOWorld
 
-    ROBOFLOW_MODEL_TYPES[("object-detection", "yolo-world")] = YOLOWorld
+        ROBOFLOW_MODEL_TYPES[("object-detection", "yolo-world")] = YOLOWorld
 except:
     warnings.warn(
-        f"Your `inference` configuration does not support YoloWorld model. "
-        f"Use pip install 'inference[yolo-world]' to install missing requirements.",
+        "Your `inference` configuration does not support YoloWorld model. "
+        "Use pip install 'inference[yolo-world]' to install missing requirements."
+        "To suppress this warning, set CORE_MODEL_YOLO_WORLD_ENABLED to False.",
         category=ModelDependencyMissing,
     )
 
@@ -489,8 +522,9 @@ try:
         ROBOFLOW_MODEL_TYPES[("embed", "perception_encoder")] = PerceptionEncoder
 except:
     warnings.warn(
-        f"Your `inference` configuration does not support Perception Encoder."
-        f"Use pip install 'inference[transformers]' to install missing requirements.",
+        "Your `inference` configuration does not support Perception Encoder."
+        "Use pip install 'inference[transformers]' to install missing requirements."
+        "To suppress this warning, set CORE_MODEL_PE_ENABLED to False.",
         category=ModelDependencyMissing,
     )
 
