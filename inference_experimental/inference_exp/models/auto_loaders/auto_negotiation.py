@@ -218,7 +218,7 @@ def filter_model_packages_by_requested_backend(
     requested_backends_set = set()
     for requested_backend in requested_backends:
         if isinstance(requested_backend, str):
-            requested_backend = _parse_backend_type(value=requested_backend)
+            requested_backend = parse_backend_type(value=requested_backend)
         requested_backends_set.add(requested_backend)
     verbose_info(
         message=f"Filtering model packages by requested backends: {requested_backends}",
@@ -248,7 +248,7 @@ def filter_model_packages_by_requested_batch_size(
     requested_batch_size: Union[int, Tuple[int, int]],
     verbose: bool = False,
 ) -> List[ModelPackageMetadata]:
-    min_batch_size, max_batch_size = _parse_batch_size(
+    min_batch_size, max_batch_size = parse_batch_size(
         requested_batch_size=requested_batch_size
     )
     verbose_info(
@@ -279,7 +279,7 @@ def filter_model_packages_by_requested_quantization(
     requested_quantization: Union[str, Quantization, List[Union[str, Quantization]]],
     verbose: bool = False,
 ) -> List[ModelPackageMetadata]:
-    requested_quantization = _parse_requested_quantization(value=requested_quantization)
+    requested_quantization = parse_requested_quantization(value=requested_quantization)
     verbose_info(
         message=f"Filtering model packages by quantization - allowed values: {requested_quantization}",
         verbose_requested=verbose,
@@ -313,7 +313,7 @@ def model_package_matches_batch_size_request(
             declared_min_batch_size, declared_max_batch_size = (
                 model_package.get_dynamic_batch_boundaries()
             )
-            ranges_match = _range_within_other(
+            ranges_match = range_within_other(
                 external_range=(declared_min_batch_size, declared_max_batch_size),
                 internal_range=(min_batch_size, max_batch_size),
             )
@@ -537,6 +537,12 @@ def trt_package_matches_runtime_environment(
                 verbose_requested=verbose,
             )
             return False
+        if runtime_x_ray.l4t_version is None:
+            verbose_info(
+                message=f"Mode package with id '{model_package.package_id}' filtered out as runtime environment does not declare L4T version",
+                verbose_requested=verbose,
+            )
+            return False
         device_compatibility = verify_trt_package_compatibility_with_cuda_device(
             all_available_cuda_devices=runtime_x_ray.gpu_devices,
             all_available_devices_cc=runtime_x_ray.gpu_devices_cc,
@@ -560,18 +566,35 @@ def trt_package_matches_runtime_environment(
             )
             return False
         if trt_forward_compatible:
-            if not verify_version_larger_equal_up_to_major_and_minor(
-                runtime_x_ray.trt_version, model_environment.trt_version
-            ):
+            if runtime_x_ray.trt_version < model_environment.trt_version:
+                verbose_info(
+                    message=f"Mode package with id '{model_package.package_id}' filtered out as TRT version in "
+                    f"environment ({runtime_x_ray.trt_version}) is older than engine TRT version "
+                    f"({model_environment.trt_version}) - despite engine being forward compatible, "
+                    f"TRT requires that TRT available in runtime is in version higher or equal compared "
+                    f"to the one used for compilation.",
+                    verbose_requested=verbose,
+                )
                 return False
             if trt_lean_runtime_excluded:
                 # not supported for now
+                verbose_info(
+                    message=f"Mode package with id '{model_package.package_id}' filtered out as it was compiled to "
+                    f"be forward compatible, but with lean runtime excluded from the engine - this mode is "
+                    f"currently not supported in `inference`.",
+                    verbose_requested=verbose,
+                )
                 return False
-            if not trt_engine_host_code_allowed:
+            elif not trt_engine_host_code_allowed:
+                verbose_info(
+                    message=f"Mode package with id '{model_package.package_id}' filtered out as it contains TRT "
+                    f"Lean Runtime that requires potentially unsafe deserialisation which is forbidden "
+                    f"in this configuration of `inference`. Set `trt_engine_host_code_allowed=True` if "
+                    f"you want this package to be supported.",
+                    verbose_requested=verbose,
+                )
                 return False
-        elif not verify_versions_up_to_major_minor_and_micro(
-            runtime_x_ray.trt_version, model_environment.trt_version
-        ):
+        elif runtime_x_ray.trt_version != model_environment.trt_version:
             verbose_info(
                 message=f"Mode package with id '{model_package.package_id}' filtered out as package trt version {model_environment.trt_version} does not match runtime trt version: {runtime_x_ray.trt_version}",
                 verbose_requested=verbose,
@@ -605,20 +628,37 @@ def trt_package_matches_runtime_environment(
         )
         return False
     if trt_forward_compatible:
-        if not verify_version_larger_equal_up_to_major_and_minor(
-            runtime_x_ray.trt_version, model_environment.trt_version
-        ):
+        if runtime_x_ray.trt_version < model_environment.trt_version:
+            verbose_info(
+                message=f"Mode package with id '{model_package.package_id}' filtered out as TRT version in "
+                f"environment ({runtime_x_ray.trt_version}) is older than engine TRT version "
+                f"({model_environment.trt_version}) - despite engine being forward compatible, "
+                f"TRT requires that TRT available in runtime is in version higher or equal compared "
+                f"to the one used for compilation.",
+                verbose_requested=verbose,
+            )
             return False
         if trt_lean_runtime_excluded:
             # not supported for now
+            verbose_info(
+                message=f"Mode package with id '{model_package.package_id}' filtered out as it was compiled to "
+                f"be forward compatible, but with lean runtime excluded from the engine - this mode is "
+                f"currently not supported in `inference`.",
+                verbose_requested=verbose,
+            )
             return False
-        if not trt_engine_host_code_allowed:
+        elif not trt_engine_host_code_allowed:
+            verbose_info(
+                message=f"Mode package with id '{model_package.package_id}' filtered out as it contains TRT "
+                f"Lean Runtime that requires potentially unsafe deserialisation which is forbidden "
+                f"in this configuration of `inference`. Set `trt_engine_host_code_allowed=True` if "
+                f"you want this package to be supported.",
+                verbose_requested=verbose,
+            )
             return False
-    elif not verify_versions_up_to_major_minor_and_micro(
-        runtime_x_ray.trt_version, model_environment.trt_version
-    ):
+    elif runtime_x_ray.trt_version != model_environment.trt_version:
         verbose_info(
-            message="Mode package with id '{model_package.package_id}' filtered out as package trt version {model_environment.trt_version} does not match runtime trt version: {runtime_x_ray.trt_version}",
+            message=f"Mode package with id '{model_package.package_id}' filtered out as package trt version {model_environment.trt_version} does not match runtime trt version: {runtime_x_ray.trt_version}",
             verbose_requested=verbose,
         )
         return False
@@ -651,18 +691,6 @@ def verify_versions_up_to_major_and_minor(x: Version, y: Version) -> bool:
     return x_simplified == y_simplified
 
 
-def verify_versions_up_to_major_minor_and_micro(x: Version, y: Version) -> bool:
-    x_simplified = Version(f"{x.major}.{x.minor}.{x.micro}")
-    y_simplified = Version(f"{y.major}.{y.minor}.{y.micro}")
-    return x_simplified == y_simplified
-
-
-def verify_version_larger_equal_up_to_major_and_minor(x: Version, y: Version) -> bool:
-    x_simplified = Version(f"{x.major}.{x.minor}")
-    y_simplified = Version(f"{y.major}.{y.minor}")
-    return x_simplified >= y_simplified
-
-
 MODEL_TO_RUNTIME_COMPATIBILITY_MATCHERS = {
     BackendType.HF: hf_transformers_package_matches_runtime_environment,
     BackendType.TRT: trt_package_matches_runtime_environment,
@@ -672,7 +700,7 @@ MODEL_TO_RUNTIME_COMPATIBILITY_MATCHERS = {
 }
 
 
-def _range_within_other(
+def range_within_other(
     external_range: Tuple[int, int],
     internal_range: Tuple[int, int],
 ) -> bool:
@@ -681,7 +709,7 @@ def _range_within_other(
     return external_min <= internal_min <= internal_max <= external_max
 
 
-def _parse_batch_size(
+def parse_batch_size(
     requested_batch_size: Union[int, Tuple[int, int]]
 ) -> Tuple[int, int]:
     if isinstance(requested_batch_size, tuple):
@@ -702,6 +730,20 @@ def _parse_batch_size(
                 f"probably typo while specifying requested batch size.",
                 help_url="https://todo",
             )
+        if max_batch_size < min_batch_size:
+            raise InvalidRequestedBatchSizeError(
+                message="Could not parse batch size requested from model package negotiation procedure. "
+                "`max_batch_size` is lower than `min_batch_size` - which is invalid value - this is "
+                "probably typo while specifying requested batch size.",
+                help_url="https://todo",
+            )
+        if max_batch_size <= 0 or min_batch_size <= 0:
+            raise InvalidRequestedBatchSizeError(
+                message="Could not parse batch size requested from model package negotiation procedure. "
+                "`min_batch_size` is <= 0 or `max_batch_size` <= - which is invalid value - this is "
+                "probably typo while specifying requested batch size.",
+                help_url="https://todo",
+            )
         return min_batch_size, max_batch_size
     if not isinstance(requested_batch_size, int):
         raise InvalidRequestedBatchSizeError(
@@ -712,10 +754,17 @@ def _parse_batch_size(
             f"probably typo while specifying requested batch size.",
             help_url="https://todo",
         )
+    if requested_batch_size <= 0:
+        raise InvalidRequestedBatchSizeError(
+            message="Could not parse batch size requested from model package negotiation procedure. "
+            "`requested_batch_size` is <= 0 which is invalid value this is "
+            f"probably typo while specifying requested batch size.",
+            help_url="https://todo",
+        )
     return requested_batch_size, requested_batch_size
 
 
-def _parse_backend_type(value: str) -> BackendType:
+def parse_backend_type(value: str) -> BackendType:
     try:
         return BackendType(value)
     except ValueError as error:
@@ -727,7 +776,7 @@ def _parse_backend_type(value: str) -> BackendType:
         ) from error
 
 
-def _parse_requested_quantization(
+def parse_requested_quantization(
     value: Union[str, Quantization, List[Union[str, Quantization]]]
 ) -> Set[Quantization]:
     if not isinstance(value, list):
@@ -735,12 +784,12 @@ def _parse_requested_quantization(
     result = set()
     for element in value:
         if isinstance(element, str):
-            element = _parse_quantization(value=element)
+            element = parse_quantization(value=element)
         result.add(element)
     return result
 
 
-def _parse_quantization(value: str) -> Quantization:
+def parse_quantization(value: str) -> Quantization:
     try:
         return Quantization(value)
     except ValueError as error:
