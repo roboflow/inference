@@ -61,6 +61,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
+    LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     ROBOFLOW_PROJECT_KIND,
     STRING_KIND,
@@ -166,10 +167,16 @@ class BlockManifest(WorkflowBlockManifest):
         description="Compression level for the registered image.",
         examples=[75],
     )
-    registration_tags: List[Union[Selector(kind=[STRING_KIND]), str]] = Field(
+    registration_tags: Union[
+        List[Union[Selector(kind=[STRING_KIND]), str]],
+        Selector(kind=[LIST_OF_VALUES_KIND]),
+    ] = Field(
         default_factory=list,
         description="Tags to be attached to the registered image.",
-        examples=[["location-florida", "factory-name", "$inputs.dynamic_tag"]],
+        examples=[
+            ["location-florida", "factory-name", "$inputs.dynamic_tag"],
+            "$inputs.tags",
+        ],
     )
     persist_predictions: bool = Field(
         default=True,

@@ -155,6 +155,59 @@ def test_manifest_parsing_when_valid_input_provided_and_fields_not_linked(
 @pytest.mark.parametrize("image_field_name", ["image", "images"])
 @pytest.mark.parametrize("image_selector", ["$inputs.image", "$steps.some.image"])
 @pytest.mark.parametrize("predictions", ["$steps.some.predictions", None])
+def test_manifest_parsing_when_registration_tags_given_as_selector(
+    image_field_name: str,
+    image_selector: str,
+    predictions: Optional[str],
+) -> None:
+    raw_manifest = {
+        "type": "roboflow_core/roboflow_dataset_upload@v2",
+        "name": "some",
+        image_field_name: image_selector,
+        "predictions": predictions,
+        "target_project": "some1",
+        "usage_quota_name": "my_quota",
+        "data_percentage": "$inputs.data_percentage",
+        "persist_predictions": "$inputs.persist_predictions",
+        "minutely_usage_limit": 10,
+        "hourly_usage_limit": 100,
+        "daily_usage_limit": 1000,
+        "max_image_size": (100, 200),
+        "compression_level": 100,
+        "registration_tags": "$inputs.tags",
+        "disable_sink": "$inputs.disable_sink",
+        "fire_and_forget": "$inputs.fire_and_forget",
+        "labeling_batch_prefix": "$inputs.labeling_batch_prefix",
+        "labeling_batches_recreation_frequency": "never",
+    }
+
+    result = BlockManifest.model_validate(raw_manifest)
+
+    assert result == BlockManifest(
+        type="roboflow_core/roboflow_dataset_upload@v2",
+        name="some",
+        images=image_selector,
+        predictions=predictions,
+        target_project="some1",
+        usage_quota_name="my_quota",
+        data_percentage="$inputs.data_percentage",
+        persist_predictions="$inputs.persist_predictions",
+        minutely_usage_limit=10,
+        hourly_usage_limit=100,
+        daily_usage_limit=1000,
+        max_image_size=(100, 200),
+        compression_level=100,
+        registration_tags="$inputs.tags",
+        disable_sink="$inputs.disable_sink",
+        fire_and_forget="$inputs.fire_and_forget",
+        labeling_batch_prefix="$inputs.labeling_batch_prefix",
+        labeling_batches_recreation_frequency="never",
+    )
+
+
+@pytest.mark.parametrize("image_field_name", ["image", "images"])
+@pytest.mark.parametrize("image_selector", ["$inputs.image", "$steps.some.image"])
+@pytest.mark.parametrize("predictions", ["$steps.some.predictions", None])
 def test_manifest_parsing_when_valid_input_provided_and_fields_linked(
     image_field_name: str,
     image_selector: str,
