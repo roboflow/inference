@@ -577,13 +577,7 @@ class CameraWrapper:
 
         # This option simulates a % speed by sending a number of move and stop
         # commands that approximate the required % - so for 25% we'll send
-        # one 100% move command followed by one stop command. It's very approximate
-        # because it'll wait until the next allowed ONVIF update to send a move
-        # command through (the first stop command is always allowed) and because
-        # it's count based, not time based. We might consider making it time-
-        # based in the future. Currently all percentages above 50% don't send
-        # any stop commands as it's always N stops followed by a single move,
-        # but this could be improved as well.
+        # one 100% move command followed by one stop command.
         if simulate_variable_speed:
             x, self._x_count = self.simulate_variable_speed(x, self._x_count)
             y, self._y_count = self.simulate_variable_speed(y, self._y_count)
