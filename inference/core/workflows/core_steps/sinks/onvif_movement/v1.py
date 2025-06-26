@@ -538,9 +538,7 @@ class CameraWrapper:
     ):
         self.schedule(self.continuous_move_async(x, y, z, simulate_variable_speed))
 
-    def simulate_variable_speed(
-        self, speed: float, count: int
-    ) -> Tuple[float, int]:
+    def simulate_variable_speed(self, speed: float, count: int) -> Tuple[float, int]:
         count = count + 1
 
         if speed == 0:
