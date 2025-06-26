@@ -540,7 +540,7 @@ class CameraWrapper:
 
     def simulate_variable_speed(
         self, speed: float, count: int
-    ) -> Tuple[float, bool, int]:
+    ) -> Tuple[float, int]:
         count = count + 1
 
         if speed == 0:
