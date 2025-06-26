@@ -32,7 +32,7 @@ def test_filter_available_devices_with_selected_device_when_cpu_device_selected(
     )
 
     # then
-    assert result == (["tesla-t4", "nvidia-l4"], [Version("7.5"), Version("8.7")])
+    assert result == ([], [])
 
 
 def test_filter_available_devices_with_selected_device_when_device_selected() -> None:

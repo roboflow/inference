@@ -1,12 +1,23 @@
 from unittest import mock
 from unittest.mock import MagicMock
 
+import pytest
 import torch
 from inference_exp.models.auto_loaders import ranking
 from inference_exp.models.auto_loaders.ranking import (
     rank_cuda_versions,
     rank_model_packages,
     rank_trt_versions,
+    retrieve_cuda_device_match_score,
+    retrieve_driver_version_match_score,
+    retrieve_jetson_device_name_match_score,
+    retrieve_l4t_version_match_score,
+    retrieve_onnx_incompatible_providers_score,
+    retrieve_os_version_match_score,
+    retrieve_same_trt_cc_compatibility_score,
+    retrieve_trt_dynamic_batch_size_score,
+    retrieve_trt_forward_compatible_match_score,
+    retrieve_trt_lean_runtime_excluded_score,
 )
 from inference_exp.runtime_introspection.core import RuntimeXRayResult
 from inference_exp.weights_providers.entities import (
@@ -1013,3 +1024,1365 @@ def test_rank_trt_versions() -> None:
         "Expected indices to be ordered such that lower cu version comes with highest rank and the higher cu version, "
         "the lower rank"
     )
+
+
+def test_retrieve_jetson_device_name_match_score_when_not_a_trt_package() -> None:
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.ONNX,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        environment_requirements=JetsonEnvironmentRequirements(
+            cuda_device_cc=Version("8.9"),
+            cuda_device_name="orin",
+            jetson_product_name="jetson-orin-nx",
+            cuda_version=Version("12.6"),
+            driver_version=Version("510.0.6"),
+            l4t_version=Version("36.4.0"),
+            trt_version=Version("10.3.0.3"),
+        ),
+    )
+
+    # when
+    result = retrieve_jetson_device_name_match_score(model_package=model_package)
+
+    # then
+    assert result == 0
+
+
+def test_retrieve_jetson_device_name_match_score_when_package_does_not_provide_environment_requirements() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        trt_package_details=TRTPackageDetails(),
+    )
+
+    # when
+    result = retrieve_jetson_device_name_match_score(model_package=model_package)
+
+    # then
+    assert result == 0
+
+
+def test_retrieve_jetson_device_name_match_score_when_unknown_environment_requirements() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        trt_package_details=TRTPackageDetails(),
+        environment_requirements=MagicMock(),
+    )
+
+    # when
+    result = retrieve_jetson_device_name_match_score(model_package=model_package)
+
+    # then
+    assert result == 0
+
+
+@mock.patch.object(ranking, "x_ray_runtime_environment")
+def test_retrieve_jetson_device_name_match_score_when_jetson_device_match(
+    x_ray_runtime_environment_mock: MagicMock,
+) -> None:
+    # given
+    x_ray_runtime_environment_mock.return_value.jetson_type = "jetson-orin-nx"
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-3",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        environment_requirements=JetsonEnvironmentRequirements(
+            cuda_device_cc=Version("8.9"),
+            cuda_device_name="orin",
+            jetson_product_name="jetson-orin-nx",
+            cuda_version=Version("12.6"),
+            driver_version=Version("510.0.6"),
+            l4t_version=Version("36.4.0"),
+            trt_version=Version("10.3.0.2"),
+        ),
+        trt_package_details=TRTPackageDetails(),
+    )
+
+    # when
+    result = retrieve_jetson_device_name_match_score(model_package=model_package)
+
+    # then
+    assert result == 1
+
+
+@mock.patch.object(ranking, "x_ray_runtime_environment")
+def test_retrieve_jetson_device_name_match_score_when_jetson_device_does_not_match(
+    x_ray_runtime_environment_mock: MagicMock,
+) -> None:
+    # given
+    x_ray_runtime_environment_mock.return_value.jetson_type = "jetson-orin-agx"
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-3",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        environment_requirements=JetsonEnvironmentRequirements(
+            cuda_device_cc=Version("8.9"),
+            cuda_device_name="orin",
+            jetson_product_name="jetson-orin-nx",
+            cuda_version=Version("12.6"),
+            driver_version=Version("510.0.6"),
+            l4t_version=Version("36.4.0"),
+            trt_version=Version("10.3.0.2"),
+        ),
+        trt_package_details=TRTPackageDetails(),
+    )
+
+    # when
+    result = retrieve_jetson_device_name_match_score(model_package=model_package)
+
+    # then
+    assert result == 0
+
+
+def test_retrieve_driver_version_match_score_when_not_a_trt_package() -> None:
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.ONNX,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        environment_requirements=JetsonEnvironmentRequirements(
+            cuda_device_cc=Version("8.9"),
+            cuda_device_name="orin",
+            jetson_product_name="jetson-orin-nx",
+            cuda_version=Version("12.6"),
+            driver_version=Version("510.0.6"),
+            l4t_version=Version("36.4.0"),
+            trt_version=Version("10.3.0.3"),
+        ),
+    )
+
+    # when
+    result = retrieve_driver_version_match_score(model_package=model_package)
+
+    # then
+    assert result == 0
+
+
+def test_retrieve_driver_version_match_score_when_no_environment_requirements() -> None:
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        trt_package_details=TRTPackageDetails(),
+    )
+
+    # when
+    result = retrieve_driver_version_match_score(model_package=model_package)
+
+    # then
+    assert result == 0
+
+
+def test_retrieve_driver_version_match_score_when_unknown_environment_requirements() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        trt_package_details=TRTPackageDetails(),
+        environment_requirements=MagicMock(),
+    )
+
+    # when
+    result = retrieve_driver_version_match_score(model_package=model_package)
+
+    # then
+    assert result == 0
+
+
+def test_retrieve_driver_version_match_score_when_no_driver_version_manifested() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        trt_package_details=TRTPackageDetails(),
+        environment_requirements=JetsonEnvironmentRequirements(
+            cuda_device_cc=Version("8.9"),
+            cuda_device_name="orin",
+            jetson_product_name="jetson-orin-nx",
+            cuda_version=Version("12.6"),
+            driver_version=None,
+            l4t_version=Version("36.4.0"),
+            trt_version=Version("10.3.0.3"),
+        ),
+    )
+
+    # when
+    result = retrieve_driver_version_match_score(model_package=model_package)
+
+    # then
+    assert result == 0
+
+
+@mock.patch.object(ranking, "x_ray_runtime_environment")
+def test_retrieve_driver_version_match_score_when_gpu_driver_matches(
+    x_ray_runtime_environment_mock: MagicMock,
+) -> None:
+    # given
+    x_ray_runtime_environment_mock.return_value.driver_version = Version("510.0.13")
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        trt_package_details=TRTPackageDetails(),
+        environment_requirements=ServerEnvironmentRequirements(
+            cuda_device_cc=Version("7.5"),
+            cuda_device_name="tesla-t4",
+            cuda_version=Version("12.6"),
+            driver_version=Version("510.0.13"),
+            os_version="ubuntu-20.04",
+            trt_version=Version("10.3.0.1"),
+        ),
+    )
+
+    # when
+    result = retrieve_driver_version_match_score(model_package=model_package)
+
+    # then
+    assert result == 1
+
+
+@mock.patch.object(ranking, "x_ray_runtime_environment")
+def test_retrieve_driver_version_match_score_when_gpu_driver_does_not_match(
+    x_ray_runtime_environment_mock: MagicMock,
+) -> None:
+    # given
+    x_ray_runtime_environment_mock.return_value.driver_version = Version("510.0.14")
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        trt_package_details=TRTPackageDetails(),
+        environment_requirements=ServerEnvironmentRequirements(
+            cuda_device_cc=Version("7.5"),
+            cuda_device_name="tesla-t4",
+            cuda_version=Version("12.6"),
+            driver_version=Version("510.0.13"),
+            os_version="ubuntu-20.04",
+            trt_version=Version("10.3.0.1"),
+        ),
+    )
+
+    # when
+    result = retrieve_driver_version_match_score(model_package=model_package)
+
+    # then
+    assert result == 0
+
+
+@mock.patch.object(ranking, "x_ray_runtime_environment")
+def test_retrieve_driver_version_match_score_when_jetson_driver_matches(
+    x_ray_runtime_environment_mock: MagicMock,
+) -> None:
+    # given
+    x_ray_runtime_environment_mock.return_value.driver_version = Version("510.0.13")
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        trt_package_details=TRTPackageDetails(),
+        environment_requirements=JetsonEnvironmentRequirements(
+            cuda_device_cc=Version("8.9"),
+            cuda_device_name="orin",
+            jetson_product_name="jetson-orin-nx",
+            cuda_version=Version("12.6"),
+            driver_version=Version("510.0.13"),
+            l4t_version=Version("36.4.0"),
+            trt_version=Version("10.3.0.3"),
+        ),
+    )
+
+    # when
+    result = retrieve_driver_version_match_score(model_package=model_package)
+
+    # then
+    assert result == 1
+
+
+@mock.patch.object(ranking, "x_ray_runtime_environment")
+def test_retrieve_driver_version_match_score_when_jetson_driver_does_not_match(
+    x_ray_runtime_environment_mock: MagicMock,
+) -> None:
+    # given
+    x_ray_runtime_environment_mock.return_value.driver_version = Version("510.0.13")
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        trt_package_details=TRTPackageDetails(),
+        environment_requirements=JetsonEnvironmentRequirements(
+            cuda_device_cc=Version("8.9"),
+            cuda_device_name="orin",
+            jetson_product_name="jetson-orin-nx",
+            cuda_version=Version("12.6"),
+            driver_version=Version("510.0.14"),
+            l4t_version=Version("36.4.0"),
+            trt_version=Version("10.3.0.3"),
+        ),
+    )
+
+    # when
+    result = retrieve_driver_version_match_score(model_package=model_package)
+
+    # then
+    assert result == 0
+
+
+def test_retrieve_l4t_version_match_score_when_not_a_trt_package() -> None:
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.ONNX,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        environment_requirements=JetsonEnvironmentRequirements(
+            cuda_device_cc=Version("8.9"),
+            cuda_device_name="orin",
+            jetson_product_name="jetson-orin-nx",
+            cuda_version=Version("12.6"),
+            driver_version=Version("510.0.6"),
+            l4t_version=Version("36.4.0"),
+            trt_version=Version("10.3.0.3"),
+        ),
+    )
+
+    # when
+    result = retrieve_l4t_version_match_score(model_package=model_package)
+
+    # then
+    assert result == 0
+
+
+def test_retrieve_l4t_version_match_score_when_no_environment_requirements() -> None:
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        trt_package_details=TRTPackageDetails(),
+    )
+
+    # when
+    result = retrieve_l4t_version_match_score(model_package=model_package)
+
+    # then
+    assert result == 0
+
+
+def test_retrieve_l4t_version_match_score_when_not_a_jetson_environment() -> None:
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        trt_package_details=TRTPackageDetails(),
+        environment_requirements=ServerEnvironmentRequirements(
+            cuda_device_cc=Version("7.5"),
+            cuda_device_name="tesla-t4",
+            cuda_version=Version("12.6"),
+            driver_version=Version("510.0.13"),
+            os_version="ubuntu-20.04",
+            trt_version=Version("10.3.0.1"),
+        ),
+    )
+
+    # when
+    result = retrieve_l4t_version_match_score(model_package=model_package)
+
+    # then
+    assert result == 0
+
+
+@mock.patch.object(ranking, "x_ray_runtime_environment")
+def test_retrieve_l4t_version_match_score_when_jetpack_matches(
+    x_ray_runtime_environment_mock: MagicMock,
+) -> None:
+    # given
+    x_ray_runtime_environment_mock.return_value.l4t_version = Version("36.4.0")
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        environment_requirements=JetsonEnvironmentRequirements(
+            cuda_device_cc=Version("8.9"),
+            cuda_device_name="orin",
+            jetson_product_name="jetson-orin-nx",
+            cuda_version=Version("12.6"),
+            driver_version=Version("510.0.6"),
+            l4t_version=Version("36.4.0"),
+            trt_version=Version("10.3.0.3"),
+        ),
+    )
+
+    # when
+    result = retrieve_l4t_version_match_score(model_package=model_package)
+
+    # then
+    assert result == 1
+
+
+@mock.patch.object(ranking, "x_ray_runtime_environment")
+def test_retrieve_l4t_version_match_score_when_jetpack_does_not_match(
+    x_ray_runtime_environment_mock: MagicMock,
+) -> None:
+    # given
+    x_ray_runtime_environment_mock.return_value.l4t_version = Version("36.4.3")
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        environment_requirements=JetsonEnvironmentRequirements(
+            cuda_device_cc=Version("8.9"),
+            cuda_device_name="orin",
+            jetson_product_name="jetson-orin-nx",
+            cuda_version=Version("12.6"),
+            driver_version=Version("510.0.6"),
+            l4t_version=Version("36.4.0"),
+            trt_version=Version("10.3.0.3"),
+        ),
+    )
+
+    # when
+    result = retrieve_l4t_version_match_score(model_package=model_package)
+
+    # then
+    assert result == 0
+
+
+def test_retrieve_os_version_match_score_when_not_a_trt_package() -> None:
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.ONNX,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        environment_requirements=ServerEnvironmentRequirements(
+            cuda_device_cc=Version("7.5"),
+            cuda_device_name="tesla-t4",
+            cuda_version=Version("12.6"),
+            driver_version=Version("510.0.13"),
+            os_version="ubuntu-20.04",
+            trt_version=Version("10.3.0.1"),
+        ),
+    )
+
+    # when
+    result = retrieve_os_version_match_score(model_package=model_package)
+
+    # then
+    assert result == 0
+
+
+def test_retrieve_os_version_match_score_when_no_environment_requirements() -> None:
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+    )
+
+    # when
+    result = retrieve_os_version_match_score(model_package=model_package)
+
+    # then
+    assert result == 0
+
+
+def test_retrieve_os_version_match_score_when_not_a_server_requirements() -> None:
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        environment_requirements=JetsonEnvironmentRequirements(
+            cuda_device_cc=Version("8.9"),
+            cuda_device_name="orin",
+            jetson_product_name="jetson-orin-nx",
+            cuda_version=Version("12.6"),
+            driver_version=Version("510.0.6"),
+            l4t_version=Version("36.4.0"),
+            trt_version=Version("10.3.0.3"),
+        ),
+    )
+
+    # when
+    result = retrieve_os_version_match_score(model_package=model_package)
+
+    # then
+    assert result == 0
+
+
+@mock.patch.object(ranking, "x_ray_runtime_environment")
+def test_retrieve_os_version_match_score_when_os_matches(
+    x_ray_runtime_environment_mock: MagicMock,
+) -> None:
+    # given
+    x_ray_runtime_environment_mock.return_value.os_version = "ubuntu-20.04"
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        environment_requirements=ServerEnvironmentRequirements(
+            cuda_device_cc=Version("7.5"),
+            cuda_device_name="tesla-t4",
+            cuda_version=Version("12.6"),
+            driver_version=Version("510.0.13"),
+            os_version="ubuntu-20.04",
+            trt_version=Version("10.3.0.1"),
+        ),
+    )
+
+    # when
+    result = retrieve_os_version_match_score(model_package=model_package)
+
+    # then
+    assert result == 1
+
+
+@mock.patch.object(ranking, "x_ray_runtime_environment")
+def test_retrieve_os_version_match_score_when_os_does_not_match(
+    x_ray_runtime_environment_mock: MagicMock,
+) -> None:
+    # given
+    x_ray_runtime_environment_mock.return_value.os_version = "ubuntu-22.04"
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        environment_requirements=ServerEnvironmentRequirements(
+            cuda_device_cc=Version("7.5"),
+            cuda_device_name="tesla-t4",
+            cuda_version=Version("12.6"),
+            driver_version=Version("510.0.13"),
+            os_version="ubuntu-20.04",
+            trt_version=Version("10.3.0.1"),
+        ),
+    )
+
+    # when
+    result = retrieve_os_version_match_score(model_package=model_package)
+
+    # then
+    assert result == 0
+
+
+def test_retrieve_trt_lean_runtime_excluded_score_when_no_trt_package_details() -> None:
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        environment_requirements=JetsonEnvironmentRequirements(
+            cuda_device_cc=Version("8.9"),
+            cuda_device_name="orin",
+            jetson_product_name="jetson-orin-nx",
+            cuda_version=Version("12.6"),
+            driver_version=Version("510.0.6"),
+            l4t_version=Version("36.4.0"),
+            trt_version=Version("10.3.0.3"),
+        ),
+    )
+
+    # when
+    result = retrieve_trt_lean_runtime_excluded_score(model_package=model_package)
+
+    # then
+    assert result == 0
+
+
+def test_retrieve_trt_lean_runtime_excluded_score_when_runtime_excluded() -> None:
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        trt_package_details=TRTPackageDetails(trt_lean_runtime_excluded=True),
+        environment_requirements=JetsonEnvironmentRequirements(
+            cuda_device_cc=Version("8.9"),
+            cuda_device_name="orin",
+            jetson_product_name="jetson-orin-nx",
+            cuda_version=Version("12.6"),
+            driver_version=Version("510.0.6"),
+            l4t_version=Version("36.4.0"),
+            trt_version=Version("10.3.0.3"),
+        ),
+    )
+
+    # when
+    result = retrieve_trt_lean_runtime_excluded_score(model_package=model_package)
+
+    # then
+    assert result == 0
+
+
+def test_retrieve_trt_lean_runtime_excluded_score_when_runtime_included() -> None:
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        trt_package_details=TRTPackageDetails(trt_lean_runtime_excluded=False),
+        environment_requirements=JetsonEnvironmentRequirements(
+            cuda_device_cc=Version("8.9"),
+            cuda_device_name="orin",
+            jetson_product_name="jetson-orin-nx",
+            cuda_version=Version("12.6"),
+            driver_version=Version("510.0.6"),
+            l4t_version=Version("36.4.0"),
+            trt_version=Version("10.3.0.3"),
+        ),
+    )
+
+    # when
+    result = retrieve_trt_lean_runtime_excluded_score(model_package=model_package)
+
+    # then
+    assert result == 1
+
+
+def test_retrieve_trt_dynamic_batch_size_score_when_no_trt_package_details() -> None:
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        environment_requirements=JetsonEnvironmentRequirements(
+            cuda_device_cc=Version("8.9"),
+            cuda_device_name="orin",
+            jetson_product_name="jetson-orin-nx",
+            cuda_version=Version("12.6"),
+            driver_version=Version("510.0.6"),
+            l4t_version=Version("36.4.0"),
+            trt_version=Version("10.3.0.3"),
+        ),
+    )
+
+    # when
+    result = retrieve_trt_dynamic_batch_size_score(model_package=model_package)
+
+    # then
+    assert result == 0
+
+
+def test_retrieve_trt_dynamic_batch_size_score_when_batch_size_details_not_filled() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        trt_package_details=TRTPackageDetails(),
+        environment_requirements=JetsonEnvironmentRequirements(
+            cuda_device_cc=Version("8.9"),
+            cuda_device_name="orin",
+            jetson_product_name="jetson-orin-nx",
+            cuda_version=Version("12.6"),
+            driver_version=Version("510.0.6"),
+            l4t_version=Version("36.4.0"),
+            trt_version=Version("10.3.0.3"),
+        ),
+    )
+
+    # when
+    result = retrieve_trt_dynamic_batch_size_score(model_package=model_package)
+
+    # then
+    assert result == 0
+
+
+@pytest.mark.parametrize(
+    "min_dynamic_batch_size, max_dynamic_batch_size, expected_score",
+    [
+        (1, 8, 7),
+        (1, 16, 15),
+    ],
+)
+def test_retrieve_trt_dynamic_batch_size_score_when_batch_size_range_declared(
+    min_dynamic_batch_size: int,
+    max_dynamic_batch_size: int,
+    expected_score: int,
+) -> None:
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        trt_package_details=TRTPackageDetails(
+            min_dynamic_batch_size=min_dynamic_batch_size,
+            max_dynamic_batch_size=max_dynamic_batch_size,
+        ),
+        environment_requirements=JetsonEnvironmentRequirements(
+            cuda_device_cc=Version("8.9"),
+            cuda_device_name="orin",
+            jetson_product_name="jetson-orin-nx",
+            cuda_version=Version("12.6"),
+            driver_version=Version("510.0.6"),
+            l4t_version=Version("36.4.0"),
+            trt_version=Version("10.3.0.3"),
+        ),
+    )
+
+    # when
+    result = retrieve_trt_dynamic_batch_size_score(model_package=model_package)
+
+    # then
+    assert result == expected_score
+
+
+def test_retrieve_onnx_incompatible_providers_score_when_no_onnx_package_details() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.ONNX,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+    )
+
+    # when
+    result = retrieve_onnx_incompatible_providers_score(model_package=model_package)
+
+    # then
+    assert result == 0
+
+
+def test_retrieve_onnx_incompatible_providers_score_when_no_incompatible_providers() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.ONNX,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        onnx_package_details=ONNXPackageDetails(opset=19),
+    )
+
+    # when
+    result = retrieve_onnx_incompatible_providers_score(model_package=model_package)
+
+    # then
+    assert result == 0
+
+
+@mock.patch.object(ranking, "x_ray_runtime_environment")
+def test_retrieve_onnx_incompatible_providers_score_when_incompatible_providers_overlap_with_runtime(
+    x_ray_runtime_environment_mock: MagicMock,
+) -> None:
+    # given
+    x_ray_runtime_environment_mock.return_value.available_onnx_execution_providers = [
+        "CoreMLExecutionProvider",
+        "CUDAExecutionProvider",
+        "TensorRTExecutionProvider",
+    ]
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.ONNX,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        onnx_package_details=ONNXPackageDetails(
+            opset=19,
+            incompatible_providers=[
+                "CoreMLExecutionProvider",
+                "AzureExecutionProvider",
+                "CUDAExecutionProvider",
+            ],
+        ),
+    )
+
+    # when
+    result = retrieve_onnx_incompatible_providers_score(model_package=model_package)
+
+    # then
+    assert result == -2
+
+
+@mock.patch.object(ranking, "x_ray_runtime_environment")
+def test_retrieve_onnx_incompatible_providers_score_when_no_incompatible_providers_overlap_with_runtime(
+    x_ray_runtime_environment_mock: MagicMock,
+) -> None:
+    # given
+    x_ray_runtime_environment_mock.return_value.available_onnx_execution_providers = [
+        "CUDAExecutionProvider",
+        "TensorRTExecutionProvider",
+    ]
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.ONNX,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        onnx_package_details=ONNXPackageDetails(
+            opset=19,
+            incompatible_providers=[
+                "CoreMLExecutionProvider",
+                "AzureExecutionProvider",
+            ],
+        ),
+    )
+
+    # when
+    result = retrieve_onnx_incompatible_providers_score(model_package=model_package)
+
+    # then
+    assert result == 0
+
+
+def test_retrieve_trt_forward_compatible_match_score_when_no_trt_package_details() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.ONNX,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+    )
+
+    # when
+    result = retrieve_trt_forward_compatible_match_score(model_package=model_package)
+
+    # then
+    assert result == 1
+
+
+def test_retrieve_trt_forward_compatible_match_score_when_forward_compatible() -> None:
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        trt_package_details=TRTPackageDetails(trt_forward_compatible=True),
+    )
+
+    # when
+    result = retrieve_trt_forward_compatible_match_score(model_package=model_package)
+
+    # then
+    assert result == 0
+
+
+def test_retrieve_trt_forward_compatible_match_score_when_not_forward_compatible() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        trt_package_details=TRTPackageDetails(trt_forward_compatible=False),
+    )
+
+    # when
+    result = retrieve_trt_forward_compatible_match_score(model_package=model_package)
+
+    # then
+    assert result == 1
+
+
+def test_retrieve_same_trt_cc_compatibility_score_when_no_trt_package_details() -> None:
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.ONNX,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+    )
+
+    # when
+    result = retrieve_same_trt_cc_compatibility_score(model_package=model_package)
+
+    # then
+    assert result == 1
+
+
+def test_retrieve_same_trt_cc_compatibility_score_when_compatibility_enabled() -> None:
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        trt_package_details=TRTPackageDetails(same_cc_compatible=True),
+    )
+
+    # when
+    result = retrieve_same_trt_cc_compatibility_score(model_package=model_package)
+
+    # then
+    assert result == 0
+
+
+def test_retrieve_same_trt_cc_compatibility_score_when_compatibility_disabled() -> None:
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        trt_package_details=TRTPackageDetails(same_cc_compatible=False),
+    )
+
+    # when
+    result = retrieve_same_trt_cc_compatibility_score(model_package=model_package)
+
+    # then
+    assert result == 1
+
+
+def test_retrieve_cuda_device_match_score_when_not_a_trt_package() -> None:
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.ONNX,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        trt_package_details=TRTPackageDetails(same_cc_compatible=False),
+        environment_requirements=JetsonEnvironmentRequirements(
+            cuda_device_cc=Version("8.9"),
+            cuda_device_name="orin",
+            jetson_product_name="jetson-orin-nx",
+            cuda_version=Version("12.6"),
+            driver_version=Version("510.0.6"),
+            l4t_version=Version("36.4.0"),
+            trt_version=Version("10.3.0.3"),
+        ),
+    )
+
+    # when
+    result = retrieve_cuda_device_match_score(model_package=model_package)
+
+    # then
+    assert result == 0
+
+
+def test_retrieve_cuda_device_match_score_when_no_environment_requirements() -> None:
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        trt_package_details=TRTPackageDetails(same_cc_compatible=False),
+    )
+
+    # when
+    result = retrieve_cuda_device_match_score(model_package=model_package)
+
+    # then
+    assert result == 0
+
+
+def test_retrieve_cuda_device_match_score_when_unknown_environment_requirements() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        trt_package_details=TRTPackageDetails(same_cc_compatible=False),
+        environment_requirements=MagicMock(),
+    )
+
+    # when
+    result = retrieve_cuda_device_match_score(model_package=model_package)
+
+    # then
+    assert result == 0
+
+
+@mock.patch.object(ranking, "x_ray_runtime_environment")
+def test_retrieve_cuda_device_match_score_when_no_selected_device_and_one_available_device_matches_for_jetson(
+    x_ray_runtime_environment_mock: MagicMock,
+) -> None:
+    # given
+    x_ray_runtime_environment_mock.return_value.gpu_devices = ["orin"]
+    x_ray_runtime_environment_mock.return_value.gpu_devices_cc = [Version("8.9")]
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        trt_package_details=TRTPackageDetails(same_cc_compatible=False),
+        environment_requirements=JetsonEnvironmentRequirements(
+            cuda_device_cc=Version("8.9"),
+            cuda_device_name="orin",
+            jetson_product_name="jetson-orin-nx",
+            cuda_version=Version("12.6"),
+            driver_version=Version("510.0.6"),
+            l4t_version=Version("36.4.0"),
+            trt_version=Version("10.3.0.3"),
+        ),
+    )
+
+    # when
+    result = retrieve_cuda_device_match_score(model_package=model_package)
+
+    # then
+    assert result == 1
+
+
+@mock.patch.object(ranking, "x_ray_runtime_environment")
+def test_retrieve_cuda_device_match_score_when_no_selected_device_and_no_available_device_matches_for_jetson(
+    x_ray_runtime_environment_mock: MagicMock,
+) -> None:
+    # given
+    x_ray_runtime_environment_mock.return_value.gpu_devices = ["orin-super"]
+    x_ray_runtime_environment_mock.return_value.gpu_devices_cc = [Version("8.9")]
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        trt_package_details=TRTPackageDetails(same_cc_compatible=False),
+        environment_requirements=JetsonEnvironmentRequirements(
+            cuda_device_cc=Version("8.9"),
+            cuda_device_name="orin",
+            jetson_product_name="jetson-orin-nx",
+            cuda_version=Version("12.6"),
+            driver_version=Version("510.0.6"),
+            l4t_version=Version("36.4.0"),
+            trt_version=Version("10.3.0.3"),
+        ),
+    )
+
+    # when
+    result = retrieve_cuda_device_match_score(model_package=model_package)
+
+    # then
+    assert result == 0
+
+
+@mock.patch.object(ranking, "x_ray_runtime_environment")
+def test_retrieve_cuda_device_match_score_when_no_selected_device_and_one_available_device_matches_for_server(
+    x_ray_runtime_environment_mock: MagicMock,
+) -> None:
+    # given
+    x_ray_runtime_environment_mock.return_value.gpu_devices = ["tesla-t4", "nvidia-l4"]
+    x_ray_runtime_environment_mock.return_value.gpu_devices_cc = [
+        Version("7.5"),
+        Version("8.7"),
+    ]
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        trt_package_details=TRTPackageDetails(same_cc_compatible=False),
+        environment_requirements=ServerEnvironmentRequirements(
+            cuda_device_cc=Version("7.5"),
+            cuda_device_name="tesla-t4",
+            cuda_version=Version("12.6"),
+            driver_version=Version("510.0.13"),
+            os_version="ubuntu-20.04",
+            trt_version=Version("10.3.0.1"),
+        ),
+    )
+
+    # when
+    result = retrieve_cuda_device_match_score(model_package=model_package)
+
+    # then
+    assert result == 1
+
+
+@mock.patch.object(ranking, "x_ray_runtime_environment")
+def test_retrieve_cuda_device_match_score_when_no_selected_device_and_no_available_device_matches_for_server(
+    x_ray_runtime_environment_mock: MagicMock,
+) -> None:
+    # given
+    x_ray_runtime_environment_mock.return_value.gpu_devices = ["tesla-t4", "nvidia-l4"]
+    x_ray_runtime_environment_mock.return_value.gpu_devices_cc = [
+        Version("7.5"),
+        Version("8.7"),
+    ]
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        trt_package_details=TRTPackageDetails(same_cc_compatible=False),
+        environment_requirements=ServerEnvironmentRequirements(
+            cuda_device_cc=Version("7.5"),
+            cuda_device_name="nvidia-l40",
+            cuda_version=Version("12.6"),
+            driver_version=Version("510.0.13"),
+            os_version="ubuntu-20.04",
+            trt_version=Version("10.3.0.1"),
+        ),
+    )
+
+    # when
+    result = retrieve_cuda_device_match_score(model_package=model_package)
+
+    # then
+    assert result == 0
+
+
+@mock.patch.object(ranking, "x_ray_runtime_environment")
+def test_retrieve_cuda_device_match_score_when_no_selected_device_and_multiple_available_device_matches_for_server(
+    x_ray_runtime_environment_mock: MagicMock,
+) -> None:
+    # given
+    x_ray_runtime_environment_mock.return_value.gpu_devices = ["tesla-t4", "tesla-t4"]
+    x_ray_runtime_environment_mock.return_value.gpu_devices_cc = [
+        Version("7.5"),
+        Version("7.5"),
+    ]
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        trt_package_details=TRTPackageDetails(same_cc_compatible=False),
+        environment_requirements=ServerEnvironmentRequirements(
+            cuda_device_cc=Version("7.5"),
+            cuda_device_name="tesla-t4",
+            cuda_version=Version("12.6"),
+            driver_version=Version("510.0.13"),
+            os_version="ubuntu-20.04",
+            trt_version=Version("10.3.0.1"),
+        ),
+    )
+
+    # when
+    result = retrieve_cuda_device_match_score(model_package=model_package)
+
+    # then
+    assert result == 2
+
+
+@mock.patch.object(ranking, "x_ray_runtime_environment")
+def test_retrieve_cuda_device_match_score_when_selected_device_matches_for_jetson(
+    x_ray_runtime_environment_mock: MagicMock,
+) -> None:
+    # given
+    x_ray_runtime_environment_mock.return_value.gpu_devices = ["orin"]
+    x_ray_runtime_environment_mock.return_value.gpu_devices_cc = [Version("8.9")]
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        trt_package_details=TRTPackageDetails(same_cc_compatible=False),
+        environment_requirements=JetsonEnvironmentRequirements(
+            cuda_device_cc=Version("8.9"),
+            cuda_device_name="orin",
+            jetson_product_name="jetson-orin-nx",
+            cuda_version=Version("12.6"),
+            driver_version=Version("510.0.6"),
+            l4t_version=Version("36.4.0"),
+            trt_version=Version("10.3.0.3"),
+        ),
+    )
+
+    # when
+    result = retrieve_cuda_device_match_score(
+        model_package=model_package, selected_device=torch.device(type="cuda", index=0)
+    )
+
+    # then
+    assert result == 1
+
+
+@mock.patch.object(ranking, "x_ray_runtime_environment")
+def test_retrieve_cuda_device_match_score_when_selected_device_matches_for_server(
+    x_ray_runtime_environment_mock: MagicMock,
+) -> None:
+    # given
+    x_ray_runtime_environment_mock.return_value.gpu_devices = ["tesla-t4", "nvidia-l4"]
+    x_ray_runtime_environment_mock.return_value.gpu_devices_cc = [
+        Version("7.5"),
+        Version("8.7"),
+    ]
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        trt_package_details=TRTPackageDetails(same_cc_compatible=False),
+        environment_requirements=ServerEnvironmentRequirements(
+            cuda_device_cc=Version("7.5"),
+            cuda_device_name="tesla-t4",
+            cuda_version=Version("12.6"),
+            driver_version=Version("510.0.13"),
+            os_version="ubuntu-20.04",
+            trt_version=Version("10.3.0.1"),
+        ),
+    )
+
+    # when
+    result = retrieve_cuda_device_match_score(
+        model_package=model_package, selected_device=torch.device(type="cuda", index=0)
+    )
+
+    # then
+    assert result == 1
+
+
+@mock.patch.object(ranking, "x_ray_runtime_environment")
+def test_retrieve_cuda_device_match_score_when_selected_device_does_not_match_for_jetson(
+    x_ray_runtime_environment_mock: MagicMock,
+) -> None:
+    # given
+    x_ray_runtime_environment_mock.return_value.gpu_devices = ["orin"]
+    x_ray_runtime_environment_mock.return_value.gpu_devices_cc = [Version("8.9")]
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        trt_package_details=TRTPackageDetails(same_cc_compatible=False),
+        environment_requirements=JetsonEnvironmentRequirements(
+            cuda_device_cc=Version("8.9"),
+            cuda_device_name="orin",
+            jetson_product_name="jetson-orin-nx",
+            cuda_version=Version("12.6"),
+            driver_version=Version("510.0.6"),
+            l4t_version=Version("36.4.0"),
+            trt_version=Version("10.3.0.3"),
+        ),
+    )
+
+    # when
+    result = retrieve_cuda_device_match_score(
+        model_package=model_package, selected_device=torch.device(type="cpu")
+    )
+
+    # then
+    assert result == 0
+
+
+@mock.patch.object(ranking, "x_ray_runtime_environment")
+def test_retrieve_cuda_device_match_score_when_selected_device_does_not_match_for_server(
+    x_ray_runtime_environment_mock: MagicMock,
+) -> None:
+    # given
+    x_ray_runtime_environment_mock.return_value.gpu_devices = ["tesla-t4", "nvidia-l4"]
+    x_ray_runtime_environment_mock.return_value.gpu_devices_cc = [
+        Version("7.5"),
+        Version("8.7"),
+    ]
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        trt_package_details=TRTPackageDetails(same_cc_compatible=False),
+        environment_requirements=ServerEnvironmentRequirements(
+            cuda_device_cc=Version("7.5"),
+            cuda_device_name="tesla-t4",
+            cuda_version=Version("12.6"),
+            driver_version=Version("510.0.13"),
+            os_version="ubuntu-20.04",
+            trt_version=Version("10.3.0.1"),
+        ),
+    )
+
+    # when
+    result = retrieve_cuda_device_match_score(
+        model_package=model_package, selected_device=torch.device(type="cuda", index=1)
+    )
+
+    # then
+    assert result == 0

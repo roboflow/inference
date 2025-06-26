@@ -104,7 +104,14 @@ def retrieve_cuda_device_match_score(
     model_package: ModelPackageMetadata,
     selected_device: Optional[torch.device] = None,
 ) -> int:
+    if model_package.backend is not BackendType.TRT:
+        return 0
     if model_package.environment_requirements is None:
+        return 0
+    if not isinstance(
+        model_package.environment_requirements,
+        (JetsonEnvironmentRequirements, ServerEnvironmentRequirements),
+    ):
         return 0
     runtime_x_ray = x_ray_runtime_environment()
     all_available_cuda_devices, _ = filter_available_devices_with_selected_device(
@@ -112,13 +119,8 @@ def retrieve_cuda_device_match_score(
         all_available_cuda_devices=runtime_x_ray.gpu_devices,
         all_available_devices_cc=runtime_x_ray.gpu_devices_cc,
     )
-    if not isinstance(
-        model_package.environment_requirements,
-        (JetsonEnvironmentRequirements, ServerEnvironmentRequirements),
-    ):
-        return 0
     compilation_device = model_package.environment_requirements.cuda_device_name
-    return int(any(dev == compilation_device for dev in all_available_cuda_devices))
+    return sum(dev == compilation_device for dev in all_available_cuda_devices)
 
 
 def retrieve_same_trt_cc_compatibility_score(
@@ -162,7 +164,6 @@ def retrieve_trt_dynamic_batch_size_score(model_package: ModelPackageMetadata) -
         bs is None
         for bs in [
             model_package.trt_package_details.min_dynamic_batch_size,
-            model_package.trt_package_details.opt_dynamic_batch_size,
             model_package.trt_package_details.max_dynamic_batch_size,
         ]
     ):
@@ -182,7 +183,7 @@ def retrieve_trt_lean_runtime_excluded_score(
 
 
 def retrieve_os_version_match_score(model_package: ModelPackageMetadata) -> int:
-    if model_package.trt_package_details is None:
+    if model_package.backend is not BackendType.TRT:
         # irrelevant for not trt
         return 0
     if model_package.environment_requirements is None:
@@ -200,7 +201,7 @@ def retrieve_os_version_match_score(model_package: ModelPackageMetadata) -> int:
 
 
 def retrieve_l4t_version_match_score(model_package: ModelPackageMetadata) -> int:
-    if model_package.trt_package_details is None:
+    if model_package.backend is not BackendType.TRT:
         # irrelevant for not trt
         return 0
     if model_package.environment_requirements is None:

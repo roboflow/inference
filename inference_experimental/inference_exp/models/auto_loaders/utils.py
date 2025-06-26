@@ -10,6 +10,8 @@ def filter_available_devices_with_selected_device(
     all_available_cuda_devices: List[str],
     all_available_devices_cc: List[Version],
 ) -> Tuple[List[str], List[Version]]:
+    if selected_device is not None and selected_device.type != "cuda":
+        return [], []
     if selected_device is not None and selected_device.type == "cuda":
         index = selected_device.index or 0
         if index >= len(all_available_cuda_devices) or index >= len(
