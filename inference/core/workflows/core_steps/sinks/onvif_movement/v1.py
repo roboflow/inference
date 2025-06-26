@@ -77,12 +77,14 @@ workflow execution. If workflow execution stops, and the camera is currently mov
 moving until it reaches the limits and will no longer be following an object.
 
 Use of a camera with variable speed movement is *highly* recommended for this block. "Simulate variable speed"
-can sometimes be used in place of this, but might result in jerky movements and hunting.
+can sometimes be used in place of this, but might result in jerky movements and hunting. This setting sends
+the camera a 100% movement command followed by a stop for a period in order to simulate a percentage speed
+movement. This can work in some cases, but the success varies depending on the camera's responsiveness.
 
 PID tuning is generally necessary for this block to avoid having the camera overshoot and hunt. Having a
-significant lag between the camera movement and video (using a lazy buffer consumption strategy) can make
-tuning extremely difficult. Using an eager buffer consumption strategy is recommended. Increasing the dead
-zone can also help, but can affect zooming.
+significant lag between the camera movement and video (using a lazy buffer consumption strategy) can make tuning
+extremely difficult. Using an eager buffer consumption strategy is recommended. Increasing the dead zone can
+also help, but can affect zooming.
 
 """
 
@@ -541,9 +543,7 @@ class CameraWrapper:
     def simulate_variable_speed(self, speed: float, count: int) -> Tuple[float, int]:
         count = count + 1
 
-        if speed == 0:
-            speed = 0
-        elif count >= int(1.0 / speed):
+        if speed != 0 and count >= int(1.0 / speed):
             speed = np.sign(speed)
             if self._can_update():
                 count = 0
