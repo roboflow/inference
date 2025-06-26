@@ -534,20 +534,18 @@ class CameraWrapper:
 
     # tells the camera to move at a continuous velocity
     def continuous_move(
-        self,
-        x: float,
-        y: float,
-        z: float,
-        simulate_variable_speed: bool = False
+        self, x: float, y: float, z: float, simulate_variable_speed: bool = False
     ):
         self.schedule(self.continuous_move_async(x, y, z, simulate_variable_speed))
 
-    def simulate_variable_speed(self, speed:float, count:int) -> Tuple[float,bool,int]:
+    def simulate_variable_speed(
+        self, speed: float, count: int
+    ) -> Tuple[float, bool, int]:
         count = count + 1
 
-        if speed==0:
+        if speed == 0:
             speed = 0
-        elif count>=int(1.0/speed):
+        elif count >= int(1.0 / speed):
             speed = np.sign(speed)
             if self._can_update():
                 count = 0
@@ -558,7 +556,9 @@ class CameraWrapper:
         return speed, count
 
     # x and y are velocities from -1 to 1
-    async def continuous_move_async(self, x: float, y: float, z: float, simulate_variable_speed:bool = False):
+    async def continuous_move_async(
+        self, x: float, y: float, z: float, simulate_variable_speed: bool = False
+    ):
         """
         Tells the camera to move at a continuous velocity, or 0 to stop
         Note this is rate limited, some commands will be ignored
@@ -729,13 +729,13 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         pid_ki: float,
         pid_kd: float,
         minimum_camera_speed: float,
-        simulate_variable_speed: bool
+        simulate_variable_speed: bool,
     ) -> BlockResult:
 
         # this is hard coded: if intermittent move signals are less
         # than 10% then it's unlikely the camera will ever move
         if simulate_variable_speed:
-            minimum_camera_speed = max(minimum_camera_speed,0.1)
+            minimum_camera_speed = max(minimum_camera_speed, 0.1)
 
         if self._step_execution_mode != StepExecutionMode.LOCAL:
             raise ValueError("Inference must be run locally for the ONVIF block")
@@ -811,7 +811,7 @@ class ONVIFSinkBlockV1(WorkflowBlock):
                     flip_x_movement,
                     flip_y_movement,
                     minimum_camera_speed,
-                    simulate_variable_speed
+                    simulate_variable_speed,
                 )
             return {
                 PREDICTIONS_OUTPUT_KEY: max_confidence_prediction,
@@ -836,7 +836,7 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         flip_x_movement: bool,
         flip_y_movement: bool,
         minimum_camera_speed: float,
-        simulate_variable_speed: bool = False
+        simulate_variable_speed: bool = False,
     ):
         """
         This is where the PID changes are adjusted before the movement
@@ -941,7 +941,9 @@ class ONVIFSinkBlockV1(WorkflowBlock):
             x_modifier = 1 if flip_x_movement else -1
             y_modifier = 1 if flip_y_movement else -1
 
-            camera.continuous_move(x * x_modifier, y * y_modifier, 0, simulate_variable_speed)
+            camera.continuous_move(
+                x * x_modifier, y * y_modifier, 0, simulate_variable_speed
+            )
 
     def __del__(self):
         self.event_loop.stop()
