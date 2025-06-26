@@ -4,7 +4,7 @@ from typing import List, Optional, Union
 import numpy as np
 import torch
 from inference_exp import ClassificationModel, ClassificationPrediction
-from inference_exp.configuration import DEFAULT_DEVICE, ONNXRUNTIME_EXECUTION_PROVIDERS
+from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
 from inference_exp.errors import EnvironmentConfigurationError, MissingDependencyError
 from inference_exp.models.base.types import PreprocessedInputs, RawPrediction
@@ -21,6 +21,7 @@ from inference_exp.models.common.roboflow.model_packages import (
 from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
+from inference_exp.utils.onnx_introspection import get_selected_onnx_execution_providers
 
 try:
     import onnxruntime
@@ -51,7 +52,7 @@ class VITForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):
         **kwargs,
     ) -> "VITForClassificationOnnx":
         if onnx_execution_providers is None:
-            onnx_execution_providers = ONNXRUNTIME_EXECUTION_PROVIDERS
+            onnx_execution_providers = get_selected_onnx_execution_providers()
         if not onnx_execution_providers:
             raise EnvironmentConfigurationError(
                 message=f"Could not initialize model - selected backend is ONNX which requires execution provider to "

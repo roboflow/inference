@@ -2,7 +2,6 @@ from functools import cache
 from typing import List, Optional, Set, Tuple, Union
 
 import torch
-from inference_exp.configuration import ONNXRUNTIME_EXECUTION_PROVIDERS
 from inference_exp.errors import (
     AmbiguousModelPackageResolutionError,
     InvalidRequestedBatchSizeError,
@@ -20,6 +19,7 @@ from inference_exp.runtime_introspection.core import (
     RuntimeXRayResult,
     x_ray_runtime_environment,
 )
+from inference_exp.utils.onnx_introspection import get_selected_onnx_execution_providers
 from inference_exp.weights_providers.entities import (
     BackendType,
     JetsonEnvironmentRequirements,
@@ -176,6 +176,13 @@ def remove_untrusted_packages(
             )
             continue
         result.append(model_package)
+    if not result:
+        raise NoModelPackagesAvailableError(
+            message=f"Could not find model packages that would be registered from trusted source. "
+            f"This error is caused by to strict requirements of model packages backends compared to what weights "
+            f"provider announce for selected model.",
+            help_url="https://todo",
+        )
     return result
 
 
@@ -287,10 +294,6 @@ def filter_model_packages_by_requested_quantization(
     filtered_packages = []
     for model_package in model_packages:
         if model_package.quantization in requested_quantization:
-            verbose_info(
-                message=f"Model package with id `{model_package.package_id}` matches requested quantization.",
-                verbose_requested=verbose,
-            )
             filtered_packages.append(model_package)
     if not filtered_packages:
         raise NoModelPackagesAvailableError(
@@ -317,24 +320,23 @@ def model_package_matches_batch_size_request(
                 external_range=(declared_min_batch_size, declared_max_batch_size),
                 internal_range=(min_batch_size, max_batch_size),
             )
-            match_str = (
-                "matches criteria" if ranges_match else "does not match criteria"
-            )
-            verbose_info(
-                message=f"Model package with id `{model_package.package_id}` declared to support dynamic batch sizes: "
-                f"[{declared_min_batch_size}, {declared_max_batch_size}] and requested batch size was: "
-                f"[{min_batch_size}, {max_batch_size}] - package {match_str}.",
-                verbose_requested=verbose,
-            )
+            if not ranges_match:
+                verbose_info(
+                    message=f"Model package with id `{model_package.package_id}` declared to support dynamic batch sizes: "
+                    f"[{declared_min_batch_size}, {declared_max_batch_size}] and requested batch size was: "
+                    f"[{min_batch_size}, {max_batch_size}] - package does not match criteria.",
+                    verbose_requested=verbose,
+                )
             return ranges_match
-        verbose_info(
-            message=f"Model package with id `{model_package.package_id}` supports dynamic batches without "
-            f"specifying bounds - including into results.",
-            verbose_requested=verbose,
-        )
         return True
-    else:
-        return min_batch_size <= model_package.static_batch_size <= max_batch_size
+    if min_batch_size <= model_package.static_batch_size <= max_batch_size:
+        return True
+    verbose_info(
+        message=f"Model package with id `{model_package.package_id}` filtered out, as static batch size does not "
+        f"match requested values: ({min_batch_size}, {max_batch_size}).",
+        verbose_requested=verbose,
+    )
+    return False
 
 
 def model_package_matches_runtime_environment(
@@ -389,23 +391,27 @@ def onnx_package_matches_runtime_environment(
             message=f"Mode package with id '{model_package.package_id}' filtered out as onnxruntime not detected",
             verbose_requested=verbose,
         )
-    if (
-        not runtime_x_ray.onnxruntime_version
-        or not runtime_x_ray.available_onnx_execution_providers
-    ):
         return False
     if model_package.onnx_package_details is None:
-        # no restrictions raised by the backend
-        return True
+        verbose_info(
+            message=f"Mode package with id '{model_package.package_id}' filtered out as onnxruntime specification "
+            f"not provided by weights provider.",
+            verbose_requested=verbose,
+        )
+        return False
     if not onnx_execution_providers:
-        onnx_execution_providers = ONNXRUNTIME_EXECUTION_PROVIDERS
+        onnx_execution_providers = get_selected_onnx_execution_providers()
     onnx_execution_providers = [
         provider
         for provider in onnx_execution_providers
         if provider in runtime_x_ray.available_onnx_execution_providers
     ]
     if not onnx_execution_providers:
-        # no actual providers capable of running the model
+        verbose_info(
+            message=f"Mode package with id '{model_package.package_id}' filtered out as `inference` could not find "
+            f"matching execution providers that are available in runtime to run a model.",
+            verbose_requested=verbose,
+        )
         return False
     incompatible_providers = model_package.onnx_package_details.incompatible_providers
     if incompatible_providers is None:
@@ -434,9 +440,25 @@ def onnx_package_matches_runtime_environment(
         f"{runtime_x_ray.onnxruntime_version.major}.{runtime_x_ray.onnxruntime_version.minor}"
     )
     if onnx_runtime_simple_version not in ONNX_RUNTIME_OPSET_COMPATIBILITY:
-        return package_opset <= ONNX_RUNTIME_OPSET_COMPATIBILITY[Version("1.15")]
+        if package_opset <= ONNX_RUNTIME_OPSET_COMPATIBILITY[Version("1.15")]:
+            return True
+        verbose_info(
+            message=f"Mode package with id '{model_package.package_id}' filtered out as onnxruntime version "
+            f"detected ({runtime_x_ray.onnxruntime_version}) could not be resolved with the matching "
+            f"onnx opset. The auto-negotiation assumes that in such case, maximum supported opset is 19.",
+            verbose_requested=verbose,
+        )
+        return False
     max_supported_opset = ONNX_RUNTIME_OPSET_COMPATIBILITY[onnx_runtime_simple_version]
-    return package_opset <= max_supported_opset
+    if package_opset > max_supported_opset:
+        verbose_info(
+            message=f"Mode package with id '{model_package.package_id}' filtered out as onnxruntime version "
+            f"detected ({runtime_x_ray.onnxruntime_version}) can only run onnx packages with opset "
+            f"up to {max_supported_opset}, but the package opset is {package_opset}.",
+            verbose_requested=verbose,
+        )
+        return False
+    return True
 
 
 def torch_package_matches_runtime_environment(

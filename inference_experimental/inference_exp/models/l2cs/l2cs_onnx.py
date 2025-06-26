@@ -4,7 +4,7 @@ from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
-from inference_exp.configuration import DEFAULT_DEVICE, ONNXRUNTIME_EXECUTION_PROVIDERS
+from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
 from inference_exp.errors import (
     EnvironmentConfigurationError,
@@ -17,6 +17,7 @@ from inference_exp.models.common.onnx import (
     run_session_via_iobinding,
     set_execution_provider_defaults,
 )
+from inference_exp.utils.onnx_introspection import get_selected_onnx_execution_providers
 from torchvision import transforms
 
 try:
@@ -58,7 +59,7 @@ class L2CSNetOnnx:
         **kwargs,
     ):
         if onnx_execution_providers is None:
-            onnx_execution_providers = ONNXRUNTIME_EXECUTION_PROVIDERS
+            onnx_execution_providers = get_selected_onnx_execution_providers()
         if not onnx_execution_providers:
             raise EnvironmentConfigurationError(
                 message=f"Could not initialize model - selected backend is ONNX which requires execution provider to "

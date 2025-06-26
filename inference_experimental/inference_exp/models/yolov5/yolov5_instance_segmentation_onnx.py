@@ -4,7 +4,7 @@ from typing import List, Optional, Tuple, Union
 import numpy as np
 import torch
 from inference_exp import InstanceDetections, InstanceSegmentationModel
-from inference_exp.configuration import DEFAULT_DEVICE, ONNXRUNTIME_EXECUTION_PROVIDERS
+from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
 from inference_exp.errors import EnvironmentConfigurationError, MissingDependencyError
 from inference_exp.models.common.model_packages import get_model_package_contents
@@ -27,6 +27,7 @@ from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
 from inference_exp.models.yolov5.nms import run_yolov5_nms_for_instance_segmentation
+from inference_exp.utils.onnx_introspection import get_selected_onnx_execution_providers
 
 try:
     import onnxruntime
@@ -61,7 +62,7 @@ class YOLOv5ForInstanceSegmentationOnnx(
         **kwargs,
     ) -> "YOLOv5ForInstanceSegmentationOnnx":
         if onnx_execution_providers is None:
-            onnx_execution_providers = ONNXRUNTIME_EXECUTION_PROVIDERS
+            onnx_execution_providers = get_selected_onnx_execution_providers()
         if not onnx_execution_providers:
             raise EnvironmentConfigurationError(
                 message=f"Could not initialize model - selected backend is ONNX which requires execution provider to "

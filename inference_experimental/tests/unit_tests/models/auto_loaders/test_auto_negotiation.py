@@ -1,21 +1,36 @@
 from typing import Tuple
+from unittest import mock
 from unittest.mock import MagicMock
 
 import pytest
 import torch
 from inference_exp.errors import (
+    AmbiguousModelPackageResolutionError,
     InvalidRequestedBatchSizeError,
     ModelPackageNegotiationError,
+    NoModelPackagesAvailableError,
     UnknownBackendTypeError,
     UnknownQuantizationError,
 )
+from inference_exp.models.auto_loaders import auto_negotiation
 from inference_exp.models.auto_loaders.auto_negotiation import (
+    determine_default_allowed_quantization,
+    filter_model_packages_by_requested_batch_size,
+    filter_model_packages_by_requested_quantization,
+    hf_transformers_package_matches_runtime_environment,
+    model_package_matches_batch_size_request,
+    model_package_matches_runtime_environment,
+    onnx_package_matches_runtime_environment,
     parse_backend_type,
     parse_batch_size,
     parse_quantization,
     parse_requested_quantization,
     range_within_other,
+    remove_untrusted_packages,
+    select_model_package_by_id,
+    torch_package_matches_runtime_environment,
     trt_package_matches_runtime_environment,
+    ultralytics_package_matches_runtime_environment,
     verify_trt_package_compatibility_with_cuda_device,
     verify_versions_up_to_major_and_minor,
 )
@@ -24,6 +39,7 @@ from inference_exp.weights_providers.entities import (
     BackendType,
     JetsonEnvironmentRequirements,
     ModelPackageMetadata,
+    ONNXPackageDetails,
     Quantization,
     ServerEnvironmentRequirements,
     TRTPackageDetails,
@@ -1118,6 +1134,7 @@ def test_trt_package_matches_runtime_for_server_when_trt_version_not_declared() 
         runtime_x_ray=runtime_x_ray,
     )
 
+    # then
     assert result is False
 
 
@@ -1168,6 +1185,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_package_exclude
         runtime_x_ray=runtime_x_ray,
     )
 
+    # then
     assert result is False
 
 
@@ -1219,6 +1237,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_package_exclude
         device=torch.device("cpu"),
     )
 
+    # then
     assert result is False
 
 
@@ -1270,6 +1289,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_selected_device
         device=torch.device(type="cuda", index=0),
     )
 
+    # then
     assert result is True
 
 
@@ -1321,6 +1341,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_selected_device
         device=torch.device(type="cuda", index=0),
     )
 
+    # then
     assert result is True
 
 
@@ -1372,6 +1393,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_selected_device
         device=torch.device(type="cuda", index=0),
     )
 
+    # then
     assert result is False
 
 
@@ -1423,6 +1445,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_no_trt_forward_
         device=torch.device(type="cuda", index=0),
     )
 
+    # then
     assert result is False
 
 
@@ -1475,6 +1498,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_trt_forward_com
         verbose=True,
     )
 
+    # then
     assert result is False
 
 
@@ -1526,6 +1550,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_trt_forward_com
         device=torch.device(type="cuda", index=0),
     )
 
+    # then
     assert result is True
 
 
@@ -1579,6 +1604,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_trt_forward_com
         device=torch.device(type="cuda", index=0),
     )
 
+    # then
     assert result is False
 
 
@@ -1631,4 +1657,1260 @@ def test_trt_package_matches_runtime_environment_for_server_when_trt_forward_com
         trt_engine_host_code_allowed=False,
     )
 
+    # then
     assert result is False
+
+
+def test_ultralytics_package_matches_runtime_environment_when_ultralytics_not_available() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-1",
+        backend=BackendType.ULTRALYTICS,
+        quantization=Quantization.FP32,
+        package_artefacts=[],
+    )
+    runtime_x_ray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["tesla-t4"],
+        gpu_devices_cc=[Version("7.5")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=Version("10.5.1.11"),
+        jetson_type=None,
+        l4t_version=None,
+        os_version="ubuntu-20.04",
+        torch_available=True,
+        onnxruntime_version=Version("1.21.0"),
+        available_onnx_execution_providers={
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
+        },
+        hf_transformers_available=True,
+        ultralytics_available=False,
+        trt_python_package_available=True,
+    )
+
+    # when
+    result = ultralytics_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_x_ray,
+    )
+
+    # then
+    assert result is False
+
+
+def test_ultralytics_package_matches_runtime_environment_when_ultralytics_available() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-1",
+        backend=BackendType.ULTRALYTICS,
+        quantization=Quantization.FP32,
+        package_artefacts=[],
+    )
+    runtime_x_ray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["tesla-t4"],
+        gpu_devices_cc=[Version("7.5")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=Version("10.5.1.11"),
+        jetson_type=None,
+        l4t_version=None,
+        os_version="ubuntu-20.04",
+        torch_available=True,
+        onnxruntime_version=Version("1.21.0"),
+        available_onnx_execution_providers={
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
+        },
+        hf_transformers_available=True,
+        ultralytics_available=True,
+        trt_python_package_available=True,
+    )
+
+    # when
+    result = ultralytics_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_x_ray,
+    )
+
+    # then
+    assert result is True
+
+
+def test_hf_transformers_package_matches_runtime_environment_when_ultralytics_not_available() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-1",
+        backend=BackendType.ULTRALYTICS,
+        quantization=Quantization.FP32,
+        package_artefacts=[],
+    )
+    runtime_x_ray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["tesla-t4"],
+        gpu_devices_cc=[Version("7.5")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=Version("10.5.1.11"),
+        jetson_type=None,
+        l4t_version=None,
+        os_version="ubuntu-20.04",
+        torch_available=True,
+        onnxruntime_version=Version("1.21.0"),
+        available_onnx_execution_providers={
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
+        },
+        hf_transformers_available=False,
+        ultralytics_available=False,
+        trt_python_package_available=True,
+    )
+
+    # when
+    result = hf_transformers_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_x_ray,
+    )
+
+    # then
+    assert result is False
+
+
+def test_hf_transformers_package_matches_runtime_environment_when_ultralytics_available() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-1",
+        backend=BackendType.ULTRALYTICS,
+        quantization=Quantization.FP32,
+        package_artefacts=[],
+    )
+    runtime_x_ray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["tesla-t4"],
+        gpu_devices_cc=[Version("7.5")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=Version("10.5.1.11"),
+        jetson_type=None,
+        l4t_version=None,
+        os_version="ubuntu-20.04",
+        torch_available=True,
+        onnxruntime_version=Version("1.21.0"),
+        available_onnx_execution_providers={
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
+        },
+        hf_transformers_available=True,
+        ultralytics_available=True,
+        trt_python_package_available=True,
+    )
+
+    # when
+    result = hf_transformers_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_x_ray,
+    )
+
+    # then
+    assert result is True
+
+
+def test_torch_package_matches_runtime_environment_when_ultralytics_not_available() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-1",
+        backend=BackendType.ULTRALYTICS,
+        quantization=Quantization.FP32,
+        package_artefacts=[],
+    )
+    runtime_x_ray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["tesla-t4"],
+        gpu_devices_cc=[Version("7.5")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=Version("10.5.1.11"),
+        jetson_type=None,
+        l4t_version=None,
+        os_version="ubuntu-20.04",
+        torch_available=False,
+        onnxruntime_version=Version("1.21.0"),
+        available_onnx_execution_providers={
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
+        },
+        hf_transformers_available=False,
+        ultralytics_available=False,
+        trt_python_package_available=True,
+    )
+
+    # when
+    result = torch_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_x_ray,
+    )
+
+    # then
+    assert result is False
+
+
+def test_torch_package_matches_runtime_environment_when_ultralytics_available() -> None:
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-1",
+        backend=BackendType.ULTRALYTICS,
+        quantization=Quantization.FP32,
+        package_artefacts=[],
+    )
+    runtime_x_ray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["tesla-t4"],
+        gpu_devices_cc=[Version("7.5")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=Version("10.5.1.11"),
+        jetson_type=None,
+        l4t_version=None,
+        os_version="ubuntu-20.04",
+        torch_available=True,
+        onnxruntime_version=Version("1.21.0"),
+        available_onnx_execution_providers={
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
+        },
+        hf_transformers_available=True,
+        ultralytics_available=True,
+        trt_python_package_available=True,
+    )
+
+    # when
+    result = torch_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_x_ray,
+    )
+
+    # then
+    assert result is True
+
+
+def test_onnx_package_matches_runtime_environment_when_onnx_not_detected_in_environment() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-1",
+        backend=BackendType.ONNX,
+        quantization=Quantization.FP32,
+        onnx_package_details=ONNXPackageDetails(opset=19),
+        package_artefacts=[],
+    )
+    runtime_x_ray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["tesla-t4"],
+        gpu_devices_cc=[Version("7.5")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=Version("10.5.1.11"),
+        jetson_type=None,
+        l4t_version=None,
+        os_version="ubuntu-20.04",
+        torch_available=False,
+        onnxruntime_version=None,
+        available_onnx_execution_providers={
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
+        },
+        hf_transformers_available=False,
+        ultralytics_available=False,
+        trt_python_package_available=True,
+    )
+
+    # when
+    result = onnx_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_x_ray,
+    )
+
+    # then
+    assert result is False
+
+
+def test_onnx_package_matches_runtime_environment_when_no_available_onnx_ep() -> None:
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-1",
+        backend=BackendType.ONNX,
+        quantization=Quantization.FP32,
+        onnx_package_details=ONNXPackageDetails(opset=19),
+        package_artefacts=[],
+    )
+    runtime_x_ray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["tesla-t4"],
+        gpu_devices_cc=[Version("7.5")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=Version("10.5.1.11"),
+        jetson_type=None,
+        l4t_version=None,
+        os_version="ubuntu-20.04",
+        torch_available=False,
+        onnxruntime_version=Version("1.15.0"),
+        available_onnx_execution_providers=None,
+        hf_transformers_available=False,
+        ultralytics_available=False,
+        trt_python_package_available=True,
+    )
+
+    # when
+    result = onnx_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_x_ray,
+    )
+
+    # then
+    assert result is False
+
+
+def test_onnx_package_matches_runtime_environment_when_no_onnx_package_details() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-1",
+        backend=BackendType.ONNX,
+        quantization=Quantization.FP32,
+        onnx_package_details=None,
+        package_artefacts=[],
+    )
+    runtime_x_ray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["tesla-t4"],
+        gpu_devices_cc=[Version("7.5")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=Version("10.5.1.11"),
+        jetson_type=None,
+        l4t_version=None,
+        os_version="ubuntu-20.04",
+        torch_available=False,
+        onnxruntime_version=Version("1.15.0"),
+        available_onnx_execution_providers={"CPUExecutionProvider"},
+        hf_transformers_available=False,
+        ultralytics_available=False,
+        trt_python_package_available=True,
+    )
+
+    # when
+    result = onnx_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_x_ray,
+    )
+
+    # then
+    assert result is False
+
+
+@mock.patch.object(auto_negotiation, "get_selected_onnx_execution_providers")
+def test_onnx_package_matches_runtime_environment_when_no_matching_execution_providers_selected_in_env(
+    get_selected_onnx_execution_providers_mock: MagicMock,
+) -> None:
+    # given
+    get_selected_onnx_execution_providers_mock.return_value = []
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-1",
+        backend=BackendType.ONNX,
+        quantization=Quantization.FP32,
+        onnx_package_details=ONNXPackageDetails(opset=19),
+        package_artefacts=[],
+    )
+    runtime_x_ray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["tesla-t4"],
+        gpu_devices_cc=[Version("7.5")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=Version("10.5.1.11"),
+        jetson_type=None,
+        l4t_version=None,
+        os_version="ubuntu-20.04",
+        torch_available=False,
+        onnxruntime_version=Version("1.15.0"),
+        available_onnx_execution_providers={"CPUExecutionProvider"},
+        hf_transformers_available=False,
+        ultralytics_available=False,
+        trt_python_package_available=True,
+    )
+
+    # when
+    result = onnx_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_x_ray,
+    )
+
+    # then
+    assert result is False
+
+
+def test_onnx_package_matches_runtime_environment_when_no_matching_execution_providers_selected_in_param() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-1",
+        backend=BackendType.ONNX,
+        quantization=Quantization.FP32,
+        onnx_package_details=ONNXPackageDetails(opset=19),
+        package_artefacts=[],
+    )
+    runtime_x_ray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["tesla-t4"],
+        gpu_devices_cc=[Version("7.5")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=Version("10.5.1.11"),
+        jetson_type=None,
+        l4t_version=None,
+        os_version="ubuntu-20.04",
+        torch_available=False,
+        onnxruntime_version=Version("1.15.0"),
+        available_onnx_execution_providers={"CPUExecutionProvider"},
+        hf_transformers_available=False,
+        ultralytics_available=False,
+        trt_python_package_available=True,
+    )
+
+    # when
+    result = onnx_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_x_ray,
+        onnx_execution_providers=["CUDAExecutionProvider"],
+    )
+
+    # then
+    assert result is False
+
+
+def test_onnx_package_matches_runtime_environment_when_no_matching_execution_providers_when_incompatible_providers_taken_into_account() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-1",
+        backend=BackendType.ONNX,
+        quantization=Quantization.FP32,
+        onnx_package_details=ONNXPackageDetails(
+            opset=19, incompatible_providers=["CUDAExecutionProvider"]
+        ),
+        package_artefacts=[],
+    )
+    runtime_x_ray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["tesla-t4"],
+        gpu_devices_cc=[Version("7.5")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=Version("10.5.1.11"),
+        jetson_type=None,
+        l4t_version=None,
+        os_version="ubuntu-20.04",
+        torch_available=False,
+        onnxruntime_version=Version("1.15.0"),
+        available_onnx_execution_providers={
+            "CPUExecutionProvider",
+            "TensorRTExecutionProvider",
+            "CUDAExecutionProvider",
+        },
+        hf_transformers_available=False,
+        ultralytics_available=False,
+        trt_python_package_available=True,
+    )
+
+    # when
+    result = onnx_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_x_ray,
+        onnx_execution_providers=["CUDAExecutionProvider", "TensorRTExecutionProvider"],
+    )
+
+    # then
+    assert result is False
+
+
+def test_onnx_package_matches_runtime_environment_when_unknown_onnx_version_spotted_and_opset_below_oldest_supported_version() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-1",
+        backend=BackendType.ONNX,
+        quantization=Quantization.FP32,
+        onnx_package_details=ONNXPackageDetails(opset=19),
+        package_artefacts=[],
+    )
+    runtime_x_ray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["tesla-t4"],
+        gpu_devices_cc=[Version("7.5")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=Version("10.5.1.11"),
+        jetson_type=None,
+        l4t_version=None,
+        os_version="ubuntu-20.04",
+        torch_available=False,
+        onnxruntime_version=Version("1.10.0"),
+        available_onnx_execution_providers={
+            "CPUExecutionProvider",
+            "TensorRTExecutionProvider",
+            "CUDAExecutionProvider",
+        },
+        hf_transformers_available=False,
+        ultralytics_available=False,
+        trt_python_package_available=True,
+    )
+
+    # when
+    result = onnx_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_x_ray,
+        onnx_execution_providers=["CUDAExecutionProvider", "TensorRTExecutionProvider"],
+    )
+
+    # then
+    assert result is True
+
+
+def test_onnx_package_matches_runtime_environment_when_unknown_onnx_version_spotted_and_opset_above_oldest_supported_version() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-1",
+        backend=BackendType.ONNX,
+        quantization=Quantization.FP32,
+        onnx_package_details=ONNXPackageDetails(opset=20),
+        package_artefacts=[],
+    )
+    runtime_x_ray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["tesla-t4"],
+        gpu_devices_cc=[Version("7.5")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=Version("10.5.1.11"),
+        jetson_type=None,
+        l4t_version=None,
+        os_version="ubuntu-20.04",
+        torch_available=False,
+        onnxruntime_version=Version("1.10.0"),
+        available_onnx_execution_providers={
+            "CPUExecutionProvider",
+            "TensorRTExecutionProvider",
+            "CUDAExecutionProvider",
+        },
+        hf_transformers_available=False,
+        ultralytics_available=False,
+        trt_python_package_available=True,
+    )
+
+    # when
+    result = onnx_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_x_ray,
+        onnx_execution_providers=["CUDAExecutionProvider", "TensorRTExecutionProvider"],
+    )
+
+    # then
+    assert result is False
+
+
+def test_onnx_package_matches_runtime_environment_when_opset_matches() -> None:
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-1",
+        backend=BackendType.ONNX,
+        quantization=Quantization.FP32,
+        onnx_package_details=ONNXPackageDetails(opset=23),
+        package_artefacts=[],
+    )
+    runtime_x_ray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["tesla-t4"],
+        gpu_devices_cc=[Version("7.5")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=Version("10.5.1.11"),
+        jetson_type=None,
+        l4t_version=None,
+        os_version="ubuntu-20.04",
+        torch_available=False,
+        onnxruntime_version=Version("1.22.0"),
+        available_onnx_execution_providers={
+            "CPUExecutionProvider",
+            "TensorRTExecutionProvider",
+            "CUDAExecutionProvider",
+        },
+        hf_transformers_available=False,
+        ultralytics_available=False,
+        trt_python_package_available=True,
+    )
+
+    # when
+    result = onnx_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_x_ray,
+        onnx_execution_providers=["CUDAExecutionProvider", "TensorRTExecutionProvider"],
+    )
+
+    # then
+    assert result is True
+
+
+def test_onnx_package_matches_runtime_environment_when_opset_to_high() -> None:
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-1",
+        backend=BackendType.ONNX,
+        quantization=Quantization.FP32,
+        onnx_package_details=ONNXPackageDetails(opset=24),
+        package_artefacts=[],
+    )
+    runtime_x_ray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["tesla-t4"],
+        gpu_devices_cc=[Version("7.5")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=Version("10.5.1.11"),
+        jetson_type=None,
+        l4t_version=None,
+        os_version="ubuntu-20.04",
+        torch_available=False,
+        onnxruntime_version=Version("1.22.0"),
+        available_onnx_execution_providers={
+            "CPUExecutionProvider",
+            "TensorRTExecutionProvider",
+            "CUDAExecutionProvider",
+        },
+        hf_transformers_available=False,
+        ultralytics_available=False,
+        trt_python_package_available=True,
+    )
+
+    # when
+    result = onnx_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_x_ray,
+        onnx_execution_providers=["CUDAExecutionProvider", "TensorRTExecutionProvider"],
+    )
+
+    # then
+    assert result is False
+
+
+def test_model_package_matches_runtime_environment_when_backend_is_not_registered() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-1",
+        backend=MagicMock(),
+        quantization=Quantization.FP32,
+        onnx_package_details=ONNXPackageDetails(opset=24),
+        package_artefacts=[],
+    )
+    runtime_x_ray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["tesla-t4"],
+        gpu_devices_cc=[Version("7.5")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=Version("10.5.1.11"),
+        jetson_type=None,
+        l4t_version=None,
+        os_version="ubuntu-20.04",
+        torch_available=False,
+        onnxruntime_version=Version("1.22.0"),
+        available_onnx_execution_providers={
+            "CPUExecutionProvider",
+            "TensorRTExecutionProvider",
+            "CUDAExecutionProvider",
+        },
+        hf_transformers_available=False,
+        ultralytics_available=False,
+        trt_python_package_available=True,
+    )
+
+    # when
+    with pytest.raises(ModelPackageNegotiationError):
+        _ = model_package_matches_runtime_environment(
+            model_package=model_package, runtime_x_ray=runtime_x_ray
+        )
+
+
+def test_model_package_matches_runtime_environment_when_package_should_be_allowed() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-1",
+        backend=BackendType.ONNX,
+        quantization=Quantization.FP32,
+        onnx_package_details=ONNXPackageDetails(opset=23),
+        package_artefacts=[],
+    )
+    runtime_x_ray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["tesla-t4"],
+        gpu_devices_cc=[Version("7.5")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=Version("10.5.1.11"),
+        jetson_type=None,
+        l4t_version=None,
+        os_version="ubuntu-20.04",
+        torch_available=False,
+        onnxruntime_version=Version("1.22.0"),
+        available_onnx_execution_providers={
+            "CPUExecutionProvider",
+            "TensorRTExecutionProvider",
+            "CUDAExecutionProvider",
+        },
+        hf_transformers_available=False,
+        ultralytics_available=False,
+        trt_python_package_available=True,
+    )
+
+    # when
+    result = model_package_matches_runtime_environment(
+        model_package=model_package, runtime_x_ray=runtime_x_ray
+    )
+
+    # then
+    assert result is True
+
+
+def test_model_package_matches_batch_size_request_when_static_batch_size_supported_and_size_does_not_match() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-1",
+        backend=BackendType.ONNX,
+        quantization=Quantization.FP32,
+        onnx_package_details=ONNXPackageDetails(opset=23),
+        static_batch_size=1,
+        package_artefacts=[],
+    )
+
+    # when
+    result = model_package_matches_batch_size_request(
+        model_package=model_package,
+        min_batch_size=4,
+        max_batch_size=16,
+    )
+
+    # then
+    assert result is False
+
+
+def test_model_package_matches_batch_size_request_when_dynamic_batch_size_supported_without_claiming_boundaries() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-1",
+        backend=BackendType.ONNX,
+        quantization=Quantization.FP32,
+        onnx_package_details=ONNXPackageDetails(opset=23),
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+    )
+
+    # when
+    result = model_package_matches_batch_size_request(
+        model_package=model_package,
+        min_batch_size=1,
+        max_batch_size=10000000,
+    )
+
+    # then
+    assert result is True
+
+
+def test_model_package_matches_batch_size_request_when_dynamic_batch_size_supported_claiming_boundaries_which_are_met() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-1",
+        backend=BackendType.ONNX,
+        quantization=Quantization.FP32,
+        onnx_package_details=ONNXPackageDetails(opset=23),
+        dynamic_batch_size_supported=True,
+        trt_package_details=TRTPackageDetails(
+            min_dynamic_batch_size=1,
+            opt_dynamic_batch_size=8,
+            max_dynamic_batch_size=16,
+        ),
+        package_artefacts=[],
+    )
+
+    # when
+    result = model_package_matches_batch_size_request(
+        model_package=model_package,
+        min_batch_size=1,
+        max_batch_size=8,
+    )
+
+    # then
+    assert result is True
+
+
+def test_model_package_matches_batch_size_request_when_dynamic_batch_size_supported_claiming_boundaries_which_are_not_met() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-1",
+        backend=BackendType.ONNX,
+        quantization=Quantization.FP32,
+        onnx_package_details=ONNXPackageDetails(opset=23),
+        dynamic_batch_size_supported=True,
+        trt_package_details=TRTPackageDetails(
+            min_dynamic_batch_size=1,
+            opt_dynamic_batch_size=8,
+            max_dynamic_batch_size=16,
+        ),
+        package_artefacts=[],
+    )
+
+    # when
+    result = model_package_matches_batch_size_request(
+        model_package=model_package,
+        min_batch_size=1,
+        max_batch_size=24,
+    )
+
+    # then
+    assert result is False
+
+
+def test_filter_model_packages_by_requested_quantization_when_nothing_left() -> None:
+    # given
+    model_packages = [
+        ModelPackageMetadata(
+            package_id="my-package-id-1",
+            backend=BackendType.ONNX,
+            quantization=Quantization.FP32,
+            onnx_package_details=ONNXPackageDetails(opset=23),
+            package_artefacts=[],
+        ),
+        ModelPackageMetadata(
+            package_id="my-package-id-1",
+            backend=BackendType.ONNX,
+            quantization=Quantization.FP16,
+            onnx_package_details=ONNXPackageDetails(opset=23),
+            package_artefacts=[],
+        ),
+    ]
+
+    # when
+    with pytest.raises(NoModelPackagesAvailableError):
+        _ = filter_model_packages_by_requested_quantization(
+            model_packages=model_packages,
+            requested_quantization="int8",
+        )
+
+
+def test_filter_model_packages_by_requested_quantization_when_something_left() -> None:
+    # given
+    model_packages = [
+        ModelPackageMetadata(
+            package_id="my-package-id-1",
+            backend=BackendType.ONNX,
+            quantization=Quantization.FP32,
+            onnx_package_details=ONNXPackageDetails(opset=23),
+            package_artefacts=[],
+        ),
+        ModelPackageMetadata(
+            package_id="my-package-id-2",
+            backend=BackendType.ONNX,
+            quantization=Quantization.FP16,
+            onnx_package_details=ONNXPackageDetails(opset=23),
+            package_artefacts=[],
+        ),
+    ]
+
+    # when
+    result = filter_model_packages_by_requested_quantization(
+        model_packages=model_packages,
+        requested_quantization="fp16",
+    )
+
+    # then
+    assert len(result) == 1
+    assert result[0].package_id == "my-package-id-2"
+
+
+def test_filter_model_packages_by_requested_batch_size_when_nothing_left() -> None:
+    # given
+    model_packages = [
+        ModelPackageMetadata(
+            package_id="my-package-id-1",
+            backend=BackendType.ONNX,
+            quantization=Quantization.FP32,
+            onnx_package_details=ONNXPackageDetails(opset=23),
+            static_batch_size=1,
+            package_artefacts=[],
+        ),
+        ModelPackageMetadata(
+            package_id="my-package-id-2",
+            backend=BackendType.ONNX,
+            quantization=Quantization.FP16,
+            onnx_package_details=ONNXPackageDetails(opset=23),
+            static_batch_size=1,
+            package_artefacts=[],
+        ),
+    ]
+
+    # when
+    with pytest.raises(NoModelPackagesAvailableError):
+        _ = filter_model_packages_by_requested_batch_size(
+            model_packages=model_packages,
+            requested_batch_size=(2, 8),
+        )
+
+
+def test_filter_model_packages_by_requested_batch_size_when_something_left() -> None:
+    # given
+    model_packages = [
+        ModelPackageMetadata(
+            package_id="my-package-id-1",
+            backend=BackendType.ONNX,
+            quantization=Quantization.FP32,
+            onnx_package_details=ONNXPackageDetails(opset=23),
+            static_batch_size=1,
+            package_artefacts=[],
+        ),
+        ModelPackageMetadata(
+            package_id="my-package-id-2",
+            backend=BackendType.ONNX,
+            quantization=Quantization.FP16,
+            onnx_package_details=ONNXPackageDetails(opset=23),
+            static_batch_size=4,
+            package_artefacts=[],
+        ),
+    ]
+
+    # when
+    result = filter_model_packages_by_requested_batch_size(
+        model_packages=model_packages,
+        requested_batch_size=(2, 8),
+    )
+
+    # then
+    assert len(result) == 1
+    assert result[0].package_id == "my-package-id-2"
+
+
+def test_select_model_package_by_id_when_no_package_matches() -> None:
+    # given
+    model_packages = [
+        ModelPackageMetadata(
+            package_id="my-package-id-1",
+            backend=BackendType.ONNX,
+            quantization=Quantization.FP32,
+            onnx_package_details=ONNXPackageDetails(opset=23),
+            static_batch_size=1,
+            package_artefacts=[],
+        ),
+        ModelPackageMetadata(
+            package_id="my-package-id-2",
+            backend=BackendType.ONNX,
+            quantization=Quantization.FP16,
+            onnx_package_details=ONNXPackageDetails(opset=23),
+            static_batch_size=4,
+            package_artefacts=[],
+        ),
+    ]
+
+    # when
+    with pytest.raises(NoModelPackagesAvailableError):
+        _ = select_model_package_by_id(
+            model_packages=model_packages, requested_model_package_id="invalid"
+        )
+
+
+def test_select_model_package_by_id_when_there_is_ambiguous_match() -> None:
+    # given
+    model_packages = [
+        ModelPackageMetadata(
+            package_id="my-package-id-1",
+            backend=BackendType.ONNX,
+            quantization=Quantization.FP32,
+            onnx_package_details=ONNXPackageDetails(opset=23),
+            static_batch_size=1,
+            package_artefacts=[],
+        ),
+        ModelPackageMetadata(
+            package_id="my-package-id-1",
+            backend=BackendType.ONNX,
+            quantization=Quantization.FP16,
+            onnx_package_details=ONNXPackageDetails(opset=23),
+            static_batch_size=4,
+            package_artefacts=[],
+        ),
+    ]
+
+    # when
+    with pytest.raises(AmbiguousModelPackageResolutionError):
+        _ = select_model_package_by_id(
+            model_packages=model_packages, requested_model_package_id="my-package-id-1"
+        )
+
+
+def test_select_model_package_by_id_when_there_is_single_match() -> None:
+    # given
+    model_packages = [
+        ModelPackageMetadata(
+            package_id="my-package-id-1",
+            backend=BackendType.ONNX,
+            quantization=Quantization.FP32,
+            onnx_package_details=ONNXPackageDetails(opset=23),
+            static_batch_size=1,
+            package_artefacts=[],
+        ),
+        ModelPackageMetadata(
+            package_id="my-package-id-2",
+            backend=BackendType.ONNX,
+            quantization=Quantization.FP16,
+            onnx_package_details=ONNXPackageDetails(opset=23),
+            static_batch_size=4,
+            package_artefacts=[],
+        ),
+    ]
+
+    # when
+    result = select_model_package_by_id(
+        model_packages=model_packages, requested_model_package_id="my-package-id-2"
+    )
+
+    # then
+    assert result.package_id == "my-package-id-2"
+
+
+def test_remove_untrusted_packages() -> None:
+    # given
+    model_packages = [
+        ModelPackageMetadata(
+            package_id="my-package-id-1",
+            backend=BackendType.ONNX,
+            quantization=Quantization.FP32,
+            onnx_package_details=ONNXPackageDetails(opset=23),
+            static_batch_size=1,
+            package_artefacts=[],
+            trusted_source=True,
+        ),
+        ModelPackageMetadata(
+            package_id="my-package-id-2",
+            backend=BackendType.ONNX,
+            quantization=Quantization.FP16,
+            onnx_package_details=ONNXPackageDetails(opset=23),
+            static_batch_size=4,
+            package_artefacts=[],
+        ),
+    ]
+
+    # when
+    result = remove_untrusted_packages(
+        model_packages=model_packages,
+    )
+
+    # then
+    assert len(result) == 1
+    assert result[0].package_id == "my-package-id-1"
+
+
+def test_remove_untrusted_packages_when_nothing_left() -> None:
+    # given
+    model_packages = [
+        ModelPackageMetadata(
+            package_id="my-package-id-1",
+            backend=BackendType.ONNX,
+            quantization=Quantization.FP32,
+            onnx_package_details=ONNXPackageDetails(opset=23),
+            static_batch_size=1,
+            package_artefacts=[],
+            trusted_source=False,
+        ),
+        ModelPackageMetadata(
+            package_id="my-package-id-2",
+            backend=BackendType.ONNX,
+            quantization=Quantization.FP16,
+            onnx_package_details=ONNXPackageDetails(opset=23),
+            static_batch_size=4,
+            package_artefacts=[],
+            trusted_source=False,
+        ),
+    ]
+
+    # when
+    with pytest.raises(NoModelPackagesAvailableError):
+        _ = remove_untrusted_packages(
+            model_packages=model_packages,
+        )
+
+
+def test_determine_default_allowed_quantization_for_cpu_device() -> None:
+    # given
+    determine_default_allowed_quantization.cache_clear()
+
+    try:
+        # when
+        results = determine_default_allowed_quantization(device=torch.device("cpu"))
+    finally:
+        determine_default_allowed_quantization.cache_clear()
+
+    # then
+    assert set(results) == {
+        Quantization.UNKNOWN,
+        Quantization.FP32,
+        Quantization.BF16,
+    }
+
+
+def test_determine_default_allowed_quantization_for_cuda_device() -> None:
+    # given
+    determine_default_allowed_quantization.cache_clear()
+
+    try:
+        # when
+        results = determine_default_allowed_quantization(
+            device=torch.device(type="cuda")
+        )
+    finally:
+        determine_default_allowed_quantization.cache_clear()
+
+    # then
+    assert set(results) == {
+        Quantization.UNKNOWN,
+        Quantization.FP32,
+        Quantization.FP16,
+    }
+
+
+def test_determine_default_allowed_quantization_for_mps_device() -> None:
+    # given
+    determine_default_allowed_quantization.cache_clear()
+
+    try:
+        # when
+        results = determine_default_allowed_quantization(
+            device=torch.device(type="mps")
+        )
+    finally:
+        determine_default_allowed_quantization.cache_clear()
+
+    # then
+    assert set(results) == {
+        Quantization.UNKNOWN,
+        Quantization.FP32,
+        Quantization.FP16,
+    }
+
+
+@mock.patch.object(auto_negotiation, "x_ray_runtime_environment")
+def test_determine_default_allowed_quantization_for_cuda_device_detected_in_runtime(
+    x_ray_runtime_environment_mock: MagicMock,
+) -> None:
+    # given
+    x_ray_runtime_environment_mock.return_value = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["nvidia-l4"],
+        gpu_devices_cc=[Version("8.7")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=None,
+        jetson_type=None,
+        l4t_version=Version("36.4.0"),
+        os_version="ubuntu-20.04",
+        torch_available=True,
+        onnxruntime_version=Version("1.21.0"),
+        available_onnx_execution_providers={
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
+        },
+        hf_transformers_available=True,
+        ultralytics_available=True,
+        trt_python_package_available=False,
+    )
+    determine_default_allowed_quantization.cache_clear()
+
+    try:
+        # when
+        results = determine_default_allowed_quantization()
+    finally:
+        determine_default_allowed_quantization.cache_clear()
+
+    # then
+    assert set(results) == {
+        Quantization.UNKNOWN,
+        Quantization.FP32,
+        Quantization.FP16,
+    }
+
+
+@mock.patch.object(auto_negotiation, "x_ray_runtime_environment")
+def test_determine_default_allowed_quantization_for_no_cuda_device_detected_in_runtime(
+    x_ray_runtime_environment_mock: MagicMock,
+) -> None:
+    # given
+    x_ray_runtime_environment_mock.return_value = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=[],
+        gpu_devices_cc=[],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=None,
+        jetson_type=None,
+        l4t_version=Version("36.4.0"),
+        os_version="ubuntu-20.04",
+        torch_available=True,
+        onnxruntime_version=Version("1.21.0"),
+        available_onnx_execution_providers={
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
+        },
+        hf_transformers_available=True,
+        ultralytics_available=True,
+        trt_python_package_available=False,
+    )
+    determine_default_allowed_quantization.cache_clear()
+
+    try:
+        # when
+        results = determine_default_allowed_quantization()
+    finally:
+        determine_default_allowed_quantization.cache_clear()
+
+    # then
+    assert set(results) == {
+        Quantization.UNKNOWN,
+        Quantization.FP32,
+        Quantization.BF16,
+    }
