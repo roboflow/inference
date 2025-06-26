@@ -12,8 +12,10 @@ RUN apt-get update -y && apt-get upgrade -y && apt-get install -y \
     libssl-dev \ 
     libreadline-dev \
     libffi-dev \
+    libsqlite3-dev \
     curl \
     libbz2-dev \
+    liblzma-dev \
     software-properties-common \
     && rm -rf /var/lib/apt/lists/*
 
@@ -29,7 +31,6 @@ RUN apt-get update -y && apt-get upgrade -y && apt-get install -y \
     python3-pip \
     python3-matplotlib \
     gfortran \
-    build-essential \
     libatlas-base-dev \
     libsm6 \
     libxext6 \
@@ -61,6 +62,7 @@ RUN python3.9 -m pip install --upgrade pip "h5py<=3.10.0" && python3.9 -m pip in
     -r requirements.yolo_world.txt \
     jupyterlab \
     "setuptools<=75.5.0" \
+    "pydantic<=2.10.6" \
     --upgrade \
     && rm -rf ~/.cache/pip
 
@@ -80,7 +82,6 @@ ENV VERSION_CHECK_MODE=continuous
 ENV PROJECT=roboflow-platform
 ENV ORT_TENSORRT_FP16_ENABLE=1
 ENV ORT_TENSORRT_ENGINE_CACHE_ENABLE=1
-ENV CORE_MODEL_SAM_ENABLED=False
 ENV PROJECT=roboflow-platform
 ENV NUM_WORKERS=1
 ENV HOST=0.0.0.0
@@ -89,10 +90,22 @@ ENV OPENBLAS_CORETYPE=ARMV8
 ENV WORKFLOWS_STEP_EXECUTION_MODE=local
 ENV WORKFLOWS_MAX_CONCURRENT_STEPS=2
 ENV API_LOGGING_ENABLED=True
-ENV CORE_MODEL_TROCR_ENABLED=false
 ENV RUNS_ON_JETSON=True
 ENV ENABLE_PROMETHEUS=True
 ENV ENABLE_STREAM_API=True
 ENV STREAM_API_PRELOADED_PROCESSES=2
+
+ENV CORE_MODEL_GAZE_ENABLED=False
+ENV CORE_MODEL_OWLV2_ENABLED=False
+ENV CORE_MODEL_PE_ENABLED=False
+ENV CORE_MODEL_SAM_ENABLED=False
+ENV CORE_MODEL_SAM2_ENABLED=False
+ENV CORE_MODEL_TROCR_ENABLED=False
+ENV DEPTH_ESTIMATION_ENABLED=False
+ENV FLORENCE2_ENABLED=False
+ENV MOONDREAM2_ENABLED=False
+ENV PALIGEMMA_ENABLED=False
+ENV QWEN_2_5_ENABLED=False
+ENV SMOLVLM2_ENABLED=False
 
 ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT
