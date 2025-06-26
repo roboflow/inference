@@ -58,8 +58,8 @@ LONG_DESCRIPTION = """
 This **ONVIF** block allows a workflow to control an ONVIF capable PTZ camera to follow a detected object.
 
 The block returns three values:
-* predictions - boolean; indicates whether or not the camera following a valid prediction
-* seeking - boolean; indicates whether or not the camera is currently seeking an object (set asynchronously)
+* predictions: a predictions object containing the single prediction the camera is currently following (can be empty)
+* seeking: indicates whether or not the camera is currently seeking an object (set asynchronously)
 
 There are two modes:
 
@@ -76,10 +76,15 @@ Note that the tracking block uses the ONVIF continuous movement service. Trackin
 workflow execution. If workflow execution stops, and the camera is currently moving, the camera will continue
 moving until it reaches the limits and will no longer be following an object.
 
+Use of a camera with variable speed movement is *highly* recommended for this block. "Simulate variable speed"
+can sometimes be used in place of this, but might result in jerky movements and hunting. This setting sends
+the camera a 100% movement command followed by a stop for a period in order to simulate a percentage speed
+movement. This can work in some cases, but the success varies depending on the camera's responsiveness.
+
 PID tuning is generally necessary for this block to avoid having the camera overshoot and hunt. Having a
-significant lag between the camera movement and video (using a lazy buffer consumption strategy) can make
-tuning extremely difficult. Using an eager buffer consumption strategy is recommended. Increasing the dead
-zone can also help, but can affect zooming.
+significant lag between the camera movement and video (using a lazy buffer consumption strategy) can make tuning
+extremely difficult. Using an eager buffer consumption strategy is recommended. Increasing the dead zone can
+also help, but can affect zooming.
 
 """
 
@@ -125,6 +130,11 @@ class BlockManifest(WorkflowBlockManifest):
         description="Follow object or go to default position preset on execution",
         examples=["Follow", "Go To Preset", "$inputs.movement_type"],
     )
+    simulate_variable_speed: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
+        default=False,
+        description="Simulate variable speed on a lower end camera by using frequent stop commands",
+        examples=[True, False, "$inputs.simulate_variable_speed"],
+    )
     zoom_if_able: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=False,
         description="Attempt to zoom into an object so it fills the image",
@@ -152,7 +162,7 @@ class BlockManifest(WorkflowBlockManifest):
         )
     )
     camera_update_rate_limit: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
-        default=500,
+        default=250,
         description="Minimum number of milliseconds between ONVIF movement updates",
     )
     flip_x_movement: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
@@ -161,7 +171,7 @@ class BlockManifest(WorkflowBlockManifest):
         description="Flip X movement if image is mirrored horizontally",
     )
     flip_y_movement: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
-        default=False,
+        default=True,
         examples=[True, False],
         description="Flip Y movement if image is mirrored vertically",
     )
@@ -269,6 +279,9 @@ class CameraWrapper:
     _stop_preset: Optional[str] = None
     _is_zoomed: bool = False
     _has_config_error: bool = False
+    _x_count: int = 0
+    _y_count: int = 0
+    _z_count: int = 0
 
     @experimental(
         reason="Usage of CameraWrapper is an experimental feature. Please report any issues "
@@ -408,7 +421,6 @@ class CameraWrapper:
             )
             config_options = ptz.GetConfigurationOptions(config_request)
             self.configuration_options = await config_options
-            # print(f"config options {type(self.configuration_options)}")
             pan_tilt_space = (
                 self.configuration_options.Spaces.ContinuousPanTiltVelocitySpace[0]
                 if hasattr(
@@ -524,15 +536,27 @@ class CameraWrapper:
 
     # tells the camera to move at a continuous velocity
     def continuous_move(
-        self,
-        x: float,
-        y: float,
-        z: float,
+        self, x: float, y: float, z: float, simulate_variable_speed: bool = False
     ):
-        self.schedule(self.continuous_move_async(x, y, z))
+        self.schedule(self.continuous_move_async(x, y, z, simulate_variable_speed))
+
+    def simulate_variable_speed(self, speed: float, count: int) -> Tuple[float, int]:
+        count = count + 1
+
+        if speed != 0 and count >= int(1.0 / speed):
+            speed = np.sign(speed)
+            if self._can_update():
+                count = 0
+        else:
+            speed = 0
+
+        # stop count until we let the next update through
+        return speed, count
 
     # x and y are velocities from -1 to 1
-    async def continuous_move_async(self, x: float, y: float, z: float):
+    async def continuous_move_async(
+        self, x: float, y: float, z: float, simulate_variable_speed: bool = False
+    ):
         """
         Tells the camera to move at a continuous velocity, or 0 to stop
         Note this is rate limited, some commands will be ignored
@@ -550,6 +574,14 @@ class CameraWrapper:
         # they'll be rescheduled on the next stop
         if x != 0 and y != 0 and z != 0:
             self.clear_next_reset()
+
+        # This option simulates a % speed by sending a number of move and stop
+        # commands that approximate the required % - so for 25% we'll send
+        # one 100% move command followed by one stop command.
+        if simulate_variable_speed:
+            x, self._x_count = self.simulate_variable_speed(x, self._x_count)
+            y, self._y_count = self.simulate_variable_speed(y, self._y_count)
+            z, self._z_count = self.simulate_variable_speed(z, self._z_count)
 
         # try to avoid hunting by allowing immediate stop
         x_changed, y_changed, z_changed = self.save_last_speeds(x, y, z)
@@ -689,7 +721,13 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         pid_ki: float,
         pid_kd: float,
         minimum_camera_speed: float,
+        simulate_variable_speed: bool,
     ) -> BlockResult:
+
+        # this is hard coded: if intermittent move signals are less
+        # than 10% then it's unlikely the camera will ever move
+        if simulate_variable_speed:
+            minimum_camera_speed = max(minimum_camera_speed, 0.1)
 
         if self._step_execution_mode != StepExecutionMode.LOCAL:
             raise ValueError("Inference must be run locally for the ONVIF block")
@@ -765,6 +803,7 @@ class ONVIFSinkBlockV1(WorkflowBlock):
                     flip_x_movement,
                     flip_y_movement,
                     minimum_camera_speed,
+                    simulate_variable_speed,
                 )
             return {
                 PREDICTIONS_OUTPUT_KEY: max_confidence_prediction,
@@ -789,6 +828,7 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         flip_x_movement: bool,
         flip_y_movement: bool,
         minimum_camera_speed: float,
+        simulate_variable_speed: bool = False,
     ):
         """
         This is where the PID changes are adjusted before the movement
@@ -803,6 +843,7 @@ class ONVIFSinkBlockV1(WorkflowBlock):
             flip_y_movement: Use to reverse the sign on the movement command if image is flipped
             minimum_camera_speed: Expressed as % from 0-1, movement commands are limited to this minimum
             stop_preset: The name of the preset for the camera to go to after being idle
+            simulate_variable_speed: All speeds will be max % with start/stops used to simulate speed
         """
 
         # get dimensions of image and bounding box from prediction
@@ -892,7 +933,9 @@ class ONVIFSinkBlockV1(WorkflowBlock):
             x_modifier = 1 if flip_x_movement else -1
             y_modifier = 1 if flip_y_movement else -1
 
-            camera.continuous_move(x * x_modifier, y * y_modifier, 0)
+            camera.continuous_move(
+                x * x_modifier, y * y_modifier, 0, simulate_variable_speed
+            )
 
     def __del__(self):
         self.event_loop.stop()
