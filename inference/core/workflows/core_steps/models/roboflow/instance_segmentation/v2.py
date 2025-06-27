@@ -137,6 +137,11 @@ class BlockManifest(WorkflowBlockManifest):
         description="Post-processing parameter to dictate tradeoff between fast and accurate.",
         examples=[0.3, "$inputs.tradeoff_factor"],
     )
+    gpu_decode: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
+        default=True,
+        description="Use GPU (cuda or mps) hardware to perform some of the mask decoding steps. (processing mode agnostic)",
+        examples=[True, "$inputs.gpu_decode"],
+    )
     disable_active_learning: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
         description="Boolean flag to disable project-level active learning for this block.",

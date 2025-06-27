@@ -133,6 +133,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
         masks = []
         mask_decode_mode = kwargs["mask_decode_mode"]
         tradeoff_factor = kwargs["tradeoff_factor"]
+        gpu_decode = kwargs["gpu_decode"]
         img_in_shape = preprocess_return_metadata["im_shape"]
 
         predictions = [np.array(p) for p in predictions]
@@ -145,7 +146,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
                 continue
             if mask_decode_mode == "accurate":
                 batch_masks = process_mask_accurate(
-                    proto, pred[:, 7:], pred[:, :4], img_in_shape[2:]
+                    proto, pred[:, 7:], pred[:, :4], img_in_shape[2:], gpu_decode
                 )
                 output_mask_shape = img_in_shape[2:]
             elif mask_decode_mode == "tradeoff":
@@ -159,11 +160,12 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
                     pred[:, :4],
                     img_in_shape[2:],
                     tradeoff_factor,
+                    gpu_decode
                 )
                 output_mask_shape = batch_masks.shape[1:]
             elif mask_decode_mode == "fast":
                 batch_masks = process_mask_fast(
-                    proto, pred[:, 7:], pred[:, :4], img_in_shape[2:]
+                    proto, pred[:, 7:], pred[:, :4], img_in_shape[2:], gpu_decode
                 )
                 output_mask_shape = batch_masks.shape[1:]
             else:

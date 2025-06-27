@@ -3,6 +3,7 @@ from typing import Dict, List, Tuple, Union
 
 import cv2
 import numpy as np
+import torch
 
 from inference.core.exceptions import PostProcessingError
 from inference.core.utils.preprocess import (
@@ -230,6 +231,7 @@ def process_mask_accurate(
     masks_in: np.ndarray,
     bboxes: np.ndarray,
     shape: Tuple[int, int],
+    gpu_decode: bool = False
 ) -> np.ndarray:
     """Returns masks that are the size of the original image.
 
@@ -246,6 +248,7 @@ def process_mask_accurate(
         protos=protos,
         masks_in=masks_in,
         shape=shape,
+        gpu_decode=gpu_decode
     )
 
     # Order = 1 -> bilinear
@@ -267,6 +270,7 @@ def process_mask_tradeoff(
     bboxes: np.ndarray,
     shape: Tuple[int, int],
     tradeoff_factor: float,
+    gpu_decode: bool = False,
 ) -> np.ndarray:
     """Returns masks that are the size of the original image with a tradeoff factor applied.
 
@@ -282,9 +286,10 @@ def process_mask_tradeoff(
     """
     c, mh, mw = protos.shape  # CHW
     masks = preprocess_segmentation_masks(
-        protos=protos,
-        masks_in=masks_in,
+        protos=torch.from_numpy(protos),
+        masks_in=torch.from_numpy(masks_in),
         shape=shape,
+        gpu_decode=gpu_decode,
     )
 
     # Order = 1 -> bilinear
@@ -316,6 +321,7 @@ def process_mask_fast(
     masks_in: np.ndarray,
     bboxes: np.ndarray,
     shape: Tuple[int, int],
+    gpu_decode: bool = False,
 ) -> np.ndarray:
     """Returns masks in their original size.
 
@@ -331,9 +337,10 @@ def process_mask_fast(
     ih, iw = shape
     c, mh, mw = protos.shape  # CHW
     masks = preprocess_segmentation_masks(
-        protos=protos,
-        masks_in=masks_in,
+        protos=torch.from_numpy(protos),
+        masks_in=torch.from_numpy(masks_in),
         shape=shape,
+        gpu_decode=gpu_decode,
     )
     down_sampled_boxes = scale_bboxes(
         bboxes=deepcopy(bboxes),
@@ -346,21 +353,29 @@ def process_mask_fast(
 
 
 def preprocess_segmentation_masks(
-    protos: np.ndarray,
-    masks_in: np.ndarray,
+    protos: torch.Tensor,
+    masks_in: torch.Tensor,
     shape: Tuple[int, int],
+    gpu_decode: bool = False,
 ) -> np.ndarray:
+    device = "cpu"
+    if gpu_decode:
+        if gpu_decode and torch.cuda.is_available():
+            device = "cuda"
+        elif gpu_decode and torch.backends.mps.is_available():
+            device = "mps"
+
     c, mh, mw = protos.shape  # CHW
-    masks = protos.astype(np.float32)
+    masks = protos.to(device)
     masks = masks.reshape((c, -1))
-    masks = masks_in @ masks
-    masks = sigmoid(masks)
+    masks = masks_in.to(device) @ masks
+    masks = torch.sigmoid(masks)
     masks = masks.reshape((-1, mh, mw))
-    gain = min(mh / shape[0], mw / shape[1])  # gain  = old / new
+    gain = torch.min(mh / shape[0], mw / shape[1])  # gain  = old / new
     pad = (mw - shape[1] * gain) / 2, (mh - shape[0] * gain) / 2  # wh padding
-    top, left = int(pad[1]), int(pad[0])  # y, x
-    bottom, right = int(mh - pad[1]), int(mw - pad[0])
-    return masks[:, top:bottom, left:right]
+    top, left = torch.round(pad[1]), torch.round(pad[0])  # y, x
+    bottom, right = torch.round(mh - pad[1]), torch.round(mw - pad[0])  # y, x
+    return masks[:, top:bottom, left:right].numpy()
 
 
 def scale_bboxes(bboxes: np.ndarray, scale_x: float, scale_y: float) -> np.ndarray:
