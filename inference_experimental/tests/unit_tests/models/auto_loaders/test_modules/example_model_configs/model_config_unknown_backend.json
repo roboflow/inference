@@ -1,0 +1,5 @@
+{
+  "backend_type": "unknown",
+  "model_module": "model.py",
+  "model_class": "MyClassificationModel"
+}
