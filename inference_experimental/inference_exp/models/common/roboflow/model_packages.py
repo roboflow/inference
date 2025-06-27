@@ -177,36 +177,42 @@ class TRTConfig:
 
 def parse_trt_config(config_path: str) -> TRTConfig:
     try:
-        with open(config_path) as f:
-            parsed_config = json.load(f)
-            config = TRTConfig(
-                static_batch_size=parsed_config.get("static_batch_size"),
-                dynamic_batch_size_min=parsed_config.get("dynamic_batch_size_min"),
-                dynamic_batch_size_opt=parsed_config.get("dynamic_batch_size_opt"),
-                dynamic_batch_size_max=parsed_config.get("dynamic_batch_size_max"),
+        parsed_config = read_json(path=config_path)
+        if not isinstance(parsed_config, dict):
+            raise ValueError(
+                f"Expected config format is dict, found {type(parsed_config)} instead"
             )
-            if config.static_batch_size is not None:
-                if config.static_batch_size <= 0:
-                    raise ValueError(
-                        f"invalid static batch size - {config.static_batch_size}"
-                    )
-                return config
-            if (
-                config.dynamic_batch_size_min is None
-                or config.dynamic_batch_size_max is None
-            ):
+        config = TRTConfig(
+            static_batch_size=parsed_config.get("static_batch_size"),
+            dynamic_batch_size_min=parsed_config.get("dynamic_batch_size_min"),
+            dynamic_batch_size_opt=parsed_config.get("dynamic_batch_size_opt"),
+            dynamic_batch_size_max=parsed_config.get("dynamic_batch_size_max"),
+        )
+        if config.static_batch_size is not None:
+            if config.static_batch_size <= 0:
                 raise ValueError(
-                    "configuration does not provide information about boundaries for dynamic batch size"
+                    f"invalid static batch size - {config.static_batch_size}"
                 )
-            if (
-                config.dynamic_batch_size_min <= 0
-                or config.dynamic_batch_size_max < config.dynamic_batch_size_min
-            ):
-                raise ValueError(f"invalid dynamic batch size")
             return config
+        if (
+            config.dynamic_batch_size_min is None
+            or config.dynamic_batch_size_opt is None
+            or config.dynamic_batch_size_max is None
+        ):
+            raise ValueError(
+                "configuration does not provide information about boundaries for dynamic batch size"
+            )
+        if (
+            config.dynamic_batch_size_min <= 0
+            or config.dynamic_batch_size_max < config.dynamic_batch_size_min
+            or config.dynamic_batch_size_opt < config.dynamic_batch_size_min
+            or config.dynamic_batch_size_opt > config.dynamic_batch_size_max
+        ):
+            raise ValueError(f"invalid dynamic batch size")
+        return config
     except (IOError, OSError, ValueError) as error:
         raise CorruptedModelPackageError(
-            message=f"TRT config file located under path {config_path} is malformed: "
+            message=f"TRT config file of the model package is malformed: "
             f"{error}. In case that the package is "
             f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
             f"verify its consistency in docs.",
@@ -216,22 +222,21 @@ def parse_trt_config(config_path: str) -> TRTConfig:
 
 def parse_class_map_from_environment_file(environment_file_path: str) -> List[str]:
     try:
-        with open(environment_file_path) as f:
-            parsed_config = json.load(f)
-            if "CLASS_MAP" not in parsed_config:
-                raise ValueError("config does not provide `CLASS_MAP` config")
-            class_map_dict = parsed_config["CLASS_MAP"]
-            class_map: List[Optional[str]] = [None] * len(class_map_dict)
-            for class_id, class_name in class_map_dict.items():
-                class_map[int(class_id)] = class_name
-            if any(c is None for c in class_map):
-                raise ValueError(
-                    "class mapping does not provide class name for every class id"
-                )
-            return class_map
-    except (IOError, OSError, ValueError) as error:
+        parsed_config = read_json(path=environment_file_path)
+        if "CLASS_MAP" not in parsed_config:
+            raise ValueError("config does not provide `CLASS_MAP` config")
+        class_map_dict = parsed_config["CLASS_MAP"]
+        class_map: List[Optional[str]] = [None] * len(class_map_dict)
+        for class_id, class_name in class_map_dict.items():
+            class_map[int(class_id)] = class_name
+        if any(c is None for c in class_map):
+            raise ValueError(
+                "class mapping does not provide class name for every class id"
+            )
+        return class_map
+    except (IOError, OSError, ValueError, IndexError) as error:
         raise CorruptedModelPackageError(
-            message=f"Environment file located under path {environment_file_path} is malformed: "
+            message=f"Environment file is malformed: "
             f"{error}. In case that the package is "
             f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
             f"verify its consistency in docs.",

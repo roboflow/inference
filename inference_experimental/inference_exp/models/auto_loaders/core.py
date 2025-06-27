@@ -239,7 +239,7 @@ def attempt_loading_model_from_local_storage(
 def parse_model_config(config_path: str) -> InferenceModelConfig:
     if not os.path.isfile(config_path):
         raise ModelLoadingError(
-            message=f"Could not find model config saved under {config_path} while attempting to load model from "
+            message=f"Could not find model config while attempting to load model from "
             f"local directory. This error may be caused by misconfiguration of model package (lack of config "
             f"file), as well as by clash between model_id or model alias and contents of local disc drive which "
             f"is possible when you have local directory in current dir which has the name colliding with the "
@@ -248,11 +248,20 @@ def parse_model_config(config_path: str) -> InferenceModelConfig:
             f"hosted solutions - contact us to get help.",
             help_url="https://todo",
         )
-    raw_config = read_json(path=config_path)
+    try:
+        raw_config = read_json(path=config_path)
+    except ValueError as error:
+        raise CorruptedModelPackageError(
+            message=f"Could not decode model config while attempting to load model from "
+            f"local directory. This error may be caused by corrupted config file. Validate the content of your "
+            f"model package and check in documentation the required format of model config file. "
+            f"If you see this problem while using one of Roboflow hosted solutions - contact us to get help.",
+            help_url="https://todo",
+        ) from error
     if not isinstance(raw_config, dict):
         raise CorruptedModelPackageError(
-            message=f"While loading the model from local directory encountered corrupted model config file under "
-            f"{config_path} - config is supposed to be a dictionary, instead decoded object of type: "
+            message=f"While loading the model from local directory encountered corrupted model config file - config is "
+            f"supposed to be a dictionary, instead decoded object of type: "
             f"{type(raw_config)}. If you see this problem while using one of Roboflow hosted solutions - "
             f"contact us to get help. Otherwise - verify the content of your model config.",
             help_url="https://todo",
@@ -264,8 +273,8 @@ def parse_model_config(config_path: str) -> InferenceModelConfig:
             backend_type = BackendType(raw_backend_type)
         except ValueError as e:
             raise CorruptedModelPackageError(
-                message=f"While loading the model from local directory encountered corrupted model config file under "
-                f"{config_path} - declared `backend_type` ({raw_backend_type}) is not supported by inference. "
+                message=f"While loading the model from local directory encountered corrupted model config "
+                "- declared `backend_type` ({raw_backend_type}) is not supported by inference. "
                 f"Supported values: {list(t.value for t in BackendType)}. If you see this problem while using "
                 f"one of Roboflow hosted solutions - contact us to get help. Otherwise - verify the content "
                 f"of your model config.",
@@ -324,13 +333,22 @@ def load_model_from_local_package_with_arbitrary_code(
 
 
 def load_class_from_path(module_path: str, class_name: str) -> AnyModel:
+    if not os.path.exists(module_path):
+        raise CorruptedModelPackageError(
+            message=f"When loading local model with arbitrary code, encountered issue with loading the module. "
+            "Could find the module under the path specified in model config. If you see this problem "
+            f"while using one of Roboflow hosted solutions - contact us to get help. Otherwise - verify your "
+            f"model package checking if you can load the module with model implementation within your "
+            f"python environment.",
+            help_url="https://todo",
+        )
     module_name = os.path.splitext(os.path.basename(module_path))[0]
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     if spec is None:
         raise CorruptedModelPackageError(
             message=f"When loading local model with arbitrary code, encountered issue with loading the module. "
             "Could not build module specification. If you see this problem while using "
-            f"one of Roboflow hosted solutions - contact us to get help. Otherwise - verify the your "
+            f"one of Roboflow hosted solutions - contact us to get help. Otherwise - verify your "
             f"model package checking if you can load the module with model implementation within your "
             f"python environment.",
             help_url="https://todo",
@@ -341,17 +359,27 @@ def load_class_from_path(module_path: str, class_name: str) -> AnyModel:
         raise CorruptedModelPackageError(
             message=f"When loading local model with arbitrary code, encountered issue with loading the module. "
             "Could not execute module loader. If you see this problem while using "
-            f"one of Roboflow hosted solutions - contact us to get help. Otherwise - verify the your "
+            f"one of Roboflow hosted solutions - contact us to get help. Otherwise - verify your "
             f"model package checking if you can load the module with model implementation within your "
             f"python environment.",
             help_url="https://todo",
         )
-    loader.exec_module(module)
+    try:
+        loader.exec_module(module)
+    except Exception as error:
+        raise CorruptedModelPackageError(
+            message=f"When loading local model with arbitrary code, encountered issue executing the module code "
+            f"to retrieve model class. Details of the error: {error}. If you see this problem while using "
+            f"one of Roboflow hosted solutions - contact us to get help. Otherwise - verify your "
+            f"model package checking if you can load the module with model implementation within your "
+            f"python environment.",
+            help_url="https://todo",
+        )
     if not hasattr(module, class_name):
         raise CorruptedModelPackageError(
             message=f"When loading local model with arbitrary code, encountered issue with loading the module. "
             f"Module `{module_name}` has no class `{class_name}`. If you see this problem while using "
-            f"one of Roboflow hosted solutions - contact us to get help. Otherwise - verify the your "
+            f"one of Roboflow hosted solutions - contact us to get help. Otherwise - verify your "
             f"model package checking if you can load the module with model implementation within your "
             f"python environment. It may also be the case that configuration file of the model points "
             f"to invalid class name.",

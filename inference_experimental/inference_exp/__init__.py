@@ -1,3 +1,4 @@
+from inference_exp.entities import ColorFormat
 from inference_exp.models.auto_loaders.core import AutoModel
 from inference_exp.models.base.classification import (
     ClassificationModel,
