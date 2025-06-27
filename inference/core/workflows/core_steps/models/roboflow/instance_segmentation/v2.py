@@ -207,6 +207,7 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
         max_candidates: Optional[int],
         mask_decode_mode: Literal["accurate", "tradeoff", "fast"],
         tradeoff_factor: Optional[float],
+        gpu_decode: Optional[bool],
         disable_active_learning: Optional[bool],
         active_learning_target_dataset: Optional[str],
     ) -> BlockResult:
@@ -222,6 +223,7 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
                 max_candidates=max_candidates,
                 mask_decode_mode=mask_decode_mode,
                 tradeoff_factor=tradeoff_factor,
+                gpu_decode=gpu_decode,
                 disable_active_learning=disable_active_learning,
                 active_learning_target_dataset=active_learning_target_dataset,
             )
@@ -257,6 +259,7 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
         max_candidates: Optional[int],
         mask_decode_mode: Literal["accurate", "tradeoff", "fast"],
         tradeoff_factor: Optional[float],
+        gpu_decode: Optional[bool],
         disable_active_learning: Optional[bool],
         active_learning_target_dataset: Optional[str],
     ) -> BlockResult:
@@ -275,6 +278,7 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
             max_candidates=max_candidates,
             mask_decode_mode=mask_decode_mode,
             tradeoff_factor=tradeoff_factor,
+            gpu_decode=gpu_decode,
             source="workflow-execution",
         )
         self._model_manager.add_model(

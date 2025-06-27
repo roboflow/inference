@@ -245,8 +245,8 @@ def process_mask_accurate(
         numpy.ndarray: Processed masks.
     """
     masks = preprocess_segmentation_masks(
-        protos=protos,
-        masks_in=masks_in,
+        protos=torch.from_numpy(protos),
+        masks_in=torch.from_numpy(masks_in),
         shape=shape,
         gpu_decode=gpu_decode
     )
@@ -259,9 +259,9 @@ def process_mask_accurate(
     if len(masks.shape) == 2:
         masks = np.expand_dims(masks, axis=2)
     masks = masks.transpose((2, 0, 1))
-    masks = crop_mask(masks, bboxes)
+    masks = slice_masks(masks, bboxes)
     masks[masks < 0.5] = 0
-    return masks
+    return masks, (shape[0], shape[1])
 
 
 def process_mask_tradeoff(
@@ -311,9 +311,9 @@ def process_mask_tradeoff(
         scale_x=mw / iw,
         scale_y=mh / ih,
     )
-    masks = crop_mask(masks, down_sampled_boxes)
+    masks = slice_masks(masks, down_sampled_boxes)
     masks[masks < 0.5] = 0
-    return masks
+    return masks, (mh, mw)
 
 
 def process_mask_fast(
@@ -347,9 +347,9 @@ def process_mask_fast(
         scale_x=mw / iw,
         scale_y=mh / ih,
     )
-    masks = crop_mask(masks, down_sampled_boxes)
+    masks = slice_masks(masks, down_sampled_boxes)
     masks[masks < 0.5] = 0
-    return masks
+    return masks, (mh, mw)
 
 
 def preprocess_segmentation_masks(
@@ -366,16 +366,16 @@ def preprocess_segmentation_masks(
             device = "mps"
 
     c, mh, mw = protos.shape  # CHW
-    masks = protos.to(device)
+    masks = protos.to(device).to(torch.float32)
     masks = masks.reshape((c, -1))
-    masks = masks_in.to(device) @ masks
+    masks = masks_in.to(device).to(torch.float32) @ masks
     masks = torch.sigmoid(masks)
     masks = masks.reshape((-1, mh, mw))
-    gain = torch.min(mh / shape[0], mw / shape[1])  # gain  = old / new
+    gain = min(mh / shape[0], mw / shape[1])  # gain  = old / new
     pad = (mw - shape[1] * gain) / 2, (mh - shape[0] * gain) / 2  # wh padding
-    top, left = torch.round(pad[1]), torch.round(pad[0])  # y, x
-    bottom, right = torch.round(mh - pad[1]), torch.round(mw - pad[0])  # y, x
-    return masks[:, top:bottom, left:right].numpy()
+    top, left = round(pad[1]), round(pad[0])  # y, x
+    bottom, right = round(mh - pad[1]), round(mw - pad[0])  # y, x
+    return masks[:, top:bottom, left:right].cpu().numpy()
 
 
 def scale_bboxes(bboxes: np.ndarray, scale_x: float, scale_y: float) -> np.ndarray:
@@ -403,6 +403,12 @@ def crop_mask(masks: np.ndarray, boxes: np.ndarray) -> np.ndarray:
 
     masks = masks * ((r >= x1) * (r < x2) * (c >= y1) * (c < y2))
     return masks
+
+def slice_masks(masks: np.ndarray, boxes: np.ndarray) -> np.ndarray:
+    result = []
+    for mask, box in zip(masks, boxes):
+        result.append(mask[round(box[1]):round(box[3]), round(box[0]):round(box[2])])
+    return np.array(result)
 
 
 def post_process_polygons(

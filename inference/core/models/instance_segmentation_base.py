@@ -1,4 +1,5 @@
 from typing import Any, List, Tuple, Union
+import time
 
 import numpy as np
 
@@ -16,6 +17,7 @@ from inference.core.models.utils.validate import (
 )
 from inference.core.nms import w_np_non_max_suppression
 from inference.core.utils.postprocess import (
+    slice_masks,
     masks2poly,
     post_process_bboxes,
     post_process_polygons,
@@ -60,6 +62,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
         max_detections: int = DEFAUlT_MAX_DETECTIONS,
         return_image_dims: bool = False,
         tradeoff_factor: float = DEFAULT_TRADEOFF_FACTOR,
+        gpu_decode: bool = True,
         **kwargs,
     ) -> Union[PREDICTIONS_TYPE, Tuple[PREDICTIONS_TYPE, List[Tuple[int, int]]]]:
         """
@@ -80,6 +83,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
             disable_preproc_contrast (bool, optional): If true, the auto contrast preprocessing step is disabled for this call. Default is False.
             disable_preproc_grayscale (bool, optional): If true, the grayscale preprocessing step is disabled for this call. Default is False.
             disable_preproc_static_crop (bool, optional): If true, the static crop preprocessing step is disabled for this call. Default is False.
+            gpu_decode (bool, optional): Use GPU (cuda or mps) hardware to perform some of the mask decoding steps. (processing mode agnostic). Default is True.
             **kwargs: Additional parameters to customize the inference process.
 
         Returns:
@@ -108,6 +112,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
             max_detections=max_detections,
             return_image_dims=return_image_dims,
             tradeoff_factor=tradeoff_factor,
+            gpu_decode=gpu_decode,
         )
 
     def postprocess(
@@ -145,16 +150,15 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
                 masks.append([])
                 continue
             if mask_decode_mode == "accurate":
-                batch_masks = process_mask_accurate(
+                batch_masks, output_mask_shape = process_mask_accurate(
                     proto, pred[:, 7:], pred[:, :4], img_in_shape[2:], gpu_decode
                 )
-                output_mask_shape = img_in_shape[2:]
             elif mask_decode_mode == "tradeoff":
                 if not 0 <= tradeoff_factor <= 1:
                     raise InvalidMaskDecodeArgument(
                         f"Invalid tradeoff_factor: {tradeoff_factor}. Must be in [0.0, 1.0]"
                     )
-                batch_masks = process_mask_tradeoff(
+                batch_masks, output_mask_shape = process_mask_tradeoff(
                     proto,
                     pred[:, 7:],
                     pred[:, :4],
@@ -162,17 +166,17 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
                     tradeoff_factor,
                     gpu_decode
                 )
-                output_mask_shape = batch_masks.shape[1:]
             elif mask_decode_mode == "fast":
-                batch_masks = process_mask_fast(
+                batch_masks, output_mask_shape = process_mask_fast(
                     proto, pred[:, 7:], pred[:, :4], img_in_shape[2:], gpu_decode
                 )
-                output_mask_shape = batch_masks.shape[1:]
             else:
                 raise InvalidMaskDecodeArgument(
                     f"Invalid mask_decode_mode: {mask_decode_mode}. Must be one of ['accurate', 'fast', 'tradeoff']"
                 )
+            
             polys = masks2poly(batch_masks)
+            
             pred[:, :4] = post_process_bboxes(
                 [pred[:, :4]],
                 infer_shape,
@@ -190,7 +194,14 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
                 self.preproc,
                 resize_method=self.resize_method,
             )
+
+            # add bbox location to polys
+            polys = [
+                [(pt[0] + bbox[0], pt[1] + bbox[1]) for pt in poly]
+                for (poly, bbox) in zip(polys, pred[:, :4])
+            ]
             masks.append(polys)
+
         return self.make_response(
             predictions, masks, preprocess_return_metadata["img_dims"], **kwargs
         )

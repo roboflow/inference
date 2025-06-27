@@ -218,6 +218,11 @@ class InstanceSegmentationInferenceRequest(ObjectDetectionInferenceRequest):
         examples=[0.5],
         description="The amount to tradeoff between 0='fast' and 1='accurate'",
     )
+    gpu_decode: Optional[bool] = Field(
+        default=True,
+        description="Use GPU (cuda or mps) hardware to perform some of the mask decoding steps. (processing mode agnostic)",
+        examples=[True, "$inputs.gpu_decode"],
+    )
 
 
 class ClassificationInferenceRequest(CVInferenceRequest):
