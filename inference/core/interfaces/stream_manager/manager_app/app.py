@@ -297,7 +297,7 @@ def get_response_ignoring_thrash(
     responses_queue: Queue, matching_request_id: str
 ) -> dict:
     while True:
-        response = responses_queue.get(timeout=SOCKET_TIMEOUT)
+        response = responses_queue.get()
         if response[0] == matching_request_id:
             return response[1]
         logger.warning(
