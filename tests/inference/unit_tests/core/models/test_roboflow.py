@@ -194,3 +194,34 @@ def test_get_class_names_from_environment_file() -> None:
         "class_k",
         "class_l",
     ]
+
+
+@mock.patch.object(roboflow.RoboflowInferenceModel, "clear_cache")
+@mock.patch.object(roboflow.RoboflowInferenceModel, "load_model_artifacts_from_cache")
+@mock.patch.object(roboflow.RoboflowInferenceModel, "cache_model_artefacts")
+@mock.patch.object(roboflow, "initialise_cache")
+@mock.patch.object(roboflow, "MODELS_CACHE_AUTH_ENABLED", False)
+def test_get_model_artifacts_redownloads_after_corruption(
+    models_cache_auth_enabled_mock: MagicMock,
+    initialise_cache_mock: MagicMock,
+    cache_model_artefacts_mock: MagicMock,
+    load_model_artifacts_from_cache_mock: MagicMock,
+    clear_cache_mock: MagicMock,
+) -> None:
+    # given
+    load_model_artifacts_from_cache_mock.side_effect = [
+        ModelArtefactError("corrupted"),
+        None,
+    ]
+    model = roboflow.RoboflowInferenceModel(
+        model_id="project/1",
+        load_weights=False,
+    )
+
+    # when
+    model.get_model_artifacts()
+
+    # then
+    assert cache_model_artefacts_mock.call_count == 2
+    assert load_model_artifacts_from_cache_mock.call_count == 2
+    clear_cache_mock.assert_called_once_with(delete_from_disk=True)
