@@ -410,6 +410,7 @@ def check_process_health() -> None:
                         == INFERENCE_THREAD_FINISHED_EVENT
                     ):
                         # pipeline was already terminated
+                        process.terminate()
                         process.join()
                         del PROCESSES_TABLE[pipeline_id]
                         continue

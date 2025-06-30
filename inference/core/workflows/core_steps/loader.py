@@ -200,6 +200,12 @@ from inference.core.workflows.core_steps.models.foundation.openai.v1 import (
 from inference.core.workflows.core_steps.models.foundation.openai.v2 import (
     OpenAIBlockV2,
 )
+from inference.core.workflows.core_steps.models.foundation.openai.v3 import (
+    OpenAIBlockV3,
+)
+from inference.core.workflows.core_steps.models.foundation.perception_encoder.v1 import (
+    PerceptionEncoderModelBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.qwen.v1 import (
     Qwen25VLBlockV1,
 )
@@ -214,6 +220,9 @@ from inference.core.workflows.core_steps.models.foundation.stability_ai.image_ge
 )
 from inference.core.workflows.core_steps.models.foundation.stability_ai.inpainting.v1 import (
     StabilityAIInpaintingBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.stability_ai.outpainting.v1 import (
+    StabilityAIOutpaintingBlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.yolo_world.v1 import (
     YoloWorldModelBlockV1,
@@ -267,6 +276,7 @@ from inference.core.workflows.core_steps.sinks.email_notification.v1 import (
     EmailNotificationBlockV1,
 )
 from inference.core.workflows.core_steps.sinks.local_file.v1 import LocalFileSinkBlockV1
+from inference.core.workflows.core_steps.sinks.onvif_movement.v1 import ONVIFSinkBlockV1
 from inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1 import (
     RoboflowCustomMetadataBlockV1,
 )
@@ -442,6 +452,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     QR_CODE_DETECTION_KIND,
     RGB_COLOR_KIND,
     ROBOFLOW_API_KEY_KIND,
+    ROBOFLOW_MANAGED_KEY,
     ROBOFLOW_MODEL_ID_KIND,
     ROBOFLOW_PROJECT_KIND,
     SECRET_KIND,
@@ -491,6 +502,7 @@ KINDS_DESERIALIZERS = {
     ROBOFLOW_MODEL_ID_KIND.name: deserialize_string_kind,
     ROBOFLOW_PROJECT_KIND.name: deserialize_string_kind,
     ROBOFLOW_API_KEY_KIND.name: deserialize_optional_string_kind,
+    ROBOFLOW_MANAGED_KEY.name: deserialize_optional_string_kind,
     FLOAT_ZERO_TO_ONE_KIND.name: deserialize_float_zero_to_one_kind,
     LIST_OF_VALUES_KIND.name: deserialize_list_of_values_kind,
     BOOLEAN_KIND.name: deserialize_boolean_kind,
@@ -552,6 +564,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ClipComparisonBlockV1,
         ClipComparisonBlockV2,
         ClipModelBlockV1,
+        PerceptionEncoderModelBlockV1,
         CogVLMBlockV1,
         ColorVisualizationBlockV1,
         ConvertGrayscaleBlockV1,
@@ -587,6 +600,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         OCRModelBlockV1,
         OpenAIBlockV1,
         OpenAIBlockV2,
+        OpenAIBlockV3,
         PathDeviationAnalyticsBlockV1,
         PathDeviationAnalyticsBlockV2,
         PixelateVisualizationBlockV1,
@@ -608,6 +622,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         SegmentAnything2BlockV1,
         StabilityAIInpaintingBlockV1,
         StabilityAIImageGenBlockV1,
+        StabilityAIOutpaintingBlockV1,
         StabilizeTrackedDetectionsBlockV1,
         StitchImagesBlockV1,
         StitchOCRDetectionsBlockV1,
@@ -647,6 +662,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         SmolVLM2BlockV1,
         Moondream2BlockV1,
         OverlapBlockV1,
+        ONVIFSinkBlockV1,
     ]
 
 
@@ -682,6 +698,7 @@ def load_kinds() -> List[Kind]:
         QR_CODE_DETECTION_KIND,
         BAR_CODE_DETECTION_KIND,
         PREDICTION_TYPE_KIND,
+        ROBOFLOW_MANAGED_KEY,
         PARENT_ID_KIND,
         IMAGE_METADATA_KIND,
         BYTES_KIND,

@@ -452,7 +452,6 @@ class OwlV2(RoboflowInferenceModel):
                 np_img = image.image_as_numpy
                 image_size = np_img.shape[:2][::-1]
                 self.image_size_cache[image.image_hash] = image_size
-                image.unload_numpy_image()  # free the huge numpy array immediately
             return image_size
         else:
             return image.shape[:2][::-1]
@@ -708,6 +707,7 @@ class OwlV2(RoboflowInferenceModel):
         return_image_embeds_dict = dict()
 
         for train_image in wrapped_training_data:
+            image_size = self.compute_image_size(train_image["image"])
             image_hash = self.embed_image(train_image["image"])
             if return_image_embeds:
                 if (image_embeds := self.get_image_embeds(image_hash)) is None:
@@ -715,8 +715,6 @@ class OwlV2(RoboflowInferenceModel):
                 return_image_embeds_dict[image_hash] = tuple(
                     t.to("cpu") for t in image_embeds
                 )
-
-            image_size = self.compute_image_size(train_image["image"])
             # grab and normalize box prompts for this image
             boxes = train_image["boxes"]
             coords = [[box["x"], box["y"], box["w"], box["h"]] for box in boxes]
@@ -820,9 +818,11 @@ class SerializedOwlV2(RoboflowInferenceModel):
 
         if previous_embeddings_file is not None:
             if DEVICE == "cpu":
-                model_data = torch.load(previous_embeddings_file, map_location="cpu")
+                model_data = torch.load(
+                    previous_embeddings_file, map_location="cpu", weights_only=False
+                )
             else:
-                model_data = torch.load(previous_embeddings_file)
+                model_data = torch.load(previous_embeddings_file, weights_only=False)
 
             train_data_dict = model_data["train_data_dict"]
             owlv2.cpu_image_embed_cache = model_data["image_embeds"]
@@ -921,10 +921,14 @@ class SerializedOwlV2(RoboflowInferenceModel):
     def load_model_artifacts_from_cache(self):
         if DEVICE == "cpu":
             self.model_data = torch.load(
-                self.cache_file(self.weights_file), map_location="cpu"
+                self.cache_file(self.weights_file),
+                map_location="cpu",
+                weights_only=False,
             )
         else:
-            self.model_data = torch.load(self.cache_file(self.weights_file))
+            self.model_data = torch.load(
+                self.cache_file(self.weights_file), weights_only=False
+            )
         self.class_names = self.model_data["class_names"]
         self.train_data_dict = self.model_data["train_data_dict"]
         self.huggingface_id = self.model_data["huggingface_id"]

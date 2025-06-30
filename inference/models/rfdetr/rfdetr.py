@@ -30,6 +30,8 @@ from inference.core.utils.preprocess import letterbox_image
 if USE_PYTORCH_FOR_PREPROCESSING:
     import torch
 
+ROBOFLOW_BACKGROUND_CLASS = "background_class83422"
+
 
 class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
     """Roboflow ONNX Object detection with the RFDETR model.
@@ -238,7 +240,9 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         return (bboxes, logits)
 
     def sigmoid_stable(self, x):
-        return np.where(x >= 0, 1 / (1 + np.exp(-x)), np.exp(x) / (1 + np.exp(x)))
+        # More efficient, branchless, numerically stable sigmoid computation
+        z = np.exp(-np.abs(x))
+        return np.where(x >= 0, 1 / (1 + z), z / (1 + z))
 
     def postprocess(
         self,
@@ -259,19 +263,18 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
 
         processed_predictions = []
 
-        background_class_index = -1  # Default to -1 (won't match valid indices)
-        background_class_name = "background_class83422"
-        try:
-            background_class_index = self.class_names.index(background_class_name)
-        except ValueError:
-            pass
-
         for batch_idx in range(batch_size):
             orig_h, orig_w = img_dims[batch_idx]
 
             logits_flat = logits_sigmoid[batch_idx].reshape(-1)
 
-            sorted_indices = np.argsort(-logits_flat)[:max_detections]
+            # Use argpartition for better performance when max_detections is smaller than logits_flat
+            partition_indices = np.argpartition(-logits_flat, max_detections)[
+                :max_detections
+            ]
+            sorted_indices = partition_indices[
+                np.argsort(-logits_flat[partition_indices])
+            ]
             topk_scores = logits_flat[sorted_indices]
 
             conf_mask = topk_scores > confidence
@@ -281,9 +284,10 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
             topk_boxes = sorted_indices // num_classes
             topk_labels = sorted_indices % num_classes
 
-            if background_class_index != -1:
-                class_filter_mask = topk_labels != background_class_index
+            if self.is_one_indexed:
+                class_filter_mask = topk_labels != self.background_class_index
 
+                topk_labels[topk_labels > self.background_class_index] -= 1
                 topk_scores = topk_scores[class_filter_mask]
                 topk_labels = topk_labels[class_filter_mask]
                 topk_boxes = topk_boxes[class_filter_mask]
@@ -320,10 +324,12 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
 
                 boxes_xyxy = boxes_input / scale
 
-            boxes_xyxy[:, 0] = np.clip(boxes_xyxy[:, 0], 0, orig_w)
-            boxes_xyxy[:, 1] = np.clip(boxes_xyxy[:, 1], 0, orig_h)
-            boxes_xyxy[:, 2] = np.clip(boxes_xyxy[:, 2], 0, orig_w)
-            boxes_xyxy[:, 3] = np.clip(boxes_xyxy[:, 3], 0, orig_h)
+            np.clip(
+                boxes_xyxy,
+                [0, 0, 0, 0],
+                [orig_w, orig_h, orig_w, orig_h],
+                out=boxes_xyxy,
+            )
 
             batch_predictions = np.column_stack(
                 (
@@ -442,6 +448,17 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                     f"Model {self.endpoint} is loaded with dynamic batching disabled"
                 )
 
+        if ROBOFLOW_BACKGROUND_CLASS in self.class_names:
+            self.is_one_indexed = True
+            self.background_class_index = self.class_names.index(
+                ROBOFLOW_BACKGROUND_CLASS
+            )
+            self.class_names = (
+                self.class_names[: self.background_class_index]
+                + self.class_names[self.background_class_index + 1 :]
+            )
+        else:
+            self.is_one_indexed = False
         logger.debug("Model initialisation finished.")
 
     def validate_model_classes(self) -> None:

@@ -45,6 +45,11 @@ setuptools.setup(
             "inference_experimental.*"
         ),
     ),
+    package_data={
+        "inference.models.perception_encoder.vision_encoder": [
+            "bpe_simple_vocab_16e6.txt.gz"
+        ],
+    },
     entry_points={
         "console_scripts": [
             "inference=inference_cli.main:app",

@@ -35,8 +35,16 @@ from inference.core.workflows.execution_engine.constants import (
     PATH_DEVIATION_KEY_IN_SV_DETECTIONS,
     POLYGON_KEY_IN_INFERENCE_RESPONSE,
     POLYGON_KEY_IN_SV_DETECTIONS,
+    SMOOTHED_SPEED_KEY_IN_INFERENCE_RESPONSE,
+    SMOOTHED_SPEED_KEY_IN_SV_DETECTIONS,
+    SMOOTHED_VELOCITY_KEY_IN_INFERENCE_RESPONSE,
+    SMOOTHED_VELOCITY_KEY_IN_SV_DETECTIONS,
+    SPEED_KEY_IN_INFERENCE_RESPONSE,
+    SPEED_KEY_IN_SV_DETECTIONS,
     TIME_IN_ZONE_KEY_IN_INFERENCE_RESPONSE,
     TIME_IN_ZONE_KEY_IN_SV_DETECTIONS,
+    VELOCITY_KEY_IN_INFERENCE_RESPONSE,
+    VELOCITY_KEY_IN_SV_DETECTIONS,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
@@ -54,6 +62,9 @@ def deserialize_image_kind(
 ) -> WorkflowImageData:
     if isinstance(image, WorkflowImageData):
         return image
+    parent_id = parameter
+    if isinstance(image, dict) and "parent_id" in image:
+        parent_id = image["parent_id"]
     video_metadata = None
     if isinstance(image, dict) and "video_metadata" in image:
         video_metadata = deserialize_video_metadata_kind(
@@ -62,7 +73,7 @@ def deserialize_image_kind(
     if isinstance(image, dict) and isinstance(image.get("value"), np.ndarray):
         image = image["value"]
     if isinstance(image, np.ndarray):
-        parent_metadata = ImageParentMetadata(parent_id=parameter)
+        parent_metadata = ImageParentMetadata(parent_id=parent_id)
         return WorkflowImageData(
             parent_metadata=parent_metadata,
             numpy_image=image,
@@ -86,7 +97,7 @@ def deserialize_image_kind(
             else:
                 base64_image = image
                 image = attempt_loading_image_from_string(image)[0]
-            parent_metadata = ImageParentMetadata(parent_id=parameter)
+            parent_metadata = ImageParentMetadata(parent_id=parent_id)
             return WorkflowImageData(
                 parent_metadata=parent_metadata,
                 numpy_image=image,
@@ -187,6 +198,13 @@ def deserialize_detections_kind(
             BOUNDING_RECT_WIDTH_KEY_IN_SV_DETECTIONS,
         ),
         (DETECTED_CODE_KEY, DETECTED_CODE_KEY),
+        (SPEED_KEY_IN_INFERENCE_RESPONSE, SPEED_KEY_IN_SV_DETECTIONS),
+        (SMOOTHED_SPEED_KEY_IN_INFERENCE_RESPONSE, SMOOTHED_SPEED_KEY_IN_SV_DETECTIONS),
+        (
+            SMOOTHED_VELOCITY_KEY_IN_INFERENCE_RESPONSE,
+            SMOOTHED_VELOCITY_KEY_IN_SV_DETECTIONS,
+        ),
+        (VELOCITY_KEY_IN_INFERENCE_RESPONSE, VELOCITY_KEY_IN_SV_DETECTIONS),
     ]
     for raw_detection_key, parsed_detection_key in optional_elements_keys:
         parsed_detections = _attach_optional_detection_element(

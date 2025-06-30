@@ -37,7 +37,7 @@ def test_parsing_manifest_when_raw_json_is_plain_string() -> None:
     raw_manifest = {
         "name": "parser",
         "type": "roboflow_core/json_parser@v1",
-        "raw_json": "{\"a\": 1}",
+        "raw_json": '{"a": 1}',
         "expected_fields": ["a"],
     }
 
@@ -48,7 +48,7 @@ def test_parsing_manifest_when_raw_json_is_plain_string() -> None:
     assert result == BlockManifest(
         name="parser",
         type="roboflow_core/json_parser@v1",
-        raw_json="{\"a\": 1}",
+        raw_json='{"a": 1}',
         expected_fields=["a"],
     )
 

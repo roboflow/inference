@@ -264,11 +264,11 @@ class LoRAQwen25VL(LoRATransformerModel):
             revision = None
             token = None
 
-        os.remove(
-            os.path.join(
-                MODEL_CACHE_DIR, "lora-bases/qwen/qwen25vl-7b/main/weights.tar.gz"
-            )
+        rm_weights = os.path.join(
+            MODEL_CACHE_DIR, "lora-bases/qwen/qwen25vl-7b/main/weights.tar.gz"
         )
+        if os.path.exists(rm_weights):
+            os.remove(rm_weights)
 
         files_folder = MODEL_CACHE_DIR + "lora-bases/qwen/qwen25vl-7b/main/"
         _patch_preprocessor_config(files_folder)

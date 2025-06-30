@@ -120,8 +120,8 @@ async def get_all_workflows():
             continue
 
         data[config_contents.get("id", json_file.stem)] = {
-            "createTime": int(stat_info.st_ctime),
-            "updateTime": int(stat_info.st_mtime),
+            "createTime": {"_seconds": int(stat_info.st_ctime)},
+            "updateTime": {"_seconds": int(stat_info.st_mtime)},
             "config": config_contents,
         }
 

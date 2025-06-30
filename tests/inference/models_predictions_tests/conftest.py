@@ -28,6 +28,7 @@ EXAMPLE_IMAGE_PATH = os.path.join(ASSETS_DIR, "example_image.jpg")
 PERSON_IMAGE_PATH = os.path.join(ASSETS_DIR, "person_image.jpg")
 BEER_IMAGE_PATH = os.path.join(ASSETS_DIR, "beer.jpg")
 TRUCK_IMAGE_PATH = os.path.join(ASSETS_DIR, "truck.jpg")
+MELEE_IMAGE_PATH = os.path.join(ASSETS_DIR, "melee.jpg")
 SAM2_TRUCK_LOGITS = os.path.join(ASSETS_DIR, "low_res_logits.npy")
 SAM2_TRUCK_MASK_FROM_CACHE = os.path.join(ASSETS_DIR, "mask_from_cached_logits.npy")
 SAM2_MULTI_POLY_RESPONSE_PATH = os.path.join(
@@ -59,6 +60,11 @@ def beer_image() -> np.ndarray:
 @pytest.fixture(scope="function")
 def truck_image() -> np.ndarray:
     return cv2.imread(TRUCK_IMAGE_PATH)
+
+
+@pytest.fixture(scope="function")
+def melee_image() -> np.ndarray:
+    return cv2.imread(MELEE_IMAGE_PATH)
 
 
 @pytest.fixture(scope="function")
@@ -105,6 +111,17 @@ def yolov5_det_model() -> Generator[str, None, None]:
     model_cache_dir = fetch_and_place_model_in_cache(
         model_id=model_id,
         model_package_url="https://storage.googleapis.com/roboflow-tests-assets/yolov5_det.zip",
+    )
+    yield model_id
+    shutil.rmtree(model_cache_dir)
+
+
+@pytest.fixture(scope="function")
+def rfdetr_base_model() -> Generator[str, None, None]:
+    model_id = "rfdetr-base/1"
+    model_cache_dir = fetch_and_place_model_in_cache(
+        model_id=model_id,
+        model_package_url="https://storage.googleapis.com/roboflow-tests-assets/rfdetr-base.zip",
     )
     yield model_id
     shutil.rmtree(model_cache_dir)

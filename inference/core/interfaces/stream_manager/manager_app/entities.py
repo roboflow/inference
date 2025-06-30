@@ -55,7 +55,7 @@ class VideoConfiguration(BaseModel):
         BufferFillingStrategy.DROP_OLDEST
     )
     source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy] = (
-        BufferConsumptionStrategy.EAGER
+        BufferConsumptionStrategy.LAZY
     )
     video_source_properties: Optional[Dict[str, float]] = None
     batch_collection_timeout: Optional[float] = None
