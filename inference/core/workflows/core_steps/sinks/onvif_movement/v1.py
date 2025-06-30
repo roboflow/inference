@@ -794,17 +794,18 @@ class ONVIFSinkBlockV1(WorkflowBlock):
 
                 camera.tracked_object = tracked_object
 
-                # adjust PID here as necessary, and send commands to wrapper
-                self.move_camera(
-                    camera,
-                    max_confidence_prediction,
-                    zoom_if_able,
-                    dead_zone,
-                    flip_x_movement,
-                    flip_y_movement,
-                    minimum_camera_speed,
-                    simulate_variable_speed,
-                )
+            # adjust PID here as necessary, and send commands to wrapper
+            self.move_camera(
+                camera,
+                max_confidence_prediction,
+                zoom_if_able,
+                dead_zone,
+                flip_x_movement,
+                flip_y_movement,
+                minimum_camera_speed,
+                simulate_variable_speed,
+            )
+
             return {
                 PREDICTIONS_OUTPUT_KEY: max_confidence_prediction,
                 SEEKING_OUTPUT_KEY: camera.seeking() if camera else False,
