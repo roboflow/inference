@@ -60,7 +60,7 @@ def pre_process_network_input(
             input_color_format=input_color_format,
             expected_network_color_format=expected_network_color_format,
             target_device=target_device,
-            normalization_constant=rescaling_constant,
+            rescaling_constant=rescaling_constant,
             normalization=normalization,
         )
     if isinstance(images[0], torch.Tensor):
@@ -141,6 +141,12 @@ def pre_process_images_tensor(
     if pre_processing_config.mode is not PreProcessingMode.LETTERBOX:
         raise ModelRuntimeError(
             message=f"Cannot find implementation for pre-processing operation: {pre_processing_config.mode}",
+            help_url="https://todo",
+        )
+    if pre_processing_config.padding_value is None:
+        raise ModelRuntimeError(
+            message="Could not pre-process data before model inference - pre-processing configuration "
+            "does not specify padding color when letterbox resize mode is selected.",
             help_url="https://todo",
         )
     original_height, original_width = images.shape[2], images.shape[3]
@@ -262,6 +268,12 @@ def pre_process_images_tensor_list(
             images_metadata.append(image_metadata)
         return torch.concat(processed, dim=0).contiguous(), images_metadata
     if pre_processing_config.mode is PreProcessingMode.LETTERBOX:
+        if pre_processing_config.padding_value is None:
+            raise ModelRuntimeError(
+                message="Could not pre-process data before model inference - pre-processing configuration "
+                "does not specify padding color when letterbox resize mode is selected.",
+                help_url="https://todo",
+            )
         target_h, target_w = (
             pre_processing_config.target_size.height,
             pre_processing_config.target_size.width,
@@ -269,7 +281,7 @@ def pre_process_images_tensor_list(
         num_images = len(images)
         final_batch = torch.full(
             (num_images, 3, target_h, target_w),
-            pre_processing_config.padding_value or 0,
+            pre_processing_config.padding_value,
             dtype=torch.float32,
             device=target_device,
         )
@@ -337,7 +349,7 @@ def pre_process_numpy_images_list(
     expected_network_color_format: ColorFormat,
     target_device: torch.device,
     input_color_format: Optional[ColorFormat] = None,
-    normalization_constant: float = 255.0,
+    rescaling_constant: Optional[float] = 255.0,
     normalization: Optional[Tuple[List[float], List[float]]] = None,
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
     result_tensors, result_metadata = [], []
@@ -348,7 +360,7 @@ def pre_process_numpy_images_list(
             expected_network_color_format=expected_network_color_format,
             target_device=target_device,
             input_color_format=input_color_format,
-            rescaling_constant=normalization_constant,
+            rescaling_constant=rescaling_constant,
             normalization=normalization,
         )
         result_tensors.append(tensor)
@@ -410,6 +422,12 @@ def pre_process_numpy_image(
         )
         return tensor.contiguous(), [image_metadata]
     if pre_processing_config.mode is PreProcessingMode.LETTERBOX:
+        if pre_processing_config.padding_value is None:
+            raise ModelRuntimeError(
+                message="Could not pre-process data before model inference - pre-processing configuration "
+                "does not specify padding color when letterbox resize mode is selected.",
+                help_url="https://todo",
+            )
         original_height, original_width = image.shape[0], image.shape[1]
         scale_w = pre_processing_config.target_size.width / original_width
         scale_h = pre_processing_config.target_size.height / original_height
@@ -473,7 +491,7 @@ def extract_input_images_dimensions(
         image_dimensions = []
         for image in images:
             image_dimensions.append(
-                ImageDimensions(height=image.shape[2], width=image.shape[3])
+                ImageDimensions(height=image.shape[1], width=image.shape[2])
             )
         return image_dimensions
     if not isinstance(images, list):
@@ -491,7 +509,7 @@ def extract_input_images_dimensions(
         image_dimensions = []
         for image in images:
             image_dimensions.append(
-                ImageDimensions(height=image.shape[2], width=image.shape[3])
+                ImageDimensions(height=image.shape[1], width=image.shape[2])
             )
         return image_dimensions
     raise ModelRuntimeError(
