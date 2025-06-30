@@ -82,7 +82,7 @@ class YOLOv10ForObjectDetectionOnnx(
             class_names_path=model_package_content["class_names.txt"]
         )
         pre_processing_config = parse_pre_processing_config(
-            environment_file_path=model_package_content["environment.json"],
+            config_path=model_package_content["environment.json"],
         )
         session = onnxruntime.InferenceSession(
             path_or_bytes=model_package_content["weights.onnx"],

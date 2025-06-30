@@ -81,7 +81,7 @@ class YOLOv8ForKeyPointsDetectionTRT(
             class_names_path=model_package_content["class_names.txt"]
         )
         pre_processing_config = parse_pre_processing_config(
-            environment_file_path=model_package_content["environment.json"],
+            config_path=model_package_content["environment.json"],
         )
         trt_config = parse_trt_config(
             config_path=model_package_content["trt_config.json"]

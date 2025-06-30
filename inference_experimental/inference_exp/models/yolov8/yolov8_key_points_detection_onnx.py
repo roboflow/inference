@@ -87,7 +87,7 @@ class YOLOv8ForKeyPointsDetectionOnnx(
             class_names_path=model_package_content["class_names.txt"]
         )
         pre_processing_config = parse_pre_processing_config(
-            environment_file_path=model_package_content["environment.json"],
+            config_path=model_package_content["environment.json"],
         )
         parsed_key_points_metadata = parse_key_points_metadata(
             key_points_metadata_path=model_package_content["keypoints_metadata.json"]

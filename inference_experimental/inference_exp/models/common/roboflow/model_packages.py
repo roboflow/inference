@@ -11,10 +11,13 @@ from inference_exp.utils.file_system import read_json, stream_file_lines
 
 def parse_class_names_file(class_names_path: str) -> List[str]:
     try:
-        return list(stream_file_lines(path=class_names_path))
-    except OSError as error:
+        result = list(stream_file_lines(path=class_names_path))
+        if not result:
+            raise ValueError("Empty class list")
+        return result
+    except (OSError, ValueError) as error:
         raise CorruptedModelPackageError(
-            message=f"Could not decode file {class_names_path} which is supposed to provide list of model class names. "
+            message=f"Could not decode file which is supposed to provide list of model class names. Error: {error}."
             f"If you created model package manually, please verify its consistency in docs. In case that the "
             f"weights are hosted on the Roboflow platform - contact support.",
             help_url="https://todo",
@@ -54,9 +57,9 @@ PreProcessingMetadata = namedtuple(
 )
 
 
-def parse_pre_processing_config(environment_file_path: str) -> PreProcessingConfig:
+def parse_pre_processing_config(config_path: str) -> PreProcessingConfig:
     try:
-        content = read_json(path=environment_file_path)
+        content = read_json(path=config_path)
         if not content:
             raise ValueError("file is empty.")
         if not isinstance(content, dict):
@@ -67,9 +70,17 @@ def parse_pre_processing_config(environment_file_path: str) -> PreProcessingConf
         resize_config = preprocessing_dict["resize"]
         if not resize_config["enabled"]:
             return PreProcessingConfig(mode=PreProcessingMode.NONE)
+        if "width" not in resize_config or "height" not in resize_config:
+            raise ValueError(
+                "file is malformed (lack of `width` or `height` key in dictionary specifying preprocessing)"
+            )
         target_size = ImageDimensions(
             width=int(resize_config["width"]), height=int(resize_config["height"])
         )
+        if "format" not in resize_config:
+            raise ValueError(
+                "file is malformed (lack of `format` key in dictionary specifying preprocessing)"
+            )
         if resize_config["format"] == "Stretch to":
             return PreProcessingConfig(
                 mode=PreProcessingMode.STRETCH, target_size=target_size
@@ -84,7 +95,7 @@ def parse_pre_processing_config(environment_file_path: str) -> PreProcessingConf
         raise ValueError("could not determine resize method or padding color")
     except (IOError, OSError, ValueError) as error:
         raise CorruptedModelPackageError(
-            message=f"Environment file located under path {environment_file_path} is malformed: "
+            message=f"Environment file is malformed: "
             f"{error}. In case that the package is "
             f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
             f"verify its consistency in docs.",
@@ -100,23 +111,26 @@ class ModelCharacteristics:
 
 def parse_model_characteristics(config_path: str) -> ModelCharacteristics:
     try:
-        with open(config_path) as f:
-            parsed_config = json.load(f)
-            if (
-                "project_task_type" not in parsed_config
-                or "model_type" not in parsed_config
-            ):
-                raise ValueError(
-                    "could not find required entries in config - either "
-                    "'project_task_type' or 'model_type' field is missing"
-                )
-            return ModelCharacteristics(
-                task_type=parsed_config["project_task_type"],
-                model_type=parsed_config["model_type"],
+        parsed_config = read_json(path=config_path)
+        if not isinstance(parsed_config, dict):
+            raise ValueError(
+                f"decoded value is {type(parsed_config)}, but dictionary expected"
             )
+        if (
+            "project_task_type" not in parsed_config
+            or "model_type" not in parsed_config
+        ):
+            raise ValueError(
+                "could not find required entries in config - either "
+                "'project_task_type' or 'model_type' field is missing"
+            )
+        return ModelCharacteristics(
+            task_type=parsed_config["project_task_type"],
+            model_type=parsed_config["model_type"],
+        )
     except (IOError, OSError, ValueError) as error:
         raise CorruptedModelPackageError(
-            message=f"Model type config file located under path {config_path} is malformed: "
+            message=f"Model type config file is malformed: "
             f"{error}. In case that the package is "
             f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
             f"verify its consistency in docs.",
@@ -126,32 +140,35 @@ def parse_model_characteristics(config_path: str) -> ModelCharacteristics:
 
 def parse_key_points_metadata(key_points_metadata_path: str) -> List[List[str]]:
     try:
-        with open(key_points_metadata_path) as f:
-            parsed_config = json.load(f)
-            if not isinstance(parsed_config, list):
+        parsed_config = read_json(path=key_points_metadata_path)
+        if not isinstance(parsed_config, list):
+            raise ValueError(
+                "config should contain list of key points descriptions for each instance"
+            )
+        result: List[Optional[List[str]]] = [None] * len(parsed_config)
+        for instance_key_point_description in parsed_config:
+            if "object_class_id" not in instance_key_point_description:
                 raise ValueError(
-                    "config should contain list of key points descriptions for each instance"
+                    "instance key point description lack 'object_class_id' key"
                 )
-            result: List[Optional[List[str]]] = [None] * len(parsed_config)
-            for instance_key_point_description in parsed_config:
-                if "object_class_id" not in instance_key_point_description:
-                    raise ValueError(
-                        "instance key point description lack 'object_class_id' key"
-                    )
-                object_class_id: int = instance_key_point_description["object_class_id"]
-                if not 0 <= object_class_id <= len(result):
-                    raise ValueError("`object_class_id` field point invalid class")
-                result[object_class_id] = _retrieve_key_points_names(
-                    instance_key_point_description=instance_key_point_description,
-                )
-            if any(e is None for e in result):
+            object_class_id: int = instance_key_point_description["object_class_id"]
+            if not 0 <= object_class_id < len(result):
+                raise ValueError("`object_class_id` field point invalid class")
+            if "keypoints" not in instance_key_point_description:
                 raise ValueError(
-                    "config does not provide metadata describing each instance key points"
+                    f"`keypoints` field not available in config for class with id {object_class_id}"
                 )
-            return result
+            result[object_class_id] = _retrieve_key_points_names(
+                key_points=instance_key_point_description["keypoints"],
+            )
+        if any(e is None for e in result):
+            raise ValueError(
+                "config does not provide metadata describing each instance key points"
+            )
+        return result
     except (IOError, OSError, ValueError) as error:
         raise CorruptedModelPackageError(
-            message=f"Key points config file located under path {key_points_metadata_path} is malformed: "
+            message=f"Key points config file is malformed: "
             f"{error}. In case that the package is "
             f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
             f"verify its consistency in docs.",
@@ -159,9 +176,9 @@ def parse_key_points_metadata(key_points_metadata_path: str) -> List[List[str]]:
         ) from error
 
 
-def _retrieve_key_points_names(instance_key_point_description: dict) -> List[str]:
+def _retrieve_key_points_names(key_points: dict) -> List[str]:
     key_points_dump = sorted(
-        [(int(k), v) for k, v in instance_key_point_description["keypoints"].items()],
+        [(int(k), v) for k, v in key_points.items()],
         key=lambda e: e[0],
     )
     return [e[1] for e in key_points_dump]
