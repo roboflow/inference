@@ -52,6 +52,8 @@ setuptools.setup(
             "inference_cli.*",
             "development",
             "development.*",
+            "inference_experimental",
+            "inference_experimental.*"
         ),
     ),
     install_requires=read_requirements(["requirements/requirements.sdk.http.txt"]),

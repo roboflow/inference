@@ -1,0 +1,3 @@
+{
+  "PREPROCESSING": "{\"auto-orient\": {\"enabled\": false}, \"filter-tags\": {\"enabled\": false}, \"resize\": {\"enabled\": true, \"format\": \"grey edges\", \"height\": \"560\", \"width\": \"560\"}}"
+}

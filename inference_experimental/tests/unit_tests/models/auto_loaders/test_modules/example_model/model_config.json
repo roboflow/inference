@@ -1,0 +1,4 @@
+{
+  "model_module": "model.py",
+  "model_class": "MyClassificationModel"
+}
