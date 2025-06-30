@@ -4,39 +4,11 @@ from json import JSONDecodeError
 import pytest
 from inference_exp.utils.file_system import (
     ensure_parent_dir_exists,
-    index_directory,
     pre_allocate_file,
     read_json,
     remove_file_if_exists,
     stream_file_lines,
 )
-
-
-def test_index_directory_for_non_existing_dir() -> None:
-    # when
-    result = index_directory(path="/some/non/existing/dir")
-
-    # then
-    assert result == {}, "Expected empty result"
-
-
-def test_index_directory_for_existing_empty_dir(empty_local_dir: str) -> None:
-    # when
-    result = index_directory(path=empty_local_dir)
-
-    # then
-    assert result == {}, "Expected empty result"
-
-
-def test_index_directory_for_existing_non_empty_dir(non_empty_local_dir: str) -> None:
-    # when
-    result = index_directory(path=non_empty_local_dir)
-
-    # then
-    assert result == {
-        "some.txt": os.path.join(non_empty_local_dir, "some.txt"),
-        "sub_dir": os.path.join(non_empty_local_dir, "sub_dir"),
-    }, "Expected empty result"
 
 
 def test_stream_file_lines_when_non_existing_file_selected() -> None:

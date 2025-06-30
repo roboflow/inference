@@ -1,13 +1,6 @@
 import json
 import os
-from typing import Dict, Generator, List, Optional, Union
-
-
-def index_directory(path: str) -> Dict[str, str]:
-    index_base = os.path.abspath(path)
-    if not os.path.isdir(index_base):
-        return {}
-    return {content: os.path.join(index_base, content) for content in os.listdir(path)}
+from typing import Generator, Optional, Union
 
 
 def stream_file_lines(path: str) -> Generator[str, None, None]:

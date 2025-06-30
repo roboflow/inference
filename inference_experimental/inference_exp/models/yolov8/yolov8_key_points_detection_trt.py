@@ -9,10 +9,6 @@ from inference_exp.entities import ColorFormat
 from inference_exp.errors import MissingDependencyError, ModelRuntimeError
 from inference_exp.models.common.cuda import use_cuda_context, use_primary_cuda_context
 from inference_exp.models.common.model_packages import get_model_package_contents
-from inference_exp.models.common.post_processing import (
-    rescale_key_points_detections,
-    run_nms_for_key_points_detection,
-)
 from inference_exp.models.common.roboflow.model_packages import (
     PreProcessingConfig,
     PreProcessingMetadata,
@@ -21,6 +17,10 @@ from inference_exp.models.common.roboflow.model_packages import (
     parse_key_points_metadata,
     parse_pre_processing_config,
     parse_trt_config,
+)
+from inference_exp.models.common.roboflow.post_processing import (
+    rescale_key_points_detections,
+    run_nms_for_key_points_detection,
 )
 from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
