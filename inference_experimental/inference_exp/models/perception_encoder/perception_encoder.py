@@ -5,6 +5,7 @@ import numpy as np
 import torch
 from PIL import Image
 
+from inference_exp.configuration import DEFAULT_DEVICE
 import inference_exp.models.perception_encoder.vision_encoder.pe as pe
 import inference_exp.models.perception_encoder.vision_encoder.transforms as transforms
 from inference_exp.models.base.embeddings import TextImageEmbeddingModel
@@ -26,7 +27,7 @@ class PerceptionEncoder(TextImageEmbeddingModel):
 
     @classmethod
     def from_pretrained(
-        cls, model_name_or_path: str, device: str = "cpu", **kwargs
+        cls, model_name_or_path: str, device: torch.device = DEFAULT_DEVICE, **kwargs
     ) -> "PerceptionEncoder":
         #here model name came from path before, which maybe doesn't match directly with how our registry works
         # instead should this be adopted to read config file that is served as part of model package?
