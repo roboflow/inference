@@ -59,7 +59,7 @@ def create_preprocessor(image_size: int) -> Callable:
     
     return _preprocess_image
 
-class PerceptionEncoder(TextImageEmbeddingModel):
+class PerceptionEncoderTorch(TextImageEmbeddingModel):
     def __init__(
         self,
         model: pe.CLIP,
@@ -74,7 +74,7 @@ class PerceptionEncoder(TextImageEmbeddingModel):
     @classmethod
     def from_pretrained(
         cls, model_name_or_path: str, device: torch.device = DEFAULT_DEVICE, **kwargs
-    ) -> "PerceptionEncoder":
+    ) -> "PerceptionEncoderTorch":
         #here model name came from path before, which maybe doesn't match directly with how our registry works
         # instead should this be adopted to read config file that is served as part of model package?
         model_config = model_name_or_path.split("/")[-1]

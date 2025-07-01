@@ -4,9 +4,8 @@ import pytest
 from PIL import Image
 from typing import Callable, Union
 
-from inference_exp.models.perception_encoder.perception_encoder import (
-    PerceptionEncoder,
-    get_tensor_image_transform,
+from inference_experimental.inference_exp.models.perception_encoder.perception_encoder_pytorch import (
+    PerceptionEncoderTorch,
     create_preprocessor,
 )
 from inference_exp.models.perception_encoder.vision_encoder import transforms
@@ -72,7 +71,7 @@ def test_preprocessing_consistency(model_size, image_shape):
 @pytest.mark.e2e_model_inference
 def test_perception_encoder_text_embedding():
     # GIVEN
-    model = PerceptionEncoder.from_pretrained(
+    model = PerceptionEncoderTorch.from_pretrained(
         "/tmp/cache/perception_encoder/PE-Core-B16-224"
     )
 
@@ -87,7 +86,7 @@ def test_perception_encoder_text_embedding():
 @pytest.mark.e2e_model_inference
 def test_perception_encoder_image_embedding():
     # GIVEN
-    model = PerceptionEncoder.from_pretrained(
+    model = PerceptionEncoderTorch.from_pretrained(
         "/tmp/cache/perception_encoder/PE-Core-B16-224"
     )
     # Create a BGR numpy image, simulating a cv2.imread() output
