@@ -3,8 +3,10 @@ import numpy as np
 import pytest
 from PIL import Image
 from typing import Callable, Union
+from inference_exp.models.auto_loaders.core import AutoModel
 
-from inference_experimental.inference_exp.models.perception_encoder.perception_encoder_pytorch import (
+
+from inference_exp.models.perception_encoder.perception_encoder_pytorch import (
     PerceptionEncoderTorch,
     create_preprocessor,
 )
@@ -33,22 +35,26 @@ def create_pil_preprocessor(image_size: int) -> Callable:
     return _pil_preprocessor
 
 
-
 @pytest.mark.parametrize("model_size", [224, 336, 448])
 @pytest.mark.parametrize("image_shape", [(224, 224), (336, 448), (640, 640)])
 def test_preprocessing_consistency(model_size, image_shape):
-    
+
     # Create a PIL-based preprocessor to compare against the tensor-based one
     # this is the original preprocessor used in the original implementation
     pil_based_preprocessor = create_pil_preprocessor(model_size)
 
     # this is the new preprocessor used in the new implementation since we dont want to convert to PIL image
     tensor_based_preprocessor = create_preprocessor(model_size)
-    
 
     # Create identical base data
     generator = torch.Generator().manual_seed(42)
-    rgb_image_tensor = torch.randint(0, 256, size=(3, image_shape[0], image_shape[1]), dtype=torch.uint8, generator=generator)
+    rgb_image_tensor = torch.randint(
+        0,
+        256,
+        size=(3, image_shape[0], image_shape[1]),
+        dtype=torch.uint8,
+        generator=generator,
+    )
     bgr_image_numpy = rgb_image_tensor.permute(1, 2, 0).numpy()[:, :, ::-1]
     rgb_image_numpy = bgr_image_numpy[:, :, ::-1]
 
@@ -56,7 +62,7 @@ def test_preprocessing_consistency(model_size, image_shape):
     # --- Test with NumPy input ---
     numpy_tensor_output = tensor_based_preprocessor(bgr_image_numpy.copy())
     numpy_pil_output = pil_based_preprocessor(rgb_image_numpy)
-    
+
     # --- Test with Tensor input ---
     tensor_tensor_output = tensor_based_preprocessor(rgb_image_tensor)
     tensor_pil_output = pil_based_preprocessor(rgb_image_tensor)
@@ -71,9 +77,11 @@ def test_preprocessing_consistency(model_size, image_shape):
 @pytest.mark.e2e_model_inference
 def test_perception_encoder_text_embedding():
     # GIVEN
-    model = PerceptionEncoderTorch.from_pretrained(
-        "/tmp/cache/perception_encoder/PE-Core-B16-224"
-    )
+    # model = PerceptionEncoderTorch.from_pretrained(
+    #     "/tmp/cache/perception_encoder/PE-Core-B16-224"
+    # )
+
+    model = AutoModel.from_pretrained("perception_encoder/PE-Core-B16-224")
 
     # WHEN
     embeddings = model.embed_text("hello world")
@@ -86,9 +94,12 @@ def test_perception_encoder_text_embedding():
 @pytest.mark.e2e_model_inference
 def test_perception_encoder_image_embedding():
     # GIVEN
-    model = PerceptionEncoderTorch.from_pretrained(
-        "/tmp/cache/perception_encoder/PE-Core-B16-224"
-    )
+    # model = PerceptionEncoderTorch.from_pretrained(
+    #     "/tmp/cache/perception_encoder/PE-Core-B16-224"
+    # )
+
+    model = AutoModel.from_pretrained("perception_encoder/PE-Core-B16-224")
+
     # Create a BGR numpy image, simulating a cv2.imread() output
     bgr_image_numpy = np.random.randint(0, 256, size=(224, 224, 3), dtype=np.uint8)
 
@@ -97,4 +108,4 @@ def test_perception_encoder_image_embedding():
 
     # THEN
     assert isinstance(embeddings, torch.Tensor)
-    assert embeddings.shape == (1, 1024) 
+    assert embeddings.shape == (1, 1024)
