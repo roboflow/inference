@@ -18,7 +18,7 @@ class PerceptionEncoder(TextImageEmbeddingModel):
         model: pe.CLIP,
         preprocessor,
         tokenizer,
-        device: str,
+        device: torch.device,
     ):
         self.model = model
         self.preprocessor = preprocessor
@@ -71,12 +71,12 @@ class PerceptionEncoder(TextImageEmbeddingModel):
         else:
             img_in = self._preproc_image(images).to(self.device)
 
-        if self.device == "cpu" or self.device == "mps":
+        if self.device.type == "cpu" or self.device.type == "mps":
             with torch.inference_mode():
                 image_features, _, _ = self.model(img_in, None)
                 embeddings = image_features.float()
         else:
-            with torch.inference_mode(), torch.autocast(self.device):
+            with torch.inference_mode(), torch.autocast(self.device.type):
                 image_features, _, _ = self.model(img_in, None)
                 embeddings = image_features.float()
 
@@ -96,11 +96,11 @@ class PerceptionEncoder(TextImageEmbeddingModel):
         # The original implementation had batching here based on CLIP_MAX_BATCH_SIZE, but not entirely sure how to handle that with Tensor output
         # I will leave it out for now, see https://github.com/roboflow/inference/blob/main/inference/models/perception_encoder/perception_encoder.py#L227 
         tokenized = self.tokenizer(texts_to_embed).to(self.device)
-        if self.device == "cpu" or self.device == "mps":
+        if self.device.type == "cpu" or self.device.type == "mps":
             with torch.no_grad():
                 _, text_features, _ = self.model(None, tokenized)
         else:
-            with torch.inference_mode(), torch.autocast(self.device):
+            with torch.inference_mode(), torch.autocast(self.device.type):
                 _, text_features, _ = self.model(None, tokenized)
 
         embeddings = text_features.float()
