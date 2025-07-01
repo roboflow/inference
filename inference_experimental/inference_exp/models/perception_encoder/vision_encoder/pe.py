@@ -18,14 +18,14 @@ from torch.nn.init import constant_, xavier_normal_, xavier_uniform_
 from torch.nn.parameter import Parameter
 from torch.utils.checkpoint import checkpoint
 
-from inference.models.perception_encoder.vision_encoder.config import (
+from inference_exp.models.perception_encoder.vision_encoder.config import (
     PE_TEXT_CONFIG,
     PE_VISION_CONFIG,
     PEConfig,
     PETextConfig,
     fetch_pe_checkpoint,
 )
-from inference.models.perception_encoder.vision_encoder.rope import Rope2D
+from inference_exp.models.perception_encoder.vision_encoder.rope import Rope2D
 
 logger = getLogger()
 
