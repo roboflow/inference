@@ -255,8 +255,8 @@ def process_mask_accurate(
         numpy.ndarray: Processed masks.
     """
     masks = preprocess_segmentation_masks(
-        protos=torch.from_numpy(protos),
-        masks_in=torch.from_numpy(masks_in),
+        protos=protos,
+        masks_in=masks_in,
         shape=shape,
         gpu_decode=gpu_decode,
     )
@@ -296,8 +296,8 @@ def process_mask_tradeoff(
     """
     c, mh, mw = protos.shape  # CHW
     masks = preprocess_segmentation_masks(
-        protos=torch.from_numpy(protos),
-        masks_in=torch.from_numpy(masks_in),
+        protos=protos,
+        masks_in=masks_in,
         shape=shape,
         gpu_decode=gpu_decode,
     )
@@ -347,8 +347,8 @@ def process_mask_fast(
     ih, iw = shape
     c, mh, mw = protos.shape  # CHW
     masks = preprocess_segmentation_masks(
-        protos=torch.from_numpy(protos),
-        masks_in=torch.from_numpy(masks_in),
+        protos=protos,
+        masks_in=masks_in,
         shape=shape,
         gpu_decode=gpu_decode,
     )
@@ -363,8 +363,8 @@ def process_mask_fast(
 
 
 def preprocess_segmentation_masks(
-    protos: torch.Tensor,
-    masks_in: torch.Tensor,
+    protos: np.ndarray,
+    masks_in: np.ndarray,
     shape: Tuple[int, int],
     gpu_decode: bool = False,
 ) -> np.ndarray:
@@ -376,17 +376,16 @@ def preprocess_segmentation_masks(
             device = "mps"
 
     c, mh, mw = protos.shape  # CHW
-    masks = protos.to(device).to(torch.float32)
+    masks = torch.from_numpy(protos).to(device).to(torch.float32)
     masks = masks.reshape((c, -1))
-    masks = masks_in.to(device).to(torch.float32) @ masks
+    masks = torch.from_numpy(masks_in).to(device).to(torch.float32) @ masks
     masks = torch.sigmoid(masks)
     masks = masks.reshape((-1, mh, mw))
     gain = min(mh / shape[0], mw / shape[1])  # gain  = old / new
     pad = (mw - shape[1] * gain) / 2, (mh - shape[0] * gain) / 2  # wh padding
-    top, left = round(pad[1]), round(pad[0])  # y, x
-    bottom, right = round(mh - pad[1]), round(mw - pad[0])  # y, x
-    # return masks[:, top:bottom, left:right].cpu().numpy()
-    return masks.cpu().numpy()
+    top, left = int(pad[1]), int(pad[0])  # y, x
+    bottom, right = int(mh - pad[1]), int(mw - pad[0])  # y, x
+    return masks[:, top:bottom, left:right].cpu().numpy()
 
 
 def scale_bboxes(bboxes: np.ndarray, scale_x: float, scale_y: float) -> np.ndarray:
@@ -420,7 +419,7 @@ def slice_masks(masks: np.ndarray, boxes: np.ndarray) -> List[np.ndarray]:
     result = []
     for mask, box in zip(masks, boxes):
         result.append(
-            mask[round(box[1]) : round(box[3]), round(box[0]) : round(box[2])]
+            mask[int(box[1]) : int(box[3]), int(box[0]) : int(box[2])]
         )
     return result
 

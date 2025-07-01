@@ -182,7 +182,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
             scale_y = infer_shape[1] / output_mask_shape[1]
             scale_x = infer_shape[0] / output_mask_shape[0]
             polys = [
-                [(pt[0] * scale_x + bbox[0], pt[1] * scale_y + bbox[1]) for pt in poly]
+                [[pt[0] * scale_x + bbox[0], pt[1] * scale_y + bbox[1]] for pt in poly]
                 for (poly, bbox) in zip(polys, pred[:, :4])
             ]
 
