@@ -2,6 +2,7 @@ import json
 import os.path
 from unittest import mock
 from unittest.mock import MagicMock, call
+import pytest
 
 from humanfriendly.testing import touch
 
