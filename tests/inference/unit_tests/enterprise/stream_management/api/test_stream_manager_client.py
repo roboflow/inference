@@ -276,7 +276,8 @@ async def test_send_message_when_communication_problem_arises() -> None:
 @pytest.mark.asyncio
 async def test_send_message_when_communication_succeeds() -> None:
     # given
-    writer = AsyncMock()
+    writer = mock.MagicMock()
+    writer.drain = AsyncMock()
     message = {"data": "some"}
     serialised_message = json.dumps(message).encode("utf-8")
     expected_payload = (

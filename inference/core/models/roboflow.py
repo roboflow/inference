@@ -240,8 +240,27 @@ class RoboflowInferenceModel(Model):
                 raise RoboflowAPINotAuthorizedError(
                     f"API key {self.api_key} does not have access to model {self.endpoint}"
                 )
-        self.cache_model_artefacts()
-        self.load_model_artifacts_from_cache()
+        max_attempts = 3
+        for attempt in range(1, max_attempts + 1):
+            try:
+                self.cache_model_artefacts()
+                self.load_model_artifacts_from_cache()
+                break
+            except Exception as error:
+                logger.warning(
+                    "Error downloading or loading artifacts on attempt %s/%s: %s",
+                    attempt,
+                    max_attempts,
+                    error,
+                )
+                if attempt == max_attempts:
+                    raise
+                logger.info(
+                    "Retrying download of model artifacts (attempt %s/%s)",
+                    attempt + 1,
+                    max_attempts,
+                )
+                self.clear_cache(delete_from_disk=True)
 
     def cache_model_artefacts(self) -> None:
         infer_bucket_files = self.get_all_required_infer_bucket_file()
