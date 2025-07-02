@@ -238,6 +238,8 @@ def get_roboflow_model_data(
     model_id: str,
     endpoint_type: ModelEndpointType,
     device_id: str,
+    countinference: bool = None,
+    service_secret: str = None,
 ) -> dict:
     api_data_cache_key = f"roboflow_api_data:{endpoint_type.value}:{model_id}"
     api_data = None
@@ -254,6 +256,15 @@ def get_roboflow_model_data(
         ]
         if api_key is not None:
             params.append(("api_key", api_key))
+
+        if (
+            INTERNAL_WEIGHTS_URL_SUFFIX == "serverless"
+            and countinference
+            and service_secret
+        ):
+            params.append(("countinference", str(countinference).lower()))
+            params.append(("service_secret", service_secret))
+
         api_base_url = urllib.parse.urljoin(API_BASE_URL, INTERNAL_WEIGHTS_URL_SUFFIX)
         api_url = _add_params_to_url(
             url=f"{api_base_url}/{endpoint_type.value}/{model_id}",
@@ -276,6 +287,8 @@ def get_roboflow_instant_model_data(
     api_key: str,
     model_id: ModelID,
     cache_prefix: str = "roboflow_api_data",
+    countinference: Optional[bool] = None,
+    service_secret: Optional[str] = None,
 ) -> dict:
     api_data_cache_key = f"{cache_prefix}:{model_id}"
     api_data = None
@@ -290,6 +303,15 @@ def get_roboflow_instant_model_data(
         ]
         if api_key is not None:
             params.append(("api_key", api_key))
+
+        if (
+            INTERNAL_WEIGHTS_URL_SUFFIX == "serverless"
+            and countinference
+            and service_secret
+        ):
+            params.append(("countinference", str(countinference).lower()))
+            params.append(("service_secret", service_secret))
+
         api_base_url = urllib.parse.urljoin(API_BASE_URL, INTERNAL_WEIGHTS_URL_SUFFIX)
         api_url = _add_params_to_url(
             url=f"{api_base_url}/getWeights",

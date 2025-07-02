@@ -1,3 +1,5 @@
+from typing import Optional
+
 from inference.core.exceptions import ModelNotRecognisedError
 from inference.core.models.base import Model
 
@@ -17,7 +19,12 @@ class ModelRegistry:
         """
         self.registry_dict = registry_dict
 
-    def get_model(self, model_type: str, model_id: str) -> Model:
+    def get_model(
+        self,
+        model_type: str,
+        model_id: str,
+        **kwargs,
+    ) -> Model:
         """Returns the model class based on the given model type.
 
         Args:

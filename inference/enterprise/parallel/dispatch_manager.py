@@ -146,6 +146,8 @@ class DispatchModelManager(ModelManager):
         api_key: str,
         model_id_alias: str = None,
         endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
+        countinference: Optional[bool] = None,
+        service_secret: Optional[str] = None,
     ) -> None:
         pass
 

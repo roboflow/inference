@@ -11,6 +11,7 @@ from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import (
     DISABLE_INFERENCE_CACHE,
+    INTERNAL_WEIGHTS_URL_SUFFIX,
     METRICS_ENABLED,
     METRICS_INTERVAL,
     MODELS_CACHE_AUTH_ENABLED,
@@ -53,6 +54,8 @@ class ModelManager:
         api_key: str,
         model_id_alias: Optional[str] = None,
         endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
+        countinference: Optional[bool] = None,
+        service_secret: Optional[str] = None,
     ) -> None:
         """Adds a new model to the manager.
 
@@ -63,7 +66,11 @@ class ModelManager:
         """
         if MODELS_CACHE_AUTH_ENABLED:
             if not _check_if_api_key_has_access_to_model(
-                api_key=api_key, model_id=model_id, endpoint_type=endpoint_type
+                api_key=api_key,
+                model_id=model_id,
+                endpoint_type=endpoint_type,
+                countinference=countinference,
+                service_secret=service_secret,
             ):
                 raise RoboflowAPINotAuthorizedError(
                     f"API key {api_key} does not have access to model {model_id}"
@@ -82,10 +89,35 @@ class ModelManager:
         logger.debug("ModelManager - model initialisation...")
 
         try:
-            model = self.model_registry.get_model(resolved_identifier, api_key)(
+            model_class = self.model_registry.get_model(
+                resolved_identifier,
+                api_key,
+                countinference=countinference,
+                service_secret=service_secret,
+            )
+            model = model_class(
                 model_id=model_id,
                 api_key=api_key,
             )
+
+            # Pass countinference and service_secret to download_model_artifacts_from_roboflow_api if available
+            if (
+                hasattr(model, "download_model_artifacts_from_roboflow_api")
+                and INTERNAL_WEIGHTS_URL_SUFFIX == "serverless"
+            ):
+                # Only pass these parameters if INTERNAL_WEIGHTS_URL_SUFFIX is "serverless"
+                if (
+                    hasattr(model, "cache_model_artefacts")
+                    and not model.has_model_metadata
+                ):
+                    # Override the download_model_artifacts_from_roboflow_api method with parameters
+                    original_method = model.download_model_artifacts_from_roboflow_api
+                    model.download_model_artifacts_from_roboflow_api = (
+                        lambda: original_method(
+                            countinference=countinference, service_secret=service_secret
+                        )
+                    )
+
             logger.debug("ModelManager - model successfully loaded.")
             self._models[resolved_identifier] = model
         except Exception as e:
