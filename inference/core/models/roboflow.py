@@ -255,11 +255,6 @@ class RoboflowInferenceModel(Model):
                 )
                 if attempt == max_attempts:
                     raise
-                logger.info(
-                    "Retrying download of model artifacts (attempt %s/%s)",
-                    attempt + 1,
-                    max_attempts,
-                )
                 self.clear_cache(delete_from_disk=True)
 
     def cache_model_artefacts(self) -> None:
