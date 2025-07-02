@@ -269,5 +269,141 @@ def python_package_speed(
         raise typer.Exit(code=1)
 
 
+@benchmark_app.command()
+def pipeline_speed(
+    model_id: Annotated[
+        Optional[str],
+        typer.Option(
+            "--model_id",
+            "-m",
+            help="Model ID in format project/version.",
+        ),
+    ] = None,
+    workflow_id: Annotated[
+        Optional[str],
+        typer.Option(
+            "--workflow-id",
+            "-wid",
+            help="Workflow ID.",
+        ),
+    ] = None,
+    workspace_name: Annotated[
+        Optional[str],
+        typer.Option(
+            "--workspace-name",
+            "-wn",
+            help="Workspace Name.",
+        ),
+    ] = None,
+    workflow_specification: Annotated[
+        Optional[str],
+        typer.Option(
+            "--workflow-specification",
+            "-ws",
+            help="Workflow specification JSON.",
+        ),
+    ] = None,
+    workflow_parameters: Annotated[
+        Optional[str],
+        typer.Option(
+            "--workflow-parameters",
+            "-wp",
+            help="Workflow parameters JSON.",
+        ),
+    ] = None,
+    video_reference: Annotated[
+        str,
+        typer.Option(
+            "--video_reference",
+            "-v",
+            help="Video source - can be video file path, stream URL, or camera ID",
+        ),
+    ] = "0",
+    duration_seconds: Annotated[
+        int,
+        typer.Option("--duration", "-t", help="Benchmark duration in seconds"),
+    ] = 60,
+    max_fps: Annotated[
+        Optional[float],
+        typer.Option("--max_fps", "-fps", help="Maximum FPS for pipeline"),
+    ] = None,
+    api_key: Annotated[
+        Optional[str],
+        typer.Option(
+            "--api-key",
+            "-a",
+            help="Roboflow API key for your workspace. If not given - env variable `ROBOFLOW_API_KEY` will be used",
+        ),
+    ] = None,
+    model_configuration: Annotated[
+        Optional[str],
+        typer.Option(
+            "--model_config", "-mc", help="Location of yaml file with model config"
+        ),
+    ] = None,
+    output_location: Annotated[
+        Optional[str],
+        typer.Option(
+            "--output_location",
+            "-o",
+            help="Location where to save the result (path to file or directory)",
+        ),
+    ] = None,
+    num_pipelines: Annotated[
+        int,
+        typer.Option(
+            "--pipelines",
+            "-p",
+            help="Number of concurrent pipelines to benchmark",
+        ),
+    ] = 1,
+):
+    # Validate inputs - either model_id or workflow params, not both
+    if model_id and (workflow_id or workflow_specification):
+        typer.echo(
+            "Error: Cannot specify both --model_id and workflow parameters (--workflow-id or --workflow-specification)"
+        )
+        raise typer.Exit(code=1)
+    if not model_id and not workflow_id and not workflow_specification:
+        typer.echo(
+            "Error: Must specify either --model_id or workflow parameters (--workflow-id with --workspace-name, or --workflow-specification)"
+        )
+        raise typer.Exit(code=1)
+    if workflow_id and not workspace_name:
+        typer.echo("Error: --workspace-name is required when using --workflow-id")
+        raise typer.Exit(code=1)
+
+    try:
+        from inference_cli.lib.benchmark_adapter import run_pipeline_speed_benchmark
+
+        run_pipeline_speed_benchmark(
+            video_reference=video_reference,
+            model_id=model_id,
+            workflow_id=workflow_id,
+            workspace_name=workspace_name,
+            workflow_specification=workflow_specification,
+            workflow_parameters=workflow_parameters,
+            duration_seconds=duration_seconds,
+            max_fps=max_fps,
+            api_key=api_key,
+            model_configuration=model_configuration,
+            output_location=output_location,
+            num_pipelines=num_pipelines,
+        )
+        # Ensure clean exit after benchmark completes
+        # Force exit to ensure all threads are terminated
+        import sys
+
+        sys.exit(0)
+    except KeyboardInterrupt:
+        print("\nBenchmark interrupted.")
+        import sys
+
+        sys.exit(0)
+    except Exception as error:
+        typer.echo(f"Command failed. Cause: {error}")
+        raise typer.Exit(code=1)
+
+
 if __name__ == "__main__":
     benchmark_app()

@@ -1,9 +1,11 @@
+import json
 import os.path
 from dataclasses import asdict
 from datetime import datetime
 from threading import Thread
 from typing import Any, Dict, Optional
 
+from inference.core import logger
 from inference_cli.lib.benchmark.api_speed import (
     coordinate_infer_api_speed_benchmark,
     coordinate_workflow_api_speed_benchmark,
@@ -187,6 +189,9 @@ def run_python_package_speed_benchmark(
     statistics_display_thread = Thread(
         target=display_benchmark_statistics, args=(results_collector,)
     )
+    statistics_display_thread.daemon = (
+        True  # Make thread daemon so it doesn't block exit
+    )
     statistics_display_thread.start()
     run_python_package_speed_benchmark(
         model_id=model_id,
@@ -236,6 +241,139 @@ def dump_benchmark_results(
         "platform": platform_specifics,
     }
     dump_json(path=target_path, content=results)
+
+
+def run_pipeline_speed_benchmark(
+    video_reference: str,
+    model_id: Optional[str] = None,
+    workflow_id: Optional[str] = None,
+    workspace_name: Optional[str] = None,
+    workflow_specification: Optional[str] = None,
+    workflow_parameters: Optional[str] = None,
+    duration_seconds: int = 60,
+    max_fps: Optional[float] = None,
+    api_key: Optional[str] = None,
+    model_configuration: Optional[str] = None,
+    output_location: Optional[str] = None,
+    num_pipelines: int = 1,
+) -> None:
+    ensure_inference_is_installed()
+
+    # importing here not to affect other entrypoints by missing `inference` core library
+    # Add a hard timeout for the entire benchmark
+    import signal
+
+    from inference_cli.lib.benchmark.pipeline_speed import run_pipeline_speed_benchmark
+
+    def timeout_handler(signum, frame):
+        logger.warning("Benchmark exceeded maximum allowed time, forcing termination")
+        import sys
+
+        sys.exit(1)
+
+    # Set alarm for duration + 30 seconds grace period
+    if hasattr(signal, "SIGALRM"):
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(duration_seconds + 30)
+
+    # Convert video_reference to int if it's a numeric string (for webcam)
+    processed_video_reference = video_reference
+    try:
+        # Try to convert to int - handles positive, negative, and zero
+        processed_video_reference = int(video_reference)
+    except ValueError:
+        # Not a number, keep as string (for file paths or URLs)
+        pass
+
+    # Create video sources for all pipelines
+    video_sources = [processed_video_reference] * num_pipelines
+
+    # Parse JSON parameters if provided
+    parsed_workflow_specification = None
+    parsed_workflow_parameters = None
+
+    if workflow_specification:
+        try:
+            parsed_workflow_specification = json.loads(workflow_specification)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON in workflow_specification: {e}")
+
+    if workflow_parameters:
+        try:
+            parsed_workflow_parameters = json.loads(workflow_parameters)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON in workflow_parameters: {e}")
+
+    results_collector = ResultsCollector()
+    statistics_display_thread = Thread(
+        target=display_benchmark_statistics, args=(results_collector,)
+    )
+    statistics_display_thread.daemon = (
+        True  # Make thread daemon so it doesn't block exit
+    )
+    statistics_display_thread.start()
+
+    run_pipeline_speed_benchmark(
+        video_sources=video_sources,
+        results_collector=results_collector,
+        model_id=model_id,
+        workflow_id=workflow_id,
+        workspace_name=workspace_name,
+        workflow_specification=parsed_workflow_specification,
+        workflow_parameters=parsed_workflow_parameters,
+        duration_seconds=duration_seconds,
+        max_fps=max_fps,
+        api_key=api_key,
+        model_configuration=model_configuration,
+    )
+
+    benchmark_results = results_collector.get_statistics()
+
+    # Force stop the results collector to ensure display thread exits
+    results_collector.stop_benchmark()
+
+    # Wait for statistics thread with timeout
+    # The display thread now checks every 100ms for completion, so it should exit quickly
+    statistics_display_thread.join(timeout=5.0)
+    if statistics_display_thread.is_alive():
+        logger.warning("Statistics display thread did not terminate properly")
+        # Force terminate by making it a daemon thread (already is) and continuing
+
+    # Benchmark completion is already reported by run_pipeline_speed_benchmark
+    print("\nBenchmark completed successfully!")
+
+    if output_location is None:
+        return None
+
+    benchmark_parameters = {
+        "datetime": datetime.now().isoformat(),
+        "video_reference": video_reference,
+        "duration_seconds": duration_seconds,
+        "num_pipelines": num_pipelines,
+        "max_fps": max_fps,
+        "model_configuration": model_configuration,
+    }
+
+    if model_id:
+        benchmark_parameters["model_id"] = model_id
+    else:
+        if workflow_id and workspace_name:
+            benchmark_parameters["workflow_id"] = workflow_id
+            benchmark_parameters["workspace_name"] = workspace_name
+        else:
+            benchmark_parameters["workflow_id"] = "locally defined"
+        if workflow_parameters:
+            benchmark_parameters["workflow_parameters"] = workflow_parameters
+
+    dump_benchmark_results(
+        output_location=output_location,
+        benchmark_parameters=benchmark_parameters,
+        benchmark_results=benchmark_results,
+    )
+
+    # Cancel the alarm if we finished normally
+    if hasattr(signal, "SIGALRM"):
+        signal.alarm(0)
 
 
 def ensure_error_rate_is_below_threshold(
