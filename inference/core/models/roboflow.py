@@ -322,7 +322,7 @@ class RoboflowInferenceModel(Model):
                         raise ModelArtefactError(
                             "Could not find `environment` key in roboflow API model description response."
                         )
-                    environment = get_from_url(api_data["environment"])
+                    environment = get_from_url(api_data["environment"], verify_content_length=True)
                     model_weights_response = get_from_url(
                         api_data["model"],
                         json_response=False,
