@@ -728,19 +728,18 @@ def _get_from_url(url: str, json_response: bool = True) -> Union[Response, dict]
             if k.lower() == "content-length":
                 content_length_header = k
                 break
-        if not content_length_header or not response.headers[content_length_header].isnumeric():
+        if (
+            not content_length_header
+            or not response.headers[content_length_header].isnumeric()
+        ):
             error = "Content-Length header not found or malformed"
             if RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API:
-                raise RetryRequestError(
-                    message=error
-                )
-            raise(RoboflowAPIUnsuccessfulRequestError(error))
+                raise RetryRequestError(message=error)
+            raise (RoboflowAPIUnsuccessfulRequestError(error))
         if int(response.headers.get(k)) != response.content:
             error = "Content-Length header does not match response content length"
             if RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API:
-                raise RetryRequestError(
-                    message=error
-                )
+                raise RetryRequestError(message=error)
             raise RoboflowAPIUnsuccessfulRequestError(error)
 
     except (ConnectionError, Timeout, requests.exceptions.ConnectionError) as error:
