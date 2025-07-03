@@ -8,7 +8,6 @@ from typing import List, Optional, Union
 from filelock import FileLock
 
 from inference.core.env import MODEL_CACHE_DIR
-from inference.core.exceptions import ModelArtefactError
 from inference.core.logger import logger
 from inference.core.utils.file_system import (
     dump_bytes,
@@ -67,31 +66,8 @@ def load_text_file_from_cache(
 def load_json_from_cache(
     file: str, model_id: Optional[str] = None, **kwargs
 ) -> Optional[Union[dict, list]]:
-    """Load a JSON artifact from the cache.
-
-    Raises ``ModelArtefactError`` when the file cannot be read as valid JSON.
-    """
-
     cached_file_path = get_cache_file_path(file=file, model_id=model_id)
-    try:
-        return read_json(path=cached_file_path, **kwargs)
-    except Exception as error:
-        try:
-            with open(cached_file_path) as f:
-                logger.error(
-                    "Failed to decode JSON from %s. Contents:\n%s",
-                    cached_file_path,
-                    f.read(),
-                )
-        except Exception as read_error:
-            logger.error(
-                "Could not read corrupted JSON file %s: %s",
-                cached_file_path,
-                read_error,
-            )
-        raise ModelArtefactError(
-            f"Could not load JSON artifact '{file}' for model '{model_id}'."
-        ) from error
+    return read_json(path=cached_file_path, **kwargs)
 
 
 def save_bytes_in_cache(

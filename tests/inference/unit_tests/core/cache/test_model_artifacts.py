@@ -2,7 +2,6 @@ import json
 import os.path
 from unittest import mock
 from unittest.mock import MagicMock, call
-import pytest
 
 from humanfriendly.testing import touch
 
@@ -20,7 +19,6 @@ from inference.core.cache.model_artifacts import (
     save_json_in_cache,
     save_text_lines_in_cache,
 )
-from inference.core.exceptions import ModelArtefactError
 from tests.inference.unit_tests.core.utils.test_file_system import (
     assert_bytes_file_content_correct,
     assert_text_file_content_correct,
@@ -171,23 +169,6 @@ def test_load_json_from_cache(
     # then
     assert result == {"some": "key"}
     get_cache_dir_mock.assert_called_once_with(model_id="some/3")
-
-
-@mock.patch.object(model_artifacts, "get_cache_dir")
-def test_load_json_from_cache_when_file_is_corrupted(
-    get_cache_dir_mock: MagicMock,
-    empty_local_dir: str,
-) -> None:
-    # given
-    cache_dir = os.path.join(empty_local_dir, "some", "3")
-    get_cache_dir_mock.return_value = cache_dir
-    os.makedirs(cache_dir, exist_ok=True)
-    with open(os.path.join(cache_dir, "a.json"), "w") as f:
-        f.write("NOT JSON")
-
-    # when / then
-    with pytest.raises(ModelArtefactError):
-        _ = load_json_from_cache(file="a.json", model_id="some/3")
 
 
 @mock.patch.object(model_artifacts, "get_cache_dir")
