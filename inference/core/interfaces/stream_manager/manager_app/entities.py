@@ -113,6 +113,10 @@ class InitialiseWebRTCPipelinePayload(InitialisePipelinePayload):
     max_consecutive_timeouts: int = 30
     min_consecutive_on_time: int = 5
 
+class WebRTCData(BaseModel):
+    stream_output: Optional[str] = None
+    data_output: Optional[str] = None
+
 
 class ConsumeResultsPayload(BaseModel):
     excluded_fields: List[str] = Field(
