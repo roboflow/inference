@@ -253,9 +253,9 @@ class RoboflowInferenceModel(Model):
                     max_attempts,
                     error,
                 )
+                self.clear_cache(delete_from_disk=True)
                 if attempt == max_attempts:
                     raise
-                self.clear_cache(delete_from_disk=True)
 
     def cache_model_artefacts(self) -> None:
         infer_bucket_files = self.get_all_required_infer_bucket_file()
