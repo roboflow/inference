@@ -706,8 +706,13 @@ def _prepare_workflow_response_cache_key(
 def get_from_url(
     url: str,
     json_response: bool = True,
+    verify_content_length: bool = False,
 ) -> Union[Response, dict]:
-    return _get_from_url(url=url, json_response=json_response)
+    return _get_from_url(
+        url=url,
+        json_response=json_response,
+        verify_content_length=verify_content_length,
+    )
 
 
 @backoff.on_exception(
@@ -716,23 +721,26 @@ def get_from_url(
     max_tries=TRANSIENT_ROBOFLOW_API_ERRORS_RETRIES,
     interval=TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL,
 )
-def _get_from_url(url: str, json_response: bool = True) -> Union[Response, dict]:
+def _get_from_url(
+    url: str, json_response: bool = True, verify_content_length: bool = False
+) -> Union[Response, dict]:
     try:
         response = requests.get(
             wrap_url(url),
             headers=build_roboflow_api_headers(),
             timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
         )
-        content_length = str(response.headers.get("Content-Length"))
-        if not content_length.isnumeric():
-            raise RoboflowAPIUnsuccessfulRequestError(
-                "Content-Length header is not numeric"
-            )
-        if int(content_length) != len(response.content):
-            error = "Content-Length header does not match response content length"
-            if RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API:
-                raise RetryRequestError(message=error)
-            raise RoboflowAPIUnsuccessfulRequestError(error)
+        if verify_content_length:
+            content_length = str(response.headers.get("Content-Length"))
+            if not content_length.isnumeric():
+                raise RoboflowAPIUnsuccessfulRequestError(
+                    "Content-Length header is not numeric"
+                )
+            if int(content_length) != len(response.content):
+                error = "Content-Length header does not match response content length"
+                if RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API:
+                    raise RetryRequestError(message=error)
+                raise RoboflowAPIUnsuccessfulRequestError(error)
 
     except (ConnectionError, Timeout, requests.exceptions.ConnectionError) as error:
         if RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API:

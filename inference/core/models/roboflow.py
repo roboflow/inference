@@ -324,7 +324,9 @@ class RoboflowInferenceModel(Model):
                         )
                     environment = get_from_url(api_data["environment"])
                     model_weights_response = get_from_url(
-                        api_data["model"], json_response=False
+                        api_data["model"],
+                        json_response=False,
+                        verify_content_length=True,
                     )
                 else:
                     api_data = get_roboflow_instant_model_data(
@@ -346,7 +348,9 @@ class RoboflowInferenceModel(Model):
                             "Could not find `environment` key in roboflow API model description response."
                         )
                     model_weights_response = get_from_url(
-                        api_data["modelFiles"]["ort"]["model"], json_response=False
+                        api_data["modelFiles"]["ort"]["model"],
+                        json_response=False,
+                        verify_content_length=True,
                     )
                     environment = api_data["environment"]
                     if "classes" in api_data:
