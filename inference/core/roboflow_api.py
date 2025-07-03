@@ -724,9 +724,11 @@ def _get_from_url(url: str, json_response: bool = True) -> Union[Response, dict]
             timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
         )
         content_length = str(response.headers.get("Content-Length"))
-        if not content_length.isnumeric() or int(content_length) != len(
-            response.content
-        ):
+        if not content_length.isnumeric():
+            raise RoboflowAPIUnsuccessfulRequestError(
+                "Content-Length header is not numeric"
+            )
+        if int(content_length) != len(response.content):
             error = "Content-Length header does not match response content length"
             if RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API:
                 raise RetryRequestError(message=error)
