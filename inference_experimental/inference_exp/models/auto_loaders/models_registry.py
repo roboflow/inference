@@ -9,6 +9,7 @@ OBJECT_DETECTION_TASK = "object-detection"
 INSTANCE_SEGMENTATION_TASK = "instance-segmentation"
 KEYPOINT_DETECTION_TASK = "keypoint-detection"
 VLM_TASK = "vlm"
+EMBEDDING_TASK = "embedding"
 
 
 REGISTERED_MODELS: Dict[Tuple[ModelArchitecture, TaskType, BackendType], LazyClass] = {
@@ -119,6 +120,10 @@ REGISTERED_MODELS: Dict[Tuple[ModelArchitecture, TaskType, BackendType], LazyCla
     ("paligemma", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_exp.models.paligemma.paligemma_hf",
         class_name="PaliGemmaHF",
+    ),
+    ("perception_encoder", EMBEDDING_TASK, BackendType.TORCH): LazyClass(
+        module_name="inference_exp.models.perception_encoder.perception_encoder_pytorch",
+        class_name="PerceptionEncoderTorch",
     ),
 }
 
