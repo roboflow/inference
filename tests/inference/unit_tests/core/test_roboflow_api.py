@@ -666,10 +666,12 @@ def test_get_roboflow_model_data_when_http_error_occurs(requests_mock: Mocker) -
 def test_get_roboflow_model_data_when_response_parsing_error_occurs(
     requests_mock: Mocker,
 ) -> None:
+    expected_response = b"For sure not a JSON payload"
     # given
     requests_mock.get(
         url=wrap_url(f"{API_BASE_URL}/ort/coins_detection/1"),
-        content=b"For sure not a JSON payload",
+        content=expected_response,
+        headers={"Content-Length": str(len(expected_response))},
     )
 
     # when
@@ -708,6 +710,7 @@ def test_get_roboflow_model_data_when_valid_response_expected(
     requests_mock.get(
         url=wrap_url(f"{API_BASE_URL}/ort/coins_detection/1"),
         json=expected_response,
+        headers={"Content-Length": str(len(json.dumps(expected_response)))},
     )
 
     # when
