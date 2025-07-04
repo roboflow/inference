@@ -30,7 +30,7 @@ def create_pil_preprocessor(image_size: int) -> Callable:
             raise TypeError("Unsupported image type for PIL preprocessor")
 
         preprocessed_image = original_pil_transform(pil_image)
-        return preprocessed_image
+        return preprocessed_image.unsqueeze(0)
 
     return _pil_preprocessor
 
@@ -59,19 +59,50 @@ def test_preprocessing_consistency(model_size, image_shape):
     rgb_image_numpy = bgr_image_numpy[:, :, ::-1]
 
     # WHEN
-    # --- Test with NumPy input ---
+    # --- Test with single NumPy input ---
     numpy_tensor_output = tensor_based_preprocessor(bgr_image_numpy.copy())
     numpy_pil_output = pil_based_preprocessor(rgb_image_numpy)
 
-    # --- Test with Tensor input ---
+    # --- Test with single Tensor input ---
     tensor_tensor_output = tensor_based_preprocessor(rgb_image_tensor)
     tensor_pil_output = pil_based_preprocessor(rgb_image_tensor)
 
+    # --- Test with a list of numpy.ndarray ---
+    bgr_images_numpy = [bgr_image_numpy.copy(), bgr_image_numpy.copy()]
+    rgb_images_numpy = [rgb_image_numpy.copy(), rgb_image_numpy.copy()]
+    list_numpy_tensor_output = tensor_based_preprocessor(bgr_images_numpy)
+    list_numpy_pil_output = torch.cat(
+        [pil_based_preprocessor(img) for img in rgb_images_numpy], dim=0
+    )
+
+    # --- Test with a list of torch.Tensor ---
+    list_rgb_tensors = [rgb_image_tensor.clone(), rgb_image_tensor.clone()]
+    list_tensor_tensor_output = tensor_based_preprocessor(list_rgb_tensors)
+    list_tensor_pil_output = torch.cat(
+        [pil_based_preprocessor(t) for t in list_rgb_tensors], dim=0
+    )
+
+    # --- Test with a batched torch.Tensor (N, C, H, W) ---
+    batched_tensor = torch.stack([rgb_image_tensor, rgb_image_tensor])
+    batch_tensor_output = tensor_based_preprocessor(batched_tensor)
+    batched_tensor_pil_output = torch.cat(
+        [pil_based_preprocessor(img) for img in batched_tensor], dim=0
+    )
+
     # THEN
+    # --- Assert single inputs ---
     assert torch.allclose(numpy_tensor_output, numpy_pil_output, atol=1e-2)
     assert torch.allclose(tensor_tensor_output, tensor_pil_output, atol=1e-2)
-    # Also ensure that processing a numpy array vs a tensor gives the same result
     assert torch.allclose(numpy_tensor_output, tensor_tensor_output, atol=1e-2)
+
+    # --- Assert list inputs ---
+    assert torch.allclose(list_numpy_tensor_output, list_numpy_pil_output, atol=1e-2)
+    assert torch.allclose(list_tensor_tensor_output, list_tensor_pil_output, atol=1e-2)
+
+    # --- Assert batched inputs ---
+    assert torch.allclose(batch_tensor_output, batched_tensor_pil_output, atol=1e-2)
+    # Also check for internal consistency (list of tensors vs batched tensor)
+    assert torch.allclose(list_tensor_tensor_output, batch_tensor_output, atol=1e-2)
 
 
 @pytest.mark.e2e_model_inference

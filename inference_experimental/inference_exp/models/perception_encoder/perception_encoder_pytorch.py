@@ -68,29 +68,39 @@ def get_tensor_image_transform(
 
 
 def create_preprocessor(image_size: int) -> Callable:
-    preprocessor = get_tensor_image_transform(image_size)
+    image_transform = get_tensor_image_transform(image_size)
 
-    def _preprocess_image(image: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
-        if isinstance(image, np.ndarray):
-            # HWC -> CHW
-            image = torch.from_numpy(image).permute(2, 0, 1)
-            # BGR -> RGB
-            image = image[[2, 1, 0], :, :]
+    def _preprocess(
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]]
+    ) -> torch.Tensor:
+        def _to_tensor(image: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
+            if isinstance(image, np.ndarray):
+                # HWC -> CHW
+                image = torch.from_numpy(image).permute(2, 0, 1)
+                # BGR -> RGB
+                image = image[[2, 1, 0], :, :]
 
-        if not isinstance(image, torch.Tensor):
-            raise TypeError(
-                "Unsupported image type, must be np.ndarray or torch.Tensor"
-            )
+            if image.dtype == torch.uint8:
+                image = image.to(torch.float32) / 255.0
+            return image
 
-        # The original ToTensor() transform also scaled images from [0, 255] to [0, 1].
-        # We need to replicate that behavior.
-        if image.dtype == torch.uint8:
-            image = image.to(torch.float32) / 255.0
+        if isinstance(images, list):
+            # Convert all images in the list to tensors and stack them
+            tensor_batch = torch.stack([_to_tensor(img) for img in images], dim=0)
+        else:
+            # Convert single image to a tensor
+            tensor_batch = _to_tensor(images)
 
-        preprocessed_image = preprocessor(image)
-        return preprocessed_image
+        # Apply the transformations
+        transformed_batch = image_transform(tensor_batch)
 
-    return _preprocess_image
+        # Ensure there is a batch dimension
+        if transformed_batch.ndim == 3:
+            transformed_batch = transformed_batch.unsqueeze(0)
+
+        return transformed_batch
+
+    return _preprocess
 
 
 class PerceptionEncoderTorch(TextImageEmbeddingModel):
@@ -140,14 +150,7 @@ class PerceptionEncoderTorch(TextImageEmbeddingModel):
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         **kwargs,
     ) -> torch.Tensor:
-        if isinstance(images, list):
-            imgs = [self.preprocessor(i) for i in images]
-            img_in = torch.stack(imgs, dim=0).to(self.device)
-        else:
-            img_in = self.preprocessor(images)
-            if img_in.ndim == 3:
-                img_in = img_in.unsqueeze(0)
-            img_in = img_in.to(self.device)
+        img_in = self.preprocessor(images).to(self.device)
 
         if self.device.type == "cpu" or self.device.type == "mps":
             with torch.inference_mode():
