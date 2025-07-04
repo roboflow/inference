@@ -1,0 +1,5 @@
+/* Zoom container styles start *//* Zoom container styles end */
+::slotted(.swiper-slide-zoomed) {
+  cursor: move;
+  touch-action: none;
+}
