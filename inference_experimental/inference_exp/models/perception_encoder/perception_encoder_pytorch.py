@@ -1,18 +1,42 @@
-import os
-from functools import partial
-from typing import Callable, List, Optional, Union
+import json
+
+from typing import Callable, List, Union
 
 import numpy as np
 import torch
 import torchvision.transforms as T
-from PIL import Image
-import json
+
+from pydantic import BaseModel, ValidationError
 
 from inference_exp.configuration import DEFAULT_DEVICE
+from inference_exp.errors import CorruptedModelPackageError
 import inference_exp.models.perception_encoder.vision_encoder.pe as pe
 import inference_exp.models.perception_encoder.vision_encoder.transforms as transforms
 from inference_exp.models.base.embeddings import TextImageEmbeddingModel
 from inference_exp.models.common.model_packages import get_model_package_contents
+
+
+class PerceptionEncoderConfig(BaseModel):
+    vision_encoder_config: str
+
+
+def load_config(config_path: str) -> PerceptionEncoderConfig:
+    config_data = {}
+    try:
+        with open(config_path) as f:
+            config_data = json.load(f)
+    except (IOError, json.JSONDecodeError) as e:
+        raise CorruptedModelPackageError(
+            message=f"Could not load or parse perception encoder model package config file: {config_path}. Details: {e}",
+            help_url="https://todo",
+        ) from e
+    try:
+        config = PerceptionEncoderConfig.model_validate(config_data)
+        return config
+    except ValidationError as e:
+        raise CorruptedModelPackageError(
+            f"Failed validate perception encoder model package config file: {config_path}. Details: {e}"
+        ) from e
 
 
 # based on original implementation using PIL images found in vision_encoder/transforms.py
@@ -96,17 +120,10 @@ class PerceptionEncoderTorch(TextImageEmbeddingModel):
 
         model_config_file = model_package_content["config.json"]
         model_weights_file = model_package_content["model.pt"]
-        with open(model_config_file) as f:
-            config = json.load(f)
-
-        print(
-            "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
-        )
-        print(config["vision_encoder_config"])
-        print(model_weights_file)
+        config = load_config(model_config_file)
 
         model = pe.CLIP.from_config(
-            config["vision_encoder_config"],
+            config.vision_encoder_config,
             pretrained=True,
             checkpoint_path=model_weights_file,
         )
