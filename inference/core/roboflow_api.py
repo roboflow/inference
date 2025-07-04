@@ -270,7 +270,7 @@ def get_roboflow_model_data(
             url=f"{api_base_url}/{endpoint_type.value}/{model_id}",
             params=params,
         )
-        api_data = _get_from_url(url=api_url)
+        api_data = _get_from_url(url=api_url, verify_content_length=True)
         cache.set(
             api_data_cache_key,
             api_data,
@@ -317,7 +317,7 @@ def get_roboflow_instant_model_data(
             url=f"{api_base_url}/getWeights",
             params=params,
         )
-        api_data = _get_from_url(url=api_url)
+        api_data = _get_from_url(url=api_url, verify_content_length=True)
         cache.set(
             api_data_cache_key,
             api_data,
@@ -730,17 +730,6 @@ def _get_from_url(
             headers=build_roboflow_api_headers(),
             timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
         )
-        if verify_content_length:
-            content_length = str(response.headers.get("Content-Length"))
-            if not content_length.isnumeric():
-                raise RoboflowAPIUnsuccessfulRequestError(
-                    "Content-Length header is not numeric"
-                )
-            if int(content_length) != len(response.content):
-                error = "Content-Length header does not match response content length"
-                if RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API:
-                    raise RetryRequestError(message=error)
-                raise RoboflowAPIUnsuccessfulRequestError(error)
 
     except (ConnectionError, Timeout, requests.exceptions.ConnectionError) as error:
         if RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API:
@@ -754,6 +743,19 @@ def _get_from_url(
         if response.status_code in TRANSIENT_ROBOFLOW_API_ERRORS:
             raise RetryRequestError(message=str(error), inner_error=error) from error
         raise error
+
+    if verify_content_length:
+        content_length = str(response.headers.get("Content-Length"))
+        if not content_length.isnumeric():
+            raise RoboflowAPIUnsuccessfulRequestError(
+                "Content-Length header is not numeric"
+            )
+        if int(content_length) != len(response.content):
+            error = "Content-Length header does not match response content length"
+            if RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API:
+                raise RetryRequestError(message=error)
+            raise RoboflowAPIUnsuccessfulRequestError(error)
+
     if json_response:
         return response.json()
     return response
