@@ -88,7 +88,7 @@ def create_preprocessor(image_size: int) -> Callable:
             image = image.to(torch.float32) / 255.0
 
         preprocessed_image = preprocessor(image)
-        return preprocessed_image.unsqueeze(0)
+        return preprocessed_image
 
     return _preprocess_image
 
@@ -142,9 +142,12 @@ class PerceptionEncoderTorch(TextImageEmbeddingModel):
     ) -> torch.Tensor:
         if isinstance(images, list):
             imgs = [self.preprocessor(i) for i in images]
-            img_in = torch.cat(imgs, dim=0).to(self.device)
+            img_in = torch.stack(imgs, dim=0).to(self.device)
         else:
-            img_in = self.preprocessor(images).to(self.device)
+            img_in = self.preprocessor(images)
+            if img_in.ndim == 3:
+                img_in = img_in.unsqueeze(0)
+            img_in = img_in.to(self.device)
 
         if self.device.type == "cpu" or self.device.type == "mps":
             with torch.inference_mode():
