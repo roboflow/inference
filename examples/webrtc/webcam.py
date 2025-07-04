@@ -1,32 +1,32 @@
 import argparse
 import asyncio
-from asyncio.exceptions import TimeoutError
-from enum import Enum
 import json
 import logging
-from pathlib import Path
-import requests
 import sys
-from threading import Event, Thread
 import time
-from typing import Optional
 import urllib.parse
+from asyncio.exceptions import TimeoutError
+from enum import Enum
+from pathlib import Path
+from threading import Event, Thread
+from typing import Optional
 
-from av.logging import set_libav_level, ERROR
+import cv2 as cv
+import numpy as np
+import requests
 from aiortc import (
     RTCConfiguration,
     RTCDataChannel,
     RTCIceServer,
     RTCPeerConnection,
     RTCSessionDescription,
-    VideoStreamTrack, 
+    VideoStreamTrack,
 )
 from aiortc.contrib.media import MediaRelay
 from aiortc.mediastreams import MediaStreamError
 from aiortc.rtcrtpreceiver import RemoteStreamTrack
 from av import VideoFrame
-import numpy as np
-import cv2 as cv
+from av.logging import ERROR, set_libav_level
 
 from inference.core.interfaces.camera.video_source import (
     BufferConsumptionStrategy,
@@ -36,16 +36,17 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
     InitialiseWebRTCPipelinePayload,
     MemorySinkConfiguration,
     VideoConfiguration,
+    WebRTCData,
     WebRTCOffer,
     WebRTCTURNConfig,
     WorkflowConfiguration,
 )
 from inference.core.roboflow_api import get_workflow_specification
 from inference.core.utils.async_utils import Queue as SyncAsyncQueue
-from inference.core.interfaces.stream_manager.manager_app.entities import WebRTCData
 from inference.core.workflows.execution_engine.v1.compiler.core import compile_workflow
-from inference.core.workflows.execution_engine.v1.compiler.entities import CompiledWorkflow
-
+from inference.core.workflows.execution_engine.v1.compiler.entities import (
+    CompiledWorkflow,
+)
 
 logging.basicConfig(
     stream=sys.stderr,
@@ -68,7 +69,9 @@ class WebcamFramesGrabber:
         async_loop: Optional[asyncio.AbstractEventLoop] = None,
         maxsize: int = 10,
     ):
-        self._frames_sink_queue: "SyncAsyncQueue[np.ndarray]" = SyncAsyncQueue(loop=async_loop, maxsize=maxsize)
+        self._frames_sink_queue: "SyncAsyncQueue[np.ndarray]" = SyncAsyncQueue(
+            loop=async_loop, maxsize=maxsize
+        )
         self._stop_event: Event = Event()
         self._frames_reader_thread: Optional[Thread] = None
         self._fps: Optional[float] = None
@@ -125,7 +128,11 @@ class WebcamFramesGrabber:
         logger.info("%s: %s", self.__class__.__name__, self._state.name)
 
     def get_fps(self) -> Optional[float]:
-        if self._state not in {WebcamFrameGrabberState.STARTING, WebcamFrameGrabberState.STARTED} or self._fps is None:
+        if (
+            self._state
+            not in {WebcamFrameGrabberState.STARTING, WebcamFrameGrabberState.STARTED}
+            or self._fps is None
+        ):
             raise RuntimeError("FPS not initialized")
         return self._fps
 
@@ -146,7 +153,9 @@ class WebcamStreamTrack(VideoStreamTrack):
         self._processed = 0
         self._asyncio_loop = asyncio_loop
         self._track_active: bool = True
-        self._webcam_frames_grabber_queue: "SyncAsyncQueue[np.ndarray]" = webcam_frames_grabber_queue
+        self._webcam_frames_grabber_queue: "SyncAsyncQueue[np.ndarray]" = (
+            webcam_frames_grabber_queue
+        )
         self._webcam_fps = webcam_fps
         self._peer_frames_queue: "SyncAsyncQueue[VideoFrame]" = peer_frames_queue
         self._av_logging_set: bool = False
@@ -172,9 +181,7 @@ class WebcamStreamTrack(VideoStreamTrack):
             raise MediaStreamError("Track not active")
 
         try:
-            frame: VideoFrame = await asyncio.wait_for(
-                self.track.recv(), timeout=0.005
-            )
+            frame: VideoFrame = await asyncio.wait_for(self.track.recv(), timeout=0.005)
             if await self._peer_frames_queue.async_full():
                 logger.debug("%s: results queue full", self.__class__.__name__)
                 await self._peer_frames_queue.async_get_nowait()
@@ -245,6 +252,7 @@ async def init_rtc_peer_connection_with_local_description(
             await peer_connection.close()
 
     data_channel = peer_connection.createDataChannel("inference")
+
     @data_channel.on("message")
     def on_message(message):
         print(message)
@@ -264,21 +272,11 @@ async def init_rtc_peer_connection_with_local_description(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="WebRTC webcam stream")
-    parser.add_argument(
-        "--workflow-id", required=True, type=str
-    )
-    parser.add_argument(
-        "--workspace-id", required=True, type=str
-    )
-    parser.add_argument(
-        "--inference-server-url", required=True, type=str
-    )
-    parser.add_argument(
-        "--api-key", required=True, type=str
-    )
-    parser.add_argument(
-        "--show-camera-preview", required=False, action="store_true"
-    )
+    parser.add_argument("--workflow-id", required=True, type=str)
+    parser.add_argument("--workspace-id", required=True, type=str)
+    parser.add_argument("--inference-server-url", required=True, type=str)
+    parser.add_argument("--api-key", required=True, type=str)
+    parser.add_argument("--show-camera-preview", required=False, action="store_true")
     return parser.parse_args()
 
 
@@ -357,7 +355,9 @@ def main():
     )
 
     response = requests.post(
-        urllib.parse.urljoin(args.inference_server_url, "inference_pipelines/initialise_webrtc"),
+        urllib.parse.urljoin(
+            args.inference_server_url, "inference_pipelines/initialise_webrtc"
+        ),
         json=request.model_dump(),
     )
     webrtc_answer = response.json()
@@ -366,7 +366,7 @@ def main():
 
     future = asyncio.run_coroutine_threadsafe(
         peer_connection.setRemoteDescription(
-            RTCSessionDescription(sdp=webrtc_answer["sdp"],type=webrtc_answer["type"])
+            RTCSessionDescription(sdp=webrtc_answer["sdp"], type=webrtc_answer["type"])
         ),
         loop,
     )
@@ -387,43 +387,58 @@ def main():
         if key == ord("q"):
             break
 
-        if key in (ord(n) for n in "1234567890abcdefghijkz") and (not peer_connection.data_channel or peer_connection.data_channel.readyState != "open"):
+        if key in (ord(n) for n in "1234567890abcdefghijkz") and (
+            not peer_connection.data_channel
+            or peer_connection.data_channel.readyState != "open"
+        ):
             logger.error("Data channel not open")
             continue
 
         if key in (ord(n) for n in "1234567890"):
             if key == ord("0"):
-                message = json.dumps(WebRTCData(
+                message = json.dumps(
+                    WebRTCData(
                         stream_output="",
                         data_output=None,
-                    ).model_dump())
+                    ).model_dump()
+                )
                 logger.info("Turning off stream output via data channel")
             else:
                 max_ind = max(0, len(workflow_specification.get("outputs", [])) - 1)
                 output_ind = min(key - ord("1"), max_ind)
-                output_name = workflow_specification.get("outputs")[output_ind].get("name", "")
-                message = json.dumps(WebRTCData(
+                output_name = workflow_specification.get("outputs")[output_ind].get(
+                    "name", ""
+                )
+                message = json.dumps(
+                    WebRTCData(
                         stream_output=output_name,
                         data_output=None,
-                    ).model_dump())
+                    ).model_dump()
+                )
                 logger.info("Setting stream output via data channel: %s", output_name)
             peer_connection.data_channel.send(message)
 
         if key in (ord(n) for n in "abcdefghijkz"):
             if key == ord("z"):
-                message = json.dumps(WebRTCData(
+                message = json.dumps(
+                    WebRTCData(
                         stream_output=None,
                         data_output="",
-                    ).model_dump())
+                    ).model_dump()
+                )
                 logger.info("Turning off data output via data channel")
             else:
                 max_ind = max(0, len(workflow_specification.get("outputs", [])) - 1)
                 output_ind = min(key - ord("a"), max_ind)
-                output_name = workflow_specification.get("outputs")[output_ind].get("name", "")
-                message = json.dumps(WebRTCData(
+                output_name = workflow_specification.get("outputs")[output_ind].get(
+                    "name", ""
+                )
+                message = json.dumps(
+                    WebRTCData(
                         stream_output=None,
                         data_output=output_name,
-                    ).model_dump())
+                    ).model_dump()
+                )
                 logger.info("Setting data output via data channel: %s", output_name)
             peer_connection.data_channel.send(message)
     webcam_frames_grabber.stop()
@@ -431,5 +446,6 @@ def main():
     future.result()
     loop.stop()
     t.join()
+
 
 main()

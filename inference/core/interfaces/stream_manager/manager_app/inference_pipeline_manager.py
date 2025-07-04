@@ -14,8 +14,8 @@ from typing import Dict, Optional, Tuple
 
 import cv2 as cv
 import numpy as np
-from pydantic import ValidationError
 import supervision as sv
+from pydantic import ValidationError
 
 from inference.core import logger
 from inference.core.exceptions import (
@@ -50,11 +50,13 @@ from inference.core.interfaces.stream_manager.manager_app.webrtc import (
     RTCPeerConnectionWithFPS,
     WebRTCPipelineWatchDog,
     WebRTCVideoFrameProducer,
-    init_rtc_peer_connection,
     get_frame_from_workflow_output,
+    init_rtc_peer_connection,
 )
 from inference.core.utils.async_utils import Queue as SyncAsyncQueue
-from inference.core.workflows.core_steps.common.serializers import serialise_sv_detections
+from inference.core.workflows.core_steps.common.serializers import (
+    serialise_sv_detections,
+)
 from inference.core.workflows.errors import WorkflowSyntaxError
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 
@@ -328,29 +330,43 @@ class InferencePipelineManager(Process):
 
                 errors = []
 
-                if peer_connection.data_output is not None and peer_connection.data_channel and peer_connection.data_channel.readyState == "open":
+                if (
+                    peer_connection.data_output is not None
+                    and peer_connection.data_channel
+                    and peer_connection.data_channel.readyState == "open"
+                ):
                     if peer_connection.data_output in prediction:
                         workflow_output = prediction[peer_connection.data_output]
                         serialized_data = None
                         if isinstance(workflow_output, WorkflowImageData):
-                            errors.append(f"Selected data output '{peer_connection.data_output}' contains image, please use video output instead")
+                            errors.append(
+                                f"Selected data output '{peer_connection.data_output}' contains image, please use video output instead"
+                            )
                         elif isinstance(workflow_output, sv.Detections):
                             try:
-                                parsed_detections = serialise_sv_detections(workflow_output)
+                                parsed_detections = serialise_sv_detections(
+                                    workflow_output
+                                )
                                 serialized_data = json.dumps(parsed_detections)
                             except Exception as error:
-                                errors.append(f"Failed to serialise output: {peer_connection.data_output}")
+                                errors.append(
+                                    f"Failed to serialise output: {peer_connection.data_output}"
+                                )
                         elif isinstance(workflow_output, dict):
                             try:
                                 serialized_data = json.dumps(workflow_output)
                             except Exception as error:
-                                errors.append(f"Failed to serialise output: {peer_connection.data_output}")
+                                errors.append(
+                                    f"Failed to serialise output: {peer_connection.data_output}"
+                                )
                         else:
                             serialized_data = str(workflow_output)
                         if serialized_data is not None:
                             peer_connection.data_channel.send(serialized_data)
                     else:
-                        errors.append(f"Selected data output '{peer_connection.data_output}' not found in workflow outputs")
+                        errors.append(
+                            f"Selected data output '{peer_connection.data_output}' not found in workflow outputs"
+                        )
 
                 if peer_connection.stream_output:
                     frame: Optional[np.ndarray] = get_frame_from_workflow_output(
@@ -364,12 +380,16 @@ class InferencePipelineManager(Process):
                                 frame_output_key=k,
                             )
                             if frame is not None:
-                                errors.append(f"'{peer_connection.stream_output}' not found in workflow outputs, using '{k}' instead")
+                                errors.append(
+                                    f"'{peer_connection.stream_output}' not found in workflow outputs, using '{k}' instead"
+                                )
                                 frame = frame.copy()
                                 break
                     if frame is None:
                         errors.append("Visualisation blocks were not executed")
-                        errors.append("or workflow was not configured to output visuals.")
+                        errors.append(
+                            "or workflow was not configured to output visuals."
+                        )
                         errors.append(
                             "Please try to adjust the scene so models detect objects"
                         )

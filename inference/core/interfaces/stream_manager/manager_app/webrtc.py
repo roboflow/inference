@@ -56,7 +56,9 @@ def overlay_text_on_np_frame(frame: np.ndarray, text: List[str]):
     return frame
 
 
-def get_frame_from_workflow_output(workflow_output: Dict[str, Union[WorkflowImageData, Any]], frame_output_key: str) -> Optional[np.ndarray]:
+def get_frame_from_workflow_output(
+    workflow_output: Dict[str, Union[WorkflowImageData, Any]], frame_output_key: str
+) -> Optional[np.ndarray]:
     step_output = workflow_output.get(frame_output_key)
     if isinstance(step_output, WorkflowImageData):
         return step_output.numpy_image
@@ -258,7 +260,14 @@ class WebRTCVideoFrameProducer(VideoFrameProducer):
 
 
 class RTCPeerConnectionWithFPS(RTCPeerConnection):
-    def __init__(self, video_transform_track: VideoTransformTrack, stream_output: Optional[str] = None, data_output: Optional[str] = None, *args, **kwargs):
+    def __init__(
+        self,
+        video_transform_track: VideoTransformTrack,
+        stream_output: Optional[str] = None,
+        data_output: Optional[str] = None,
+        *args,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         self.video_transform_track: VideoTransformTrack = video_transform_track
         self._consumers_signalled: bool = False
