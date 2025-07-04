@@ -85,7 +85,7 @@ RESTART_ELIGIBLE_STATES = {
 }
 
 
-class BufferFillingStrategy(Enum):
+class BufferFillingStrategy(str, Enum):
     WAIT = "WAIT"
     DROP_OLDEST = "DROP_OLDEST"
     ADAPTIVE_DROP_OLDEST = "ADAPTIVE_DROP_OLDEST"
@@ -103,7 +103,7 @@ DROP_OLDEST_STRATEGIES = {
 }
 
 
-class BufferConsumptionStrategy(Enum):
+class BufferConsumptionStrategy(str, Enum):
     LAZY = "LAZY"
     EAGER = "EAGER"
 

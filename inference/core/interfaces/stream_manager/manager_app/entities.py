@@ -114,6 +114,11 @@ class InitialiseWebRTCPipelinePayload(InitialisePipelinePayload):
     min_consecutive_on_time: int = 5
 
 
+class WebRTCData(BaseModel):
+    stream_output: Optional[str] = None
+    data_output: Optional[str] = None
+
+
 class ConsumeResultsPayload(BaseModel):
     excluded_fields: List[str] = Field(
         default_factory=list,

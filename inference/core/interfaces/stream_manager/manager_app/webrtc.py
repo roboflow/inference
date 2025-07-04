@@ -1,13 +1,14 @@
 import asyncio
 import concurrent.futures
-import datetime
+import json
 import time
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import cv2 as cv
 import numpy as np
 from aiortc import (
     RTCConfiguration,
+    RTCDataChannel,
     RTCIceServer,
     RTCPeerConnection,
     RTCSessionDescription,
@@ -31,11 +32,13 @@ from inference.core.interfaces.stream.inference_pipeline import (
 )
 from inference.core.interfaces.stream.watchdog import BasePipelineWatchDog
 from inference.core.interfaces.stream_manager.manager_app.entities import (
+    WebRTCData,
     WebRTCOffer,
     WebRTCTURNConfig,
 )
 from inference.core.utils.async_utils import Queue as SyncAsyncQueue
 from inference.core.utils.function import experimental
+from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 
 FALLBACK_FPS: float = 10
 
@@ -52,6 +55,18 @@ def overlay_text_on_np_frame(frame: np.ndarray, text: List[str]):
             2,
         )
     return frame
+
+
+def get_frame_from_workflow_output(
+    workflow_output: Dict[str, Union[WorkflowImageData, Any]], frame_output_key: str
+) -> Optional[np.ndarray]:
+    step_output = workflow_output.get(frame_output_key)
+    if isinstance(step_output, WorkflowImageData):
+        return step_output.numpy_image
+    elif isinstance(step_output, dict):
+        for frame_output in step_output.values():
+            if isinstance(frame_output, WorkflowImageData):
+                return frame_output.numpy_image
 
 
 class VideoTransformTrack(VideoStreamTrack):
@@ -148,6 +163,8 @@ class VideoTransformTrack(VideoStreamTrack):
                 if self._consecutive_on_time >= self._min_consecutive_on_time:
                     self._consecutive_timeouts = 0
         except asyncio.TimeoutError:
+            while not await self.to_inference_queue.async_empty():
+                await self.to_inference_queue.async_get_nowait()
             if self._last_frame:
                 if self._max_consecutive_timeouts:
                     self._consecutive_timeouts += 1
@@ -249,10 +266,20 @@ class WebRTCVideoFrameProducer(VideoFrameProducer):
 
 
 class RTCPeerConnectionWithFPS(RTCPeerConnection):
-    def __init__(self, video_transform_track: VideoTransformTrack, *args, **kwargs):
+    def __init__(
+        self,
+        video_transform_track: VideoTransformTrack,
+        stream_output: Optional[str] = None,
+        data_output: Optional[str] = None,
+        *args,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         self.video_transform_track: VideoTransformTrack = video_transform_track
         self._consumers_signalled: bool = False
+        self.stream_output: Optional[str] = stream_output
+        self.data_output: Optional[str] = data_output
+        self.data_channel: Optional[RTCDataChannel] = None
 
 
 class WebRTCPipelineWatchDog(BasePipelineWatchDog):
@@ -289,6 +316,8 @@ async def init_rtc_peer_connection(
     min_consecutive_on_time: int,
     webrtc_turn_config: Optional[WebRTCTURNConfig] = None,
     webcam_fps: Optional[float] = None,
+    stream_output: Optional[str] = None,
+    data_output: Optional[str] = None,
 ) -> RTCPeerConnectionWithFPS:
     video_transform_track = VideoTransformTrack(
         to_inference_queue=to_inference_queue,
@@ -310,10 +339,14 @@ async def init_rtc_peer_connection(
         peer_connection = RTCPeerConnectionWithFPS(
             video_transform_track=video_transform_track,
             configuration=RTCConfiguration(iceServers=[turn_server]),
+            stream_output=stream_output,
+            data_output=data_output,
         )
     else:
         peer_connection = RTCPeerConnectionWithFPS(
             video_transform_track=video_transform_track,
+            stream_output=stream_output,
+            data_output=data_output,
         )
     relay = MediaRelay()
 
@@ -323,9 +356,28 @@ async def init_rtc_peer_connection(
         video_transform_track.set_track(track=relay.subscribe(track))
         peer_connection.addTrack(video_transform_track)
 
+    @peer_connection.on("datachannel")
+    def on_datachannel(channel: RTCDataChannel):
+        logger.info("Data channel %s received", channel.label)
+
+        @channel.on("message")
+        def on_message(message):
+            logger.info("Data channel message received: %s", message)
+            try:
+                message = WebRTCData(**json.loads(message))
+            except json.JSONDecodeError:
+                logger.error("Failed to decode webrtc data payload: %s", message)
+                return
+            if message.stream_output is not None:
+                peer_connection.stream_output = message.stream_output or None
+            if message.data_output is not None:
+                peer_connection.data_output = message.data_output or None
+
+        peer_connection.data_channel = channel
+
     @peer_connection.on("connectionstatechange")
     async def on_connectionstatechange():
-        logger.debug("Connection state is %s", peer_connection.connectionState)
+        logger.info("Connection state is %s", peer_connection.connectionState)
         if peer_connection.connectionState in {"failed", "closed"}:
             logger.info("Stopping WebRTC peer")
             await peer_connection.close()
@@ -336,7 +388,7 @@ async def init_rtc_peer_connection(
                 await to_inference_queue.async_get_nowait()
                 await to_inference_queue.async_put_nowait(None)
             peer_connection._consumers_signalled = True
-            logger.debug("'connectionstatechange' event handler finished")
+            logger.info("'connectionstatechange' event handler finished")
 
     await peer_connection.setRemoteDescription(
         RTCSessionDescription(sdp=webrtc_offer.sdp, type=webrtc_offer.type)
