@@ -41,7 +41,7 @@ def load_config(config_path: str) -> PerceptionEncoderConfig:
 
 # based on original implementation using PIL images found in vision_encoder/transforms.py
 # but adjusted to work directly on tensors
-def get_tensor_image_transform(
+def create_image_resize_transform(
     image_size: int,
     center_crop: bool = False,
     interpolation: T.InterpolationMode = T.InterpolationMode.BILINEAR,
@@ -58,17 +58,16 @@ def get_tensor_image_transform(
                 (image_size, image_size), interpolation=interpolation, antialias=True
             )
         ]
+    return T.Compose(crop)
 
-    return T.Compose(
-        crop
-        + [
-            T.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5], inplace=True),
-        ]
-    )
+
+def create_image_normalize_transform():
+    return T.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5], inplace=True)
 
 
 def create_preprocessor(image_size: int) -> Callable:
-    image_transform = get_tensor_image_transform(image_size)
+    resize_transform = create_image_resize_transform(image_size)
+    normalize_transform = create_image_normalize_transform()
 
     def _preprocess(
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]]
@@ -79,25 +78,25 @@ def create_preprocessor(image_size: int) -> Callable:
                 image = torch.from_numpy(image).permute(2, 0, 1)
                 # BGR -> RGB
                 image = image[[2, 1, 0], :, :]
-
-            if image.dtype == torch.uint8:
-                image = image.to(torch.float32) / 255.0
             return image
 
         if isinstance(images, list):
-            # Convert all images in the list to tensors and stack them
-            tensor_batch = torch.stack([_to_tensor(img) for img in images], dim=0)
+            # Resize each image individually, then stack to a batch
+            resized_images = [resize_transform(_to_tensor(img)) for img in images]
+            tensor_batch = torch.stack(resized_images, dim=0)
         else:
-            # Convert single image to a tensor
-            tensor_batch = _to_tensor(images)
+            # Handle single image or pre-batched tensor
+            tensor_batch = resize_transform(_to_tensor(images))
 
-        # Apply the transformations
-        transformed_batch = image_transform(tensor_batch)
+        # Ensure there is a batch dimension for single images
+        if tensor_batch.ndim == 3:
+            tensor_batch = tensor_batch.unsqueeze(0)
 
-        # Ensure there is a batch dimension
-        if transformed_batch.ndim == 3:
-            transformed_batch = transformed_batch.unsqueeze(0)
+        # Perform dtype conversion and normalization on the whole batch for efficiency
+        if tensor_batch.dtype == torch.uint8:
+            tensor_batch = tensor_batch.to(torch.float32) / 255.0
 
+        transformed_batch = normalize_transform(tensor_batch)
         return transformed_batch
 
     return _preprocess

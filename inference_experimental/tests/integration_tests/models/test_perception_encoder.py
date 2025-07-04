@@ -89,6 +89,16 @@ def test_preprocessing_consistency(model_size, image_shape):
         [pil_based_preprocessor(img) for img in batched_tensor], dim=0
     )
 
+    # --- Test with a list of numpy.ndarray of different sizes ---
+    bgr_image_numpy_2 = np.random.randint(0, 256, size=(300, 300, 3), dtype=np.uint8)
+    rgb_image_numpy_2 = bgr_image_numpy_2[:, :, ::-1]
+    bgr_images_varied = [bgr_image_numpy.copy(), bgr_image_numpy_2]
+    rgb_images_varied = [rgb_image_numpy.copy(), rgb_image_numpy_2]
+    list_varied_numpy_tensor_output = tensor_based_preprocessor(bgr_images_varied)
+    list_varied_numpy_pil_output = torch.cat(
+        [pil_based_preprocessor(img) for img in rgb_images_varied], dim=0
+    )
+
     # THEN
     # --- Assert single inputs ---
     assert torch.allclose(numpy_tensor_output, numpy_pil_output, atol=1e-2)
@@ -103,6 +113,11 @@ def test_preprocessing_consistency(model_size, image_shape):
     assert torch.allclose(batch_tensor_output, batched_tensor_pil_output, atol=1e-2)
     # Also check for internal consistency (list of tensors vs batched tensor)
     assert torch.allclose(list_tensor_tensor_output, batch_tensor_output, atol=1e-2)
+
+    # --- Assert varied size list inputs ---
+    assert torch.allclose(
+        list_varied_numpy_tensor_output, list_varied_numpy_pil_output, atol=1e-2
+    )
 
 
 @pytest.mark.e2e_model_inference
