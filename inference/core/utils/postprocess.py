@@ -3,6 +3,7 @@ from typing import Dict, List, Tuple, Union
 
 import cv2
 import numpy as np
+import torch
 
 from inference.core.exceptions import PostProcessingError
 from inference.core.utils.preprocess import (
@@ -25,27 +26,37 @@ def cosine_similarity(a: np.ndarray, b: np.ndarray) -> Union[np.number, np.ndarr
     return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
 
 
-def masks2poly(masks: np.ndarray) -> List[np.ndarray]:
+def masks2poly(masks: Union[np.ndarray, List[np.ndarray]]) -> List[np.ndarray]:
     """Converts binary masks to polygonal segments.
 
     Args:
-        masks (numpy.ndarray): A set of binary masks, where masks are multiplied by 255 and converted to uint8 type.
+        masks (numpy.ndarray or list of numpy.ndarray): A set of binary masks, where masks are multiplied by 255 and converted to uint8 type.
 
     Returns:
         list: A list of segments, where each segment is obtained by converting the corresponding mask.
     """
     segments = []
-    masks = (masks * 255.0).astype(np.uint8)
-    for mask in masks:
-        segments.append(mask2poly(mask))
+
+    # Handle both single numpy array and list of numpy arrays
+    if isinstance(masks, list):
+        # masks is already a list of individual mask arrays
+        for mask in masks:
+            normalized_mask = (mask * 255.0).astype(np.uint8)
+            segments.append(mask2poly(normalized_mask))
+    else:
+        # masks is a single numpy array containing multiple masks
+        masks = (masks * 255.0).astype(np.uint8)
+        for mask in masks:
+            segments.append(mask2poly(mask))
+
     return segments
 
 
-def masks2multipoly(masks: np.ndarray) -> List[np.ndarray]:
+def masks2multipoly(masks: Union[np.ndarray, List[np.ndarray]]) -> List[np.ndarray]:
     """Converts binary masks to polygonal segments.
 
     Args:
-        masks (numpy.ndarray): A set of binary masks, where masks are multiplied by 255 and converted to uint8 type.
+        masks (numpy.ndarray or list of numpy.ndarray): A set of binary masks, where masks are multiplied by 255 and converted to uint8 type.
 
     Returns:
         list: A list of segments, where each segment is obtained by converting the corresponding mask.
@@ -230,6 +241,7 @@ def process_mask_accurate(
     masks_in: np.ndarray,
     bboxes: np.ndarray,
     shape: Tuple[int, int],
+    gpu_decode: bool = False,
 ) -> np.ndarray:
     """Returns masks that are the size of the original image.
 
@@ -246,6 +258,7 @@ def process_mask_accurate(
         protos=protos,
         masks_in=masks_in,
         shape=shape,
+        gpu_decode=gpu_decode,
     )
 
     # Order = 1 -> bilinear
@@ -256,9 +269,9 @@ def process_mask_accurate(
     if len(masks.shape) == 2:
         masks = np.expand_dims(masks, axis=2)
     masks = masks.transpose((2, 0, 1))
-    masks = crop_mask(masks, bboxes)
     masks[masks < 0.5] = 0
-    return masks
+    masks = slice_masks(masks, bboxes)
+    return masks, (shape[0], shape[1])
 
 
 def process_mask_tradeoff(
@@ -267,6 +280,7 @@ def process_mask_tradeoff(
     bboxes: np.ndarray,
     shape: Tuple[int, int],
     tradeoff_factor: float,
+    gpu_decode: bool = False,
 ) -> np.ndarray:
     """Returns masks that are the size of the original image with a tradeoff factor applied.
 
@@ -285,6 +299,7 @@ def process_mask_tradeoff(
         protos=protos,
         masks_in=masks_in,
         shape=shape,
+        gpu_decode=gpu_decode,
     )
 
     # Order = 1 -> bilinear
@@ -306,9 +321,9 @@ def process_mask_tradeoff(
         scale_x=mw / iw,
         scale_y=mh / ih,
     )
-    masks = crop_mask(masks, down_sampled_boxes)
     masks[masks < 0.5] = 0
-    return masks
+    masks = slice_masks(masks, down_sampled_boxes)
+    return masks, (mh, mw)
 
 
 def process_mask_fast(
@@ -316,7 +331,8 @@ def process_mask_fast(
     masks_in: np.ndarray,
     bboxes: np.ndarray,
     shape: Tuple[int, int],
-) -> np.ndarray:
+    gpu_decode: bool = False,
+) -> List[np.ndarray]:
     """Returns masks in their original size.
 
     Args:
@@ -334,33 +350,42 @@ def process_mask_fast(
         protos=protos,
         masks_in=masks_in,
         shape=shape,
+        gpu_decode=gpu_decode,
     )
     down_sampled_boxes = scale_bboxes(
         bboxes=deepcopy(bboxes),
         scale_x=mw / iw,
         scale_y=mh / ih,
     )
-    masks = crop_mask(masks, down_sampled_boxes)
     masks[masks < 0.5] = 0
-    return masks
+    sliced_masks = slice_masks(masks, down_sampled_boxes)
+    return sliced_masks, (mh, mw)
 
 
 def preprocess_segmentation_masks(
     protos: np.ndarray,
     masks_in: np.ndarray,
     shape: Tuple[int, int],
+    gpu_decode: bool = False,
 ) -> np.ndarray:
+    device = "cpu"
+    if gpu_decode:
+        if gpu_decode and torch.cuda.is_available():
+            device = "cuda"
+        elif gpu_decode and torch.backends.mps.is_available():
+            device = "mps"
+
     c, mh, mw = protos.shape  # CHW
-    masks = protos.astype(np.float32)
+    masks = torch.from_numpy(protos).to(device).to(torch.float32)
     masks = masks.reshape((c, -1))
-    masks = masks_in @ masks
-    masks = sigmoid(masks)
+    masks = torch.from_numpy(masks_in).to(device).to(torch.float32) @ masks
+    masks = torch.sigmoid(masks)
     masks = masks.reshape((-1, mh, mw))
     gain = min(mh / shape[0], mw / shape[1])  # gain  = old / new
     pad = (mw - shape[1] * gain) / 2, (mh - shape[0] * gain) / 2  # wh padding
     top, left = int(pad[1]), int(pad[0])  # y, x
-    bottom, right = int(mh - pad[1]), int(mw - pad[0])
-    return masks[:, top:bottom, left:right]
+    bottom, right = int(mh - pad[1]), int(mw - pad[0])  # y, x
+    return masks[:, top:bottom, left:right].cpu().numpy()
 
 
 def scale_bboxes(bboxes: np.ndarray, scale_x: float, scale_y: float) -> np.ndarray:
@@ -388,6 +413,15 @@ def crop_mask(masks: np.ndarray, boxes: np.ndarray) -> np.ndarray:
 
     masks = masks * ((r >= x1) * (r < x2) * (c >= y1) * (c < y2))
     return masks
+
+
+def slice_masks(masks: np.ndarray, boxes: np.ndarray) -> List[np.ndarray]:
+    result = []
+    for mask, box in zip(masks, boxes):
+        result.append(
+            mask[int(box[1]) : int(box[3]), int(box[0]) : int(box[2])]
+        )
+    return result
 
 
 def post_process_polygons(
