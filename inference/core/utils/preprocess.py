@@ -256,6 +256,7 @@ def resize_image_keeping_aspect_ratio(
 ) -> ImageMetaType:
     """
     Resize reserving its aspect ratio.
+    Uses pyrDown for faster downsizing of large images.
 
     Parameters:
     - image: numpy array representing the image.
@@ -263,8 +264,10 @@ def resize_image_keeping_aspect_ratio(
     """
     if isinstance(image, np.ndarray):
         img_ratio = image.shape[1] / image.shape[0]
+        current_height, current_width = image.shape[:2]
     elif USE_PYTORCH_FOR_PREPROCESSING:
         img_ratio = image.shape[-1] / image.shape[-2]
+        current_height, current_width = image.shape[-2:]
     else:
         raise ValueError(
             f"Received an image of unknown type, {type(image)}; "
@@ -283,9 +286,28 @@ def resize_image_keeping_aspect_ratio(
         new_height = desired_size[1]
         new_width = int(desired_size[1] * img_ratio)
 
-    # Resize the image to new dimensions
+    # Use pyrDown optimization for numpy arrays when downsizing significantly
     if isinstance(image, np.ndarray):
-        return cv2.resize(image, (new_width, new_height))
+        # Calculate scale factors
+        width_scale = current_width / new_width
+        height_scale = current_height / new_height
+        max_scale = max(width_scale, height_scale)
+        
+        # Use pyrDown for logarithmic downsizing if scaling down by more than 2x
+        if max_scale > 2.0:
+            temp_image = image
+            current_scale = 1.0
+            
+            # Apply pyrDown repeatedly until within 2x of target size
+            while max_scale / current_scale > 2.0:
+                temp_image = cv2.pyrDown(temp_image)
+                current_scale *= 2.0
+            
+            # Final resize to exact dimensions
+            return cv2.resize(temp_image, (new_width, new_height))
+        else:
+            # Direct resize for small scale changes
+            return cv2.resize(image, (new_width, new_height))
     elif USE_PYTORCH_FOR_PREPROCESSING:
         return torch.nn.functional.interpolate(
             image, size=(new_height, new_width), mode="bilinear"
