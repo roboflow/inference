@@ -1,5 +1,6 @@
 import json
 from typing import Optional
+import sys
 
 import typer
 from typing_extensions import Annotated
@@ -9,6 +10,7 @@ from inference_cli.lib.benchmark_adapter import (
     run_infer_api_speed_benchmark,
     run_python_package_speed_benchmark,
     run_workflow_api_speed_benchmark,
+    run_pipeline_speed_benchmark,
 )
 
 benchmark_app = typer.Typer(help="Commands for running inference benchmarks.")
@@ -358,7 +360,6 @@ def pipeline_speed(
         ),
     ] = 1,
 ):
-    # Validate inputs - either model_id or workflow params, not both
     if model_id and (workflow_id or workflow_specification):
         typer.echo(
             "Error: Cannot specify both --model_id and workflow parameters (--workflow-id or --workflow-specification)"
@@ -374,8 +375,6 @@ def pipeline_speed(
         raise typer.Exit(code=1)
 
     try:
-        from inference_cli.lib.benchmark_adapter import run_pipeline_speed_benchmark
-
         run_pipeline_speed_benchmark(
             video_reference=video_reference,
             model_id=model_id,
@@ -390,16 +389,11 @@ def pipeline_speed(
             output_location=output_location,
             num_pipelines=num_pipelines,
         )
-        # Ensure clean exit after benchmark completes
-        # Force exit to ensure all threads are terminated
-        import sys
 
-        sys.exit(0)
     except KeyboardInterrupt:
         print("\nBenchmark interrupted.")
-        import sys
+        return
 
-        sys.exit(0)
     except Exception as error:
         typer.echo(f"Command failed. Cause: {error}")
         raise typer.Exit(code=1)

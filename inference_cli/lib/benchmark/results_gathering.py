@@ -123,16 +123,7 @@ class ResultsCollector:
             errors_number += 1
 
         error_rate = round(errors_number / inferences_made * 100, 2)
-        
-        # When using a window, calculate duration from first to last measurement in window
-        # Otherwise use the full benchmark duration
-        if window is not None and len(stats) >= window:
-            # Use the actual time span of measurements in the window
-            window_end_time = stats[-1][0]
-            duration = (window_end_time - start).total_seconds()
-        else:
-            # Use current time for incomplete windows or no window
-            duration = (end_time - start).total_seconds()
+        duration = (end_time - start).total_seconds()
         
         requests_per_second = round(inferences_made / duration, 1)
         images_per_second = round(images_processed / duration, 1)
