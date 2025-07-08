@@ -501,10 +501,37 @@ class RoboflowInferenceModel(Model):
         if self.resize_method == "Stretch to":
             if isinstance(preprocessed_image, np.ndarray):
                 preprocessed_image = preprocessed_image.astype(np.float32)
-                resized = cv2.resize(
-                    preprocessed_image,
-                    (self.img_size_w, self.img_size_h),
-                )
+                
+                # Use pyrDown optimization for large images
+                current_h, current_w = preprocessed_image.shape[:2]
+                target_h, target_w = self.img_size_h, self.img_size_w
+                
+                # Calculate scale factors
+                width_scale = current_w / target_w
+                height_scale = current_h / target_h
+                max_scale = max(width_scale, height_scale)
+                
+                # Use pyrDown for logarithmic downsizing if scaling down by more than 2x
+                if max_scale > 2.0:
+                    temp_image = preprocessed_image
+                    current_scale = 1.0
+                    
+                    # Apply pyrDown repeatedly until within 2x of target size
+                    while max_scale / current_scale > 2.0:
+                        temp_image = cv2.pyrDown(temp_image)
+                        current_scale *= 2.0
+                    
+                    # Final resize to exact dimensions
+                    resized = cv2.resize(
+                        temp_image,
+                        (self.img_size_w, self.img_size_h),
+                    )
+                else:
+                    # Direct resize for small scale changes
+                    resized = cv2.resize(
+                        preprocessed_image,
+                        (self.img_size_w, self.img_size_h),
+                    )
             elif USE_PYTORCH_FOR_PREPROCESSING:
                 resized = torch.nn.functional.interpolate(
                     preprocessed_image,
