@@ -82,6 +82,9 @@ class AutoModel:
         verify_hash_while_download: bool = True,
         download_files_without_hash: bool = False,
         use_auto_resolution_cache: bool = True,
+        on_file_allocated: Optional[Callable[[str], None]] = None,
+        on_file_renamed: Optional[Callable[[str, str], None]] = None,
+        on_symlink_created: Optional[Callable[[str, str], None]] = None,
         **kwargs,
     ) -> AnyModel:
         # TODO: implement authorized cache
@@ -136,6 +139,9 @@ class AutoModel:
                 verify_hash_while_download=verify_hash_while_download,
                 download_files_without_hash=download_files_without_hash,
                 use_auto_resolution_cache=use_auto_resolution_cache,
+                on_file_allocated=on_file_allocated,
+                on_file_renamed=on_file_renamed,
+                on_symlink_created=on_symlink_created,
             )
         return attempt_loading_model_from_local_storage(
             model_dir=model_package_id,
