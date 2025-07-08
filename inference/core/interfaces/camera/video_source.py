@@ -671,7 +671,7 @@ class VideoSource:
 
     def _set_stream_mode_consumption_strategies(self) -> None:
         if self._buffer_consumption_strategy is None:
-            self._buffer_consumption_strategy = BufferConsumptionStrategy.LAZY
+            self._buffer_consumption_strategy = BufferConsumptionStrategy.EAGER
 
     def _consume_video(self) -> None:
         send_video_source_status_update(
