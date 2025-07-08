@@ -21,7 +21,8 @@ def pre_allocate_file(
 ) -> None:
     ensure_parent_dir_exists(path=path)
     with open(path, "wb") as f:
-        on_file_allocated(path)
+        if on_file_allocated:
+            on_file_allocated(path)
         f.truncate(file_size)
 
 
