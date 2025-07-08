@@ -38,7 +38,7 @@ def test_download_files_to_directory_small_files(empty_local_dir: str) -> None:
 
 
 @pytest.mark.timeout(10)
-def test_download_files_to_directory_small_files_with_nested_file_handles(
+def test_download_files_to_directory_small_files_with_nested_file_handles_and_event_handlers(
     empty_local_dir: str,
 ) -> None:
     # given
@@ -56,14 +56,30 @@ def test_download_files_to_directory_small_files_with_nested_file_handles(
             "fc3f17e4aa70acf5bfc385aaa344d275",
         ),
     ]
+    file_renames = []
+    file_allocations = []
 
     # when
     result = download_files_to_directory(
         target_dir=empty_local_dir,
         files_specs=files_specs,
+        on_file_allocated=lambda e: file_allocations.append(e),
+        on_file_renamed=lambda e, f: file_renames.append((e, f)),
     )
 
     # then
+    assert result["nested_1/some.jpg"] == some_path
+    assert result["other.jpg"] == other_path
+    assert len(file_renames) == 2
+    assert len(file_allocations) == 2
+    file_allocations = sorted(file_allocations)
+    file_renames = sorted(file_renames, key=lambda e: e[1])
+    assert os.path.basename(file_allocations[0]).startswith("some.jpg.")
+    assert os.path.basename(file_allocations[1]).startswith("other.jpg.")
+    assert os.path.basename(file_renames[0][0]).startswith("some.jpg.")
+    assert os.path.basename(file_renames[1][0]).startswith("other.jpg.")
+    assert file_renames[0][1] == some_path
+    assert file_renames[1][1] == other_path
     assert os.path.isfile(some_path)
     assert os.path.isfile(other_path)
     assert calculate_md5(file=some_path) == "fc3f17e4aa70acf5bfc385aaa344d275"
