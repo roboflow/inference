@@ -16,6 +16,12 @@ def read_json(path: str) -> Optional[Union[dict, list]]:
         return json.load(f)
 
 
+def dump_json(path: str, content: Union[dict, list]) -> None:
+    ensure_parent_dir_exists(path=path)
+    with open(path, "w") as f:
+        json.dump(content, f)
+
+
 def pre_allocate_file(
     path: str, file_size: int, on_file_allocated: Optional[Callable[[str], None]] = None
 ) -> None:

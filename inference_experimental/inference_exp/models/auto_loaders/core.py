@@ -4,6 +4,7 @@ import os.path
 from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import torch
+from filelock import FileLock
 from inference_exp.configuration import DEFAULT_DEVICE, INFERENCE_HOME
 from inference_exp.errors import CorruptedModelPackageError, ModelLoadingError
 from inference_exp.logger import LOGGER, verbose_info
@@ -26,7 +27,7 @@ from inference_exp.models.base.instance_segmentation import InstanceSegmentation
 from inference_exp.models.base.keypoints_detection import KeyPointsDetectionModel
 from inference_exp.models.base.object_detection import ObjectDetectionModel
 from inference_exp.utils.download import FileHandle, download_files_to_directory
-from inference_exp.utils.file_system import read_json
+from inference_exp.utils.file_system import dump_json, read_json
 from inference_exp.weights_providers.core import get_model_from_provider
 from inference_exp.weights_providers.entities import (
     BackendType,
@@ -207,6 +208,17 @@ def initialize_model(
         task_type=task_type,
         backend=model_package.backend,
     )
+    for artefact in model_package.package_artefacts:
+        if artefact.file_handle == MODEL_CONFIG_FILE_NAME:
+            raise CorruptedModelPackageError(
+                message=f"For model with id=`{model_id}` and package={model_package.package_id} discovered "
+                f"artefact named `{MODEL_CONFIG_FILE_NAME}` which collides with the config file that "
+                f"inference is supposed to create for a model in order for compatibility with offline "
+                f"loaders. This problem indicate a violation of model package contract and requires change in "
+                f"model package structure. If you experience this issue using hosted Roboflow solution, contact "
+                f"us to solve the problem.",
+                help_url="https://todo",
+            )
     files_specs = [
         (a.file_handle, a.download_url, a.md5_hash)
         for a in model_package.package_artefacts
@@ -241,6 +253,15 @@ def initialize_model(
         shared_files_mapping=shared_files_mapping,
         on_symlink_created=on_symlink_created,
     )
+    config_path = os.path.join(model_package_cache_dir, MODEL_CONFIG_FILE_NAME)
+    dump_model_config_for_offline_use(
+        config_path=config_path,
+        model_architecture=model_architecture,
+        task_type=task_type,
+        backend_type=model_package.backend,
+        file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
+        on_file_allocated=on_file_allocated,
+    )
     return model_class.from_pretrained(model_package_cache_dir, **model_init_kwargs)
 
 
@@ -262,6 +283,31 @@ def create_symlinks_to_shared_blobs(
         os.symlink(target_path, link_name)
         if on_symlink_created:
             on_symlink_created(shared_files_mapping[file_handle], link_name)
+
+
+def dump_model_config_for_offline_use(
+    config_path: str,
+    model_architecture: Optional[ModelArchitecture],
+    task_type: TaskType,
+    backend_type: Optional[BackendType],
+    file_lock_acquire_timeout: int,
+    on_file_allocated: Optional[Callable[[str], None]] = None,
+) -> None:
+    if os.path.exists(config_path):
+        return None
+    target_file_dir, target_file_name = os.path.split(config_path)
+    lock_path = os.path.join(target_file_dir, f".{target_file_name}.lock")
+    with FileLock(lock_path, timeout=file_lock_acquire_timeout):
+        dump_json(
+            path=config_path,
+            content={
+                "model_architecture": model_architecture,
+                "task_type": task_type,
+                "backend_type": backend_type,
+            },
+        )
+        if on_file_allocated:
+            on_file_allocated(config_path)
 
 
 def attempt_loading_model_from_local_storage(
