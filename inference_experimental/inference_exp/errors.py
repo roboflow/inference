@@ -33,6 +33,14 @@ class ModelRetrievalError(BaseInferenceError):
     pass
 
 
+class UntrustedFileError(BaseInferenceError):
+    pass
+
+
+class FileHashSumMissmatch(BaseInferenceError):
+    pass
+
+
 class UnauthorizedModelAccessError(ModelRetrievalError):
     pass
 
@@ -98,4 +106,8 @@ class CorruptedModelPackageError(ModelLoadingError):
 
 
 class MissingDependencyError(BaseInferenceError):
+    pass
+
+
+class InvalidParameterError(BaseInferenceError):
     pass

@@ -76,7 +76,7 @@ def test_parse_ultralytics_model_package() -> None:
         package_id="my-package-id",
         backend=BackendType.ULTRALYTICS,
         package_artefacts=[
-            FileDownloadSpecs(download_url="https://dummy.com", file_name="some"),
+            FileDownloadSpecs(download_url="https://dummy.com", file_handle="some"),
         ],
         quantization=Quantization.UNKNOWN,
         trusted_source=False,
@@ -107,7 +107,7 @@ def test_parse_hf_model_package_model_package_when_valid_input_provided() -> Non
         package_id="my-package-id",
         backend=BackendType.HF,
         package_artefacts=[
-            FileDownloadSpecs(download_url="https://dummy.com", file_name="some"),
+            FileDownloadSpecs(download_url="https://dummy.com", file_handle="some"),
         ],
         quantization=Quantization.FP32,
         trusted_source=True,
@@ -197,7 +197,7 @@ def test_parse_torch_model_package_when_valid_manifest_provided() -> None:
         dynamic_batch_size_supported=True,
         static_batch_size=None,
         package_artefacts=[
-            FileDownloadSpecs(download_url="https://dummy.com", file_name="some"),
+            FileDownloadSpecs(download_url="https://dummy.com", file_handle="some"),
         ],
         trusted_source=metadata.trusted_source,
     )
@@ -446,7 +446,7 @@ def test_parse_trt_model_package_when_manifest_with_jetson_environment_specifica
         static_batch_size=None,
         trt_package_details=trt_package_details,
         package_artefacts=[
-            FileDownloadSpecs(download_url="https://dummy.com", file_name="some"),
+            FileDownloadSpecs(download_url="https://dummy.com", file_handle="some"),
         ],
         environment_requirements=environment_requirements,
         trusted_source=metadata.trusted_source,
@@ -517,7 +517,7 @@ def test_parse_trt_model_package_when_manifest_with_server_environment_specifica
         static_batch_size=None,
         trt_package_details=trt_package_details,
         package_artefacts=[
-            FileDownloadSpecs(download_url="https://dummy.com", file_name="some"),
+            FileDownloadSpecs(download_url="https://dummy.com", file_handle="some"),
         ],
         environment_requirements=environment_requirements,
         trusted_source=metadata.trusted_source,
@@ -594,7 +594,7 @@ def test_parse_onnx_model_package_when_valid_manifest_provided() -> None:
         dynamic_batch_size_supported=True,
         static_batch_size=None,
         package_artefacts=[
-            FileDownloadSpecs(download_url="https://dummy.com", file_name="some"),
+            FileDownloadSpecs(download_url="https://dummy.com", file_handle="some"),
         ],
         onnx_package_details=ONNXPackageDetails(
             opset=19,
@@ -718,7 +718,7 @@ def test_parse_model_package_metadata_when_package_manifest_is_known_and_valid()
         dynamic_batch_size_supported=True,
         static_batch_size=None,
         package_artefacts=[
-            FileDownloadSpecs(download_url="https://dummy.com", file_name="some"),
+            FileDownloadSpecs(download_url="https://dummy.com", file_handle="some"),
         ],
         onnx_package_details=ONNXPackageDetails(
             opset=19,

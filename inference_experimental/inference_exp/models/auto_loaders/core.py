@@ -1,7 +1,7 @@
 import importlib
 import importlib.util
 import os.path
-from typing import List, Optional, Tuple, Union
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import torch
 from inference_exp.configuration import DEFAULT_DEVICE, INFERENCE_HOME
@@ -25,7 +25,7 @@ from inference_exp.models.base.embeddings import TextImageEmbeddingModel
 from inference_exp.models.base.instance_segmentation import InstanceSegmentationModel
 from inference_exp.models.base.keypoints_detection import KeyPointsDetectionModel
 from inference_exp.models.base.object_detection import ObjectDetectionModel
-from inference_exp.utils.download import download_files_to_directory
+from inference_exp.utils.download import FileHandle, download_files_to_directory
 from inference_exp.utils.file_system import read_json
 from inference_exp.weights_providers.core import get_model_from_provider
 from inference_exp.weights_providers.entities import (
@@ -71,6 +71,8 @@ class AutoModel:
         allow_untrusted_packages: bool = False,
         trt_engine_host_code_allowed: bool = True,
         allow_local_code_packages: bool = False,
+        verify_hash_while_download: bool = True,
+        download_files_without_hash: bool = False,
         **kwargs,
     ) -> AnyModel:
         model_init_kwargs = {
@@ -112,6 +114,8 @@ class AutoModel:
                 model_init_kwargs=model_init_kwargs,
                 max_package_loading_attempts=max_package_loading_attempts,
                 model_download_file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
+                verify_hash_while_download=verify_hash_while_download,
+                download_files_without_hash=download_files_without_hash,
             )
         return attempt_loading_model_from_local_storage(
             model_dir=model_package_id,
@@ -129,6 +133,8 @@ def attempt_loading_matching_model_packages(
     max_package_loading_attempts: Optional[int] = None,
     model_download_file_lock_acquire_timeout: int = 10,
     verbose: bool = True,
+    verify_hash_while_download: bool = True,
+    download_files_without_hash: bool = False,
 ) -> AnyModel:
     if max_package_loading_attempts is not None:
         matching_model_packages = matching_model_packages[:max_package_loading_attempts]
@@ -152,6 +158,8 @@ def attempt_loading_matching_model_packages(
                 model_package=model_package,
                 model_download_file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
                 model_init_kwargs=model_init_kwargs,
+                verify_hash_while_download=verify_hash_while_download,
+                download_files_without_hash=download_files_without_hash,
             )
         except Exception as error:
             LOGGER.warning(
@@ -188,24 +196,72 @@ def initialize_model(
     model_package: ModelPackageMetadata,
     model_init_kwargs: dict,
     model_download_file_lock_acquire_timeout: int = 10,
+    verify_hash_while_download: bool = True,
+    download_files_without_hash: bool = False,
+    on_file_allocated: Optional[Callable[[str], None]] = None,
+    on_file_renamed: Optional[Callable[[str, str], None]] = None,
+    on_symlink_created: Optional[Callable[[str, str], None]] = None,
 ) -> AnyModel:
     model_class = resolve_model_class(
         model_architecture=model_architecture,
         task_type=task_type,
         backend=model_package.backend,
     )
-    model_package_cache_dir = os.path.join(
-        INFERENCE_HOME, model_id, model_package.package_id
-    )
     files_specs = [
-        (a.file_name, a.download_url) for a in model_package.package_artefacts
+        (a.file_handle, a.download_url, a.md5_hash)
+        for a in model_package.package_artefacts
     ]
-    download_files_to_directory(
-        target_path=model_package_cache_dir,
-        files_specs=files_specs,
+    file_specs_with_hash = [f for f in files_specs if f[2] is not None]
+    file_specs_without_hash = [f for f in files_specs if f[2] is None]
+    shared_blobs_dir = os.path.join(INFERENCE_HOME, "shared-blobs")
+    model_package_cache_dir = os.path.join(
+        INFERENCE_HOME, "models-cache", model_id, model_package.package_id
+    )
+    shared_files_mapping = download_files_to_directory(
+        target_dir=shared_blobs_dir,
+        files_specs=file_specs_with_hash,
         file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
+        verify_hash_while_download=verify_hash_while_download,
+        download_files_without_hash=download_files_without_hash,
+        name_after="md5_hash",
+        on_file_allocated=on_file_allocated,
+        on_file_renamed=on_file_renamed,
+    )
+    _ = download_files_to_directory(
+        target_dir=model_package_cache_dir,
+        files_specs=file_specs_without_hash,
+        file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
+        verify_hash_while_download=verify_hash_while_download,
+        download_files_without_hash=download_files_without_hash,
+        on_file_allocated=on_file_allocated,
+        on_file_renamed=on_file_renamed,
+    )
+    create_symlinks_to_shared_blobs(
+        model_dir=model_package_cache_dir,
+        shared_files_mapping=shared_files_mapping,
+        on_symlink_created=on_symlink_created,
     )
     return model_class.from_pretrained(model_package_cache_dir, **model_init_kwargs)
+
+
+def create_symlinks_to_shared_blobs(
+    model_dir: str,
+    shared_files_mapping: Dict[FileHandle, str],
+    on_symlink_created: Optional[Callable[[str, str], None]] = None,
+) -> None:
+    # this function will not override existing files
+    os.makedirs(model_dir, exist_ok=True)
+    for file_handle, source_path in shared_files_mapping.items():
+        link_name = os.path.join(model_dir, file_handle)
+        target_path = shared_files_mapping[file_handle]
+        if os.path.exists(link_name):
+            continue
+        if os.path.islink(link_name):
+            # file does not exist, but is link = broken symlink - we should purge
+            os.remove(link_name)
+        os.symlink(target_path, link_name)
+        if on_symlink_created:
+            on_symlink_created(shared_files_mapping[file_handle], link_name)
 
 
 def attempt_loading_model_from_local_storage(

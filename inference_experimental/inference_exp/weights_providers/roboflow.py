@@ -42,8 +42,9 @@ MODEL_PACKAGES_TO_IGNORE = {
 
 
 class RoboflowModelPackageFile(BaseModel):
-    file_name: str = Field(alias="fileName")
+    file_handle: str = Field(alias="fileHandle")
     download_url: str = Field(alias="downloadUrl")
+    md5_hash: Optional[str] = Field(alias="md5Hash", default=None)
 
 
 class RoboflowModelPackageV1(BaseModel):
@@ -463,7 +464,9 @@ def parse_package_artefacts(
     package_artefacts: List[RoboflowModelPackageFile],
 ) -> List[FileDownloadSpecs]:
     return [
-        FileDownloadSpecs(download_url=f.download_url, file_name=f.file_name)
+        FileDownloadSpecs(
+            download_url=f.download_url, file_handle=f.file_handle, md5_hash=f.md5_hash
+        )
         for f in package_artefacts
     ]
 

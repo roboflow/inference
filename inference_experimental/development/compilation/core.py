@@ -108,10 +108,11 @@ def download_model_packages(
         package_dir = os.path.join(target_path, model_package.package_id)
         os.makedirs(package_dir, exist_ok=True)
         files_specs = [
-            (a.file_name, a.download_url) for a in model_package.package_artefacts
+            (a.file_handle, a.download_url, a.md5_hash)
+            for a in model_package.package_artefacts
         ]
         download_files_to_directory(
-            target_path=package_dir,
+            target_dir=package_dir,
             files_specs=files_specs,
             verbose=True,
         )

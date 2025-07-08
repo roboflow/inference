@@ -31,6 +31,7 @@ except ImportError as import_error:
 
 
 DEFAULT_CONFIG_URL = "https://raw.githubusercontent.com/roboflow/GroundingDINO/main/groundingdino/config/GroundingDINO_SwinT_OGC.py"
+DEFAULT_CONFIG_MD5 = "bdb07fc17b611d622633d133d2cf873a"
 
 
 class GroundingDinoForObjectDetectionTorch(
@@ -54,8 +55,14 @@ class GroundingDinoForObjectDetectionTorch(
         config_path = os.path.join(model_name_or_path, "GroundingDINO_SwinT_OGC.py")
         if not os.path.exists(config_path):
             download_files_to_directory(
-                target_path=model_name_or_path,
-                files_specs=[("GroundingDINO_SwinT_OGC.py", DEFAULT_CONFIG_URL)],
+                target_dir=model_name_or_path,
+                files_specs=[
+                    (
+                        "GroundingDINO_SwinT_OGC.py",
+                        DEFAULT_CONFIG_URL,
+                        DEFAULT_CONFIG_MD5,
+                    )
+                ],
             )
         model = load_model(
             model_config_path=config_path,

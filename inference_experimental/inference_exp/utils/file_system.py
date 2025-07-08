@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Generator, Optional, Union
+from typing import Callable, Generator, Optional, Union
 
 
 def stream_file_lines(path: str) -> Generator[str, None, None]:
@@ -16,9 +16,12 @@ def read_json(path: str) -> Optional[Union[dict, list]]:
         return json.load(f)
 
 
-def pre_allocate_file(path: str, file_size: int) -> None:
+def pre_allocate_file(
+    path: str, file_size: int, on_file_allocated: Optional[Callable[[str], None]] = None
+) -> None:
     ensure_parent_dir_exists(path=path)
     with open(path, "wb") as f:
+        on_file_allocated(path)
         f.truncate(file_size)
 
 

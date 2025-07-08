@@ -17,7 +17,7 @@ def test_download_files_to_directory_small_files(empty_local_dir: str) -> None:
 
     # when
     download_files_to_directory(
-        target_path=empty_local_dir,
+        target_dir=empty_local_dir,
         files_specs=files_specs,
     )
 
@@ -47,7 +47,7 @@ def test_download_files_to_directory_large_files(empty_local_dir: str) -> None:
 
     # when
     download_files_to_directory(
-        target_path=empty_local_dir,
+        target_dir=empty_local_dir,
         files_specs=files_specs,
     )
 

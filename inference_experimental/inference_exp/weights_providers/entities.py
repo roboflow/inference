@@ -25,7 +25,8 @@ class Quantization(str, Enum):
 @dataclass(frozen=True)
 class FileDownloadSpecs:
     download_url: str
-    file_name: str
+    file_handle: str
+    md5_hash: Optional[str] = field(default=None)
 
 
 @dataclass(frozen=True)
