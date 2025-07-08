@@ -1,16 +1,23 @@
 import importlib
 import importlib.util
 import os.path
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from copy import copy
+from datetime import datetime
+from typing import Callable, Dict, List, Optional, Set, Tuple, Union
 
 import torch
 from filelock import FileLock
-from inference_exp.configuration import DEFAULT_DEVICE, INFERENCE_HOME
+from inference_exp.configuration import (
+    AUTO_LOADER_CACHE_EXPIRATION_MINUTES,
+    DEFAULT_DEVICE,
+    INFERENCE_HOME,
+)
 from inference_exp.errors import CorruptedModelPackageError, ModelLoadingError
 from inference_exp.logger import LOGGER, verbose_info
 from inference_exp.models.auto_loaders.auto_negotiation import negotiate_model_packages
 from inference_exp.models.auto_loaders.entities import (
     MODEL_CONFIG_FILE_NAME,
+    AutoResolutionCacheEntry,
     InferenceModelConfig,
     ModelArchitecture,
     TaskType,
@@ -27,7 +34,7 @@ from inference_exp.models.base.instance_segmentation import InstanceSegmentation
 from inference_exp.models.base.keypoints_detection import KeyPointsDetectionModel
 from inference_exp.models.base.object_detection import ObjectDetectionModel
 from inference_exp.utils.download import FileHandle, download_files_to_directory
-from inference_exp.utils.file_system import dump_json, read_json
+from inference_exp.utils.file_system import dump_json, read_json, remove_file_if_exists
 from inference_exp.weights_providers.core import get_model_from_provider
 from inference_exp.weights_providers.entities import (
     BackendType,
@@ -74,8 +81,10 @@ class AutoModel:
         allow_local_code_packages: bool = False,
         verify_hash_while_download: bool = True,
         download_files_without_hash: bool = False,
+        use_auto_resolution_cache: bool = True,
         **kwargs,
     ) -> AnyModel:
+        # TODO: implement authorized cache
         model_init_kwargs = {
             "onnx_execution_providers": onnx_execution_providers,
             "device": device,
@@ -90,6 +99,14 @@ class AutoModel:
             # that still may end up with ambiguous behaviour - probably the solution would be
             # to require prefix like file://... to denote the intent of loading model from local
             # drive?
+            model_from_cache = attempt_loading_model_with_auto_load_cache(
+                use_auto_resolution_cache=use_auto_resolution_cache,
+                model_name_or_path=model_name_or_path,
+                model_init_kwargs=model_init_kwargs,
+                verbose=verbose,
+            )
+            if model_from_cache:
+                return model_from_cache
             model_metadata = get_model_from_provider(
                 provider=weights_provider,
                 model_id=model_name_or_path,
@@ -109,6 +126,7 @@ class AutoModel:
             )
             return attempt_loading_matching_model_packages(
                 model_id=model_metadata.model_id,
+                model_alias=model_name_or_path,
                 model_architecture=model_metadata.model_architecture,
                 task_type=model_metadata.task_type,
                 matching_model_packages=matching_model_packages,
@@ -117,6 +135,7 @@ class AutoModel:
                 model_download_file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
                 verify_hash_while_download=verify_hash_while_download,
                 download_files_without_hash=download_files_without_hash,
+                use_auto_resolution_cache=use_auto_resolution_cache,
             )
         return attempt_loading_model_from_local_storage(
             model_dir=model_package_id,
@@ -125,8 +144,107 @@ class AutoModel:
         )
 
 
+def attempt_loading_model_with_auto_load_cache(
+    use_auto_resolution_cache: bool,
+    model_name_or_path: str,
+    model_init_kwargs: dict,
+    verbose: bool = False,
+) -> Optional[AnyModel]:
+    if not use_auto_resolution_cache:
+        return None
+    verbose_info(
+        message=f"Attempt to load model {model_name_or_path} using auto-load cache.",
+        verbose_requested=verbose,
+    )
+    cache_path = generate_auto_resolution_cache_path(model_id=model_name_or_path)
+    if not os.path.exists(cache_path):
+        verbose_info(
+            message=f"Could not find auto-load cache for model {model_name_or_path}.",
+            verbose_requested=verbose,
+        )
+        return None
+    try:
+        cache_content = read_json(path=cache_path)
+        cache_entry = AutoResolutionCacheEntry.model_validate(cache_content)
+        minutes_since_entry_created = (
+            datetime.now() - cache_entry.created_at
+        ).total_seconds() / 60
+        if minutes_since_entry_created > AUTO_LOADER_CACHE_EXPIRATION_MINUTES:
+            remove_file_if_exists(path=cache_path)
+            verbose_info(
+                message=f"Auto-load cache for model {model_name_or_path} expired.",
+                verbose_requested=verbose,
+            )
+            return None
+        if not all_files_exist(cache_entry.resolved_files):
+            return None
+        model_class = resolve_model_class(
+            model_architecture=cache_entry.model_architecture,
+            task_type=cache_entry.task_type,
+            backend=cache_entry.backend_type,
+        )
+        model_package_cache_dir = generate_model_package_cache_path(
+            model_id=cache_entry.model_id,
+            package_id=cache_entry.model_package_id,
+        )
+        model = model_class.from_pretrained(
+            model_package_cache_dir, **model_init_kwargs
+        )
+        verbose_info(
+            message=f"Successfully loaded model {model_name_or_path} using auto-loading cache.",
+            verbose_requested=verbose,
+        )
+        return model
+    except Exception as error:
+        LOGGER.warning(
+            f"Encountered error {error} of type {type(error)} when attempted to load model using "
+            f"auto-load cache. This may indicate corrupted cache of inference bug. Contact Roboflow submitting "
+            f"issue under: https://github.com/roboflow/inference/issues/"
+        )
+        remove_file_if_exists(path=cache_path)
+        return None
+
+
+def all_files_exist(files: List[str]) -> bool:
+    return all(os.path.exists(f) for f in files)
+
+
+class FileLoadingMiddleware:
+
+    def __init__(
+        self,
+        upstream_on_file_allocated: Optional[Callable[[str], None]] = None,
+        upstream_on_file_renamed: Optional[Callable[[str, str], None]] = None,
+        upstream_on_symlink_created: Optional[Callable[[str, str], None]] = None,
+    ):
+        self._upstream_on_file_allocated = upstream_on_file_allocated
+        self._upstream_on_file_renamed = upstream_on_file_renamed
+        self._upstream_on_symlink_created = upstream_on_symlink_created
+        self._directory_content = set()
+
+    def on_file_allocated(self, file: str) -> None:
+        if self._upstream_on_file_allocated:
+            self._upstream_on_file_allocated(file)
+        self._directory_content.add(file)
+
+    def on_file_renamed(self, old: str, new: str) -> None:
+        if self._upstream_on_file_renamed:
+            self._upstream_on_file_renamed(old, new)
+        self._directory_content.remove(old)
+        self._directory_content.add(new)
+
+    def on_symlink_created(self, source: str, target: str) -> None:
+        if self._upstream_on_symlink_created:
+            self._upstream_on_symlink_created(source, target)
+        self._directory_content.add(target)
+
+    def get_all_files_in_directory(self) -> Set[str]:
+        return copy(self._directory_content)
+
+
 def attempt_loading_matching_model_packages(
     model_id: str,
+    model_alias: str,
     model_architecture: ModelArchitecture,
     task_type: Optional[TaskType],
     matching_model_packages: List[ModelPackageMetadata],
@@ -136,6 +254,10 @@ def attempt_loading_matching_model_packages(
     verbose: bool = True,
     verify_hash_while_download: bool = True,
     download_files_without_hash: bool = False,
+    use_auto_resolution_cache: bool = True,
+    on_file_allocated: Optional[Callable[[str], None]] = None,
+    on_file_renamed: Optional[Callable[[str, str], None]] = None,
+    on_symlink_created: Optional[Callable[[str, str], None]] = None,
 ) -> AnyModel:
     if max_package_loading_attempts is not None:
         matching_model_packages = matching_model_packages[:max_package_loading_attempts]
@@ -152,7 +274,12 @@ def attempt_loading_matching_model_packages(
             verbose_requested=verbose,
         )
         try:
-            return initialize_model(
+            loading_middleware = FileLoadingMiddleware(
+                upstream_on_file_allocated=on_file_allocated,
+                upstream_on_file_renamed=on_file_renamed,
+                upstream_on_symlink_created=on_symlink_created,
+            )
+            model = initialize_model(
                 model_id=model_id,
                 model_architecture=model_architecture,
                 task_type=task_type,
@@ -161,7 +288,22 @@ def attempt_loading_matching_model_packages(
                 model_init_kwargs=model_init_kwargs,
                 verify_hash_while_download=verify_hash_while_download,
                 download_files_without_hash=download_files_without_hash,
+                on_file_allocated=loading_middleware.on_file_allocated,
+                on_file_renamed=loading_middleware.on_file_renamed,
+                on_symlink_created=loading_middleware.on_symlink_created,
             )
+            dump_auto_resolution_cache(
+                use_auto_resolution_cache=use_auto_resolution_cache,
+                model_id=model_id,
+                model_alias=model_alias,
+                model_package_id=model_package.package_id,
+                model_architecture=model_architecture,
+                task_type=task_type,
+                backend_type=model_package.backend,
+                resolved_files=loading_middleware.get_all_files_in_directory(),
+                file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
+            )
+            return model
         except Exception as error:
             LOGGER.warning(
                 f"Model package with id {model_package.package_id} that was selected to be loaded "
@@ -226,8 +368,9 @@ def initialize_model(
     file_specs_with_hash = [f for f in files_specs if f[2] is not None]
     file_specs_without_hash = [f for f in files_specs if f[2] is None]
     shared_blobs_dir = os.path.join(INFERENCE_HOME, "shared-blobs")
-    model_package_cache_dir = os.path.join(
-        INFERENCE_HOME, "models-cache", model_id, model_package.package_id
+    model_package_cache_dir = generate_model_package_cache_path(
+        model_id=model_id,
+        package_id=model_package.package_id,
     )
     shared_files_mapping = download_files_to_directory(
         target_dir=shared_blobs_dir,
@@ -308,6 +451,62 @@ def dump_model_config_for_offline_use(
         )
         if on_file_allocated:
             on_file_allocated(config_path)
+
+
+def dump_auto_resolution_cache(
+    use_auto_resolution_cache: bool,
+    model_id: str,
+    model_alias: str,
+    model_package_id: str,
+    model_architecture: Optional[ModelArchitecture],
+    task_type: TaskType,
+    backend_type: Optional[BackendType],
+    resolved_files: Set[str],
+    file_lock_acquire_timeout: int,
+) -> None:
+    if not use_auto_resolution_cache:
+        return None
+    cache_content = AutoResolutionCacheEntry(
+        model_id=model_id,
+        model_package_id=model_package_id,
+        resolved_files=resolved_files,
+        model_architecture=model_architecture,
+        task_type=task_type,
+        backend_type=backend_type,
+        created_at=datetime.now(),
+    )
+    path_for_model_id = generate_auto_resolution_cache_path(model_id=model_id)
+    _dump_auto_resolution_cache(
+        path=path_for_model_id,
+        content=cache_content.model_dump(mode="json"),
+        file_lock_acquire_timeout=file_lock_acquire_timeout,
+    )
+    if model_alias != model_id:
+        path_for_alias = generate_auto_resolution_cache_path(model_id=model_alias)
+        _dump_auto_resolution_cache(
+            path=path_for_alias,
+            content=cache_content.model_dump(mode="json"),
+            file_lock_acquire_timeout=file_lock_acquire_timeout,
+        )
+
+
+def generate_auto_resolution_cache_path(model_id: str) -> str:
+    return os.path.join(INFERENCE_HOME, "auto-resolution-cache", f"{model_id}.json")
+
+
+def generate_model_package_cache_path(model_id: str, package_id: str) -> str:
+    return os.path.join(INFERENCE_HOME, "models-cache", model_id, package_id)
+
+
+def _dump_auto_resolution_cache(
+    path: str,
+    content: dict,
+    file_lock_acquire_timeout: int,
+) -> None:
+    target_file_dir, target_file_name = os.path.split(path)
+    lock_path = os.path.join(target_file_dir, f".{target_file_name}.lock")
+    with FileLock(lock_path, timeout=file_lock_acquire_timeout):
+        dump_json(path=path, content=content)
 
 
 def attempt_loading_model_from_local_storage(
