@@ -418,9 +418,7 @@ def crop_mask(masks: np.ndarray, boxes: np.ndarray) -> np.ndarray:
 def slice_masks(masks: np.ndarray, boxes: np.ndarray) -> List[np.ndarray]:
     result = []
     for mask, box in zip(masks, boxes):
-        result.append(
-            mask[int(box[1]) : int(box[3]), int(box[0]) : int(box[2])]
-        )
+        result.append(mask[int(box[1]) : int(box[3]), int(box[0]) : int(box[2])])
     return result
 
 
