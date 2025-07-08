@@ -55,7 +55,7 @@ class VideoConfiguration(BaseModel):
         BufferFillingStrategy.DROP_OLDEST
     )
     source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy] = (
-        BufferConsumptionStrategy.LAZY
+        BufferConsumptionStrategy.EAGER
     )
     video_source_properties: Optional[Dict[str, float]] = None
     batch_collection_timeout: Optional[float] = None
@@ -112,6 +112,11 @@ class InitialiseWebRTCPipelinePayload(InitialisePipelinePayload):
     fps_probe_frames: int = 10
     max_consecutive_timeouts: int = 30
     min_consecutive_on_time: int = 5
+
+
+class WebRTCData(BaseModel):
+    stream_output: Optional[str] = None
+    data_output: Optional[str] = None
 
 
 class ConsumeResultsPayload(BaseModel):
