@@ -14,6 +14,8 @@ from inference.core.utils.postprocess import (
     post_process_bboxes,
     post_process_keypoints,
     post_process_polygons,
+    preprocess_segmentation_masks,
+    process_mask_fast,
     scale_bboxes,
     scale_polygons,
     shift_bboxes,
@@ -856,3 +858,441 @@ def test_post_process_keypoints_when_crop_was_taken_and_fit_to_padding_method_us
 
     # then
     assert np.allclose(np.array(result), expected_result)
+
+
+def test_preprocess_segmentation_masks_basic() -> None:
+    # given
+    protos = np.random.rand(32, 64, 64).astype(np.float32)
+    masks_in = np.random.rand(2, 32).astype(np.float32)
+    shape = (128, 128)
+
+    # when
+    result = preprocess_segmentation_masks(
+        protos=protos,
+        masks_in=masks_in,
+        shape=shape,
+    )
+
+    # then
+    assert result.shape == (2, 64, 64)
+    assert result.dtype == np.float32
+    assert np.all(result >= 0) and np.all(result <= 1)
+
+
+def test_preprocess_segmentation_masks_with_single_active_mask() -> None:
+    # given
+    protos = np.ones((32, 64, 64), dtype=np.float32)
+    masks_in = np.zeros((1, 32), dtype=np.float32)
+    masks_in[0, 0] = 1.0
+    shape = (64, 64)
+
+    # when
+    result = preprocess_segmentation_masks(
+        protos=protos,
+        masks_in=masks_in,
+        shape=shape,
+    )
+
+    # then
+    assert result.shape == (1, 64, 64)
+    expected_sigmoid = 1 / (1 + np.exp(-1))
+    assert np.allclose(result, expected_sigmoid, rtol=1e-4)
+
+
+def test_preprocess_segmentation_masks_multiple_masks() -> None:
+    # given
+    protos = np.eye(32, dtype=np.float32).reshape(32, 8, 4)
+    masks_in = np.eye(5, 32, dtype=np.float32)
+    shape = (16, 8)
+
+    # when
+    result = preprocess_segmentation_masks(
+        protos=protos,
+        masks_in=masks_in,
+        shape=shape,
+    )
+
+    # then
+    assert result.shape == (5, 8, 4)
+    assert result.dtype == np.float32
+
+
+def test_preprocess_segmentation_masks_different_aspect_ratios() -> None:
+    # given
+    protos = np.random.rand(16, 128, 64).astype(np.float32)
+    masks_in = np.random.rand(3, 16).astype(np.float32)
+    shape = (256, 64)
+
+    # when
+    result = preprocess_segmentation_masks(
+        protos=protos,
+        masks_in=masks_in,
+        shape=shape,
+    )
+
+    # then
+    gain = min(128 / 256, 64 / 64)
+    padw = (64 - 64 * gain) / 2
+    padh = (128 - 256 * gain) / 2
+    left, top = int(padw), int(padh)
+    right, bottom = int(64 - padw), int(128 - padh)
+    expected_height = bottom - top
+    expected_width = right - left
+    assert result.shape == (3, expected_height, expected_width)
+
+
+def test_preprocess_segmentation_masks_no_cropping_needed() -> None:
+    # given
+    protos = np.random.rand(8, 32, 32).astype(np.float32)
+    masks_in = np.random.rand(2, 8).astype(np.float32)
+    shape = (32, 32)
+
+    # when
+    result = preprocess_segmentation_masks(
+        protos=protos,
+        masks_in=masks_in,
+        shape=shape,
+    )
+
+    # then
+    assert result.shape == (2, 32, 32)
+
+
+def test_preprocess_segmentation_masks_extreme_aspect_ratio() -> None:
+    # given
+    protos = np.random.rand(16, 256, 32).astype(np.float32)
+    masks_in = np.random.rand(1, 16).astype(np.float32)
+    shape = (512, 32)
+
+    # when
+    result = preprocess_segmentation_masks(
+        protos=protos,
+        masks_in=masks_in,
+        shape=shape,
+    )
+
+    # then
+    gain = min(256 / 512, 32 / 32)
+    padw = (32 - 32 * gain) / 2
+    padh = (256 - 512 * gain) / 2
+    left, top = int(padw), int(padh)
+    right, bottom = int(32 - padw), int(256 - padh)
+    expected_height = bottom - top
+    expected_width = right - left
+    assert result.shape == (1, expected_height, expected_width)
+
+
+def test_preprocess_segmentation_masks_single_mask() -> None:
+    # given
+    protos = np.random.rand(16, 100, 100).astype(np.float32)
+    masks_in = np.random.rand(1, 16).astype(np.float32)
+    shape = (200, 200)
+
+    # when
+    result = preprocess_segmentation_masks(
+        protos=protos,
+        masks_in=masks_in,
+        shape=shape,
+    )
+
+    # then
+    assert result.shape == (1, 100, 100)
+    assert result.dtype == np.float32
+
+
+def test_preprocess_segmentation_masks_zero_masks() -> None:
+    # given
+    protos = np.random.rand(16, 50, 50).astype(np.float32)
+    masks_in = np.zeros((1, 16), dtype=np.float32)
+    shape = (100, 100)
+
+    # when
+    result = preprocess_segmentation_masks(
+        protos=protos,
+        masks_in=masks_in,
+        shape=shape,
+    )
+
+    # then
+    assert result.shape == (1, 50, 50)
+    assert np.all(result == 0.5)
+
+
+def test_preprocess_segmentation_masks_identity_protos() -> None:
+    # given
+    protos = np.zeros((4, 16, 16), dtype=np.float32)
+    protos[0, :, :] = 1.0
+    masks_in = np.array([[1.0, 0.0, 0.0, 0.0]], dtype=np.float32)
+    shape = (16, 16)
+
+    # when
+    result = preprocess_segmentation_masks(
+        protos=protos,
+        masks_in=masks_in,
+        shape=shape,
+    )
+
+    # then
+    assert result.shape == (1, 16, 16)
+    expected_value = 1 / (1 + np.exp(-1))
+    assert np.allclose(result, expected_value, rtol=1e-4)
+
+
+def test_preprocess_segmentation_masks_with_negative_values() -> None:
+    # given
+    protos = np.random.randn(8, 32, 32).astype(np.float32)
+    masks_in = np.random.randn(2, 8).astype(np.float32)
+    shape = (64, 64)
+
+    # when
+    result = preprocess_segmentation_masks(
+        protos=protos,
+        masks_in=masks_in,
+        shape=shape,
+    )
+
+    # then
+    assert result.shape == (2, 32, 32)
+    assert np.all(result >= 0) and np.all(result <= 1)
+
+
+def test_preprocess_segmentation_masks_large_batch() -> None:
+    # given
+    protos = np.random.rand(64, 128, 128).astype(np.float32)
+    masks_in = np.random.rand(10, 64).astype(np.float32)
+    shape = (256, 256)
+
+    # when
+    result = preprocess_segmentation_masks(
+        protos=protos,
+        masks_in=masks_in,
+        shape=shape,
+    )
+
+    # then
+    assert result.shape == (10, 128, 128)
+    assert result.dtype == np.float32
+    assert np.all(result >= 0) and np.all(result <= 1)
+
+
+def test_process_mask_fast_basic() -> None:
+    # given
+    protos = np.random.rand(32, 64, 64).astype(np.float32)
+    masks_in = np.random.rand(2, 32).astype(np.float32)
+    bboxes = np.array([[10, 10, 30, 30], [20, 20, 50, 50]], dtype=np.float32)
+    shape = (128, 128)
+
+    # when
+    result, mask_shape = process_mask_fast(
+        protos=protos,
+        masks_in=masks_in,
+        bboxes=bboxes,
+        shape=shape,
+    )
+
+    # then
+    assert len(result) == 2
+    assert mask_shape == (64, 64)
+    assert result[0].shape == (10, 10)
+    assert result[1].shape == (15, 15)
+
+
+def test_process_mask_fast_single_mask() -> None:
+    # given
+    protos = np.ones((16, 32, 32), dtype=np.float32)
+    masks_in = np.ones((1, 16), dtype=np.float32)
+    bboxes = np.array([[5, 5, 25, 25]], dtype=np.float32)
+    shape = (64, 64)
+
+    # when
+    result, mask_shape = process_mask_fast(
+        protos=protos,
+        masks_in=masks_in,
+        bboxes=bboxes,
+        shape=shape,
+    )
+
+    # then
+    assert len(result) == 1
+    assert mask_shape == (32, 32)
+    assert result[0].shape == (10, 10)
+    assert np.all(result[0] > 0)
+
+
+def test_process_mask_fast_with_thresholding() -> None:
+    # given
+    protos = np.full((8, 16, 16), -10.0, dtype=np.float32)
+    masks_in = np.ones((2, 8), dtype=np.float32)
+    bboxes = np.array([[2, 2, 10, 10], [6, 6, 14, 14]], dtype=np.float32)
+    shape = (32, 32)
+
+    # when
+    result, mask_shape = process_mask_fast(
+        protos=protos,
+        masks_in=masks_in,
+        bboxes=bboxes,
+        shape=shape,
+    )
+
+    # then
+    assert len(result) == 2
+    assert mask_shape == (16, 16)
+    assert result[0].shape == (4, 4)
+    assert result[1].shape == (4, 4)
+    assert np.all(result[0] == 0)
+    assert np.all(result[1] == 0)
+
+
+def test_process_mask_fast_different_bbox_sizes() -> None:
+    # given
+    protos = np.random.rand(16, 50, 50).astype(np.float32) + 0.5
+    masks_in = np.ones((3, 16), dtype=np.float32)
+    bboxes = np.array(
+        [[10, 10, 20, 20], [5, 5, 40, 40], [0, 0, 50, 50]], dtype=np.float32
+    )
+    shape = (100, 100)
+
+    # when
+    result, mask_shape = process_mask_fast(
+        protos=protos,
+        masks_in=masks_in,
+        bboxes=bboxes,
+        shape=shape,
+    )
+
+    # then
+    assert len(result) == 3
+    assert mask_shape == (50, 50)
+    assert result[0].shape == (5, 5)
+    assert result[1].shape == (18, 18)
+    assert result[2].shape == (25, 25)
+
+
+def test_process_mask_fast_scaled_bboxes() -> None:
+    # given
+    protos = np.random.rand(8, 128, 128).astype(np.float32)
+    masks_in = np.random.rand(2, 8).astype(np.float32)
+    bboxes = np.array([[20, 20, 60, 60], [100, 100, 200, 200]], dtype=np.float32)
+    shape = (256, 256)
+
+    # when
+    result, mask_shape = process_mask_fast(
+        protos=protos,
+        masks_in=masks_in,
+        bboxes=bboxes,
+        shape=shape,
+    )
+
+    # then
+    assert len(result) == 2
+    assert mask_shape == (128, 128)
+    assert result[0].shape == (20, 20)
+    assert result[1].shape == (50, 50)
+
+
+def test_process_mask_fast_edge_cases() -> None:
+    # given
+    protos = np.random.rand(4, 32, 32).astype(np.float32)
+    masks_in = np.random.rand(4, 4).astype(np.float32)
+    bboxes = np.array(
+        [
+            [0, 0, 5, 5],
+            [27, 27, 32, 32],
+            [10, 0, 20, 32],
+            [0, 10, 32, 20],
+        ],
+        dtype=np.float32,
+    )
+    shape = (64, 64)
+
+    # when
+    result, mask_shape = process_mask_fast(
+        protos=protos,
+        masks_in=masks_in,
+        bboxes=bboxes,
+        shape=shape,
+    )
+
+    # then
+    assert len(result) == 4
+    assert mask_shape == (32, 32)
+    assert result[0].shape == (2, 2)
+    assert result[1].shape == (3, 3)
+    assert result[2].shape == (16, 5)
+    assert result[3].shape == (5, 16)
+
+
+def test_process_mask_fast_extreme_scaling() -> None:
+    # given
+    protos = np.random.rand(16, 256, 256).astype(np.float32)
+    masks_in = np.random.rand(1, 16).astype(np.float32)
+    bboxes = np.array([[10, 10, 20, 20]], dtype=np.float32)
+    shape = (32, 32)
+
+    # when
+    result, mask_shape = process_mask_fast(
+        protos=protos,
+        masks_in=masks_in,
+        bboxes=bboxes,
+        shape=shape,
+    )
+
+    # then
+    assert len(result) == 1
+    assert mask_shape == (256, 256)
+    assert result[0].shape == (80, 80)
+
+
+def test_process_mask_fast_full_image_bbox() -> None:
+    # given
+    protos = np.random.rand(8, 64, 64).astype(np.float32)
+    masks_in = np.random.rand(1, 8).astype(np.float32)
+    bboxes = np.array([[0, 0, 128, 128]], dtype=np.float32)
+    shape = (128, 128)
+
+    # when
+    result, mask_shape = process_mask_fast(
+        protos=protos,
+        masks_in=masks_in,
+        bboxes=bboxes,
+        shape=shape,
+    )
+
+    # then
+    assert len(result) == 1
+    assert mask_shape == (64, 64)
+    assert result[0].shape == (64, 64)
+
+
+def test_process_mask_fast_multiple_overlapping_boxes() -> None:
+    # given
+    protos = np.random.rand(16, 32, 32).astype(np.float32)
+    masks_in = np.random.rand(5, 16).astype(np.float32)
+    bboxes = np.array(
+        [
+            [5, 5, 15, 15],
+            [10, 10, 20, 20],
+            [15, 15, 25, 25],
+            [0, 0, 32, 32],
+            [16, 16, 32, 32],
+        ],
+        dtype=np.float32,
+    )
+    shape = (64, 64)
+
+    # when
+    result, mask_shape = process_mask_fast(
+        protos=protos,
+        masks_in=masks_in,
+        bboxes=bboxes,
+        shape=shape,
+    )
+
+    # then
+    assert len(result) == 5
+    assert mask_shape == (32, 32)
+    assert result[0].shape == (5, 5)
+    assert result[1].shape == (5, 5)
+    assert result[2].shape == (5, 5)
+    assert result[3].shape == (16, 16)
+    assert result[4].shape == (8, 8)

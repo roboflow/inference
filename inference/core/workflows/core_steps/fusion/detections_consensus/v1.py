@@ -372,7 +372,6 @@ def agree_on_consensus_for_all_detections_sources(
     )
     detections_already_considered = set()
     consensus_detections = []
-    i = 0
     for source_id, detection in enumerate_detections(
         detections_from_sources=detections_from_sources
     ):
@@ -393,15 +392,6 @@ def agree_on_consensus_for_all_detections_sources(
             detections_already_considered=detections_already_considered,
         )
         consensus_detections += consensus_detections_update
-        print(
-            i,
-            (
-                consensus_detections_update[0].mask is None
-                if consensus_detections_update
-                else ""
-            ),
-        )
-        i += 1
     consensus_detections = sv.Detections.merge(consensus_detections)
     (
         object_present,
