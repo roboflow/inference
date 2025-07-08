@@ -406,12 +406,10 @@ def preprocess_segmentation_masks(
 
 
 def scale_bboxes(bboxes: np.ndarray, scale_x: float, scale_y: float) -> np.ndarray:
-    """Scale bounding boxes in-place (faster, no deepcopy needed)."""
-    bboxes = bboxes.astype(
-        np.float32, copy=False
-    )  # Avoid implicit copy if already float32
-    bboxes[:, [0, 2]] *= scale_x
-    bboxes[:, [1, 3]] *= scale_y
+    bboxes[:, 0] *= scale_x
+    bboxes[:, 2] *= scale_x
+    bboxes[:, 1] *= scale_y
+    bboxes[:, 3] *= scale_y
     return bboxes
 
 
