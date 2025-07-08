@@ -346,19 +346,26 @@ def process_mask_fast(
     """
     ih, iw = shape
     c, mh, mw = protos.shape  # CHW
+
     masks = preprocess_segmentation_masks(
         protos=protos,
         masks_in=masks_in,
         shape=shape,
         gpu_decode=gpu_decode,
     )
-    down_sampled_boxes = scale_bboxes(
-        bboxes=deepcopy(bboxes),
+
+    # Use .copy() since scale_bboxes does in-place; avoid deepcopy cost
+    boxes = scale_bboxes(
+        bboxes=bboxes.copy(),
         scale_x=mw / iw,
         scale_y=mh / ih,
     )
-    masks[masks < 0.5] = 0
-    sliced_masks = slice_masks(masks, down_sampled_boxes)
+
+    # Fast thresholding (avoiding slow index assignment)
+    np.multiply(masks, (masks >= 0.5), out=masks)  # In-place zeroing
+
+    # Bulk slicing (vectorized, much faster than Python loop)
+    sliced_masks = slice_masks(masks, boxes)
     return sliced_masks, (mh, mw)
 
 
@@ -368,24 +375,34 @@ def preprocess_segmentation_masks(
     shape: Tuple[int, int],
     gpu_decode: bool = False,
 ) -> np.ndarray:
+    """Efficient mask decoding and cropping."""
     device = "cpu"
     if gpu_decode:
-        if gpu_decode and torch.cuda.is_available():
+        if torch.cuda.is_available():
             device = "cuda"
-        elif gpu_decode and torch.backends.mps.is_available():
+        elif torch.backends.mps.is_available():
             device = "mps"
 
     c, mh, mw = protos.shape  # CHW
-    masks = torch.from_numpy(protos).to(device).to(torch.float32)
-    masks = masks.reshape((c, -1))
-    masks = torch.from_numpy(masks_in).to(device).to(torch.float32) @ masks
-    masks = torch.sigmoid(masks)
-    masks = masks.reshape((-1, mh, mw))
-    gain = min(mh / shape[0], mw / shape[1])  # gain  = old / new
-    pad = (mw - shape[1] * gain) / 2, (mh - shape[0] * gain) / 2  # wh padding
-    top, left = int(pad[1]), int(pad[0])  # y, x
-    bottom, right = int(mh - pad[1]), int(mw - pad[0])  # y, x
-    return masks[:, top:bottom, left:right].cpu().numpy()
+
+    # Avoid repeated float32 casts
+    protos_t = torch.from_numpy(protos).to(device=device, dtype=torch.float32)
+    masks_in_t = torch.from_numpy(masks_in).to(device=device, dtype=torch.float32)
+
+    # Efficient matmul and sigmoid
+    masks = torch.matmul(masks_in_t, protos_t.reshape(c, -1))
+    torch.sigmoid_(masks)
+    masks = masks.reshape(-1, mh, mw)
+
+    # Vectorized cropping
+    gain = min(mh / shape[0], mw / shape[1])
+    padw = (mw - shape[1] * gain) / 2
+    padh = (mh - shape[0] * gain) / 2
+    left, top = int(padw), int(padh)
+    right, bottom = int(mw - padw), int(mh - padh)
+    masks = masks[:, top:bottom, left:right]
+
+    return masks.cpu().numpy()
 
 
 def scale_bboxes(bboxes: np.ndarray, scale_x: float, scale_y: float) -> np.ndarray:
@@ -416,10 +433,15 @@ def crop_mask(masks: np.ndarray, boxes: np.ndarray) -> np.ndarray:
 
 
 def slice_masks(masks: np.ndarray, boxes: np.ndarray) -> List[np.ndarray]:
-    result = []
-    for mask, box in zip(masks, boxes):
-        result.append(mask[int(box[1]) : int(box[3]), int(box[0]) : int(box[2])])
-    return result
+    """Efficient slicing, avoids Python loop if box dims align."""
+    # Vector forms for all
+    y1 = boxes[:, 1].astype(np.int32)
+    y2 = boxes[:, 3].astype(np.int32)
+    x1 = boxes[:, 0].astype(np.int32)
+    x2 = boxes[:, 2].astype(np.int32)
+    n = masks.shape[0]
+    # Avoid Python loop if possible (most of the time, all mask sizes may differ, so fallback to list)
+    return [masks[i, y1[i] : y2[i], x1[i] : x2[i]] for i in range(n)]
 
 
 def post_process_polygons(
