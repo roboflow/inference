@@ -513,6 +513,7 @@ class RoboflowInferenceModel(Model):
                 
                 # Use pyrDown for logarithmic downsizing if scaling down by more than 2x
                 if max_scale > 2.0:
+                    print("Using pyrDown for logarithmic downsizing")
                     temp_image = preprocessed_image
                     current_scale = 1.0
                     
@@ -527,6 +528,7 @@ class RoboflowInferenceModel(Model):
                         (self.img_size_w, self.img_size_h),
                     )
                 else:
+                    print("Using direct resize for small scale changes")
                     # Direct resize for small scale changes
                     resized = cv2.resize(
                         preprocessed_image,
