@@ -41,4 +41,6 @@ jobs:
           python -m uv pip install pytest --python .venv
       - name: 🧪 Unit Tests of Inference SDK
         timeout-minutes: 30
-        run: source .venv/bin/activate && python -m pytest tests/unit_tests
+        run: |
+          source .venv/bin/activate
+          python -m pytest tests/unit_tests
