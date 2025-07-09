@@ -14,7 +14,7 @@ class BaseInferenceError(Exception):
     def __str__(self) -> str:
         if self._help_url is None:
             return super().__str__()
-        return f"{super().__str__()} VISIT {self._help_url} FOR FURTHER SUPPORT"
+        return f"{super().__str__()} - VISIT {self._help_url} FOR FURTHER SUPPORT"
 
 
 class EnvironmentConfigurationError(BaseInferenceError):
@@ -90,6 +90,10 @@ class AmbiguousModelPackageResolutionError(ModelPackageNegotiationError):
 
 
 class ModelLoadingError(BaseInferenceError):
+    pass
+
+
+class DirectLocalStorageAccessError(ModelLoadingError):
     pass
 
 

@@ -155,7 +155,7 @@ def get_one_page_of_model_metadata(
 
 
 def handle_response_errors(response: Response, operation_name: str) -> None:
-    if response.status_code == 401:
+    if response.status_code == 401 or response.status_code == 403:
         raise UnauthorizedModelAccessError(
             message=f"Could not {operation_name}. Request unauthorised. Are you sure you use valid Roboflow API key? "
             "See details here: https://docs.roboflow.com/api-reference/authentication and "

@@ -3,18 +3,24 @@ import importlib.util
 import os.path
 from copy import copy
 from datetime import datetime
+from functools import partial
 from typing import Callable, Dict, List, Optional, Set, Tuple, Union
 
 import torch
 from filelock import FileLock
-from inference_exp.configuration import (
-    AUTO_LOADER_CACHE_EXPIRATION_MINUTES,
-    DEFAULT_DEVICE,
-    INFERENCE_HOME,
+from inference_exp.configuration import DEFAULT_DEVICE, INFERENCE_HOME
+from inference_exp.errors import (
+    CorruptedModelPackageError,
+    DirectLocalStorageAccessError,
+    ModelLoadingError,
+    UnauthorizedModelAccessError,
 )
-from inference_exp.errors import CorruptedModelPackageError, ModelLoadingError
 from inference_exp.logger import LOGGER, verbose_info
 from inference_exp.models.auto_loaders.auto_negotiation import negotiate_model_packages
+from inference_exp.models.auto_loaders.auto_resolution_cache import (
+    AutoResolutionCache,
+    BaseAutoLoadMetadataCache,
+)
 from inference_exp.models.auto_loaders.entities import (
     MODEL_CONFIG_FILE_NAME,
     AutoResolutionCacheEntry,
@@ -23,6 +29,11 @@ from inference_exp.models.auto_loaders.entities import (
     TaskType,
 )
 from inference_exp.models.auto_loaders.models_registry import resolve_model_class
+from inference_exp.models.auto_loaders.storage_manager import (
+    AccessIdentifiers,
+    LiberalModelStorageManager,
+    ModelStorageManager,
+)
 from inference_exp.models.base.classification import (
     ClassificationModel,
     MultiLabelClassificationModel,
@@ -34,7 +45,8 @@ from inference_exp.models.base.instance_segmentation import InstanceSegmentation
 from inference_exp.models.base.keypoints_detection import KeyPointsDetectionModel
 from inference_exp.models.base.object_detection import ObjectDetectionModel
 from inference_exp.utils.download import FileHandle, download_files_to_directory
-from inference_exp.utils.file_system import dump_json, read_json, remove_file_if_exists
+from inference_exp.utils.file_system import dump_json, read_json
+from inference_exp.utils.hashing import hash_dict_content
 from inference_exp.weights_providers.core import get_model_from_provider
 from inference_exp.weights_providers.entities import (
     BackendType,
@@ -82,12 +94,29 @@ class AutoModel:
         verify_hash_while_download: bool = True,
         download_files_without_hash: bool = False,
         use_auto_resolution_cache: bool = True,
-        on_file_allocated: Optional[Callable[[str], None]] = None,
-        on_file_renamed: Optional[Callable[[str, str], None]] = None,
-        on_symlink_created: Optional[Callable[[str, str], None]] = None,
+        auto_resolution_cache: Optional[AutoResolutionCache] = None,
+        allow_direct_local_storage_loading: bool = True,
+        model_storage_manager: Optional[ModelStorageManager] = None,
         **kwargs,
     ) -> AnyModel:
-        # TODO: implement authorized cache
+        if model_storage_manager is None:
+            model_storage_manager = LiberalModelStorageManager()
+        if model_storage_manager.is_model_access_forbidden(
+            model_name_or_path=model_name_or_path, api_key=api_key
+        ):
+            raise UnauthorizedModelAccessError(
+                message=f"Unauthorized not access model with ID: {model_package_id}. Are you sure you use valid "
+                f"API key? The default weights provider is Roboflow - see Roboflow authentication details: "
+                f"https://docs.roboflow.com/api-reference/authentication "
+                f"and export key to `ROBOFLOW_API_KEY` environment variable. If you use custom weights "
+                f"provider - verify access constraints relevant for the provider.",
+                help_url="https://todo",
+            )
+        if auto_resolution_cache is None:
+            auto_resolution_cache = BaseAutoLoadMetadataCache(
+                file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
+                verbose=verbose,
+            )
         model_init_kwargs = {
             "onnx_execution_providers": onnx_execution_providers,
             "device": device,
@@ -102,19 +131,44 @@ class AutoModel:
             # that still may end up with ambiguous behaviour - probably the solution would be
             # to require prefix like file://... to denote the intent of loading model from local
             # drive?
+            auto_negotiation_hash = hash_dict_content(
+                content={
+                    "provider": weights_provider,
+                    "model_id": model_name_or_path,
+                    "api_key": api_key,
+                    "requested_model_package_id": model_package_id,
+                    "requested_backends": backends,
+                    "requested_batch_size": batch_size,
+                    "requested_quantization": quantization,
+                    "device": str(device),
+                    "onnx_execution_providers": onnx_execution_providers,
+                    "allow_untrusted_packages": allow_untrusted_packages,
+                    "trt_engine_host_code_allowed": trt_engine_host_code_allowed,
+                }
+            )
             model_from_cache = attempt_loading_model_with_auto_load_cache(
                 use_auto_resolution_cache=use_auto_resolution_cache,
+                auto_resolution_cache=auto_resolution_cache,
+                auto_negotiation_hash=auto_negotiation_hash,
+                model_storage_manager=model_storage_manager,
                 model_name_or_path=model_name_or_path,
                 model_init_kwargs=model_init_kwargs,
+                api_key=api_key,
                 verbose=verbose,
             )
             if model_from_cache:
                 return model_from_cache
-            model_metadata = get_model_from_provider(
-                provider=weights_provider,
-                model_id=model_name_or_path,
-                api_key=api_key,
-            )
+            try:
+                model_metadata = get_model_from_provider(
+                    provider=weights_provider,
+                    model_id=model_name_or_path,
+                    api_key=api_key,
+                )
+            except UnauthorizedModelAccessError as error:
+                model_storage_manager.on_model_access_forbidden(
+                    model_id=model_name_or_path, api_key=api_key
+                )
+                raise error
             matching_model_packages = negotiate_model_packages(
                 model_packages=model_metadata.model_packages,
                 requested_model_package_id=model_package_id,
@@ -128,23 +182,34 @@ class AutoModel:
                 verbose=verbose,
             )
             return attempt_loading_matching_model_packages(
-                model_id=model_metadata.model_id,
-                model_alias=model_name_or_path,
+                model_id=model_name_or_path,
                 model_architecture=model_metadata.model_architecture,
                 task_type=model_metadata.task_type,
                 matching_model_packages=matching_model_packages,
                 model_init_kwargs=model_init_kwargs,
+                model_storage_manager=model_storage_manager,
+                auto_negotiation_hash=auto_negotiation_hash,
+                api_key=api_key,
                 max_package_loading_attempts=max_package_loading_attempts,
                 model_download_file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
                 verify_hash_while_download=verify_hash_while_download,
                 download_files_without_hash=download_files_without_hash,
+                auto_resolution_cache=auto_resolution_cache,
                 use_auto_resolution_cache=use_auto_resolution_cache,
-                on_file_allocated=on_file_allocated,
-                on_file_renamed=on_file_renamed,
-                on_symlink_created=on_symlink_created,
+            )
+        if not allow_direct_local_storage_loading:
+            raise DirectLocalStorageAccessError(
+                message="Attempted to load model directly pointing local path, rather than model ID. This "
+                "operation is forbidden as AutoModel.from_pretrained(...) was used with "
+                "`allow_direct_local_storage_loading=False`. If you are running `inference` outside Roboflow "
+                "hosted solutions - verify your setup. If you see this error on Roboflow platform - this "
+                "feature was disabled for security reason. In rare cases when you use valid model ID, the "
+                "clash of ID with local path may cause this error - we ask you to report the issue here: "
+                "https://github.com/roboflow/inference/issues.",
+                help_url="https://todo",
             )
         return attempt_loading_model_from_local_storage(
-            model_dir=model_package_id,
+            model_dir=model_name_or_path,
             allow_local_code_packages=allow_local_code_packages,
             model_init_kwargs=model_init_kwargs,
         )
@@ -152,8 +217,12 @@ class AutoModel:
 
 def attempt_loading_model_with_auto_load_cache(
     use_auto_resolution_cache: bool,
+    auto_resolution_cache: AutoResolutionCache,
+    auto_negotiation_hash: str,
+    model_storage_manager: ModelStorageManager,
     model_name_or_path: str,
     model_init_kwargs: dict,
+    api_key: Optional[str],
     verbose: bool = False,
 ) -> Optional[AnyModel]:
     if not use_auto_resolution_cache:
@@ -162,28 +231,28 @@ def attempt_loading_model_with_auto_load_cache(
         message=f"Attempt to load model {model_name_or_path} using auto-load cache.",
         verbose_requested=verbose,
     )
-    cache_path = generate_auto_resolution_cache_path(model_id=model_name_or_path)
-    if not os.path.exists(cache_path):
+    cache_entry = auto_resolution_cache.retrieve(
+        auto_negotiation_hash=auto_negotiation_hash
+    )
+    if cache_entry is None:
         verbose_info(
             message=f"Could not find auto-load cache for model {model_name_or_path}.",
             verbose_requested=verbose,
         )
         return None
+    if not model_storage_manager.is_model_package_access_granted(
+        model_id=cache_entry.model_id,
+        package_id=cache_entry.model_package_id,
+        api_key=api_key,
+    ):
+        return None
+    if not all_files_exist(files=cache_entry.resolved_files):
+        verbose_info(
+            message=f"Could not find all required files denoted in auto-load cache for model {model_name_or_path}.",
+            verbose_requested=verbose,
+        )
+        return None
     try:
-        cache_content = read_json(path=cache_path)
-        cache_entry = AutoResolutionCacheEntry.model_validate(cache_content)
-        minutes_since_entry_created = (
-            datetime.now() - cache_entry.created_at
-        ).total_seconds() / 60
-        if minutes_since_entry_created > AUTO_LOADER_CACHE_EXPIRATION_MINUTES:
-            remove_file_if_exists(path=cache_path)
-            verbose_info(
-                message=f"Auto-load cache for model {model_name_or_path} expired.",
-                verbose_requested=verbose,
-            )
-            return None
-        if not all_files_exist(cache_entry.resolved_files):
-            return None
         model_class = resolve_model_class(
             model_architecture=cache_entry.model_architecture,
             task_type=cache_entry.task_type,
@@ -207,7 +276,7 @@ def attempt_loading_model_with_auto_load_cache(
             f"auto-load cache. This may indicate corrupted cache of inference bug. Contact Roboflow submitting "
             f"issue under: https://github.com/roboflow/inference/issues/"
         )
-        remove_file_if_exists(path=cache_path)
+        auto_resolution_cache.invalidate(auto_negotiation_hash=auto_negotiation_hash)
         return None
 
 
@@ -250,20 +319,20 @@ class FileLoadingMiddleware:
 
 def attempt_loading_matching_model_packages(
     model_id: str,
-    model_alias: str,
     model_architecture: ModelArchitecture,
     task_type: Optional[TaskType],
     matching_model_packages: List[ModelPackageMetadata],
     model_init_kwargs: dict,
+    model_storage_manager: ModelStorageManager,
+    auto_resolution_cache: AutoResolutionCache,
+    auto_negotiation_hash: str,
+    api_key: Optional[str],
     max_package_loading_attempts: Optional[int] = None,
     model_download_file_lock_acquire_timeout: int = 10,
     verbose: bool = True,
     verify_hash_while_download: bool = True,
     download_files_without_hash: bool = False,
     use_auto_resolution_cache: bool = True,
-    on_file_allocated: Optional[Callable[[str], None]] = None,
-    on_file_renamed: Optional[Callable[[str, str], None]] = None,
-    on_symlink_created: Optional[Callable[[str, str], None]] = None,
 ) -> AnyModel:
     if max_package_loading_attempts is not None:
         matching_model_packages = matching_model_packages[:max_package_loading_attempts]
@@ -275,15 +344,29 @@ def attempt_loading_matching_model_packages(
         )
     failed_load_attempts: List[Tuple[str, Exception]] = []
     for model_package in matching_model_packages:
+        access_identifiers = AccessIdentifiers(
+            model_id=model_id,
+            package_id=model_package.package_id,
+            api_key=api_key,
+        )
         verbose_info(
             message=f"Attempt to load model package: {model_package.get_summary()}",
             verbose_requested=verbose,
         )
         try:
             loading_middleware = FileLoadingMiddleware(
-                upstream_on_file_allocated=on_file_allocated,
-                upstream_on_file_renamed=on_file_renamed,
-                upstream_on_symlink_created=on_symlink_created,
+                upstream_on_file_allocated=partial(
+                    model_storage_manager.on_file_allocated,
+                    access_identifiers=access_identifiers,
+                ),
+                upstream_on_file_renamed=partial(
+                    model_storage_manager.on_file_renamed,
+                    access_identifiers=access_identifiers,
+                ),
+                upstream_on_symlink_created=partial(
+                    model_storage_manager.on_symlink_created,
+                    access_identifiers=access_identifiers,
+                ),
             )
             model = initialize_model(
                 model_id=model_id,
@@ -294,20 +377,24 @@ def attempt_loading_matching_model_packages(
                 model_init_kwargs=model_init_kwargs,
                 verify_hash_while_download=verify_hash_while_download,
                 download_files_without_hash=download_files_without_hash,
+                on_model_package_dir_created=partial(
+                    model_storage_manager.on_model_package_access_granted,
+                    access_identifiers=access_identifiers,
+                ),
                 on_file_allocated=loading_middleware.on_file_allocated,
                 on_file_renamed=loading_middleware.on_file_renamed,
                 on_symlink_created=loading_middleware.on_symlink_created,
             )
             dump_auto_resolution_cache(
                 use_auto_resolution_cache=use_auto_resolution_cache,
+                auto_resolution_cache=auto_resolution_cache,
+                auto_negotiation_hash=auto_negotiation_hash,
                 model_id=model_id,
-                model_alias=model_alias,
                 model_package_id=model_package.package_id,
                 model_architecture=model_architecture,
                 task_type=task_type,
                 backend_type=model_package.backend,
                 resolved_files=loading_middleware.get_all_files_in_directory(),
-                file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
             )
             return model
         except Exception as error:
@@ -333,7 +420,7 @@ def attempt_loading_matching_model_packages(
         f"that warning is displayed when the model package was auto-selected - there is most "
         f"likely a bug in `inference` and you should raise an issue providing full context of "
         f"the event. https://github.com/roboflow/inference/issues\n\n"
-        f"Here is the summary of errors for specific model packages:\n{summary_of_errors}",
+        f"Here is the summary of errors for specific model packages:\n{summary_of_errors}\n\n",
         help_url="https://todo",
     )
 
@@ -347,6 +434,7 @@ def initialize_model(
     model_download_file_lock_acquire_timeout: int = 10,
     verify_hash_while_download: bool = True,
     download_files_without_hash: bool = False,
+    on_model_package_dir_created: Optional[Callable[[str], None]] = None,
     on_file_allocated: Optional[Callable[[str], None]] = None,
     on_file_renamed: Optional[Callable[[str, str], None]] = None,
     on_symlink_created: Optional[Callable[[str, str], None]] = None,
@@ -378,6 +466,9 @@ def initialize_model(
         model_id=model_id,
         package_id=model_package.package_id,
     )
+    os.makedirs(shared_blobs_dir, exist_ok=True)
+    if on_model_package_dir_created:
+        on_model_package_dir_created(shared_blobs_dir)
     shared_files_mapping = download_files_to_directory(
         target_dir=shared_blobs_dir,
         files_specs=file_specs_with_hash,
@@ -461,14 +552,14 @@ def dump_model_config_for_offline_use(
 
 def dump_auto_resolution_cache(
     use_auto_resolution_cache: bool,
+    auto_resolution_cache: AutoResolutionCache,
+    auto_negotiation_hash: str,
     model_id: str,
-    model_alias: str,
     model_package_id: str,
     model_architecture: Optional[ModelArchitecture],
     task_type: TaskType,
     backend_type: Optional[BackendType],
     resolved_files: Set[str],
-    file_lock_acquire_timeout: int,
 ) -> None:
     if not use_auto_resolution_cache:
         return None
@@ -481,23 +572,9 @@ def dump_auto_resolution_cache(
         backend_type=backend_type,
         created_at=datetime.now(),
     )
-    path_for_model_id = generate_auto_resolution_cache_path(model_id=model_id)
-    _dump_auto_resolution_cache(
-        path=path_for_model_id,
-        content=cache_content.model_dump(mode="json"),
-        file_lock_acquire_timeout=file_lock_acquire_timeout,
+    auto_resolution_cache.register(
+        auto_negotiation_hash=auto_negotiation_hash, cache_entry=cache_content
     )
-    if model_alias != model_id:
-        path_for_alias = generate_auto_resolution_cache_path(model_id=model_alias)
-        _dump_auto_resolution_cache(
-            path=path_for_alias,
-            content=cache_content.model_dump(mode="json"),
-            file_lock_acquire_timeout=file_lock_acquire_timeout,
-        )
-
-
-def generate_auto_resolution_cache_path(model_id: str) -> str:
-    return os.path.join(INFERENCE_HOME, "auto-resolution-cache", f"{model_id}.json")
 
 
 def generate_model_package_cache_path(model_id: str, package_id: str) -> str:
