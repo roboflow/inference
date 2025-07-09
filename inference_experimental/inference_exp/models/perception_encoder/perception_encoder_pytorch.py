@@ -1,6 +1,6 @@
 import json
 
-from typing import Callable, List, Union
+from typing import Callable, List, Union, Optional
 
 import numpy as np
 import torch
@@ -14,6 +14,7 @@ import inference_exp.models.perception_encoder.vision_encoder.pe as pe
 import inference_exp.models.perception_encoder.vision_encoder.transforms as transforms
 from inference_exp.models.base.embeddings import TextImageEmbeddingModel
 from inference_exp.models.common.model_packages import get_model_package_contents
+from inference_exp.entities import ColorFormat
 
 
 class PerceptionEncoderConfig(BaseModel):
@@ -70,15 +71,23 @@ def create_preprocessor(image_size: int) -> Callable:
     normalize_transform = create_image_normalize_transform()
 
     def _preprocess(
-        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]]
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        input_color_format: Optional[ColorFormat] = None,
     ) -> torch.Tensor:
         def _to_tensor(image: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
-            if isinstance(image, np.ndarray):
-                # HWC -> CHW
-                image = torch.from_numpy(image).permute(2, 0, 1)
+            is_numpy = isinstance(image, np.ndarray)
+            if is_numpy:
+                tensor_image = torch.from_numpy(image).permute(2, 0, 1)
+            else:
+                tensor_image = image
+
+            # For numpy array inputs, we default to BGR -> RGB conversion for compatibility.
+            # For tensor inputs, we only convert if BGR is explicitly specified, otherwise RGB is assumed.
+            if input_color_format == "bgr" or (is_numpy and input_color_format is None):
                 # BGR -> RGB
-                image = image[[2, 1, 0], :, :]
-            return image
+                tensor_image = tensor_image[[2, 1, 0], :, :]
+
+            return tensor_image
 
         if isinstance(images, list):
             # Resize each image individually, then stack to a batch
@@ -147,9 +156,12 @@ class PerceptionEncoderTorch(TextImageEmbeddingModel):
     def embed_images(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        input_color_format: Optional[ColorFormat] = None,
         **kwargs,
     ) -> torch.Tensor:
-        img_in = self.preprocessor(images).to(self.device)
+        img_in = self.preprocessor(images, input_color_format=input_color_format).to(
+            self.device
+        )
 
         if self.device.type == "cpu" or self.device.type == "mps":
             with torch.inference_mode():
