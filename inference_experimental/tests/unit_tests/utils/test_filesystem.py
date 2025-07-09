@@ -1,8 +1,10 @@
+import json
 import os.path
 from json import JSONDecodeError
 
 import pytest
 from inference_exp.utils.file_system import (
+    dump_json,
     ensure_parent_dir_exists,
     pre_allocate_file,
     read_json,
@@ -178,3 +180,19 @@ def test_remove_file_if_exists_when_existing_file(non_empty_local_dir: str) -> N
     assert os.path.exists(
         os.path.join(non_empty_local_dir, "sub_dir")
     ), "Additional directory content should be left as is"
+
+
+def test_dump_json(empty_local_dir: str) -> None:
+    # given
+    target_path = os.path.join(empty_local_dir, "example.json")
+
+    # when
+    dump_json(
+        path=target_path,
+        content={"some": "value"},
+    )
+
+    # then
+    with open(target_path) as f:
+        result = json.load(f)
+    assert result == {"some": "value"}

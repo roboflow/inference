@@ -14,7 +14,7 @@ class BaseInferenceError(Exception):
     def __str__(self) -> str:
         if self._help_url is None:
             return super().__str__()
-        return f"{super().__str__()} VISIT {self._help_url} FOR FURTHER SUPPORT"
+        return f"{super().__str__()} - VISIT {self._help_url} FOR FURTHER SUPPORT"
 
 
 class EnvironmentConfigurationError(BaseInferenceError):
@@ -30,6 +30,14 @@ class RetryError(BaseInferenceError):
 
 
 class ModelRetrievalError(BaseInferenceError):
+    pass
+
+
+class UntrustedFileError(BaseInferenceError):
+    pass
+
+
+class FileHashSumMissmatch(BaseInferenceError):
     pass
 
 
@@ -85,6 +93,10 @@ class ModelLoadingError(BaseInferenceError):
     pass
 
 
+class DirectLocalStorageAccessError(ModelLoadingError):
+    pass
+
+
 class ModelImplementationLoaderError(ModelLoadingError):
     pass
 
@@ -98,4 +110,8 @@ class CorruptedModelPackageError(ModelLoadingError):
 
 
 class MissingDependencyError(BaseInferenceError):
+    pass
+
+
+class InvalidParameterError(BaseInferenceError):
     pass

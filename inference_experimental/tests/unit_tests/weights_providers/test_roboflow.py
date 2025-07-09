@@ -63,7 +63,9 @@ def test_parse_ultralytics_model_package() -> None:
         packageId="my-package-id",
         packageManifest={},
         packageFiles=[
-            RoboflowModelPackageFile(fileName="some", downloadUrl="https://dummy.com")
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
         ],
         trustedSource=False,
     )
@@ -76,7 +78,9 @@ def test_parse_ultralytics_model_package() -> None:
         package_id="my-package-id",
         backend=BackendType.ULTRALYTICS,
         package_artefacts=[
-            FileDownloadSpecs(download_url="https://dummy.com", file_name="some"),
+            FileDownloadSpecs(
+                download_url="https://dummy.com", file_handle="some", md5_hash="some"
+            ),
         ],
         quantization=Quantization.UNKNOWN,
         trusted_source=False,
@@ -94,7 +98,9 @@ def test_parse_hf_model_package_model_package_when_valid_input_provided() -> Non
             "quantization": "fp32",
         },
         packageFiles=[
-            RoboflowModelPackageFile(fileName="some", downloadUrl="https://dummy.com")
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
         ],
         trustedSource=True,
     )
@@ -107,7 +113,9 @@ def test_parse_hf_model_package_model_package_when_valid_input_provided() -> Non
         package_id="my-package-id",
         backend=BackendType.HF,
         package_artefacts=[
-            FileDownloadSpecs(download_url="https://dummy.com", file_name="some"),
+            FileDownloadSpecs(
+                download_url="https://dummy.com", file_handle="some", md5_hash="some"
+            ),
         ],
         quantization=Quantization.FP32,
         trusted_source=True,
@@ -121,7 +129,9 @@ def test_parse_hf_model_package_model_package_when_invalid_input_provided() -> N
         packageId="my-package-id",
         packageManifest={},
         packageFiles=[
-            RoboflowModelPackageFile(fileName="some", downloadUrl="https://dummy.com")
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
         ],
         trustedSource=True,
     )
@@ -142,7 +152,9 @@ def test_parse_torch_model_package_when_batch_size_missmatch_present() -> None:
             "quantization": "fp32",
         },
         packageFiles=[
-            RoboflowModelPackageFile(fileName="some", downloadUrl="https://dummy.com")
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
         ],
         trustedSource=True,
     )
@@ -159,7 +171,9 @@ def test_parse_torch_model_package_when_invalid_manifest_provided() -> None:
         packageId="my-package-id",
         packageManifest={},
         packageFiles=[
-            RoboflowModelPackageFile(fileName="some", downloadUrl="https://dummy.com")
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
         ],
         trustedSource=True,
     )
@@ -181,7 +195,9 @@ def test_parse_torch_model_package_when_valid_manifest_provided() -> None:
             "dynamicBatchSize": True,
         },
         packageFiles=[
-            RoboflowModelPackageFile(fileName="some", downloadUrl="https://dummy.com")
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
         ],
         trustedSource=True,
     )
@@ -197,7 +213,9 @@ def test_parse_torch_model_package_when_valid_manifest_provided() -> None:
         dynamic_batch_size_supported=True,
         static_batch_size=None,
         package_artefacts=[
-            FileDownloadSpecs(download_url="https://dummy.com", file_name="some"),
+            FileDownloadSpecs(
+                download_url="https://dummy.com", file_handle="some", md5_hash="some"
+            ),
         ],
         trusted_source=metadata.trusted_source,
     )
@@ -210,7 +228,9 @@ def test_parse_trt_model_package_when_invalid_manifest_provided() -> None:
         packageId="my-package-id",
         packageManifest={},
         packageFiles=[
-            RoboflowModelPackageFile(fileName="some", downloadUrl="https://dummy.com")
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
         ],
         trustedSource=True,
     )
@@ -248,7 +268,9 @@ def test_parse_trt_model_package_when_manifest_with_batch_size_missmatch_provide
             },
         },
         packageFiles=[
-            RoboflowModelPackageFile(fileName="some", downloadUrl="https://dummy.com")
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
         ],
         trustedSource=True,
     )
@@ -287,7 +309,9 @@ def test_parse_trt_model_package_when_manifest_with_dynamic_batch_size_missmatch
             },
         },
         packageFiles=[
-            RoboflowModelPackageFile(fileName="some", downloadUrl="https://dummy.com")
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
         ],
         trustedSource=True,
     )
@@ -329,7 +353,9 @@ def test_parse_trt_model_package_when_manifest_with_environment_specification_mi
             },
         },
         packageFiles=[
-            RoboflowModelPackageFile(fileName="some", downloadUrl="https://dummy.com")
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
         ],
         trustedSource=True,
     )
@@ -370,7 +396,9 @@ def test_parse_trt_model_package_when_manifest_with_environment_specification_mi
             },
         },
         packageFiles=[
-            RoboflowModelPackageFile(fileName="some", downloadUrl="https://dummy.com")
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
         ],
         trustedSource=True,
     )
@@ -412,7 +440,9 @@ def test_parse_trt_model_package_when_manifest_with_jetson_environment_specifica
             },
         },
         packageFiles=[
-            RoboflowModelPackageFile(fileName="some", downloadUrl="https://dummy.com")
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
         ],
         trustedSource=True,
     )
@@ -446,7 +476,9 @@ def test_parse_trt_model_package_when_manifest_with_jetson_environment_specifica
         static_batch_size=None,
         trt_package_details=trt_package_details,
         package_artefacts=[
-            FileDownloadSpecs(download_url="https://dummy.com", file_name="some"),
+            FileDownloadSpecs(
+                download_url="https://dummy.com", file_handle="some", md5_hash="some"
+            ),
         ],
         environment_requirements=environment_requirements,
         trusted_source=metadata.trusted_source,
@@ -484,7 +516,9 @@ def test_parse_trt_model_package_when_manifest_with_server_environment_specifica
             },
         },
         packageFiles=[
-            RoboflowModelPackageFile(fileName="some", downloadUrl="https://dummy.com")
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
         ],
         trustedSource=True,
     )
@@ -517,7 +551,9 @@ def test_parse_trt_model_package_when_manifest_with_server_environment_specifica
         static_batch_size=None,
         trt_package_details=trt_package_details,
         package_artefacts=[
-            FileDownloadSpecs(download_url="https://dummy.com", file_name="some"),
+            FileDownloadSpecs(
+                download_url="https://dummy.com", file_handle="some", md5_hash="some"
+            ),
         ],
         environment_requirements=environment_requirements,
         trusted_source=metadata.trusted_source,
@@ -531,7 +567,9 @@ def test_parse_onnx_model_package_when_invalid_manifest_provided() -> None:
         packageId="my-package-id",
         packageManifest={},
         packageFiles=[
-            RoboflowModelPackageFile(fileName="some", downloadUrl="https://dummy.com")
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
         ],
         trustedSource=True,
     )
@@ -555,7 +593,9 @@ def test_parse_onnx_model_package_when_valid_manifest_with_batch_size_missmatch_
             "incompatibleProviders": ["TRTExecutionProvider"],
         },
         packageFiles=[
-            RoboflowModelPackageFile(fileName="some", downloadUrl="https://dummy.com")
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
         ],
         trustedSource=True,
     )
@@ -578,7 +618,9 @@ def test_parse_onnx_model_package_when_valid_manifest_provided() -> None:
             "incompatibleProviders": ["TRTExecutionProvider"],
         },
         packageFiles=[
-            RoboflowModelPackageFile(fileName="some", downloadUrl="https://dummy.com")
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
         ],
         trustedSource=True,
     )
@@ -594,7 +636,9 @@ def test_parse_onnx_model_package_when_valid_manifest_provided() -> None:
         dynamic_batch_size_supported=True,
         static_batch_size=None,
         package_artefacts=[
-            FileDownloadSpecs(download_url="https://dummy.com", file_name="some"),
+            FileDownloadSpecs(
+                download_url="https://dummy.com", file_handle="some", md5_hash="some"
+            ),
         ],
         onnx_package_details=ONNXPackageDetails(
             opset=19,
@@ -627,7 +671,9 @@ def test_parse_model_package_metadata_when_package_manifest_type_is_to_be_ignore
             "type": "tfjs-model-package-v1",
         },
         packageFiles=[
-            RoboflowModelPackageFile(fileName="some", downloadUrl="https://dummy.com")
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
         ],
         trustedSource=True,
     )
@@ -650,7 +696,9 @@ def test_parse_model_package_metadata_when_package_manifest_type_is_not_recognis
             "type": "new-model-package-type-v1",
         },
         packageFiles=[
-            RoboflowModelPackageFile(fileName="some", downloadUrl="https://dummy.com")
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
         ],
         trustedSource=True,
     )
@@ -676,7 +724,9 @@ def test_parse_model_package_metadata_when_package_manifest_is_known_but_invalid
             "incompatibleProviders": ["TRTExecutionProvider"],
         },
         packageFiles=[
-            RoboflowModelPackageFile(fileName="some", downloadUrl="https://dummy.com")
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
         ],
         trustedSource=True,
     )
@@ -702,7 +752,9 @@ def test_parse_model_package_metadata_when_package_manifest_is_known_and_valid()
             "incompatibleProviders": ["TRTExecutionProvider"],
         },
         packageFiles=[
-            RoboflowModelPackageFile(fileName="some", downloadUrl="https://dummy.com")
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
         ],
         trustedSource=True,
     )
@@ -718,7 +770,9 @@ def test_parse_model_package_metadata_when_package_manifest_is_known_and_valid()
         dynamic_batch_size_supported=True,
         static_batch_size=None,
         package_artefacts=[
-            FileDownloadSpecs(download_url="https://dummy.com", file_name="some"),
+            FileDownloadSpecs(
+                download_url="https://dummy.com", file_handle="some", md5_hash="some"
+            ),
         ],
         onnx_package_details=ONNXPackageDetails(
             opset=19,
@@ -815,7 +869,11 @@ def test_get_one_page_of_model_metadata_when_retry_not_needed_and_parsable_respo
                         "packageId": "my-package-id",
                         "packageManifest": {},
                         "packageFiles": [
-                            {"fileName": "some", "downloadUrl": "https://link.com"}
+                            {
+                                "fileHandle": "some",
+                                "downloadUrl": "https://link.com",
+                                "md5Hash": "some",
+                            }
                         ],
                     },
                 ],
@@ -843,7 +901,9 @@ def test_get_one_page_of_model_metadata_when_retry_not_needed_and_parsable_respo
                 packageManifest={},
                 packageFiles=[
                     RoboflowModelPackageFile(
-                        fileName="some", downloadUrl="https://link.com"
+                        fileHandle="some",
+                        downloadUrl="https://link.com",
+                        md5Hash="some",
                     )
                 ],
             ),
@@ -895,8 +955,9 @@ def test_get_one_page_of_model_metadata_when_retry_needed_and_parsable_response(
                                 "packageManifest": {},
                                 "packageFiles": [
                                     {
-                                        "fileName": "some",
+                                        "fileHandle": "some",
                                         "downloadUrl": "https://link.com",
+                                        "md5Hash": "some",
                                     }
                                 ],
                             },
@@ -927,7 +988,9 @@ def test_get_one_page_of_model_metadata_when_retry_needed_and_parsable_response(
                 packageManifest={},
                 packageFiles=[
                     RoboflowModelPackageFile(
-                        fileName="some", downloadUrl="https://link.com"
+                        fileHandle="some",
+                        downloadUrl="https://link.com",
+                        md5Hash="some",
                     )
                 ],
             ),
@@ -981,7 +1044,7 @@ def test_get_model_metadata_with_pagination(requests_mock: Mocker) -> None:
                                 "packageManifest": {},
                                 "packageFiles": [
                                     {
-                                        "fileName": "some",
+                                        "fileHandle": "some",
                                         "downloadUrl": "https://link.com",
                                     }
                                 ],
@@ -1006,7 +1069,7 @@ def test_get_model_metadata_with_pagination(requests_mock: Mocker) -> None:
                                 "packageManifest": {},
                                 "packageFiles": [
                                     {
-                                        "fileName": "some",
+                                        "fileHandle": "some",
                                         "downloadUrl": "https://link.com",
                                     }
                                 ],
@@ -1035,7 +1098,7 @@ def test_get_model_metadata_with_pagination(requests_mock: Mocker) -> None:
                 packageManifest={},
                 packageFiles=[
                     RoboflowModelPackageFile(
-                        fileName="some", downloadUrl="https://link.com"
+                        fileHandle="some", downloadUrl="https://link.com", md5Hash=None
                     )
                 ],
             ),
@@ -1045,7 +1108,7 @@ def test_get_model_metadata_with_pagination(requests_mock: Mocker) -> None:
                 packageManifest={},
                 packageFiles=[
                     RoboflowModelPackageFile(
-                        fileName="some", downloadUrl="https://link.com"
+                        fileHandle="some", downloadUrl="https://link.com", md5Hash=None
                     )
                 ],
             ),
@@ -1083,7 +1146,7 @@ def test_get_roboflow_model(requests_mock: Mocker) -> None:
                                 },
                                 "packageFiles": [
                                     {
-                                        "fileName": "some",
+                                        "fileHandle": "some",
                                         "downloadUrl": "https://link.com",
                                     }
                                 ],
@@ -1131,7 +1194,7 @@ def test_get_roboflow_model(requests_mock: Mocker) -> None:
                                 },
                                 "packageFiles": [
                                     {
-                                        "fileName": "some",
+                                        "fileHandle": "some",
                                         "downloadUrl": "https://link.com",
                                     }
                                 ],
