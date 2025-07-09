@@ -1,4 +1,4 @@
-name: UNIT TESTS - inference_experimental
+name: INTEGRATION TESTS - inference_experimental (CPU)
 permissions:
   contents: read
 on:
@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  unit-tests-inference-experimental:
+  integration-tests-inference-experimental-cpu:
     runs-on:
       labels: depot-ubuntu-22.04-4
       group: public-depot
