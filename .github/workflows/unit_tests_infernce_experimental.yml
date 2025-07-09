@@ -40,7 +40,7 @@ jobs:
           python -m uv pip install -e . --python .venv
           python -m uv pip install pytest --python .venv
           python -m uv pip install pytest-xdist --python .venv
-      - name: 🧪 Unit Tests of Inference SDK
+      - name: 🧪 Unit Tests
         timeout-minutes: 30
         run: |
           source .venv/bin/activate
