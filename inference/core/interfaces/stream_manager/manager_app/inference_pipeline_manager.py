@@ -266,7 +266,8 @@ class InferencePipelineManager(Process):
 
             stream_output = None
             if parsed_payload.stream_output:
-                stream_output = parsed_payload.stream_output[0]
+                # TODO: UI sends None as stream_output for wildcard outputs
+                stream_output = parsed_payload.stream_output[0] or ""
             data_output = None
             if parsed_payload.data_output:
                 data_output = parsed_payload.data_output[0]
@@ -368,7 +369,7 @@ class InferencePipelineManager(Process):
                             f"Selected data output '{peer_connection.data_output}' not found in workflow outputs"
                         )
 
-                if peer_connection.stream_output:
+                if peer_connection.stream_output is not None:
                     frame: Optional[np.ndarray] = get_frame_from_workflow_output(
                         workflow_output=prediction,
                         frame_output_key=peer_connection.stream_output,
