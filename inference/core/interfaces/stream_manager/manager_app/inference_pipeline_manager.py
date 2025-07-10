@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import signal
 import threading
@@ -12,6 +13,8 @@ from types import FrameType
 from typing import Dict, Optional, Tuple
 
 import cv2 as cv
+import numpy as np
+import supervision as sv
 from pydantic import ValidationError
 
 from inference.core import logger
@@ -47,9 +50,13 @@ from inference.core.interfaces.stream_manager.manager_app.webrtc import (
     RTCPeerConnectionWithFPS,
     WebRTCPipelineWatchDog,
     WebRTCVideoFrameProducer,
+    get_frame_from_workflow_output,
     init_rtc_peer_connection,
 )
 from inference.core.utils.async_utils import Queue as SyncAsyncQueue
+from inference.core.workflows.core_steps.common.serializers import (
+    serialise_sv_detections,
+)
 from inference.core.workflows.errors import WorkflowSyntaxError
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 
@@ -257,6 +264,14 @@ class InferencePipelineManager(Process):
             to_inference_queue = SyncAsyncQueue(loop=loop, maxsize=10)
             from_inference_queue = SyncAsyncQueue(loop=loop, maxsize=10)
 
+            stream_output = None
+            if parsed_payload.stream_output:
+                # TODO: UI sends None as stream_output for wildcard outputs
+                stream_output = parsed_payload.stream_output[0] or ""
+            data_output = None
+            if parsed_payload.data_output:
+                data_output = parsed_payload.data_output[0]
+
             future = asyncio.run_coroutine_threadsafe(
                 init_rtc_peer_connection(
                     webrtc_offer=webrtc_offer,
@@ -269,6 +284,8 @@ class InferencePipelineManager(Process):
                     min_consecutive_on_time=parsed_payload.min_consecutive_on_time,
                     processing_timeout=parsed_payload.processing_timeout,
                     fps_probe_frames=parsed_payload.fps_probe_frames,
+                    data_output=data_output,
+                    stream_output=stream_output,
                 ),
                 loop,
             )
@@ -307,20 +324,82 @@ class InferencePipelineManager(Process):
             def webrtc_sink(
                 prediction: Dict[str, WorkflowImageData], video_frame: VideoFrame
             ) -> None:
+                try:
+                    asyncio.get_event_loop()
+                except RuntimeError:
+                    asyncio.set_event_loop(loop)
+
                 errors = []
-                if not any(
-                    isinstance(v, WorkflowImageData) for v in prediction.values()
+
+                if (
+                    peer_connection.data_output is not None
+                    and peer_connection.data_channel
+                    and peer_connection.data_channel.readyState == "open"
                 ):
-                    errors.append("Visualisation blocks were not executed")
-                    errors.append("or workflow was not configured to output visuals.")
-                    errors.append(
-                        "Please try to adjust the scene so models detect objects"
+                    if peer_connection.data_output in prediction:
+                        workflow_output = prediction[peer_connection.data_output]
+                        serialized_data = None
+                        if isinstance(workflow_output, WorkflowImageData):
+                            errors.append(
+                                f"Selected data output '{peer_connection.data_output}' contains image, please use video output instead"
+                            )
+                        elif isinstance(workflow_output, sv.Detections):
+                            try:
+                                parsed_detections = serialise_sv_detections(
+                                    workflow_output
+                                )
+                                serialized_data = json.dumps(parsed_detections)
+                            except Exception as error:
+                                errors.append(
+                                    f"Failed to serialise output: {peer_connection.data_output}"
+                                )
+                        elif isinstance(workflow_output, dict):
+                            try:
+                                serialized_data = json.dumps(workflow_output)
+                            except Exception as error:
+                                errors.append(
+                                    f"Failed to serialise output: {peer_connection.data_output}"
+                                )
+                        else:
+                            serialized_data = str(workflow_output)
+                        if serialized_data is not None:
+                            peer_connection.data_channel.send(serialized_data)
+                    else:
+                        errors.append(
+                            f"Selected data output '{peer_connection.data_output}' not found in workflow outputs"
+                        )
+
+                if peer_connection.stream_output is not None:
+                    frame: Optional[np.ndarray] = get_frame_from_workflow_output(
+                        workflow_output=prediction,
+                        frame_output_key=peer_connection.stream_output,
                     )
-                    errors.append("or stop preview, update workflow and try again.")
-                    result_frame = video_frame.image.copy()
+                    if frame is None:
+                        for k in prediction.keys():
+                            frame = get_frame_from_workflow_output(
+                                workflow_output=prediction,
+                                frame_output_key=k,
+                            )
+                            if frame is not None:
+                                errors.append(
+                                    f"'{peer_connection.stream_output}' not found in workflow outputs, using '{k}' instead"
+                                )
+                                frame = frame.copy()
+                                break
+                    if frame is None:
+                        errors.append("Visualisation blocks were not executed")
+                        errors.append(
+                            "or workflow was not configured to output visuals."
+                        )
+                        errors.append(
+                            "Please try to adjust the scene so models detect objects"
+                        )
+                        errors.append("or stop preview, update workflow and try again.")
+                        frame = video_frame.image.copy()
+
                     for row, error in enumerate(errors):
-                        result_frame = cv.putText(
-                            result_frame,
+                        frame = cv.putText(
+                            frame,
                             error,
                             (10, 20 + 30 * row),
                             cv.FONT_HERSHEY_SIMPLEX,
@@ -328,18 +407,7 @@ class InferencePipelineManager(Process):
                             (0, 255, 0),
                             2,
                         )
-                    from_inference_queue.sync_put(result_frame)
-                    return
-                if parsed_payload.stream_output[0] not in prediction or not isinstance(
-                    prediction[parsed_payload.stream_output[0]], WorkflowImageData
-                ):
-                    for output in prediction.values():
-                        if isinstance(output, WorkflowImageData):
-                            from_inference_queue.sync_put(output.numpy_image)
-                            return
-                from_inference_queue.sync_put(
-                    prediction[parsed_payload.stream_output[0]].numpy_image
-                )
+                    from_inference_queue.sync_put(frame)
 
             buffer_sink = InMemoryBufferSink.init(
                 queue_size=parsed_payload.sink_configuration.results_buffer_size,

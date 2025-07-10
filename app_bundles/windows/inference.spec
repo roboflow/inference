@@ -13,6 +13,7 @@ peft_datas, peft_bins, peft_hiddenimports                     = collect_all('pef
 cython_datas, cython_bins, cython_hiddenimports               = collect_all('Cython')
 tldextract_datas, tldextract_binaries, tldextract_hidden      = collect_all("tldextract")
 inference_datas, inference_bins, inference_hidden = collect_all('inference', include_py_files=True)
+scipy_datas, scipy_binaries, scipy_hiddenimports              = collect_all('scipy')
 
 a = Analysis(
     ['run_inference.py'],
@@ -23,16 +24,18 @@ binaries=[
         *peft_bins,
         *cython_bins,
         *tldextract_binaries,
-        *inference_bins
+        *inference_bins,
+        *scipy_binaries
     ],
     datas=[
-        *clip_datas, 
-        *rasterio_datas, 
+        *clip_datas,
+        *rasterio_datas,
         *transformers_datas,
         *peft_datas,
         *cython_datas,
         *tldextract_datas,
         *inference_datas,
+        *scipy_datas,
         ('../../inference/core/interfaces/http/builder/editor.html', 'inference/core/interfaces/http/builder')
     ],
     hiddenimports=[
@@ -41,6 +44,7 @@ binaries=[
         *transformers_hiddenimports,
         *peft_hiddenimports,
         *cython_hiddenimports,
+        *scipy_hiddenimports,
         'psutil',
         'rasterio',
         'rasterio.sample',
