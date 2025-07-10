@@ -11,6 +11,14 @@ def stream_file_lines(path: str) -> Generator[str, None, None]:
                 yield stripped_line
 
 
+def stream_file_bytes(path: str, chunk_size: int) -> Generator[bytes, None, None]:
+    with open(path, "rb") as f:
+        chunk = f.read(chunk_size)
+        while chunk:
+            yield chunk
+            chunk = f.read(chunk_size)
+
+
 def read_json(path: str) -> Optional[Union[dict, list]]:
     with open(path) as f:
         return json.load(f)
