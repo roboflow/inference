@@ -18,12 +18,12 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
 WORKDIR /build
 
-COPY inference_experimental/uv.lock uv.lock
-COPY inference_experimental/pyproject.toml pyproject.toml
+COPY uv.lock uv.lock
+COPY pyproject.toml pyproject.toml
 
 RUN UV_PROJECT_ENVIRONMENT=/usr $HOME/.local/bin/uv sync --locked --extra torch-cu124 --extra onnx-cu12 --extra mediapipe --extra grounding-dino --extra trt10
 
-COPY inference_experimental/inference_exp inference_exp
+COPY inference_exp inference_exp
 RUN $HOME/.local/bin/uv build
 RUN WHEEL=$(ls dist/inference_exp-*.whl) && $HOME/.local/bin/uv pip install --system "${WHEEL}"
 
