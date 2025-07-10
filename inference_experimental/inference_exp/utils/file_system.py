@@ -12,6 +12,7 @@ def stream_file_lines(path: str) -> Generator[str, None, None]:
 
 
 def stream_file_bytes(path: str, chunk_size: int) -> Generator[bytes, None, None]:
+    chunk_size = max(chunk_size, 1)
     with open(path, "rb") as f:
         chunk = f.read(chunk_size)
         while chunk:

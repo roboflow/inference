@@ -91,7 +91,7 @@ class BaseAutoLoadMetadataCache(AutoResolutionCache):
                 datetime.now() - cache_entry.created_at
             ).total_seconds() / 60
             if minutes_since_entry_created > AUTO_LOADER_CACHE_EXPIRATION_MINUTES:
-                remove_file_if_exists(path=path_for_cached_content)
+                self.invalidate(auto_negotiation_hash=auto_negotiation_hash)
                 verbose_info(
                     message=f"Auto-negotiation cache for hash: {auto_negotiation_hash} is expired - removed its content",
                     verbose_requested=self._verbose,
@@ -110,7 +110,9 @@ class BaseAutoLoadMetadataCache(AutoResolutionCache):
         path_for_cached_content = generate_auto_resolution_cache_path(
             auto_negotiation_hash=auto_negotiation_hash
         )
-        remove_file_if_exists(path=path_for_cached_content)
+        if not os.path.exists(path=path_for_cached_content):
+            return None
+        os.remove(path=path_for_cached_content)
         if self._on_file_deleted:
             self._on_file_deleted(path_for_cached_content)
 

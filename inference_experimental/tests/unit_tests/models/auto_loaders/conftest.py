@@ -1,4 +1,6 @@
 import os.path
+import tempfile
+from typing import Generator
 
 import pytest
 
@@ -51,3 +53,9 @@ def unknown_backend_config_path() -> str:
 @pytest.fixture
 def full_config_path() -> str:
     return os.path.join(TEST_MODULES_DIR, "example_model_configs", "full_config.json")
+
+
+@pytest.fixture(scope="function")
+def empty_local_dir() -> Generator[str, None, None]:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        yield tmp_dir

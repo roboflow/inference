@@ -1,9 +1,23 @@
+import json
+import os.path
+from datetime import datetime
+from unittest import mock
+from unittest.mock import MagicMock, call
+
 import numpy as np
 import pytest
 from inference_exp import ClassificationPrediction
 from inference_exp.errors import CorruptedModelPackageError, ModelLoadingError
+from inference_exp.models.auto_loaders import core
+from inference_exp.models.auto_loaders.auto_resolution_cache import (
+    AutoResolutionCacheEntry,
+)
 from inference_exp.models.auto_loaders.core import (
     attempt_loading_model_from_local_storage,
+    create_symlinks_to_shared_blobs,
+    dump_auto_resolution_cache,
+    dump_model_config_for_offline_use,
+    generate_model_package_cache_path,
     load_class_from_path,
     parse_model_config,
 )
@@ -128,3 +142,245 @@ def test_parse_model_config_when_full_config_provided(full_config_path: str) -> 
         model_module="model.py",
         model_class="MyClassificationModel",
     )
+
+
+@mock.patch.object(core, "INFERENCE_HOME", "/some")
+def test_generate_model_package_cache_path() -> None:
+    # when
+    result = generate_model_package_cache_path(
+        model_id="my-model", package_id="my-package"
+    )
+
+    # then
+    assert result == "/some/models-cache/my-model/my-package"
+
+
+def test_dump_auto_resolution_cache_when_cache_disabled() -> None:
+    # given
+    auto_resolution_cache = MagicMock()
+
+    # when
+    dump_auto_resolution_cache(
+        use_auto_resolution_cache=False,
+        auto_resolution_cache=auto_resolution_cache,
+        auto_negotiation_hash="my-hash",
+        model_id="my-model",
+        model_package_id="my-package",
+        model_architecture="yolov8",
+        task_type="object-detection",
+        backend_type=BackendType.ONNX,
+        resolved_files={"some/file.txt"},
+    )
+
+    # then
+    auto_resolution_cache.assert_not_called()
+
+
+@mock.patch.object(core, "datetime")
+def test_dump_auto_resolution_cache_when_cache_enabled(
+    datetime_mock: MagicMock,
+) -> None:
+    # given
+    now = datetime.now()
+    auto_resolution_cache = MagicMock()
+    datetime_mock.now.return_value = now
+
+    # when
+    dump_auto_resolution_cache(
+        use_auto_resolution_cache=True,
+        auto_resolution_cache=auto_resolution_cache,
+        auto_negotiation_hash="my-hash",
+        model_id="my-model",
+        model_package_id="my-package",
+        model_architecture="yolov8",
+        task_type="object-detection",
+        backend_type=BackendType.ONNX,
+        resolved_files={"some/file.txt"},
+    )
+
+    # then
+    auto_resolution_cache.register.assert_called_once_with(
+        auto_negotiation_hash="my-hash",
+        cache_entry=AutoResolutionCacheEntry(
+            model_id="my-model",
+            model_package_id="my-package",
+            resolved_files={"some/file.txt"},
+            model_architecture="yolov8",
+            task_type="object-detection",
+            backend_type=BackendType.ONNX,
+            created_at=now,
+        ),
+    )
+
+
+def test_dump_model_config_for_offline_use_when_file_exists(
+    empty_local_dir: str,
+) -> None:
+    # given
+    config_path = os.path.join(empty_local_dir, "model_config.json")
+    with open(config_path, "w") as f:
+        json.dump(
+            {
+                "model_architecture": "yolov8",
+                "task_type": "object-detection",
+                "backend_type": BackendType.ONNX,
+            },
+            f,
+        )
+    on_file_created = MagicMock()
+
+    # then
+    dump_model_config_for_offline_use(
+        config_path=config_path,
+        model_architecture="yolov8",
+        task_type="object-detection",
+        backend_type=BackendType.ONNX,
+        file_lock_acquire_timeout=10,
+        on_file_created=on_file_created,
+    )
+
+    # then
+    on_file_created.assert_not_called()
+
+
+def test_dump_model_config_for_offline_use_when_file_does_not_exists(
+    empty_local_dir: str,
+) -> None:
+    # given
+    config_path = os.path.join(empty_local_dir, "model_config.json")
+    on_file_created = MagicMock()
+
+    # then
+    dump_model_config_for_offline_use(
+        config_path=config_path,
+        model_architecture="yolov8",
+        task_type="object-detection",
+        backend_type=BackendType.ONNX,
+        file_lock_acquire_timeout=10,
+        on_file_created=on_file_created,
+    )
+
+    # then
+    on_file_created.assert_called_once_with(config_path)
+    with open(config_path) as f:
+        decoded = json.load(f)
+    assert decoded == {
+        "model_architecture": "yolov8",
+        "task_type": "object-detection",
+        "backend_type": "onnx",
+    }
+
+
+def test_create_symlinks_to_shared_blobs_when_hooks_provided(
+    empty_local_dir: str,
+) -> None:
+    # given
+    shared_dir = os.path.join(empty_local_dir, "shared")
+    shared_file_a = os.path.join(shared_dir, "a.txt")
+    _create_file(path=shared_file_a, content="a")
+    shared_file_b = os.path.join(shared_dir, "b.txt")
+    _create_file(path=shared_file_b, content="b")
+    model_dir = os.path.join(shared_dir, "model_dir")
+    broken_file = os.path.join(shared_dir, "broken.txt")
+    _create_file(path=broken_file, content="broken")
+    os.makedirs(model_dir, exist_ok=True)
+    existing_model_file = os.path.join(model_dir, "existing.txt")
+    _create_file(path=existing_model_file, content="existing")
+    initially_broken_link = os.path.join(model_dir, "initially_broken.txt")
+    os.symlink(broken_file, initially_broken_link)
+    os.remove(broken_file)
+    shared_files_mapping = {
+        "my_file_a.txt": shared_file_a,
+        "my_file_b.txt": shared_file_b,
+        "existing.txt": shared_file_a,
+        "initially_broken.txt": shared_file_b,
+    }
+    on_symlink_created = MagicMock()
+    on_symlink_deleted = MagicMock()
+
+    # when
+    result = create_symlinks_to_shared_blobs(
+        model_dir=model_dir,
+        shared_files_mapping=shared_files_mapping,
+        on_symlink_deleted=on_symlink_deleted,
+        on_symlink_created=on_symlink_created,
+    )
+
+    # then
+    assert result == {
+        "my_file_a.txt": os.path.join(model_dir, "my_file_a.txt"),
+        "my_file_b.txt": os.path.join(model_dir, "my_file_b.txt"),
+        "existing.txt": os.path.join(model_dir, "existing.txt"),
+        "initially_broken.txt": os.path.join(model_dir, "initially_broken.txt"),
+    }
+    on_symlink_deleted.assert_called_once_with(initially_broken_link)
+    on_symlink_created.assert_has_calls(
+        [
+            call.__bool__(),
+            call(shared_file_a, os.path.join(model_dir, "my_file_a.txt")),
+            call.__bool__(),
+            call(shared_file_b, os.path.join(model_dir, "my_file_b.txt")),
+            call.__bool__(),
+            call(shared_file_b, os.path.join(model_dir, "initially_broken.txt")),
+        ]
+    )
+    assert _read_file(result["my_file_a.txt"]) == "a"
+    assert _read_file(result["my_file_b.txt"]) == "b"
+    assert _read_file(result["existing.txt"]) == "existing"
+    assert _read_file(result["initially_broken.txt"]) == "b"
+
+
+def test_create_symlinks_to_shared_blobs_when_hooks_not_provided(
+    empty_local_dir: str,
+) -> None:
+    # given
+    shared_dir = os.path.join(empty_local_dir, "shared")
+    shared_file_a = os.path.join(shared_dir, "a.txt")
+    _create_file(path=shared_file_a, content="a")
+    shared_file_b = os.path.join(shared_dir, "b.txt")
+    _create_file(path=shared_file_b, content="b")
+    model_dir = os.path.join(shared_dir, "model_dir")
+    broken_file = os.path.join(shared_dir, "broken.txt")
+    _create_file(path=broken_file, content="broken")
+    os.makedirs(model_dir, exist_ok=True)
+    existing_model_file = os.path.join(model_dir, "existing.txt")
+    _create_file(path=existing_model_file, content="existing")
+    initially_broken_link = os.path.join(model_dir, "initially_broken.txt")
+    os.symlink(broken_file, initially_broken_link)
+    os.remove(broken_file)
+    shared_files_mapping = {
+        "my_file_a.txt": shared_file_a,
+        "my_file_b.txt": shared_file_b,
+        "existing.txt": shared_file_a,
+        "initially_broken.txt": shared_file_b,
+    }
+
+    # when
+    result = create_symlinks_to_shared_blobs(
+        model_dir=model_dir,
+        shared_files_mapping=shared_files_mapping,
+    )
+
+    # then
+    assert result == {
+        "my_file_a.txt": os.path.join(model_dir, "my_file_a.txt"),
+        "my_file_b.txt": os.path.join(model_dir, "my_file_b.txt"),
+        "existing.txt": os.path.join(model_dir, "existing.txt"),
+        "initially_broken.txt": os.path.join(model_dir, "initially_broken.txt"),
+    }
+    assert _read_file(result["my_file_a.txt"]) == "a"
+    assert _read_file(result["my_file_b.txt"]) == "b"
+    assert _read_file(result["existing.txt"]) == "existing"
+    assert _read_file(result["initially_broken.txt"]) == "b"
+
+
+def _create_file(path: str, content: str) -> None:
+    parent_dir = os.path.dirname(path)
+    os.makedirs(parent_dir, exist_ok=True)
+    with open(path, "w") as f:
+        f.write(content)
+
+
+def _read_file(path: str) -> str:
+    with open(path, "r") as f:
+        return f.read()

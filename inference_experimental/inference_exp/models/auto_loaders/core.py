@@ -535,6 +535,8 @@ def dump_model_config_for_offline_use(
     on_file_created: Optional[Callable[[str], None]] = None,
 ) -> None:
     if os.path.exists(config_path):
+        # we kinda trust that what we did previously is right - in case when the file
+        # gets corrupted we may end up in problem - to be verified empirically
         return None
     target_file_dir, target_file_name = os.path.split(config_path)
     lock_path = os.path.join(target_file_dir, f".{target_file_name}.lock")
@@ -580,17 +582,6 @@ def dump_auto_resolution_cache(
 
 def generate_model_package_cache_path(model_id: str, package_id: str) -> str:
     return os.path.join(INFERENCE_HOME, "models-cache", model_id, package_id)
-
-
-def _dump_auto_resolution_cache(
-    path: str,
-    content: dict,
-    file_lock_acquire_timeout: int,
-) -> None:
-    target_file_dir, target_file_name = os.path.split(path)
-    lock_path = os.path.join(target_file_dir, f".{target_file_name}.lock")
-    with FileLock(lock_path, timeout=file_lock_acquire_timeout):
-        dump_json(path=path, content=content)
 
 
 def attempt_loading_model_from_local_storage(
