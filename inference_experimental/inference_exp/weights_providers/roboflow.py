@@ -147,6 +147,7 @@ def get_one_page_of_model_metadata(
     try:
         return RoboflowModelMetadata.model_validate(response.json()["modelMetadata"])
     except (ValueError, ValidationError, KeyError) as error:
+        # TODO: either handle here or fix API, which return 200 with content {error: "endpoint not found"} id endpoint isnt available
         raise ModelRetrievalError(
             message=f"Could not decode Roboflow API response when trying to retrieve model {model_id}. If that problem "
             f"is not ephemeral - contact Roboflow.",
