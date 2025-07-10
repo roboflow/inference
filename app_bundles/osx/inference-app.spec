@@ -13,6 +13,8 @@ peft_datas, peft_bins, peft_hiddenimports                     = collect_all('pef
 cython_datas, cython_bins, cython_hiddenimports               = collect_all('Cython')
 tldextract_datas, tldextract_binaries, tldextract_hidden      = collect_all("tldextract")
 inference_datas, inference_bins, inference_hidden = collect_all('inference', include_py_files=True)
+scipy_datas, scipy_binaries, scipy_hiddenimports              = collect_all('scipy')
+
 
 # ---------------------------------------------------------------------------
 opensslnames = ("libcrypto.3.dylib", "libssl.3.dylib")
@@ -29,6 +31,7 @@ a = Analysis(
         *cython_bins,
         *tldextract_binaries,
         *inference_bins,
+        *scipy_binaries,
     ],
     datas=[
         *clip_datas,
@@ -38,6 +41,7 @@ a = Analysis(
         *cython_datas,
         *tldextract_datas,
         *inference_datas,
+        *scipy_datas,
         # Manually include editor.html for the builder interface
         ('../../inference/core/interfaces/http/builder/editor.html', 'inference/core/interfaces/http/builder'),
     ],
@@ -47,6 +51,7 @@ a = Analysis(
         *transformers_hiddenimports,
         *peft_hiddenimports,
         *cython_hiddenimports,
+        *scipy_hiddenimports,
         'psutil',
         'rasterio',
         'rasterio.sample',
@@ -61,6 +66,11 @@ a = Analysis(
         'Cython',
         'inference',
         'pyvips',
+        'scipy',
+        'scipy.linalg.cython_lapack',
+        'scipy.linalg.cython_blas',
+        'scipy.linalg.cython_overflow',
+        'scipy._lib.messagestream',
         *inference_hidden,
     ],
     hookspath=['hooks'],     # place custom hooks here if you like
