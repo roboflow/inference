@@ -1,7 +1,6 @@
 import importlib
 import importlib.util
 import os.path
-from copy import copy
 from datetime import datetime
 from functools import partial
 from typing import Callable, Dict, List, Optional, Set, Tuple, Union
@@ -90,7 +89,7 @@ class AutoModel:
         model_download_file_lock_acquire_timeout: int = 10,
         allow_untrusted_packages: bool = False,
         trt_engine_host_code_allowed: bool = True,
-        allow_local_code_packages: bool = False,
+        allow_local_code_packages: bool = True,
         verify_hash_while_download: bool = True,
         download_files_without_hash: bool = False,
         use_auto_resolution_cache: bool = True,
@@ -102,7 +101,7 @@ class AutoModel:
         if model_storage_manager is None:
             model_storage_manager = LiberalModelStorageManager()
         if model_storage_manager.is_model_access_forbidden(
-            model_name_or_path=model_name_or_path, api_key=api_key
+            model_id=model_name_or_path, api_key=api_key
         ):
             raise UnauthorizedModelAccessError(
                 message=f"Unauthorized not access model with ID: {model_package_id}. Are you sure you use valid "
@@ -212,6 +211,7 @@ class AutoModel:
                 download_files_without_hash=download_files_without_hash,
                 auto_resolution_cache=auto_resolution_cache,
                 use_auto_resolution_cache=use_auto_resolution_cache,
+                verbose=verbose,
             )
         if not allow_direct_local_storage_loading:
             raise DirectLocalStorageAccessError(
@@ -439,14 +439,14 @@ def initialize_model(
     ]
     file_specs_with_hash = [f for f in files_specs if f[2] is not None]
     file_specs_without_hash = [f for f in files_specs if f[2] is None]
-    shared_blobs_dir = os.path.join(INFERENCE_HOME, "shared-blobs")
+    shared_blobs_dir = generate_shared_blobs_path()
     model_package_cache_dir = generate_model_package_cache_path(
         model_id=model_id,
         package_id=model_package.package_id,
     )
-    os.makedirs(shared_blobs_dir, exist_ok=True)
+    os.makedirs(model_package_cache_dir, exist_ok=True)
     if on_model_package_dir_created:
-        on_model_package_dir_created(shared_blobs_dir)
+        on_model_package_dir_created(model_package_cache_dir)
     shared_files_mapping = download_files_to_directory(
         target_dir=shared_blobs_dir,
         files_specs=file_specs_with_hash,
@@ -578,6 +578,10 @@ def dump_auto_resolution_cache(
     auto_resolution_cache.register(
         auto_negotiation_hash=auto_negotiation_hash, cache_entry=cache_content
     )
+
+
+def generate_shared_blobs_path() -> str:
+    return os.path.join(INFERENCE_HOME, "shared-blobs")
 
 
 def generate_model_package_cache_path(model_id: str, package_id: str) -> str:
