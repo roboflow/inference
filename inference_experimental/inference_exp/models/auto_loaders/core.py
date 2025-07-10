@@ -19,11 +19,11 @@ from inference_exp.logger import LOGGER, verbose_info
 from inference_exp.models.auto_loaders.auto_negotiation import negotiate_model_packages
 from inference_exp.models.auto_loaders.auto_resolution_cache import (
     AutoResolutionCache,
+    AutoResolutionCacheEntry,
     BaseAutoLoadMetadataCache,
 )
 from inference_exp.models.auto_loaders.entities import (
     MODEL_CONFIG_FILE_NAME,
-    AutoResolutionCacheEntry,
     InferenceModelConfig,
     ModelArchitecture,
     TaskType,
@@ -113,9 +113,25 @@ class AutoModel:
                 help_url="https://todo",
             )
         if auto_resolution_cache is None:
+
+            def register_file_created_for_model_package(
+                file_path: str, model_id: str, package_id: str
+            ) -> None:
+                access_identifiers = AccessIdentifiers(
+                    model_id=model_id,
+                    package_id=package_id,
+                    api_key=api_key,
+                )
+                model_storage_manager.on_file_created(
+                    file_path=file_path,
+                    access_identifiers=access_identifiers,
+                )
+
             auto_resolution_cache = BaseAutoLoadMetadataCache(
                 file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
                 verbose=verbose,
+                on_file_created=register_file_created_for_model_package,
+                on_file_deleted=model_storage_manager.on_file_deleted,
             )
         model_init_kwargs = {
             "onnx_execution_providers": onnx_execution_providers,
@@ -284,39 +300,6 @@ def all_files_exist(files: List[str]) -> bool:
     return all(os.path.exists(f) for f in files)
 
 
-class FileLoadingMiddleware:
-
-    def __init__(
-        self,
-        upstream_on_file_allocated: Optional[Callable[[str], None]] = None,
-        upstream_on_file_renamed: Optional[Callable[[str, str], None]] = None,
-        upstream_on_symlink_created: Optional[Callable[[str, str], None]] = None,
-    ):
-        self._upstream_on_file_allocated = upstream_on_file_allocated
-        self._upstream_on_file_renamed = upstream_on_file_renamed
-        self._upstream_on_symlink_created = upstream_on_symlink_created
-        self._directory_content = set()
-
-    def on_file_allocated(self, file: str) -> None:
-        if self._upstream_on_file_allocated:
-            self._upstream_on_file_allocated(file)
-        self._directory_content.add(file)
-
-    def on_file_renamed(self, old: str, new: str) -> None:
-        if self._upstream_on_file_renamed:
-            self._upstream_on_file_renamed(old, new)
-        self._directory_content.remove(old)
-        self._directory_content.add(new)
-
-    def on_symlink_created(self, source: str, target: str) -> None:
-        if self._upstream_on_symlink_created:
-            self._upstream_on_symlink_created(source, target)
-        self._directory_content.add(target)
-
-    def get_all_files_in_directory(self) -> Set[str]:
-        return copy(self._directory_content)
-
-
 def attempt_loading_matching_model_packages(
     model_id: str,
     model_architecture: ModelArchitecture,
@@ -354,20 +337,6 @@ def attempt_loading_matching_model_packages(
             verbose_requested=verbose,
         )
         try:
-            loading_middleware = FileLoadingMiddleware(
-                upstream_on_file_allocated=partial(
-                    model_storage_manager.on_file_allocated,
-                    access_identifiers=access_identifiers,
-                ),
-                upstream_on_file_renamed=partial(
-                    model_storage_manager.on_file_renamed,
-                    access_identifiers=access_identifiers,
-                ),
-                upstream_on_symlink_created=partial(
-                    model_storage_manager.on_symlink_created,
-                    access_identifiers=access_identifiers,
-                ),
-            )
             model = initialize_model(
                 model_id=model_id,
                 model_architecture=model_architecture,
@@ -375,26 +344,31 @@ def attempt_loading_matching_model_packages(
                 model_package=model_package,
                 model_download_file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
                 model_init_kwargs=model_init_kwargs,
+                auto_resolution_cache=auto_resolution_cache,
+                auto_negotiation_hash=auto_negotiation_hash,
                 verify_hash_while_download=verify_hash_while_download,
                 download_files_without_hash=download_files_without_hash,
                 on_model_package_dir_created=partial(
                     model_storage_manager.on_model_package_access_granted,
                     access_identifiers=access_identifiers,
                 ),
-                on_file_allocated=loading_middleware.on_file_allocated,
-                on_file_renamed=loading_middleware.on_file_renamed,
-                on_symlink_created=loading_middleware.on_symlink_created,
-            )
-            dump_auto_resolution_cache(
+                on_file_created=partial(
+                    model_storage_manager.on_file_created,
+                    access_identifiers=access_identifiers,
+                ),
+                on_file_renamed=partial(
+                    model_storage_manager.on_file_renamed,
+                    access_identifiers=access_identifiers,
+                ),
+                on_symlink_created=partial(
+                    model_storage_manager.on_symlink_created,
+                    access_identifiers=access_identifiers,
+                ),
+                on_symlink_deleted=partial(
+                    model_storage_manager.on_symlink_deleted,
+                    access_identifiers=access_identifiers,
+                ),
                 use_auto_resolution_cache=use_auto_resolution_cache,
-                auto_resolution_cache=auto_resolution_cache,
-                auto_negotiation_hash=auto_negotiation_hash,
-                model_id=model_id,
-                model_package_id=model_package.package_id,
-                model_architecture=model_architecture,
-                task_type=task_type,
-                backend_type=model_package.backend,
-                resolved_files=loading_middleware.get_all_files_in_directory(),
             )
             return model
         except Exception as error:
@@ -431,13 +405,17 @@ def initialize_model(
     task_type: Optional[TaskType],
     model_package: ModelPackageMetadata,
     model_init_kwargs: dict,
+    auto_resolution_cache: AutoResolutionCache,
+    auto_negotiation_hash: str,
     model_download_file_lock_acquire_timeout: int = 10,
     verify_hash_while_download: bool = True,
     download_files_without_hash: bool = False,
     on_model_package_dir_created: Optional[Callable[[str], None]] = None,
-    on_file_allocated: Optional[Callable[[str], None]] = None,
+    on_file_created: Optional[Callable[[str], None]] = None,
     on_file_renamed: Optional[Callable[[str, str], None]] = None,
     on_symlink_created: Optional[Callable[[str, str], None]] = None,
+    on_symlink_deleted: Optional[Callable[[str], None]] = None,
+    use_auto_resolution_cache: bool = True,
 ) -> AnyModel:
     model_class = resolve_model_class(
         model_architecture=model_architecture,
@@ -476,22 +454,23 @@ def initialize_model(
         verify_hash_while_download=verify_hash_while_download,
         download_files_without_hash=download_files_without_hash,
         name_after="md5_hash",
-        on_file_allocated=on_file_allocated,
+        on_file_created=on_file_created,
         on_file_renamed=on_file_renamed,
     )
-    _ = download_files_to_directory(
+    model_specific_files_mapping = download_files_to_directory(
         target_dir=model_package_cache_dir,
         files_specs=file_specs_without_hash,
         file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
         verify_hash_while_download=verify_hash_while_download,
         download_files_without_hash=download_files_without_hash,
-        on_file_allocated=on_file_allocated,
+        on_file_created=on_file_created,
         on_file_renamed=on_file_renamed,
     )
-    create_symlinks_to_shared_blobs(
+    symlinks_mapping = create_symlinks_to_shared_blobs(
         model_dir=model_package_cache_dir,
         shared_files_mapping=shared_files_mapping,
         on_symlink_created=on_symlink_created,
+        on_symlink_deleted=on_symlink_deleted,
     )
     config_path = os.path.join(model_package_cache_dir, MODEL_CONFIG_FILE_NAME)
     dump_model_config_for_offline_use(
@@ -500,29 +479,51 @@ def initialize_model(
         task_type=task_type,
         backend_type=model_package.backend,
         file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
-        on_file_allocated=on_file_allocated,
+        on_file_created=on_file_created,
     )
-    return model_class.from_pretrained(model_package_cache_dir, **model_init_kwargs)
+    resolved_files = set(shared_files_mapping.values())
+    resolved_files.update(model_specific_files_mapping.values())
+    resolved_files.update(symlinks_mapping.values())
+    resolved_files.add(config_path)
+    model = model_class.from_pretrained(model_package_cache_dir, **model_init_kwargs)
+    dump_auto_resolution_cache(
+        use_auto_resolution_cache=use_auto_resolution_cache,
+        auto_resolution_cache=auto_resolution_cache,
+        auto_negotiation_hash=auto_negotiation_hash,
+        model_id=model_id,
+        model_package_id=model_package.package_id,
+        model_architecture=model_architecture,
+        task_type=task_type,
+        backend_type=model_package.backend,
+        resolved_files=resolved_files,
+    )
+    return model
 
 
 def create_symlinks_to_shared_blobs(
     model_dir: str,
     shared_files_mapping: Dict[FileHandle, str],
     on_symlink_created: Optional[Callable[[str, str], None]] = None,
-) -> None:
+    on_symlink_deleted: Optional[Callable[[str], None]] = None,
+) -> Dict[str, str]:
     # this function will not override existing files
     os.makedirs(model_dir, exist_ok=True)
+    result = {}
     for file_handle, source_path in shared_files_mapping.items():
         link_name = os.path.join(model_dir, file_handle)
         target_path = shared_files_mapping[file_handle]
+        result[file_handle] = link_name
         if os.path.exists(link_name):
             continue
         if os.path.islink(link_name):
             # file does not exist, but is link = broken symlink - we should purge
             os.remove(link_name)
+            if on_symlink_deleted:
+                on_symlink_deleted(link_name)
         os.symlink(target_path, link_name)
         if on_symlink_created:
             on_symlink_created(shared_files_mapping[file_handle], link_name)
+    return result
 
 
 def dump_model_config_for_offline_use(
@@ -531,7 +532,7 @@ def dump_model_config_for_offline_use(
     task_type: TaskType,
     backend_type: Optional[BackendType],
     file_lock_acquire_timeout: int,
-    on_file_allocated: Optional[Callable[[str], None]] = None,
+    on_file_created: Optional[Callable[[str], None]] = None,
 ) -> None:
     if os.path.exists(config_path):
         return None
@@ -546,8 +547,8 @@ def dump_model_config_for_offline_use(
                 "backend_type": backend_type,
             },
         )
-        if on_file_allocated:
-            on_file_allocated(config_path)
+        if on_file_created:
+            on_file_created(config_path)
 
 
 def dump_auto_resolution_cache(

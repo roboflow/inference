@@ -79,7 +79,7 @@ def download_files_to_directory(
     verify_hash_while_download: bool = True,
     download_files_without_hash: bool = False,
     name_after: Literal["file_handle", "md5_hash"] = "file_handle",
-    on_file_allocated: Optional[Callable[[str], None]] = None,
+    on_file_created: Optional[Callable[[str], None]] = None,
     on_file_renamed: Optional[Callable[[str, str], None]] = None,
 ) -> Dict[str, str]:
     if name_after not in {"file_handle", "md5_hash"}:
@@ -143,7 +143,7 @@ def download_files_to_directory(
                     request_timeout=request_timeout,
                     max_threads_per_download=max_threads_per_download,
                     file_lock_acquire_timeout=file_lock_acquire_timeout,
-                    on_file_allocated=on_file_allocated,
+                    on_file_created=on_file_created,
                     on_file_renamed=on_file_renamed,
                 )
                 futures.append(future)
@@ -206,7 +206,7 @@ def safe_download_file(
     request_timeout: int,
     max_threads_per_download: int,
     file_lock_acquire_timeout: int,
-    on_file_allocated: Optional[Callable[[str], None]] = None,
+    on_file_created: Optional[Callable[[str], None]] = None,
     on_file_renamed: Optional[Callable[[str, str], None]] = None,
 ) -> None:
     ensure_parent_dir_exists(path=target_file_path)
@@ -228,7 +228,7 @@ def safe_download_file(
                 request_timeout=request_timeout,
                 max_threads_per_download=max_threads_per_download,
                 original_file_name=target_file_name,
-                on_file_allocated=on_file_allocated,
+                on_file_created=on_file_created,
                 on_file_renamed=on_file_renamed,
             )
     finally:
@@ -246,7 +246,7 @@ def safe_execute_download(
     request_timeout: int,
     max_threads_per_download: int,
     original_file_name: str,
-    on_file_allocated: Optional[Callable[[str], None]] = None,
+    on_file_created: Optional[Callable[[str], None]] = None,
     on_file_renamed: Optional[Callable[[str, str], None]] = None,
 ) -> None:
     expected_file_size = safe_check_range_download_option(
@@ -275,7 +275,7 @@ def safe_execute_download(
             verify_hash_while_download=verify_hash_while_download,
             response_codes_to_retry=response_codes_to_retry,
             on_chunk_downloaded=on_chunk_downloaded,
-            on_file_allocated=on_file_allocated,
+            on_file_created=on_file_created,
         )
     else:
         threaded_download_file(
@@ -288,7 +288,7 @@ def safe_execute_download(
             md5_hash=md5_hash,
             verify_hash_while_download=verify_hash_while_download,
             on_chunk_downloaded=on_chunk_downloaded,
-            on_file_allocated=on_file_allocated,
+            on_file_created=on_file_created,
         )
     os.rename(tmp_download_file, target_file_path)
     if on_file_renamed:
@@ -347,7 +347,7 @@ def threaded_download_file(
     md5_hash: MD5Hash,
     verify_hash_while_download: bool,
     on_chunk_downloaded: Optional[Callable[[int], None]] = None,
-    on_file_allocated: Optional[Callable[[str], None]] = None,
+    on_file_created: Optional[Callable[[str], None]] = None,
 ) -> MD5Hash:
     chunks_boundaries = generate_chunks_boundaries(
         file_size=file_size,
@@ -355,7 +355,7 @@ def threaded_download_file(
         min_chunk_size=MIN_THREAD_CHUNK_SIZE,
     )
     pre_allocate_file(
-        path=target_path, file_size=file_size, on_file_allocated=on_file_allocated
+        path=target_path, file_size=file_size, on_file_created=on_file_created
     )
     max_workers = min(len(chunks_boundaries), max_threads_per_download)
     download_chunk_closure = partial(
@@ -464,7 +464,7 @@ def stream_download(
     verify_hash_while_download: bool,
     file_chunk: int = DEFAULT_STREAM_DOWNLOAD_CHUNK,
     on_chunk_downloaded: Optional[Callable[[int], None]] = None,
-    on_file_allocated: Optional[Callable[[str], None]] = None,
+    on_file_created: Optional[Callable[[str], None]] = None,
 ) -> None:
     ensure_parent_dir_exists(path=target_path)
     computed_hash = (
@@ -486,7 +486,7 @@ def stream_download(
                 file_chunk=file_chunk,
                 on_chunk_downloaded=on_chunk_downloaded,
                 content_storage=computed_hash,
-                on_file_allocated=on_file_allocated,
+                on_file_created=on_file_created,
             )
     except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
         raise RetryError(
@@ -512,11 +512,11 @@ def _handle_stream_download(
     file_open_mode: str = "wb",
     offset: Optional[int] = None,
     content_storage: Optional[Union[hashlib.md5, HashNullObject, BytesStorage]] = None,
-    on_file_allocated: Optional[Callable[[str], None]] = None,
+    on_file_created: Optional[Callable[[str], None]] = None,
 ) -> None:
     with open(target_path, file_open_mode) as file:
-        if on_file_allocated:
-            on_file_allocated(target_path)
+        if on_file_created:
+            on_file_created(target_path)
         if offset:
             file.seek(offset)
         for chunk in response.iter_content(file_chunk):

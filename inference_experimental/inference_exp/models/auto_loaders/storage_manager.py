@@ -23,7 +23,7 @@ class ModelStorageManager(ABC):
         pass
 
     @abstractmethod
-    def on_file_allocated(
+    def on_file_created(
         self, file_path: str, access_identifiers: AccessIdentifiers
     ) -> None:
         pass
@@ -38,6 +38,18 @@ class ModelStorageManager(ABC):
     def on_symlink_created(
         self, target_path: str, link_name: str, access_identifiers: AccessIdentifiers
     ) -> None:
+        pass
+
+    @abstractmethod
+    def on_symlink_deleted(self, link_name: str) -> None:
+        pass
+
+    @abstractmethod
+    def on_file_deleted(self, file_path: str) -> None:
+        pass
+
+    @abstractmethod
+    def on_directory_deleted(self, dir_path: str) -> None:
         pass
 
     @abstractmethod
@@ -75,7 +87,7 @@ class LiberalModelStorageManager(ModelStorageManager):
     ) -> None:
         pass
 
-    def on_file_allocated(
+    def on_file_created(
         self, file_path: str, access_identifiers: AccessIdentifiers
     ) -> None:
         pass
@@ -88,6 +100,15 @@ class LiberalModelStorageManager(ModelStorageManager):
     def on_symlink_created(
         self, target_path: str, link_name: str, access_identifiers: AccessIdentifiers
     ) -> None:
+        pass
+
+    def on_symlink_deleted(self, link_name: str) -> None:
+        pass
+
+    def on_file_deleted(self, file_path: str) -> None:
+        pass
+
+    def on_directory_deleted(self, dir_path: str) -> None:
         pass
 
     def is_model_access_forbidden(
