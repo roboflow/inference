@@ -37,9 +37,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install uv
           python -m uv venv
-          python -m uv pip install -e . --python .venv
-          python -m uv pip install pytest --python .venv
-          python -m uv pip install pytest-xdist --python .venv
+          python -m uv pip install -e .[test] --python .venv
       - name: 🧪 Unit Tests
         timeout-minutes: 30
         run: |

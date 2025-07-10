@@ -38,10 +38,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install uv
           python -m uv venv
-          python -m uv pip install -e . --python .venv
-          python -m uv pip install pytest --python .venv
-          python -m uv pip install pytest-xdist --python .venv
-          python -m uv pip install -e .[${{ matrix.extras.install }}] --python .venv
+          python -m uv pip install -e .[test,${{ matrix.extras.install }}] --python .venv
       - name: 🧪 Run tests marked `${{ matrix.extras.marker }}`
         timeout-minutes: 30
         run: |
