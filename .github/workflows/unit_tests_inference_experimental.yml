@@ -24,7 +24,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ~/.cache/uv
-          key: ${{ runner.os }}-uv-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
+          key: ${{ runner.os }}-uv-${{ matrix.python-version }}-${{ hashFiles('inference_experimental/pyproject.toml') }}
           restore-keys: |
             ${{ runner.os }}-uv-${{ matrix.python-version }}-
       - name: 🐍 Set up Python ${{ matrix.python-version }}
