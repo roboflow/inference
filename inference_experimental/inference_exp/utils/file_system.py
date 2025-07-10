@@ -23,12 +23,12 @@ def dump_json(path: str, content: Union[dict, list]) -> None:
 
 
 def pre_allocate_file(
-    path: str, file_size: int, on_file_allocated: Optional[Callable[[str], None]] = None
+    path: str, file_size: int, on_file_created: Optional[Callable[[str], None]] = None
 ) -> None:
     ensure_parent_dir_exists(path=path)
     with open(path, "wb") as f:
-        if on_file_allocated:
-            on_file_allocated(path)
+        if on_file_created:
+            on_file_created(path)
         f.truncate(file_size)
 
 
