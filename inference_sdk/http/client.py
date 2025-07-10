@@ -189,18 +189,22 @@ class InferenceHTTPClient:
         self,
         api_url: str,
         api_key: Optional[str] = None,
+        use_numpy_format: bool = False,
     ):
         """Initialize a new InferenceHTTPClient instance.
 
         Args:
             api_url (str): The base URL for the inference API.
             api_key (Optional[str], optional): API key for authentication. Defaults to None.
+            use_numpy_format (Optional[bool], optional): Whether to use numpy format for 
+                image transmission instead of base64
         """
         self.__api_url = api_url
         self.__api_key = api_key
         self.__inference_configuration = InferenceConfiguration.init_default()
         self.__client_mode = _determine_client_mode(api_url=api_url)
         self.__selected_model: Optional[str] = None
+        self.__use_numpy_format = use_numpy_format
 
     @property
     def inference_configuration(self) -> InferenceConfiguration:
@@ -228,6 +232,15 @@ class InferenceHTTPClient:
             Optional[str]: The identifier of the currently selected model, if any.
         """
         return self.__selected_model
+
+    @property
+    def use_numpy_format(self) -> bool:
+        """Get whether numpy format is enabled for image transmission.
+
+        Returns:
+            bool: True if numpy format is enabled, False otherwise.
+        """
+        return self.__use_numpy_format
 
     @contextmanager
     def use_configuration(
@@ -472,6 +485,7 @@ class InferenceHTTPClient:
             inference_input=inference_input,
             max_height=max_height,
             max_width=max_width,
+            use_numpy_format=self.__use_numpy_format,
         )
         params = {
             "api_key": self.__api_key,
@@ -550,6 +564,7 @@ class InferenceHTTPClient:
             inference_input=inference_input,
             max_height=max_height,
             max_width=max_width,
+            use_numpy_format=self.__use_numpy_format,
         )
         params = {
             "api_key": self.__api_key,
@@ -614,6 +629,7 @@ class InferenceHTTPClient:
             inference_input=inference_input,
             max_height=max_height,
             max_width=max_width,
+            use_numpy_format=self.__use_numpy_format,
         )
         payload = {
             "api_key": self.__api_key,
@@ -687,6 +703,7 @@ class InferenceHTTPClient:
             inference_input=inference_input,
             max_height=max_height,
             max_width=max_width,
+            use_numpy_format=self.__use_numpy_format,
         )
         payload = {
             "api_key": self.__api_key,
@@ -1016,6 +1033,7 @@ class InferenceHTTPClient:
         """
         encoded_inference_inputs = load_static_inference_input(
             inference_input=inference_input,
+            use_numpy_format=self.__use_numpy_format,
         )
         payload = self.__initialise_payload()
         if version:
@@ -1064,6 +1082,7 @@ class InferenceHTTPClient:
         """
         encoded_inference_inputs = await load_static_inference_input_async(
             inference_input=inference_input,
+            use_numpy_format=self.__use_numpy_format,
         )
         payload = self.__initialise_payload()
         if version:
@@ -1300,18 +1319,20 @@ class InferenceHTTPClient:
         if subject_type == "image":
             encoded_image = load_static_inference_input(
                 inference_input=subject,
+                use_numpy_format=self.__use_numpy_format,
             )
             payload = inject_images_into_payload(
-                payload=payload, encoded_images=encoded_image, key="subject"
+                payload=payload, encoded_images=encoded_image, key="subject", use_numpy_format=self.__use_numpy_format
             )
         else:
             payload["subject"] = subject
         if prompt_type == "image":
             encoded_inference_inputs = load_static_inference_input(
                 inference_input=prompt,
+                use_numpy_format=self.__use_numpy_format,
             )
             payload = inject_images_into_payload(
-                payload=payload, encoded_images=encoded_inference_inputs, key="prompt"
+                payload=payload, encoded_images=encoded_inference_inputs, key="prompt", use_numpy_format=self.__use_numpy_format
             )
         else:
             payload["prompt"] = prompt
@@ -1364,18 +1385,20 @@ class InferenceHTTPClient:
         if subject_type == "image":
             encoded_image = await load_static_inference_input_async(
                 inference_input=subject,
+                use_numpy_format=self.__use_numpy_format,
             )
             payload = inject_images_into_payload(
-                payload=payload, encoded_images=encoded_image, key="subject"
+                payload=payload, encoded_images=encoded_image, key="subject", use_numpy_format=self.__use_numpy_format
             )
         else:
             payload["subject"] = subject
         if prompt_type == "image":
             encoded_inference_inputs = await load_static_inference_input_async(
                 inference_input=prompt,
+                use_numpy_format=self.__use_numpy_format,
             )
             payload = inject_images_into_payload(
-                payload=payload, encoded_images=encoded_inference_inputs, key="prompt"
+                payload=payload, encoded_images=encoded_inference_inputs, key="prompt", use_numpy_format=self.__use_numpy_format
             )
         else:
             payload["prompt"] = prompt
@@ -1652,6 +1675,7 @@ class InferenceHTTPClient:
         """
         encoded_inference_inputs = load_static_inference_input(
             inference_input=inference_input,
+            use_numpy_format=self.__use_numpy_format,
         )
         payload = self.__initialise_payload()
         payload["text"] = class_names
@@ -1706,6 +1730,7 @@ class InferenceHTTPClient:
         """
         encoded_inference_inputs = await load_static_inference_input_async(
             inference_input=inference_input,
+            use_numpy_format=self.__use_numpy_format,
         )
         payload = self.__initialise_payload()
         payload["text"] = class_names
@@ -2022,6 +2047,7 @@ class InferenceHTTPClient:
     ) -> Union[dict, List[dict]]:
         encoded_inference_inputs = load_static_inference_input(
             inference_input=inference_input,
+            use_numpy_format=self.__use_numpy_format,
         )
         payload = self.__initialise_payload()
         if model_id is not None:

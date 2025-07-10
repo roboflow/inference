@@ -54,6 +54,7 @@ def inject_images_into_payload(
     payload: dict,
     encoded_images: List[Tuple[str, Optional[float]]],
     key: str = "image",
+    use_numpy_format: bool = False,
 ) -> dict:
     """Inject images into the payload.
 
@@ -61,19 +62,23 @@ def inject_images_into_payload(
         payload: The payload to inject the images into.
         encoded_images: The encoded images.
         key: The key of the images.
+        use_numpy_format: Whether to use numpy format instead of base64.
 
     Returns:
         The payload with the images injected.
     """
     if len(encoded_images) == 0:
         return payload
+    
+    image_type = "numpy" if use_numpy_format else "base64"
+    
     if len(encoded_images) > 1:
         images_payload = [
-            {"type": "base64", "value": image} for image, _ in encoded_images
+            {"type": image_type, "value": image} for image, _ in encoded_images
         ]
         payload[key] = images_payload
     else:
-        payload[key] = {"type": "base64", "value": encoded_images[0][0]}
+        payload[key] = {"type": image_type, "value": encoded_images[0][0]}
     return payload
 
 
@@ -81,6 +86,7 @@ def inject_nested_batches_of_images_into_payload(
     payload: dict,
     encoded_images: Union[list, Tuple[str, Optional[float]]],
     key: str = "image",
+    use_numpy_format: bool = False,
 ) -> dict:
     """Inject nested batches of images into the payload.
 
@@ -88,12 +94,14 @@ def inject_nested_batches_of_images_into_payload(
         payload: The payload to inject the images into.
         encoded_images: The encoded images.
         key: The key of the images.
+        use_numpy_format: Whether to use numpy format instead of base64.
 
     Returns:
         The payload with the images injected.
     """
     payload_value = _batch_of_images_into_inference_format(
         encoded_images=encoded_images,
+        use_numpy_format=use_numpy_format,
     )
     payload[key] = payload_value
     return payload
@@ -101,22 +109,26 @@ def inject_nested_batches_of_images_into_payload(
 
 def _batch_of_images_into_inference_format(
     encoded_images: Union[list, Tuple[str, Optional[float]]],
+    use_numpy_format: bool = False,
 ) -> Union[dict, list]:
     """Batch of images into inference format.
 
     Args:
         encoded_images: The encoded images.
+        use_numpy_format: Whether to use numpy format instead of base64.
 
     Returns:
         The images in inference format.
     """
     if not isinstance(encoded_images, list):
-        return {"type": "base64", "value": encoded_images[0]}
+        image_type = "numpy" if use_numpy_format else "base64"
+        return {"type": image_type, "value": encoded_images[0]}
     result = []
     for element in encoded_images:
         result.append(
             _batch_of_images_into_inference_format(
                 encoded_images=element,
+                use_numpy_format=use_numpy_format,
             )
         )
     return result

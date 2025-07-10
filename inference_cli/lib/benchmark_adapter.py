@@ -36,6 +36,7 @@ def run_infer_api_speed_benchmark(
     output_location: Optional[str] = None,
     enforce_legacy_endpoints: bool = False,
     max_error_rate: Optional[float] = None,
+    use_numpy_format: bool = False,
 ) -> None:
     dataset_images = load_dataset_images(
         dataset_reference=dataset_reference,
@@ -47,6 +48,7 @@ def run_infer_api_speed_benchmark(
         disable_active_learning=True,
         max_concurrent_requests=1,
         max_batch_size=request_batch_size,
+        use_numpy_format=use_numpy_format,
     )
     client.select_model(model_id=model_id)
     if enforce_legacy_endpoints:
@@ -105,6 +107,7 @@ def run_workflow_api_speed_benchmark(
     model_configuration: Optional[str] = None,
     output_location: Optional[str] = None,
     max_error_rate: Optional[float] = None,
+    use_numpy_format: bool = False,
 ) -> None:
     dataset_images = load_dataset_images(
         dataset_reference=dataset_reference,
@@ -116,6 +119,7 @@ def run_workflow_api_speed_benchmark(
         disable_active_learning=True,
         max_concurrent_requests=1,
         max_batch_size=request_batch_size,
+        use_numpy_format=use_numpy_format,
     )
     benchmark_results = coordinate_workflow_api_speed_benchmark(
         client=client,
