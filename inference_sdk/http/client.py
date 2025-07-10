@@ -499,6 +499,7 @@ class InferenceHTTPClient:
             payload=None,
             max_batch_size=1,
             image_placement=ImagePlacement.DATA,
+            use_numpy_format=self.__use_numpy_format,
         )
         responses = execute_requests_packages(
             requests_data=requests_data,
@@ -578,6 +579,7 @@ class InferenceHTTPClient:
             payload=None,
             max_batch_size=1,
             image_placement=ImagePlacement.DATA,
+            use_numpy_format=self.__use_numpy_format,
         )
         responses = await execute_requests_packages_async(
             requests_data=requests_data,
@@ -650,6 +652,7 @@ class InferenceHTTPClient:
             payload=payload,
             max_batch_size=self.__inference_configuration.max_batch_size,
             image_placement=ImagePlacement.JSON,
+            use_numpy_format=self.__use_numpy_format,
         )
         responses = execute_requests_packages(
             requests_data=requests_data,
@@ -724,6 +727,7 @@ class InferenceHTTPClient:
             payload=payload,
             max_batch_size=self.__inference_configuration.max_batch_size,
             image_placement=ImagePlacement.JSON,
+            use_numpy_format=self.__use_numpy_format,
         )
         responses = await execute_requests_packages_async(
             requests_data=requests_data,
@@ -1049,6 +1053,7 @@ class InferenceHTTPClient:
             payload=payload,
             max_batch_size=1,
             image_placement=ImagePlacement.JSON,
+            use_numpy_format=self.__use_numpy_format,
         )
         responses = execute_requests_packages(
             requests_data=requests_data,
@@ -1098,6 +1103,7 @@ class InferenceHTTPClient:
             payload=payload,
             max_batch_size=1,
             image_placement=ImagePlacement.JSON,
+            use_numpy_format=self.__use_numpy_format,
         )
         responses = await execute_requests_packages_async(
             requests_data=requests_data,
@@ -1692,6 +1698,7 @@ class InferenceHTTPClient:
             payload=payload,
             max_batch_size=1,
             image_placement=ImagePlacement.JSON,
+            use_numpy_format=self.__use_numpy_format,
         )
         responses = execute_requests_packages(
             requests_data=requests_data,
@@ -1747,6 +1754,7 @@ class InferenceHTTPClient:
             payload=payload,
             max_batch_size=1,
             image_placement=ImagePlacement.JSON,
+            use_numpy_format=self.__use_numpy_format,
         )
         return await execute_requests_packages_async(
             requests_data=requests_data,
@@ -2063,6 +2071,7 @@ class InferenceHTTPClient:
             payload=payload,
             max_batch_size=self.__inference_configuration.max_batch_size,
             image_placement=ImagePlacement.JSON,
+            use_numpy_format=self.__use_numpy_format,
         )
         responses = execute_requests_packages(
             requests_data=requests_data,
@@ -2081,6 +2090,7 @@ class InferenceHTTPClient:
     ) -> Union[dict, List[dict]]:
         encoded_inference_inputs = await load_static_inference_input_async(
             inference_input=inference_input,
+            use_numpy_format=self.__use_numpy_format,
         )
         payload = self.__initialise_payload()
         if model_id is not None:
@@ -2096,6 +2106,7 @@ class InferenceHTTPClient:
             payload=payload,
             max_batch_size=self.__inference_configuration.max_batch_size,
             image_placement=ImagePlacement.JSON,
+            use_numpy_format=self.__use_numpy_format,
         )
         responses = await execute_requests_packages_async(
             requests_data=requests_data,

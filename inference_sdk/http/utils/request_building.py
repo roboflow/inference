@@ -43,6 +43,7 @@ def prepare_requests_data(
     payload: Optional[Dict[str, Any]],
     max_batch_size: int,
     image_placement: ImagePlacement,
+    use_numpy_format: bool = False,
 ) -> List[RequestData]:
     """Prepare requests data.
 
@@ -54,6 +55,7 @@ def prepare_requests_data(
         payload: The payload of the request.
         max_batch_size: The maximum batch size.
         image_placement: The image placement.
+        use_numpy_format: Whether to use numpy format instead of base64.
 
     Returns:
         The list of request data.
@@ -73,6 +75,7 @@ def prepare_requests_data(
             parameters=parameters,
             payload=payload,
             image_placement=image_placement,
+            use_numpy_format=use_numpy_format,
         )
         requests_data.append(request_data)
     return requests_data
@@ -85,6 +88,7 @@ def assembly_request_data(
     parameters: Optional[Dict[str, Union[str, List[str]]]],
     payload: Optional[Dict[str, Any]],
     image_placement: ImagePlacement,
+    use_numpy_format: bool = False,
 ) -> RequestData:
     """Assemble request data.
 
@@ -109,6 +113,7 @@ def assembly_request_data(
         payload = inject_images_into_payload(
             payload=payload,
             encoded_images=batch_inference_inputs,
+            use_numpy_format=use_numpy_format,
         )
     elif image_placement is ImagePlacement.DATA:
         data = batch_inference_inputs[0][0]

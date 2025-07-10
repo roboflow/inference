@@ -48,6 +48,7 @@ class ImageType(Enum):
     NUMPY_OBJECT = "numpy_object"
     PILLOW = "pil"
     URL = "url"
+    LATIN1 = "latin-1"
 
 
 def load_image_rgb(value: Any, disable_preproc_auto_orient: bool = False) -> np.ndarray:
@@ -315,6 +316,34 @@ def load_image_from_buffer(
     return result
 
 
+def load_image_from_latin1(value: str) -> np.ndarray:
+    """Loads an image from a pickled numpy array decoded as string with latin-1.
+
+    Args:
+        value str: pickled numpy array decoded as string with latin-1.
+
+    Returns:
+        np.ndarray: The loaded numpy array.
+
+    Raises:
+        InvalidNumpyInput: If the numpy data is invalid.
+    """
+    if not ALLOW_NUMPY_INPUT:
+        raise InvalidImageTypeDeclared(
+            message=f"NumPy image type is not supported in this configuration of `inference`.",
+            public_message=f"NumPy image type is not supported in this configuration of `inference`.",
+        )
+    try:
+        data = pickle.loads(value.encode("latin-1"))
+    except (EOFError, TypeError, pickle.UnpicklingError, binascii.Error) as error:
+        raise InvalidNumpyInput(
+            message=f"Could not unpickle image data. Cause: {error}",
+            public_message="Could not deserialize pickle payload.",
+        ) from error
+    validate_numpy_image(data=data)
+    return data
+
+
 def load_image_from_numpy_str(value: Union[bytes, str]) -> np.ndarray:
     """Loads an image from a numpy array string.
 
@@ -524,6 +553,7 @@ IMAGE_LOADERS = {
     ImageType.NUMPY_OBJECT: lambda v, _: load_image_from_numpy_object(v),
     ImageType.PILLOW: lambda v, _: np.asarray(v.convert("RGB")),
     ImageType.URL: load_image_from_url,
+    ImageType.LATIN1: lambda v, _: load_image_from_latin1(v),
 }
 
 

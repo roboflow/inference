@@ -56,16 +56,15 @@ def pickle_numpy_array(image: np.ndarray) -> bytes:
     """pickle numpy array.
 
     This format is used when ALLOW_NUMPY_INPUT is enabled on the server.
-    WARNING: This should only be used with trusted servers as pickle
-    deserialization can execute arbitrary code.
 
     Args:
-        image: The numpy array to encode.
+        image: The numpy array to pickle and represent as latin-1 string.
 
     Returns:
         The pickled numpy array.
     """
-    return pickle.dumps(image)
+    # latin-1 represents all 256 values of the byte and is faster than base64
+    return pickle.dumps(image).decode("latin-1")
 
 
 def bytes_to_opencv_image(

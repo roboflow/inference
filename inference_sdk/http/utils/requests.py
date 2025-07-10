@@ -70,7 +70,7 @@ def inject_images_into_payload(
     if len(encoded_images) == 0:
         return payload
     
-    image_type = "numpy" if use_numpy_format else "base64"
+    image_type = "latin-1" if use_numpy_format else "base64"
     
     if len(encoded_images) > 1:
         images_payload = [
