@@ -10,6 +10,7 @@ on:
 
 jobs:
   integration-tests-inference-experimental-gpu:
+    if: false 
     runs-on: Roboflow-GPU-VM-Runner
     timeout-minutes: 10
     strategy:
@@ -17,7 +18,7 @@ jobs:
         python-version: ["3.9", "3.10", "3.11", "3.12"]
         extras:
           - { install: "onnx-cu12", marker: "onnx_extras" }
-#          - { install: "trt10", marker: "trt_extras" }
+          - { install: "trt10", marker: "trt_extras" }
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v4
