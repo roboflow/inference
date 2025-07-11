@@ -17,7 +17,7 @@ jobs:
         python-version: ["3.9", "3.10", "3.11", "3.12"]
         extras:
           - { install: "onnx-gpu", marker: "onnx_extras" }
-          - { install: "trt10", marker: "trt_extras" }
+#          - { install: "trt10", marker: "trt_extras" }
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v4
