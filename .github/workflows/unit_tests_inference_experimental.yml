@@ -33,6 +33,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           check-latest: true
       - name: 📦 Install dependencies
+        working-directory: inference_experimental
         run: |
           python -m pip install --upgrade pip
           python -m pip install uv
@@ -40,6 +41,7 @@ jobs:
           python -m uv pip install -e .[test] --python .venv
       - name: 🧪 Unit Tests
         timeout-minutes: 30
+        working-directory: inference_experimental
         run: |
           source .venv/bin/activate
           python -m pytest -n auto tests/unit_tests
