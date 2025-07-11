@@ -2397,7 +2397,9 @@ def test_model_package_matches_runtime_environment_when_package_should_be_allowe
 
     # when
     result = model_package_matches_runtime_environment(
-        model_package=model_package, runtime_x_ray=runtime_x_ray
+        model_package=model_package,
+        runtime_x_ray=runtime_x_ray,
+        onnx_execution_providers=["CPUExecutionProvider"]
     )
 
     # then
