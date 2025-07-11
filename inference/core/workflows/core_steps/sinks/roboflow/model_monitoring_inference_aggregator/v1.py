@@ -180,7 +180,7 @@ class ParsedPrediction(BaseModel):
 class PredictionsAggregator(object):
 
     def __init__(self):
-        self._raw_predictions: dict[str, List[Union[sv.Detections, dict]]] = {}
+        self._raw_predictions: Dict[str, List[Union[sv.Detections, dict]]] = {}
 
     def collect(self, value: Union[sv.Detections, dict], model_id: str) -> None:
         # TODO: push into global state, otherwise for HTTP server use,

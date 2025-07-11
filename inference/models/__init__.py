@@ -13,7 +13,7 @@ from inference.core.env import (
     DEPTH_ESTIMATION_ENABLED,
 )
 
-_MODEL_REGISTRY: dict[str, Any] = {}
+_MODEL_REGISTRY: Dict[str, Any] = {}
 
 CORE_MODELS = {
     "Clip": ("inference.models.clip", CORE_MODEL_CLIP_ENABLED),
