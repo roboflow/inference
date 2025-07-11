@@ -1,4 +1,5 @@
 import base64
+import pickle
 from io import BytesIO
 from typing import Union
 
@@ -49,6 +50,21 @@ def encode_base_64(payload: bytes) -> str:
         The base64 string.
     """
     return base64.b64encode(payload).decode("utf-8")
+
+
+def pickle_numpy_array(image: np.ndarray) -> bytes:
+    """pickle numpy array.
+
+    This format is used when ALLOW_NUMPY_INPUT is enabled on the server.
+
+    Args:
+        image: The numpy array to pickle and represent as latin-1 string.
+
+    Returns:
+        The pickled numpy array.
+    """
+    # latin-1 represents all 256 values of the byte and is faster than base64
+    return pickle.dumps(image).decode("latin-1")
 
 
 def bytes_to_opencv_image(

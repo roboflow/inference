@@ -15,6 +15,7 @@ from inference_sdk.http.utils.encoding import (
     bytes_to_opencv_image,
     encode_base_64,
     numpy_array_to_base64_jpeg,
+    pickle_numpy_array,
     pillow_image_to_base64_jpeg,
 )
 from inference_sdk.http.utils.pre_processing import (
@@ -74,6 +75,7 @@ def load_nested_batches_of_inference_input(
     inference_input: Union[list, ImagesReference],
     max_height: Optional[int] = None,
     max_width: Optional[int] = None,
+    use_numpy_format: bool = False,
 ) -> Union[Tuple[str, Optional[float]], list]:
     """Load a nested batch of inference input.
 
@@ -81,6 +83,7 @@ def load_nested_batches_of_inference_input(
         inference_input: The inference input.
         max_height: The maximum height of the image.
         max_width: The maximum width of the image.
+        use_numpy_format: Whether to use numpy format instead of base64.
 
     Returns:
         The nested batch of inference input.
@@ -90,6 +93,7 @@ def load_nested_batches_of_inference_input(
             inference_input=inference_input,
             max_height=max_height,
             max_width=max_width,
+            use_numpy_format=use_numpy_format,
         )[0]
     result = []
     for element in inference_input:
@@ -98,6 +102,7 @@ def load_nested_batches_of_inference_input(
                 inference_input=element,
                 max_height=max_height,
                 max_width=max_width,
+                use_numpy_format=use_numpy_format,
             )
         )
     return result
@@ -107,6 +112,7 @@ def load_static_inference_input(
     inference_input: Union[ImagesReference, List[ImagesReference]],
     max_height: Optional[int] = None,
     max_width: Optional[int] = None,
+    use_numpy_format: bool = False,
 ) -> List[Tuple[str, Optional[float]]]:
     """Load a static inference input.
 
@@ -114,6 +120,7 @@ def load_static_inference_input(
         inference_input: The inference input.
         max_height: The maximum height of the image.
         max_width: The maximum width of the image.
+        use_numpy_format: Whether to use numpy format instead of base64.
 
     Returns:
         The list of the inference input.
@@ -126,6 +133,7 @@ def load_static_inference_input(
                     inference_input=element,
                     max_height=max_height,
                     max_width=max_width,
+                    use_numpy_format=use_numpy_format,
                 )
             )
         return results
@@ -141,7 +149,10 @@ def load_static_inference_input(
             max_height=max_height,
             max_width=max_width,
         )
-        return [(numpy_array_to_base64_jpeg(image=image), scaling_factor)]
+        if use_numpy_format:
+            return [(pickle_numpy_array(image=image), scaling_factor)]
+        else:
+            return [(numpy_array_to_base64_jpeg(image=image), scaling_factor)]
     if issubclass(type(inference_input), Image.Image):
         image, scaling_factor = resize_pillow_image(
             image=inference_input,
@@ -158,6 +169,7 @@ async def load_static_inference_input_async(
     inference_input: Union[ImagesReference, List[ImagesReference]],
     max_height: Optional[int] = None,
     max_width: Optional[int] = None,
+    use_numpy_format: bool = False,
 ) -> List[Tuple[str, Optional[float]]]:
     """Load a static inference input asynchronously.
 
@@ -165,6 +177,7 @@ async def load_static_inference_input_async(
         inference_input: The inference input.
         max_height: The maximum height of the image.
         max_width: The maximum width of the image.
+        use_numpy_format: Whether to use numpy format instead of base64.
 
     Returns:
         The list of the inference input.
@@ -177,6 +190,7 @@ async def load_static_inference_input_async(
                     inference_input=element,
                     max_height=max_height,
                     max_width=max_width,
+                    use_numpy_format=use_numpy_format,
                 )
             )
         return results
@@ -192,7 +206,10 @@ async def load_static_inference_input_async(
             max_height=max_height,
             max_width=max_width,
         )
-        return [(numpy_array_to_base64_jpeg(image=image), scaling_factor)]
+        if use_numpy_format:
+            return [(pickle_numpy_array(image=image), scaling_factor)]
+        else:
+            return [(numpy_array_to_base64_jpeg(image=image), scaling_factor)]
     if issubclass(type(inference_input), Image.Image):
         image, scaling_factor = resize_pillow_image(
             image=inference_input,

@@ -144,6 +144,13 @@ def api_speed(
             "return non-success error code. Expected percentage values in range 0.0-100.0",
         ),
     ] = None,
+    use_numpy_format: Annotated[
+        bool,
+        typer.Option(
+            "--numpy/--no-numpy",
+            help="Use numpy format for image transmission instead of base64. Requires server to have ALLOW_NUMPY_INPUT=True.",
+        ),
+    ] = False,
 ):
     if "roboflow.com" in host and not proceed_automatically:
         proceed = input(
@@ -167,6 +174,7 @@ def api_speed(
                 output_location=output_location,
                 enforce_legacy_endpoints=enforce_legacy_endpoints,
                 max_error_rate=max_error_rate,
+                use_numpy_format=use_numpy_format,
             )
         else:
             if workflow_specification:
@@ -189,6 +197,7 @@ def api_speed(
                 model_configuration=model_configuration,
                 output_location=output_location,
                 max_error_rate=max_error_rate,
+                use_numpy_format=use_numpy_format,
             )
     except Exception as error:
         typer.echo(f"Command failed. Cause: {error}")

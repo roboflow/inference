@@ -787,6 +787,7 @@ class HttpInterface(BaseInterface):
             Returns:
                 InferenceResponse: The response containing the inference results.
             """
+            t1 = time.time()
             de_aliased_model_id = resolve_roboflow_model_alias(
                 model_id=inference_request.model_id
             )
@@ -799,6 +800,8 @@ class HttpInterface(BaseInterface):
             resp = await self.model_manager.infer_from_request(
                 de_aliased_model_id, inference_request, **kwargs
             )
+            t2 = time.time()
+            logger.error(f"################################## {t2 - t1:.2f}s")
             return orjson_response(resp)
 
         def process_workflow_inference_request(
