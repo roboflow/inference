@@ -11,13 +11,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 from einops import rearrange
-from timm.layers import DropPath
-from torch import nn
-from torch.nn import functional as F
-from torch.nn.init import constant_, xavier_normal_, xavier_uniform_
-from torch.nn.parameter import Parameter
-from torch.utils.checkpoint import checkpoint
-
 from inference_exp.models.perception_encoder.vision_encoder.config import (
     PE_TEXT_CONFIG,
     PE_VISION_CONFIG,
@@ -26,6 +19,12 @@ from inference_exp.models.perception_encoder.vision_encoder.config import (
     fetch_pe_checkpoint,
 )
 from inference_exp.models.perception_encoder.vision_encoder.rope import Rope2D
+from timm.layers import DropPath
+from torch import nn
+from torch.nn import functional as F
+from torch.nn.init import constant_, xavier_normal_, xavier_uniform_
+from torch.nn.parameter import Parameter
+from torch.utils.checkpoint import checkpoint
 
 logger = getLogger()
 

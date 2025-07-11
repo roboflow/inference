@@ -26,17 +26,17 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
 WORKDIR /build
 
-COPY inference_experimental/dockerfiles/build_scripts/compile_opencv_jetpack_6.sh compile_opencv_jetpack_6.sh
+COPY dockerfiles/build_scripts/compile_opencv_jetpack_6.sh compile_opencv_jetpack_6.sh
 RUN chmod ugo+x compile_opencv_jetpack_6.sh
 RUN ./compile_opencv_jetpack_6.sh
 
 WORKDIR /build/inference_experimental
 
-COPY inference_experimental/uv.lock uv.lock
-COPY inference_experimental/pyproject.toml pyproject.toml
+COPY uv.lock uv.lock
+COPY pyproject.toml pyproject.toml
 RUN UV_PROJECT_ENVIRONMENT=/usr $HOME/.local/bin/uv sync --locked --no-install-package opencv-python --extra torch-jp6-cu126 --extra onnx-jp6-cu126
 RUN $HOME/.local/bin/uv pip install --system /build/opencv_compilation/opencv-4.11.0/release/python_loader/dist/opencv-4.11.0-py3-none-any.whl
-COPY inference_experimental/inference_exp inference_exp
+COPY inference_exp inference_exp
 RUN $HOME/.local/bin/uv build
 RUN WHEEL=$(ls dist/inference_exp-*.whl) && $HOME/.local/bin/uv pip install --system --no-deps "${WHEEL}"
 

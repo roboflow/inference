@@ -531,6 +531,15 @@ class LambdaMiddleware(BaseHTTPMiddleware):
         return response
 
 
+class GCPServerlessMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        t1 = time.time()
+        response = await call_next(request)
+        t2 = time.time()
+        response.headers["X-Processing-Time"] = str(t2 - t1)
+        return response
+
+
 class HttpInterface(BaseInterface):
     """Roboflow defined HTTP interface for a general-purpose inference server.
 
@@ -604,6 +613,8 @@ class HttpInterface(BaseInterface):
             )
         if LAMBDA:
             app.add_middleware(LambdaMiddleware)
+        if GCP_SERVERLESS:
+            app.add_middleware(GCPServerlessMiddleware)
 
         if len(ALLOW_ORIGINS) > 0:
             # Add CORS Middleware (but not for /build**, which is controlled separately)

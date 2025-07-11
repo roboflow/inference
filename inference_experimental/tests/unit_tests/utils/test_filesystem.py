@@ -9,6 +9,7 @@ from inference_exp.utils.file_system import (
     pre_allocate_file,
     read_json,
     remove_file_if_exists,
+    stream_file_bytes,
     stream_file_lines,
 )
 
@@ -196,3 +197,80 @@ def test_dump_json(empty_local_dir: str) -> None:
     with open(target_path) as f:
         result = json.load(f)
     assert result == {"some": "value"}
+
+
+def test_stream_file_bytes_when_non_existing_file_path_provided() -> None:
+    # given
+    generator = stream_file_bytes(path="/some/non/existing/file.txt", chunk_size=10)
+
+    # when
+    with pytest.raises(FileNotFoundError):
+        _ = next(generator)
+
+
+def test_stream_file_bytes_when_existing_file_provided_with_large_chunk_size(
+    binary_file: str,
+) -> None:
+    # given
+    generator = stream_file_bytes(path=binary_file, chunk_size=100000)
+
+    # when
+    received_bytes = []
+    for bytes_chunk in generator:
+        received_bytes.append(bytes_chunk)
+
+    # then
+    assert len(received_bytes) == 1
+    assert received_bytes[0] == b"\xf8\xde\x0a\x97\x46\x0c\x0f\x3f\x7b\x59"
+
+
+def test_stream_file_bytes_when_existing_file_provided_with_small_not_fitting_chunk_size(
+    binary_file: str,
+) -> None:
+    # given
+    generator = stream_file_bytes(path=binary_file, chunk_size=3)
+
+    # when
+    received_bytes = []
+    for bytes_chunk in generator:
+        received_bytes.append(bytes_chunk)
+
+    # then
+    assert len(received_bytes) == 4
+    assert received_bytes[0] == b"\xf8\xde\x0a"
+    assert received_bytes[1] == b"\x97\x46\x0c"
+    assert received_bytes[2] == b"\x0f\x3f\x7b"
+    assert received_bytes[3] == b"\x59"
+
+
+def test_stream_file_bytes_when_existing_file_provided_with_small_fitting_chunk_size(
+    binary_file: str,
+) -> None:
+    # given
+    generator = stream_file_bytes(path=binary_file, chunk_size=5)
+
+    # when
+    received_bytes = []
+    for bytes_chunk in generator:
+        received_bytes.append(bytes_chunk)
+
+    # then
+    assert len(received_bytes) == 2
+    assert received_bytes[0] == b"\xf8\xde\x0a\x97\x46"
+    assert received_bytes[1] == b"\x0c\x0f\x3f\x7b\x59"
+
+
+def test_stream_file_bytes_when_existing_file_provided_with_negative_chunk_size(
+    binary_file: str,
+) -> None:
+    # given
+    generator = stream_file_bytes(path=binary_file, chunk_size=-1)
+
+    # when
+    received_bytes = []
+    for bytes_chunk in generator:
+        received_bytes.append(bytes_chunk)
+
+    # then
+    assert len(received_bytes) == 10
+    assert b"".join(received_bytes) == b"\xf8\xde\x0a\x97\x46\x0c\x0f\x3f\x7b\x59"

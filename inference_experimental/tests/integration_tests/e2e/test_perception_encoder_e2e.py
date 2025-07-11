@@ -1,7 +1,7 @@
-import torch
 import numpy as np
 import pytest
-from inference_exp.models.auto_loaders.core import AutoModel
+import torch
+from inference_exp import AutoModel
 
 
 @pytest.mark.e2e_model_inference

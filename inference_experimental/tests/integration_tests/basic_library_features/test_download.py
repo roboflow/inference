@@ -57,13 +57,13 @@ def test_download_files_to_directory_small_files_with_nested_file_handles_and_ev
         ),
     ]
     file_renames = []
-    file_allocations = []
+    file_creations = []
 
     # when
     result = download_files_to_directory(
         target_dir=empty_local_dir,
         files_specs=files_specs,
-        on_file_allocated=lambda e: file_allocations.append(e),
+        on_file_created=lambda e: file_creations.append(e),
         on_file_renamed=lambda e, f: file_renames.append((e, f)),
     )
 
@@ -71,11 +71,11 @@ def test_download_files_to_directory_small_files_with_nested_file_handles_and_ev
     assert result["nested_1/some.jpg"] == some_path
     assert result["other.jpg"] == other_path
     assert len(file_renames) == 2
-    assert len(file_allocations) == 2
-    file_allocations = sorted(file_allocations)
+    assert len(file_creations) == 2
+    file_creations = sorted(file_creations)
     file_renames = sorted(file_renames, key=lambda e: e[1])
-    assert os.path.basename(file_allocations[0]).startswith("some.jpg.")
-    assert os.path.basename(file_allocations[1]).startswith("other.jpg.")
+    assert os.path.basename(file_creations[0]).startswith("some.jpg.")
+    assert os.path.basename(file_creations[1]).startswith("other.jpg.")
     assert os.path.basename(file_renames[0][0]).startswith("some.jpg.")
     assert os.path.basename(file_renames[1][0]).startswith("other.jpg.")
     assert file_renames[0][1] == some_path

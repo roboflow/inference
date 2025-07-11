@@ -23,7 +23,7 @@ class ModelStorageManager(ABC):
         pass
 
     @abstractmethod
-    def on_file_allocated(
+    def on_file_created(
         self, file_path: str, access_identifiers: AccessIdentifiers
     ) -> None:
         pass
@@ -41,26 +41,24 @@ class ModelStorageManager(ABC):
         pass
 
     @abstractmethod
-    def is_model_access_forbidden(
-        self, model_name_or_path: str, api_key: Optional[str]
-    ) -> bool:
+    def on_symlink_deleted(self, link_name: str) -> None:
+        pass
+
+    @abstractmethod
+    def on_file_deleted(self, file_path: str) -> None:
+        pass
+
+    @abstractmethod
+    def on_directory_deleted(self, dir_path: str) -> None:
+        pass
+
+    @abstractmethod
+    def is_model_access_forbidden(self, model_id: str, api_key: Optional[str]) -> bool:
         pass
 
     @abstractmethod
     def is_model_package_access_granted(
         self, model_id: str, package_id: str, api_key: Optional[str]
-    ) -> bool:
-        pass
-
-    @abstractmethod
-    def is_directory_access_granted(
-        self, dir_path: str, access_identifiers: AccessIdentifiers
-    ) -> bool:
-        pass
-
-    @abstractmethod
-    def is_file_access_granted(
-        self, file_path: str, access_identifiers: AccessIdentifiers
     ) -> bool:
         pass
 
@@ -75,7 +73,7 @@ class LiberalModelStorageManager(ModelStorageManager):
     ) -> None:
         pass
 
-    def on_file_allocated(
+    def on_file_created(
         self, file_path: str, access_identifiers: AccessIdentifiers
     ) -> None:
         pass
@@ -90,22 +88,19 @@ class LiberalModelStorageManager(ModelStorageManager):
     ) -> None:
         pass
 
-    def is_model_access_forbidden(
-        self, model_name_or_path: str, api_key: Optional[str]
-    ) -> bool:
+    def on_symlink_deleted(self, link_name: str) -> None:
+        pass
+
+    def on_file_deleted(self, file_path: str) -> None:
+        pass
+
+    def on_directory_deleted(self, dir_path: str) -> None:
+        pass
+
+    def is_model_access_forbidden(self, model_id: str, api_key: Optional[str]) -> bool:
         return False
 
     def is_model_package_access_granted(
         self, model_id: str, package_id: str, api_key: Optional[str]
-    ) -> bool:
-        return True
-
-    def is_directory_access_granted(
-        self, dir_path: str, access_identifiers: AccessIdentifiers
-    ) -> bool:
-        return True
-
-    def is_file_access_granted(
-        self, file_path: str, access_identifiers: AccessIdentifiers
     ) -> bool:
         return True
