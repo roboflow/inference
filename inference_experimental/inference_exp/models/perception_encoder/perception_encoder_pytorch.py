@@ -1,20 +1,17 @@
 import json
+from typing import Callable, List, Optional, Union
 
-from typing import Callable, List, Union, Optional
-
+import inference_exp.models.perception_encoder.vision_encoder.pe as pe
+import inference_exp.models.perception_encoder.vision_encoder.transforms as transforms
 import numpy as np
 import torch
 import torchvision.transforms as T
-
-from pydantic import BaseModel, ValidationError
-
 from inference_exp.configuration import DEFAULT_DEVICE
+from inference_exp.entities import ColorFormat
 from inference_exp.errors import CorruptedModelPackageError
-import inference_exp.models.perception_encoder.vision_encoder.pe as pe
-import inference_exp.models.perception_encoder.vision_encoder.transforms as transforms
 from inference_exp.models.base.embeddings import TextImageEmbeddingModel
 from inference_exp.models.common.model_packages import get_model_package_contents
-from inference_exp.entities import ColorFormat
+from pydantic import BaseModel, ValidationError
 
 
 class PerceptionEncoderConfig(BaseModel):

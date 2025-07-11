@@ -1,7 +1,6 @@
-import torch
 import numpy as np
 import pytest
-
+import torch
 from inference_exp import AutoModel
 
 

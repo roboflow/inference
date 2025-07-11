@@ -1,14 +1,13 @@
-import torch
-import numpy as np
-import pytest
-from PIL import Image
 from typing import Callable, Union
 
-
+import numpy as np
+import pytest
+import torch
 from inference_exp.models.perception_encoder.perception_encoder_pytorch import (
     create_preprocessor,
 )
 from inference_exp.models.perception_encoder.vision_encoder import transforms
+from PIL import Image
 
 
 def create_pil_preprocessor(image_size: int) -> Callable:
