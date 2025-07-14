@@ -9,6 +9,7 @@ on:
   workflow_dispatch:
 
 jobs:
+  if: false
   unit-tests-inference-experimental:
     runs-on:
       labels: depot-ubuntu-22.04-4

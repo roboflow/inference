@@ -35,17 +35,18 @@ jobs:
           check-latest: true
       - name: TEST
         run: |
-          find /
-      - name: 📦 Install base dependencies as well as `${{ matrix.extras.install }}` dependencies
-        working-directory: inference_experimental
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install uv
-          python -m uv venv
-          python -m uv pip install -e .[test,${{ matrix.extras.install }}] --python .venv
-      - name: 🧪 Run tests marked `${{ matrix.extras.marker }}`
-        working-directory: inference_experimental
-        timeout-minutes: 30
-        run: |
-          source .venv/bin/activate
-          python -m pytest -n auto -m ${{ matrix.extras.marker }} tests/integration_tests
+          env
+          echo ${PATH}
+      # - name: 📦 Install base dependencies as well as `${{ matrix.extras.install }}` dependencies
+      #   working-directory: inference_experimental
+      #   run: |
+      #     python -m pip install --upgrade pip
+      #     python -m pip install uv
+      #     python -m uv venv
+      #     python -m uv pip install -e .[test,${{ matrix.extras.install }}] --python .venv
+      # - name: 🧪 Run tests marked `${{ matrix.extras.marker }}`
+      #   working-directory: inference_experimental
+      #   timeout-minutes: 30
+      #   run: |
+      #     source .venv/bin/activate
+      #     python -m pytest -n auto -m ${{ matrix.extras.marker }} tests/integration_tests

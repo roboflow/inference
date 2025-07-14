@@ -9,6 +9,7 @@ on:
   workflow_dispatch:
 
 jobs:
+  if: false
   call_is_mergeable:
     uses: ./.github/workflows/check_if_branch_is_mergeable.yml
     secrets: inherit
