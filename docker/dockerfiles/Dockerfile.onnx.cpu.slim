@@ -1,21 +1,25 @@
-FROM python:3.9 as base
+# Stage 1: Compile image - install build dependencies and create virtualenv
+FROM python:3.9 AS compile-image
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG TARGETPLATFORM
 
+# Install build dependencies
 RUN apt update -y && apt install -y \
-    libxext6 \
-    libopencv-dev \
-    uvicorn \
-    python3-pip \
     git \
-    libgdal-dev \
     cmake \
     rustc \
     cargo \
+    libxext6 \
+    libopencv-dev \
+    libgdal-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# Create and use virtualenv
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
+# Copy requirements files
 COPY requirements/requirements.cpu.txt \
     requirements/requirements.http.txt \
     requirements/requirements.waf.txt \
@@ -27,6 +31,7 @@ COPY requirements/requirements.cpu.txt \
 
 RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then mv requirements.vino.txt requirements.cpu.txt; fi
 
+# Install Python packages into virtualenv
 RUN pip3 install --upgrade pip && pip3 install "wheel>=0.38.1,<=0.45.1"
 RUN pip3 install \
     -r _requirements.txt \
@@ -39,16 +44,31 @@ RUN pip3 install \
     --upgrade \
     && rm -rf ~/.cache/pip
 
-FROM scratch
-COPY --from=base / /
+# Stage 2: Runtime image - minimal dependencies with virtualenv
+FROM python:3.9 AS runtime-image
 
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Install only runtime dependencies
+RUN apt update -y && apt install -y \
+    uvicorn \
+    libxext6 \
+    libopencv-dev \
+    libgdal-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy and use virtualenv from compile stage
+COPY --from=compile-image /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copy application code
 WORKDIR /app
-
 COPY inference inference
 COPY inference_sdk inference_sdk
 COPY inference_cli inference_cli
 COPY docker/config/cpu_http.py cpu_http.py
 
+# Environment variables
 ENV CORE_MODEL_CLIP_ENABLED=false
 ENV CORE_MODEL_PE_ENABLED=false
 ENV CORE_MODEL_SAM_ENABLED=false

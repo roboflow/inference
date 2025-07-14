@@ -1,21 +1,27 @@
-FROM python:3.9 as base
+# Stage 1: Compile image - install build dependencies and create virtualenv
+FROM python:3.9 AS compile-image
 
 WORKDIR /app
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG TARGETPLATFORM
 
+# Install build dependencies
 RUN apt update -y && apt install -y \
-    libxext6 \
-    libopencv-dev \
-    uvicorn \
-    python3-pip \
     git \
-    libgdal-dev \
+    cmake \
     rustc \
     cargo \
+    libxext6 \
+    libopencv-dev \
+    libgdal-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# Create and use virtualenv
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copy requirements files
 COPY requirements/requirements.sam.txt \
     requirements/requirements.clip.txt \
     requirements/requirements.cpu.txt \
@@ -32,6 +38,7 @@ COPY requirements/requirements.sam.txt \
 
 RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then mv requirements.vino.txt requirements.cpu.txt; fi
 
+# Install Python packages into virtualenv
 RUN pip3 install --upgrade pip && pip3 install "wheel>=0.38.1,<=0.45.1"
 RUN pip3 install \
     -r _requirements.txt \
@@ -48,20 +55,46 @@ RUN pip3 install \
     "setuptools<=75.5.0" \
     --upgrade \
     && rm -rf ~/.cache/pip
+
+# Install Redis
 RUN apt-get update && apt-get install -y lsb-release curl gpg
 RUN curl -fsSL https://packages.redis.io/gpg | gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg
 RUN echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/redis.list
 RUN apt-get update && apt-get install -y redis
 
-FROM scratch
-COPY --from=base / /
+# Stage 2: Runtime image - minimal dependencies with virtualenv
+FROM python:3.9 AS runtime-image
 
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Install only runtime dependencies
+RUN apt update -y && apt install -y \
+    uvicorn \
+    libxext6 \
+    libopencv-dev \
+    libgdal-dev \
+    lsb-release \
+    curl \
+    gpg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Redis in runtime stage
+RUN curl -fsSL https://packages.redis.io/gpg | gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg
+RUN echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/redis.list
+RUN apt-get update && apt-get install -y redis && rm -rf /var/lib/apt/lists/*
+
+# Copy and use virtualenv from compile stage
+COPY --from=compile-image /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copy application code
 WORKDIR /app/
 COPY inference inference
 COPY inference_sdk inference_sdk
 COPY inference_cli inference_cli
 COPY inference/enterprise/parallel/parallel_http_config.py parallel_http.py
 
+# Environment variables
 ENV VERSION_CHECK_MODE=continuous
 ENV PROJECT=roboflow-platform
 ENV NUM_WORKERS=1
