@@ -64,6 +64,7 @@ COPY inference_cli inference_cli
 COPY docker/config/gpu_http.py gpu_http.py
 
 # Environment variables
+ENV PYTHONPATH=/app/
 ENV CORE_MODEL_CLIP_ENABLED=false
 ENV CORE_MODEL_PE_ENABLED=false
 ENV CORE_MODEL_SAM_ENABLED=false
