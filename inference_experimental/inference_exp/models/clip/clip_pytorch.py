@@ -39,49 +39,47 @@ def load_config(config_path: str) -> ClipConfig:
 
 
 def create_preprocessor(image_size: int) -> Callable:
-    resize_transform = T.Resize(
-        image_size, interpolation=T.InterpolationMode.BICUBIC, antialias=True
-    )
-    center_crop_transform = T.CenterCrop(image_size)
-    normalize_transform = T.Normalize(
-        (0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711)
+    # This transform pipeline operates on PIL Images, matching the original CLIP implementation
+    pil_transform = T.Compose(
+        [
+            T.Resize(image_size, interpolation=T.InterpolationMode.BICUBIC),
+            T.CenterCrop(image_size),
+            T.ToTensor(),
+            T.Normalize(
+                (0.48145466, 0.4578275, 0.40821073),
+                (0.26862954, 0.26130258, 0.27577711),
+            ),
+        ]
     )
 
     def _preprocess(
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]]
     ) -> torch.Tensor:
-        def _to_tensor(image: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
-            if isinstance(image, np.ndarray):
-                # HWC -> CHW
-                image = torch.from_numpy(image).permute(2, 0, 1)
-                # BGR -> RGB
-                image = image[[2, 1, 0], :, :]
-            return image
+        def _to_pil(image: Union[np.ndarray, torch.Tensor]) -> Image.Image:
+            if isinstance(image, torch.Tensor):
+                # Assuming CHW RGB tensor
+                image_numpy = image.permute(1, 2, 0).cpu().numpy()
+                if image_numpy.dtype in [np.float32, np.float64]:
+                    image_numpy = (image_numpy * 255).astype(np.uint8)
+                return Image.fromarray(image_numpy)
+
+            # Assuming HWC BGR numpy array
+            if image.ndim == 3 and image.shape[2] == 3:
+                image = image[:, :, ::-1]  # BGR to RGB
+            return Image.fromarray(image)
 
         if isinstance(images, list):
             # Handle lists of varied-size images by processing them one-by-one
-            images_to_stack = []
-            for img in images:
-                tensor = _to_tensor(img)
-                if tensor.dtype == torch.uint8:
-                    tensor = tensor.to(torch.float32) / 255.0
-                resized = resize_transform(tensor)
-                cropped = center_crop_transform(resized)
-                images_to_stack.append(cropped)
+            images_to_stack = [pil_transform(_to_pil(img)) for img in images]
             tensor_batch = torch.stack(images_to_stack, dim=0)
-        else:
-            # Handle single image or 4D batch for optimized processing
-            tensor_batch = _to_tensor(images)
-            if tensor_batch.ndim == 3:
-                tensor_batch = tensor_batch.unsqueeze(0)  # Ensure batch dimension
-            if tensor_batch.dtype == torch.uint8:
-                tensor_batch = tensor_batch.to(torch.float32) / 255.0
-            tensor_batch = resize_transform(tensor_batch)
-            tensor_batch = center_crop_transform(tensor_batch)
+        elif images.ndim == 4:  # Handle 4D numpy batch
+            images_to_stack = [pil_transform(_to_pil(img)) for img in images]
+            tensor_batch = torch.stack(images_to_stack, dim=0)
+        else:  # Handle single image
+            pil_image = _to_pil(images)
+            tensor_batch = pil_transform(pil_image).unsqueeze(0)
 
-        # Normalize the entire batch
-        transformed_batch = normalize_transform(tensor_batch)
-        return transformed_batch
+        return tensor_batch
 
     return _preprocess
 
