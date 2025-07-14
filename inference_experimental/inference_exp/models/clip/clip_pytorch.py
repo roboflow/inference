@@ -122,7 +122,6 @@ class ClipTorch(TextImageEmbeddingModel):
         tensor_batch = self.preprocessor(images)
         with torch.no_grad():
             image_features = self.model.encode_image(tensor_batch.to(self.device))
-            image_features /= image_features.norm(dim=-1, keepdim=True)
 
         return image_features
 
@@ -137,6 +136,5 @@ class ClipTorch(TextImageEmbeddingModel):
         text_tokens = self.tokenizer(texts).to(self.device)
         with torch.no_grad():
             text_features = self.model.encode_text(text_tokens)
-            text_features /= text_features.norm(dim=-1, keepdim=True)
 
         return text_features
