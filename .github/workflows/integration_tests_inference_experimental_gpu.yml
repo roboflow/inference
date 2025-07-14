@@ -35,8 +35,7 @@ jobs:
           check-latest: true
       - name: TEST
         run: |
-          env
-          echo ${PATH}
+          uname -a
       # - name: 📦 Install base dependencies as well as `${{ matrix.extras.install }}` dependencies
       #   working-directory: inference_experimental
       #   run: |
