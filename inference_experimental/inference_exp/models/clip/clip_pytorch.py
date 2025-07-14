@@ -1,5 +1,5 @@
 import json
-from typing import Callable, List, Union
+from typing import Callable, List, Optional, Union
 
 import numpy as np
 import torch
@@ -10,6 +10,7 @@ from PIL import Image
 from pydantic import BaseModel, ValidationError
 
 from inference_exp.configuration import DEFAULT_DEVICE
+from inference_exp.entities import ColorFormat
 from inference_exp.errors import CorruptedModelPackageError
 from inference_exp.models.base.embeddings import TextImageEmbeddingModel
 from inference_exp.models.common.model_packages import get_model_package_contents
@@ -48,15 +49,22 @@ def create_preprocessor(image_size: int) -> Callable:
     )
 
     def _preprocess(
-        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]]
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        input_color_format: Optional[ColorFormat] = None,
     ) -> torch.Tensor:
         def _to_tensor(image: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
-            if isinstance(image, np.ndarray):
+            is_numpy = isinstance(image, np.ndarray)
+            if is_numpy:
                 # HWC -> CHW
-                image = torch.from_numpy(image).permute(2, 0, 1)
+                tensor_image = torch.from_numpy(image).permute(2, 0, 1)
+            else:
+                tensor_image = image
+
+            if input_color_format == "bgr" or (is_numpy and input_color_format is None):
                 # BGR -> RGB
-                image = image[[2, 1, 0], :, :]
-            return image
+                tensor_image = tensor_image[[2, 1, 0], :, :]
+
+            return tensor_image
 
         if isinstance(images, list):
             # Handle lists of varied-size images by processing them one-by-one
@@ -117,9 +125,10 @@ class ClipTorch(TextImageEmbeddingModel):
     def embed_images(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        input_color_format: Optional[ColorFormat] = None,
         **kwargs,
     ) -> torch.Tensor:
-        tensor_batch = self.preprocessor(images)
+        tensor_batch = self.preprocessor(images, input_color_format=input_color_format)
         with torch.no_grad():
             image_features = self.model.encode_image(tensor_batch.to(self.device))
 
