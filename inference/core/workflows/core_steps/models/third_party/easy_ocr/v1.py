@@ -4,11 +4,19 @@ import easyocr
 import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
+from uuid import uuid4
 
+from supervision.config import CLASS_NAME_DATA_FIELD
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.query_language.entities.operations import (
-    AllOperationsType,
+
+from inference.core.workflows.core_steps.common.utils import attach_parents_coordinates_to_sv_detections
+from inference.core.workflows.execution_engine.constants import (
+    DETECTED_CODE_KEY,
+    DETECTION_ID_KEY,
+    IMAGE_DIMENSIONS_KEY,
+    PREDICTION_TYPE_KEY,
 )
+
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
@@ -258,9 +266,9 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
 
-def ocr_result_to_detections(result: List[Union[List, str]]) -> sv.Detections:
+def ocr_result_to_detections(image: WorkflowImageData, result: List[Union[List, str]]) -> sv.Detections:
     # Prepare lists for bounding boxes, confidences, class IDs, and labels
-    xyxy, confidences, class_ids, label = [], [], [], []
+    xyxy, confidences, class_ids, label, class_names = [], [], [], [], []
 
     # Extract data from OCR result
     for detection in result:
@@ -277,12 +285,25 @@ def ocr_result_to_detections(result: List[Union[List, str]]) -> sv.Detections:
         label.append(text)
         confidences.append(confidence)
         class_ids.append(0)
+        class_names.append("ocr_result")
 
     # Convert to NumPy arrays
     detections = sv.Detections(
         xyxy=np.array(xyxy),
         confidence=np.array(confidences),
         class_id=np.array(class_ids),
+        data={CLASS_NAME_DATA_FIELD: class_names},
+    )
+    detections[DETECTION_ID_KEY] = np.array([uuid4() for _ in range(len(detections))])
+    detections[PREDICTION_TYPE_KEY] = np.array(["barcode-detection"] * len(detections))
+    detections[DETECTED_CODE_KEY] = np.array(label)
+    img_height, img_width = image.numpy_image.shape[:2]
+    detections[IMAGE_DIMENSIONS_KEY] = np.array(
+        [[img_height, img_width]] * len(detections)
+    )
+    return attach_parents_coordinates_to_sv_detections(
+        detections=detections,
+        image=image,
     )
     return detections
 
@@ -312,7 +333,7 @@ class EasyOCRBlockV1(WorkflowBlock):
             if not self.reader:
                 self.reader = easyocr.Reader([reader_char_set])
             result = self.reader.readtext(image.numpy_image)
-            return {"ocr_result": ocr_result_to_detections(result)}
+            return {"ocr_result": ocr_result_to_detections(image, result)}
         elif self._step_execution_mode == StepExecutionMode.REMOTE:
             raise NotImplementedError(
                 "Remote execution is not supported for EasyOCR. Please use a local or dedicated inference server."
