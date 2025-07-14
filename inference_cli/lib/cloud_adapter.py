@@ -205,7 +205,7 @@ def cloud_deploy(provider, compute_type, dry_run, custom, help, roboflow_api_key
 
     # For later - when notebook becomes secure
     # if notebook:
-    #     yaml_string.replace("9001", "[9001, 9002]")
+    #     yaml_string.replace("9001", "[9001, 9003]")
     #     placeholder_string += " -e NOTEBOOK_ENABLED=true"
 
     yaml_string = yaml_string.replace("PLACEHOLDER", placeholder_string)

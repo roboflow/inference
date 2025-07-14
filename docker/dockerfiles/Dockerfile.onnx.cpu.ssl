@@ -1,0 +1,27 @@
+# Modified section for SSL support
+WORKDIR /app
+COPY inference inference
+COPY docker/config/cpu_http.py cpu_http.py
+COPY docker/config/cpu_http_ssl.py cpu_http_ssl.py
+COPY start_server.py start_server.py
+
+ENV VERSION_CHECK_MODE=continuous
+ENV PROJECT=roboflow-platform
+ENV NUM_WORKERS=1
+ENV HOST=0.0.0.0
+ENV PORT=9001
+ENV WORKFLOWS_STEP_EXECUTION_MODE=local
+ENV WORKFLOWS_MAX_CONCURRENT_STEPS=4
+ENV API_LOGGING_ENABLED=True
+ENV CORE_MODEL_SAM2_ENABLED=True
+ENV CORE_MODEL_OWLV2_ENABLED=True
+ENV ENABLE_STREAM_API=True
+ENV ENABLE_PROMETHEUS=True
+
+# SSL configuration environment variables
+ENV ENABLE_SSL=False
+ENV SSL_PORT=9002
+ENV SSL_CERTIFICATE=INDIRECT
+
+# Use the new startup script that handles both HTTP and HTTPS
+ENTRYPOINT ["python", "start_server.py"]

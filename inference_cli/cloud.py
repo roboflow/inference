@@ -82,7 +82,7 @@ def deploy(
     #     typer.Option(
     #         "--notebook",
     #         "-n",
-    #         help="Expose the notebook instance at port 9002 (caution - can be insecure).",
+    #         help="Expose the notebook instance at port 9003 (caution - can be insecure).",
     #     ),
     # ] = False,
 ):

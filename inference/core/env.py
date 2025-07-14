@@ -339,8 +339,13 @@ NOTEBOOK_ENABLED = str2bool(os.getenv("NOTEBOOK_ENABLED", False))
 # Jupyter notebook password, default is "roboflow"
 NOTEBOOK_PASSWORD = os.getenv("NOTEBOOK_PASSWORD", "roboflow")
 
-# Jupyter notebook port, default is 9002
-NOTEBOOK_PORT = int(os.getenv("NOTEBOOK_PORT", 9002))
+# Jupyter notebook port, default is 9003
+NOTEBOOK_PORT = int(os.getenv("NOTEBOOK_PORT", 9003))
+
+# SSL configuration
+ENABLE_SSL = str2bool(os.getenv("ENABLE_SSL", False))
+SSL_PORT = int(os.getenv("SSL_PORT", 9002))
+SSL_CERTIFICATE = os.getenv("SSL_CERTIFICATE", "INDIRECT")
 
 # Number of workers, default is 1
 NUM_WORKERS = int(os.getenv("NUM_WORKERS", 1))

@@ -56,7 +56,7 @@ export default function Home() {
                   <span className="w-full leading-loose lg:leading-7 text-sm lg:text-base items-baseline gap-0 text-left">
                   To do this, use the <span className="font-mono whitespace-break-spaces break-normal  text-xs lg:text-[13px] bg-black bg-opacity-90 font-normal py-1 px-2 border border-gray-900 mx-1 text-white rounded">--dev</span> flag with the inference-cli: <span className="font-mono break-normal whitespace-break-spaces text-xs lg:text-[13px] bg-black bg-opacity-90 font-normal py-1 px-2 border border-gray-900 mx-1 text-white rounded">inference
             server start --dev</span>. Or, update your docker run command with the
-            argument <span className="font-mono whitespace-break-spaces text-xs break-normal lg:text-[13px] bg-black bg-opacity-90 font-normal py-1 px-2 border border-gray-900 mx-1 text-white rounded">-e NOTEBOOK_ENABLED=true -p 9002:9002</span>.</span> 
+            argument <span className="font-mono whitespace-break-spaces text-xs break-normal lg:text-[13px] bg-black bg-opacity-90 font-normal py-1 px-2 border border-gray-900 mx-1 text-white rounded">-e NOTEBOOK_ENABLED=true -p 9003:9003</span>.</span> 
                  
                 </div>
           

@@ -58,7 +58,7 @@ See [Using Your New Server](#using-your-new-server) for next steps.
 
 The `--dev` parameter to `inference server start` starts in development mode.
 This spins up a companion Jupyter notebook server with a quickstart guide on
-[`localhost:9002`](http://localhost:9002). Dive in there for a whirlwind tour
+[`localhost:9003`](http://localhost:9003). Dive in there for a whirlwind tour
 of your new Inference Server's functionality!
 
 ```bash

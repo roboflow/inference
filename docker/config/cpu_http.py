@@ -1,3 +1,4 @@
+import os
 from functools import partial
 from multiprocessing import Process
 
@@ -24,10 +25,12 @@ from inference.core.registries.roboflow import (
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
 
 if ENABLE_STREAM_API:
-    stream_manager_process = Process(
-        target=partial(start, expected_warmed_up_pipelines=STREAM_API_PRELOADED_PROCESSES),
-    )
-    stream_manager_process.start()
+    # Only start stream manager if not already started by parent process
+    if not os.environ.get('STREAM_MANAGER_STARTED_BY_PARENT'):
+        stream_manager_process = Process(
+            target=partial(start, expected_warmed_up_pipelines=STREAM_API_PRELOADED_PROCESSES),
+        )
+        stream_manager_process.start()
 
 model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
 
