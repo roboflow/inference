@@ -10,7 +10,6 @@ on:
 
 jobs:
   integration-tests-inference-experimental-gpu:
-    if: false 
     runs-on: Roboflow-GPU-VM-Runner
     timeout-minutes: 10
     strategy:
@@ -34,6 +33,9 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           check-latest: true
+      - name: TEST
+        run: |
+          find /
       - name: 📦 Install base dependencies as well as `${{ matrix.extras.install }}` dependencies
         working-directory: inference_experimental
         run: |
