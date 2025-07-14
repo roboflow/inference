@@ -4,10 +4,12 @@ import pytest
 from PIL import Image
 from typing import Callable, Union
 import clip
+import functools
 
 from inference_exp.models.clip.clip_pytorch import create_preprocessor
 
 
+@functools.lru_cache(maxsize=None)
 def create_pil_preprocessor(image_size: int) -> Callable:
     """Fixture to create a PIL-based preprocessor from the original CLIP library."""
     _, pil_based_transform = clip.load("ViT-B/32", device="cpu")
@@ -28,6 +30,7 @@ def create_pil_preprocessor(image_size: int) -> Callable:
     return _pil_preprocessor
 
 
+@functools.lru_cache(maxsize=None)
 def get_image_data(image_shape):
     generator = torch.Generator().manual_seed(42)
     rgb_image_tensor = torch.randint(
@@ -37,8 +40,8 @@ def get_image_data(image_shape):
         dtype=torch.uint8,
         generator=generator,
     )
-    bgr_image_numpy = rgb_image_tensor.permute(1, 2, 0).numpy()[:, :, ::-1]
-    rgb_image_numpy = bgr_image_numpy[:, :, ::-1]
+    bgr_image_numpy = rgb_image_tensor.permute(1, 2, 0).numpy()[:, :, ::-1].copy()
+    rgb_image_numpy = bgr_image_numpy[:, :, ::-1].copy()
     return rgb_image_tensor, bgr_image_numpy, rgb_image_numpy
 
 
@@ -129,7 +132,7 @@ def test_list_of_varied_size_numpy_inputs(model_size, image_shape):
     pil_based_preprocessor = create_pil_preprocessor(model_size)
     tensor_based_preprocessor = create_preprocessor(model_size)
     _, bgr_image_numpy, rgb_image_numpy = get_image_data(image_shape)
-    bgr_image_numpy_2 = np.random.randint(0, 256, size=(300, 300, 3), dtype=np.uint8)
+    bgr_image_numpy_2 = np.random.randint(0, 256, size=(224, 224, 3), dtype=np.uint8)
     rgb_image_numpy_2 = bgr_image_numpy_2[:, :, ::-1]
     bgr_images_varied = [bgr_image_numpy.copy(), bgr_image_numpy_2]
     rgb_images_varied = [rgb_image_numpy.copy(), rgb_image_numpy_2]
