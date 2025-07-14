@@ -1,17 +1,26 @@
-FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 as base
+# Stage 1: Compile image - install build dependencies and create virtualenv
+FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 AS compile-image
 
 WORKDIR /app
 
+# Install build dependencies
 RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    libxext6 \
-    libopencv-dev \
-    uvicorn \
-    python3-pip \
     git \
     rustc \
     cargo \
+    python3-pip \
+    python3-venv \
+    libxext6 \
+    libopencv-dev \
+    libgdal-dev \
+    libvips-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# Create and use virtualenv
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copy requirements files
 COPY requirements/requirements.sam.txt \
     requirements/requirements.clip.txt \
     requirements/requirements.http.txt \
@@ -22,6 +31,7 @@ COPY requirements/requirements.sam.txt \
     requirements/_requirements.txt \
     ./
 
+# Install Python packages into virtualenv
 RUN pip3 install --upgrade pip  && pip3 install \
     -r _requirements.txt \
     -r requirements.sam.txt \
@@ -35,28 +45,50 @@ RUN pip3 install --upgrade pip  && pip3 install \
     --upgrade \
     && rm -rf ~/.cache/pip
 
-RUN apt-get update && apt-get install -y lsb-release curl gpg
-RUN curl -fsSL https://packages.redis.io/gpg | gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg
-RUN echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/redis.list
-RUN apt-get update && apt-get install -y redis
-RUN echo net.core.somaxconn=1024 > /etc/sysctl.conf
-
-FROM scratch
-COPY --from=base / /
-
+# Build application wheels
 WORKDIR /build
 COPY . .
-RUN ln -s /usr/bin/python3 /usr/bin/python
 RUN /bin/make create_wheels_for_gpu_notebook
 RUN pip3 install dist/inference_cli*.whl dist/inference_core*.whl dist/inference_gpu*.whl dist/inference_sdk*.whl "setuptools<=75.5.0"
 
+# Stage 2: Runtime image - minimal dependencies with virtualenv
+FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 AS runtime-image
+
+WORKDIR /app
+
+# Install only runtime dependencies
+RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    uvicorn \
+    lsb-release \
+    curl \
+    gpg \
+    libxext6 \
+    libopencv-dev \
+    libgdal-dev \
+    libvips-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Redis in runtime stage
+RUN curl -fsSL https://packages.redis.io/gpg | gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg
+RUN echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/redis.list
+RUN apt-get update && apt-get install -y redis && rm -rf /var/lib/apt/lists/*
+RUN echo net.core.somaxconn=1024 > /etc/sysctl.conf
+
+# Copy and use virtualenv from compile stage
+COPY --from=compile-image /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copy notebooks
 WORKDIR /notebooks
 COPY examples/notebooks .
 
+# Copy application code
 WORKDIR /app/
 COPY inference inference
 COPY inference/enterprise/parallel/parallel_http_config.py parallel_http.py
 COPY inference/enterprise/parallel/entrypoint.py entrypoint.py
+
+# Environment variables
 ENV PYTHONPATH=/app/
 ENV PROJECT=roboflow-platform
 ENV CORE_MODELS_ENABLED=false
