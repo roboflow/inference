@@ -56,12 +56,6 @@ RUN pip3 install \
     --upgrade \
     && rm -rf ~/.cache/pip
 
-# Install Redis
-RUN apt-get update && apt-get install -y lsb-release curl gpg
-RUN curl -fsSL https://packages.redis.io/gpg | gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg
-RUN echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/redis.list
-RUN apt-get update && apt-get install -y redis
-
 # Stage 2: Runtime image - minimal dependencies with virtualenv
 FROM python:3.9 AS runtime-image
 
@@ -70,12 +64,12 @@ ARG DEBIAN_FRONTEND=noninteractive
 # Install only runtime dependencies
 RUN apt update -y && apt install -y \
     uvicorn \
-    libxext6 \
-    libopencv-dev \
-    libgdal-dev \
     lsb-release \
     curl \
     gpg \
+    libxext6 \
+    libopencv-dev \
+    libgdal-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Redis in runtime stage
