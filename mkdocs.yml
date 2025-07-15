@@ -57,12 +57,13 @@ nav:
               - Known Issues: workflows/batch_processing/known_issues.md
           - Supported Cameras: install/cameras.md
           - Benchmark Inference: inference_helpers/cli_commands/benchmark/
-          - Find Your Roboflow API Key: /quickstart/configure_api_key/
+          - Find Your Roboflow API Key: start/configure_api_key.md
       - Choose a Model:
           - How to Choose a Model: quickstart/choose_model.md
-          - Pre-Trained Models: quickstart/pretrained_models.md
-          - Universe Models: quickstart/load_from_universe.md
-          - Foundation Models: foundation/about.md
+          - Load from Roboflow Cloud: quickstart/pretrained_models.md
+          - Load from Roboflow Universe: quickstart/load_from_universe.md
+          - Load from Local Weights: models/from_local_weights.md
+          - Use a Foundation Model: foundation/about.md
       - Start Building:
         - "Explore Tutorials →": guides/written.md
   - Tutorials:
@@ -91,17 +92,15 @@ nav:
       - Block Gallery: workflows/blocks/
   - Extend:
     - Introduction: extend/index.md
-    - Environment Setup: extend/environment_setup.md
     - Custom Python Blocks: extend/python.md
     - Contribute a Workflow Block:
-      - How to Add a Block: extend/contribute_block.md
+      - How to Add a Block: workflows/create_workflow_block.md
     - Workflows for Developers:
       - Workflow Definitions: workflows/definitions.md
       - Workflow Execution: workflows/workflow_execution.md
       - Kinds: workflows/kinds/
       - Compiler: workflows/workflows_compiler.md
       - Execution Engine: workflows/workflows_execution_engine.md
-      - Block Creation: workflows/create_workflow_block.md
       - Block Bundling: workflows/blocks_bundling.md
       - Data Representations: workflows/internal_data_types.md
       - Workflow Versions: workflows/versioning.md
@@ -117,6 +116,36 @@ nav:
       - Python SDK:
           - inference_helpers/inference_sdk.md
           - Reference: reference/inference_sdk/
+          - Run Models with the Python SDK:
+            - 'Fine-Tuned Models':
+                - quickstart/explore_models.md
+                - RF-DETR: fine-tuned/rfdetr.md
+                - YOLOv11: fine-tuned/yolov11.md
+                - YOLOv10: fine-tuned/yolov10.md
+                - YOLOv9: fine-tuned/yolov9.md
+                - YOLOv8: fine-tuned/yolov8.md
+                - YOLOv7: fine-tuned/yolov7.md
+                - YOLOv5: fine-tuned/yolov5.md
+                - YOLO-NAS: fine-tuned/yolonas.md
+            - 'Pre-Trained Models': quickstart/aliases.md
+            - 'Universe Models': quickstart/load_from_universe.md
+            - 'Foundation Models':
+                - foundation/about.md
+                - CLIP (Classification, Embeddings): foundation/clip.md
+                - DocTR (OCR): foundation/doctr.md
+                - Depth Estimation (Depth Anything V2 Small): foundation/depth_estimation.md
+                - Florence-2: foundation/florence2.md
+                - TrOCR (OCR): foundation/trocr.md
+                - Grounding DINO (Object Detection): foundation/grounding_dino.md
+                - L2CS-Net (Gaze Detection): foundation/gaze.md
+                - Moondream2: foundation/moondream2.md
+                - PaliGemma: foundation/paligemma.md
+                - Perception Encoder: foundation/perception_encoder.md
+                - Segment Anything (Segmentation): foundation/sam.md
+                - Segment Anything 2 (Segmentation): foundation/sam2.md
+                - SmolVLM2: foundation/smolvlm.md
+                - YOLO-World (Object Detection): foundation/yolo_world.md
+                - OwlV2 (Object Detection): foundation/owlv2.md
       - Video Streams:
         - InferencePipeline: using_inference/inference_pipeline.md
       - Command Line Interface:

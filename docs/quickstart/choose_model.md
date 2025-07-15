@@ -15,6 +15,7 @@ In addition, "foundation" models are supported. These are models that do well at
 
 You can deploy models that are:
 
-1. Trained on or uploaded to Roboflow;
-2. Released to the public on Roboflow Universe, and;
-3. Stored on your local computer.
+1. [Trained on or uploaded to Roboflow](/quickstart/pretrained_models.md);
+2. [Released to the public on Roboflow Universe](/quickstart/load_from_universe/), and;
+3. [Stored on your local computer](/models/from_local_weights/).
+

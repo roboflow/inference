@@ -1,10 +1,25 @@
 # Roboflow API Key
 
-Throughout these docs you will see references to your Roboflow API key. Using your Roboflow API key grants you access to the models you have trained on Roboflow, public models available on Roboflow Universe, and access to hosted inference API's.
+Using your Roboflow API key grants you access to the models you have trained on Roboflow, public models available on Roboflow Universe, and access to hosted inference APIs (i.e. the [Roboflow Serverless API](https://docs.roboflow.com/deploy/serverless-hosted-api-v2)).
 
-## Access Your Roboflow API Key
+You will need an API key for everything listed in the table below that does not have a check in the "Open Access" column:
 
-For some examples in the documentation you will need to provide your Roboflow API key. To access your Roboflow API key, you will need to <a href="https://app.roboflow.com" target="_blank">create a free Roboflow account</a>, then <a href="https://docs.roboflow.com/api-reference/authentication" target="_blank">follow the docs</a> to retrieve your key.
+|                         | Open Access | With API Key |
+|-------------------------|-------------|--------------|
+| [Pre-Trained Models](https://inference.roboflow.com/quickstart/aliases/#supported-pre-trained-models) | ✅ | ✅
+| [Foundation Models](https://inference.roboflow.com/foundation/about/) | ✅ | ✅
+| [Video Stream Management](https://inference.roboflow.com/workflows/video_processing/overview/) | ✅ | ✅
+| [Dynamic Python Blocks](https://inference.roboflow.com/workflows/custom_python_code_blocks/) | ✅ | ✅
+| [Public Workflows](https://inference.roboflow.com/workflows/about/) | ✅ | ✅
+| [Private Workflows](https://docs.roboflow.com/workflows/create-a-workflow) |  | ✅
+| [Fine-Tuned Models](https://roboflow.com/train) |  | ✅
+| [Universe Models](https://roboflow.com/universe) |  | ✅
+| [Active Learning](https://inference.roboflow.com/workflows/blocks/roboflow_dataset_upload/) |  | ✅
+| [Serverless Hosted API](https://docs.roboflow.com/deploy/hosted-api) |  | ✅
+| [Dedicated Deployments](https://docs.roboflow.com/deploy/dedicated-deployments) |  | ✅
+| [Commercial Model Licensing](https://roboflow.com/licensing) |  | Paid
+| [Device Management](https://docs.roboflow.com/roboflow-enterprise) |  | Enterprise
+| [Model Monitoring](https://docs.roboflow.com/deploy/model-monitoring) |  | Enterprise
 
 ## Use Your Roboflow API Key
 
@@ -20,6 +35,8 @@ export ROBOFLOW_API_KEY=MY_ROBOFLOW_API_KEY
 
 Then, any command you run within that same terminal session will have access to the environment variable `ROBOFLOW_API_KEY`.
 
+<details>
+<summary>Advanced</summary>
 ### Python
 
 When using Inference within python, your Roboflow API key can be set via keyword arguments
@@ -64,3 +81,4 @@ docker run -it --rm --network=host -e ROBOFLOW_API_KEY=YOUR_ROBOFLOW_API_KEY rob
 ```
 
 Requests sent to this server can now omit `api_key` from the request payload.
+</details>
