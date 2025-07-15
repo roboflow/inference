@@ -35,9 +35,7 @@ jobs:
           check-latest: true
       - name: TEST
         run: |
-          /sbin/ldconfig -N -v $(sed 's/:/ /' <<< $LD_LIBRARY_PATH) 2>/dev/null | grep libcuda
-          /sbin/ldconfig -N -v $(sed 's/:/ /' <<< $LD_LIBRARY_PATH) 2>/dev/null | grep libcudart
-          /sbin/ldconfig -N -v $(sed 's/:/ /' <<< $LD_LIBRARY_PATH) 2>/dev/null | grep libcudnn
+          which nvcc
       # - name: 📦 Install base dependencies as well as `${{ matrix.extras.install }}` dependencies
       #   working-directory: inference_experimental
       #   run: |
