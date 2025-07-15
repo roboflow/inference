@@ -12,6 +12,7 @@ from PIL import Image
 from inference_exp.models.clip.clip_onnx import ClipOnnx
 from inference_exp.models.clip.clip_pytorch import ClipTorch
 from inference_exp import AutoModel
+from inference_exp.weights_providers.entities import BackendType
 
 
 @pytest.fixture(scope="module")
@@ -27,7 +28,11 @@ def baseline_clip_model(clip_model_name: str):
 
 @pytest.fixture(scope="module")
 def clip_torch_wrapper(clip_model_name: str) -> ClipTorch:
-    return ClipTorch.from_pretrained(model_name_or_path=clip_model_name, device="cpu")
+    return AutoModel.from_pretrained(
+        model_name_or_path=f"clip/{clip_model_name}",
+        device=torch.device("cpu"),
+        backends=[BackendType.TORCH],
+    )
 
 
 @pytest.fixture(scope="module")
@@ -36,7 +41,7 @@ def clip_onnx_wrapper(clip_model_name: str) -> ClipOnnx:
     return AutoModel.from_pretrained(
         model_name_or_path=f"clip/{clip_model_name}",
         device=torch.device("cpu"),
-        onnx_execution_providers=["CPUExecutionProvider"],
+        backends=[BackendType.ONNX],
     )
 
 

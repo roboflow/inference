@@ -13,7 +13,6 @@ from inference_exp.entities import ColorFormat
 from inference_exp.errors import CorruptedModelPackageError
 from inference_exp.models.base.embeddings import TextImageEmbeddingModel
 from inference_exp.models.clip.preprocessing import create_clip_preprocessor
-from inference_exp.weights_providers.roboflow import RoboflowWeightsProvider
 from inference_exp.models.common.model_packages import get_model_package_contents
 
 
@@ -64,7 +63,12 @@ class ClipTorch(TextImageEmbeddingModel):
             elements=["model.pt"],
         )
         model_weights_file = model_package_content["model.pt"]
-        state_dict = torch.load(model_weights_file, map_location="cpu")
+
+        # The model file is a JIT archive, so we load it as such
+        # and then build a new model from its state dict.
+        jit_model = torch.jit.load(model_weights_file, map_location="cpu").eval()
+        state_dict = jit_model.state_dict()
+
         model = build_model(state_dict).to(device)
 
         if str(device) == "cpu":
