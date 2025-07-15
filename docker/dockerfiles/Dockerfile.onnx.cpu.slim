@@ -6,6 +6,7 @@ ARG TARGETPLATFORM
 
 # Install build dependencies
 RUN apt update -y && apt install -y \
+    python3-pip \
     git \
     cmake \
     rustc \

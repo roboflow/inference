@@ -5,15 +5,13 @@ WORKDIR /app
 
 # Install build dependencies
 RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    python3-pip \
+    python3-venv \
     git \
     rustc \
     cargo \
-    python3-pip \
-    python3-venv \
     libxext6 \
     libopencv-dev \
-    libgdal-dev \
-    libvips-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Create and use virtualenv
@@ -64,8 +62,6 @@ RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_
     gpg \
     libxext6 \
     libopencv-dev \
-    libgdal-dev \
-    libvips-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Redis in runtime stage
