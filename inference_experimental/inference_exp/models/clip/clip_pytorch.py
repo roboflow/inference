@@ -1,9 +1,11 @@
 import json
+import os
 from typing import Callable, List, Optional, Union
 
 import numpy as np
 import torch
 import clip
+from clip.model import build_model
 from pydantic import BaseModel, ValidationError
 
 from inference_exp.configuration import DEFAULT_DEVICE
@@ -11,6 +13,8 @@ from inference_exp.entities import ColorFormat
 from inference_exp.errors import CorruptedModelPackageError
 from inference_exp.models.base.embeddings import TextImageEmbeddingModel
 from inference_exp.models.clip.preprocessing import create_clip_preprocessor
+from inference_exp.weights_providers.roboflow import RoboflowWeightsProvider
+from inference_exp.models.common.model_packages import get_model_package_contents
 
 
 class ClipConfig(BaseModel):
@@ -40,12 +44,10 @@ class ClipTorch(TextImageEmbeddingModel):
     def __init__(
         self,
         model: torch.nn.Module,
-        preprocess: Callable,
         tokenizer: Callable,
         device: torch.device,
     ):
         self.model = model
-        self.preprocess = preprocess
         self.tokenizer = tokenizer
         self.device = device
         self.preprocessor = create_clip_preprocessor(
@@ -56,12 +58,24 @@ class ClipTorch(TextImageEmbeddingModel):
     def from_pretrained(
         cls, model_name_or_path: str, device: torch.device = DEFAULT_DEVICE, **kwargs
     ) -> "ClipTorch":
-        model, _ = clip.load(model_name_or_path, device=device)
+
+        model_package_content = get_model_package_contents(
+            model_package_dir=model_name_or_path,
+            elements=["model.pt"],
+        )
+        model_weights_file = model_package_content["model.pt"]
+        state_dict = torch.load(model_weights_file, map_location="cpu")
+        model = build_model(state_dict).to(device)
+
+        if str(device) == "cpu":
+            model.float()
+
+        model.eval()
+
         tokenizer = clip.tokenize
 
         return cls(
             model=model,
-            preprocess=None,  # Preprocess is created in __init__
             tokenizer=tokenizer,
             device=device,
         )
