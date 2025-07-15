@@ -12,19 +12,13 @@ from inference_exp.errors import (
     ModelRuntimeError,
 )
 from inference_exp.models.base.embeddings import TextImageEmbeddingModel
+from inference_exp.models.clip.preprocessing import create_clip_preprocessor
 from inference_exp.models.common.model_packages import get_model_package_contents
 from inference_exp.models.common.onnx import (
     run_session_via_iobinding,
     set_execution_provider_defaults,
 )
 from inference_exp.utils.onnx_introspection import get_selected_onnx_execution_providers
-from torchvision.transforms import (
-    CenterCrop,
-    Compose,
-    InterpolationMode,
-    Normalize,
-    Resize,
-)
 
 try:
     import onnxruntime
@@ -122,13 +116,8 @@ class ClipOnnx(TextImageEmbeddingModel):
         self._max_batch_size = max_batch_size
         self._visual_session_thread_lock = Lock()
         self._textual_session_thread_lock = Lock()
-        self._torch_transforms = Compose(
-            [
-                Resize(self._image_size, interpolation=InterpolationMode.BICUBIC),
-                CenterCrop(self._image_size),
-                lambda x: x / 255,
-                Normalize(MEAN, STD),
-            ]
+        self._preprocessor = create_clip_preprocessor(
+            image_size=image_size, device=device
         )
 
     def embed_images(
@@ -137,7 +126,7 @@ class ClipOnnx(TextImageEmbeddingModel):
         input_color_format: Optional[ColorFormat] = None,
         **kwargs,
     ) -> torch.Tensor:
-        pre_processed_images = self._pre_process_images(
+        pre_processed_images = self._preprocessor(
             images=images, input_color_format=input_color_format
         )
         with self._visual_session_thread_lock:
@@ -177,50 +166,3 @@ class ClipOnnx(TextImageEmbeddingModel):
             )[0]
             results.append(batch_results)
         return torch.cat(results, dim=0)
-
-    def _pre_process_images(
-        self,
-        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-        input_color_format: Optional[ColorFormat],
-    ) -> torch.Tensor:
-        if isinstance(images, torch.Tensor):
-            input_color_format = input_color_format or "rgb"
-            images = images.to(self._device).unsqueeze(dim=0)
-            if input_color_format != "rgb":
-                images = images[:, [2, 1, 0], :, :]
-            return self._torch_transforms(images.float())
-        if isinstance(images, np.ndarray):
-            input_color_format = input_color_format or "bgr"
-            if input_color_format != "rgb":
-                images = np.ascontiguousarray(images[:, :, ::-1])
-            images = torch.from_numpy(images).permute(2, 0, 1).to(self._device)
-            return self._torch_transforms(images).unsqueeze(dim=0)
-        if not len(images):
-            raise ModelRuntimeError(
-                message="Detected empty input to the model",
-                help_url="https://todo",
-            )
-        if isinstance(images[0], np.ndarray):
-            input_color_format = input_color_format or "bgr"
-            results = []
-            for image in images:
-                if input_color_format != "rgb":
-                    image = np.ascontiguousarray(image[:, :, ::-1])
-                image = torch.from_numpy(image).permute(2, 0, 1).to(self._device)
-                preprocessed_image = self._torch_transforms(image)
-                results.append(preprocessed_image)
-            return torch.stack(results, dim=0).contiguous()
-        if isinstance(images[0], torch.Tensor):
-            input_color_format = input_color_format or "rgb"
-            results = []
-            for image in images:
-                image = image.to(device=self._device).unsqueeze(dim=0)
-                if input_color_format != "rgb":
-                    image = image[:, [2, 1, 0], :, :]
-                preprocessed_image = self._torch_transforms(image.float())
-                results.append(preprocessed_image)
-            return torch.cat(results, dim=0).contiguous()
-        raise ModelRuntimeError(
-            message=f"Detected unknown input batch element: {type(images[0])}",
-            help_url="https://todo",
-        )
