@@ -27,6 +27,9 @@ from inference.core.workflows.execution_engine.introspection.schema_parser impor
     parse_block_manifest,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
+from .generate_tutorials import get_tutorials
+
+_, results_indexed_by_used_workflow_block = get_tutorials()
 
 template_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
 jinja_env = Environment(loader=FileSystemLoader(template_dir))
@@ -68,8 +71,6 @@ BLOCK_FAMILY_TEMPLATE = """
 """
 
 BLOCK_VERSION_TEMPLATE = """
-{description}
-
 ### Type identifier
 
 Use the following identifier in step `"type"` field: `{type_identifier}`to add the block as
@@ -125,17 +126,26 @@ article > a.md-content__button.md-icon:first-child {{
 
 
 BLOCK_VERSION_TEMPLATE_SINGLE_VERSION = """
+{description}
+
+{tutorial}
+
+## Developer Reference
+
+The information below is intended for advanced users and developers.
 
 ??? "Class: `{short_block_class_name}`"
 
     Source:
     <a target="_blank" href="{block_source_link}">{block_class_name}</a>
-    
 
 """ + BLOCK_VERSION_TEMPLATE
 
 
 BLOCK_VERSION_TEMPLATE_MULTIPLE_VERSIONS = """
+{description}
+
+{tutorial}
 
 ## {version}
 
@@ -203,7 +213,8 @@ BLOCK_SECTIONS = [
         {
             "title": "Models",
             "id": "model",
-            "colorScheme": "purboflow"
+            "colorScheme": "purboflow",
+            "colorReadable": "#8315f9"
         },
         {
             "title": "Visualizations",
@@ -297,7 +308,7 @@ def write_individual_block_pages(block_families, blocks_description):
             long_description = block.block_schema.get("long_description", "Description not available")
 
 
-            template = BLOCK_VERSION_TEMPLATE_SINGLE_VERSION if len(family_members) == 1 else BLOCK_VERSION_TEMPLATE_MULTIPLE_VERSIONS
+            template = BLOCK_VERSION_TEMPLATE_SINGLE_VERSION.strip() if len(family_members) == 1 else BLOCK_VERSION_TEMPLATE_MULTIPLE_VERSIONS.strip()
 
             version_content = template.format(
                 family_name=family_name,
@@ -306,6 +317,7 @@ def write_individual_block_pages(block_families, blocks_description):
                 block_class_name=block_class_name,
                 short_block_class_name = block.fully_qualified_block_class_name.split(".")[-1],
                 type_identifier=block.manifest_type_identifier,
+                tutorial="""<h2>Tutorial{}</h2><div class="grid cards" markdown>""".format("s" if len(results_indexed_by_used_workflow_block[block.human_friendly_block_name.split('.')[-1]]) > 1 else "") + "".join(results_indexed_by_used_workflow_block[block.human_friendly_block_name.split('.')[-1]]) + "</div>" if results_indexed_by_used_workflow_block[block.human_friendly_block_name.split('.')[-1]] else "",
                 description=long_description,
                 block_inputs=format_block_inputs(parsed_manifest),
                 block_input_bindings=format_input_bindings(parsed_manifest),
@@ -372,6 +384,10 @@ def write_blocks_summary_md(block_families):
         for family_name in sorted(block_families_by_section[section_id], key=lambda x: block_families[x][0].block_schema.get("ui_manifest", {}).get("blockPriority", 99)):
             # Suppose you had a function slugify_block_name:
             slug = slugify_block_name(family_name)
+            if family_name.endswith("Model"):
+                family_name = family_name[:-len("Model")]  # Remove "Model" suffix for better readability
+            if family_name.endswith("Visualization"):
+                family_name = family_name[:-len("Visualization")]
             # Link to foo.md (or bar.md, etc.)
             lines.append(f"    * [{family_name}]({slug}.md)")
 
@@ -399,7 +415,8 @@ def write_blocks_index_file(block_families):
                 "url": slugify_block_name(family_name),
                 "description": block_schema.get("short_description", "Description not available"),
                 "license": block_schema.get("license", "").upper(),
-                "icon": block_schema.get("ui_manifest", {}).get("icon", "far fa-sparkles")
+                "icon": block_schema.get("ui_manifest", {}).get("icon", "far fa-sparkles"),
+                "color": block_section.get("colorReadable", block_section.get("colorScheme", "#eee")),
             }
             blocks_by_section[section_id].append(block_data)
 

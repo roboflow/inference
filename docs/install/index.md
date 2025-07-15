@@ -1,68 +1,33 @@
-# 🚀 Native Desktop Apps
+# Install Inference
 
-You can now run Roboflow Inference Server on your Windows or macOS machine with our native desktop applications! This is the quickest and most effortless way to get up and running.
+Inference runs as a Docker container. This ensures all dependencies, model weights, and application caching can be managed in one place.
 
-Simply download the latest installer for your operating system.  You can find these attached to our **latest release on GitHub**.
+You can make HTTP requests to the Docker container to run models and Workflows.
 
-➡️ **[View Latest Release and Download Installers on Github](https://github.com/roboflow/inference/releases)**
+Inference is designed to run both on the edge and in the cloud.
 
-### Windows (x86)
- - [Download the latest installer](https://github.com/roboflow/inference/releases) and run it to install Roboflow Inference
- - When the install is finished it will offer to launch the Inference server after the setup completes
- - To stop the inference server simply close the terminal window it opens
- - To start it again later, you can find Roboflow Inference in your Start Menu
+## Run on the Edge
 
-### MacOS (Apple Silicon)
- - [Download the Roboflow Inference DMG](https://github.com/roboflow/inference/releases) disk image
- - Mount hte disk image by double clicking it
- - Drag the Roboflow Inference App to the Application Folder
- - Go to your Application Folder and double click the Roboflow Inference App to start the server
+Inference runs on many edge and personal computing devices. Choose your device below to find the installation guide you need:
 
+- [Windows](install/windows.md)
+- [macOS](install/mac.md)
+- [NVIDIA Jetson](install/jetson.md)
+- [Raspberry Pi](install/jetson.md)
 
+## Run in the Cloud
 
+You can run Inference on servers in the cloud. Choose your cloud below to find the installation guide you need:
 
----
+- [Amazon Web Services](install/cloud/aws.md)
+- [Microsoft Azure](install/cloud/azure.md)
+- [Google Cloud Platform](install/cloud/gcp.md)
 
-# Local Installation using Docker
+## Run with Roboflow
 
-Inference is built to be run at the edge. It loads and executes model
-weights and does computation locally. It can run fully offline (once
-model weights are downloaded) but it's often useful to maintain a
-network connection for interfacing with outside systems (like PLCs on
-the local network, or remote systems for storing data and sending
-notifications).
+You can run Workflows developed with Inference in the Roboflow Cloud. You can use:
 
-## Run via Docker
+- [Dedicated Deployments](https://docs.roboflow.com/deploy/dedicated-deployments), cloud CPUs or GPUs dedicated to your Workflows.
+- [Serverless API](https://docs.roboflow.com/deploy/serverless), which auto-scales with your workloads.
 
-The preferred way to use Inference is via Docker
-(see [Why Docker](/understand/architecture.md#why-docker)).
-
-[Install Docker](https://docs.docker.com/engine/install/) (and
-[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
-for GPU acceleration if you have a CUDA-enabled GPU). Then run:
-
-```bash
-pip install inference-cli
-inference server start
-```
-
-The `inference server start` command attempts to automatically choose
-and configure the optimal container to optimize performance on your machine.
-See [Using Your New Server](#using-your-new-server) for next steps.
-
-!!! Tip
-    Special installation notes and performance tips by device are also available.
-    Browse the navigation on the left for detailed install guides.
-
-## Dev Mode
-
-The `--dev` parameter to `inference server start` starts in development mode.
-This spins up a companion Jupyter notebook server with a quickstart guide on
-[`localhost:9002`](http://localhost:9002). Dive in there for a whirlwind tour
-of your new Inference Server's functionality!
-
-```bash
-inference server start --dev
-```
-
---8<-- "install/using-your-new-server.md"
+Running on another device? [Learn more about the architectures on which Inference is designed to run](/install/other/).

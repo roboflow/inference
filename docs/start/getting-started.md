@@ -1,143 +1,132 @@
-# Installation
+# Build and Run a Workflow
 
-You can install `inference` in a [Python>=3.8](https://www.python.org/) environment.
+Inference supports over 100 "blocks" with which you can make a Workflow.
 
-!!! example "Installation Command"
+A Workflow is a single or multi-stage computer vision application.
 
-    === "CPU"
-        ```bash
-        pip install inference
-        ```
+In this guide, we are going to make a Workflow that runs an object detection model and shows the bounding boxes and labels returned by the model.
 
-    === "Nvidia GPU"
-        ```bash
-        pip install inference-gpu
-        ```
-
-# Quickstart
-
-With the following code snippet, we can load a model and then we used that model's `infer(...)` method to run an image through it.
-
-```python
-# import a utility function for loading Roboflow models
-from inference import get_model
-
-# define the image url to use for inference
-image = "https://media.roboflow.com/inference/people-walking.jpg"
-
-# load a pre-trained yolov8n model
-model = get_model(model_id="yolov8n-640")
-
-# run inference on our chosen image, image can be a url, a numpy array, a PIL image, etc.
-results = model.infer(image)
-```
+This Workflow can then be run on images, videos, RTSP streams, and more.
 
 !!! note
-	
-	For a more detailed example, please refer to the tutorial on [running a model](../quickstart/run_a_model).
 
-# Choosing a Deployment Method
+    Before we get started, make sure you have [installed Inference](/install/start/).
 
-There are three primary ways to deploy Inference:
+## Step #1: Choose a Workflow Builder
 
-* [Serverless Hosted API](#serverless-hosted-api) - for smaller image models.
-* [Dedicated Deployment](#dedicated-deployments) - for bigger models and streaming video.
-* [Self Hosted](#self-hosting) - on your own edge device or server.
+You can build Workflows both on your own hardware and using the Roboflow web application. No matter where your Workflow is built, it can be deployed to the cloud or your own hardware.
 
-Each has pros and cons and which one you should choose depends on your particular
-use-case and organizational constraints.
+=== "Build with Roboflow"
 
-|                         | Serverless | Dedicated | Self-Hosted |
-|-------------------------|------------|-----------|-------------|
-| Workflows               | ✅         | ✅         | ✅          |
-| Basic Logic Blocks      | ✅         | ✅         | ✅          |
-| Pre-Trained Models      | ✅         | ✅         | ✅          |
-| Fine-Tuned Models       | ✅         | ✅         | ✅          |
-| Universe Models         | ✅         | ✅         | ✅          |
-| Active Learning         | ✅         | ✅         | ✅          |
-| Model Monitoring        | ✅         | ✅         | ✅          |
-| Foundation Models       |            | ✅         | ✅          |
-| Video Stream Management |            | ✅         | ✅          |
-| Dynamic Python Blocks   |            | ✅         | ✅          |
-| Device Management       |            | ✅         | ✅          |
-| Access Local Devices    |            |            | ✅          |
-| Can Run Offline         |            |            | ✅          |
-| Billing                 | Per-Call   | Hourly     | [See Below](#self-hosting) |
+    To get started, create a [free Roboflow account](https://app.roboflow.com).
 
-## Cloud Hosting
+    Then, click "Workflows" in the right sidebar of the Roboflow web interface.
 
-By far the easiest way to get started is with Roboflow's managed services. You can
-jump straight to building without having to setup any infrastructure. It's often
-the front-door to using Inference even for those who know they will eventually want
-to self host.
+    Click "Create Workflow" to create a blank Workflow.
 
-There are two cloud hosted offerings with different targeted use-cases, capabilities,
-and pricing models.
+=== "Build on Device"
 
-### Serverless Hosted API
+    You can run the Workflow builder on your own hardware.
 
-The [Serverless Hosted API](https://docs.roboflow.com/deploy/hosted-api) supports running Workflows on
-pre-trained & fine-tuned models, chaining models, basic logic, visualizations, and
-external integrations.
+    To get started, [install Inference and set up your server](/install/index/).
 
-It supports cloud-hosted VLMs like ChatGPT and Anthropic Claude, but does not support
-running heavy models like Florence-2 or SAM 2. It also does not support streaming
-video.
+    Then, go to `http://localhost:9001/build`.
 
-The Serverless API scales down to zero when you're not using it (and up to infinity
-under load) with quick (a couple of seconds) cold-start time. You pay per model
-inference with no minimums. Roboflow's free tier credits may be used.
+    Click "Create Workflow" to create a blank Workflow.
 
-### Dedicated Deployments
+You will then see a blank Workflow builder in which you can build your application:
 
-[Dedicated Deployments](https://docs.roboflow.com/deploy/dedicated-deployments) are single-tenant virtual machines that
-are allocated for your exclusive use. They can optionally be configured with a GPU
-and used in development mode (where you may be evicted if capacity is needed for a
-higher priority task & are limited to 3-hour sessions) or production mode (guaranteed
-capacity and no session time limit).
+[add image]
 
-On a Dedicated Deployment, you can stream video, run custom Python code, access
-heavy foundation models like SAM 2, Florence-2, and Paligemma (including your fine-tunes
-of those models), and install additional dependencies. They are much higher performance
-machines than the instances backing the Serverless Hosted API.
+## Step #2: Add a Detection Block
 
-Scale-up time is on the order of a minute or two.
+You can deploy both base models (i.e. RF-DETR Base) as well as models fine-tuned for a specific use case with Workflows.
 
-!!! info "Dedicated Deployments Availability"
-    Dedicated Deployments are only available to Roboflow Workspaces with an active
-    subscription (and are not available on the free trial). They are billed hourly.
+Let's build an application that detects common objects in an image. For this purpose, we will use a base RF-DETR Base model pre-trained with the Microsoft COCO dataset. This model is free to use, so we don't need to do any set up.
 
-## Self Hosting
+Want to detect a custom object? [Learn how to fine-tune a model for your use case](https://blog.roboflow.com/getting-started-with-roboflow/).
 
-[Running at the edge](/install/index.md) is a core priority and focus area of Inference. For many use-cases
-latency matters, bandwidth is limited, interfacing with local devices is key, and
-resiliency to Internet outages is mandatory.
+Click "Add Model" in Workflows, then choose "Object Detection Model":
 
-Running locally on a development machine, an AI computer, or an edge device is as simple
-as starting a Docker container.
+[add image]
 
-!!! info "Self-Hosted Pricing"
-    Basic usage of self-hosted Inference Servers is completely free.
-    
-    Workflows and Models that require
-    [a Roboflow API Key](https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key)
-    to access Roboflow Cloud powered features (for example: the private model repository)
-    are [metered and consume credits](https://roboflow.com/pricing)
-    (which cost money after a generous free tier is used up) based on the number of images
-    or the hours of video processed.
+A window will appear in which you can choose the model you want to use. Click "Public Models", then choose "RF-DETR Base":
 
-Detailed [installation instructions and device-specific performance tips are here](/install/index.md).
+[add image]
 
-## Bring Your Own Cloud
+Then, click "Save" to add the model to your Workflow.
 
-Sometimes enterprise compliance policies regarding sensitive data requires running
-workloads on-premises. This is supported via
-[self-hosting on your own cloud](../install/cloud/index.md). Billing is the same
-as for self-hosting on an edge device.
+## Step #3: Add a Visualizer
 
-<br />
+The Object Detection block runs an object detection model. By default, this block returns the predictions from the model: bounding boxes with their associated labels.
 
-# Next Steps
+You can use Workflows to show bounding boxes and labels.
 
-Once you've decided on a deployment method and have a server running,
-[interfacing with it is easy](../start/next.md).
+Click "Add Block", then add a "Bounding Box Visualization". Then, add a "Label Visualization". Your Workflow should now look like this:
+
+[add image]
+
+Every block in Workflows is configurable. For example, you can change the thickness of the bounding box lines, or the size of the text in the labels.
+
+## Step #4: Test the Workflow
+
+We now have a Workflow ready to test.
+
+To test your Workflow, click the "Test Workflow" button.
+
+If you are running Workflows using a local Inference server or a Dedicated Deployment, you can test your Workflow on a video with the browser. Otherwise, you can test with images.
+
+Let's test with the following image that contains several objects that our RF-DETR Base model can detect, including a coffee cup and a cell phone:
+
+[add image]
+
+## Step #5: Add a Tracker
+
+Workflows has an extensive suite of tools for building applications designed to run on video.
+
+Let's add a tracker that will let us track objects between frames.
+
+Hover over the Object Detection model block, then click the "+" (plus) icon to add a block below. Choose "Byte Tracker".
+
+Your Workflow should look like this:
+
+[add image]
+
+Our Workflow can now track objects between frames.
+
+## Step #5: Deploy the Workflow
+
+With a video-capable Workflow ready, let's test our Workflow on our hardware.
+
+Click "Deploy" in the top right corner, then copy the code snippet you see. The code snippet will look like this:
+
+```python
+# Import the InferencePipeline object
+from inference import InferencePipeline
+import cv2
+
+def my_sink(result, video_frame):
+    if result.get("output_image"): # Display an image from the workflow response
+        cv2.imshow("Workflow Image", result["output_image"].numpy_image)
+        cv2.waitKey(1)
+    print(result) # do something with the predictions of each frame
+
+
+# initialize a pipeline object
+pipeline = InferencePipeline.init_with_workflow(
+    api_key="",
+    workspace_name="capjamesg",
+    workflow_id="custom-workflow-84",
+    video_reference=0, # Path to video, device id (int, usually 0 for built in webcams), or RTSP stream url
+    max_fps=30,
+    on_prediction=my_sink
+)
+pipeline.start() #start the pipeline
+pipeline.join() #wait for the pipeline thread to finish
+```
+
+Create a new Python file with this code, then run the file.
+
+You will see your Workflow running live on your webcam.
+
+Want to run on an RTSP stream? Replace the `video_reference` with the URL of your stream.
