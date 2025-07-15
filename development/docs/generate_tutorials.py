@@ -1,8 +1,12 @@
 import requests
 # defaultdict
 from collections import defaultdict
+import os
 
-TUTORIAL_URL = "https://roboflow.ghost.io/ghost/api/content/posts/?key=1298d26bc529ad38a0984c3ebf"
+TUTORIAL_URL = "https://roboflow.ghost.io/ghost/api/content/posts/?key=" + os.getenv("GHOST_API_KEY", "")
+
+if not TUTORIAL_URL:
+    raise ValueError("GHOST_API_KEY environment variable is not set. Please set it to access the blog API.")
 
 TEMPLATE = """
 - **{title}**
