@@ -32,9 +32,9 @@ OUT: str = "out"
 DETECTIONS_IN_OUT_PARAM: str = "in_out"
 SHORT_DESCRIPTION = "Count detections passing a line."
 LONG_DESCRIPTION = """
-The `LineCounter` is an analytics block designed to count objects passing the line.
-The block requires detections to be tracked (i.e. each object must have unique tracker_id assigned,
-which persists between frames)
+The Line Counter block tracks how many objects cross a specified line in a video stream.
+
+To use this block, you need to define a tracker (i.e. ByteTrack), then use the results from the tracker as input to this block.
 """
 
 

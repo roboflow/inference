@@ -29,9 +29,10 @@ from inference.core.workflows.prototypes.block import (
 OUTPUT_KEY: str = "path_deviation_detections"
 SHORT_DESCRIPTION = "Calculate Fréchet distance of object from the reference path."
 LONG_DESCRIPTION = """
-The `PathDeviationAnalyticsBlock` is an analytics block designed to measure the Frechet distance
-of tracked objects from a user-defined reference path. The block requires detections to be tracked
-(i.e. each object must have a unique tracker_id assigned, which persists between frames).
+The Path Deviation block lets you measure the Fréchet distance
+of tracked objects from a user-defined reference path.
+
+The block requires detections to be tracked using a tracker block (i.e., ByteTrack).
 """
 
 

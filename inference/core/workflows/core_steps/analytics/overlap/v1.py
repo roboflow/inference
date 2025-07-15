@@ -22,11 +22,11 @@ from inference.core.workflows.prototypes.block import (
 OUTPUT_KEY: str = "overlaps"
 SHORT_DESCRIPTION = "Filter objects overlapping some other class"
 LONG_DESCRIPTION = """
-The `OverlapFilter` is an analytics block that filters out objects overlapping instances of some other class
+The Overlap Filter block filters out objects overlapping instances of another class.
 
 For instance, for filtering people on bicycles, "bicycle" could be used as the overlap class.
 
-Examples applications: people in a car, items on a pallet
+Examples applications: people in a car, items on a pallet.
 
 The filter will remove the overlap class from the results, and only return the objects that overlap it. So
 in the case above, bicycle will also be removed from the results. 

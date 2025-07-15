@@ -23,9 +23,9 @@ from inference.core.workflows.prototypes.block import (
 )
 
 LONG_DESCRIPTION = """
-Stores a value in a cache entry for later retrieval.
+Store a value in a cache that you can retrieve when you run your Workflow again.
 
-Use the `Cache Get` block to fetch values from the cache.
+You can use the `Cache Get` block to fetch values from the cache.
 """
 
 SHORT_DESCRIPTION = "Stores a value in a cache entry for later retrieval."

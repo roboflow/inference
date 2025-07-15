@@ -34,11 +34,39 @@ from inference.core.workflows.prototypes.block import (
 from inference_sdk import InferenceHTTPClient
 
 LONG_DESCRIPTION = """
-Use a CLIP model to create semantic embeddings of text and images.
+<a href="https://github.com/openai/CLIP" target="_blank">CLIP</a> is a computer vision model that can measure the similarity between text and images.
 
-This block accepts an image or string and returns an embedding.
-The embedding can be used to compare the similarity between different
-images or between images and text.
+CLIP can be used for, among other things:
+
+- Image classification
+- Automated labeling for classification models
+- Image clustering
+- Gathering images for model training that are sufficiently dissimilar from existing samples
+- Content moderation
+
+With Workflows, you can calculate CLIP embeddings for images and text in real-time.
+
+You can then use the Cosine Similarity block to compare the embeddings of two images or an image and a string.
+
+## Supported CLIP versions
+
+- `clip/RN101`
+- `clip/RN50`
+- `clip/RN50x16`
+- `clip/RN50x4`
+- `clip/RN50x64`
+- `clip/ViT-B-16`
+- `clip/ViT-B-32`
+- `clip/ViT-L-14-336px`
+- `clip/ViT-L-14`
+
+## See Also
+
+- <a href="https://blog.roboflow.com/openai-clip/" target="_blank">What is CLIP?</a>
+- <a href="https://blog.roboflow.com/clip-image-search-faiss/" target="_blank">Build an Image Search Engine with CLIP and Faiss</a>
+- <a href="https://blog.roboflow.com/build-a-photo-memories-app-with-clip/" target="_blank">Build a Photo Memories App with CLIP</a>
+- <a href="https://blog.roboflow.com/how-to-analyze-and-classify-video-with-clip/" target="_blank">Analyze and Classify Video with CLIP</a>
+
 """
 
 

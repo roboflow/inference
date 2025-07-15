@@ -87,6 +87,7 @@ nav:
         - Deploy Florence-2: https://www.youtube.com/watch?v=_u53TxShLsk
         - Video Analytics: https://www.youtube.com/watch?v=VCbcC5OEGRU
   - Blocks:
+      - workflows/blocks/index.md
       - Block Gallery: workflows/blocks/
   - Extend:
     - Introduction: extend/index.md

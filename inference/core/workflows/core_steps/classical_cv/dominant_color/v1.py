@@ -21,11 +21,9 @@ from inference.core.workflows.prototypes.block import (
 
 SHORT_DESCRIPTION = "Get the dominant color of an image in RGB format."
 LONG_DESCRIPTION = """
-Extract the dominant color from an input image using K-means clustering.
+This block identifies the most prevalent color in an image using K-means clustering.
 
-This block identifies the most prevalent color in an image.
-Processing time is dependant on color complexity and image size.
-Most images should complete in under half a second.
+Processing time is dependant on color complexity and image size. Most images should complete in under half a second.
 
 The output is a list of RGB values representing the dominant color, making it easy 
 to use in further processing or visualization tasks.

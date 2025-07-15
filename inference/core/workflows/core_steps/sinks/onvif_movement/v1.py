@@ -55,22 +55,19 @@ PREDICTIONS_OUTPUT_KEY: str = "predictions"
 SEEKING_OUTPUT_KEY: str = "seeking"
 
 LONG_DESCRIPTION = """
-This **ONVIF** block allows a workflow to control an ONVIF capable PTZ camera to follow a detected object.
+The **ONVIF** block allows a workflow to control an ONVIF-capable PTZ camera to follow a detected object.
 
 The block returns three values:
+
 * predictions: a predictions object containing the single prediction the camera is currently following (can be empty)
 * seeking: indicates whether or not the camera is currently seeking an object (set asynchronously)
 
 There are two modes:
 
-*Follow:
-The object it follows is the maximum confidence prediction out of all predictions passed into it. To follow
+* Follow: The object it follows is the maximum confidence prediction out of all predictions passed into it. To follow
 a specific object, use the appropriate filters on the predictiion object to specify the object you want to
-follow. Additionally if a tracker is used, the camera will follow the tracked object until it disappears.
-Additionally, zoom can be toggled to get the camera to zoom into a position.
-
-*Move to Preset:
-The camera can also move to a defined preset position. The camera must support the GotoPreset service.
+follow. Additionally if a tracker is used, the camera will follow the tracked object until it disappears. Additionally, zoom can be toggled to get the camera to zoom into a position.
+* Move to Preset: The camera can also move to a defined preset position. The camera must support the GotoPreset service.
 
 Note that the tracking block uses the ONVIF continuous movement service. Tracking is adjusted on each successive
 workflow execution. If workflow execution stops, and the camera is currently moving, the camera will continue

@@ -32,9 +32,9 @@ from inference.core.workflows.prototypes.block import (
 OUTPUT_KEY: str = "timed_detections"
 SHORT_DESCRIPTION = "Track object time in zone."
 LONG_DESCRIPTION = """
-The `TimeInZoneBlock` is an analytics block designed to measure time spent by objects in a zone.
-The block requires detections to be tracked (i.e. each object must have unique tracker_id assigned,
-which persists between frames)
+The Time in Zone block lets you measure for how long an object has spent in a zone.
+
+The block requires detections to be tracked using a tracker block (i.e., ByteTrack).
 """
 
 
