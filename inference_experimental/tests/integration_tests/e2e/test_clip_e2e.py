@@ -11,6 +11,7 @@ from PIL import Image
 
 from inference_exp.models.clip.clip_onnx import ClipOnnx
 from inference_exp.models.clip.clip_pytorch import ClipTorch
+from inference_exp import AutoModel
 
 
 @pytest.fixture(scope="module")
@@ -31,7 +32,8 @@ def clip_torch_wrapper(clip_model_name: str) -> ClipTorch:
 
 @pytest.fixture(scope="module")
 def clip_onnx_wrapper(clip_model_name: str) -> ClipOnnx:
-    return ClipOnnx.from_pretrained(
+
+    return AutoModel.from_pretrained(
         model_name_or_path=f"clip/{clip_model_name}",
         device=torch.device("cpu"),
         onnx_execution_providers=["CPUExecutionProvider"],

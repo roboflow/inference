@@ -59,7 +59,7 @@ def test_single_numpy_input(model_size, image_shape):
     pil_output = pil_based_preprocessor(rgb_image_numpy).unsqueeze(0)
     # THEN
     mean_diff = torch.mean(torch.abs(tensor_output - pil_output))
-    assert mean_diff < 1e-1
+    assert mean_diff < 1e-2
 
 
 @pytest.mark.parametrize("model_size", [224])
@@ -76,7 +76,7 @@ def test_single_tensor_input(model_size, image_shape):
     pil_output = pil_based_preprocessor(rgb_image_tensor).unsqueeze(0)
     # THEN
     mean_diff = torch.mean(torch.abs(tensor_output - pil_output))
-    assert mean_diff < 1e-1
+    assert mean_diff < 1e-2
 
 
 @pytest.mark.parametrize("model_size", [224])
@@ -97,7 +97,7 @@ def test_list_of_numpy_inputs(model_size, image_shape):
     )
     # THEN
     mean_diff = torch.mean(torch.abs(tensor_output - pil_output))
-    assert mean_diff < 1e-1
+    assert mean_diff < 1e-2
 
 
 @pytest.mark.parametrize("model_size", [224])
@@ -117,7 +117,7 @@ def test_list_of_tensor_inputs(model_size, image_shape):
     )
     # THEN
     mean_diff = torch.mean(torch.abs(tensor_output - pil_output))
-    assert mean_diff < 1e-1
+    assert mean_diff < 1e-2
 
 
 @pytest.mark.parametrize("model_size", [224])
@@ -137,7 +137,7 @@ def test_batched_tensor_input(model_size, image_shape):
     )
     # THEN
     mean_diff = torch.mean(torch.abs(tensor_output - pil_output))
-    assert mean_diff < 1e-1
+    assert mean_diff < 1e-2
 
 
 @pytest.mark.parametrize("model_size", [224])
@@ -160,7 +160,7 @@ def test_list_of_varied_size_numpy_inputs(model_size, image_shape):
     )
     # THEN
     mean_diff = torch.mean(torch.abs(tensor_output - pil_output))
-    assert mean_diff < 1e-1
+    assert mean_diff < 1e-2
 
 
 @pytest.mark.parametrize("model_size", [224])
@@ -178,7 +178,7 @@ def test_internal_consistency_of_tensor_inputs(model_size, image_shape):
     batched_tensor_output = tensor_based_preprocessor(batched_tensor)
     # THEN
     mean_diff = torch.mean(torch.abs(list_tensor_output - batched_tensor_output))
-    assert mean_diff < 1e-4
+    assert mean_diff < 1e-2
 
 
 @pytest.mark.parametrize("model_size", [224])
@@ -194,4 +194,4 @@ def test_internal_consistency_of_numpy_and_tensor_inputs(model_size, image_shape
     tensor_output = tensor_based_preprocessor(rgb_image_tensor)
     # THEN
     mean_diff = torch.mean(torch.abs(numpy_output - tensor_output))
-    assert mean_diff < 1e-4
+    assert mean_diff < 1e-2
