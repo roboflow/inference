@@ -93,7 +93,7 @@ class ClipConfig(BaseModel):
 
 
 def load_config(config_path: str) -> ClipConfig:
-    config_data = {}
+
     try:
         with open(config_path) as f:
             config_data = json.load(f)
