@@ -36,6 +36,7 @@ jobs:
       - name: TEST
         run: |
           uname -a
+          /sbin/ldconfig -N -v $(sed 's/:/ /' <<< $LD_LIBRARY_PATH) 2>/dev/null | grep libcuda
           sudo apt update -y && sudo apt install -y install nvidia-cuda-toolkit
           which nvcc
       # - name: 📦 Install base dependencies as well as `${{ matrix.extras.install }}` dependencies
