@@ -20,8 +20,16 @@ STD = (0.26862954, 0.26130258, 0.27577711)
 
 def create_clip_preprocessor(image_size: int, device: torch.device) -> Callable:
     """
-    Creates a preprocessor for CLIP models that operates on tensors,
-    replicating the logic of the original PIL-based preprocessing pipeline.
+    Creates a preprocessor for CLIP models that operates on tensors.
+
+    This implementation replicates the logic of the original CLIP preprocessing pipeline
+    but is designed to work directly with torch.Tensors and np.ndarrays, avoiding
+    the need to convert to and from PIL.Image objects.
+
+    Note: Due to differences in the underlying resizing algorithms (torchvision vs. PIL),
+    the output of this preprocessor may have minor numerical differences compared to
+    the original. These differences have been tested and are known to produce
+    embeddings with very high cosine similarity, making them functionally equivalent.
 
     Args:
         image_size (int): The target size for the input images.
