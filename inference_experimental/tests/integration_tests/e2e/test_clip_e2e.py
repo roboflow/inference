@@ -1,4 +1,5 @@
 import os
+from typing import Optional
 
 
 import clip
@@ -24,23 +25,52 @@ def baseline_clip_model(clip_model_name: str):
     return model
 
 
-@pytest.fixture(scope="module")
-def clip_torch_wrapper(clip_model_name: str) -> ClipTorch:
+def _get_clip_torch_wrapper(
+    clip_model_name: str, max_batch_size: Optional[int] = None
+) -> ClipTorch:
+    kwargs = {}
+    if max_batch_size is not None:
+        kwargs["max_batch_size"] = max_batch_size
     return AutoModel.from_pretrained(
         model_name_or_path=f"clip/{clip_model_name}",
         device=torch.device("cpu"),
         backends=[BackendType.TORCH],
+        **kwargs,
     )
 
 
-@pytest.fixture(scope="module")
-def clip_onnx_wrapper(clip_model_name: str) -> ClipOnnx:
-
+def _get_clip_onnx_wrapper(
+    clip_model_name: str, max_batch_size: Optional[int] = None
+) -> ClipOnnx:
+    kwargs = {}
+    if max_batch_size is not None:
+        kwargs["max_batch_size"] = max_batch_size
     return AutoModel.from_pretrained(
         model_name_or_path=f"clip/{clip_model_name}",
         device=torch.device("cpu"),
         backends=[BackendType.ONNX],
+        **kwargs,
     )
+
+
+@pytest.fixture(scope="module")
+def clip_torch_wrapper(clip_model_name: str) -> ClipTorch:
+    return _get_clip_torch_wrapper(clip_model_name=clip_model_name)
+
+
+@pytest.fixture(scope="module")
+def clip_onnx_wrapper(clip_model_name: str) -> ClipOnnx:
+    return _get_clip_onnx_wrapper(clip_model_name=clip_model_name)
+
+
+@pytest.fixture(scope="module")
+def clip_torch_wrapper_small_batch(clip_model_name: str) -> ClipTorch:
+    return _get_clip_torch_wrapper(clip_model_name=clip_model_name, max_batch_size=2)
+
+
+@pytest.fixture(scope="module")
+def clip_onnx_wrapper_small_batch(clip_model_name: str) -> ClipOnnx:
+    return _get_clip_onnx_wrapper(clip_model_name=clip_model_name, max_batch_size=2)
 
 
 def _test_clip_wrapper_vs_baseline_for_image_embeddings(
@@ -339,3 +369,51 @@ def test_onnx_embed_batch_of_tensor_images(
     _test_embed_batch_of_tensor_images(
         clip_wrapper=clip_onnx_wrapper, image_shape=image_shape
     )
+
+
+def _test_max_batch_size_for_images(model):
+    # given
+    images = [
+        np.random.randint(0, 255, size=(224, 224, 3), dtype=np.uint8) for _ in range(5)
+    ]
+
+    # when
+    embeddings = model.embed_images(images, input_color_format="rgb")
+
+    # then
+    assert isinstance(embeddings, torch.Tensor)
+    assert embeddings.shape == (5, 1024)
+
+
+@pytest.mark.e2e_model_inference
+def test_torch_max_batch_size_for_images(clip_torch_wrapper_small_batch: ClipTorch):
+    _test_max_batch_size_for_images(model=clip_torch_wrapper_small_batch)
+
+
+def _test_max_batch_size_for_text(model):
+    # given
+    texts = ["a", "b", "c", "d", "e"]
+
+    # when
+    embeddings = model.embed_text(texts)
+
+    # then
+    assert isinstance(embeddings, torch.Tensor)
+    assert embeddings.shape == (5, 1024)
+
+
+@pytest.mark.e2e_model_inference
+def test_torch_max_batch_size_for_text(clip_torch_wrapper_small_batch: ClipTorch):
+    _test_max_batch_size_for_text(model=clip_torch_wrapper_small_batch)
+
+
+@pytest.mark.onnx_extras
+@pytest.mark.e2e_model_inference
+def test_onnx_max_batch_size_for_images(clip_onnx_wrapper_small_batch: ClipOnnx):
+    _test_max_batch_size_for_images(model=clip_onnx_wrapper_small_batch)
+
+
+@pytest.mark.onnx_extras
+@pytest.mark.e2e_model_inference
+def test_onnx_max_batch_size_for_text(clip_onnx_wrapper_small_batch: ClipOnnx):
+    _test_max_batch_size_for_text(model=clip_onnx_wrapper_small_batch)

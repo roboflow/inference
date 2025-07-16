@@ -18,7 +18,11 @@ class ClipTorch(TextImageEmbeddingModel):
 
     @classmethod
     def from_pretrained(
-        cls, model_name_or_path: str, device: torch.device = DEFAULT_DEVICE, **kwargs
+        cls,
+        model_name_or_path: str,
+        device: torch.device = DEFAULT_DEVICE,
+        max_batch_size: int = 32,
+        **kwargs,
     ) -> "ClipTorch":
 
         model_package_content = get_model_package_contents(
@@ -48,6 +52,7 @@ class ClipTorch(TextImageEmbeddingModel):
             model=model,
             tokenizer=clip.tokenize,
             device=device,
+            max_batch_size=max_batch_size,
         )
 
     def __init__(
@@ -55,6 +60,7 @@ class ClipTorch(TextImageEmbeddingModel):
         model: torch.nn.Module,
         tokenizer: Callable,
         device: torch.device,
+        max_batch_size: int,
     ):
         self.model = model
         self.tokenizer = tokenizer
@@ -62,6 +68,7 @@ class ClipTorch(TextImageEmbeddingModel):
         self.preprocessor = create_clip_preprocessor(
             image_size=model.visual.input_resolution, device=device
         )
+        self._max_batch_size = max_batch_size
 
     def embed_images(
         self,
@@ -70,10 +77,17 @@ class ClipTorch(TextImageEmbeddingModel):
         **kwargs,
     ) -> torch.Tensor:
         tensor_batch = self.preprocessor(images, input_color_format=input_color_format)
-        with torch.no_grad():
-            image_features = self.model.encode_image(tensor_batch.to(self.device))
-
-        return image_features
+        if tensor_batch.shape[0] <= self._max_batch_size:
+            with torch.no_grad():
+                image_features = self.model.encode_image(tensor_batch.to(self.device))
+            return image_features
+        results = []
+        for i in range(0, tensor_batch.shape[0], self._max_batch_size):
+            batch_input = tensor_batch[i : i + self._max_batch_size].contiguous()
+            with torch.no_grad():
+                batch_results = self.model.encode_image(batch_input.to(self.device))
+            results.append(batch_results)
+        return torch.cat(results, dim=0)
 
     def embed_text(
         self,
@@ -84,7 +98,14 @@ class ClipTorch(TextImageEmbeddingModel):
             texts = [texts]
 
         text_tokens = self.tokenizer(texts).to(self.device)
-        with torch.no_grad():
-            text_features = self.model.encode_text(text_tokens)
-
-        return text_features
+        if text_tokens.shape[0] <= self._max_batch_size:
+            with torch.no_grad():
+                text_features = self.model.encode_text(text_tokens)
+            return text_features
+        results = []
+        for i in range(0, text_tokens.shape[0], self._max_batch_size):
+            batch_input = text_tokens[i : i + self._max_batch_size].contiguous()
+            with torch.no_grad():
+                batch_results = self.model.encode_text(batch_input)
+            results.append(batch_results)
+        return torch.cat(results, dim=0)
