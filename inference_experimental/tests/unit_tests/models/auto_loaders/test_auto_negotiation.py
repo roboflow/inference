@@ -26,6 +26,7 @@ from inference_exp.models.auto_loaders.auto_negotiation import (
     parse_quantization,
     parse_requested_quantization,
     range_within_other,
+    remove_packages_not_matching_implementation,
     remove_untrusted_packages,
     select_model_package_by_id,
     torch_package_matches_runtime_environment,
@@ -2399,7 +2400,7 @@ def test_model_package_matches_runtime_environment_when_package_should_be_allowe
     result = model_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
-        onnx_execution_providers=["CPUExecutionProvider"]
+        onnx_execution_providers=["CPUExecutionProvider"],
     )
 
     # then
@@ -2916,3 +2917,99 @@ def test_determine_default_allowed_quantization_for_no_cuda_device_detected_in_r
         Quantization.FP32,
         Quantization.BF16,
     }
+
+
+def test_remove_packages_not_matching_implementation_when_nothing_to_be_removed() -> (
+    None
+):
+    # given
+    model_packages = [
+        ModelPackageMetadata(
+            package_id="my-package-id-1",
+            backend=BackendType.ONNX,
+            quantization=Quantization.FP32,
+            onnx_package_details=ONNXPackageDetails(opset=23),
+            static_batch_size=1,
+            package_artefacts=[],
+            trusted_source=False,
+        ),
+        ModelPackageMetadata(
+            package_id="my-package-id-2",
+            backend=BackendType.ONNX,
+            quantization=Quantization.FP16,
+            onnx_package_details=ONNXPackageDetails(opset=23),
+            static_batch_size=4,
+            package_artefacts=[],
+            trusted_source=False,
+        ),
+    ]
+
+    # when
+    result = remove_packages_not_matching_implementation(
+        model_architecture="yolov8",
+        task_type="object-detection",
+        model_packages=model_packages,
+    )
+
+    # then
+    assert result == model_packages
+
+
+def test_remove_packages_not_matching_implementation_when_some_entries_to_be_removed() -> (
+    None
+):
+    # given
+    model_packages = [
+        ModelPackageMetadata(
+            package_id="my-package-id-1",
+            backend=BackendType.ONNX,
+            quantization=Quantization.FP32,
+            onnx_package_details=ONNXPackageDetails(opset=23),
+            static_batch_size=1,
+            package_artefacts=[],
+            trusted_source=False,
+        ),
+        ModelPackageMetadata(
+            package_id="my-package-id-2",
+            backend=BackendType.HF,
+            quantization=Quantization.FP16,
+            static_batch_size=4,
+            package_artefacts=[],
+            trusted_source=False,
+        ),
+    ]
+
+    # when
+    result = remove_packages_not_matching_implementation(
+        model_architecture="yolov8",
+        task_type="object-detection",
+        model_packages=model_packages,
+    )
+
+    # then
+    assert len(result) == 1
+    assert result[0] == model_packages[0]
+
+
+def test_remove_packages_not_matching_implementation_when_all_entries_to_be_removed() -> (
+    None
+):
+    # given
+    model_packages = [
+        ModelPackageMetadata(
+            package_id="my-package-id-2",
+            backend=BackendType.HF,
+            quantization=Quantization.FP16,
+            static_batch_size=4,
+            package_artefacts=[],
+            trusted_source=False,
+        ),
+    ]
+
+    # when
+    with pytest.raises(NoModelPackagesAvailableError):
+        _ = remove_packages_not_matching_implementation(
+            model_architecture="yolov8",
+            task_type="object-detection",
+            model_packages=model_packages,
+        )
