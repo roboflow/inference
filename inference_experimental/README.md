@@ -129,7 +129,7 @@ are required.
 
 | Architecture       | Task Type               | Supported variants |
 |--------------------|-------------------------|--------------------|
-| RFDetr             | `object-detection`      | TRT                |
+| RFDetr             | `object-detection`      | TRT, Torch         |
 | YOLO v8            | `object-detection`      | ONNX, TRT          |
 | YOLO v8            | `instance-segmentation` | ONNX, TRT          |
 | YOLO v9            | `object-detection`      | ONNX, TRT          |

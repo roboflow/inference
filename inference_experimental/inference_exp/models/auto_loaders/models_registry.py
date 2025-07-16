@@ -129,6 +129,10 @@ REGISTERED_MODELS: Dict[Tuple[ModelArchitecture, TaskType, BackendType], LazyCla
         module_name="inference_exp.models.rfdetr.rfdetr_object_detection_trt",
         class_name="RFDetrForObjectDetectionTRT",
     ),
+    ("rfdetr", OBJECT_DETECTION_TASK, BackendType.TORCH): LazyClass(
+        module_name="inference_exp.models.rfdetr.rfdetr_object_detection_pytorch",
+        class_name="RFDetrForObjectDetectionTorch",
+    ),
 }
 
 
