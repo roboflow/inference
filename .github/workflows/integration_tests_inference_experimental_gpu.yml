@@ -31,10 +31,12 @@ jobs:
       - name: 📦 Cache apt packages
         uses: actions/cache@v3
         with:
-          path: /var/cache/apt/archives/
-          key: ${{ runner.os }}-apt-${{ matrix.python-version }}-${{ hashFiles('inference_experimental/pyproject.toml') }}
+          path: |
+            /var/cache/apt/archives/
+            /var/lib/apt/lists/
+          key: ${{ runner.os }}-apt-cuda-${{ hashFiles('inference_experimental/pyproject.toml') }}
           restore-keys: |
-            ${{ runner.os }}-apt-${{ matrix.python-version }}-
+            ${{ runner.os }}-apt-cuda-
       - name: 🐍 Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
@@ -43,7 +45,8 @@ jobs:
       - name: 📦 Install base dependencies as well as `${{ matrix.extras.install }}` dependencies
         working-directory: inference_experimental
         run: |
-          sudo apt-get update -y && sudo apt-get install -y cuda-toolkit
+          sudo apt-get update -y
+          sudo apt-get install -y -o APT::Keep-Downloaded-Packages=true cuda-cudart-dev-12-* cuda-nvcc-12-*
           python -m pip install --upgrade pip
           python -m pip install uv
           python -m uv venv
