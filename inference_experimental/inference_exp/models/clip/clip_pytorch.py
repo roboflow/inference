@@ -48,7 +48,7 @@ class ClipTorch(TextImageEmbeddingModel):
 
         model = build_model(state_dict).to(device)
 
-        if str(device) == "cpu":
+        if device.type == "cpu":
             model.float()
 
         model.eval()
