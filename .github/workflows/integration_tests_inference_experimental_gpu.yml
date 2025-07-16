@@ -35,6 +35,7 @@ jobs:
           check-latest: true
       - name: TEST
         run: |
+          uname -a
           sudo apt update -y && sudo apt install -y install nvidia-cuda-toolkit
           which nvcc
       # - name: 📦 Install base dependencies as well as `${{ matrix.extras.install }}` dependencies
