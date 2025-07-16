@@ -40,22 +40,21 @@ are mostly based on Torch.
 * Backend selection happens **dynamically at runtime**, based on model metadata and environment checks, 
 but can be fully overridden by the user when needed.
 
-## ⚡ Quickstart: Install & Run
+## ⚡ Installation
 
 > [!TIP]
 > We recommend using `uv` to install `inference-exp`. To install the tool, follow 
 > [official guide](https://docs.astral.sh/uv/getting-started/installation/) or use the snippet below:
 > ```bash
-> !curl -LsSf https://astral.sh/uv/install.sh | sh
+> curl -LsSf https://astral.sh/uv/install.sh | sh
 > ```
 
-### Installation
 
 To install `inference-exp` **with TRT and ONNX** on GPU server with base CUDA libraries available run the following 
 command:
 
 ```bash
-!uv pip install "inference-exp[torch-cu128,onnx-cu12,trt10]" "tensorrt==10.12.0.36"
+uv pip install "inference-exp[torch-cu128,onnx-cu12,trt10]" "tensorrt==10.12.0.36"
 ```
 > [!TIP]
 > To avoid clashes with external packages, `pyproject.toml` defines quite loose restrictions for the dependent packages.
@@ -80,4 +79,36 @@ uv pip install inference-exp
 > follow the installation method based on `uv.lock` which is demonstrated in official [docker builds](./dockerfiles) 
 > of the library.
 
+## 📖 Basic Usage
+```python
+from inference_exp import AutoModel
+import cv2
+import supervision as sv
+
+# loads model from Roboflow API
+model = AutoModel.from_pretrained("yolov8n-640")  
+image = cv2.imread("<path-to-your-image>")
+predictions = model(image)[0]
+
+# integration with supervision
+annotator = sv.BoxAnnotator()
+annotated = annotator.annotate(image.copy(), predictions.to_supervision())
+```
+
 ## 🔌 Extra Dependencies
+
+### Backends
+| Backend | Extras                                                                        | Description                                                                                                                                                                                                                                                                                                                   |
+|---------|-------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| PyTorch | `torch-cu118`, `torch-cu124`, `torch-cu126`, `torch-cu128`, `torch-jp6-cu126` | Provide specific variants of `torch` to match installed CUDA version, only works with `uv` which is capable of reading extra indexes from `pyproject.toml`, when using with `pip`, use `--extra-index-url`. By default, CPU version of `torch` is installed with the library. Torch backend is a default one for the library. |
+| ONNX    | `onnx-cpu`, `onnx-cu118`, `onnx-cu12`, `onnx-jp6-cu126`                       | Provide specific variants of `onnxruntime`. only works with `uv` which is capable of reading extra indexes from `pyproject.toml`, when using with `pip`, use `--extra-index-url`. This extras is not installed by default and is not required, but enables wide variety of models trained on Roboflow Platform.               |
+| TRT     | `trt10`                                                                       | Provide specific variants of `tensorrt`, only works on GPU servers. Jetson installations should fall back to pre-compiled package shipped with Jetpack.                                                                                                                                                                       |
+
+
+### Additional models / capabilities
+| Extras           | Description                                                                                        |
+|------------------|----------------------------------------------------------------------------------------------------|
+| `mediapipe`      | Enables MediaPipe models, including Face Detector                                                  |
+| `grounding-dino` | Enables Grounding Dino model                                                                       |
+| `flash-attn`     | *EXPERIMENTAL:* Installs `flash-attn` for faster LLMs/VLMs - usually requires extensive compilation |
+| `test`           | Test dependencies                                                                                  |
