@@ -1,7 +1,5 @@
 import os
 
-os.environ["ROBOFLOW_API_HOST"] = "https://api.roboflow.one"
-
 
 import clip
 import numpy as np
@@ -45,16 +43,12 @@ def clip_onnx_wrapper(clip_model_name: str) -> ClipOnnx:
     )
 
 
-@pytest.mark.parametrize("wrapper_name", ["clip_torch_wrapper", "clip_onnx_wrapper"])
-@pytest.mark.parametrize("image_shape", [(224, 224), (320, 240), (448, 448)])
-def test_clip_wrapper_vs_baseline_for_image_embeddings(
-    wrapper_name: str,
-    request,
+def _test_clip_wrapper_vs_baseline_for_image_embeddings(
+    clip_wrapper,
     baseline_clip_model,
     image_shape: tuple,
 ):
     # given
-    clip_wrapper = request.getfixturevalue(wrapper_name)
     image = np.random.randint(
         0, 255, size=(image_shape[0], image_shape[1], 3), dtype=np.uint8
     )
@@ -75,14 +69,40 @@ def test_clip_wrapper_vs_baseline_for_image_embeddings(
     assert similarity.item() > 0.99
 
 
-@pytest.mark.parametrize("wrapper_name", ["clip_torch_wrapper", "clip_onnx_wrapper"])
-def test_clip_wrapper_vs_baseline_for_text_embeddings(
-    wrapper_name: str,
-    request,
+@pytest.mark.e2e_model_inference
+@pytest.mark.parametrize("image_shape", [(224, 224), (320, 240), (448, 448)])
+def test_torch_clip_wrapper_vs_baseline_for_image_embeddings(
+    clip_torch_wrapper: ClipTorch,
+    baseline_clip_model,
+    image_shape: tuple,
+):
+    _test_clip_wrapper_vs_baseline_for_image_embeddings(
+        clip_wrapper=clip_torch_wrapper,
+        baseline_clip_model=baseline_clip_model,
+        image_shape=image_shape,
+    )
+
+
+@pytest.mark.onnx_extras
+@pytest.mark.e2e_model_inference
+@pytest.mark.parametrize("image_shape", [(224, 224), (320, 240), (448, 448)])
+def test_onnx_clip_wrapper_vs_baseline_for_image_embeddings(
+    clip_onnx_wrapper: ClipOnnx,
+    baseline_clip_model,
+    image_shape: tuple,
+):
+    _test_clip_wrapper_vs_baseline_for_image_embeddings(
+        clip_wrapper=clip_onnx_wrapper,
+        baseline_clip_model=baseline_clip_model,
+        image_shape=image_shape,
+    )
+
+
+def _test_clip_wrapper_vs_baseline_for_text_embeddings(
+    clip_wrapper,
     baseline_clip_model,
 ):
     # given
-    clip_wrapper = request.getfixturevalue(wrapper_name)
     text = "hello world"
     baseline_input = clip.tokenize([text])
 
@@ -98,10 +118,29 @@ def test_clip_wrapper_vs_baseline_for_text_embeddings(
     assert similarity.item() > 0.999
 
 
-@pytest.mark.parametrize("wrapper_name", ["clip_torch_wrapper", "clip_onnx_wrapper"])
-def test_embed_text(wrapper_name: str, request):
+@pytest.mark.e2e_model_inference
+def test_torch_clip_wrapper_vs_baseline_for_text_embeddings(
+    clip_torch_wrapper: ClipTorch,
+    baseline_clip_model,
+):
+    _test_clip_wrapper_vs_baseline_for_text_embeddings(
+        clip_wrapper=clip_torch_wrapper, baseline_clip_model=baseline_clip_model
+    )
+
+
+@pytest.mark.onnx_extras
+@pytest.mark.e2e_model_inference
+def test_onnx_clip_wrapper_vs_baseline_for_text_embeddings(
+    clip_onnx_wrapper: ClipOnnx,
+    baseline_clip_model,
+):
+    _test_clip_wrapper_vs_baseline_for_text_embeddings(
+        clip_wrapper=clip_onnx_wrapper, baseline_clip_model=baseline_clip_model
+    )
+
+
+def _test_embed_text(clip_wrapper):
     # given
-    clip_wrapper = request.getfixturevalue(wrapper_name)
     texts = ["hello world", "this is a test"]
 
     # when
@@ -112,11 +151,19 @@ def test_embed_text(wrapper_name: str, request):
     assert embeddings.shape == (2, 1024)
 
 
-@pytest.mark.parametrize("wrapper_name", ["clip_torch_wrapper", "clip_onnx_wrapper"])
-@pytest.mark.parametrize("image_shape", [(224, 224), (320, 240), (640, 480)])
-def test_embed_single_numpy_image(wrapper_name: str, request, image_shape: tuple):
+@pytest.mark.e2e_model_inference
+def test_torch_embed_text(clip_torch_wrapper: ClipTorch):
+    _test_embed_text(clip_wrapper=clip_torch_wrapper)
+
+
+@pytest.mark.onnx_extras
+@pytest.mark.e2e_model_inference
+def test_onnx_embed_text(clip_onnx_wrapper: ClipOnnx):
+    _test_embed_text(clip_wrapper=clip_onnx_wrapper)
+
+
+def _test_embed_single_numpy_image(clip_wrapper, image_shape: tuple):
     # given
-    clip_wrapper = request.getfixturevalue(wrapper_name)
     image = np.random.randint(
         0, 255, size=(image_shape[0], image_shape[1], 3), dtype=np.uint8
     )
@@ -129,11 +176,27 @@ def test_embed_single_numpy_image(wrapper_name: str, request, image_shape: tuple
     assert embeddings.shape == (1, 1024)
 
 
-@pytest.mark.parametrize("wrapper_name", ["clip_torch_wrapper", "clip_onnx_wrapper"])
+@pytest.mark.e2e_model_inference
 @pytest.mark.parametrize("image_shape", [(224, 224), (320, 240), (640, 480)])
-def test_embed_single_tensor_image(wrapper_name: str, request, image_shape: tuple):
+def test_torch_embed_single_numpy_image(
+    clip_torch_wrapper: ClipTorch, image_shape: tuple
+):
+    _test_embed_single_numpy_image(
+        clip_wrapper=clip_torch_wrapper, image_shape=image_shape
+    )
+
+
+@pytest.mark.onnx_extras
+@pytest.mark.e2e_model_inference
+@pytest.mark.parametrize("image_shape", [(224, 224), (320, 240), (640, 480)])
+def test_onnx_embed_single_numpy_image(clip_onnx_wrapper: ClipOnnx, image_shape: tuple):
+    _test_embed_single_numpy_image(
+        clip_wrapper=clip_onnx_wrapper, image_shape=image_shape
+    )
+
+
+def _test_embed_single_tensor_image(clip_wrapper, image_shape: tuple):
     # given
-    clip_wrapper = request.getfixturevalue(wrapper_name)
     image = torch.randint(
         0, 255, size=(3, image_shape[0], image_shape[1]), dtype=torch.uint8
     )
@@ -146,11 +209,29 @@ def test_embed_single_tensor_image(wrapper_name: str, request, image_shape: tupl
     assert embeddings.shape == (1, 1024)
 
 
-@pytest.mark.parametrize("wrapper_name", ["clip_torch_wrapper", "clip_onnx_wrapper"])
+@pytest.mark.e2e_model_inference
 @pytest.mark.parametrize("image_shape", [(224, 224), (320, 240), (640, 480)])
-def test_embed_list_of_numpy_images(wrapper_name: str, request, image_shape: tuple):
+def test_torch_embed_single_tensor_image(
+    clip_torch_wrapper: ClipTorch, image_shape: tuple
+):
+    _test_embed_single_tensor_image(
+        clip_wrapper=clip_torch_wrapper, image_shape=image_shape
+    )
+
+
+@pytest.mark.onnx_extras
+@pytest.mark.e2e_model_inference
+@pytest.mark.parametrize("image_shape", [(224, 224), (320, 240), (640, 480)])
+def test_onnx_embed_single_tensor_image(
+    clip_onnx_wrapper: ClipOnnx, image_shape: tuple
+):
+    _test_embed_single_tensor_image(
+        clip_wrapper=clip_onnx_wrapper, image_shape=image_shape
+    )
+
+
+def _test_embed_list_of_numpy_images(clip_wrapper, image_shape: tuple):
     # given
-    clip_wrapper = request.getfixturevalue(wrapper_name)
     images = [
         np.random.randint(
             0, 255, size=(image_shape[0], image_shape[1], 3), dtype=np.uint8
@@ -166,11 +247,29 @@ def test_embed_list_of_numpy_images(wrapper_name: str, request, image_shape: tup
     assert embeddings.shape == (2, 1024)
 
 
-@pytest.mark.parametrize("wrapper_name", ["clip_torch_wrapper", "clip_onnx_wrapper"])
+@pytest.mark.e2e_model_inference
 @pytest.mark.parametrize("image_shape", [(224, 224), (320, 240), (640, 480)])
-def test_embed_list_of_tensor_images(wrapper_name: str, request, image_shape: tuple):
+def test_torch_embed_list_of_numpy_images(
+    clip_torch_wrapper: ClipTorch, image_shape: tuple
+):
+    _test_embed_list_of_numpy_images(
+        clip_wrapper=clip_torch_wrapper, image_shape=image_shape
+    )
+
+
+@pytest.mark.onnx_extras
+@pytest.mark.e2e_model_inference
+@pytest.mark.parametrize("image_shape", [(224, 224), (320, 240), (640, 480)])
+def test_onnx_embed_list_of_numpy_images(
+    clip_onnx_wrapper: ClipOnnx, image_shape: tuple
+):
+    _test_embed_list_of_numpy_images(
+        clip_wrapper=clip_onnx_wrapper, image_shape=image_shape
+    )
+
+
+def _test_embed_list_of_tensor_images(clip_wrapper, image_shape: tuple):
     # given
-    clip_wrapper = request.getfixturevalue(wrapper_name)
     images = [
         torch.randint(
             0, 255, size=(3, image_shape[0], image_shape[1]), dtype=torch.uint8
@@ -186,11 +285,29 @@ def test_embed_list_of_tensor_images(wrapper_name: str, request, image_shape: tu
     assert embeddings.shape == (2, 1024)
 
 
-@pytest.mark.parametrize("wrapper_name", ["clip_torch_wrapper", "clip_onnx_wrapper"])
+@pytest.mark.e2e_model_inference
 @pytest.mark.parametrize("image_shape", [(224, 224), (320, 240), (640, 480)])
-def test_embed_batch_of_tensor_images(wrapper_name: str, request, image_shape: tuple):
+def test_torch_embed_list_of_tensor_images(
+    clip_torch_wrapper: ClipTorch, image_shape: tuple
+):
+    _test_embed_list_of_tensor_images(
+        clip_wrapper=clip_torch_wrapper, image_shape=image_shape
+    )
+
+
+@pytest.mark.onnx_extras
+@pytest.mark.e2e_model_inference
+@pytest.mark.parametrize("image_shape", [(224, 224), (320, 240), (640, 480)])
+def test_onnx_embed_list_of_tensor_images(
+    clip_onnx_wrapper: ClipOnnx, image_shape: tuple
+):
+    _test_embed_list_of_tensor_images(
+        clip_wrapper=clip_onnx_wrapper, image_shape=image_shape
+    )
+
+
+def _test_embed_batch_of_tensor_images(clip_wrapper, image_shape: tuple):
     # given
-    clip_wrapper = request.getfixturevalue(wrapper_name)
     images = torch.randint(
         0, 255, size=(2, 3, image_shape[0], image_shape[1]), dtype=torch.uint8
     )
@@ -201,3 +318,24 @@ def test_embed_batch_of_tensor_images(wrapper_name: str, request, image_shape: t
     # then
     assert isinstance(embeddings, torch.Tensor)
     assert embeddings.shape == (2, 1024)
+
+
+@pytest.mark.e2e_model_inference
+@pytest.mark.parametrize("image_shape", [(224, 224), (320, 240), (640, 480)])
+def test_torch_embed_batch_of_tensor_images(
+    clip_torch_wrapper: ClipTorch, image_shape: tuple
+):
+    _test_embed_batch_of_tensor_images(
+        clip_wrapper=clip_torch_wrapper, image_shape=image_shape
+    )
+
+
+@pytest.mark.onnx_extras
+@pytest.mark.e2e_model_inference
+@pytest.mark.parametrize("image_shape", [(224, 224), (320, 240), (640, 480)])
+def test_onnx_embed_batch_of_tensor_images(
+    clip_onnx_wrapper: ClipOnnx, image_shape: tuple
+):
+    _test_embed_batch_of_tensor_images(
+        clip_wrapper=clip_onnx_wrapper, image_shape=image_shape
+    )
