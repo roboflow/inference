@@ -466,27 +466,35 @@ CELERY_LOG_LEVEL = os.getenv("CELERY_LOG_LEVEL", "WARNING")
 LOCAL_INFERENCE_API_URL = os.getenv("LOCAL_INFERENCE_API_URL", "http://127.0.0.1:9001")
 HOSTED_DETECT_URL = os.getenv(
     "HOSTED_DETECT_URL",
-    "https://detect.roboflow.com"
-    if PROJECT == "roboflow-platform"
-    else "https://lambda-object-detection.staging.roboflow.com"
+    (
+        "https://detect.roboflow.com"
+        if PROJECT == "roboflow-platform"
+        else "https://lambda-object-detection.staging.roboflow.com"
+    ),
 )
 HOSTED_INSTANCE_SEGMENTATION_URL = os.getenv(
     "HOSTED_INSTANCE_SEGMENTATION_URL",
-    "https://outline.roboflow.com"
-    if PROJECT == "roboflow-platform"
-    else "https://lambda-instance-segmentation.staging.roboflow.com"
+    (
+        "https://outline.roboflow.com"
+        if PROJECT == "roboflow-platform"
+        else "https://lambda-instance-segmentation.staging.roboflow.com"
+    ),
 )
 HOSTED_CLASSIFICATION_URL = os.getenv(
     "HOSTED_CLASSIFICATION_URL",
-    "https://classify.roboflow.com"
-    if PROJECT == "roboflow-platform"
-    else "https://lambda-classification.staging.roboflow.com"
+    (
+        "https://classify.roboflow.com"
+        if PROJECT == "roboflow-platform"
+        else "https://lambda-classification.staging.roboflow.com"
+    ),
 )
 HOSTED_CORE_MODEL_URL = os.getenv(
     "HOSTED_CORE_MODEL_URL",
-    "https://infer.roboflow.com"
-    if PROJECT == "roboflow-platform"
-    else "https://3hkaykeh3j.execute-api.us-east-1.amazonaws.com"
+    (
+        "https://infer.roboflow.com"
+        if PROJECT == "roboflow-platform"
+        else "https://3hkaykeh3j.execute-api.us-east-1.amazonaws.com"
+    ),
 )
 
 DISABLE_WORKFLOW_ENDPOINTS = str2bool(os.getenv("DISABLE_WORKFLOW_ENDPOINTS", False))
