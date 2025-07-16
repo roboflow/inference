@@ -1,6 +1,6 @@
 [project]
 name = "inference-exp"
-version = "0.4.0"
+version = "0.5.0"
 description = "Experimental vresion of inference package which is supposed to evolve into inference 1.0"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
@@ -200,4 +200,9 @@ conflicts = [
     { extra = "onnx-cu12" },
     { extra = "onnx-jp6-cu126" },
   ],
+]
+
+[tool.setuptools.package-data]
+inference_exp = [
+  "models/rfdetr/dinov2_configs/*.json"
 ]

@@ -127,13 +127,13 @@ annotated = annotator.annotate(image.copy(), predictions.to_supervision())
 Below there is a table showcasing models that are supported, with the hints regarding extra dependencies that 
 are required.
 
-| Architecture       | Task Type               | Supported variants |
-|--------------------|-------------------------|--------------------|
-| RFDetr             | `object-detection`      | TRT, Torch         |
-| YOLO v8            | `object-detection`      | ONNX, TRT          |
-| YOLO v8            | `instance-segmentation` | ONNX, TRT          |
-| YOLO v9            | `object-detection`      | ONNX, TRT          |
-| YOLO v10           | `object-detection`      | ONNX, TRT          |
-| YOLO v11           | `object-detection`      | ONNX, TRT          |
-| YOLO v11           | `instance-segmentation` | ONNX, TRT          |
-| Perception Encoder | `embedding`             | Torch              |
+| Architecture       | Task Type               | Supported variants | Registered Models with pre-trained weights                                                                                                                                                                                                                              |
+|--------------------|-------------------------|--------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| RFDetr             | `object-detection`      | TRT, Torch         | `rfdetr-base` (COCO), `rfdetr-large` (COCO)                                                                                                                                                                                                                             |
+| YOLO v8            | `object-detection`      | ONNX, TRT          | `yolov8n-640` (COCO), `yolov8n-1280` (COCO), `yolov8s-640` (COCO), `yolov8s-1280` (COCO), `yolov8m-640` (COCO), `yolov8m-1280` (COCO), `yolov8l-640` (COCO), `yolov8l-1280` (COCO), `yolov8x-640` (COCO), `yolov8x-1280` (COCO)                                         |
+| YOLO v8            | `instance-segmentation` | ONNX, TRT          | `yolov8n-seg-640` (COCO), `yolov8n-seg-1280` (COCO), `yolov8s-seg-640` (COCO), `yolov8s-seg-1280` (COCO), `yolov8m-seg-640` (COCO), `yolov8m-seg-1280` (COCO), `yolov8l-seg-640` (COCO), `yolov8l-seg-1280` (COCO), `yolov8x-seg-640` (COCO), `yolov8x-seg-1280` (COCO) |
+| YOLO v9            | `object-detection`      | ONNX, TRT          |                                                                                                                                                                                                                                                                         |
+| YOLO v10           | `object-detection`      | ONNX, TRT          | `yolov10n-640` (COCO), `yolov10s-640` (COCO), `yolov10m-640` (COCO), `yolov10b-640` (COCO), `yolov10l-640` (COCO), `yolov10x-640` (COCO)                                                                                                                                |
+| YOLO v11           | `object-detection`      | ONNX, TRT          |                                                                                                                                                                                                                                                                         |
+| YOLO v11           | `instance-segmentation` | ONNX, TRT          |                                                                                                                                                                                                                                                                         |
+| Perception Encoder | `embedding`             | Torch              |                                                                                                                                                                                                                                                                         |
