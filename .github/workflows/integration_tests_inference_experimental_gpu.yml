@@ -45,7 +45,7 @@ jobs:
       - name: 🔧 Install CUDA development toolkit
         run: |
           sudo apt-get update
-          sudo apt-get install -y cuda-toolkit-12-4 cuda-driver-dev-12-4 cuda-profiler-api-12-4 cuda-cupti-12-4 cuda-cupti-dev-12-4
+          sudo apt-get install -y cuda-12-4
       - name: 📦 Install base dependencies as well as `${{ matrix.extras.install }}` dependencies
         working-directory: inference_experimental
         run: |
@@ -53,11 +53,11 @@ jobs:
           sudo apt-get install -y -o APT::Keep-Downloaded-Packages=true cuda-cudart-dev-12-* cuda-nvcc-12-*
           source ~/.bashrc || true
           if [ -f /etc/profile.d/cuda.sh ]; then source /etc/profile.d/cuda.sh; fi
-          export CUDA_HOME=/usr/local/cuda
-          export PATH=/usr/local/cuda/bin:$PATH
-          export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
-          export CPATH=/usr/local/cuda/include:$CPATH
-          export LIBRARY_PATH=/usr/local/cuda/lib64:$LIBRARY_PATH
+          export CUDA_HOME=/usr/local/cuda-12.4
+          export PATH=/usr/local/cuda-12.4/bin:$PATH
+          export LD_LIBRARY_PATH=/usr/local/cuda-12.4/lib64:$LD_LIBRARY_PATH
+          export CPATH=/usr/local/cuda-12.4/include:$CPATH
+          export LIBRARY_PATH=/usr/local/cuda-12.4/lib64:$LIBRARY_PATH
           python -m pip install --upgrade pip
           python -m pip install uv
           python -m uv venv
