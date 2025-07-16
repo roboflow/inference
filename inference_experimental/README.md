@@ -85,7 +85,7 @@ from inference_exp import AutoModel
 import cv2
 import supervision as sv
 
-# loads model from Roboflow API
+# loads model from Roboflow API (loading from local dir also available)
 model = AutoModel.from_pretrained("yolov8n-640")  
 image = cv2.imread("<path-to-your-image>")
 predictions = model(image)[0]
@@ -112,3 +112,28 @@ annotated = annotator.annotate(image.copy(), predictions.to_supervision())
 | `grounding-dino` | Enables Grounding Dino model                                                                       |
 | `flash-attn`     | *EXPERIMENTAL:* Installs `flash-attn` for faster LLMs/VLMs - usually requires extensive compilation |
 | `test`           | Test dependencies                                                                                  |
+
+
+## 🧠 Models
+
+> [!IMPORTANT] 
+> If you see a bug in model implementation or loading mechanism - create 
+> [new issue](https://github.com/roboflow/inference/issues/) tagging it with `inference-exp-bug`.
+> 
+> Additionally, We are working hard to extend pool of supported models - suggestions on new models to be added 
+> appreciated 🤝
+
+
+Below there is a table showcasing models that are supported, with the hints regarding extra dependencies that 
+are required.
+
+| Architecture       | Task Type               | Supported variants |
+|--------------------|-------------------------|--------------------|
+| RFDetr             | `object-detection`      | TRT                |
+| YOLO v8            | `object-detection`      | ONNX, TRT          |
+| YOLO v8            | `instance-segmentation` | ONNX, TRT          |
+| YOLO v9            | `object-detection`      | ONNX, TRT          |
+| YOLO v10           | `object-detection`      | ONNX, TRT          |
+| YOLO v11           | `object-detection`      | ONNX, TRT          |
+| YOLO v11           | `instance-segmentation` | ONNX, TRT          |
+| Perception Encoder | `embedding`             | Torch              |
