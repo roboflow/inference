@@ -45,8 +45,15 @@ jobs:
       - name: 🔧 Install CUDA development toolkit
         run: |
           sudo apt-get update
-          sudo apt-get install -y cuda-cudart-12-4 cuda-cudart-dev-12-4 cuda-driver-dev-12-4 cuda-nvcc-12-4 cuda-nvprof-12-4 cuda-command-line-tools-12-4
-          find /
+          sudo apt-get install -y \
+              cuda-cudart-12-4 \
+              cuda-cudart-dev-12-4 \
+              cuda-driver-dev-12-4 \
+              cuda-nvcc-12-4 \
+              cuda-nvprof-12-4 \
+              cuda-command-line-tools-12-4 \
+              cuda-profiler-api-12-4 \
+              libcurand-dev-12-4
       - name: 📦 Install base dependencies as well as `${{ matrix.extras.install }}` dependencies
         working-directory: inference_experimental
         run: |
