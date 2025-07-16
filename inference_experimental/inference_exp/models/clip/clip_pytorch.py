@@ -1,4 +1,3 @@
-import json
 import os
 from typing import Callable, List, Optional, Union
 
@@ -6,7 +5,6 @@ import numpy as np
 import torch
 import clip
 from clip.model import build_model
-from pydantic import BaseModel, ValidationError
 
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
@@ -17,18 +15,6 @@ from inference_exp.models.common.model_packages import get_model_package_content
 
 
 class ClipTorch(TextImageEmbeddingModel):
-    def __init__(
-        self,
-        model: torch.nn.Module,
-        tokenizer: Callable,
-        device: torch.device,
-    ):
-        self.model = model
-        self.tokenizer = tokenizer
-        self.device = device
-        self.preprocessor = create_clip_preprocessor(
-            image_size=model.visual.input_resolution, device=device
-        )
 
     @classmethod
     def from_pretrained(
@@ -41,24 +27,40 @@ class ClipTorch(TextImageEmbeddingModel):
         )
         model_weights_file = model_package_content["model.pt"]
 
-        # The model file is a JIT archive, so we load it as such
-        # and then build a new model from its state dict.
-        jit_model = torch.jit.load(model_weights_file, map_location="cpu").eval()
-        state_dict = jit_model.state_dict()
+        try:
+            # The model file is a JIT archive, so we load it as such
+            # and then build a new model from its state dict.
+            jit_model = torch.jit.load(model_weights_file, map_location="cpu").eval()
+            state_dict = jit_model.state_dict()
 
-        model = build_model(state_dict).to(device)
+            model = build_model(state_dict).to(device)
 
-        if device.type == "cpu":
-            model.float()
+            if device.type == "cpu":
+                model.float()
 
-        model.eval()
-
-        tokenizer = clip.tokenize
+            model.eval()
+        except Exception as e:
+            raise CorruptedModelPackageError(
+                f"Could not load TorchScript model from {model_weights_file}. Details: {e}"
+            ) from e
 
         return cls(
             model=model,
-            tokenizer=tokenizer,
+            tokenizer=clip.tokenize,
             device=device,
+        )
+
+    def __init__(
+        self,
+        model: torch.nn.Module,
+        tokenizer: Callable,
+        device: torch.device,
+    ):
+        self.model = model
+        self.tokenizer = tokenizer
+        self.device = device
+        self.preprocessor = create_clip_preprocessor(
+            image_size=model.visual.input_resolution, device=device
         )
 
     def embed_images(
@@ -86,26 +88,3 @@ class ClipTorch(TextImageEmbeddingModel):
             text_features = self.model.encode_text(text_tokens)
 
         return text_features
-
-
-class ClipConfig(BaseModel):
-    model_name: str
-
-
-def load_config(config_path: str) -> ClipConfig:
-
-    try:
-        with open(config_path) as f:
-            config_data = json.load(f)
-    except (IOError, json.JSONDecodeError) as e:
-        raise CorruptedModelPackageError(
-            message=f"Could not load or parse clip model package config file: {config_path}. Details: {e}",
-            help_url="https://todo",
-        ) from e
-    try:
-        config = ClipConfig.model_validate(config_data)
-        return config
-    except ValidationError as e:
-        raise CorruptedModelPackageError(
-            f"Failed validate clip model package config file: {config_path}. Details: {e}"
-        ) from e
