@@ -42,6 +42,10 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           check-latest: true
+      - name: 🔧 Install CUDA development toolkit
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cuda-toolkit-12-4
       - name: 📦 Install base dependencies as well as `${{ matrix.extras.install }}` dependencies
         working-directory: inference_experimental
         run: |
