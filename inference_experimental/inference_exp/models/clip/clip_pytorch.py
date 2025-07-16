@@ -16,29 +16,6 @@ from inference_exp.models.clip.preprocessing import create_clip_preprocessor
 from inference_exp.models.common.model_packages import get_model_package_contents
 
 
-class ClipConfig(BaseModel):
-    model_name: str
-
-
-def load_config(config_path: str) -> ClipConfig:
-    config_data = {}
-    try:
-        with open(config_path) as f:
-            config_data = json.load(f)
-    except (IOError, json.JSONDecodeError) as e:
-        raise CorruptedModelPackageError(
-            message=f"Could not load or parse clip model package config file: {config_path}. Details: {e}",
-            help_url="https://todo",
-        ) from e
-    try:
-        config = ClipConfig.model_validate(config_data)
-        return config
-    except ValidationError as e:
-        raise CorruptedModelPackageError(
-            f"Failed validate clip model package config file: {config_path}. Details: {e}"
-        ) from e
-
-
 class ClipTorch(TextImageEmbeddingModel):
     def __init__(
         self,
@@ -109,3 +86,26 @@ class ClipTorch(TextImageEmbeddingModel):
             text_features = self.model.encode_text(text_tokens)
 
         return text_features
+
+
+class ClipConfig(BaseModel):
+    model_name: str
+
+
+def load_config(config_path: str) -> ClipConfig:
+    config_data = {}
+    try:
+        with open(config_path) as f:
+            config_data = json.load(f)
+    except (IOError, json.JSONDecodeError) as e:
+        raise CorruptedModelPackageError(
+            message=f"Could not load or parse clip model package config file: {config_path}. Details: {e}",
+            help_url="https://todo",
+        ) from e
+    try:
+        config = ClipConfig.model_validate(config_data)
+        return config
+    except ValidationError as e:
+        raise CorruptedModelPackageError(
+            f"Failed validate clip model package config file: {config_path}. Details: {e}"
+        ) from e
