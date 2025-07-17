@@ -6,8 +6,8 @@ import pytest
 import torch
 import torch.nn.functional as F
 from clip import clip
-from PIL.Image import Image
 from filelock import FileLock
+from PIL.Image import Image
 from torch import nn
 
 EXPECTED_DOG_IMAGE_EMBEDDING = torch.Tensor(
@@ -1043,7 +1043,9 @@ EXPECTED_DOG_IMAGE_EMBEDDING = torch.Tensor(
 
 
 @pytest.fixture(scope="module")
-def reference_clip_model(original_clip_download_dir: str) -> Generator[Tuple[nn.Module, callable], None, None]:
+def reference_clip_model(
+    original_clip_download_dir: str,
+) -> Generator[Tuple[nn.Module, callable], None, None]:
     lock_file = os.path.join(original_clip_download_dir, "clip_lock")
     with FileLock(lock_file=lock_file, timeout=120):
         original_model, preprocess = clip.load(
