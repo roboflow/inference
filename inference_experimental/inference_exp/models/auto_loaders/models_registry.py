@@ -121,7 +121,7 @@ REGISTERED_MODELS: Dict[Tuple[ModelArchitecture, TaskType, BackendType], LazyCla
         module_name="inference_exp.models.paligemma.paligemma_hf",
         class_name="PaliGemmaHF",
     ),
-    ("perception_encoder", EMBEDDING_TASK, BackendType.TORCH): LazyClass(
+    ("perception-encoder", EMBEDDING_TASK, BackendType.TORCH): LazyClass(
         module_name="inference_exp.models.perception_encoder.perception_encoder_pytorch",
         class_name="PerceptionEncoderTorch",
     ),

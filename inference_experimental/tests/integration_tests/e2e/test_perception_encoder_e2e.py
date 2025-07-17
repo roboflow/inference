@@ -7,7 +7,7 @@ from inference_exp import AutoModel
 @pytest.mark.e2e_model_inference
 def test_perception_encoder_text_embedding():
     # GIVEN
-    model = AutoModel.from_pretrained("perception_encoder/PE-Core-B16-224")
+    model = AutoModel.from_pretrained("perception-encoder/PE-Core-B16-224")
 
     # WHEN
     embeddings = model.embed_text("hello world")
@@ -20,7 +20,7 @@ def test_perception_encoder_text_embedding():
 @pytest.mark.e2e_model_inference
 def test_perception_encoder_image_embedding_with_numpy_inputs():
     # GIVEN
-    model = AutoModel.from_pretrained("perception_encoder/PE-Core-B16-224")
+    model = AutoModel.from_pretrained("perception-encoder/PE-Core-B16-224")
 
     # WHEN & THEN
 
@@ -42,7 +42,7 @@ def test_perception_encoder_image_embedding_with_numpy_inputs():
 @pytest.mark.e2e_model_inference
 def test_perception_encoder_image_embedding_with_tensor_inputs():
     # GIVEN
-    model = AutoModel.from_pretrained("perception_encoder/PE-Core-B16-224")
+    model = AutoModel.from_pretrained("perception-encoder/PE-Core-B16-224")
 
     # WHEN & THEN
 
