@@ -31,9 +31,7 @@ jobs:
       - name: 📦 Cache apt packages
         uses: actions/cache@v3
         with:
-          path: |
-            /var/cache/apt/archives/*.deb
-            /var/lib/apt/lists/*
+          path: ~/apt-cache
           key: ${{ runner.os }}-apt-cuda-12-4
           restore-keys: |
             ${{ runner.os }}-apt-cuda-
@@ -44,12 +42,20 @@ jobs:
           check-latest: true
       - name: 🔧 Install CUDA development toolkit
         run: |
+          mkdir -p ~/apt-cache
+
+          sudo mkdir -p /var/cache/apt/archives
+          sudo cp -r ~/apt-cache/* /var/cache/apt/archives/ 2>/dev/null || true
+
           sudo apt-get update
           sudo apt-get install -y \
               cuda-cudart-dev-12-4 \
               cuda-nvcc-12-4 \
               cuda-profiler-api-12-4 \
               libcurand-dev-12-4
+
+          sudo cp /var/cache/apt/archives/*.deb ~/apt-cache/ 2>/dev/null || true
+          sudo chown -R $(whoami):$(whoami) ~/apt-cache
       - name: 📦 Install base dependencies as well as `${{ matrix.extras.install }}` dependencies
         working-directory: inference_experimental
         run: |
