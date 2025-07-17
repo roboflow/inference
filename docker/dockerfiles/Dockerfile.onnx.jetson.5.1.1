@@ -72,7 +72,7 @@ COPY docker/config/gpu_http.py gpu_http.py
 COPY .release .release
 COPY Makefile Makefile
 
-RUN make create_inference_cli_whl
+RUN PYTHON=python3.9 make create_inference_cli_whl
 RUN pip3 install dist/inference_cli*.whl
 
 ENV VERSION_CHECK_MODE=continuous

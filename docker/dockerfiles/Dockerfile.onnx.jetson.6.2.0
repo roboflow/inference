@@ -56,7 +56,7 @@ COPY docker/config/gpu_http.py ./gpu_http.py
 COPY .release .release
 COPY Makefile Makefile
 
-RUN make create_inference_cli_whl
+RUN PYTHON=python3 make create_inference_cli_whl
 RUN pip3 install dist/inference_cli*.whl
 
 # Set environment variables
