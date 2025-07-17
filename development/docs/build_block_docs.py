@@ -252,6 +252,11 @@ BLOCK_SECTIONS = [
             "title": "Advanced",
             "id": "advanced",
             "colorScheme": "orange"
+        },
+        {
+            "title": "Enterprise",
+            "id": "enterprise_blocks",
+            "colorScheme": "gray"
         }
     ]
 
@@ -338,7 +343,6 @@ def write_individual_block_pages(block_families, blocks_description):
     )   
 
     for family_name, family_members in block_families.items():
-        
         documentation_file_name = slugify_block_name(family_name) + ".md"
         documentation_file_path = os.path.join(
             BLOCK_DOCUMENTATION_DIRECTORY, documentation_file_name

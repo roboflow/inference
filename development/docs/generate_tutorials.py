@@ -1,7 +1,7 @@
 import requests
-# defaultdict
 from collections import defaultdict
 import os
+from PIL import Image
 
 TUTORIAL_URL = "https://roboflow.ghost.io/ghost/api/content/posts/?key=" + os.getenv("GHOST_API_KEY", "")
 
@@ -19,11 +19,11 @@ TEMPLATE = """
 """
 
 CUSTOM = [
-    {"title": "Measure Object Sizes with Computer Vision [video]", "url": "https://www.youtube.com/watch?v=FQY7TSHfZeI", "feature_image": "https://media.roboflow.com/inference/thumbnails/size-measurement.jpg", "blocks": ["Size Measurement"], "description": "Learn how to measure the size of objects in images using computer vision techniques."},
-    {"title": "Use YOLOv12 with Roboflow and Workflows [video]", "url": "https://www.youtube.com/watch?v=fksJmIMIfXo", "feature_image": "https://media.roboflow.com/inference/thumbnails/yolov12.jpg", "blocks": ["Object Detection Model"], "description": "Learn how to use YOLOv12 for object detection in your computer vision projects."},
-    {"title": "Use Florence-2 with Roboflow and Workflows [video]", "url": "https://www.youtube.com/watch?v=_u53TxShLsk", "feature_image": "https://media.roboflow.com/inference/thumbnails/florence-2.jpg", "blocks": ["Florence-2 Model"], "description": "Learn how to use the Florence-2 model for advanced computer vision tasks."},
-    {"title": "Use Depth Anything 2 with Workflows [video]", "url": "https://www.youtube.com/watch?v=lqPf3198wjw", "feature_image": "https://media.roboflow.com/inference/thumbnails/depth-anything.jpg", "blocks": ["Depth Estimation"], "description": "Learn how to use Depth Anything 2 for depth estimation in images."},
-    {"title": "Use Qwen2.5-VL with Workflows [video]", "url": "https://www.youtube.com/watch?v=xEfh0IR8Fvo", "feature_image": "https://media.roboflow.com/inference/thumbnails/qwen.jpg", "blocks": ["Qwen2.5-VL"], "description": "Learn how to use the Qwen2.5-VL model for vision-language tasks."},
+    {"title": "Measure Object Sizes with Computer Vision [video]", "url": "https://www.youtube.com/watch?v=FQY7TSHfZeI", "feature_image": "https://media.roboflow.com/inference/cover-images/size-measurement.jpg", "blocks": ["Size Measurement"], "description": "Learn how to measure the size of objects in images using computer vision techniques."},
+    {"title": "Use YOLOv12 with Roboflow and Workflows [video]", "url": "https://www.youtube.com/watch?v=fksJmIMIfXo", "feature_image": "https://media.roboflow.com/inference/cover-images/yolov12.jpg", "blocks": ["Object Detection Model"], "description": "Learn how to use YOLOv12 for object detection in your computer vision projects."},
+    {"title": "Use Florence-2 with Roboflow and Workflows [video]", "url": "https://www.youtube.com/watch?v=_u53TxShLsk", "feature_image": "https://media.roboflow.com/inference/cover-images/florence-2.jpg", "blocks": ["Florence-2 Model"], "description": "Learn how to use the Florence-2 model for advanced computer vision tasks."},
+    {"title": "Use Depth Anything 2 with Workflows [video]", "url": "https://www.youtube.com/watch?v=lqPf3198wjw", "feature_image": "https://media.roboflow.com/inference/cover-images/depth-anything.jpg", "blocks": ["Depth Estimation"], "description": "Learn how to use Depth Anything 2 for depth estimation in images."},
+    {"title": "Use Qwen2.5-VL with Workflows [video]", "url": "https://www.youtube.com/watch?v=xEfh0IR8Fvo", "feature_image": "https://media.roboflow.com/inference/cover-images/qwen.jpg", "blocks": ["Qwen2.5-VL"], "description": "Learn how to use the Qwen2.5-VL model for vision-language tasks."},
 ]
 
 def get_tutorials():
@@ -57,16 +57,13 @@ def get_tutorials():
         for template in data["posts"]:
             title = template["title"]
             url = template["url"]
-            image_url = template["feature_image"]
+            image_url = "https://media.roboflow.com/inference/cover-images/" + template["slug"] + ".png"
             description = template["custom_excerpt"].split(". ")[0] if template.get("custom_excerpt") else ""
             tags = template.get("tags", [])
             tags.append({"name": "#Workflows_None"})
 
             tags = [i["name"].replace("#Workflows_", "").replace("_", " ") for i in tags if i["name"].startswith("#Workflows_")]
             main_tag = tags[0] if tags else "None"
-
-            if main_tag != "Tutorial":
-                print(main_tag, title)
 
             # if none in tag, skip
             if main_tag == "None":
@@ -92,6 +89,12 @@ def get_tutorials():
                             description=description or "",
                         )
                     )
+            # # save meta image as img/post-slug.png
+            # with open(f"cover-images/{template['slug']}.png", "wb") as img_file:
+            #     img = Image.open(requests.get(image_url, stream=True).raw)
+            #     img = img.convert("RGB")
+            #     img.thumbnail((800, 800)) #, Image.ANTIALIAS)
+            #     img.save(img_file, format="PNG", optimize=True, quality=85)
 
         next = data.get("meta", {}).get("pagination", {}).get("next", None)
         next = None
@@ -109,8 +112,6 @@ def get_tutorials():
 
 if __name__ == "__main__":
     results, results_indexed_by_used_workflow_block = get_tutorials()
-
-    print(results_indexed_by_used_workflow_block.keys())
 
     with open("x.md", "w") as f:
         for tag, tutorials in results.items():

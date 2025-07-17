@@ -8,80 +8,52 @@ In the first example, we showed how to run a people detection model. This model 
 
 Go to the <a href="https://universe.roboflow.com" target="_blank">Roboflow Universe</a> homepage and use the search bar to find a model.
 
-![Roboflow Universe search bar](https://media.roboflow.com/universe-search.png)
+![](https://media.roboflow.com/inference/universe/search.png)
 
-!!! info
+!!! tip
 
     Add "model" to your search query to only find models.
 
-Browse the search page to find a model.
+Browse the Universe search page to find a model:
 
-![Search page](https://media.roboflow.com/universe-search-page.png)
+![](https://media.roboflow.com/inference/universe/search-results.png)
 
-When you have found a model, click on the model card to learn more. Click the "Model" link in the sidebar to get the information you need to use the model.
+When you have found a model, click "Model" in the sidebar. You can preview the model and try it out on your own data or images from the model test set from this page.
 
-Then, install Inference and supervision, which we will use to run our model and handle model predictions, respectively:
+## Use the Universe Model in a Workflow
 
-```bash
-pip install inference supervision
-```
+To use the model you have found, open your Workflows editor. Then, add the model block that corresponds with the type of model you found on Universe. For example, if you found an object detection model, choose an [Object Detection Model](/workflows/blocks/object_detection_model/) block.
 
-Next, create a new Python file and add the following code:
+When you add a model block, a window will appear from which you can choose a model.
 
-```python
-# import a utility function for loading Roboflow models
-from inference import get_model
-# import supervision to visualize our results
-import supervision as sv
-# import cv2 to helo load our image
-import cv2
+Click "Public Models".
 
-# define the image url to use for inference
-image_file = "people-walking.jpg"
-image = cv2.imread(image_file)
+Then, go back to Universe and copy the model ID from the model you want to use:
 
-# load a pre-trained yolov8n model
-model = get_model(model_id="yolov8n-640")
+![](https://media.roboflow.com/inference/universe/model-id.png)
 
-# run inference on our chosen image, image can be a url, a numpy array, a PIL image, etc.
-results = model.infer(image)
+Paste the model ID in the Public Models search bar:
 
-# load the results into the supervision Detections api
-detections = sv.Detections.from_inference(results[0].dict(by_alias=True, exclude_none=True))
+![](https://media.roboflow.com/inference/universe/set-model.png)
 
-# create supervision annotators
-bounding_box_annotator = sv.BoxAnnotator()
-label_annotator = sv.LabelAnnotator()
+Then, click the purple "Use model ID" button.
 
-# annotate the image with our inference results
-annotated_image = bounding_box_annotator.annotate(
-    scene=image, detections=detections)
-annotated_image = label_annotator.annotate(
-    scene=annotated_image, detections=detections)
+The model will then be added to your Workflow:
 
-# display the image
-sv.plot_image(annotated_image)
-```
+![](https://media.roboflow.com/inference/universe/result.png)
 
+Let's add Bounding Box and Label Visualizer blocks so we can visualize the predictions from our model:
 
-!!! Tip
+![](https://media.roboflow.com/inference/universe/workflow.png)
 
-    To see more models, check out the [Pre-Trained Models](../quickstart/aliases.md) page and [Roboflow Universe](https://universe.roboflow.com).
+Now, let's test our model on an image. Click "Test Workflow" in the top right, and drag in an image you want to use in your Workflow. Then, click "Run" to test your Workflow.
 
-The `people-walking.jpg` file is hosted <a href="https://media.roboflow.com/inference/people-walking.jpg" target="_blank">here</a>.
+![](https://media.roboflow.com/inference/universe/empty-test.png)
 
-Replace `yolov8n-640` with the model ID you found on Universe, replace `image` with the image of your choosing, and be sure to export your API key:
+Here are the results from our Workflow:
 
-```
-export ROBOFLOW_API_KEY=<your api key>
-```
+![](https://media.roboflow.com/inference/universe/result.png)
 
-Then, run the Python script:
+The model successfully identified a defect in the image we used as an input to our Workflow.
 
-```
-python app.py
-```
-
-You should see your model's predictions visualized on your screen.
-
-![People Walking Annotated](https://storage.googleapis.com/com-roboflow-marketing/inference/people-walking-annotated.jpg)
+Ready to build more logic in your Workflow? [Check out our gallery of tutorials.](/guides/written/)
