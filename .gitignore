@@ -204,3 +204,4 @@ tests/inference_sdk/unit_tests/http/inference_profiling
 !app_bundles/**/*.png
 
 inference_experimental/tests/integration_tests/models/assets/models
+inference_experimental/tests/integration_tests/e2e/assets/

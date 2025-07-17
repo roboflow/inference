@@ -1,12 +1,16 @@
+import os.path
 from typing import Optional
 
 import clip
 import numpy as np
 import pytest
 import torch
+from filelock import FileLock
 from inference_exp import AutoModel
 from inference_exp.weights_providers.entities import BackendType
 from PIL import Image
+
+ASSETS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "assets"))
 
 
 @pytest.fixture(scope="module")
@@ -16,8 +20,14 @@ def clip_model_name() -> str:
 
 @pytest.fixture(scope="module")
 def baseline_clip_model(clip_model_name: str):
-    model, _ = clip.load(clip_model_name, device="cpu")
-    return model
+    original_clip_dir = os.path.join(ASSETS_DIR, "original_clip")
+    os.makedirs(original_clip_dir, exist_ok=True)
+    lock_file = os.path.join(original_clip_dir, "clip_lock")
+    with FileLock(lock_file=lock_file, timeout=120):
+        model, _ = clip.load(
+            clip_model_name, device="cpu", download_root=original_clip_dir
+        )
+        return model
 
 
 def _get_clip_torch_wrapper(

@@ -1,5 +1,4 @@
 import os.path
-from typing import Generator
 
 import cv2
 import numpy as np
@@ -7,6 +6,7 @@ import pytest
 import requests
 import torch
 import torchvision.io
+from filelock import FileLock
 from PIL import Image
 
 ASSETS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "assets"))
@@ -65,13 +65,15 @@ def dog_image_pil() -> Image.Image:
     return Image.open(DOG_IMAGE_PATH)
 
 
-def _download_if_not_exists(file_path: str, url: str) -> None:
+def _download_if_not_exists(file_path: str, url: str, lock_timeout: int = 120) -> None:
     if os.path.exists(file_path):
         return None
-    os.makedirs(os.path.dirname(file_path), exist_ok=True)
-    with requests.get(url, stream=True) as response:
-        response.raise_for_status()
-        with open(file_path, "wb") as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
+    lock_path = f"{file_path}.lock"
+    with FileLock(lock_file=lock_path, timeout=lock_timeout):
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        with requests.get(url, stream=True) as response:
+            response.raise_for_status()
+            with open(file_path, "wb") as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
