@@ -8,6 +8,7 @@ on:
 
 jobs:
   build:
+    if: ${{ !github.event.act }}
     runs-on: Roboflow-GPU-VM-Runner
     timeout-minutes: 120
 
