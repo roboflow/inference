@@ -1,6 +1,6 @@
 [project]
 name = "inference-exp"
-version = "0.1.0"
+version = "0.6.0"
 description = "Experimental vresion of inference package which is supposed to evolve into inference 1.0"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
@@ -10,7 +10,7 @@ dependencies = [
   "torchvision",
   "opencv-python>=4.8.1.78",
   "requests>=2.32.0,<3.0.0",
-  "supervision==0.26.0rc7",  # just for now, as versions 0.25.x had issues with definitions of
+  "supervision>=0.26.0",
   "backoff~=2.2.0",
   "transformers>=4.50.0,<5.0.0",
   "timm>=1.0.0,<2.0.0",
@@ -65,16 +65,16 @@ onnx-cpu = [
 ]
 onnx-cu118 = [
   "onnxruntime-gpu>=1.15.1,<1.23.0; platform_system != 'darwin'",
-  "pycuda>=2025.0.0,<2026.0.0",
+  "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin'",
 ]
 onnx-cu12 = [
   "onnxruntime-gpu>=1.17.0,<1.23.0; platform_system != 'darwin'",
-  "pycuda>=2025.0.0,<2026.0.0",
+  "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin'",
 ]
 onnx-jp6-cu126 = [
   "numpy<2.0.0",
-  "onnxruntime-gpu>=1.17.0,<1.23.0; platform_system != 'linux'",
-  "pycuda>=2025.0.0,<2026.0.0",
+  "onnxruntime-gpu>=1.17.0,<1.24.0; platform_system != 'darwin'",
+  "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin'",
 ]
 mediapipe = [
   "mediapipe>=0.9,<0.11"
@@ -146,7 +146,7 @@ explicit = true
 
 [[tool.uv.index]]
 name = "jp6-cu126"
-url = "https://pypi.jetson-ai-lab.dev/jp6/cu126/+simple"
+url = "https://pypi.jetson-ai-lab.io/jp6/cu126/+simple"
 explicit = true
 
 [[tool.uv.index]]
@@ -201,4 +201,9 @@ conflicts = [
     { extra = "onnx-cu12" },
     { extra = "onnx-jp6-cu126" },
   ],
+]
+
+[tool.setuptools.package-data]
+inference_exp = [
+  "models/rfdetr/dinov2_configs/*.json"
 ]
