@@ -1,9 +1,14 @@
+import os
+from typing import Generator, Tuple
+
 import numpy as np
 import pytest
 import torch
 import torch.nn.functional as F
 from clip import clip
 from PIL.Image import Image
+from filelock import FileLock
+from torch import nn
 
 EXPECTED_DOG_IMAGE_EMBEDDING = torch.Tensor(
     [
@@ -1037,6 +1042,18 @@ EXPECTED_DOG_IMAGE_EMBEDDING = torch.Tensor(
 )
 
 
+@pytest.fixture(scope="module")
+def reference_clip_model(original_clip_download_dir: str) -> Generator[Tuple[nn.Module, callable], None, None]:
+    lock_file = os.path.join(original_clip_download_dir, "clip_lock")
+    with FileLock(lock_file=lock_file, timeout=120):
+        original_model, preprocess = clip.load(
+            "RN50",
+            device=torch.device("cpu"),
+            download_root=original_clip_download_dir,
+        )
+        yield original_model, preprocess
+
+
 @pytest.mark.slow
 def test_clip_torch_image_prediction_for_numpy(
     clip_rn50_pytorch_path: str,
@@ -1075,13 +1092,16 @@ def test_clip_torch_image_prediction_for_torch_tensor(
 
 @pytest.mark.slow
 def test_clip_predictions_for_image_are_comparable_with_reference_implementation(
-    clip_rn50_pytorch_path: str, dog_image_torch: np.ndarray, dog_image_pil: Image
+    clip_rn50_pytorch_path: str,
+    dog_image_torch: np.ndarray,
+    dog_image_pil: Image,
+    reference_clip_model: Tuple[nn.Module, callable],
 ) -> None:
     # given
     from inference_exp.models.clip.clip_pytorch import ClipTorch
 
     inference_model = ClipTorch.from_pretrained(clip_rn50_pytorch_path)
-    original_model, preprocess = clip.load("RN50", device=torch.device("cpu"))
+    original_model, preprocess = reference_clip_model
     dog_image_original_preprocessing = (
         preprocess(dog_image_pil).unsqueeze(0).to(torch.device("cpu"))
     )
@@ -1120,12 +1140,13 @@ def test_clip_torch_image_text_embeddings(
 @pytest.mark.slow
 def test_clip_torch_image_text_embeddings_on_pair_with_reference_implementation(
     clip_rn50_pytorch_path: str,
+    reference_clip_model: Tuple[nn.Module, callable],
 ) -> None:
     # given
     from inference_exp.models.clip.clip_pytorch import ClipTorch
 
     inference_model = ClipTorch.from_pretrained(clip_rn50_pytorch_path)
-    original_model, _ = clip.load("RN50", device=torch.device("cpu"))
+    original_model, _ = reference_clip_model
     text = clip.tokenize(["This is example text"]).to(torch.device("cpu"))
 
     # when
@@ -1185,6 +1206,8 @@ def test_clip_onnx_image_prediction_similar_to_reference_implementation(
     clip_rn50_onnx_path: str,
     dog_image_torch: np.ndarray,
     dog_image_pil: Image,
+    original_clip_download_dir: str,
+    reference_clip_model: Tuple[nn.Module, callable],
 ) -> None:
     # given
     from inference_exp.models.clip.clip_onnx import ClipOnnx
@@ -1194,7 +1217,7 @@ def test_clip_onnx_image_prediction_similar_to_reference_implementation(
     )
 
     # when
-    original_model, preprocess = clip.load("RN50", device=torch.device("cpu"))
+    original_model, preprocess = reference_clip_model
     dog_image_original_preprocessing = (
         preprocess(dog_image_pil).unsqueeze(0).to(torch.device("cpu"))
     )
@@ -1238,6 +1261,7 @@ def test_clip_onnx_image_prediction_for_text(
 def test_clip_onnx_image_prediction_for_text_comparable_with_reference_implementation(
     clip_rn50_onnx_path: str,
     dog_image_torch: np.ndarray,
+    reference_clip_model: Tuple[nn.Module, callable],
 ) -> None:
     # given
     from inference_exp.models.clip.clip_onnx import ClipOnnx
@@ -1247,7 +1271,7 @@ def test_clip_onnx_image_prediction_for_text_comparable_with_reference_implement
     )
 
     # when
-    original_model, _ = clip.load("RN50", device=torch.device("cpu"))
+    original_model, _ = reference_clip_model
     text = clip.tokenize(["This is example text"]).to(torch.device("cpu"))
 
     # when

@@ -1,4 +1,5 @@
 import os.path
+from typing import Generator
 
 import cv2
 import numpy as np
@@ -15,6 +16,13 @@ DOG_IMAGE_URL = "https://media.roboflow.com/dog.jpeg"
 CLIP_RN50_TORCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/clip_packages/RN50/torch/model.pt"
 CLIP_RN50_ONNX_VISUAL = "https://storage.googleapis.com/roboflow-tests-assets/clip_packages/RN50/onnx/visual.onnx"
 CLIP_RN50_ONNX_TEXTUAL = "https://storage.googleapis.com/roboflow-tests-assets/clip_packages/RN50/onnx/textual.onnx"
+
+
+@pytest.fixture(scope="module")
+def original_clip_download_dir() -> str:
+    clip_dir = os.path.join(MODELS_DIR, "clip_original")
+    os.makedirs(clip_dir, exist_ok=True)
+    return clip_dir
 
 
 @pytest.fixture(scope="module")

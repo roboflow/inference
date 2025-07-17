@@ -203,6 +203,4 @@ tests/inference_sdk/unit_tests/http/inference_profiling
 !app_bundles/**/*.spec
 !app_bundles/**/*.png
 
-inference_experimental/tests/integration_tests/models/assets/models/**/*.pt
-inference_experimental/tests/integration_tests/models/assets/models/**/*.onnx
-inference_experimental/tests/integration_tests/models/assets/models/**/*.plan
+inference_experimental/tests/integration_tests/models/assets/models
