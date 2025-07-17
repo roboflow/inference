@@ -259,7 +259,7 @@ class BlockManifest(WorkflowBlockManifest):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
-                name="ocr_result", kind=[OBJECT_DETECTION_PREDICTION_KIND]
+                name="predictions", kind=[OBJECT_DETECTION_PREDICTION_KIND]
             ),
         ]
 
@@ -335,7 +335,7 @@ class EasyOCRBlockV1(WorkflowBlock):
             if not self.reader:
                 self.reader = easyocr.Reader([reader_char_set])
             result = self.reader.readtext(image.numpy_image)
-            return {"ocr_result": ocr_result_to_detections(image, result)}
+            return {"predictions": ocr_result_to_detections(image, result)}
         elif self._step_execution_mode == StepExecutionMode.REMOTE:
             raise NotImplementedError(
                 "Remote execution is not supported for EasyOCR. Please use a local or dedicated inference server."
