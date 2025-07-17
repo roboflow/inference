@@ -32,8 +32,8 @@ jobs:
         uses: actions/cache@v3
         with:
           path: |
-            /var/cache/apt/archives/
-            /var/lib/apt/lists/
+            /var/cache/apt/archives/*.deb
+            /var/lib/apt/lists/*
           key: ${{ runner.os }}-apt-cuda-12-4
           restore-keys: |
             ${{ runner.os }}-apt-cuda-
