@@ -53,9 +53,7 @@ def create_clip_preprocessor(image_size: int) -> PreprocessorFun:
     # 4. Normalize with CLIP's specific mean and standard deviation.
     transforms = Compose(
         [
-            Resize(
-                image_size, interpolation=InterpolationMode.BICUBIC, antialias=False
-            ),
+            Resize(image_size, interpolation=InterpolationMode.BICUBIC, antialias=True),
             CenterCrop(image_size),
             lambda x: x.to(torch.float32) / 255.0,
             Normalize(MEAN, STD),

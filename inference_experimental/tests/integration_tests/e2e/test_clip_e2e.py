@@ -5,8 +5,6 @@ import numpy as np
 import pytest
 import torch
 from inference_exp import AutoModel
-from inference_exp.models.clip.clip_onnx import ClipOnnx
-from inference_exp.models.clip.clip_pytorch import ClipTorch
 from inference_exp.weights_providers.entities import BackendType
 from PIL import Image
 
@@ -24,7 +22,7 @@ def baseline_clip_model(clip_model_name: str):
 
 def _get_clip_torch_wrapper(
     clip_model_name: str, max_batch_size: Optional[int] = None
-) -> ClipTorch:
+) -> AutoModel:
     kwargs = {}
     if max_batch_size is not None:
         kwargs["max_batch_size"] = max_batch_size
@@ -38,7 +36,7 @@ def _get_clip_torch_wrapper(
 
 def _get_clip_onnx_wrapper(
     clip_model_name: str, max_batch_size: Optional[int] = None
-) -> ClipOnnx:
+) -> AutoModel:
     kwargs = {}
     if max_batch_size is not None:
         kwargs["max_batch_size"] = max_batch_size
@@ -51,22 +49,22 @@ def _get_clip_onnx_wrapper(
 
 
 @pytest.fixture(scope="module")
-def clip_torch_wrapper(clip_model_name: str) -> ClipTorch:
+def clip_torch_wrapper(clip_model_name: str) -> AutoModel:
     return _get_clip_torch_wrapper(clip_model_name=clip_model_name)
 
 
 @pytest.fixture(scope="module")
-def clip_onnx_wrapper(clip_model_name: str) -> ClipOnnx:
+def clip_onnx_wrapper(clip_model_name: str) -> AutoModel:
     return _get_clip_onnx_wrapper(clip_model_name=clip_model_name)
 
 
 @pytest.fixture(scope="module")
-def clip_torch_wrapper_small_batch(clip_model_name: str) -> ClipTorch:
+def clip_torch_wrapper_small_batch(clip_model_name: str) -> AutoModel:
     return _get_clip_torch_wrapper(clip_model_name=clip_model_name, max_batch_size=2)
 
 
 @pytest.fixture(scope="module")
-def clip_onnx_wrapper_small_batch(clip_model_name: str) -> ClipOnnx:
+def clip_onnx_wrapper_small_batch(clip_model_name: str) -> AutoModel:
     return _get_clip_onnx_wrapper(clip_model_name=clip_model_name, max_batch_size=2)
 
 
@@ -99,7 +97,7 @@ def _test_clip_wrapper_vs_baseline_for_image_embeddings(
 @pytest.mark.e2e_model_inference
 @pytest.mark.parametrize("image_shape", [(224, 224), (320, 240), (448, 448)])
 def test_torch_clip_wrapper_vs_baseline_for_image_embeddings(
-    clip_torch_wrapper: ClipTorch,
+    clip_torch_wrapper: AutoModel,
     baseline_clip_model,
     image_shape: tuple,
 ):
@@ -114,7 +112,7 @@ def test_torch_clip_wrapper_vs_baseline_for_image_embeddings(
 @pytest.mark.e2e_model_inference
 @pytest.mark.parametrize("image_shape", [(224, 224), (320, 240), (448, 448)])
 def test_onnx_clip_wrapper_vs_baseline_for_image_embeddings(
-    clip_onnx_wrapper: ClipOnnx,
+    clip_onnx_wrapper: AutoModel,
     baseline_clip_model,
     image_shape: tuple,
 ):
@@ -147,7 +145,7 @@ def _test_clip_wrapper_vs_baseline_for_text_embeddings(
 
 @pytest.mark.e2e_model_inference
 def test_torch_clip_wrapper_vs_baseline_for_text_embeddings(
-    clip_torch_wrapper: ClipTorch,
+    clip_torch_wrapper: AutoModel,
     baseline_clip_model,
 ):
     _test_clip_wrapper_vs_baseline_for_text_embeddings(
@@ -158,7 +156,7 @@ def test_torch_clip_wrapper_vs_baseline_for_text_embeddings(
 @pytest.mark.onnx_extras
 @pytest.mark.e2e_model_inference
 def test_onnx_clip_wrapper_vs_baseline_for_text_embeddings(
-    clip_onnx_wrapper: ClipOnnx,
+    clip_onnx_wrapper: AutoModel,
     baseline_clip_model,
 ):
     _test_clip_wrapper_vs_baseline_for_text_embeddings(
@@ -179,13 +177,13 @@ def _test_embed_text(clip_wrapper):
 
 
 @pytest.mark.e2e_model_inference
-def test_torch_embed_text(clip_torch_wrapper: ClipTorch):
+def test_torch_embed_text(clip_torch_wrapper: AutoModel):
     _test_embed_text(clip_wrapper=clip_torch_wrapper)
 
 
 @pytest.mark.onnx_extras
 @pytest.mark.e2e_model_inference
-def test_onnx_embed_text(clip_onnx_wrapper: ClipOnnx):
+def test_onnx_embed_text(clip_onnx_wrapper: AutoModel):
     _test_embed_text(clip_wrapper=clip_onnx_wrapper)
 
 
@@ -206,7 +204,7 @@ def _test_embed_single_numpy_image(clip_wrapper, image_shape: tuple):
 @pytest.mark.e2e_model_inference
 @pytest.mark.parametrize("image_shape", [(224, 224), (320, 240), (640, 480)])
 def test_torch_embed_single_numpy_image(
-    clip_torch_wrapper: ClipTorch, image_shape: tuple
+    clip_torch_wrapper: AutoModel, image_shape: tuple
 ):
     _test_embed_single_numpy_image(
         clip_wrapper=clip_torch_wrapper, image_shape=image_shape
@@ -216,7 +214,9 @@ def test_torch_embed_single_numpy_image(
 @pytest.mark.onnx_extras
 @pytest.mark.e2e_model_inference
 @pytest.mark.parametrize("image_shape", [(224, 224), (320, 240), (640, 480)])
-def test_onnx_embed_single_numpy_image(clip_onnx_wrapper: ClipOnnx, image_shape: tuple):
+def test_onnx_embed_single_numpy_image(
+    clip_onnx_wrapper: AutoModel, image_shape: tuple
+):
     _test_embed_single_numpy_image(
         clip_wrapper=clip_onnx_wrapper, image_shape=image_shape
     )
@@ -239,7 +239,7 @@ def _test_embed_single_tensor_image(clip_wrapper, image_shape: tuple):
 @pytest.mark.e2e_model_inference
 @pytest.mark.parametrize("image_shape", [(224, 224), (320, 240), (640, 480)])
 def test_torch_embed_single_tensor_image(
-    clip_torch_wrapper: ClipTorch, image_shape: tuple
+    clip_torch_wrapper: AutoModel, image_shape: tuple
 ):
     _test_embed_single_tensor_image(
         clip_wrapper=clip_torch_wrapper, image_shape=image_shape
@@ -250,7 +250,7 @@ def test_torch_embed_single_tensor_image(
 @pytest.mark.e2e_model_inference
 @pytest.mark.parametrize("image_shape", [(224, 224), (320, 240), (640, 480)])
 def test_onnx_embed_single_tensor_image(
-    clip_onnx_wrapper: ClipOnnx, image_shape: tuple
+    clip_onnx_wrapper: AutoModel, image_shape: tuple
 ):
     _test_embed_single_tensor_image(
         clip_wrapper=clip_onnx_wrapper, image_shape=image_shape
@@ -277,7 +277,7 @@ def _test_embed_list_of_numpy_images(clip_wrapper, image_shape: tuple):
 @pytest.mark.e2e_model_inference
 @pytest.mark.parametrize("image_shape", [(224, 224), (320, 240), (640, 480)])
 def test_torch_embed_list_of_numpy_images(
-    clip_torch_wrapper: ClipTorch, image_shape: tuple
+    clip_torch_wrapper: AutoModel, image_shape: tuple
 ):
     _test_embed_list_of_numpy_images(
         clip_wrapper=clip_torch_wrapper, image_shape=image_shape
@@ -288,7 +288,7 @@ def test_torch_embed_list_of_numpy_images(
 @pytest.mark.e2e_model_inference
 @pytest.mark.parametrize("image_shape", [(224, 224), (320, 240), (640, 480)])
 def test_onnx_embed_list_of_numpy_images(
-    clip_onnx_wrapper: ClipOnnx, image_shape: tuple
+    clip_onnx_wrapper: AutoModel, image_shape: tuple
 ):
     _test_embed_list_of_numpy_images(
         clip_wrapper=clip_onnx_wrapper, image_shape=image_shape
@@ -315,7 +315,7 @@ def _test_embed_list_of_tensor_images(clip_wrapper, image_shape: tuple):
 @pytest.mark.e2e_model_inference
 @pytest.mark.parametrize("image_shape", [(224, 224), (320, 240), (640, 480)])
 def test_torch_embed_list_of_tensor_images(
-    clip_torch_wrapper: ClipTorch, image_shape: tuple
+    clip_torch_wrapper: AutoModel, image_shape: tuple
 ):
     _test_embed_list_of_tensor_images(
         clip_wrapper=clip_torch_wrapper, image_shape=image_shape
@@ -326,7 +326,7 @@ def test_torch_embed_list_of_tensor_images(
 @pytest.mark.e2e_model_inference
 @pytest.mark.parametrize("image_shape", [(224, 224), (320, 240), (640, 480)])
 def test_onnx_embed_list_of_tensor_images(
-    clip_onnx_wrapper: ClipOnnx, image_shape: tuple
+    clip_onnx_wrapper: AutoModel, image_shape: tuple
 ):
     _test_embed_list_of_tensor_images(
         clip_wrapper=clip_onnx_wrapper, image_shape=image_shape
@@ -350,7 +350,7 @@ def _test_embed_batch_of_tensor_images(clip_wrapper, image_shape: tuple):
 @pytest.mark.e2e_model_inference
 @pytest.mark.parametrize("image_shape", [(224, 224), (320, 240), (640, 480)])
 def test_torch_embed_batch_of_tensor_images(
-    clip_torch_wrapper: ClipTorch, image_shape: tuple
+    clip_torch_wrapper: AutoModel, image_shape: tuple
 ):
     _test_embed_batch_of_tensor_images(
         clip_wrapper=clip_torch_wrapper, image_shape=image_shape
@@ -361,7 +361,7 @@ def test_torch_embed_batch_of_tensor_images(
 @pytest.mark.e2e_model_inference
 @pytest.mark.parametrize("image_shape", [(224, 224), (320, 240), (640, 480)])
 def test_onnx_embed_batch_of_tensor_images(
-    clip_onnx_wrapper: ClipOnnx, image_shape: tuple
+    clip_onnx_wrapper: AutoModel, image_shape: tuple
 ):
     _test_embed_batch_of_tensor_images(
         clip_wrapper=clip_onnx_wrapper, image_shape=image_shape
@@ -383,7 +383,7 @@ def _test_max_batch_size_for_images(model):
 
 
 @pytest.mark.e2e_model_inference
-def test_torch_max_batch_size_for_images(clip_torch_wrapper_small_batch: ClipTorch):
+def test_torch_max_batch_size_for_images(clip_torch_wrapper_small_batch: AutoModel):
     _test_max_batch_size_for_images(model=clip_torch_wrapper_small_batch)
 
 
@@ -400,17 +400,17 @@ def _test_max_batch_size_for_text(model):
 
 
 @pytest.mark.e2e_model_inference
-def test_torch_max_batch_size_for_text(clip_torch_wrapper_small_batch: ClipTorch):
+def test_torch_max_batch_size_for_text(clip_torch_wrapper_small_batch: AutoModel):
     _test_max_batch_size_for_text(model=clip_torch_wrapper_small_batch)
 
 
 @pytest.mark.onnx_extras
 @pytest.mark.e2e_model_inference
-def test_onnx_max_batch_size_for_images(clip_onnx_wrapper_small_batch: ClipOnnx):
+def test_onnx_max_batch_size_for_images(clip_onnx_wrapper_small_batch: AutoModel):
     _test_max_batch_size_for_images(model=clip_onnx_wrapper_small_batch)
 
 
 @pytest.mark.onnx_extras
 @pytest.mark.e2e_model_inference
-def test_onnx_max_batch_size_for_text(clip_onnx_wrapper_small_batch: ClipOnnx):
+def test_onnx_max_batch_size_for_text(clip_onnx_wrapper_small_batch: AutoModel):
     _test_max_batch_size_for_text(model=clip_onnx_wrapper_small_batch)

@@ -1,3 +1,4 @@
+import cv2
 import numpy as np
 import pytest
 import torch
@@ -19,8 +20,8 @@ def test_single_numpy_bgr_input(
     original_output = original_preprocessor(dog_image_pil).unsqueeze(0)
 
     # then
-    mean_diff = torch.mean(torch.abs(ours_output - original_output))
-    assert mean_diff < 0.1
+    max_diff = torch.max(torch.abs(ours_output - original_output))
+    assert max_diff < 0.03
 
 
 def test_single_numpy_rgb_input(
@@ -39,8 +40,8 @@ def test_single_numpy_rgb_input(
 
     # then
     assert torch.allclose(ours_output_rgb, ours_output_bgr)
-    mean_diff = torch.mean(torch.abs(ours_output_rgb - original_output))
-    assert mean_diff < 0.1
+    max_diff = torch.max(torch.abs(ours_output_rgb - original_output))
+    assert max_diff < 0.03
 
 
 def test_single_3d_rgb_tensor_input(
@@ -63,8 +64,8 @@ def test_single_3d_rgb_tensor_input(
 
     # then
     assert torch.allclose(ours_output_torch, ours_output_numpy)
-    mean_diff = torch.mean(torch.abs(ours_output_torch - original_output))
-    assert mean_diff < 0.1
+    max_diff = torch.max(torch.abs(ours_output_torch - original_output))
+    assert max_diff < 0.03
 
 
 def test_list_of_numpy_inputs_bgr(
@@ -81,8 +82,8 @@ def test_list_of_numpy_inputs_bgr(
 
     # then
     assert ours_output.shape[0] == 2
-    assert torch.mean(torch.abs(ours_output[0] - original_output[0])) < 0.1
-    assert torch.mean(torch.abs(ours_output[1] - original_output[0])) < 0.1
+    assert torch.max(torch.abs(ours_output[0] - original_output[0])) < 0.03
+    assert torch.max(torch.abs(ours_output[1] - original_output[0])) < 0.03
 
 
 def test_list_of_numpy_inputs_rgb(
@@ -102,8 +103,8 @@ def test_list_of_numpy_inputs_rgb(
 
     # then
     assert ours_output.shape[0] == 2
-    assert torch.mean(torch.abs(ours_output[0] - original_output[0])) < 0.1
-    assert torch.mean(torch.abs(ours_output[1] - original_output[0])) < 0.1
+    assert torch.max(torch.abs(ours_output[0] - original_output[0])) < 0.03
+    assert torch.max(torch.abs(ours_output[1] - original_output[0])) < 0.03
 
 
 def test_list_of_tensor_inputs(
@@ -120,8 +121,45 @@ def test_list_of_tensor_inputs(
 
     # then
     assert ours_output.shape[0] == 2
-    assert torch.mean(torch.abs(ours_output[0] - original_output[0])) < 0.1
-    assert torch.mean(torch.abs(ours_output[1] - original_output[0])) < 0.1
+    assert torch.max(torch.abs(ours_output[0] - original_output[0])) < 0.03
+    assert torch.max(torch.abs(ours_output[1] - original_output[0])) < 0.03
+
+
+def test_list_of_elements_of_different_type(
+    dog_image_torch: torch.Tensor,
+    dog_image_numpy: np.ndarray,
+    dog_image_pil: Image.Image,
+) -> None:
+    # given
+    original_preprocessor = _transform(n_px=224)
+    inference_preprocessor = create_clip_preprocessor(image_size=224)
+    input_images = [dog_image_torch, dog_image_numpy]
+
+    # when
+    ours_output = inference_preprocessor(input_images, None, torch.device("cpu"))
+    original_output = original_preprocessor(dog_image_pil).unsqueeze(0)
+
+    # then
+    assert ours_output.shape[0] == 2
+    assert torch.max(torch.abs(ours_output[0] - original_output[0])) < 0.03
+    assert torch.max(torch.abs(ours_output[1] - original_output[0])) < 0.03
+
+
+def test_list_of_elements_of_different_shape(
+    dog_image_numpy: np.ndarray, dog_image_pil: Image.Image
+) -> None:
+    # given
+    original_preprocessor = _transform(n_px=224)
+    inference_preprocessor = create_clip_preprocessor(image_size=224)
+    input_images = [dog_image_numpy, cv2.resize(dog_image_numpy, (1920, 1080))]
+
+    # when
+    ours_output = inference_preprocessor(input_images, None, torch.device("cpu"))
+    original_output = original_preprocessor(dog_image_pil).unsqueeze(0)
+
+    # then
+    assert ours_output.shape[0] == 2
+    assert torch.max(torch.abs(ours_output[0] - original_output[0])) < 0.03
 
 
 def test_batched_tensor_input(
@@ -138,8 +176,8 @@ def test_batched_tensor_input(
 
     # then
     assert ours_output.shape[0] == 2
-    assert torch.mean(torch.abs(ours_output[0] - original_output[0])) < 0.1
-    assert torch.mean(torch.abs(ours_output[1] - original_output[0])) < 0.1
+    assert torch.max(torch.abs(ours_output[0] - original_output[0])) < 0.03
+    assert torch.max(torch.abs(ours_output[1] - original_output[0])) < 0.03
 
 
 def test_clip_preprocessor_when_empty_list_provided() -> None:
