@@ -66,11 +66,11 @@ def dog_image_pil() -> Image.Image:
 
 
 def _download_if_not_exists(file_path: str, url: str, lock_timeout: int = 120) -> None:
-    if os.path.exists(file_path):
-        return None
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
     lock_path = f"{file_path}.lock"
     with FileLock(lock_file=lock_path, timeout=lock_timeout):
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        if os.path.exists(file_path):
+            return None
         with requests.get(url, stream=True) as response:
             response.raise_for_status()
             with open(file_path, "wb") as f:
