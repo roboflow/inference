@@ -60,7 +60,7 @@ COPY inference inference
 COPY .release .release
 COPY Makefile Makefile
 
-RUN PYTHON=python3.9 make create_inference_cli_whl
+RUN make create_inference_cli_whl PYTHON=python3.9
 RUN pip3 install dist/inference_cli*.whl
 
 ENV ORT_TENSORRT_FP16_ENABLE=1
