@@ -73,19 +73,16 @@ def pre_process_image(
     images = inputs_to_tensor(
         images=images, device=device, input_color_format=input_color_format
     )
-    return transforms(images)
+    if isinstance(images, torch.Tensor):
+        return transforms(images)
+    return torch.cat([transforms(i) for i in images], dim=0).contiguous()
 
 
 def inputs_to_tensor(
     images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
     device: torch.device,
     input_color_format: Optional[ColorFormat] = None,
-) -> torch.Tensor:
-    """
-    Function to transform standard inputs (single-image np.ndarray, list of np.ndarray, 3D/4D tensors, list of
-    3D tensors).
-    All images expect to be 3 channels, 0-255 values (int8 or float32).
-    """
+) -> Union[torch.Tensor, List[torch.Tensor]]:
     if not isinstance(images, (list, np.ndarray, torch.Tensor)):
         raise ModelRuntimeError(
             f"Unsupported input type: {type(images)}. Must be one of list, np.ndarray, or torch.Tensor."
@@ -93,7 +90,7 @@ def inputs_to_tensor(
     if isinstance(images, list):
         if not images:
             raise ModelRuntimeError("Input image list cannot be empty.")
-        processed_images = [
+        return [
             input_to_tensor(
                 image=image,
                 device=device,
@@ -102,7 +99,6 @@ def inputs_to_tensor(
             )
             for image in images
         ]
-        return torch.cat(processed_images, dim=0).contiguous()
     return input_to_tensor(
         image=images,
         device=device,
