@@ -53,7 +53,7 @@ def retrieve_property_from_manifest(
     if not hasattr(step_manifest, property_name):
         raise BlockInterfaceError(
             public_message=f"Attempted to retrieve property {property_name} from "
-            f"manifest of step {step_manifest.name} based on manifest schema, but property "
+            f"manifest of step {step_manifest.name} based od manifest schema, but property "
             f"is not defined for object instance. That may be due to aliasing of manifest property "
             f"name in pydantic class, which is not allowed.",
             context="workflow_compilation | execution_graph_construction",

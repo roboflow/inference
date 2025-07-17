@@ -260,9 +260,6 @@ from inference.core.workflows.core_steps.models.roboflow.object_detection.v2 imp
 from inference.core.workflows.core_steps.models.third_party.barcode_detection.v1 import (
     BarcodeDetectorBlockV1,
 )
-from inference.core.workflows.core_steps.models.third_party.easy_ocr.v1 import (
-    EasyOCRBlockV1,
-)
 from inference.core.workflows.core_steps.models.third_party.qr_code_detection.v1 import (
     QRCodeDetectorBlockV1,
 )
@@ -555,7 +552,6 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         CosineSimilarityBlockV1,
         BackgroundColorVisualizationBlockV1,
         BarcodeDetectorBlockV1,
-        EasyOCRBlockV1,
         BlurVisualizationBlockV1,
         BoundingBoxVisualizationBlockV1,
         BoundingRectBlockV1,
