@@ -58,7 +58,7 @@ body.light {
 .md-header__inner {
   align-items: center;
   display: grid;
-  grid-template-columns: 0.1fr 1.4fr 2fr 2fr;
+  grid-template-columns: 0.1fr 1.4fr 2fr auto;
   padding-right: 1rem;
 }
 .md-search__inner {
@@ -247,4 +247,7 @@ body[data-md-url$="/cookbooks/"] .md-content {
 }
 .md-search {
   flex-grow: 0;
+}
+.md-nav__link .md-nav__container {
+  padding: 0;
 }

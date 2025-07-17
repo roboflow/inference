@@ -13,7 +13,7 @@ hide:
     <div class="text-center">
     {% if custom_title %}
       <h1>{{ title }}</h1>
-      <p>{{ description }}</p>
+      <p style="white-space: pre-wrap;">{{ description.strip() }}</p>
     {% else %}
       <h1>Workflow Blocks</h1>
       <p>Workflows are made of Blocks. Blocks can be connected to build multi-step computer vision applications.</p>

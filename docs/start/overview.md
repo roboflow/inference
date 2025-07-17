@@ -20,3 +20,43 @@ Need inspiration? Check out these guides:
 - [Measure the dimensions of objects](https://www.youtube.com/watch?v=FQY7TSHfZeI)
 - [Build a vision app in 10 minutes with Roboflow Instant and a Workflow](https://www.youtube.com/watch?v=aPxlImNxj5A)
 - [Deploy Florence-2 for object detection](https://www.youtube.com/watch?v=_u53TxShLsk)
+
+## Supported Models
+Inference supports a wide range of state-of-the-art models, including:
+
+<div class="grid" markdown style="grid-template-columns: 1fr 1fr !important;">
+<div markdown>
+### Fine-tunable Models
+* RF-DETR
+* ViT
+* ResNet
+* SmolVLM2
+* Qwen2.5-VL
+* YOLOv12
+* YOLO11
+* YOLOv8
+</div>
+<div markdown>
+### Foundation Models 
+* Perception Encoder
+* Segment Anything 2
+* CLIP
+* Florence-2
+* Moondream2
+* Apple DepthPro
+</div>
+</div>
+
+Workflows supports 100+ "blocks" that you can use to build on top of vision models.
+
+With Workflows, you can:
+
+* Run object detection, segmentation, classification, and multimodal models
+* Run supported foundation models like Segment Anything 2 and Perception Encoder
+* Run stateful video tracking
+* Implement conditional logic
+* Transform images
+* Run detections consensus algorithms
+* And more
+
+[See a full list of what you can do with Workflows](/workflows/tutorials).

@@ -6,7 +6,11 @@ A Workflow is a single or multi-stage computer vision application.
 
 In this guide, we are going to make a Workflow that runs an object detection model and shows the bounding boxes and labels returned by the model.
 
+We will use a pre-trained model to detect vehicles and other common objects in a video.
+
 This Workflow can then be run on images, videos, RTSP streams, and more.
+
+We will then add video tracking to our Workflow.
 
 !!! note
 
@@ -30,13 +34,15 @@ You can build Workflows both on your own hardware and using the Roboflow web app
 
     To get started, [install Inference and set up your server](/install/index/).
 
+    Use `inference server start --dev` to set up your server.
+
     Then, go to `http://localhost:9001/build`.
 
     Click "Create Workflow" to create a blank Workflow.
 
 You will then see a blank Workflow builder in which you can build your application:
 
-[add image]
+![](https://media.roboflow.com/inference/get-started/blank.png)
 
 ## Step #2: Add a Detection Block
 
@@ -48,11 +54,11 @@ Want to detect a custom object? [Learn how to fine-tune a model for your use cas
 
 Click "Add Model" in Workflows, then choose "Object Detection Model":
 
-[add image]
+![](https://media.roboflow.com/inference/get-started/add.png)
 
 A window will appear in which you can choose the model you want to use. Click "Public Models", then choose "RF-DETR Base":
 
-[add image]
+![](https://media.roboflow.com/inference/get-started/choose-model.png)
 
 Then, click "Save" to add the model to your Workflow.
 
@@ -64,7 +70,7 @@ You can use Workflows to show bounding boxes and labels.
 
 Click "Add Block", then add a "Bounding Box Visualization". Then, add a "Label Visualization". Your Workflow should now look like this:
 
-[add image]
+![](https://media.roboflow.com/inference/get-started/with-visuals.png)
 
 Every block in Workflows is configurable. For example, you can change the thickness of the bounding box lines, or the size of the text in the labels.
 
@@ -76,9 +82,9 @@ To test your Workflow, click the "Test Workflow" button.
 
 If you are running Workflows using a local Inference server or a Dedicated Deployment, you can test your Workflow on a video with the browser. Otherwise, you can test with images.
 
-Let's test with the following image that contains several objects that our RF-DETR Base model can detect, including a coffee cup and a cell phone:
+Let's test with the following image that contains vehicles, one of the objects our pre-trained model can identify. You can also upload an image with commmon objects like cell phones, cups, glasses, chairs -- [the model we are using, trained on the Microsoft COCO dataset, can identify over 80 objects](https://blog.roboflow.com/microsoft-coco-classes/).
 
-[add image]
+![](https://media.roboflow.com/inference/get-started/test-image.png)
 
 ## Step #5: Add a Tracker
 
@@ -88,9 +94,11 @@ Let's add a tracker that will let us track objects between frames.
 
 Hover over the Object Detection model block, then click the "+" (plus) icon to add a block below. Choose "Byte Tracker".
 
+![](https://media.roboflow.com/inference/get-started/add-tracker.png)
+
 Your Workflow should look like this:
 
-[add image]
+![](https://media.roboflow.com/inference/get-started/final-workflow.png)
 
 Our Workflow can now track objects between frames.
 
@@ -130,3 +138,7 @@ Create a new Python file with this code, then run the file.
 You will see your Workflow running live on your webcam.
 
 Want to run on an RTSP stream? Replace the `video_reference` with the URL of your stream.
+
+You have just built your first Workflow!
+
+Ready to build more? [Check out our gallery of tutorials](/guides/written/).
