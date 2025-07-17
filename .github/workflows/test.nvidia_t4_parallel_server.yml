@@ -7,7 +7,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  if: false
   build:
     if: ${{ !github.event.act }}
     runs-on: Roboflow-GPU-VM-Runner

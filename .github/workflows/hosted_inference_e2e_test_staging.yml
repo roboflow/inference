@@ -3,7 +3,6 @@ permissions:
   contents: read
 
 on:
-  if: false
   workflow_dispatch:
     inputs:
       skip_warmup:
