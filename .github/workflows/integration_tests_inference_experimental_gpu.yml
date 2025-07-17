@@ -34,7 +34,7 @@ jobs:
           path: |
             /var/cache/apt/archives/
             /var/lib/apt/lists/
-          key: ${{ runner.os }}-apt-cuda-${{ hashFiles('inference_experimental/pyproject.toml') }}
+          key: ${{ runner.os }}-apt-cuda-12-4
           restore-keys: |
             ${{ runner.os }}-apt-cuda-
       - name: 🐍 Set up Python ${{ matrix.python-version }}

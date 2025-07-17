@@ -18,9 +18,6 @@ from inference_exp.models.auto_loaders.storage_manager import (
     AccessIdentifiers,
     ModelStorageManager,
 )
-from inference_exp.models.yolov8.yolov8_object_detection_onnx import (
-    YOLOv8ForObjectDetectionOnnx,
-)
 from requests_mock import Mocker
 
 
@@ -254,6 +251,9 @@ def test_auto_loading_with_weights_provider_in_base_scenario(
     requests_mock: Mocker,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_object_detection_onnx import (
+        YOLOv8ForObjectDetectionOnnx,
+    )
     storage_manager = AccumulativeModelStorageManager()
     shared_blobs_dir_path = os.path.join(empty_local_dir, "shared-blobs")
     generate_shared_blobs_path_mock.side_effect = lambda: shared_blobs_dir_path
@@ -338,6 +338,9 @@ def test_auto_loading_with_weights_provider_when_cache_for_the_exact_model_and_a
     requests_mock: Mocker,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_object_detection_onnx import (
+        YOLOv8ForObjectDetectionOnnx,
+    )
     storage_manager = AccumulativeModelStorageManager()
     shared_blobs_dir_path = os.path.join(empty_local_dir, "shared-blobs")
     generate_shared_blobs_path_mock.side_effect = lambda: shared_blobs_dir_path
@@ -397,6 +400,9 @@ def test_auto_loading_with_weights_provider_when_cache_for_the_exact_model_but_d
     requests_mock: Mocker,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_object_detection_onnx import (
+        YOLOv8ForObjectDetectionOnnx,
+    )
     storage_manager = AccumulativeModelStorageManager()
     shared_blobs_dir_path = os.path.join(empty_local_dir, "shared-blobs")
     generate_shared_blobs_path_mock.side_effect = lambda: shared_blobs_dir_path
@@ -528,6 +534,9 @@ def test_auto_loading_with_weights_provider_when_api_denoted_forbidden_for_one_k
     requests_mock: Mocker,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_object_detection_onnx import (
+        YOLOv8ForObjectDetectionOnnx,
+    )
     storage_manager = AccumulativeModelStorageManager()
     shared_blobs_dir_path = os.path.join(empty_local_dir, "shared-blobs")
     generate_shared_blobs_path_mock.side_effect = lambda: shared_blobs_dir_path
@@ -622,6 +631,9 @@ def test_auto_loading_from_cached_local_path(
     requests_mock: Mocker,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_object_detection_onnx import (
+        YOLOv8ForObjectDetectionOnnx,
+    )
     shared_blobs_dir_path = os.path.join(empty_local_dir, "shared-blobs")
     generate_shared_blobs_path_mock.side_effect = lambda: shared_blobs_dir_path
     generate_model_package_cache_path_mock.side_effect = lambda model_id, package_id: (
