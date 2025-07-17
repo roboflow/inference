@@ -58,6 +58,7 @@ WORKDIR /app/
 COPY inference_cli/ ./inference_cli/
 COPY inference inference
 COPY .release .release
+COPY requirements requirements
 COPY Makefile Makefile
 
 RUN make create_inference_cli_whl PYTHON=python3.9
