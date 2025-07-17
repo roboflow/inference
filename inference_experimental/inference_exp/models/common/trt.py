@@ -99,33 +99,61 @@ def infer_from_trt_engine_with_static_batch_size(
     input_name: str,
     outputs: List[str],
 ) -> List[torch.Tensor]:
-    batch_pad_reminder = 0
     if pre_processed_images.shape[0] < trt_config.static_batch_size:
-        batch_pad_reminder = (
-            trt_config.static_batch_size - pre_processed_images.shape[0]
-        )
+        reminder = trt_config.static_batch_size - pre_processed_images.shape[0]
         pre_processed_images = torch.cat(
             (
                 pre_processed_images,
                 torch.zeros(
-                    (batch_pad_reminder,) + pre_processed_images.shape[1:],
+                    (reminder,) + pre_processed_images.shape[1:],
                     dtype=pre_processed_images.dtype,
                     device=pre_processed_images.device,
                 ),
             ),
             dim=0,
         )
-    results = execute_trt_engine(
-        pre_processed_images=pre_processed_images,
-        engine=engine,
-        context=context,
-        device=device,
-        input_name=input_name,
-        outputs=outputs,
-    )
-    if not batch_pad_reminder:
-        return results
-    return [r[:-batch_pad_reminder] for r in results]
+        results = execute_trt_engine(
+            pre_processed_images=pre_processed_images,
+            engine=engine,
+            context=context,
+            device=device,
+            input_name=input_name,
+            outputs=outputs,
+        )
+        if not reminder:
+            return results
+        return [r[:-reminder] for r in results]
+    all_results = []
+    for _ in outputs:
+        all_results.append([])
+    for i in range(0, pre_processed_images.shape[0], trt_config.static_batch_size):
+        batch = pre_processed_images[i : i + trt_config.static_batch_size].contiguous()
+        reminder = trt_config.static_batch_size - batch.shape[0]
+        if reminder > 0:
+            batch = torch.cat(
+                (
+                    pre_processed_images,
+                    torch.zeros(
+                        (reminder,) + batch.shape[1:],
+                        dtype=pre_processed_images.dtype,
+                        device=pre_processed_images.device,
+                    ),
+                ),
+                dim=0,
+            )
+        results = execute_trt_engine(
+            pre_processed_images=batch,
+            engine=engine,
+            context=context,
+            device=device,
+            input_name=input_name,
+            outputs=outputs,
+        )
+        if reminder > 0:
+            results = [r[:-reminder] for r in results]
+        for partial_result, all_result_element in zip(results, all_results):
+            all_result_element.append(partial_result)
+    return [torch.cat(e, dim=0).contiguous() for e in all_results]
 
 
 def infer_from_trt_engine_with_dynamic_batch_size(
