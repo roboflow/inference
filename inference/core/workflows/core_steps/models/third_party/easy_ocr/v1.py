@@ -289,7 +289,7 @@ def ocr_result_to_detections(
         confidences.append(confidence)
         class_ids.append(0)
         class_names.append(text)
-        print(text)
+        logger.debug(text)
 
     # Convert to NumPy arrays
     detections = sv.Detections(
