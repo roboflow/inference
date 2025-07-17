@@ -15,6 +15,7 @@ from inference_exp.models.base.types import PreprocessedInputs
 from inference_exp.models.common.model_packages import get_model_package_contents
 from inference_exp.models.common.onnx import (
     run_session_via_iobinding,
+    run_session_with_batch_size_limit,
     set_execution_provider_defaults,
 )
 from inference_exp.utils.onnx_introspection import get_selected_onnx_execution_providers
@@ -188,17 +189,10 @@ class L2CSNetOnnx:
         **kwargs,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         with self._session_thread_lock:
-            yaw, pitch = [], []
-            for i in range(0, pre_processed_images.shape[0], self._max_batch_size):
-                batch_input = pre_processed_images[
-                    i : i + self._max_batch_size
-                ].contiguous()
-                batch_yaw, batch_pitch = run_session_via_iobinding(
-                    session=self._session, inputs={self._input_name: batch_input}
-                )
-                yaw.append(batch_yaw)
-                pitch.append(batch_pitch)
-            return torch.cat(yaw, dim=0), torch.cat(pitch, dim=0)
+            yaw, pitch = run_session_with_batch_size_limit(
+                session=self._session, inputs={self._input_name: pre_processed_images}
+            )
+            return yaw, pitch
 
     def post_process(
         self,

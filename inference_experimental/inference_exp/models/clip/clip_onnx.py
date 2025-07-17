@@ -6,16 +6,12 @@ import numpy as np
 import torch
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
-from inference_exp.errors import (
-    EnvironmentConfigurationError,
-    MissingDependencyError,
-    ModelRuntimeError,
-)
+from inference_exp.errors import EnvironmentConfigurationError, MissingDependencyError
 from inference_exp.models.base.embeddings import TextImageEmbeddingModel
 from inference_exp.models.clip.preprocessing import create_clip_preprocessor
 from inference_exp.models.common.model_packages import get_model_package_contents
 from inference_exp.models.common.onnx import (
-    run_session_via_iobinding,
+    run_session_with_batch_size_limit,
     set_execution_provider_defaults,
 )
 from inference_exp.utils.onnx_introspection import get_selected_onnx_execution_providers
@@ -128,39 +124,19 @@ class ClipOnnx(TextImageEmbeddingModel):
             images, input_color_format, self._device
         )
         with self._visual_session_thread_lock:
-            if pre_processed_images.shape[0] <= self._max_batch_size:
-                return run_session_via_iobinding(
-                    session=self._visual_onnx_session,
-                    inputs={self._visual_input_name: pre_processed_images},
-                )[0]
-        results = []
-        for i in range(0, pre_processed_images.shape[0], self._max_batch_size):
-            batch_input = pre_processed_images[
-                i : i + self._max_batch_size
-            ].contiguous()
-            batch_results = run_session_via_iobinding(
+            return run_session_with_batch_size_limit(
                 session=self._visual_onnx_session,
-                inputs={self._visual_input_name: batch_input},
+                inputs={self._visual_input_name: pre_processed_images},
+                max_batch_size=self._max_batch_size,
             )[0]
-            results.append(batch_results)
-        return torch.cat(results, dim=0)
 
     def embed_text(self, texts: Union[str, List[str]], **kwargs) -> torch.Tensor:
         if not isinstance(texts, list):
             texts = [texts]
         tokenized_batch = clip.tokenize(texts)
         with self._textual_session_thread_lock:
-            if tokenized_batch.shape[0] <= self._max_batch_size:
-                return run_session_via_iobinding(
-                    session=self._textual_onnx_session,
-                    inputs={self._textual_input_name: tokenized_batch},
-                )[0]
-        results = []
-        for i in range(0, tokenized_batch.shape[0], self._max_batch_size):
-            batch_input = tokenized_batch[i : i + self._max_batch_size].contiguous()
-            batch_results = run_session_via_iobinding(
+            return run_session_with_batch_size_limit(
                 session=self._textual_onnx_session,
-                inputs={self._textual_input_name: batch_input},
+                inputs={self._textual_input_name: tokenized_batch},
+                max_batch_size=self._max_batch_size,
             )[0]
-            results.append(batch_results)
-        return torch.cat(results, dim=0)
