@@ -10,6 +10,7 @@ from inference_exp.errors import EnvironmentConfigurationError, MissingDependenc
 from inference_exp.models.common.model_packages import get_model_package_contents
 from inference_exp.models.common.onnx import (
     run_session_via_iobinding,
+    run_session_with_batch_size_limit,
     set_execution_provider_defaults,
 )
 from inference_exp.models.common.roboflow.model_packages import (
@@ -143,25 +144,14 @@ class YOLOv7ForInstanceSegmentationOnnx(
         self, pre_processed_images: torch.Tensor, **kwargs
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         with self._session_thread_lock:
-            if self._input_batch_size is None:
-                raw_outputs = run_session_via_iobinding(
-                    session=self._session,
-                    inputs={"images": pre_processed_images},
-                )
-                instances, protos = raw_outputs[0], raw_outputs[4]
-                return instances, protos
-            instances, protos = [], []
-            for i in range(0, pre_processed_images.shape[0], self._input_batch_size):
-                batch_input = pre_processed_images[
-                    i : i + self._input_batch_size
-                ].contiguous()
-                raw_outputs = run_session_via_iobinding(
-                    session=self._session, inputs={"images": batch_input}
-                )
-                batch_instances, batch_protos = raw_outputs[0], raw_outputs[4]
-                instances.append(batch_instances)
-                protos.append(batch_protos)
-            return torch.cat(instances, dim=0), torch.cat(protos, dim=0)
+            raw_outputs = run_session_with_batch_size_limit(
+                session=self._session,
+                inputs={"images": pre_processed_images},
+                min_batch_size=self._input_batch_size,
+                max_batch_size=self._input_batch_size,
+            )
+            instances, protos = raw_outputs[0], raw_outputs[4]
+            return instances, protos
 
     def post_process(
         self,
