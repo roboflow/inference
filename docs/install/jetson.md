@@ -30,7 +30,7 @@ pip install inference-cli
 inference server start
 ```
 
-## Manually Starting the Container
+## Manually Start the Container
 
 If you want more control of the container settings you can also start it
 manually. Jetson devices with NVIDIA Jetpack are pre-configured with NVIDIA Container

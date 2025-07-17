@@ -18,8 +18,13 @@ from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlock
 TYPE: str = "roboflow_core/pixelate_visualization@v1"
 SHORT_DESCRIPTION = "Pixelate detected objects in an image."
 LONG_DESCRIPTION = """
-The `PixelateVisualization` block pixelates detected
-objects in an image using Supervision's `sv.PixelateAnnotator`.
+The Pixelate Visualization block pixelates detected regions in an image.
+
+This block is useful if you want to censor parts of an image.
+
+The below example shows a box being pixelated in an image:
+
+![](https://media.roboflow.com/inference/workflows/pixelate.png)
 """
 
 

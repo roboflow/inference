@@ -1,6 +1,8 @@
-# Roboflow API Key
+# Find Your Roboflow API Key
 
 Using your Roboflow API key grants you access to the models you have trained on Roboflow, public models available on Roboflow Universe, and access to hosted inference APIs (i.e. the [Roboflow Serverless API](https://docs.roboflow.com/deploy/serverless-hosted-api-v2)).
+
+[Read the Roboflow product documentation to learn how find your API key.](https://docs.roboflow.com/developer/authentication/find-your-roboflow-api-key)
 
 You will need an API key for everything listed in the table below that does not have a check in the "Open Access" column:
 
@@ -25,13 +27,52 @@ You will need an API key for everything listed in the table below that does not 
 
 There are several ways to configure your Roboflow API key when using Inference.
 
+### In a Workflow Call
+
+When you run a Roboflow Workflow, you will need to specify your API key.
+
+#### With the Inference SDK (for Images)
+
+If you are using the Inference SDK, you can set up your API key with your HTTP client:
+
+```python
+from inference_sdk import InferenceHTTPClient
+import os
+
+client = InferenceHTTPClient(
+    api_url="https://serverless.roboflow.com",
+    api_key=os.environ.get("ROBOFLOW_API_KEY")
+)
+```
+
+#### With the InferencePipeline Method (for Video)
+
+If you are running your Workflow on a video, you will use InferencePipeline. You can set your API key using the `api_key` argument:
+
+```python
+from inference import InferencePipeline
+import os
+
+pipeline = InferencePipeline.init_with_workflow(
+    api_key=os.environ.get("ROBOFLOW_API_KEY")
+    workspace_name="workspace-name",
+    workflow_id="custom-workflow-84",
+    video_reference=0,
+    max_fps=30
+)
+```
+
+You can find this code snippet from the "Deploy" section of the Roboflow Workflows web interface.
+
 ### Environment Variable
 
-The recommended way is to set your Roboflow API key within your environment via the variable `ROBOFLOW_API_KEY`. In most terminals you can run:
+You can also set your Roboflow API key within your environment via the variable `ROBOFLOW_API_KEY`. In most terminals you can run:
 
 ```bash
 export ROBOFLOW_API_KEY=MY_ROBOFLOW_API_KEY
 ```
+
+This is useful if you are using the Inference Python package directly.
 
 Then, any command you run within that same terminal session will have access to the environment variable `ROBOFLOW_API_KEY`.
 

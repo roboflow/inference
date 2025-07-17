@@ -59,7 +59,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "CogVLM",
             "version": "v1",
-            "short_description": "DEPRECATED! Run a self-hosted vision language model.",
+            "short_description": "Run CogVLM. [Deprecated]",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",

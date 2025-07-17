@@ -54,11 +54,12 @@ DETECTIONS_CLASS_NAME_FIELD = "class_name"
 DETECTION_ID_FIELD = "detection_id"
 
 LONG_DESCRIPTION = """
-Run Segment Anything 2, a zero-shot instance segmentation model, on an image.
+Segment Anything 2 is an open source image segmentation model.
 
-** Dedicated inference server required (GPU recomended) **
+You can use Segment Anything 2 to identify the precise location of objects in an image. This process can generate masks for objects in an image based on a specified point or a selected region.
 
-You can use pass in boxes/predictions from other models to Segment Anything 2 to use as prompts for the model.
+You can pass in predictions from other detection-based models to Segment Anything 2 to use as prompts for the model.
+
 If you pass in box detections from another model, the class names of the boxes will be forwarded to the predicted masks.  If using the model unprompted, the model will assign integers as class names / ids.
 """
 

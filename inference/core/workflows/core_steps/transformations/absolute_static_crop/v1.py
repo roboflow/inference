@@ -22,11 +22,6 @@ from inference.core.workflows.prototypes.block import (
 
 LONG_DESCRIPTION = """
 Crop a Region of Interest (RoI) from an image, using absolute coordinates.
-
-This is useful when placed after an ObjectDetection block as part of a multi-stage 
-workflow. For example, you could use an ObjectDetection block to detect objects, then 
-the AbsoluteStaticCrop block to crop objects, then an OCR block to run character 
-recognition on each of the individual cropped regions.
 """
 
 

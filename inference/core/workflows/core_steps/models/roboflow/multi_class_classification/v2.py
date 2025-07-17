@@ -44,14 +44,16 @@ from inference.core.workflows.prototypes.block import (
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 LONG_DESCRIPTION = """
-Run inference on a multi-class classification model hosted on or uploaded to Roboflow.
+Run inference on a single-label classification model hosted on or uploaded to Roboflow.
 
-You can query any model that is private to your account, or any public model available 
+You can use any classification model that is private to your account, or any public model available 
 on [Roboflow Universe](https://universe.roboflow.com).
 
 You will need to set your Roboflow API key in your Inference environment to use this 
-block. To learn more about setting your Roboflow API key, [refer to the Inference 
-documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
+block. [Learn how to find and set your Roboflow API key](/start/configure_api_key/).
+
+This block returns classifications from the model. If you want to display the class labels on an input image,
+use the Classification Label Visualization block.
 """
 
 

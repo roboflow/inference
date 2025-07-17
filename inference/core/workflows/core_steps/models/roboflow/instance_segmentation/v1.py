@@ -55,8 +55,7 @@ You can query any model that is private to your account, or any public model ava
 on [Roboflow Universe](https://universe.roboflow.com).
 
 You will need to set your Roboflow API key in your Inference environment to use this 
-block. To learn more about setting your Roboflow API key, [refer to the Inference 
-documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
+block. [Learn how to find and set your Roboflow API key](/start/configure_api_key/).
 """
 
 

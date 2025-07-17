@@ -75,7 +75,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "CLIP Embedding Model",
             "version": "v1",
-            "short_description": "Generate an embedding of an image or string.",
+            "short_description": "Generate a CLIP embedding of an image or string.",
             "long_description": LONG_DESCRIPTION,
             "license": "MIT",
             "block_type": "model",

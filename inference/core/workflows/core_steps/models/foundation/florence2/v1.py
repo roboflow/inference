@@ -96,24 +96,12 @@ RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
     for k, v in RELEVANT_TASKS_METADATA.items()
 )
 LONG_DESCRIPTION = f"""
-**Dedicated inference server required (GPU recommended) - you may want to use dedicated deployment**
+!!! note
 
-This Workflow block introduces **Florence 2**, a Visual Language Model (VLM) capable of performing a 
-wide range of tasks, including:
+    We recommend using this block with a GPU.
 
-* Object Detection
-
-* Instance Segmentation
-
-* Image Captioning
-
-* Optical Character Recognition (OCR)
-
-* and more...
-
-
-Below is a comprehensive list of tasks supported by the model, along with descriptions on 
-how to utilize their outputs within the Workflows ecosystem:
+Florence-2 is a Visual Language Model (VLM) capable of performing a 
+wide range of tasks. These are:
 
 **Task Descriptions:**
 

@@ -15,6 +15,50 @@ We have prepared several guides that walk through how to build multi-stage appli
     </a>
 
 
+
+- **Part Inspection Using Computer Vision**
+
+    <a href="https://blog.roboflow.com/part-inspection-using-computer-vision/" style="color: black !important;">
+    <img src="https://blog.roboflow.com/content/images/2025/05/Screenshot-2025-05-07-at-11.54.47-AM.png">
+
+    <p>Understand what parts inspection is, and how computer vision can be used in part inspection</p>
+    </a>
+
+
+</div>
+## Hobby Projects
+
+<div class="grid cards" markdown>
+
+- **Creating a Cutting Safety Tool with Keypoint Detection**
+
+    <a href="https://blog.roboflow.com/cutting-safety-computer-vision/" style="color: black !important;">
+    <img src="https://blog.roboflow.com/content/images/2025/07/safety-tool.png">
+
+    <p>Learn how to create a tool that monitors for potentially hazardous posture when cutting food in the kitchen.</p>
+    </a>
+
+
+
+- **Making Sure Dog Owners Keep Streets Clean with AI**
+
+    <a href="https://blog.roboflow.com/clean-streets/" style="color: black !important;">
+    <img src="https://blog.roboflow.com/content/images/2025/04/image-1--1.png">
+
+    <p>I used Roboflow to solve a public health problem</p>
+    </a>
+
+
+
+- **Using Computer Vision to Assess Bouldering Performance**
+
+    <a href="https://blog.roboflow.com/bouldering/" style="color: black !important;">
+    <img src="https://blog.roboflow.com/content/images/2024/12/16_9.png">
+
+    <p>Learn how I built a system to assess my bouldering skills using computer vision.</p>
+    </a>
+
+
 </div>
 ## Camera Control
 
@@ -63,17 +107,33 @@ We have prepared several guides that walk through how to build multi-stage appli
     </a>
 
 
-</div>
-## Hobby Projects
 
-<div class="grid cards" markdown>
+- **How to Use Roboflow with Ignition using MQTT**
 
-- **Making Sure Dog Owners Keep Streets Clean with AI**
+    <a href="https://blog.roboflow.com/roboflow-ignition-mqtt/" style="color: black !important;">
+    <img src="https://blog.roboflow.com/content/images/2024/10/16_9-7--Large.jpeg">
 
-    <a href="https://blog.roboflow.com/clean-streets/" style="color: black !important;">
-    <img src="https://blog.roboflow.com/content/images/2025/04/image-1--1.png">
+    <p>Learn how to use Roboflow with Ignition using the MQTT protocol.</p>
+    </a>
 
-    <p>I used Roboflow to solve a public health problem</p>
+
+
+- **How to Create a Retail Planogram using Computer Vision**
+
+    <a href="https://blog.roboflow.com/how-to-create-a-retail-planogram-using-computer-vision/" style="color: black !important;">
+    <img src="https://blog.roboflow.com/content/images/2024/08/16_9-12-.png">
+
+    <p>Learn how to create a retail planogram from a photo using computer vision.</p>
+    </a>
+
+
+
+- **Monitor Assembly Line Throughput with Computer Vision**
+
+    <a href="https://blog.roboflow.com/monitor-assembly-line-throughput/" style="color: black !important;">
+    <img src="https://blog.roboflow.com/content/images/2024/08/16_9-3--Large.jpeg">
+
+    <p>Learn how to monitor assembly line throughput with computer vision.</p>
     </a>
 
 

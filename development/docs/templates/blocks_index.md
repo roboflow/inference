@@ -11,14 +11,19 @@ hide:
 <section class="mdx-container portfolio-section">
   <div class="md-grid md-typeset">
     <div class="text-center">
+    {% if custom_title %}
+      <h1>{{ title }}</h1>
+      <p>{{ description }}</p>
+    {% else %}
       <h1>Workflow Blocks</h1>
       <p>Workflows are made of Blocks. Blocks can be connected to build multi-step computer vision applications.</p>
       <p>Below is a list of all the Blocks supported in Workflows.</p>
+    {% endif %}
     </div>
-    
+
       {% for section in block_sections %}
       <div class="section">
-        <h2>{{ section.title | capitalize }}</h2>
+        <h2>{{ section.title }}</h2>
         <div class="blocks">
             <div class="custom-grid">
             {% for block in blocks_by_section[section.id] %}

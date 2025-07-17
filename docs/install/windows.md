@@ -1,21 +1,29 @@
 # Install on Windows
 
+You can install Inference on Windows in two ways:
+
+1. With our dedicated Windows Installer (for x86)
+2. With Docker
+
 ## Windows Installer (x86)
 
-You can now run Roboflow Inference Server on your Windows machine using our native desktop app! 
+You can install and run Roboflow Inference on your Windows machine using a native desktop application.
 
-Simply download the latest windows installer from the latest release on Github.  
-➡️ **[View Latest Release and Download Installers on Github](https://github.com/roboflow/inference/releases)**
+To get started, download the Windows installer from the [latest release of Inference on Github](https://github.com/roboflow/inference/releases).
 
-### Windows Installation Steps 
- - [Download the latest installer](https://github.com/roboflow/inference/releases) and run it to install Roboflow Inference
- - When the install is finished it will offer to launch the Inference server after the setup completes
- - To stop the inference server simply close the terminal window it opens
- - To start it again later, you can find Roboflow Inference in your Start Menu
+Once you have downloaded the installer, open the installer software and follow the on-screen instructions.
+
+When the install is finished it will offer to launch the Inference server after the setup completes.
+
+To stop the inference server, close the terminal window the application opens.
+
+To start your Inference server, open Roboflow Inference from your Start Menu.
 
 ## Using Docker
+
 First, you'll need to [install Docker Desktop](https://docs.docker.com/desktop/setup/install/windows-install/).
-Then, use the CLI to start the container.
+
+Then, use the Roboflow Inference CLI to start the container.
 
 === "CPU"
     ```cmd
@@ -40,7 +48,7 @@ Then, use the CLI to start the container.
     [install Python](https://www.python.org/downloads/release/python-3128/#:~:text=Windows%20installer%20(64%2Dbit))
     first. Once you have Python version 3.12, 3.11, 3.10, or 3.9 on your machine, retry the command.
 
-## Manually Starting the Container
+## Manually Start the Container
 
 If you want more control of the container settings you can also start it
 manually.

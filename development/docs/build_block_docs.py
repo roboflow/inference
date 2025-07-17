@@ -92,21 +92,16 @@ in `workflow` runtime. See *Bindings* for more info.
     - outputs: {output_connections}
 
     
-### Input and Output Bindings
+### Inputs
 
 The available connections depend on its binding kinds. Check what binding kinds 
 `{family_name}` in version `{version}`  has.
-
-???+ tip "Bindings"
-
-    - input
     
 {block_input_bindings}
 
-    - output
+### Outputs
     
 {block_output_bindings}
-
 
 
 ??? tip "Example JSON definition of step `{family_name}` in version `{version}`"
@@ -143,6 +138,8 @@ The information below is intended for advanced users and developers.
 
 
 BLOCK_VERSION_TEMPLATE_MULTIPLE_VERSIONS = """
+## About this block
+
 {description}
 
 {tutorial}
@@ -258,6 +255,54 @@ BLOCK_SECTIONS = [
         }
     ]
 
+BLOCK_DESCRIPTIONS = {
+    "Models": """
+Model blocks run a single computer vision model.
+
+You can run models that have been trained on or uploaded to Roboflow, open sourced on Roboflow Universe, or foundation models.
+
+Supported models cover tasks such as object detection, segmentation, classification, visual question answering with multimodal models, calculating image embeddings, and more.
+""",
+    "Visualizations": """
+Visualization blocks show results from a model on an image.
+
+They can be used to visualize model predictions, draw bounding boxes, masks, and more.
+""",
+    "Logic and Branching": """
+Logic and branching blocks let you control the flow of your Workflow.
+
+For example, you can use the Continue If block to conditionally run a branch of logic in your Workflow.
+""",
+    "Data Storage": """
+Data storage blocks store data calculated by your Workflow.
+
+They can be used to permanently save data for future use.
+""",
+    "Notifications": """
+Notification blocks send messages or alerts based on events in your Workflow.
+""",
+    "Transformations": """
+Transformation blocks modify images and predictions.
+
+You can use these blocks to crop detected regions, apply static crops, stitch images together, add padding around detected regions, and more..
+""",
+    "Classical Computer Vision": """
+Classical computer vision blocks let you use traditional vision techniques like edge detection, template matching, and size measurement.
+""",
+    "Video": """
+Video blocks allow for stateful video analysis.
+
+You can use video blocks to track objects, measure for how long an object has been in a zone, and more.
+""",
+    "Advanced": """
+Advanced blocks provide additional functionality for specific use cases.
+
+These include implementing PASS/FAIL logic (possible with the `Expression` block), data caching, and more.
+""",
+"Custom": """
+Create custom Python blocks to extend the functionality of Workflows.
+"""
+}
 
 def main() -> None:
     blocks_description = describe_available_blocks(dynamic_blocks=[])
@@ -308,17 +353,18 @@ def write_individual_block_pages(block_families, blocks_description):
             long_description = block.block_schema.get("long_description", "Description not available")
 
 
-            template = BLOCK_VERSION_TEMPLATE_SINGLE_VERSION.strip() if len(family_members) == 1 else BLOCK_VERSION_TEMPLATE_MULTIPLE_VERSIONS.strip()
+            template = "\n## About this block\n" + BLOCK_VERSION_TEMPLATE_SINGLE_VERSION.strip() if len(family_members) == 1 else BLOCK_VERSION_TEMPLATE_MULTIPLE_VERSIONS.strip()
+            most_recent_version = family_members[0].block_schema.get("version", "undefined")
 
             version_content = template.format(
                 family_name=family_name,
-                version=block.block_schema.get("version", "undefined"),
+                version="Current Version" if most_recent_version == block.block_schema.get("version", "undefined") else block.block_schema.get("version", "undefined"),
                 block_source_link=block_source_link,
                 block_class_name=block_class_name,
                 short_block_class_name = block.fully_qualified_block_class_name.split(".")[-1],
                 type_identifier=block.manifest_type_identifier,
-                tutorial="""<h2>Tutorial{}</h2><div class="grid cards" markdown>""".format("s" if len(results_indexed_by_used_workflow_block[block.human_friendly_block_name.split('.')[-1]]) > 1 else "") + "".join(results_indexed_by_used_workflow_block[block.human_friendly_block_name.split('.')[-1]]) + "</div>" if results_indexed_by_used_workflow_block[block.human_friendly_block_name.split('.')[-1]] else "",
-                description=long_description,
+                tutorial="""## Tutorial{}\n<div class="grid cards" markdown>""".format("s" if len(results_indexed_by_used_workflow_block[block.human_friendly_block_name.split('.')[-1]]) > 1 else "") + "".join(results_indexed_by_used_workflow_block[block.human_friendly_block_name.split('.')[-1]]) + "</div>" if results_indexed_by_used_workflow_block[block.human_friendly_block_name.split('.')[-1]] and most_recent_version == block.block_schema.get("version", "undefined") else "",
+                description=long_description if most_recent_version == block.block_schema.get("version", "undefined") else "",
                 block_inputs=format_block_inputs(parsed_manifest),
                 block_input_bindings=format_input_bindings(parsed_manifest),
                 block_output_bindings=format_block_outputs(block.outputs_manifest),
@@ -336,6 +382,7 @@ def write_individual_block_pages(block_families, blocks_description):
                 ),
                 example=_dump_step_example_definition(example_definition=example_definition),
             )
+
             versions_content.append(version_content)
         all_versions_combined = combined_content_from_versions(versions_content)
         family_document_content = BLOCK_FAMILY_TEMPLATE.format(
@@ -379,9 +426,34 @@ def write_blocks_summary_md(block_families):
     for block_section in BLOCK_SECTIONS:
         section_title = block_section['title']
         section_id = block_section['id']
+        section_slug = slugify_block_name(section_title)
         
         lines.append(f"* {section_title}")
-        for family_name in sorted(block_families_by_section[section_id], key=lambda x: block_families[x][0].block_schema.get("ui_manifest", {}).get("blockPriority", 99)):
+        lines.append(f"    * [All {section_title}](all_{section_slug}.md)")
+
+        # generate an all page based on development/docs/templates/blocks_index.md
+        all_page_content = render_template(
+            "blocks_index.md",
+            blocks_by_section={section_id: [
+                {
+                    "name": family_name,
+                    "url": "/workflows/blocks/" + slugify_block_name(family_name),
+                    "description": block_families[family_name][0].block_schema.get("short_description", "Description not available"),
+                    "license": block_families[family_name][0].block_schema.get("license", "").upper(),
+                    "icon": block_families[family_name][0].block_schema.get("ui_manifest", {}).get("icon", "far fa-sparkles"),
+                    "color": block_section.get("colorReadable", block_section.get("colorScheme", "#eee")),
+                }
+                for family_name in block_families_by_section[section_id]
+            ]},
+            block_sections=[block_section],
+            custom_title=True,
+            title= f"All {section_title} Blocks",
+            description=BLOCK_DESCRIPTIONS.get(section_title, f"Explore all {section_title} blocks."),
+        )
+        all_page_path = os.path.join(BLOCK_DOCUMENTATION_DIRECTORY, f"all_{section_slug}.md")
+        with open(all_page_path, "w", encoding="utf-8") as f:
+            f.write(all_page_content)
+        for family_name in sorted(block_families_by_section[section_id], key=lambda x: block_families[x][0].block_schema.get("blockPriority", 99)):
             # Suppose you had a function slugify_block_name:
             slug = slugify_block_name(family_name)
             if family_name.endswith("Model"):
@@ -531,7 +603,7 @@ def format_input_bindings(parsed_manifest: BlockManifestMetadata) -> str:
     for selector in parsed_manifest.selectors.values():
         kinds_annotation = prepare_selector_kinds_annotation(selector=selector)
         rows.append(
-            f"        - `{selector.property_name}` (*{kinds_annotation}*): {selector.property_description}."
+            f"- `{selector.property_name}` (*{kinds_annotation}*): {selector.property_description}."
         )
     return "\n".join(rows)
 
@@ -563,7 +635,7 @@ def format_block_outputs(outputs_manifest: List[OutputDefinition]) -> str:
             kind = output.kind[0].name
             description = output.kind[0].description
             rows.append(
-                f"        - `{output.name}` ([`{kind}`]({relative_link})): {description}."
+                f"- `{output.name}` ([`{kind}`]({relative_link})): {description}."
             )
         else:
             kind = ", ".join(
@@ -575,7 +647,7 @@ def format_block_outputs(outputs_manifest: List[OutputDefinition]) -> str:
             description = " or ".join(
                 [f"{k.description} if `{k.name}`" for k in output.kind]
             )
-            rows.append(f"        - `{output.name}` (*Union[{kind}]*): {description}.")
+            rows.append(f"- `{output.name}` (*Union[{kind}]*): {description}.")
 
     return "\n".join(rows)
 

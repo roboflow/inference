@@ -20,8 +20,13 @@ from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlock
 TYPE: str = "roboflow_core/corner_visualization@v1"
 SHORT_DESCRIPTION = "Draw the corners of detected objects in an image."
 LONG_DESCRIPTION = """
-The `CornerVisualization` block draws the corners of detected
-objects in an image using Supervision's `sv.BoxCornerAnnotator`.
+The Corner Visualization block draws corners around detected regions in an image.
+
+This block is useful if you want to highlight the boundaries of detected objects.
+
+Here is an example of the block in use:
+
+![](https://media.roboflow.com/inference/workflows/corner.png)
 """
 
 

@@ -30,7 +30,7 @@ The block wraps [Stability AI image generation API](https://platform.stability.a
 """
 
 SHORT_DESCRIPTION = (
-    "generate new images from text, or create variations of existing images."
+    "Generate images from text prompts, or create variations of existing images."
 )
 
 API_HOST = "https://api.stability.ai"

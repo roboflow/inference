@@ -34,11 +34,12 @@ from inference.core.workflows.prototypes.block import (
 )
 
 LONG_DESCRIPTION = """
-Run L2CS Gaze detection model on faces in images.
+Run a gaze detection model on images.
 
-This block can:
-1. Detect faces in images and estimate their gaze direction
-2. Estimate gaze direction on pre-cropped face images
+This block will:
+
+- Detect faces in images and estimate their gaze direction, and;
+- Estimate gaze direction on pre-cropped face images.
 
 The gaze direction is represented by yaw and pitch angles in degrees.
 """
@@ -127,7 +128,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Gaze Detection",
             "version": "v1",
-            "short_description": "Detect faces and estimate gaze direction",
+            "short_description": "Detect faces and estimate gaze direction.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",

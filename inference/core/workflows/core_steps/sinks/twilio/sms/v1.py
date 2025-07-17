@@ -36,24 +36,18 @@ CACHE_EXPIRE_TIME = 15 * 60
 TRUNCATION_MARKER = "[...]"
 
 LONG_DESCRIPTION = """
-The 📲 **Twilio SMS Notification** ✉️ block enables sending text message notifications via the Twilio SMS service, 
+The Twilio SMS Notification block lets you send text message notifications via the Twilio SMS service, 
 with flexible features such as dynamic content, message truncation, and cooldown management.
 
-The block requires Twilio setup - 
-[this article](https://www.twilio.com/docs/messaging/tutorials/how-to-send-sms-messages/python) may help you 
-configuring everything properly.
+The block requires Twilio setup. [Learn how to set up Twilio](https://www.twilio.com/docs/messaging/tutorials/how-to-send-sms-messages/python).
 
-#### ✨ Key Features
+This block lets you:
 
-* 📢 **Send SMS**: Deliver SMS messages to designated recipients.
-
-* 🔗 **Dynamic Content**: Craft notifications based on outputs from other Workflow steps.
-
-* ✂️ **Message Truncation**: Automatically truncate messages exceeding the character limit.
-
-* 🕒 **Cooldown Control:** Prevent duplicate notifications within a set time frame.
-
-* ⚙️ **Flexible Execution:** Execute in the background or block Workflow execution for debugging.
+- Deliver SMS messages to designated recipients.
+- Craft notifications based on outputs from other Workflow steps.
+- Automatically truncate messages exceeding the character limit.
+- Prevent duplicate notifications within a set time frame.
+- Execute in the background or block Workflow execution for debugging.
 """
 
 PARAMETER_REGEX = re.compile(r"({{\s*\$parameters\.(\w+)\s*}})")

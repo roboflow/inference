@@ -19,9 +19,11 @@ TEMPLATE = """
 """
 
 CUSTOM = [
-    {"title": "Measure Object Sizes with Computer Vision", "url": "https://www.youtube.com/watch?v=FQY7TSHfZeI", "feature_image": "https://i.ytimg.com/an_webp/FQY7TSHfZeI/mqdefault_6s.webp?du=3000&sqp=CObg18MG&rs=AOn4CLA_7L4NMaYiDeHSsUumz2bewNCUAA", "blocks": ["Size Measurement"]},
-    {"title": "Use YOLOv12 with Roboflow and Workflows", "url": "https://www.youtube.com/watch?v=fksJmIMIfXo", "feature_image": "https://i.ytimg.com/an_webp/fksJmIMIfXo/mqdefault_6s.webp?du=3000&sqp=CLzy18MG&rs=AOn4CLDoZZqXnFndEl5A9x-OXsTTyz0HTg", "blocks": ["Object Detection Model"]},
-    {"title": "Use Florence-2 with Roboflow and Workflows", "url": "https://www.youtube.com/watch?v=_u53TxShLsk", "feature_image": "https://i.ytimg.com/vi/_u53TxShLsk/hqdefault.jpg?sqp=-oaymwEcCNACELwBSFXyq4qpAw4IARUAAIhCGAFwAcABBg==&rs=AOn4CLC-oQve5_hOpEucqkDRy7V07UfIFA", "blocks": ["Florence-2 Model"]},
+    {"title": "Measure Object Sizes with Computer Vision [video]", "url": "https://www.youtube.com/watch?v=FQY7TSHfZeI", "feature_image": "https://media.roboflow.com/inference/thumbnails/size-measurement.jpg", "blocks": ["Size Measurement"], "description": "Learn how to measure the size of objects in images using computer vision techniques."},
+    {"title": "Use YOLOv12 with Roboflow and Workflows [video]", "url": "https://www.youtube.com/watch?v=fksJmIMIfXo", "feature_image": "https://media.roboflow.com/inference/thumbnails/yolov12.jpg", "blocks": ["Object Detection Model"], "description": "Learn how to use YOLOv12 for object detection in your computer vision projects."},
+    {"title": "Use Florence-2 with Roboflow and Workflows [video]", "url": "https://www.youtube.com/watch?v=_u53TxShLsk", "feature_image": "https://media.roboflow.com/inference/thumbnails/florence-2.jpg", "blocks": ["Florence-2 Model"], "description": "Learn how to use the Florence-2 model for advanced computer vision tasks."},
+    {"title": "Use Depth Anything 2 with Workflows [video]", "url": "https://www.youtube.com/watch?v=lqPf3198wjw", "feature_image": "https://media.roboflow.com/inference/thumbnails/depth-anything.jpg", "blocks": ["Depth Estimation"], "description": "Learn how to use Depth Anything 2 for depth estimation in images."},
+    {"title": "Use Qwen2.5-VL with Workflows [video]", "url": "https://www.youtube.com/watch?v=xEfh0IR8Fvo", "feature_image": "https://media.roboflow.com/inference/thumbnails/qwen.jpg", "blocks": ["Qwen2.5-VL"], "description": "Learn how to use the Qwen2.5-VL model for vision-language tasks."},
 ]
 
 def get_tutorials():

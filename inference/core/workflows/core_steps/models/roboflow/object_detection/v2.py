@@ -49,12 +49,23 @@ from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 LONG_DESCRIPTION = """
 Run inference on a object-detection model hosted on or uploaded to Roboflow.
 
+Supported architectures include:
+
+- RF-DETR
+- YOLO-NAS
+- YOLOv8
+- YOLO11
+
+To see a full list of supported models that you can use with this Workflow block, [refer to the "Supported Models" list on the Roboflow documentation](https://docs.roboflow.com/deploy/supported-models).
+
 You can query any model that is private to your account, or any public model available 
 on [Roboflow Universe](https://universe.roboflow.com).
 
 You will need to set your Roboflow API key in your Inference environment to use this 
-block. To learn more about setting your Roboflow API key, [refer to the Inference 
-documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
+block. [Learn how to find and set your Roboflow API key](/start/configure_api_key/).
+
+This block returns detection coordinates from the model. If you want to display the predictions on an input image,
+use the Bounding Box and Label Visualization blocks.
 """
 
 
@@ -63,7 +74,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Object Detection Model",
             "version": "v2",
-            "short_description": "Predict the location of objects with bounding boxes.",
+            "short_description": "Find objects in an image. Returns bounding boxes.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
