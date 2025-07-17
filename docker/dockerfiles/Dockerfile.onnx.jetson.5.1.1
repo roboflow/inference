@@ -69,6 +69,7 @@ COPY inference inference
 COPY inference_cli inference_cli
 COPY inference_sdk inference_sdk
 COPY docker/config/gpu_http.py gpu_http.py
+COPY Makefile Makefile
 
 RUN make create_inference_cli_whl
 RUN pip3 install dist/inference_cli*.whl
