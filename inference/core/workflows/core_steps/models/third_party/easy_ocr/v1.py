@@ -1,22 +1,21 @@
 from typing import Dict, List, Literal, Optional, Type, Union
+from uuid import uuid4
 
 import easyocr
 import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
-from uuid import uuid4
-
 from supervision.config import CLASS_NAME_DATA_FIELD
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 
-from inference.core.workflows.core_steps.common.utils import attach_parents_coordinates_to_sv_detections
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.utils import (
+    attach_parents_coordinates_to_sv_detections,
+)
 from inference.core.workflows.execution_engine.constants import (
-    DETECTED_CODE_KEY,
     DETECTION_ID_KEY,
     IMAGE_DIMENSIONS_KEY,
     PREDICTION_TYPE_KEY,
 )
-
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
@@ -33,7 +32,7 @@ from inference.core.workflows.prototypes.block import (
 )
 
 LONG_DESCRIPTION = """
- Retrieve the characters in an image using EasyOCR Optical Character Recognition (OCR).
+Retrieve the characters in an image using EasyOCR Optical Character Recognition (OCR).
 
 This block returns the text within an image.
 
@@ -41,6 +40,9 @@ You may want to use this block in combination with a detections-based block (i.e
 ObjectDetectionBlock). An object detection model could isolate specific regions from an
 image (i.e. a shipping container ID in a logistics use case) for further processing.
 You can then use a DynamicCropBlock to crop the region of interest before running OCR.
+
+Note that the current version of this block must download weights from EasyOCR and
+therefore can only run in a local or dedicated inference server environment.
 
 Using a detections model then cropping detections allows you to isolate your analysis
 on particular regions of an image.
@@ -266,9 +268,11 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
 
-def ocr_result_to_detections(image: WorkflowImageData, result: List[Union[List, str]]) -> sv.Detections:
+def ocr_result_to_detections(
+    image: WorkflowImageData, result: List[Union[List, str]]
+) -> sv.Detections:
     # Prepare lists for bounding boxes, confidences, class IDs, and labels
-    xyxy, confidences, class_ids, label, class_names = [], [], [], [], []
+    xyxy, confidences, class_ids, class_names = [], [], [], []
 
     # Extract data from OCR result
     for detection in result:
@@ -282,21 +286,20 @@ def ocr_result_to_detections(image: WorkflowImageData, result: List[Union[List, 
 
         # Append data to lists
         xyxy.append([x_min, y_min, x_max, y_max])
-        label.append(text)
         confidences.append(confidence)
         class_ids.append(0)
-        class_names.append("ocr_result")
+        class_names.append(text)
+        print(text)
 
     # Convert to NumPy arrays
     detections = sv.Detections(
         xyxy=np.array(xyxy),
         confidence=np.array(confidences),
         class_id=np.array(class_ids),
-        data={CLASS_NAME_DATA_FIELD: class_names},
+        data={CLASS_NAME_DATA_FIELD: np.array(class_names)},
     )
     detections[DETECTION_ID_KEY] = np.array([uuid4() for _ in range(len(detections))])
-    detections[PREDICTION_TYPE_KEY] = np.array(["barcode-detection"] * len(detections))
-    detections[DETECTED_CODE_KEY] = np.array(label)
+    detections[PREDICTION_TYPE_KEY] = np.array(["easy-ocr"] * len(detections))
     img_height, img_width = image.numpy_image.shape[:2]
     detections[IMAGE_DIMENSIONS_KEY] = np.array(
         [[img_height, img_width]] * len(detections)
@@ -305,7 +308,6 @@ def ocr_result_to_detections(image: WorkflowImageData, result: List[Union[List, 
         detections=detections,
         image=image,
     )
-    return detections
 
 
 class EasyOCRBlockV1(WorkflowBlock):

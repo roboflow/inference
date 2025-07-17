@@ -183,6 +183,9 @@ from inference.core.workflows.core_steps.models.foundation.google_gemini.v1 impo
 from inference.core.workflows.core_steps.models.foundation.google_vision_ocr.v1 import (
     GoogleVisionOCRBlockV1,
 )
+from inference.core.workflows.core_steps.models.third_party.easy_ocr.v1 import (
+    EasyOCRBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.llama_vision.v1 import (
     LlamaVisionBlockV1,
 )
@@ -663,6 +666,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         Moondream2BlockV1,
         OverlapBlockV1,
         ONVIFSinkBlockV1,
+        EasyOCRBlockV1
     ]
 
 
