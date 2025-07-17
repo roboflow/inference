@@ -1,17 +1,14 @@
-import os
 from typing import Optional
-
 
 import clip
 import numpy as np
 import pytest
 import torch
-from PIL import Image
-
+from inference_exp import AutoModel
 from inference_exp.models.clip.clip_onnx import ClipOnnx
 from inference_exp.models.clip.clip_pytorch import ClipTorch
-from inference_exp import AutoModel
 from inference_exp.weights_providers.entities import BackendType
+from PIL import Image
 
 
 @pytest.fixture(scope="module")

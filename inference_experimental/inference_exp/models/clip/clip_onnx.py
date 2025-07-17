@@ -116,9 +116,7 @@ class ClipOnnx(TextImageEmbeddingModel):
         self._max_batch_size = max_batch_size
         self._visual_session_thread_lock = Lock()
         self._textual_session_thread_lock = Lock()
-        self._preprocessor = create_clip_preprocessor(
-            image_size=image_size, device=device
-        )
+        self._preprocessor = create_clip_preprocessor(image_size=image_size)
 
     def embed_images(
         self,
@@ -127,7 +125,7 @@ class ClipOnnx(TextImageEmbeddingModel):
         **kwargs,
     ) -> torch.Tensor:
         pre_processed_images = self._preprocessor(
-            images=images, input_color_format=input_color_format
+            images, input_color_format, self._device
         )
         with self._visual_session_thread_lock:
             if pre_processed_images.shape[0] <= self._max_batch_size:
