@@ -129,9 +129,17 @@ REGISTERED_MODELS: Dict[Tuple[ModelArchitecture, TaskType, BackendType], LazyCla
         module_name="inference_exp.models.clip.clip_onnx",
         class_name="ClipOnnx",
     ),
-    ("perception_encoder", EMBEDDING_TASK, BackendType.TORCH): LazyClass(
+    ("perception-encoder", EMBEDDING_TASK, BackendType.TORCH): LazyClass(
         module_name="inference_exp.models.perception_encoder.perception_encoder_pytorch",
         class_name="PerceptionEncoderTorch",
+    ),
+    ("rfdetr", OBJECT_DETECTION_TASK, BackendType.TRT): LazyClass(
+        module_name="inference_exp.models.rfdetr.rfdetr_object_detection_trt",
+        class_name="RFDetrForObjectDetectionTRT",
+    ),
+    ("rfdetr", OBJECT_DETECTION_TASK, BackendType.TORCH): LazyClass(
+        module_name="inference_exp.models.rfdetr.rfdetr_object_detection_pytorch",
+        class_name="RFDetrForObjectDetectionTorch",
     ),
 }
 
