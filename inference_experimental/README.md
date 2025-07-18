@@ -51,7 +51,6 @@ uv pip install "inference-exp[torch-cu128,onnx-cu12,trt10]" "tensorrt==10.12.0.3
 pip install "inference-exp[torch-cu128,onnx-cu12,trt10]" "tensorrt==10.12.0.36"
 ```
 
-> [!TIP]
 > To avoid clashes with external packages, `pyproject.toml` defines quite loose restrictions for the dependent packages.
 > Some packages, like `tensorrt` are good to be kept under more strict control (as some TRT engines will only work 
 > when there is an exact match of environment that runs the model with the one that compiled it) - that's why we 
@@ -80,7 +79,6 @@ uv pip install inference-exp
 <details>
 <summary>👉 Reproducibility of installation</summary>
 
-> [!NOTE] 
 > Using `uv pip install ...` or `pip install`, it is possible to get non-reproducible builds (as `pyproject.toml` 
 > defines quite loose restrictions for the dependent packages). If you care about strict control of dependencies - 
 > follow the installation method based on `uv.lock` which is demonstrated in official [docker builds](./dockerfiles) 
@@ -105,6 +103,14 @@ annotator = sv.BoxAnnotator()
 annotated = annotator.annotate(image.copy(), predictions[0].to_supervision())
 ```
 
+> [!TIP]
+> Model **failed to load,** and you see error prompting you to **install additional dependencies**?
+> 
+> Take a look at [📜 Principles and Assumptions](#-principles-and-assumptions) to understand why this happens and 
+> navigate to [extras](#-extra-dependencies) section to find out which extra dependency you need to install. 
+> The common issue is lack of ONNX backend required to run models trained on Roboflow platform.
+
+
 ## 📜 Principles and Assumptions
 
 * We define a **model** as weights trained on a dataset, which can be exported or compiled into multiple equivalent 
@@ -126,12 +132,23 @@ but can be fully overridden by the user when needed.
 
 ## 🔌 Extra Dependencies
 
+Extras dependencies are optional features of the package that can be installed with:
+
+```bash
+uv pip install "inference-exp[extras-name-1,extras-name-1]"
+# or - if you use pip
+pip install "inference-exp[extras-name-1,extras-name-2]"
+```
+
+In case of `inference-exp`, extras bring either additional **backends** (dependencies to run AI models of different type, 
+like TensorRT engines) or additional **models**. 
+
 ### Backends
-| Backend | Extras                                                                        | Description                                                                                                                                                                                                                                                                                                                   |
-|---------|-------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| PyTorch | `torch-cu118`, `torch-cu124`, `torch-cu126`, `torch-cu128`, `torch-jp6-cu126` | Provide specific variants of `torch` to match installed CUDA version, only works with `uv` which is capable of reading extra indexes from `pyproject.toml`, when using with `pip`, use `--extra-index-url`. By default, CPU version of `torch` is installed with the library. Torch backend is a default one for the library. |
-| ONNX    | `onnx-cpu`, `onnx-cu118`, `onnx-cu12`, `onnx-jp6-cu126`                       | Provide specific variants of `onnxruntime`. only works with `uv` which is capable of reading extra indexes from `pyproject.toml`, when using with `pip`, use `--extra-index-url`. This extras is not installed by default and is not required, but enables wide variety of models trained on Roboflow Platform.               |
-| TRT     | `trt10`                                                                       | Provide specific variants of `tensorrt`, only works on GPU servers. Jetson installations should fall back to pre-compiled package shipped with Jetpack.                                                                                                                                                                       |
+| Extras names                                                                  | Backend | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+|-------------------------------------------------------------------------------|---------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `torch-cu118`, `torch-cu124`, `torch-cu126`, `torch-cu128`, `torch-jp6-cu126` | PyTorch | Provide specific variants of `torch` to match installed CUDA version, only works with `uv` which is capable of reading extra indexes from `pyproject.toml`, when using with `pip`, use `--extra-index-url`. By default, CPU version of `torch` is installed with the library. Torch backend is a default one for the library. Extras named `torch-cu*` are relevant for GPU servers with certain CUDA version, whereas extras like `torch-jp6-cu126` are to be installed on Jetson with specific Jetpack and CUDA versions. |
+| `onnx-cpu`, `onnx-cu118`, `onnx-cu12`, `onnx-jp6-cu126`                       | ONNX    | Provide specific variants of `onnxruntime`. only works with `uv` which is capable of reading extra indexes from `pyproject.toml`, when using with `pip`, use `--extra-index-url`. This extras is not installed by default and is not required, but enables wide variety of models trained on Roboflow Platform. Extras named `onnx-cu*` are relevant for GPU servers with certain CUDA version, whereas extras like `onnx-jp6-cu126` are to be installed on Jetson with specific Jetpack and CUDA versions.                 |
+| `trt10`                                                                       | TRT     | Provide specific variants of `tensorrt`, only works on GPU servers. Jetson installations should fall back to pre-compiled package shipped with Jetpack.                                                                                                                                                                                                                                                                                                                                                                     |
 
 
 ### Additional models / capabilities
@@ -141,6 +158,11 @@ but can be fully overridden by the user when needed.
 | `grounding-dino` | Enables Grounding Dino model                                                                       |
 | `flash-attn`     | *EXPERIMENTAL:* Installs `flash-attn` for faster LLMs/VLMs - usually requires extensive compilation |
 | `test`           | Test dependencies                                                                                  |
+
+> [!IMPORTANT]  
+> Not all extras are possible to be installed together in a single environment. We try to make the extras as composable 
+> as possible, but **this will not always be possible**, and sometimes you need to choose which extras are to be 
+> installed.
 
 
 ## 🧠 Models

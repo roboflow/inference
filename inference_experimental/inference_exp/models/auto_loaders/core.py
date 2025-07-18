@@ -468,6 +468,7 @@ def initialize_model(
     symlinks_mapping = create_symlinks_to_shared_blobs(
         model_dir=model_package_cache_dir,
         shared_files_mapping=shared_files_mapping,
+        model_download_file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
         on_symlink_created=on_symlink_created,
         on_symlink_deleted=on_symlink_deleted,
     )
@@ -502,6 +503,7 @@ def initialize_model(
 def create_symlinks_to_shared_blobs(
     model_dir: str,
     shared_files_mapping: Dict[FileHandle, str],
+    model_download_file_lock_acquire_timeout: int = 10,
     on_symlink_created: Optional[Callable[[str, str], None]] = None,
     on_symlink_deleted: Optional[Callable[[str], None]] = None,
 ) -> Dict[str, str]:
@@ -514,6 +516,26 @@ def create_symlinks_to_shared_blobs(
         result[file_handle] = link_name
         if os.path.exists(link_name):
             continue
+        handle_symlink_creation(
+            target_path=target_path,
+            link_name=link_name,
+            model_download_file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
+            on_symlink_created=on_symlink_created,
+            on_symlink_deleted=on_symlink_deleted,
+        )
+    return result
+
+
+def handle_symlink_creation(
+    target_path: str,
+    link_name: str,
+    model_download_file_lock_acquire_timeout: int = 10,
+    on_symlink_created: Optional[Callable[[str, str], None]] = None,
+    on_symlink_deleted: Optional[Callable[[str], None]] = None,
+) -> None:
+    link_dir, link_file_name = os.path.split(os.path.abspath(link_name))
+    lock_path = os.path.join(link_dir, f".{link_file_name}.lock")
+    with FileLock(lock_path, timeout=model_download_file_lock_acquire_timeout):
         if os.path.islink(link_name):
             # file does not exist, but is link = broken symlink - we should purge
             os.remove(link_name)
@@ -521,8 +543,7 @@ def create_symlinks_to_shared_blobs(
                 on_symlink_deleted(link_name)
         os.symlink(target_path, link_name)
         if on_symlink_created:
-            on_symlink_created(shared_files_mapping[file_handle], link_name)
-    return result
+            on_symlink_created(target_path, link_name)
 
 
 def dump_model_config_for_offline_use(
