@@ -55,7 +55,15 @@ RUN python3.9 -m pip install onnxruntime_gpu-1.16.0-cp39-cp39-linux_aarch64.whl 
     && rm onnxruntime_gpu-1.16.0-cp39-cp39-linux_aarch64.whl
 
 WORKDIR /app/
+COPY inference_cli/ ./inference_cli/
+COPY inference_sdk/ ./inference_sdk/
 COPY inference inference
+COPY .release .release
+COPY requirements requirements
+COPY Makefile Makefile
+
+RUN make create_inference_cli_whl PYTHON=python3.9
+RUN python3.9 -m pip install dist/inference_cli*.whl
 
 ENV ORT_TENSORRT_FP16_ENABLE=1
 ENV ORT_TENSORRT_ENGINE_CACHE_ENABLE=1

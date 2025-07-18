@@ -75,7 +75,7 @@ REGISTERED_MODELS: Dict[Tuple[ModelArchitecture, TaskType, BackendType], LazyCla
     ),
     ("yolov9", OBJECT_DETECTION_TASK, BackendType.TRT): LazyClass(
         module_name="inference_exp.models.yolov9.yolov9_trt",
-        class_name="YOLOv9ForObjectDetectionOnnx",
+        class_name="YOLOv9ForObjectDetectionTRT",
     ),
     ("yolov10", OBJECT_DETECTION_TASK, BackendType.ONNX): LazyClass(
         module_name="inference_exp.models.yolov10.yolov10_object_detection_onnx",
@@ -121,9 +121,25 @@ REGISTERED_MODELS: Dict[Tuple[ModelArchitecture, TaskType, BackendType], LazyCla
         module_name="inference_exp.models.paligemma.paligemma_hf",
         class_name="PaliGemmaHF",
     ),
-    ("perception_encoder", EMBEDDING_TASK, BackendType.TORCH): LazyClass(
+    ("clip", EMBEDDING_TASK, BackendType.TORCH): LazyClass(
+        module_name="inference_exp.models.clip.clip_pytorch",
+        class_name="ClipTorch",
+    ),
+    ("clip", EMBEDDING_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_exp.models.clip.clip_onnx",
+        class_name="ClipOnnx",
+    ),
+    ("perception-encoder", EMBEDDING_TASK, BackendType.TORCH): LazyClass(
         module_name="inference_exp.models.perception_encoder.perception_encoder_pytorch",
         class_name="PerceptionEncoderTorch",
+    ),
+    ("rfdetr", OBJECT_DETECTION_TASK, BackendType.TRT): LazyClass(
+        module_name="inference_exp.models.rfdetr.rfdetr_object_detection_trt",
+        class_name="RFDetrForObjectDetectionTRT",
+    ),
+    ("rfdetr", OBJECT_DETECTION_TASK, BackendType.TORCH): LazyClass(
+        module_name="inference_exp.models.rfdetr.rfdetr_object_detection_pytorch",
+        class_name="RFDetrForObjectDetectionTorch",
     ),
 }
 
