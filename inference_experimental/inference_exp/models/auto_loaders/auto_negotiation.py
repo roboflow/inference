@@ -11,6 +11,10 @@ from inference_exp.errors import (
     UnknownQuantizationError,
 )
 from inference_exp.logger import verbose_info
+from inference_exp.models.auto_loaders.entities import ModelArchitecture, TaskType
+from inference_exp.models.auto_loaders.models_registry import (
+    model_implementation_exists,
+)
 from inference_exp.models.auto_loaders.ranking import rank_model_packages
 from inference_exp.models.auto_loaders.utils import (
     filter_available_devices_with_selected_device,
@@ -31,6 +35,8 @@ from packaging.version import Version
 
 
 def negotiate_model_packages(
+    model_architecture: ModelArchitecture,
+    task_type: Optional[TaskType],
     model_packages: List[ModelPackageMetadata],
     requested_model_package_id: Optional[str] = None,
     requested_backends: Optional[
@@ -53,11 +59,17 @@ def negotiate_model_packages(
     print_model_packages(model_packages=model_packages, verbose=verbose)
     if not model_packages:
         raise NoModelPackagesAvailableError(
-            message=f"Could not select model package to load among ones announced by weights provider. "
-            f"That may indicate that the 'inference' installation lacks additional dependencies or "
-            f"the backend does not provide expected model packages.",
+            message=f"Could not find any model package announced by weights provider. If you see this error "
+            f"using Roboflow platform your model may not be ready - if the problem is persistent, "
+            f"contact us to get help. If you use weights provider other than Roboflow - this is most likely "
+            f"the root cause of the error.",
             help_url="https://todo",
         )
+    model_packages = remove_packages_not_matching_implementation(
+        model_architecture=model_architecture,
+        task_type=task_type,
+        model_packages=model_packages,
+    )
     if not allow_untrusted_packages:
         model_packages = remove_untrusted_packages(
             model_packages=model_packages,
@@ -163,6 +175,38 @@ def print_model_packages(
     verbose_info(message="\n".join(contents), verbose_requested=verbose)
 
 
+def remove_packages_not_matching_implementation(
+    model_architecture: ModelArchitecture,
+    task_type: Optional[TaskType],
+    model_packages: List[ModelPackageMetadata],
+    verbose: bool = False,
+) -> List[ModelPackageMetadata]:
+    result = []
+    for model_package in model_packages:
+        if not model_implementation_exists(
+            model_architecture=model_architecture,
+            task_type=task_type,
+            backend=model_package.backend,
+        ):
+            verbose_info(
+                message=f"Model package with id `{model_package.package_id}` is filtered out as `inference` "
+                f"does not provide implementation for the model architecture {model_architecture} with "
+                f"task type: {task_type} and backend {model_package.backend}.",
+                verbose_requested=verbose,
+            )
+            continue
+        result.append(model_package)
+    if not result:
+        raise NoModelPackagesAvailableError(
+            message=f"Could not find any model package with registered implementation among packages "
+            f"announced by weights provider. Usually this problem occurs when `inference` does not "
+            f"register model implementation properly. Submit new issue with problem description: "
+            f"https://github.com/roboflow/inference/issues/. ",
+            help_url="https://todo",
+        )
+    return result
+
+
 def remove_untrusted_packages(
     model_packages: List[ModelPackageMetadata],
     verbose: bool = False,
@@ -179,8 +223,11 @@ def remove_untrusted_packages(
     if not result:
         raise NoModelPackagesAvailableError(
             message=f"Could not find model packages that would be registered from trusted source. "
-            f"This error is caused by to strict requirements of model packages backends compared to what weights "
-            f"provider announce for selected model.",
+            f"Model loading procedure was run with `allow_untrusted_packages=False` which filtered "
+            f"out all the packages announced by weights provider. If you see this error using Roboflow "
+            f"hosted platform - contact us to get help. If you run `inference` in other environment "
+            f"(especially with custom weights provider), consider adjusting setting of the flag according "
+            f"to the context you run the package.",
             help_url="https://todo",
         )
     return result
@@ -242,9 +289,11 @@ def filter_model_packages_by_requested_backend(
         filtered_packages.append(model_package)
     if not filtered_packages:
         raise NoModelPackagesAvailableError(
-            message=f"Could not find model packages that match the criteria of requested backends: {requested_backends_set}. "
-            f"This error is caused by to strict requirements of model packages backends compared to what weights "
-            f"provider announce for selected model.",
+            message=f"Could not find model packages that match the criteria of requested backends: "
+            f"{requested_backends_set}. This error is caused by to strict requirements of model "
+            f"packages backends compared to what weights provider announce for selected model. If you see this error "
+            f"on Roboflow platform - contact us to get help. Otherwise, consider adjusting `requested_backends` "
+            f"parameter.",
             help_url="https://todo",
         )
     return filtered_packages
@@ -275,7 +324,9 @@ def filter_model_packages_by_requested_batch_size(
         raise NoModelPackagesAvailableError(
             message=f"Could not find model packages that match the criteria of requested batch size: "
             f"[{min_batch_size}, {max_batch_size}]. This error is caused by to strict requirements of "
-            f"supported batch size compared to what weights provider announce for selected model.",
+            f"supported batch size compared to what weights provider announce for selected model."
+            f"If you see this error on Roboflow platform - contact us to get help. "
+            f"Otherwise, consider adjusting `requested_batch_size` parameter.",
             help_url="https://todo",
         )
     return filtered_packages
@@ -299,7 +350,9 @@ def filter_model_packages_by_requested_quantization(
         raise NoModelPackagesAvailableError(
             message=f"Could not find model packages that match the criteria of quantization: "
             f"{requested_quantization}. This error is caused by to strict requirements of "
-            f"supported quantization compared to what weights provider announce for selected model.",
+            f"supported quantization compared to what weights provider announce for selected model. "
+            f"If you see this error on Roboflow platform - contact us to get help. "
+            f"Otherwise, consider adjusting `requested_quantization` parameter.",
             help_url="https://todo",
         )
     return filtered_packages
@@ -333,7 +386,9 @@ def model_package_matches_batch_size_request(
         return True
     verbose_info(
         message=f"Model package with id `{model_package.package_id}` filtered out, as static batch size does not "
-        f"match requested values: ({min_batch_size}, {max_batch_size}).",
+        f"match requested values: ({min_batch_size}, {max_batch_size})."
+        f"If you see this error on Roboflow platform - contact us to get help. "
+        f"Otherwise, consider adjusting requested batch size.",
         verbose_requested=verbose,
     )
     return False

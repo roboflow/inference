@@ -70,75 +70,40 @@ def infer_from_trt_engine(
     outputs: List[str],
 ) -> List[torch.Tensor]:
     if trt_config.static_batch_size is not None:
-        return infer_from_trt_engine_with_static_batch_size(
+        return infer_from_trt_engine_with_batch_size_boundaries(
             pre_processed_images=pre_processed_images,
-            trt_config=trt_config,
             engine=engine,
             context=context,
             device=device,
             input_name=input_name,
             outputs=outputs,
+            min_batch_size=trt_config.static_batch_size,
+            max_batch_size=trt_config.static_batch_size,
         )
-    return infer_from_trt_engine_with_dynamic_batch_size(
-        pre_processed_images=pre_processed_images,
-        trt_config=trt_config,
-        engine=engine,
-        context=context,
-        device=device,
-        input_name=input_name,
-        outputs=outputs,
-    )
-
-
-def infer_from_trt_engine_with_static_batch_size(
-    pre_processed_images: torch.Tensor,
-    trt_config: TRTConfig,
-    engine: trt.ICudaEngine,
-    context: trt.IExecutionContext,
-    device: torch.device,
-    input_name: str,
-    outputs: List[str],
-) -> List[torch.Tensor]:
-    batch_pad_reminder = 0
-    if pre_processed_images.shape[0] < trt_config.static_batch_size:
-        batch_pad_reminder = (
-            trt_config.static_batch_size - pre_processed_images.shape[0]
-        )
-        pre_processed_images = torch.cat(
-            (
-                pre_processed_images,
-                torch.zeros(
-                    (batch_pad_reminder,) + pre_processed_images.shape[1:],
-                    dtype=pre_processed_images.dtype,
-                    device=pre_processed_images.device,
-                ),
-            ),
-            dim=0,
-        )
-    results = execute_trt_engine(
+    return infer_from_trt_engine_with_batch_size_boundaries(
         pre_processed_images=pre_processed_images,
         engine=engine,
         context=context,
         device=device,
         input_name=input_name,
         outputs=outputs,
+        min_batch_size=trt_config.dynamic_batch_size_min,
+        max_batch_size=trt_config.dynamic_batch_size_max,
     )
-    if not batch_pad_reminder:
-        return results
-    return [r[:-batch_pad_reminder] for r in results]
 
 
-def infer_from_trt_engine_with_dynamic_batch_size(
+def infer_from_trt_engine_with_batch_size_boundaries(
     pre_processed_images: torch.Tensor,
-    trt_config: TRTConfig,
     engine: trt.ICudaEngine,
     context: trt.IExecutionContext,
     device: torch.device,
     input_name: str,
     outputs: List[str],
+    min_batch_size: int,
+    max_batch_size: int,
 ) -> List[torch.Tensor]:
-    if pre_processed_images.shape[0] <= trt_config.dynamic_batch_size_max:
-        reminder = trt_config.dynamic_batch_size_min - pre_processed_images.shape[0]
+    if pre_processed_images.shape[0] <= max_batch_size:
+        reminder = min_batch_size - pre_processed_images.shape[0]
         if reminder > 0:
             pre_processed_images = torch.cat(
                 (
@@ -165,11 +130,9 @@ def infer_from_trt_engine_with_dynamic_batch_size(
     all_results = []
     for _ in outputs:
         all_results.append([])
-    for i in range(0, pre_processed_images.shape[0], trt_config.dynamic_batch_size_max):
-        batch = pre_processed_images[
-            i : i + trt_config.dynamic_batch_size_max
-        ].contiguous()
-        reminder = trt_config.dynamic_batch_size_min - batch.shape[0]
+    for i in range(0, pre_processed_images.shape[0], max_batch_size):
+        batch = pre_processed_images[i : i + max_batch_size].contiguous()
+        reminder = min_batch_size - batch.shape[0]
         if reminder > 0:
             batch = torch.cat(
                 (

@@ -75,8 +75,15 @@ RUN python3.9 -m pip install "numpy<=1.26.4" onnxruntime_gpu-1.11.0-cp39-cp39-li
 
 WORKDIR /app/
 COPY inference inference
+COPY inference_cli inference_cli
 COPY inference_sdk inference_sdk
 COPY docker/config/gpu_http.py gpu_http.py
+COPY .release .release
+COPY requirements requirements
+COPY Makefile Makefile
+
+RUN make create_inference_cli_whl PYTHON=python3.9
+RUN python3.9 -m pip install dist/inference_cli*.whl
 
 ENV VERSION_CHECK_MODE=continuous
 ENV PROJECT=roboflow-platform

@@ -185,6 +185,8 @@ class AutoModel:
                 )
                 raise error
             matching_model_packages = negotiate_model_packages(
+                model_architecture=model_metadata.model_architecture,
+                task_type=model_metadata.task_type,
                 model_packages=model_metadata.model_packages,
                 requested_model_package_id=model_package_id,
                 requested_backends=backends,
@@ -364,10 +366,7 @@ def attempt_loading_matching_model_packages(
                     model_storage_manager.on_symlink_created,
                     access_identifiers=access_identifiers,
                 ),
-                on_symlink_deleted=partial(
-                    model_storage_manager.on_symlink_deleted,
-                    access_identifiers=access_identifiers,
-                ),
+                on_symlink_deleted=model_storage_manager.on_symlink_deleted,
                 use_auto_resolution_cache=use_auto_resolution_cache,
             )
             return model
