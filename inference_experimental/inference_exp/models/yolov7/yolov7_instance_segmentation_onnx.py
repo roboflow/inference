@@ -35,7 +35,7 @@ try:
 except ImportError as import_error:
     raise MissingDependencyError(
         message=f"Could not import YOLOv7 model with ONNX backend - this error means that some additional dependencies "
-        f"are not installed in the environment. If you run the `inference` library directly in your Python "
+        f"are not installed in the environment. If you run the `inference-exp` library directly in your Python "
         f"program, make sure the following extras of the package are installed: \n"
         f"\t* `onnx-cpu` - when you wish to use library with CPU support only\n"
         f"\t* `onnx-cu12` - for running on GPU with Cuda 12 installed\n"

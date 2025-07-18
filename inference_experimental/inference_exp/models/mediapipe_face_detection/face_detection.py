@@ -14,7 +14,7 @@ try:
 except ImportError as import_error:
     raise MissingDependencyError(
         message=f"Could not import face detection model from MediaPipe - this error means that some additional dependencies "
-        f"are not installed in the environment. If you run the `inference` library directly in your Python "
+        f"are not installed in the environment. If you run the `inference-exp` library directly in your Python "
         f"program, make sure the following extras of the package are installed: `mediapipe`."
         f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
         f"You can also contact Roboflow to get support.",

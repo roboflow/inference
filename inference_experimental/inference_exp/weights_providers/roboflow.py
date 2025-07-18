@@ -105,7 +105,7 @@ def get_model_metadata(
     if not fetched_pages or not all_model_packages:
         raise ModelRetrievalError(
             message=f"Could not retrieve model {model_id} from Roboflow API. Backend provided empty list of model "
-            f"packages `inference` library could load. Contact Roboflow to solve the problem.",
+            f"packages `inference-exp` library could load. Contact Roboflow to solve the problem.",
             help_url="https://todo",
         )
     fetched_pages[-1].model_packages = all_model_packages
@@ -193,7 +193,7 @@ def parse_model_package_metadata(
         model_package_id = metadata.get("packageId", "unknown")
         LOGGER.warning(
             "Roboflow API returned entity describing model package which cannot be parsed. This may indicate that "
-            f"your `inference` package is outdated. "
+            f"your `inference-exp` package is outdated. "
             f"Debug info - entity type: `{metadata_type}`, model package id: {model_package_id}"
         )
         return None
@@ -207,7 +207,7 @@ def parse_model_package_metadata(
     if manifest_type not in MODEL_PACKAGE_PARSERS:
         LOGGER.warning(
             "Roboflow API returned entity describing model package which cannot be parsed. This may indicate that "
-            f"your `inference` package is outdated. "
+            f"your `inference-exp` package is outdated. "
             f"Debug info - package manifest type: `{manifest_type}`."
         )
         return None

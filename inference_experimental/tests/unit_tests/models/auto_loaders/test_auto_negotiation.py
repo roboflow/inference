@@ -438,13 +438,14 @@ def test_trt_package_matches_runtime_environment_when_trt_not_detected_in_env() 
     )
 
     # when
-    result = trt_package_matches_runtime_environment(
+    result, reason = trt_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
     )
 
     # then
     assert result is False
+    assert reason is not None
 
 
 def test_trt_package_matches_runtime_environment_when_trt_python_package_not_detected_in_env() -> (
@@ -488,13 +489,14 @@ def test_trt_package_matches_runtime_environment_when_trt_python_package_not_det
     )
 
     # when
-    result = trt_package_matches_runtime_environment(
+    result, reason = trt_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
     )
 
     # then
     assert result is False
+    assert reason is not None
 
 
 def test_trt_package_matches_runtime_environment_when_environment_requirements_not_manifested() -> (
@@ -530,13 +532,14 @@ def test_trt_package_matches_runtime_environment_when_environment_requirements_n
     )
 
     # when
-    result = trt_package_matches_runtime_environment(
+    result, reason = trt_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
     )
 
     # then
     assert result is False
+    assert reason is not None
 
 
 def test_trt_package_matches_runtime_for_jetson_when_trt_version_not_declared_in_runtime_env() -> (
@@ -581,13 +584,14 @@ def test_trt_package_matches_runtime_for_jetson_when_trt_version_not_declared_in
     )
 
     # when
-    result = trt_package_matches_runtime_environment(
+    result, reason = trt_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
     )
 
     # then
     assert result is False
+    assert reason is not None
 
 
 def test_trt_package_matches_runtime_for_jetson_when_cpu_device_declared() -> None:
@@ -630,7 +634,7 @@ def test_trt_package_matches_runtime_for_jetson_when_cpu_device_declared() -> No
     )
 
     # when
-    result = trt_package_matches_runtime_environment(
+    result, reason = trt_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
         device=torch.device("cpu"),
@@ -638,6 +642,7 @@ def test_trt_package_matches_runtime_for_jetson_when_cpu_device_declared() -> No
 
     # then
     assert result is False
+    assert reason is not None
 
 
 def test_trt_package_matches_runtime_for_jetson_when_device_not_declared_but_does_not_match_available_by_type() -> (
@@ -682,13 +687,14 @@ def test_trt_package_matches_runtime_for_jetson_when_device_not_declared_but_doe
     )
 
     # when
-    result = trt_package_matches_runtime_environment(
+    result, reason = trt_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
     )
 
     # then
     assert result is False
+    assert reason is not None
 
 
 def test_trt_package_matches_runtime_for_jetson_when_device_not_declared_but_does_not_match_available_by_type_but_matches_through_cc_and_cc_compatibility_enabled() -> (
@@ -734,12 +740,13 @@ def test_trt_package_matches_runtime_for_jetson_when_device_not_declared_but_doe
     )
 
     # when
-    result = trt_package_matches_runtime_environment(
+    result, reason = trt_package_matches_runtime_environment(
         model_package=model_package, runtime_x_ray=runtime_x_ray, verbose=True
     )
 
     # then
     assert result is True
+    assert reason is None
 
 
 def test_trt_package_matches_runtime_for_jetson_when_trt_versions_missmatch() -> None:
@@ -782,13 +789,14 @@ def test_trt_package_matches_runtime_for_jetson_when_trt_versions_missmatch() ->
     )
 
     # when
-    result = trt_package_matches_runtime_environment(
+    result, reason = trt_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
     )
 
     # then
     assert result is False
+    assert reason is not None
 
 
 def test_trt_package_matches_runtime_for_jetson_when_l4t_versions_missmatch() -> None:
@@ -831,12 +839,13 @@ def test_trt_package_matches_runtime_for_jetson_when_l4t_versions_missmatch() ->
     )
 
     # when
-    result = trt_package_matches_runtime_environment(
+    result, reason = trt_package_matches_runtime_environment(
         model_package=model_package, runtime_x_ray=runtime_x_ray, verbose=True
     )
 
     # then
     assert result is False
+    assert reason is not None
 
 
 def test_trt_package_matches_runtime_for_jetson_when_trt_versions_missmatch_despite_forward_capability() -> (
@@ -882,13 +891,14 @@ def test_trt_package_matches_runtime_for_jetson_when_trt_versions_missmatch_desp
     )
 
     # when
-    result = trt_package_matches_runtime_environment(
+    result, reason = trt_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
     )
 
     # then
     assert result is False
+    assert reason is not None
 
 
 def test_trt_package_matches_runtime_for_jetson_when_trt_versions_missmatch_but_forward_capability_saves_the_day() -> (
@@ -934,7 +944,7 @@ def test_trt_package_matches_runtime_for_jetson_when_trt_versions_missmatch_but_
     )
 
     # when
-    result = trt_package_matches_runtime_environment(
+    result, reason = trt_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
     )
@@ -988,12 +998,13 @@ def test_trt_package_matches_runtime_for_jetson_when_trt_versions_missmatch_forw
     )
 
     # when
-    result = trt_package_matches_runtime_environment(
+    result, reason = trt_package_matches_runtime_environment(
         model_package=model_package, runtime_x_ray=runtime_x_ray, verbose=True
     )
 
     # then
     assert result is False
+    assert reason is not None
 
 
 def test_trt_package_matches_runtime_for_jetson_when_trt_versions_missmatch_with_forward_capability_mode_but_without_permission_to_execute_host_code() -> (
@@ -1039,7 +1050,7 @@ def test_trt_package_matches_runtime_for_jetson_when_trt_versions_missmatch_with
     )
 
     # when
-    result = trt_package_matches_runtime_environment(
+    result, reason = trt_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
         trt_engine_host_code_allowed=False,
@@ -1047,6 +1058,7 @@ def test_trt_package_matches_runtime_for_jetson_when_trt_versions_missmatch_with
 
     # then
     assert result is False
+    assert reason is not None
 
 
 def test_trt_package_matches_runtime_when_unknown_environment_requirements_declared() -> (
@@ -1130,13 +1142,14 @@ def test_trt_package_matches_runtime_for_server_when_trt_version_not_declared() 
     )
 
     # when
-    result = trt_package_matches_runtime_environment(
+    result, reason = trt_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
     )
 
     # then
     assert result is False
+    assert reason is not None
 
 
 def test_trt_package_matches_runtime_environment_for_server_when_package_excluded_by_device_incompatibility() -> (
@@ -1181,13 +1194,14 @@ def test_trt_package_matches_runtime_environment_for_server_when_package_exclude
     )
 
     # when
-    result = trt_package_matches_runtime_environment(
+    result, reason = trt_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
     )
 
     # then
     assert result is False
+    assert reason is not None
 
 
 def test_trt_package_matches_runtime_environment_for_server_when_package_excluded_by_choosing_cpu_device() -> (
@@ -1232,7 +1246,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_package_exclude
     )
 
     # when
-    result = trt_package_matches_runtime_environment(
+    result, reason = trt_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
         device=torch.device("cpu"),
@@ -1240,6 +1254,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_package_exclude
 
     # then
     assert result is False
+    assert reason is not None
 
 
 def test_trt_package_matches_runtime_environment_for_server_when_selected_device_compatible() -> (
@@ -1284,7 +1299,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_selected_device
     )
 
     # when
-    result = trt_package_matches_runtime_environment(
+    result, reason = trt_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
         device=torch.device(type="cuda", index=0),
@@ -1292,6 +1307,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_selected_device
 
     # then
     assert result is True
+    assert reason is None
 
 
 def test_trt_package_matches_runtime_environment_for_server_when_selected_device_compatible_when_cc_compatibility_saves_the_day() -> (
@@ -1336,7 +1352,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_selected_device
     )
 
     # when
-    result = trt_package_matches_runtime_environment(
+    result, reason = trt_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
         device=torch.device(type="cuda", index=0),
@@ -1344,6 +1360,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_selected_device
 
     # then
     assert result is True
+    assert reason is None
 
 
 def test_trt_package_matches_runtime_environment_for_server_when_selected_device_compatible_when_cc_compatibility_would_save_the_day_but_disabled() -> (
@@ -1388,7 +1405,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_selected_device
     )
 
     # when
-    result = trt_package_matches_runtime_environment(
+    result, reason = trt_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
         device=torch.device(type="cuda", index=0),
@@ -1396,6 +1413,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_selected_device
 
     # then
     assert result is False
+    assert reason is not None
 
 
 def test_trt_package_matches_runtime_environment_for_server_when_no_trt_forward_compatibility_but_trt_version_missmatch() -> (
@@ -1440,7 +1458,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_no_trt_forward_
     )
 
     # when
-    result = trt_package_matches_runtime_environment(
+    result, reason = trt_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
         device=torch.device(type="cuda", index=0),
@@ -1448,6 +1466,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_no_trt_forward_
 
     # then
     assert result is False
+    assert reason is not None
 
 
 def test_trt_package_matches_runtime_environment_for_server_when_trt_forward_compatibility_missmatch() -> (
@@ -1492,7 +1511,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_trt_forward_com
     )
 
     # when
-    result = trt_package_matches_runtime_environment(
+    result, reason = trt_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
         device=torch.device(type="cuda", index=0),
@@ -1501,6 +1520,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_trt_forward_com
 
     # then
     assert result is False
+    assert reason is not None
 
 
 def test_trt_package_matches_runtime_environment_for_server_when_trt_forward_compatibility_saves_the_day() -> (
@@ -1545,7 +1565,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_trt_forward_com
     )
 
     # when
-    result = trt_package_matches_runtime_environment(
+    result, reason = trt_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
         device=torch.device(type="cuda", index=0),
@@ -1553,6 +1573,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_trt_forward_com
 
     # then
     assert result is True
+    assert reason is None
 
 
 def test_trt_package_matches_runtime_environment_for_server_when_trt_forward_compatibility_enabled_but_lean_runtime_excluded() -> (
@@ -1599,7 +1620,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_trt_forward_com
     )
 
     # when
-    result = trt_package_matches_runtime_environment(
+    result, reason = trt_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
         device=torch.device(type="cuda", index=0),
@@ -1607,6 +1628,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_trt_forward_com
 
     # then
     assert result is False
+    assert reason is not None
 
 
 def test_trt_package_matches_runtime_environment_for_server_when_trt_forward_compatibility_enabled_but_unsafe_deserialisation_prevented() -> (
@@ -1651,7 +1673,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_trt_forward_com
     )
 
     # when
-    result = trt_package_matches_runtime_environment(
+    result, reason = trt_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
         device=torch.device(type="cuda", index=0),
@@ -1660,6 +1682,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_trt_forward_com
 
     # then
     assert result is False
+    assert reason is not None
 
 
 def test_ultralytics_package_matches_runtime_environment_when_ultralytics_not_available() -> (
@@ -1694,13 +1717,14 @@ def test_ultralytics_package_matches_runtime_environment_when_ultralytics_not_av
     )
 
     # when
-    result = ultralytics_package_matches_runtime_environment(
+    result, reason = ultralytics_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
     )
 
     # then
     assert result is False
+    assert reason is not None
 
 
 def test_ultralytics_package_matches_runtime_environment_when_ultralytics_available() -> (
@@ -1735,13 +1759,14 @@ def test_ultralytics_package_matches_runtime_environment_when_ultralytics_availa
     )
 
     # when
-    result = ultralytics_package_matches_runtime_environment(
+    result, reason = ultralytics_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
     )
 
     # then
     assert result is True
+    assert reason is None
 
 
 def test_hf_transformers_package_matches_runtime_environment_when_ultralytics_not_available() -> (
@@ -1776,13 +1801,14 @@ def test_hf_transformers_package_matches_runtime_environment_when_ultralytics_no
     )
 
     # when
-    result = hf_transformers_package_matches_runtime_environment(
+    result, reason = hf_transformers_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
     )
 
     # then
     assert result is False
+    assert reason is not None
 
 
 def test_hf_transformers_package_matches_runtime_environment_when_ultralytics_available() -> (
@@ -1817,13 +1843,14 @@ def test_hf_transformers_package_matches_runtime_environment_when_ultralytics_av
     )
 
     # when
-    result = hf_transformers_package_matches_runtime_environment(
+    result, reason = hf_transformers_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
     )
 
     # then
     assert result is True
+    assert reason is None
 
 
 def test_torch_package_matches_runtime_environment_when_ultralytics_not_available() -> (
@@ -1858,13 +1885,14 @@ def test_torch_package_matches_runtime_environment_when_ultralytics_not_availabl
     )
 
     # when
-    result = torch_package_matches_runtime_environment(
+    result, reason = torch_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
     )
 
     # then
     assert result is False
+    assert reason is not None
 
 
 def test_torch_package_matches_runtime_environment_when_ultralytics_available() -> None:
@@ -1897,13 +1925,14 @@ def test_torch_package_matches_runtime_environment_when_ultralytics_available() 
     )
 
     # when
-    result = torch_package_matches_runtime_environment(
+    result, reason = torch_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
     )
 
     # then
     assert result is True
+    assert reason is None
 
 
 def test_onnx_package_matches_runtime_environment_when_onnx_not_detected_in_environment() -> (
@@ -1939,13 +1968,14 @@ def test_onnx_package_matches_runtime_environment_when_onnx_not_detected_in_envi
     )
 
     # when
-    result = onnx_package_matches_runtime_environment(
+    result, reason = onnx_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
     )
 
     # then
     assert result is False
+    assert reason is not None
 
 
 def test_onnx_package_matches_runtime_environment_when_no_available_onnx_ep() -> None:
@@ -1976,13 +2006,14 @@ def test_onnx_package_matches_runtime_environment_when_no_available_onnx_ep() ->
     )
 
     # when
-    result = onnx_package_matches_runtime_environment(
+    result, reason = onnx_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
     )
 
     # then
     assert result is False
+    assert reason is not None
 
 
 def test_onnx_package_matches_runtime_environment_when_no_onnx_package_details() -> (
@@ -2015,13 +2046,14 @@ def test_onnx_package_matches_runtime_environment_when_no_onnx_package_details()
     )
 
     # when
-    result = onnx_package_matches_runtime_environment(
+    result, reason = onnx_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
     )
 
     # then
     assert result is False
+    assert reason is not None
 
 
 @mock.patch.object(auto_negotiation, "get_selected_onnx_execution_providers")
@@ -2056,13 +2088,14 @@ def test_onnx_package_matches_runtime_environment_when_no_matching_execution_pro
     )
 
     # when
-    result = onnx_package_matches_runtime_environment(
+    result, reason = onnx_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
     )
 
     # then
     assert result is False
+    assert reason is not None
 
 
 def test_onnx_package_matches_runtime_environment_when_no_matching_execution_providers_selected_in_param() -> (
@@ -2095,7 +2128,7 @@ def test_onnx_package_matches_runtime_environment_when_no_matching_execution_pro
     )
 
     # when
-    result = onnx_package_matches_runtime_environment(
+    result, reason = onnx_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
         onnx_execution_providers=["CUDAExecutionProvider"],
@@ -2103,6 +2136,7 @@ def test_onnx_package_matches_runtime_environment_when_no_matching_execution_pro
 
     # then
     assert result is False
+    assert reason is not None
 
 
 def test_onnx_package_matches_runtime_environment_when_no_matching_execution_providers_when_incompatible_providers_taken_into_account() -> (
@@ -2141,7 +2175,7 @@ def test_onnx_package_matches_runtime_environment_when_no_matching_execution_pro
     )
 
     # when
-    result = onnx_package_matches_runtime_environment(
+    result, reason = onnx_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
         onnx_execution_providers=["CUDAExecutionProvider", "TensorRTExecutionProvider"],
@@ -2149,6 +2183,7 @@ def test_onnx_package_matches_runtime_environment_when_no_matching_execution_pro
 
     # then
     assert result is False
+    assert reason is not None
 
 
 def test_onnx_package_matches_runtime_environment_when_unknown_onnx_version_spotted_and_opset_below_oldest_supported_version() -> (
@@ -2185,7 +2220,7 @@ def test_onnx_package_matches_runtime_environment_when_unknown_onnx_version_spot
     )
 
     # when
-    result = onnx_package_matches_runtime_environment(
+    result, reason = onnx_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
         onnx_execution_providers=["CUDAExecutionProvider", "TensorRTExecutionProvider"],
@@ -2193,6 +2228,7 @@ def test_onnx_package_matches_runtime_environment_when_unknown_onnx_version_spot
 
     # then
     assert result is True
+    assert reason is None
 
 
 def test_onnx_package_matches_runtime_environment_when_unknown_onnx_version_spotted_and_opset_above_oldest_supported_version() -> (
@@ -2229,7 +2265,7 @@ def test_onnx_package_matches_runtime_environment_when_unknown_onnx_version_spot
     )
 
     # when
-    result = onnx_package_matches_runtime_environment(
+    result, reason = onnx_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
         onnx_execution_providers=["CUDAExecutionProvider", "TensorRTExecutionProvider"],
@@ -2237,6 +2273,7 @@ def test_onnx_package_matches_runtime_environment_when_unknown_onnx_version_spot
 
     # then
     assert result is False
+    assert reason is not None
 
 
 def test_onnx_package_matches_runtime_environment_when_opset_matches() -> None:
@@ -2271,7 +2308,7 @@ def test_onnx_package_matches_runtime_environment_when_opset_matches() -> None:
     )
 
     # when
-    result = onnx_package_matches_runtime_environment(
+    result, reason = onnx_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
         onnx_execution_providers=["CUDAExecutionProvider", "TensorRTExecutionProvider"],
@@ -2279,6 +2316,7 @@ def test_onnx_package_matches_runtime_environment_when_opset_matches() -> None:
 
     # then
     assert result is True
+    assert reason is None
 
 
 def test_onnx_package_matches_runtime_environment_when_opset_to_high() -> None:
@@ -2313,7 +2351,7 @@ def test_onnx_package_matches_runtime_environment_when_opset_to_high() -> None:
     )
 
     # when
-    result = onnx_package_matches_runtime_environment(
+    result, reason = onnx_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
         onnx_execution_providers=["CUDAExecutionProvider", "TensorRTExecutionProvider"],
@@ -2321,6 +2359,7 @@ def test_onnx_package_matches_runtime_environment_when_opset_to_high() -> None:
 
     # then
     assert result is False
+    assert reason is not None
 
 
 def test_model_package_matches_runtime_environment_when_backend_is_not_registered() -> (
@@ -2397,7 +2436,7 @@ def test_model_package_matches_runtime_environment_when_package_should_be_allowe
     )
 
     # when
-    result = model_package_matches_runtime_environment(
+    result, reason = model_package_matches_runtime_environment(
         model_package=model_package,
         runtime_x_ray=runtime_x_ray,
         onnx_execution_providers=["CPUExecutionProvider"],
@@ -2405,6 +2444,7 @@ def test_model_package_matches_runtime_environment_when_package_should_be_allowe
 
     # then
     assert result is True
+    assert reason is None
 
 
 def test_model_package_matches_batch_size_request_when_static_batch_size_supported_and_size_does_not_match() -> (
@@ -2524,7 +2564,7 @@ def test_filter_model_packages_by_requested_quantization_when_nothing_left() -> 
             package_artefacts=[],
         ),
         ModelPackageMetadata(
-            package_id="my-package-id-1",
+            package_id="my-package-id-2",
             backend=BackendType.ONNX,
             quantization=Quantization.FP16,
             onnx_package_details=ONNXPackageDetails(opset=23),
@@ -2533,11 +2573,17 @@ def test_filter_model_packages_by_requested_quantization_when_nothing_left() -> 
     ]
 
     # when
-    with pytest.raises(NoModelPackagesAvailableError):
-        _ = filter_model_packages_by_requested_quantization(
-            model_packages=model_packages,
-            requested_quantization="int8",
-        )
+    result, discarded = filter_model_packages_by_requested_quantization(
+        model_packages=model_packages,
+        requested_quantization="int8",
+        default_quantization_used=True,
+    )
+
+    # then
+    assert len(result) == 0
+    assert len(discarded) == 2
+    assert discarded[0].package_id == "my-package-id-1"
+    assert discarded[1].package_id == "my-package-id-2"
 
 
 def test_filter_model_packages_by_requested_quantization_when_something_left() -> None:
@@ -2560,14 +2606,17 @@ def test_filter_model_packages_by_requested_quantization_when_something_left() -
     ]
 
     # when
-    result = filter_model_packages_by_requested_quantization(
+    result, discarded = filter_model_packages_by_requested_quantization(
         model_packages=model_packages,
         requested_quantization="fp16",
+        default_quantization_used=False,
     )
 
     # then
     assert len(result) == 1
     assert result[0].package_id == "my-package-id-2"
+    assert len(discarded) == 1
+    assert discarded[0].package_id == "my-package-id-1"
 
 
 def test_filter_model_packages_by_requested_batch_size_when_nothing_left() -> None:
@@ -2592,11 +2641,16 @@ def test_filter_model_packages_by_requested_batch_size_when_nothing_left() -> No
     ]
 
     # when
-    with pytest.raises(NoModelPackagesAvailableError):
-        _ = filter_model_packages_by_requested_batch_size(
-            model_packages=model_packages,
-            requested_batch_size=(2, 8),
-        )
+    result, discarded = filter_model_packages_by_requested_batch_size(
+        model_packages=model_packages,
+        requested_batch_size=(2, 8),
+    )
+
+    # then
+    assert len(result) == 0
+    assert len(discarded) == 2
+    assert discarded[0].package_id == "my-package-id-1"
+    assert discarded[1].package_id == "my-package-id-2"
 
 
 def test_filter_model_packages_by_requested_batch_size_when_something_left() -> None:
@@ -2621,7 +2675,7 @@ def test_filter_model_packages_by_requested_batch_size_when_something_left() -> 
     ]
 
     # when
-    result = filter_model_packages_by_requested_batch_size(
+    result, discarded = filter_model_packages_by_requested_batch_size(
         model_packages=model_packages,
         requested_batch_size=(2, 8),
     )
@@ -2629,6 +2683,8 @@ def test_filter_model_packages_by_requested_batch_size_when_something_left() -> 
     # then
     assert len(result) == 1
     assert result[0].package_id == "my-package-id-2"
+    assert len(discarded) == 1
+    assert discarded[0].package_id == "my-package-id-1"
 
 
 def test_select_model_package_by_id_when_no_package_matches() -> None:
@@ -2740,13 +2796,15 @@ def test_remove_untrusted_packages() -> None:
     ]
 
     # when
-    result = remove_untrusted_packages(
+    result, removed = remove_untrusted_packages(
         model_packages=model_packages,
     )
 
     # then
     assert len(result) == 1
     assert result[0].package_id == "my-package-id-1"
+    assert len(removed) == 1
+    assert removed[0].package_id == "my-package-id-2"
 
 
 def test_remove_untrusted_packages_when_nothing_left() -> None:
@@ -2773,10 +2831,15 @@ def test_remove_untrusted_packages_when_nothing_left() -> None:
     ]
 
     # when
-    with pytest.raises(NoModelPackagesAvailableError):
-        _ = remove_untrusted_packages(
-            model_packages=model_packages,
-        )
+    result, removed = remove_untrusted_packages(
+        model_packages=model_packages,
+    )
+
+    # then
+    assert len(result) == 0
+    assert len(removed) == 2
+    assert removed[0].package_id == "my-package-id-1"
+    assert removed[1].package_id == "my-package-id-2"
 
 
 def test_determine_default_allowed_quantization_for_cpu_device() -> None:
@@ -2945,7 +3008,7 @@ def test_remove_packages_not_matching_implementation_when_nothing_to_be_removed(
     ]
 
     # when
-    result = remove_packages_not_matching_implementation(
+    result, discarded = remove_packages_not_matching_implementation(
         model_architecture="yolov8",
         task_type="object-detection",
         model_packages=model_packages,
@@ -2953,6 +3016,7 @@ def test_remove_packages_not_matching_implementation_when_nothing_to_be_removed(
 
     # then
     assert result == model_packages
+    assert len(discarded) == 0
 
 
 def test_remove_packages_not_matching_implementation_when_some_entries_to_be_removed() -> (
@@ -2980,7 +3044,7 @@ def test_remove_packages_not_matching_implementation_when_some_entries_to_be_rem
     ]
 
     # when
-    result = remove_packages_not_matching_implementation(
+    result, discarded = remove_packages_not_matching_implementation(
         model_architecture="yolov8",
         task_type="object-detection",
         model_packages=model_packages,
@@ -2989,6 +3053,8 @@ def test_remove_packages_not_matching_implementation_when_some_entries_to_be_rem
     # then
     assert len(result) == 1
     assert result[0] == model_packages[0]
+    assert len(discarded) == 1
+    assert discarded[0].package_id == "my-package-id-2"
 
 
 def test_remove_packages_not_matching_implementation_when_all_entries_to_be_removed() -> (
@@ -3007,9 +3073,13 @@ def test_remove_packages_not_matching_implementation_when_all_entries_to_be_remo
     ]
 
     # when
-    with pytest.raises(NoModelPackagesAvailableError):
-        _ = remove_packages_not_matching_implementation(
-            model_architecture="yolov8",
-            task_type="object-detection",
-            model_packages=model_packages,
-        )
+    result, discarded = remove_packages_not_matching_implementation(
+        model_architecture="yolov8",
+        task_type="object-detection",
+        model_packages=model_packages,
+    )
+
+    # then
+    assert len(result) == 0
+    assert len(discarded) == 1
+    assert discarded[0].package_id == "my-package-id-2"
