@@ -142,7 +142,7 @@ def negotiate_model_packages(
             message=f"Auto-negotiation protocol could not select model packages. This situation may be caused by "
             f"several reasons, with the most common being missing dependencies or too strict requirements "
             f"stated as parameters of loading function. Below you can find reasons why specific model "
-            f"packages was rejected:\n{rejections_summary}\n",
+            f"packages were rejected:\n{rejections_summary}\n",
             help_url="https://todo",
         )
     model_packages = rank_model_packages(
@@ -304,10 +304,10 @@ def filter_model_packages_by_requested_backend(
             requested_backend = parse_backend_type(value=requested_backend)
         requested_backends_set.add(requested_backend)
     verbose_info(
-        message=f"Filtering model packages by requested backends: {requested_backends}",
+        message=f"Filtering model packages by requested backends: {requested_backends_set}",
         verbose_requested=verbose,
     )
-    requested_backends_str = [b.value for b in requested_backends_set]
+    requested_backends_serialised = [b.value for b in requested_backends_set]
     filtered_packages, discarded_packages = [], []
     for model_package in model_packages:
         if model_package.backend not in requested_backends_set:
@@ -319,7 +319,7 @@ def filter_model_packages_by_requested_backend(
                 DiscardedPackage(
                     package_id=model_package.package_id,
                     reason=f"Package backend {model_package.backend.value} does not match requested backends: "
-                    f"{requested_backends_str}",
+                    f"{requested_backends_serialised}",
                 )
             )
             continue
