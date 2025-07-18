@@ -96,6 +96,7 @@ test = [
   "pytest>=8.0.0",
   "pytest-timeout==2.4.0",
   "pytest-xdist>=3.0.0",
+  "pytest-timeout",
   "requests-mock>=1.12.1"
 ]
 

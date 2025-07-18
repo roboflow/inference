@@ -14,7 +14,7 @@ jobs:
     timeout-minutes: 10
     strategy:
       matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12"]
         extras:
           - { install: "onnx-cu12", marker: "onnx_extras" }
           - { install: "trt10", marker: "trt_extras" }
@@ -28,14 +28,42 @@ jobs:
           key: ${{ runner.os }}-uv-${{ matrix.python-version }}-${{ hashFiles('inference_experimental/pyproject.toml') }}
           restore-keys: |
             ${{ runner.os }}-uv-${{ matrix.python-version }}-
+      - name: 📦 Cache apt packages
+        uses: actions/cache@v3
+        with:
+          path: ~/apt-cache
+          key: ${{ runner.os }}-apt-cuda-12-4
+          restore-keys: |
+            ${{ runner.os }}-apt-cuda-
       - name: 🐍 Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
           check-latest: true
+      - name: 🔧 Install CUDA development toolkit
+        run: |
+          mkdir -p ~/apt-cache
+
+          sudo mkdir -p /var/cache/apt/archives
+          sudo cp -r ~/apt-cache/* /var/cache/apt/archives/ 2>/dev/null || true
+
+          sudo apt-get update
+          sudo apt-get install -y \
+              cuda-cudart-dev-12-4 \
+              cuda-nvcc-12-4 \
+              cuda-profiler-api-12-4 \
+              libcurand-dev-12-4
+
+          sudo cp /var/cache/apt/archives/*.deb ~/apt-cache/ 2>/dev/null || true
+          sudo chown -R $(whoami):$(whoami) ~/apt-cache
       - name: 📦 Install base dependencies as well as `${{ matrix.extras.install }}` dependencies
         working-directory: inference_experimental
         run: |
+          export CUDA_HOME=/usr/local/cuda-12.4
+          export PATH=/usr/local/cuda-12.4/bin:$PATH
+          export LD_LIBRARY_PATH=/usr/local/cuda-12.4/targets/x86_64-linux/lib64:$LD_LIBRARY_PATH
+          export CPATH=/usr/local/cuda-12.4/targets/x86_64-linux/include:$CPATH
+          export LIBRARY_PATH=/usr/local/cuda-12.4/targets/x86_64-linux/lib64:$LIBRARY_PATH
           python -m pip install --upgrade pip
           python -m pip install uv
           python -m uv venv
