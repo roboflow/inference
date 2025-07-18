@@ -1,8 +1,9 @@
 import numpy as np
 import pytest
 import torch
+from inference_exp.configuration import DEFAULT_DEVICE
 
-EXPECTED_DOG_IMAGE_EMBEDDING = torch.Tensor(
+EXPECTED_DOG_IMAGE_EMBEDDING = torch.tensor(
     [
         [
             -0.04075119271874428,
@@ -1030,7 +1031,8 @@ EXPECTED_DOG_IMAGE_EMBEDDING = torch.Tensor(
             0.027445748448371887,
             0.03301752358675003,
         ]
-    ]
+    ],
+    device=DEFAULT_DEVICE,
 )
 
 
