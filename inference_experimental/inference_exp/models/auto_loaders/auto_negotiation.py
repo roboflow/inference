@@ -307,7 +307,7 @@ def filter_model_packages_by_requested_backend(
         message=f"Filtering model packages by requested backends: {requested_backends}",
         verbose_requested=verbose,
     )
-    requested_backends_str = [b.value for b in requested_backends]
+    requested_backends_str = [b.value for b in requested_backends_set]
     filtered_packages, discarded_packages = [], []
     for model_package in model_packages:
         if model_package.backend not in requested_backends_set:
