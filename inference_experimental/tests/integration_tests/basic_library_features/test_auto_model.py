@@ -327,6 +327,7 @@ def test_auto_loading_with_weights_provider_in_base_scenario(
 
 @pytest.mark.timeout(60)
 @pytest.mark.slow
+@pytest.mark.onnx_extra
 @mock.patch.object(auto_resolution_cache, "generate_auto_resolution_cache_path")
 @mock.patch.object(core, "generate_model_package_cache_path")
 @mock.patch.object(core, "generate_shared_blobs_path")
@@ -389,6 +390,7 @@ def test_auto_loading_with_weights_provider_when_cache_for_the_exact_model_and_a
 
 @pytest.mark.timeout(60)
 @pytest.mark.slow
+@pytest.mark.onnx_extra
 @mock.patch.object(auto_resolution_cache, "generate_auto_resolution_cache_path")
 @mock.patch.object(core, "generate_model_package_cache_path")
 @mock.patch.object(core, "generate_shared_blobs_path")
@@ -463,6 +465,7 @@ def test_auto_loading_with_weights_provider_when_cache_for_the_exact_model_but_d
 
 @pytest.mark.timeout(60)
 @pytest.mark.slow
+@pytest.mark.onnx_extra
 @mock.patch.object(auto_resolution_cache, "generate_auto_resolution_cache_path")
 @mock.patch.object(core, "generate_model_package_cache_path")
 @mock.patch.object(core, "generate_shared_blobs_path")
@@ -523,6 +526,7 @@ def test_auto_loading_with_weights_provider_when_api_denoted_forbidden(
 
 @pytest.mark.timeout(60)
 @pytest.mark.slow
+@pytest.mark.onnx_extra
 @mock.patch.object(auto_resolution_cache, "generate_auto_resolution_cache_path")
 @mock.patch.object(core, "generate_model_package_cache_path")
 @mock.patch.object(core, "generate_shared_blobs_path")
