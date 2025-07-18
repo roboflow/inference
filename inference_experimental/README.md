@@ -12,15 +12,98 @@ We’re excited to have you join us on this journey — let’s build something 
 
 > [!CAUTION]
 > The `inference-exp` package **is an experimental preview** of upcoming inference capabilities.
-> **🔧 What this means:**
 > * Features may change, break, or be removed without notice.
 > * We **do not guarantee backward compatibility** between releases.
-> * We are publishing this to PyPI only **for preview and feedback purposes.**
-> * Although `inference-exp` is located in the `inference` codebase, it is not included in any production build and
-> its lifecycle is completely independent of the official `inference` package releases.
 > 
-> ❗ **We strongly advise against** using `inference-exp` in production systems or building integrations on top of it.
-> For production use and official model deployment, please **continue to use the stable `inference` package.**
+> ❗ **We strongly advise against** using `inference-exp` in production systems - for such purposes 
+> please **continue to use the stable `inference` package.**
+
+## ⚡ Installation
+
+> [!TIP]
+> We recommend using `uv` to install `inference-exp`. To install the tool, follow 
+> [official guide](https://docs.astral.sh/uv/getting-started/installation/) or use the snippet below:
+> ```bash
+> curl -LsSf https://astral.sh/uv/install.sh | sh
+> ```
+
+Use the following command to install `inference-exp` on **CPU machine 💻** (below you can find more advanced options):
+
+```bash
+uv pip install inference-exp
+# or - if you use pip
+pip install inference-exp
+```
+
+<details>
+<summary>👉 GPU installation</summary>
+
+As you mat learn in [📜 Principles and Assumptions](#-principles-and-assumptions), `inference-exp` is designed to 
+compose the build out of different [extras](#-extra-dependencies) defined for the package. Some extras bring new 
+models, while others - ability to run models created for specific backend. To get the most out of the installation
+on GPU machine, we recommend including TRT and ONNX extensions, as well as select `torch-cu*` extras to install 
+torch compliant with version of CUDA installed on the machine. ONNX backend is particularly important when running
+models trained on Roboflow platform.
+
+```bash
+uv pip install "inference-exp[torch-cu128,onnx-cu12,trt10]" "tensorrt==10.12.0.36"
+# or - if you use pip
+pip install "inference-exp[torch-cu128,onnx-cu12,trt10]" "tensorrt==10.12.0.36"
+```
+
+> [!TIP]
+> To avoid clashes with external packages, `pyproject.toml` defines quite loose restrictions for the dependent packages.
+> Some packages, like `tensorrt` are good to be kept under more strict control (as some TRT engines will only work 
+> when there is an exact match of environment that runs the model with the one that compiled it) - that's why we 
+> recommend fixing `tensorrt` version to the one we currently use to compile TRT artefacts.
+> 
+> Additionally, library defines set of `torch-*` extras which, thanks to `uv` deliver extra packages indexes adjusted 
+> for specific CUDA version: `torch-cu118`, `torch-cu124`, `torch-cu126`, `torch-cu128`, `torch-jp6-cu126`.
+
+</details>
+
+<details>
+<summary>👉 CPU installation - enabling <b>models trained with Roboflow</b></summary>
+
+For CPU installations, we recommend installing ONNX backed, as the majority of models trained on Roboflow platform 
+are exported to ONNX and not available:
+```bash
+# to install with ONNX backend
+uv pip install "inference-exp[onnx-cpu]"
+# or - to install only base dependencies
+uv pip install inference-exp
+```
+
+</details>
+
+
+<details>
+<summary>👉 Reproducibility of installation</summary>
+
+> [!NOTE] 
+> Using `uv pip install ...` or `pip install`, it is possible to get non-reproducible builds (as `pyproject.toml` 
+> defines quite loose restrictions for the dependent packages). If you care about strict control of dependencies - 
+> follow the installation method based on `uv.lock` which is demonstrated in official [docker builds](./dockerfiles) 
+> of the library.
+
+</details>
+
+
+## 📖 Basic Usage
+```python
+from inference_exp import AutoModel
+import cv2
+import supervision as sv
+
+# loads model from Roboflow API (loading from local dir also available)
+model = AutoModel.from_pretrained("rfdetr-base")  
+image = cv2.imread("<path-to-your-image>")
+predictions = model(image)
+
+# integration with supervision
+annotator = sv.BoxAnnotator()
+annotated = annotator.annotate(image.copy(), predictions[0].to_supervision())
+```
 
 ## 📜 Principles and Assumptions
 
@@ -40,60 +123,6 @@ are mostly based on Torch.
 * Backend selection happens **dynamically at runtime**, based on model metadata and environment checks, 
 but can be fully overridden by the user when needed.
 
-## ⚡ Installation
-
-> [!TIP]
-> We recommend using `uv` to install `inference-exp`. To install the tool, follow 
-> [official guide](https://docs.astral.sh/uv/getting-started/installation/) or use the snippet below:
-> ```bash
-> curl -LsSf https://astral.sh/uv/install.sh | sh
-> ```
-
-
-To install `inference-exp` **with TRT and ONNX** on GPU server with base CUDA libraries available run the following 
-command:
-
-```bash
-uv pip install "inference-exp[torch-cu128,onnx-cu12,trt10]" "tensorrt==10.12.0.36"
-```
-> [!TIP]
-> To avoid clashes with external packages, `pyproject.toml` defines quite loose restrictions for the dependent packages.
-> Some packages, like `tensorrt` are good to be kept under more strict control (as some TRT engines will only work 
-> when there is an exact match of environment that runs the model with the one that compiled it) - that's why we 
-> recommend fixing `tensorrt` version to the one we currently use to compile TRT artefacts.
-> 
-> Additionally, library defines set of `torch-*` extras which, thanks to `uv` deliver extra packages indexes adjusted 
-> for specific CUDA version: `torch-cu118`, `torch-cu124`, `torch-cu126`, `torch-cu128`, `torch-jp6-cu126`.
-
-For CPU installations, we recommend the following commands:
-```bash
-# to install with ONNX backend
-uv pip install "inference-exp[onnx-cpu]"
-# or - to install only base dependencies
-uv pip install inference-exp
-```
-
-> [!NOTE] 
-> Using `uv pip install ...` or `pip install`, it is possible to get non-reproducible builds (as `pyproject.toml` 
-> defines quite loose restrictions for the dependent packages). If you care about strict control of dependencies - 
-> follow the installation method based on `uv.lock` which is demonstrated in official [docker builds](./dockerfiles) 
-> of the library.
-
-## 📖 Basic Usage
-```python
-from inference_exp import AutoModel
-import cv2
-import supervision as sv
-
-# loads model from Roboflow API (loading from local dir also available)
-model = AutoModel.from_pretrained("yolov8n-640")  
-image = cv2.imread("<path-to-your-image>")
-predictions = model(image)[0]
-
-# integration with supervision
-annotator = sv.BoxAnnotator()
-annotated = annotator.annotate(image.copy(), predictions.to_supervision())
-```
 
 ## 🔌 Extra Dependencies
 
