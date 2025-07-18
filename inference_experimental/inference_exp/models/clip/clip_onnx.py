@@ -6,25 +6,15 @@ import numpy as np
 import torch
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
-from inference_exp.errors import (
-    EnvironmentConfigurationError,
-    MissingDependencyError,
-    ModelRuntimeError,
-)
+from inference_exp.errors import EnvironmentConfigurationError, MissingDependencyError
 from inference_exp.models.base.embeddings import TextImageEmbeddingModel
+from inference_exp.models.clip.preprocessing import create_clip_preprocessor
 from inference_exp.models.common.model_packages import get_model_package_contents
 from inference_exp.models.common.onnx import (
-    run_session_via_iobinding,
+    run_session_with_batch_size_limit,
     set_execution_provider_defaults,
 )
 from inference_exp.utils.onnx_introspection import get_selected_onnx_execution_providers
-from torchvision.transforms import (
-    CenterCrop,
-    Compose,
-    InterpolationMode,
-    Normalize,
-    Resize,
-)
 
 try:
     import onnxruntime
@@ -122,14 +112,7 @@ class ClipOnnx(TextImageEmbeddingModel):
         self._max_batch_size = max_batch_size
         self._visual_session_thread_lock = Lock()
         self._textual_session_thread_lock = Lock()
-        self._torch_transforms = Compose(
-            [
-                Resize(self._image_size, interpolation=InterpolationMode.BICUBIC),
-                CenterCrop(self._image_size),
-                lambda x: x / 255,
-                Normalize(MEAN, STD),
-            ]
-        )
+        self._preprocessor = create_clip_preprocessor(image_size=image_size)
 
     def embed_images(
         self,
@@ -137,90 +120,23 @@ class ClipOnnx(TextImageEmbeddingModel):
         input_color_format: Optional[ColorFormat] = None,
         **kwargs,
     ) -> torch.Tensor:
-        pre_processed_images = self._pre_process_images(
-            images=images, input_color_format=input_color_format
+        pre_processed_images = self._preprocessor(
+            images, input_color_format, self._device
         )
         with self._visual_session_thread_lock:
-            if pre_processed_images.shape[0] <= self._max_batch_size:
-                return run_session_via_iobinding(
-                    session=self._visual_onnx_session,
-                    inputs={self._visual_input_name: pre_processed_images},
-                )[0]
-        results = []
-        for i in range(0, pre_processed_images.shape[0], self._max_batch_size):
-            batch_input = pre_processed_images[
-                i : i + self._max_batch_size
-            ].contiguous()
-            batch_results = run_session_via_iobinding(
+            return run_session_with_batch_size_limit(
                 session=self._visual_onnx_session,
-                inputs={self._visual_input_name: batch_input},
+                inputs={self._visual_input_name: pre_processed_images},
+                max_batch_size=self._max_batch_size,
             )[0]
-            results.append(batch_results)
-        return torch.cat(results, dim=0)
 
     def embed_text(self, texts: Union[str, List[str]], **kwargs) -> torch.Tensor:
         if not isinstance(texts, list):
             texts = [texts]
         tokenized_batch = clip.tokenize(texts)
         with self._textual_session_thread_lock:
-            if tokenized_batch.shape[0] <= self._max_batch_size:
-                return run_session_via_iobinding(
-                    session=self._textual_onnx_session,
-                    inputs={self._textual_input_name: tokenized_batch},
-                )[0]
-        results = []
-        for i in range(0, tokenized_batch.shape[0], self._max_batch_size):
-            batch_input = tokenized_batch[i : i + self._max_batch_size].contiguous()
-            batch_results = run_session_via_iobinding(
+            return run_session_with_batch_size_limit(
                 session=self._textual_onnx_session,
-                inputs={self._textual_input_name: batch_input},
+                inputs={self._textual_input_name: tokenized_batch},
+                max_batch_size=self._max_batch_size,
             )[0]
-            results.append(batch_results)
-        return torch.cat(results, dim=0)
-
-    def _pre_process_images(
-        self,
-        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-        input_color_format: Optional[ColorFormat],
-    ) -> torch.Tensor:
-        if isinstance(images, torch.Tensor):
-            input_color_format = input_color_format or "rgb"
-            images = images.to(self._device).unsqueeze(dim=0)
-            if input_color_format != "rgb":
-                images = images[:, [2, 1, 0], :, :]
-            return self._torch_transforms(images.float())
-        if isinstance(images, np.ndarray):
-            input_color_format = input_color_format or "bgr"
-            if input_color_format != "rgb":
-                images = np.ascontiguousarray(images[:, :, ::-1])
-            images = torch.from_numpy(images).permute(2, 0, 1).to(self._device)
-            return self._torch_transforms(images).unsqueeze(dim=0)
-        if not len(images):
-            raise ModelRuntimeError(
-                message="Detected empty input to the model",
-                help_url="https://todo",
-            )
-        if isinstance(images[0], np.ndarray):
-            input_color_format = input_color_format or "bgr"
-            results = []
-            for image in images:
-                if input_color_format != "rgb":
-                    image = np.ascontiguousarray(image[:, :, ::-1])
-                image = torch.from_numpy(image).permute(2, 0, 1).to(self._device)
-                preprocessed_image = self._torch_transforms(image)
-                results.append(preprocessed_image)
-            return torch.stack(results, dim=0).contiguous()
-        if isinstance(images[0], torch.Tensor):
-            input_color_format = input_color_format or "rgb"
-            results = []
-            for image in images:
-                image = image.to(device=self._device).unsqueeze(dim=0)
-                if input_color_format != "rgb":
-                    image = image[:, [2, 1, 0], :, :]
-                preprocessed_image = self._torch_transforms(image.float())
-                results.append(preprocessed_image)
-            return torch.cat(results, dim=0).contiguous()
-        raise ModelRuntimeError(
-            message=f"Detected unknown input batch element: {type(images[0])}",
-            help_url="https://todo",
-        )

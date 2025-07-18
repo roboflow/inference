@@ -127,13 +127,43 @@ annotated = annotator.annotate(image.copy(), predictions.to_supervision())
 Below there is a table showcasing models that are supported, with the hints regarding extra dependencies that 
 are required.
 
-| Architecture       | Task Type               | Supported variants | Registered Models with pre-trained weights                                                                                                                                                                                                                              |
-|--------------------|-------------------------|--------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| RFDetr             | `object-detection`      | TRT, Torch         | `rfdetr-base` (COCO), `rfdetr-large` (COCO)                                                                                                                                                                                                                             |
-| YOLO v8            | `object-detection`      | ONNX, TRT          | `yolov8n-640` (COCO), `yolov8n-1280` (COCO), `yolov8s-640` (COCO), `yolov8s-1280` (COCO), `yolov8m-640` (COCO), `yolov8m-1280` (COCO), `yolov8l-640` (COCO), `yolov8l-1280` (COCO), `yolov8x-640` (COCO), `yolov8x-1280` (COCO)                                         |
-| YOLO v8            | `instance-segmentation` | ONNX, TRT          | `yolov8n-seg-640` (COCO), `yolov8n-seg-1280` (COCO), `yolov8s-seg-640` (COCO), `yolov8s-seg-1280` (COCO), `yolov8m-seg-640` (COCO), `yolov8m-seg-1280` (COCO), `yolov8l-seg-640` (COCO), `yolov8l-seg-1280` (COCO), `yolov8x-seg-640` (COCO), `yolov8x-seg-1280` (COCO) |
-| YOLO v9            | `object-detection`      | ONNX, TRT          |                                                                                                                                                                                                                                                                         |
-| YOLO v10           | `object-detection`      | ONNX, TRT          | `yolov10n-640` (COCO), `yolov10s-640` (COCO), `yolov10m-640` (COCO), `yolov10b-640` (COCO), `yolov10l-640` (COCO), `yolov10x-640` (COCO)                                                                                                                                |
-| YOLO v11           | `object-detection`      | ONNX, TRT          |                                                                                                                                                                                                                                                                         |
-| YOLO v11           | `instance-segmentation` | ONNX, TRT          |                                                                                                                                                                                                                                                                         |
-| Perception Encoder | `embedding`             | Torch              |                                                                                                                                                                                                                                                                         |
+| Architecture       | Task Type               | Supported variants |
+|--------------------|-------------------------|--------------------|
+| RFDetr             | `object-detection`      | TRT, Torch         |
+| YOLO v8            | `object-detection`      | ONNX, TRT          |
+| YOLO v8            | `instance-segmentation` | ONNX, TRT          |
+| YOLO v9            | `object-detection`      | ONNX, TRT          |
+| YOLO v10           | `object-detection`      | ONNX, TRT          |
+| YOLO v11           | `object-detection`      | ONNX, TRT          |
+| YOLO v11           | `instance-segmentation` | ONNX, TRT          |
+| Perception Encoder | `embedding`             | Torch              |
+| CLIP               | `embedding`             | Torch, ONNX        |
+
+
+### Registered pre-trained weights
+
+Below you can find a list of model IDs registered in Roboflow weights provider (along with notes about access rights).
+
+* `public-open` - available without Roboflow API key, but under licenses for specific model 
+
+* `public-api-key-gated` - available for everyone with Roboflow API key
+
+**Models:**
+
+* **RFDetr:** `rfdetr-base` (COCO), `rfdetr-large` (COCO) - all `public-open` - [license](./inference_exp/models/rfdetr/LICENSE.txt)
+* **YOLO v8 (object-detection):** `yolov8n-640` (COCO), `yolov8n-1280` (COCO), `yolov8s-640` (COCO), `yolov8s-1280` (COCO), `yolov8m-640` (COCO), `yolov8m-1280` (COCO), `yolov8l-640` (COCO), `yolov8l-1280` (COCO), `yolov8x-640` (COCO), `yolov8x-1280` (COCO) - all `public-open` - [license](./inference_exp/models/yolov8/LICENSE.txt)
+* **YOLO v8 (instance-segmentation):** `yolov8n-seg-640` (COCO), `yolov8n-seg-1280` (COCO), `yolov8s-seg-640` (COCO), `yolov8s-seg-1280` (COCO), `yolov8m-seg-640` (COCO), `yolov8m-seg-1280` (COCO), `yolov8l-seg-640` (COCO), `yolov8l-seg-1280` (COCO), `yolov8x-seg-640` (COCO), `yolov8x-seg-1280` (COCO) - all `public-open` - [license](./inference_exp/models/yolov8/LICENSE.txt)
+* **YOLO v10 (object-detection):** `yolov10n-640` (COCO), `yolov10s-640` (COCO), `yolov10m-640` (COCO), `yolov10b-640` (COCO), `yolov10l-640` (COCO), `yolov10x-640` (COCO)  - all `public-open` - [license](./inference_exp/models/yolov10/LICENSE.txt)
+* **Perception Encoder:** `perception-encoder/PE-Core-B16-224`, `perception-encoder/PE-Core-G14-448`, `perception-encoder/PE-Core-L14-336` - all `public-open` - [license](./inference_exp/models/perception_encoder/vision_encoder/LICENSE.weigths.txt)
+* **CLIP:** `clip/RN50`, `clip/RN101`, `clip/RN50x16`, `clip/RN50x4`, `clip/RN50x64`, `clip/ViT-B-16`, `clip/ViT-B-32`, `clip/ViT-L-14-336px`, `clip/ViT-L-14` - all `public-open` - [license](./inference_exp/models/clip/LICENSE.txt)
+
+## 📜 Citations
+
+```
+@article{bolya2025PerceptionEncoder,
+  title={Perception Encoder: The best visual embeddings are not at the output of the network},
+  author={Daniel Bolya and Po-Yao Huang and Peize Sun and Jang Hyun Cho and Andrea Madotto and Chen Wei and Tengyu Ma and Jiale Zhi and Jathushan Rajasegaran and Hanoona Rasheed and Junke Wang and Marco Monteiro and Hu Xu and Shiyu Dong and Nikhila Ravi and Daniel Li and Piotr Doll{\'a}r and Christoph Feichtenhofer},
+  journal={arXiv:2504.13181},
+  year={2025}
+}
+```
