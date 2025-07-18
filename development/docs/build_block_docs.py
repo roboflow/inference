@@ -457,7 +457,7 @@ def write_blocks_summary_md(block_families):
         all_page_path = os.path.join(BLOCK_DOCUMENTATION_DIRECTORY, f"all_{section_slug}.md")
         with open(all_page_path, "w", encoding="utf-8") as f:
             f.write(all_page_content)
-        for family_name in sorted(block_families_by_section[section_id], key=lambda x: block_families[x][0].block_schema.get("blockPriority", 99)):
+        for family_name in sorted(block_families_by_section[section_id], key=lambda x: block_families[x][0].block_schema.get("ui_manifest", {}).get("blockPriority", 99)):
             # Suppose you had a function slugify_block_name:
             slug = slugify_block_name(family_name)
             if family_name.endswith("Model"):
