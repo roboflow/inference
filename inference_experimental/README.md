@@ -38,7 +38,7 @@ pip install inference-exp
 <details>
 <summary>👉 GPU installation</summary>
 
-As you mat learn in [📜 Principles and Assumptions](#-principles-and-assumptions), `inference-exp` is designed to 
+As you may learn from [📜 Principles and Assumptions](#-principles-and-assumptions), `inference-exp` is designed to 
 compose the build out of different [extras](#-extra-dependencies) defined for the package. Some extras bring new 
 models, while others - ability to run models created for specific backend. To get the most out of the installation
 on GPU machine, we recommend including TRT and ONNX extensions, as well as select `torch-cu*` extras to install 
