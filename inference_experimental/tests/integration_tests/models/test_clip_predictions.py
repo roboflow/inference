@@ -1162,6 +1162,7 @@ def test_clip_torch_image_text_embeddings_on_pair_with_reference_implementation(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_clip_onnx_image_prediction_for_numpy(
     clip_rn50_onnx_path: str,
     dog_image_numpy: np.ndarray,
@@ -1183,6 +1184,7 @@ def test_clip_onnx_image_prediction_for_numpy(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_clip_onnx_image_prediction_for_torch_tensor(
     clip_rn50_onnx_path: str,
     dog_image_torch: np.ndarray,
@@ -1204,6 +1206,7 @@ def test_clip_onnx_image_prediction_for_torch_tensor(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_clip_onnx_image_prediction_similar_to_reference_implementation(
     clip_rn50_onnx_path: str,
     dog_image_torch: np.ndarray,
@@ -1240,6 +1243,7 @@ def test_clip_onnx_image_prediction_similar_to_reference_implementation(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_clip_onnx_image_prediction_for_text(
     clip_rn50_onnx_path: str,
     dog_image_torch: np.ndarray,
@@ -1260,6 +1264,7 @@ def test_clip_onnx_image_prediction_for_text(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_clip_onnx_image_prediction_for_text_comparable_with_reference_implementation(
     clip_rn50_onnx_path: str,
     dog_image_torch: np.ndarray,
