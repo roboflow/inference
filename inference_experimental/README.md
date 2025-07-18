@@ -302,7 +302,7 @@ The following model IDs are registered for **object detection** task:
 
 **License:**  [FAIR Noncommercial Research License](./inference_exp/models/perception_encoder/vision_encoder/LICENSE.weigths.txt)
 
-The following model IDs are registered for **object detection** task:
+The following model IDs are registered:
 
 * `perception-encoder/PE-Core-B16-224`
 
@@ -319,7 +319,7 @@ The following model IDs are registered for **object detection** task:
 
 **License:**  [FAIR Noncommercial Research License](./inference_exp/models/perception_encoder/vision_encoder/LICENSE.weigths.txt)
 
-The following model IDs are registered for **object detection** task:
+The following model IDs are registered:
 
 * `clip/RN50`
 
