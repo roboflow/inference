@@ -33,7 +33,7 @@ try:
 except ImportError as import_error:
     raise MissingDependencyError(
         message=f"Could not import YOLOv5 model with TRT backend - this error means that some additional dependencies "
-        f"are not installed in the environment. If you run the `inference` library directly in your Python "
+        f"are not installed in the environment. If you run the `inference-exp` library directly in your Python "
         f"program, make sure the following extras of the package are installed: `trt10` - installation can only "
         f"succeed for Linux and Windows machines with Cuda 12 installed. Jetson devices, should have TRT 10.x "
         f"installed for all builds with Jetpack 6. "

@@ -14,7 +14,7 @@ try:
 except ImportError as import_error:
     raise MissingDependencyError(
         message=f"Could not TRT tools required to run models with TRT backend - this error means that some additional "
-        f"dependencies are not installed in the environment. If you run the `inference` library directly in your "
+        f"dependencies are not installed in the environment. If you run the `inference-exp` library directly in your "
         f"Python program, make sure the following extras of the package are installed: `trt10` - installation can only "
         f"succeed for Linux and Windows machines with Cuda 12 installed. Jetson devices, should have TRT 10.x "
         f"installed for all builds with Jetpack 6. "

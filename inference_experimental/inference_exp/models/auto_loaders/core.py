@@ -219,7 +219,7 @@ class AutoModel:
             raise DirectLocalStorageAccessError(
                 message="Attempted to load model directly pointing local path, rather than model ID. This "
                 "operation is forbidden as AutoModel.from_pretrained(...) was used with "
-                "`allow_direct_local_storage_loading=False`. If you are running `inference` outside Roboflow "
+                "`allow_direct_local_storage_loading=False`. If you are running `inference-exp` outside Roboflow "
                 "hosted solutions - verify your setup. If you see this error on Roboflow platform - this "
                 "feature was disabled for security reason. In rare cases when you use valid model ID, the "
                 "clash of ID with local path may cause this error - we ask you to report the issue here: "
@@ -377,7 +377,7 @@ def attempt_loading_matching_model_packages(
                 f"be caused several issues. If you see this warning after manually specifying model "
                 f"package to be loaded - make sure that all required dependencies are installed. If "
                 f"that warning is displayed when the model package was auto-selected - there is most "
-                f"likely a bug in `inference` and you should raise an issue providing full context of "
+                f"likely a bug in `inference-exp` and you should raise an issue providing full context of "
                 f"the event. https://github.com/roboflow/inference/issues"
             )
             failed_load_attempts.append((model_package.package_id, error))
@@ -391,7 +391,7 @@ def attempt_loading_matching_model_packages(
         f"be caused several issues. If you see this warning after manually specifying model "
         f"package to be loaded - make sure that all required dependencies are installed. If "
         f"that warning is displayed when the model package was auto-selected - there is most "
-        f"likely a bug in `inference` and you should raise an issue providing full context of "
+        f"likely a bug in `inference-exp` and you should raise an issue providing full context of "
         f"the event. https://github.com/roboflow/inference/issues\n\n"
         f"Here is the summary of errors for specific model packages:\n{summary_of_errors}\n\n",
         help_url="https://todo",
