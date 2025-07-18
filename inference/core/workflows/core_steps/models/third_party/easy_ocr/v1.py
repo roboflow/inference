@@ -7,6 +7,7 @@ import supervision as sv
 from pydantic import ConfigDict, Field
 from supervision.config import CLASS_NAME_DATA_FIELD
 
+from inference.core.logger import logger
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_sv_detections,
