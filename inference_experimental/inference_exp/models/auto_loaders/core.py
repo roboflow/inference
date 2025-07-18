@@ -366,10 +366,7 @@ def attempt_loading_matching_model_packages(
                     model_storage_manager.on_symlink_created,
                     access_identifiers=access_identifiers,
                 ),
-                on_symlink_deleted=partial(
-                    model_storage_manager.on_symlink_deleted,
-                    access_identifiers=access_identifiers,
-                ),
+                on_symlink_deleted=model_storage_manager.on_symlink_deleted,
                 use_auto_resolution_cache=use_auto_resolution_cache,
             )
             return model

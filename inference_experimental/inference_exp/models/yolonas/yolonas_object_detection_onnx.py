@@ -9,7 +9,7 @@ from inference_exp.entities import ColorFormat
 from inference_exp.errors import EnvironmentConfigurationError, MissingDependencyError
 from inference_exp.models.common.model_packages import get_model_package_contents
 from inference_exp.models.common.onnx import (
-    run_session_via_iobinding,
+    run_session_with_batch_size_limit,
     set_execution_provider_defaults,
 )
 from inference_exp.models.common.roboflow.model_packages import (
@@ -135,23 +135,12 @@ class YOLONasForObjectDetectionOnnx(
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
         with self._session_thread_lock:
-            if self._input_batch_size is None:
-                results = run_session_via_iobinding(
-                    session=self._session,
-                    inputs={"input.1": pre_processed_images},
-                )
-                return torch.cat(results, dim=-1)
-            results = []
-            for i in range(0, pre_processed_images.shape[0], self._input_batch_size):
-                batch_input = pre_processed_images[
-                    i : i + self._input_batch_size
-                ].contiguous()
-                batch_results = run_session_via_iobinding(
-                    session=self._session,
-                    inputs={"input.1": batch_input},
-                )
-                results.append(torch.cat(batch_results, dim=-1))
-            return torch.cat(results, dim=0)
+            return run_session_with_batch_size_limit(
+                session=self._session,
+                inputs={"input.1": pre_processed_images},
+                min_batch_size=self._input_batch_size,
+                max_batch_size=self._input_batch_size,
+            )[0]
 
     def post_process(
         self,
