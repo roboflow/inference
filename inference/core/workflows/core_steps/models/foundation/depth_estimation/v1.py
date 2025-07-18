@@ -43,6 +43,7 @@ This is particularly useful for understanding 3D structure from 2D images, creat
 The model runs efficiently on Apple Silicon (M1-M4) using Metal Performance Shaders (MPS) for accelerated inference.
 """
 
+
 class BlockManifest(WorkflowBlockManifest):
     # Standard model configuration for UI, schema, etc.
     model_config = ConfigDict(
