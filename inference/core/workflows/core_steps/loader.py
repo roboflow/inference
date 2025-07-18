@@ -183,9 +183,6 @@ from inference.core.workflows.core_steps.models.foundation.google_gemini.v1 impo
 from inference.core.workflows.core_steps.models.foundation.google_vision_ocr.v1 import (
     GoogleVisionOCRBlockV1,
 )
-from inference.core.workflows.core_steps.models.third_party.easy_ocr.v1 import (
-    EasyOCRBlockV1,
-)
 from inference.core.workflows.core_steps.models.foundation.llama_vision.v1 import (
     LlamaVisionBlockV1,
 )
@@ -262,6 +259,9 @@ from inference.core.workflows.core_steps.models.roboflow.object_detection.v2 imp
 )
 from inference.core.workflows.core_steps.models.third_party.barcode_detection.v1 import (
     BarcodeDetectorBlockV1,
+)
+from inference.core.workflows.core_steps.models.third_party.easy_ocr.v1 import (
+    EasyOCRBlockV1,
 )
 from inference.core.workflows.core_steps.models.third_party.qr_code_detection.v1 import (
     QRCodeDetectorBlockV1,
