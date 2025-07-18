@@ -534,6 +534,7 @@ def handle_symlink_creation(
     on_symlink_deleted: Optional[Callable[[str], None]] = None,
 ) -> None:
     link_dir, link_file_name = os.path.split(os.path.abspath(link_name))
+    os.makedirs(link_dir, exist_ok=True)
     lock_path = os.path.join(link_dir, f".{link_file_name}.lock")
     with FileLock(lock_path, timeout=model_download_file_lock_acquire_timeout):
         if os.path.islink(link_name):
