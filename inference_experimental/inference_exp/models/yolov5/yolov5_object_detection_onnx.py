@@ -10,6 +10,7 @@ from inference_exp.errors import EnvironmentConfigurationError, MissingDependenc
 from inference_exp.models.common.model_packages import get_model_package_contents
 from inference_exp.models.common.onnx import (
     run_session_via_iobinding,
+    run_session_with_batch_size_limit,
     set_execution_provider_defaults,
 )
 from inference_exp.models.common.roboflow.model_packages import (
@@ -135,22 +136,12 @@ class YOLOv5ForObjectDetectionOnnx(
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
         with self._session_thread_lock:
-            if self._input_batch_size is None:
-                return run_session_via_iobinding(
-                    session=self._session,
-                    inputs={"images": pre_processed_images},
-                )[0]
-            results = []
-            for i in range(0, pre_processed_images.shape[0], self._input_batch_size):
-                batch_input = pre_processed_images[
-                    i : i + self._input_batch_size
-                ].contiguous()
-                batch_results = run_session_via_iobinding(
-                    session=self._session,
-                    inputs={"images": batch_input},
-                )[0]
-                results.append(batch_results)
-            return torch.cat(results, dim=0)
+            return run_session_with_batch_size_limit(
+                session=self._session,
+                inputs={"images": pre_processed_images},
+                min_batch_size=self._input_batch_size,
+                max_batch_size=self._input_batch_size,
+            )[0]
 
     def post_process(
         self,
