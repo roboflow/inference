@@ -1,38 +1,21 @@
 # Roboflow Batch Processing
 
-Roboflow Batch Processing is a fully managed solution powered by **Workflows** that allows you to process large 
-volumes of videos and images without writing code. It offers an easy-to-use UI for quick tasks and a comprehensive 
-API for automating data processing—fitting both small and large workloads.
+Roboflow Batch Processing lets you run a Workflow on a batch of images or videos in the cloud.
 
-With configurable processing workflows, real-time monitoring, and event-based notifications, Roboflow Batch Processing 
-helps you efficiently manage data processing, track progress, and integrate with other systems—making it easy to 
-achieve your goals.
+Batch Processing is ideal if you have large volumes of data on which you want to run a Workflow asynchornously. This may include:
 
+- Analyzing pre-recorded video files (i.e. security footage, sports broadcasts)
+- Processing a large folder of images (i.e. an S3 bucket with multiple gigabytes of data)
 
-!!! info "What is the nature of `batch` processing?"
+Batch Processing automatically provisions the infrastructure required to process your data, either on a CPU or GPU depending on how you configure your batch.
 
-    Batch processing involves accepting large volumes of data to be processed in jobs that run  
-    **in the background** - without external orchestration and with weak guarantees on when the job will start or 
-    when results will be available.
-
-    When the service is not busy, jobs typically start within 3–8 minutes after being scheduled, but this time may 
-    be longer under high load.
-
-    This service is suitable for use cases that do not require real-time responses, such as:
-
-    * Analyzing pre-recorded video files
-
-    * Making predictions from a large pool of images stored in your storage
-
-    * Automatic data labeling
-
-## Quick overview
+We explain how batch processing works in the video below, as well as the tutorial below the video:
 
 <div align="center">
   <iframe width="560" height="315" src="https://www.youtube.com/embed/S7K2j2IeQrM?si=WIVN7VweAfQ6JE-z" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
 </div>
 
-## Getting started
+## Create a Batch
 
 To get started with Roboflow Batch Processing, first build and test your Workflow. Once it's ready, select the data you 
 want to process and upload it using the UI or CLI tool. Then, initiate the processing and let Batch Processing handle 
@@ -41,8 +24,7 @@ write code or run processing on your machine.
 
 ### UI Interface
 
-The Roboflow platform provides a UI interface to interact with Roboflow Batch Processing, making it easy and accessible 
-to try out the feature or process a  **small to moderate** amount of data. 
+The Roboflow platform provides a UI interface to interact with Roboflow Batch Processing.
 
 ![Batch Processing UI](https://media.roboflow.com/inference/batch-processing/bp-ui.jpg)
 

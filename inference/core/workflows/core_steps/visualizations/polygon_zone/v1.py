@@ -25,10 +25,17 @@ from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlock
 TYPE: str = "roboflow_core/polygon_zone_visualization@v1"
 SHORT_DESCRIPTION = "Apply a mask over a polygon zone in an image."
 LONG_DESCRIPTION = """
-The `PolygonZoneVisualization` block draws polygon zone
-in an image with a specified color and opacity.
-Please note: zones will be drawn on top of image passed to this block,
-this block should be placed before other visualization blocks in the workflow.
+The Polygon Zone Visualization block highlights a designated zone in an image.
+
+The drawn zone is opaque so you can see the background image through it.
+
+This block is especially useful when you are using a Polygon Zone block to define a zone of interest in an image.
+
+You can use Polygon Zone to track items entering and exiting a zone, and the Polygon Zone Visualization to show the zone.
+
+Here is an example of the block in use:
+
+![](https://media.roboflow.com/inference/workflows/zone.png)
 """
 
 
