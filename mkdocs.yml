@@ -29,7 +29,6 @@ extra:
 extra_css:
   - styles/cookbooks.css
   - styles.css
-  # - styles/roboflow.css
 
 nav:
   - Start:
@@ -206,23 +205,23 @@ theme:
       primary: 'custom'
 
 plugins:
-#   - mkdocstrings:
-#       handlers:
-#         python:
-#           paths: [.]
-#   - search
-#   - swagger-ui-tag
-#   - mkdocs-jupyter
-#   - social
-#   - ezlinks
-  # - gen-files:
-  #     scripts:
-  #       - docs/scripts/gen_ref_pages.py
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [.]
+  - search
+  - swagger-ui-tag
+  - mkdocs-jupyter
+  - social
+  - ezlinks
+  - gen-files:
+      scripts:
+        - docs/scripts/gen_ref_pages.py
   - literate-nav:
       nav_file: SUMMARY.md
       implicit_index: True
-#   - macros:
-#       include_dir: docs/include
+  - macros:
+      include_dir: docs/include
 
 
 markdown_extensions:
@@ -257,5 +256,5 @@ extra_javascript:
   - 'assets/home.js'
   - 'js/segment.js'
 
-# hooks:
-#   - theme/build.py
+hooks:
+  - theme/build.py
