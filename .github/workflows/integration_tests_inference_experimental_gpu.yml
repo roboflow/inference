@@ -10,7 +10,6 @@ on:
 
 jobs:
   integration-tests-inference-experimental-gpu:
-    if: false 
     runs-on: Roboflow-GPU-VM-Runner
     timeout-minutes: 10
     strategy:
@@ -46,4 +45,4 @@ jobs:
         timeout-minutes: 30
         run: |
           source .venv/bin/activate
-          python -m pytest -n auto -m ${{ matrix.extras.marker }} tests/integration_tests
+          python -m pytest -n auto -m "${{ matrix.extras.marker }} and not cpu_only" tests/integration_tests
