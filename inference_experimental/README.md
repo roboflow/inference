@@ -178,17 +178,17 @@ like TensorRT engines) or additional **models**.
 Below there is a table showcasing models that are supported, with the hints regarding extra dependencies that 
 are required.
 
-| Architecture       | Task Type               | Supported variants |
+| Architecture       | Task Type               | Supported backends |
 |--------------------|-------------------------|--------------------|
-| RFDetr             | `object-detection`      | TRT, Torch         |
-| YOLO v8            | `object-detection`      | ONNX, TRT          |
-| YOLO v8            | `instance-segmentation` | ONNX, TRT          |
-| YOLO v9            | `object-detection`      | ONNX, TRT          |
-| YOLO v10           | `object-detection`      | ONNX, TRT          |
-| YOLO v11           | `object-detection`      | ONNX, TRT          |
-| YOLO v11           | `instance-segmentation` | ONNX, TRT          |
-| Perception Encoder | `embedding`             | Torch              |
-| CLIP               | `embedding`             | Torch, ONNX        |
+| RFDetr             | `object-detection`      | `trt`, `torch`     |
+| YOLO v8            | `object-detection`      | `onnx`, `trt`      |
+| YOLO v8            | `instance-segmentation` | `onnx`, `trt`      |
+| YOLO v9            | `object-detection`      | `onnx`, `trt`      |
+| YOLO v10           | `object-detection`      | `onnx`, `trt`      |
+| YOLO v11           | `object-detection`      | `onnx`, `trt`      |
+| YOLO v11           | `instance-segmentation` | `onnx`, `trt`      |
+| Perception Encoder | `embedding`             | `torch`            |
+| CLIP               | `embedding`             | `torch`, `onnx`     |
 
 
 ### Registered pre-trained weights
@@ -201,12 +201,145 @@ Below you can find a list of model IDs registered in Roboflow weights provider (
 
 **Models:**
 
-* **RFDetr:** `rfdetr-base` (COCO), `rfdetr-large` (COCO) - all `public-open` - [license](./inference_exp/models/rfdetr/LICENSE.txt)
-* **YOLO v8 (object-detection):** `yolov8n-640` (COCO), `yolov8n-1280` (COCO), `yolov8s-640` (COCO), `yolov8s-1280` (COCO), `yolov8m-640` (COCO), `yolov8m-1280` (COCO), `yolov8l-640` (COCO), `yolov8l-1280` (COCO), `yolov8x-640` (COCO), `yolov8x-1280` (COCO) - all `public-open` - [license](./inference_exp/models/yolov8/LICENSE.txt)
-* **YOLO v8 (instance-segmentation):** `yolov8n-seg-640` (COCO), `yolov8n-seg-1280` (COCO), `yolov8s-seg-640` (COCO), `yolov8s-seg-1280` (COCO), `yolov8m-seg-640` (COCO), `yolov8m-seg-1280` (COCO), `yolov8l-seg-640` (COCO), `yolov8l-seg-1280` (COCO), `yolov8x-seg-640` (COCO), `yolov8x-seg-1280` (COCO) - all `public-open` - [license](./inference_exp/models/yolov8/LICENSE.txt)
-* **YOLO v10 (object-detection):** `yolov10n-640` (COCO), `yolov10s-640` (COCO), `yolov10m-640` (COCO), `yolov10b-640` (COCO), `yolov10l-640` (COCO), `yolov10x-640` (COCO)  - all `public-open` - [license](./inference_exp/models/yolov10/LICENSE.txt)
-* **Perception Encoder:** `perception-encoder/PE-Core-B16-224`, `perception-encoder/PE-Core-G14-448`, `perception-encoder/PE-Core-L14-336` - all `public-open` - [license](./inference_exp/models/perception_encoder/vision_encoder/LICENSE.weigths.txt)
-* **CLIP:** `clip/RN50`, `clip/RN101`, `clip/RN50x16`, `clip/RN50x4`, `clip/RN50x64`, `clip/ViT-B-16`, `clip/ViT-B-32`, `clip/ViT-L-14-336px`, `clip/ViT-L-14` - all `public-open` - [license](./inference_exp/models/clip/LICENSE.txt)
+<details>
+<summary>👉 <b>RFDetr</b></summary>
+
+**Access level:** `public-open`
+
+**License:**  [Apache 2.0](./inference_exp/models/rfdetr/LICENSE.txt)
+
+The following model IDs are registered:
+
+* `rfdetr-base` (trained on COCO dataset)
+
+* `rfdetr-base` (trained on COCO dataset)
+
+</details>
+
+<details>
+<summary>👉 <b>YOLO v8</b></summary>
+
+**Access level:** `public-open`
+
+**License:**  [AGPL](./inference_exp/models/yolov8/LICENSE.txt)
+
+The following model IDs are registered for **object detection** task:
+
+* `yolov8n-640` (trained on COCO dataset)
+
+* `yolov8n-1280` (trained on COCO dataset)
+
+* `yolov8s-640` (trained on COCO dataset)
+
+* `yolov8s-1280` (trained on COCO dataset)
+
+* `yolov8m-640` (trained on COCO dataset)
+
+* `yolov8m-1280` (trained on COCO dataset)
+
+* `yolov8l-640` (trained on COCO dataset)
+
+* `yolov8l-1280` (trained on COCO dataset)
+
+* `yolov8x-640` (trained on COCO dataset)
+
+* `yolov8x-1280` (trained on COCO dataset)
+
+
+The following model IDs are registered for **instance segmentation** task:
+
+* `yolov8n-seg-640` (trained on COCO dataset)
+
+* `yolov8n-seg-1280` (trained on COCO dataset)
+
+* `yolov8s-seg-640` (trained on COCO dataset)
+
+* `yolov8s-seg-1280` (trained on COCO dataset)
+
+* `yolov8m-seg-640` (trained on COCO dataset)
+
+* `yolov8m-seg-1280` (trained on COCO dataset)
+
+* `yolov8l-seg-640` (trained on COCO dataset)
+
+* `yolov8l-seg-1280` (trained on COCO dataset)
+
+* `yolov8x-seg-640` (trained on COCO dataset)
+
+* `yolov8x-seg-1280` (trained on COCO dataset)
+
+</details>
+
+
+<details>
+<summary>👉 <b>YOLO v10</b></summary>
+
+**Access level:** `public-open`
+
+**License:**  [AGPL](./inference_exp/models/yolov10/LICENSE.txt)
+
+The following model IDs are registered for **object detection** task:
+
+* `yolov10n-640` (trained on COCO dataset)
+
+* `yolov10s-640` (trained on COCO dataset)
+
+* `yolov10m-640` (trained on COCO dataset)
+
+* `yolov10b-640` (trained on COCO dataset)
+
+* `yolov10l-640` (trained on COCO dataset)
+
+* `yolov10x-640` (trained on COCO dataset)
+
+</details>
+
+
+<details>
+<summary>👉 <b>Perception Encoder</b></summary>
+
+**Access level:** `public-open`
+
+**License:**  [FAIR Noncommercial Research License](./inference_exp/models/perception_encoder/vision_encoder/LICENSE.weigths.txt)
+
+The following model IDs are registered for **object detection** task:
+
+* `perception-encoder/PE-Core-B16-224`
+
+* `perception-encoder/PE-Core-G14-448`
+
+* `perception-encoder/PE-Core-L14-336`
+
+</details>
+
+<details>
+<summary>👉 <b>CLIP</b></summary>
+
+**Access level:** `public-open`
+
+**License:**  [FAIR Noncommercial Research License](./inference_exp/models/perception_encoder/vision_encoder/LICENSE.weigths.txt)
+
+The following model IDs are registered for **object detection** task:
+
+* `clip/RN50`
+
+* `clip/RN101`
+
+* `clip/RN50x16`
+ 
+* `clip/RN50x4`
+ 
+* `clip/RN50x64`
+ 
+* `clip/ViT-B-16`
+ 
+* `clip/ViT-B-32`
+ 
+* `clip/ViT-L-14-336px`
+ 
+* `clip/ViT-L-14`
+
+</details>
 
 ## 📜 Citations
 
