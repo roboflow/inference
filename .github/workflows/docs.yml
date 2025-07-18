@@ -96,8 +96,16 @@ jobs:
         run: pip install .
         working-directory: ./roboflow_enterprise_blocks
 
+      - name: Build tutorials gallery docs
+        with:
+          ghost-api-key: ${{ secrets.GHOST_API_KEY }}
+        run: python -m development.docs.generate_tutorials
+        working-directory: ./inference_repo
+
       - name: Build block docs
-        run: python -m development.docs.build_block_docs
+        # env var set to make sure enterprise blocks are loaded so 
+        # enterprise block docs pages can be built
+        run: LOAD_ENTERPRISE_BLOCKS=True python -m development.docs.build_block_docs
         working-directory: ./inference_repo
 
       - name: Build workflows gallery

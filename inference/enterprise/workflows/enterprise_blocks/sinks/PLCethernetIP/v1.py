@@ -56,6 +56,11 @@ class PLCBlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Roboflow Enterprise License",
             "block_type": "sinks",
+            "ui_manifest": {
+                "section": "enterprise_blocks",
+                "icon": "far fa-building",
+                "blockPriority": 1,
+            },
         }
     )
 

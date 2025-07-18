@@ -62,6 +62,10 @@ class LMMConfig(BaseModel):
 
 
 LONG_DESCRIPTION = """
+!!! warning "Method deprecated"
+
+    This model is deprecated. We recommend using the new model-specific multimodal model blocks like OpenAI, LLaMA, Anthropic Claude, and Google Gemini.
+
 Ask a question to a Large Multimodal Model (LMM) with an image and text.
 
 You can specify arbitrary text prompts to an LMMBlock.
@@ -74,6 +78,7 @@ You need to provide your OpenAI API key to use the GPT-4 with Vision model.
 
 _If you want to classify an image into one or more categories, we recommend using the 
 dedicated LMMForClassificationBlock._
+
 """
 
 

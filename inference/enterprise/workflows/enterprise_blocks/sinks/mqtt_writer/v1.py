@@ -25,11 +25,11 @@ MQTT Writer block for publishing messages to an MQTT broker.
 This block is blocking on connect and publish operations.
 
 Outputs:
-    - error_status (bool): Indicates if an error occurred during the MQTT publishing process.
-                          True if there was an error, False if successful.
-    - message (str): Status message describing the result of the operation.
-                    Contains error details if error_status is True,
-                    or success confirmation if error_status is False.
+- error_status (bool): Indicates if an error occurred during the MQTT publishing process.
+    True if there was an error, False if successful.
+- message (str): Status message describing the result of the operation.
+        Contains error details if error_status is True,
+        or success confirmation if error_status is False.
 """
 
 
@@ -42,6 +42,11 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Roboflow Enterprise License",
             "block_type": "sink",
+            "ui_manifest": {
+                "section": "enterprise_blocks",
+                "icon": "far fa-building",
+                "blockPriority": 1,
+            },
         }
     )
     type: Literal["mqtt_writer_sink@v1"]

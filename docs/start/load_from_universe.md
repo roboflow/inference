@@ -56,4 +56,6 @@ Here are the results from our Workflow:
 
 The model successfully identified a defect in the image we used as an input to our Workflow.
 
+To deploy your workflow, click "Deploy". A window will appear with the code snippets you need to run your Workflow on your hardware.
+
 Ready to build more logic in your Workflow? [Check out our gallery of tutorials.](/guides/written/)

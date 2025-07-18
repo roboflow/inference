@@ -58,24 +58,27 @@ nav:
           - Supported Cameras: install/cameras.md
           - Benchmark Inference: start/benchmark.md
           - Find Your Roboflow API Key: start/configure_api_key.md
+          - Manage Deployments: start/management.md
       - Choose a Model:
           - How to Choose a Model: start/choose_model.md
           - Load from Roboflow Cloud: start/aliases.md
           - Load from Roboflow Universe: start/load_from_universe.md
-          - Load from Local Weights: start/from_local_weights.md
+          - Load from Local Weights: start/load_from_local.md
           - Use a Foundation Model: start/foundation.md
+          - Model Licenses: https://roboflow.com/licensing
       - Start Building:
         - "Explore Tutorials": guides/written.md
   - Tutorials:
       - guides/written.md
+      - Featured:
+        - All Featured: guides/written/#featured
+        - Compare Models: guides/compare-models.md
+        - Detect Small Objects: guides/detect-small-objects.md
       - Categories:
-        - Featured: guides/written/#featured
-        - Essential Blocks: guides/written/#essential-blocks
         - Industrial Applications: guides/written/#industrial-applications
         - Multimodal Models: guides/written/#multimodal-models
         - Video Processing: guides/written/#video-processing
         - Camera Control: guides/written/#camera-control
-        - Active Learning: guides/written/#active-learning
         - Hobby Projects: guides/written/#hobby-projects
 
       - Video Tutorials:
@@ -91,9 +94,10 @@ nav:
       - Block Gallery: workflows/blocks/
   - Extend:
     - Introduction: extend/index.md
-    - Custom Python Blocks: extend/python.md
+    - Custom Python:
+      - extend/python.md
     - Contribute a Workflow Block:
-      - How to Add a Block: workflows/create_workflow_block.md
+      - How to Create a New Block: workflows/create_workflow_block.md
     - Workflows for Developers:
       - Workflow Definitions: workflows/definitions.md
       - Workflow Execution: workflows/workflow_execution.md

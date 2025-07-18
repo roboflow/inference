@@ -27,23 +27,23 @@ Inference supports a wide range of state-of-the-art models, including:
 <div class="grid" markdown style="grid-template-columns: 1fr 1fr !important;">
 <div markdown>
 ### Fine-tunable Models
-* RF-DETR
-* ViT
-* ResNet
-* SmolVLM2
-* Qwen2.5-VL
-* YOLOv12
-* YOLO11
-* YOLOv8
+* [RF-DETR](https://blog.roboflow.com/rf-detr/)
+* [ViT](https://blog.roboflow.com/train-vision-transformer/)
+* [ResNet](https://blog.roboflow.com/how-to-train-a-resnet-50-model/)
+* [SmolVLM2](/workflows/blocks/smol_vlm2/)
+* [Qwen2.5-VL](/workflows/blocks/qwen2.5_vl/)
+* [YOLOv12](/workflows/blocks/object_detection_model/)
+* [YOLO11](/workflows/blocks/object_detection_model/)
+* [YOLOv8](/workflows/blocks/object_detection_model/)
 </div>
 <div markdown>
 ### Foundation Models 
-* Perception Encoder
-* Segment Anything 2
-* CLIP
-* Florence-2
-* Moondream2
-* Apple DepthPro
+* [Perception Encoder](/workflows/blocks/perception_encoder_embedding_model)
+* [Segment Anything 2](/workflows/blocks/segment_anything2_model/)
+* [CLIP](/workflows/blocks/clip_embedding_model)
+* [Florence-2](/workflows/blocks/florence2_model)
+* [Moondream2](/workflows/blocks/moondream2)
+* [Apple DepthPro](/workflows/blocks/depth_estimation)
 </div>
 </div>
 

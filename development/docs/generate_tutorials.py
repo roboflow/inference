@@ -1,7 +1,15 @@
 import requests
 from collections import defaultdict
 import os
-from PIL import Image
+from development.docs.write_openapi_spec import DOCS_ROOT_DIR
+from jinja2 import Environment, FileSystemLoader
+
+template_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
+jinja_env = Environment(loader=FileSystemLoader(template_dir))
+
+def render_template(template_name, **kwargs):
+    template = jinja_env.get_template(template_name)
+    return template.render(**kwargs)
 
 TUTORIAL_URL = "https://roboflow.ghost.io/ghost/api/content/posts/?key=" + os.getenv("GHOST_API_KEY", "")
 
@@ -52,9 +60,16 @@ def get_tutorials():
             )
 
     while next is not None:
-        data = requests.get(f"{TUTORIAL_URL}{next}&include=tags,authors&limit=all").json()
+        try:
+            response = requests.get(f"{TUTORIAL_URL}{next}&include=tags,authors&limit=all")
+            response.raise_for_status()
+        except requests.RequestException as e:
+            print(f"Error fetching tutorials: {e}")
+            break
 
-        for template in data["posts"]:
+        data = response.json()
+
+        for template in data.get("posts", []):
             title = template["title"]
             url = template["url"]
             image_url = "https://media.roboflow.com/inference/cover-images/" + template["slug"] + ".png"
@@ -111,12 +126,20 @@ def get_tutorials():
     return results, results_indexed_by_used_workflow_block
 
 if __name__ == "__main__":
+    WRITTEN_TUTORIALS_FILE = os.path.join(DOCS_ROOT_DIR, "guides", "written.md")
+
     results, results_indexed_by_used_workflow_block = get_tutorials()
 
-    with open("x.md", "w") as f:
-        for tag, tutorials in results.items():
-            f.write(f"## {tag}\n\n")
-            f.write("<div class=\"grid cards\" markdown>\n")
-            for tutorial in tutorials:
-                f.write(tutorial + "\n\n")
-            f.write("</div>\n")
+    text = ""
+    
+    for tag, tutorials in results.items():
+        text += f"## {tag}\n\n"
+        text += "<div class=\"grid cards\" markdown>\n"
+        for tutorial in tutorials:
+            text += tutorial + "\n\n"
+        text += "</div>\n"
+
+    template = render_template("tutorials.md", text=text)
+
+    with open(WRITTEN_TUTORIALS_FILE, "w+") as f:
+        f.write(template)
