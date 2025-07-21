@@ -27,7 +27,15 @@ RUN chmod ugo+x compile_opencv_jetpack_6_2.sh
 RUN ./compile_opencv_jetpack_6_2.sh
 
 # Copy all requirements files
-COPY requirements/ ./requirements/
+WORKDIR /app
+COPY inference_cli/ ./inference_cli/
+COPY inference_sdk/ ./inference_sdk/
+COPY .release .release
+COPY requirements requirements
+COPY Makefile Makefile
+
+RUN make create_inference_cli_whl PYTHON=python3
+RUN pip3 install dist/inference_cli*.whl
 
 # Upgrade pip and install Python packages
 RUN python3 -m pip install --upgrade pip && \
@@ -48,17 +56,8 @@ RUN python3 -m pip install --upgrade pip && \
 RUN python3 -m pip install "numpy<=1.26.4"
 
 # Set up the application runtime
-WORKDIR /app
 COPY inference/ ./inference/
-COPY inference_cli/ ./inference_cli/
-COPY inference_sdk/ ./inference_sdk/
 COPY docker/config/gpu_http.py ./gpu_http.py
-COPY .release .release
-COPY requirements requirements
-COPY Makefile Makefile
-
-RUN make create_inference_cli_whl PYTHON=python3
-RUN pip3 install dist/inference_cli*.whl
 
 # Set environment variables
 ENV VERSION_CHECK_MODE=continuous \
