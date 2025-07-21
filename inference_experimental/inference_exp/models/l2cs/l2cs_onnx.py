@@ -15,6 +15,7 @@ from inference_exp.models.base.types import PreprocessedInputs
 from inference_exp.models.common.model_packages import get_model_package_contents
 from inference_exp.models.common.onnx import (
     run_session_via_iobinding,
+    run_session_with_batch_size_limit,
     set_execution_provider_defaults,
 )
 from inference_exp.utils.onnx_introspection import get_selected_onnx_execution_providers
@@ -25,7 +26,7 @@ try:
 except ImportError as import_error:
     raise MissingDependencyError(
         message=f"Could not import L2CS model with ONNX backend - this error means that some additional dependencies "
-        f"are not installed in the environment. If you run the `inference` library directly in your Python "
+        f"are not installed in the environment. If you run the `inference-exp` library directly in your Python "
         f"program, make sure the following extras of the package are installed: \n"
         f"\t* `onnx-cpu` - when you wish to use library with CPU support only\n"
         f"\t* `onnx-cu12` - for running on GPU with Cuda 12 installed\n"
@@ -188,17 +189,10 @@ class L2CSNetOnnx:
         **kwargs,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         with self._session_thread_lock:
-            yaw, pitch = [], []
-            for i in range(0, pre_processed_images.shape[0], self._max_batch_size):
-                batch_input = pre_processed_images[
-                    i : i + self._max_batch_size
-                ].contiguous()
-                batch_yaw, batch_pitch = run_session_via_iobinding(
-                    session=self._session, inputs={self._input_name: batch_input}
-                )
-                yaw.append(batch_yaw)
-                pitch.append(batch_pitch)
-            return torch.cat(yaw, dim=0), torch.cat(pitch, dim=0)
+            yaw, pitch = run_session_with_batch_size_limit(
+                session=self._session, inputs={self._input_name: pre_processed_images}
+            )
+            return yaw, pitch
 
     def post_process(
         self,

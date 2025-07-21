@@ -9,7 +9,7 @@ try:
 except ImportError as import_error:
     raise MissingDependencyError(
         message=f"Could not import onnx tools required to run models with ONNX backend - this error means that some additional "
-        f"dependencies are not installed in the environment. If you run the `inference` library directly in your "
+        f"dependencies are not installed in the environment. If you run the `inference-exp` library directly in your "
         f"Python program, make sure the following extras of the package are installed: \n"
         f"\t* `onnx-cpu` - when you wish to use library with CPU support only\n"
         f"\t* `onnx-cu12` - for running on GPU with Cuda 12 installed\n"
@@ -112,6 +112,79 @@ def set_execution_provider_defaults(
     return result
 
 
+def run_session_with_batch_size_limit(
+    session: onnxruntime.InferenceSession,
+    inputs: Dict[str, torch.Tensor],
+    output_shape_mapping: Optional[Dict[str, tuple]] = None,
+    max_batch_size: Optional[int] = None,
+    min_batch_size: Optional[int] = None,
+) -> List[torch.Tensor]:
+    if max_batch_size is None:
+        return run_session_via_iobinding(
+            session=session,
+            inputs=inputs,
+            output_shape_mapping=output_shape_mapping,
+        )
+    input_batch_sizes = set()
+    for input_tensor in inputs.values():
+        input_batch_sizes.add(input_tensor.shape[0])
+    if len(input_batch_sizes) != 1:
+        raise ModelRuntimeError(
+            message="When running forward pass through ONNX model detected inputs with different batch sizes. "
+            "This is the error with the model you run. If the model was trained or exported "
+            "on Roboflow platform - contact us to get help. Otherwise, verify your model package or "
+            "implementation of the model class.",
+            help_url="https://todo",
+        )
+    input_batch_size = input_batch_sizes.pop()
+    if min_batch_size is None and input_batch_size <= max_batch_size:
+        # no point iterating
+        return run_session_via_iobinding(
+            session=session,
+            inputs=inputs,
+            output_shape_mapping=output_shape_mapping,
+        )
+    all_results = []
+    for _ in session.get_outputs():
+        all_results.append([])
+    for i in range(0, input_batch_size, max_batch_size):
+        batch_inputs = {}
+        reminder = 0
+        for name, value in inputs.items():
+            batched_value = value[i : i + max_batch_size]
+            if min_batch_size is not None:
+                reminder = min_batch_size - batched_value.shape[0]
+            if reminder > 0:
+                batched_value = torch.cat(
+                    (
+                        batched_value,
+                        torch.zeros(
+                            (reminder,) + batched_value.shape[1:],
+                            dtype=batched_value.dtype,
+                            device=batched_value.device,
+                        ),
+                    ),
+                    dim=0,
+                )
+            batched_value = batched_value.contiguous()
+            batch_inputs[name] = batched_value
+        batch_output_shape_mapping = None
+        if output_shape_mapping:
+            batch_output_shape_mapping = {}
+            for name, shape in output_shape_mapping.items():
+                batch_output_shape_mapping[name] = (max_batch_size,) + shape[1:]
+        batch_results = run_session_via_iobinding(
+            session=session,
+            inputs=batch_inputs,
+            output_shape_mapping=batch_output_shape_mapping,
+        )
+        if reminder > 0:
+            batch_results = [r[:-reminder] for r in batch_results]
+        for partial_result, all_result_element in zip(batch_results, all_results):
+            all_result_element.append(partial_result)
+    return [torch.cat(e, dim=0).contiguous() for e in all_results]
+
+
 def run_session_via_iobinding(
     session: onnxruntime.InferenceSession,
     inputs: Dict[str, torch.Tensor],
@@ -123,9 +196,9 @@ def run_session_via_iobinding(
     )
     device = get_input_device(inputs=inputs)
     if device.type != "cuda":
-        inputs_np = {name: value.numpy() for name, value in inputs.items()}
+        inputs_np = {name: value.cpu().numpy() for name, value in inputs.items()}
         results = session.run(None, inputs_np)
-        return [torch.from_numpy(element) for element in results]
+        return [torch.from_numpy(element).to(device=device) for element in results]
     try:
         import pycuda.driver as cuda
         from inference_exp.models.common.cuda import use_primary_cuda_context

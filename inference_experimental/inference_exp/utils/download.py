@@ -74,7 +74,7 @@ def download_files_to_directory(
         raise InvalidParameterError(
             message="Function download_files_to_directory(...) was called with "
             f"invalid value of parameter `name_after` - received value `{name_after}`. "
-            f"This is a bug in `inference` - submit new issue under "
+            f"This is a bug in `inference-exp` - submit new issue under "
             f"https://github.com/roboflow/inference/issues/",
             help_url="https://todo",
         )
@@ -157,7 +157,7 @@ def construct_files_path_mapping(
             raise UntrustedFileError(
                 message="Attempted to download file without declared hash sum when "
                 "`name_after='md5_hash'` - this problem is either misconfiguration "
-                "of download procedure in `inference` or bug in the codebase. "
+                "of download procedure in `inference-exp` or bug in the codebase. "
                 "If you see this error using hosted Roboflow solution - contact us to get "
                 "help. Running locally, verify the download code and raise an issue if you see "
                 "a bug: https://github.com/roboflow/inference/issues/",
