@@ -1,8 +1,10 @@
 from typing import List, Literal, Optional, Tuple, Union
+import os
 
 import cv2
 import numpy as np
 import torch
+from peft import LoraConfig, PeftModel
 from inference_exp import Detections, InstanceDetections
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ImageDimensions
@@ -35,15 +37,35 @@ class Florence2HF:
         **kwargs,
     ) -> "Florence2HF":
         torch_dtype = torch.float16 if device.type == "cuda" else torch.float32
-        model = AutoModelForCausalLM.from_pretrained(
-            model_name_or_path,
-            torch_dtype=torch_dtype,
-            trust_remote_code=True,
-        ).to(device)
-        processor = AutoProcessor.from_pretrained(
-            model_name_or_path,
-            trust_remote_code=True,
-        )
+
+        adapter_config_path = os.path.join(model_name_or_path, "adapter_config.json")
+        if os.path.exists(adapter_config_path):
+            lora_config = LoraConfig.from_pretrained(model_name_or_path)
+            base_model_path = lora_config.base_model_name_or_path
+            model = AutoModelForCausalLM.from_pretrained(
+                base_model_path,
+                torch_dtype=torch_dtype,
+                trust_remote_code=True,
+            )
+            model = PeftModel.from_pretrained(model, model_name_or_path)
+            model.merge_and_unload()
+            model.to(device)
+
+            processor = AutoProcessor.from_pretrained(
+                base_model_path,
+                trust_remote_code=True,
+            )
+        else:
+            model = AutoModelForCausalLM.from_pretrained(
+                model_name_or_path,
+                torch_dtype=torch_dtype,
+                trust_remote_code=True,
+            ).to(device)
+            processor = AutoProcessor.from_pretrained(
+                model_name_or_path,
+                trust_remote_code=True,
+            )
+
         return cls(
             model=model, processor=processor, device=device, torch_dtype=torch_dtype
         )
