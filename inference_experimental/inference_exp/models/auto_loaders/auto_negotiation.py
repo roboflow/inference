@@ -140,7 +140,7 @@ def negotiate_model_packages(
         )
         raise NoModelPackagesAvailableError(
             message=f"Auto-negotiation protocol could not select model packages. This situation may be caused by "
-            f"several reasons, with the most common being missing dependencies or too strict requirements "
+            f"several issues, with the most common being missing dependencies or too strict requirements "
             f"stated as parameters of loading function. Below you can find reasons why specific model "
             f"packages were rejected:\n{rejections_summary}\n",
             help_url="https://todo",
@@ -981,7 +981,7 @@ def parse_batch_size(
 
 def parse_backend_type(value: str) -> BackendType:
     try:
-        return BackendType(value)
+        return BackendType(value.lower())
     except ValueError as error:
         supported_backends = [e.value for e in BackendType]
         raise UnknownBackendTypeError(
