@@ -18,9 +18,9 @@ GRANULARITY_2TASK = {
     "very_detailed": "<MORE_DETAILED_CAPTION>",
 }
 LABEL_MODE2TASK = {
-    "roi": "<REGION_PROPOSAL>",
-    "class": "<OD>",
-    "caption": "<DENSE_REGION_CAPTION>",
+    "rois": "<REGION_PROPOSAL>",
+    "classes": "<OD>",
+    "captions": "<DENSE_REGION_CAPTION>",
 }
 LOC_BINS = 1000
 
