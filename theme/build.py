@@ -4,6 +4,11 @@ import subprocess
 
 def on_pre_build(config):
     """Run npm build before mkdocs build"""
+    # Check if we're in development mode (mkdocs serve)
+    if os.environ.get('MKDOCS_DEV'):
+        print("Skipping theme build in development mode...")
+        return
+    
     print("Building theme assets...")
     theme_dir = os.path.dirname(os.path.abspath(__file__))
 
