@@ -63,14 +63,27 @@ def get_frame_from_workflow_output(
 ) -> Optional[np.ndarray]:
     step_output = workflow_output.get(frame_output_key)
     if isinstance(step_output, WorkflowImageData):
-        latency = datetime.datetime.now() - step_output.video_metadata.frame_timestamp
-        logger.info("Processing latency: %ss", latency.total_seconds())
+        if (
+            step_output.video_metadata
+            and step_output.video_metadata.frame_timestamp is not None
+        ):
+            latency = (
+                datetime.datetime.now() - step_output.video_metadata.frame_timestamp
+            )
+            logger.info("Processing latency: %ss", latency.total_seconds())
         return step_output.numpy_image
     elif isinstance(step_output, dict):
         for frame_output in step_output.values():
             if isinstance(frame_output, WorkflowImageData):
-                latency = datetime.datetime.now() - frame_output.video_metadata.frame_timestamp
-                logger.info("Processing latency: %ss", latency.total_seconds())
+                if (
+                    frame_output.video_metadata
+                    and frame_output.video_metadata.frame_timestamp is not None
+                ):
+                    latency = (
+                        datetime.datetime.now()
+                        - frame_output.video_metadata.frame_timestamp
+                    )
+                    logger.info("Processing latency: %ss", latency.total_seconds())
                 return frame_output.numpy_image
 
 
