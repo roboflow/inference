@@ -550,21 +550,12 @@ class VideoSource:
             self._fps = source_metadata.source_properties.fps
             if not self._fps or self._fps <= 0 or self._fps > 1000:
                 self._fps = 30  # sane default
-        if not self._is_file:
-            current_timestamp = time.time_ns()
-            if (current_timestamp - self._last_frame_timestamp) / 1e9 < 1 / self._fps:
-                time.sleep(
-                    (1 / self._fps)
-                    - (current_timestamp - self._last_frame_timestamp) / 1e9
-                )
         video_frame: Optional[Union[VideoFrame, str]] = get_from_queue(
             queue=self._frames_buffer,
             on_successful_read=self._video_consumer.notify_frame_consumed,
             timeout=timeout,
             purge=self._buffer_consumption_strategy is BufferConsumptionStrategy.EAGER,
         )
-        if not self._is_file:
-            self._last_frame_timestamp = time.time_ns()
         if video_frame == POISON_PILL:
             raise EndOfStreamError(
                 "Attempted to retrieve frame from stream that already ended."
@@ -926,7 +917,7 @@ class VideoConsumer:
 
     def _set_stream_mode_buffering_strategies(self) -> None:
         if self._buffer_filling_strategy is None:
-            self._buffer_filling_strategy = BufferFillingStrategy.DROP_OLDEST
+            self._buffer_filling_strategy = BufferFillingStrategy.ADAPTIVE_DROP_OLDEST
 
     def _video_fps_should_be_sub_sampled(self) -> bool:
         if self._desired_fps is None:
