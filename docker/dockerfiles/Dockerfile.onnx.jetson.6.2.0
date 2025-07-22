@@ -50,8 +50,15 @@ RUN python3 -m pip install "numpy<=1.26.4"
 # Set up the application runtime
 WORKDIR /app
 COPY inference/ ./inference/
+COPY inference_cli/ ./inference_cli/
 COPY inference_sdk/ ./inference_sdk/
 COPY docker/config/gpu_http.py ./gpu_http.py
+COPY .release .release
+COPY requirements requirements
+COPY Makefile Makefile
+
+RUN make create_inference_cli_whl PYTHON=python3
+RUN pip3 install dist/inference_cli*.whl
 
 # Set environment variables
 ENV VERSION_CHECK_MODE=continuous \
@@ -71,7 +78,8 @@ ENV VERSION_CHECK_MODE=continuous \
     RUNS_ON_JETSON=True \
     ENABLE_PROMETHEUS=True \
     ENABLE_STREAM_API=True \
-    STREAM_API_PRELOADED_PROCESSES=2
+    STREAM_API_PRELOADED_PROCESSES=2 \
+    PYTHONPATH=/app:$PYTHONPATH
 
 # Expose the application port
 EXPOSE 9001

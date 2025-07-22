@@ -19,6 +19,7 @@ def configure_log_level(
         logger.addHandler(handler)
     for handler in logger.handlers:
         handler.setLevel(log_level)
+    logger.propagate = False
 
 
 LOGGER = logging.getLogger("inference-exp")

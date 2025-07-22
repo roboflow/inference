@@ -10,6 +10,7 @@ from inference_exp.errors import EnvironmentConfigurationError, MissingDependenc
 from inference_exp.models.common.model_packages import get_model_package_contents
 from inference_exp.models.common.onnx import (
     run_session_via_iobinding,
+    run_session_with_batch_size_limit,
     set_execution_provider_defaults,
 )
 from inference_exp.models.common.roboflow.model_packages import (
@@ -34,7 +35,7 @@ try:
 except ImportError as import_error:
     raise MissingDependencyError(
         message=f"Could not import YOLOv8 model with ONNX backend - this error means that some additional dependencies "
-        f"are not installed in the environment. If you run the `inference` library directly in your Python "
+        f"are not installed in the environment. If you run the `inference-exp` library directly in your Python "
         f"program, make sure the following extras of the package are installed: \n"
         f"\t* `onnx-cpu` - when you wish to use library with CPU support only\n"
         f"\t* `onnx-cu12` - for running on GPU with Cuda 12 installed\n"
@@ -143,23 +144,13 @@ class YOLOv8ForInstanceSegmentationOnnx(
         self, pre_processed_images: torch.Tensor, **kwargs
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         with self._session_thread_lock:
-            if self._input_batch_size is None:
-                instances, protos = run_session_via_iobinding(
-                    session=self._session,
-                    inputs={"images": pre_processed_images},
-                )
-                return instances, protos
-            instances, protos = [], []
-            for i in range(0, pre_processed_images.shape[0], self._input_batch_size):
-                batch_input = pre_processed_images[
-                    i : i + self._input_batch_size
-                ].contiguous()
-                batch_instances, batch_protos = run_session_via_iobinding(
-                    session=self._session, inputs={"images": batch_input}
-                )
-                instances.append(batch_instances)
-                protos.append(batch_protos)
-            return torch.cat(instances, dim=0), torch.cat(protos, dim=0)
+            instances, protos = run_session_with_batch_size_limit(
+                session=self._session,
+                inputs={"images": pre_processed_images},
+                min_batch_size=self._input_batch_size,
+                max_batch_size=self._input_batch_size,
+            )
+            return instances, protos
 
     def post_process(
         self,

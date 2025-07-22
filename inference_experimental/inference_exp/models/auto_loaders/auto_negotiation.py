@@ -1,3 +1,5 @@
+from collections import Counter
+from dataclasses import dataclass
 from functools import cache
 from typing import List, Optional, Set, Tuple, Union
 
@@ -11,6 +13,10 @@ from inference_exp.errors import (
     UnknownQuantizationError,
 )
 from inference_exp.logger import verbose_info
+from inference_exp.models.auto_loaders.entities import ModelArchitecture, TaskType
+from inference_exp.models.auto_loaders.models_registry import (
+    model_implementation_exists,
+)
 from inference_exp.models.auto_loaders.ranking import rank_model_packages
 from inference_exp.models.auto_loaders.utils import (
     filter_available_devices_with_selected_device,
@@ -30,7 +36,15 @@ from inference_exp.weights_providers.entities import (
 from packaging.version import Version
 
 
+@dataclass(frozen=True)
+class DiscardedPackage:
+    package_id: str
+    reason: str
+
+
 def negotiate_model_packages(
+    model_architecture: ModelArchitecture,
+    task_type: Optional[TaskType],
     model_packages: List[ModelPackageMetadata],
     requested_model_package_id: Optional[str] = None,
     requested_backends: Optional[
@@ -53,15 +67,11 @@ def negotiate_model_packages(
     print_model_packages(model_packages=model_packages, verbose=verbose)
     if not model_packages:
         raise NoModelPackagesAvailableError(
-            message=f"Could not select model package to load among ones announced by weights provider. "
-            f"That may indicate that the 'inference' installation lacks additional dependencies or "
-            f"the backend does not provide expected model packages.",
+            message=f"Could not find any model package announced by weights provider. If you see this error "
+            f"using Roboflow platform your model may not be ready - if the problem is persistent, "
+            f"contact us to get help. If you use weights provider other than Roboflow - this is most likely "
+            f"the root cause of the error.",
             help_url="https://todo",
-        )
-    if not allow_untrusted_packages:
-        model_packages = remove_untrusted_packages(
-            model_packages=model_packages,
-            verbose=verbose,
         )
     if requested_model_package_id is not None:
         return [
@@ -71,54 +81,88 @@ def negotiate_model_packages(
                 verbose=verbose,
             )
         ]
+    model_packages, discarded_packages = remove_packages_not_matching_implementation(
+        model_architecture=model_architecture,
+        task_type=task_type,
+        model_packages=model_packages,
+    )
+    if not allow_untrusted_packages:
+        model_packages, discarded_untrusted_packages = remove_untrusted_packages(
+            model_packages=model_packages,
+            verbose=verbose,
+        )
+        discarded_packages.extend(discarded_untrusted_packages)
     if requested_backends is not None:
-        model_packages = filter_model_packages_by_requested_backend(
-            model_packages=model_packages,
-            requested_backends=requested_backends,
-            verbose=verbose,
+        model_packages, discarded_by_not_matching_backend = (
+            filter_model_packages_by_requested_backend(
+                model_packages=model_packages,
+                requested_backends=requested_backends,
+                verbose=verbose,
+            )
         )
+        discarded_packages.extend(discarded_by_not_matching_backend)
     if requested_batch_size is not None:
-        model_packages = filter_model_packages_by_requested_batch_size(
-            model_packages=model_packages,
-            requested_batch_size=requested_batch_size,
-            verbose=verbose,
+        model_packages, discarded_by_batch_size = (
+            filter_model_packages_by_requested_batch_size(
+                model_packages=model_packages,
+                requested_batch_size=requested_batch_size,
+                verbose=verbose,
+            )
         )
+        discarded_packages.extend(discarded_by_batch_size)
+    default_quantization = False
     if requested_quantization is None:
+        default_quantization = True
         requested_quantization = determine_default_allowed_quantization(device=device)
     if requested_quantization:
-        model_packages = filter_model_packages_by_requested_quantization(
-            model_packages=model_packages,
-            requested_quantization=requested_quantization,
-            verbose=verbose,
+        model_packages, discarded_by_quantization = (
+            filter_model_packages_by_requested_quantization(
+                model_packages=model_packages,
+                requested_quantization=requested_quantization,
+                default_quantization_used=default_quantization,
+                verbose=verbose,
+            )
         )
-    runtime_x_ray = x_ray_runtime_environment()
-    verbose_info(
-        message=f"Selecting model packages matching to runtime: {runtime_x_ray}",
-        verbose_requested=verbose,
-    )
-    results = [
-        model_package
-        for model_package in model_packages
-        if model_package_matches_runtime_environment(
-            model_package=model_package,
-            runtime_x_ray=runtime_x_ray,
+        discarded_packages.extend(discarded_by_quantization)
+    model_packages, discarded_by_env_matching = (
+        filter_model_packages_matching_runtime_environment(
+            model_packages=model_packages,
             device=device,
             onnx_execution_providers=onnx_execution_providers,
             trt_engine_host_code_allowed=trt_engine_host_code_allowed,
             verbose=verbose,
         )
-    ]
-    if not results:
+    )
+    discarded_packages.extend(discarded_by_env_matching)
+    if not model_packages:
+        rejections_summary = summarise_discarded_packages(
+            discarded_packages=discarded_packages
+        )
         raise NoModelPackagesAvailableError(
-            message=f"Could not select model package to load among ones announced by weights provider comparing with "
-            f"detected runtime environment. That may indicate that the 'inference' installation lacks additional "
-            f"dependencies or the model is not registered with packages that would allow `inference` to run.",
+            message=f"Auto-negotiation protocol could not select model packages. This situation may be caused by "
+            f"several issues, with the most common being missing dependencies or too strict requirements "
+            f"stated as parameters of loading function. Below you can find reasons why specific model "
+            f"packages were rejected:\n{rejections_summary}\n",
             help_url="https://todo",
         )
-    results = rank_model_packages(model_packages=results, selected_device=device)
+    model_packages = rank_model_packages(
+        model_packages=model_packages, selected_device=device
+    )
     verbose_info("Eligible packages ranked:", verbose_requested=verbose)
-    print_model_packages(model_packages=results, verbose=verbose)
-    return results
+    print_model_packages(model_packages=model_packages, verbose=verbose)
+    return model_packages
+
+
+def summarise_discarded_packages(discarded_packages: List[DiscardedPackage]) -> str:
+    reasons_and_counts = Counter()
+    for package in discarded_packages:
+        reasons_and_counts[package.reason] += 1
+    reasons_stats = reasons_and_counts.most_common()
+    result = []
+    for reason, count in reasons_stats:
+        package_str = "package" if count < 2 else "packages"
+        result.append(f"\t* {count} {package_str} with the following note: {reason}")
+    return "\n".join(result)
 
 
 @cache
@@ -163,27 +207,59 @@ def print_model_packages(
     verbose_info(message="\n".join(contents), verbose_requested=verbose)
 
 
-def remove_untrusted_packages(
+def remove_packages_not_matching_implementation(
+    model_architecture: ModelArchitecture,
+    task_type: Optional[TaskType],
     model_packages: List[ModelPackageMetadata],
     verbose: bool = False,
-) -> List[ModelPackageMetadata]:
-    result = []
+) -> Tuple[List[ModelPackageMetadata], List[DiscardedPackage]]:
+    result, discarded = [], []
     for model_package in model_packages:
-        if not model_package.trusted_source:
+        if not model_implementation_exists(
+            model_architecture=model_architecture,
+            task_type=task_type,
+            backend=model_package.backend,
+        ):
             verbose_info(
-                message=f"Model package with id `{model_package.package_id}` is filtered out as come from untrusted source.",
+                message=f"Model package with id `{model_package.package_id}` is filtered out as `inference-exp` "
+                f"does not provide implementation for the model architecture {model_architecture} with "
+                f"task type: {task_type} and backend {model_package.backend}.",
                 verbose_requested=verbose,
+            )
+            discarded.append(
+                DiscardedPackage(
+                    package_id=model_package.package_id,
+                    reason=f"`inference-exp` does not provide implementation for the model {model_architecture} "
+                    f"({task_type}) with backend {model_package.backend.value}",
+                )
             )
             continue
         result.append(model_package)
-    if not result:
-        raise NoModelPackagesAvailableError(
-            message=f"Could not find model packages that would be registered from trusted source. "
-            f"This error is caused by to strict requirements of model packages backends compared to what weights "
-            f"provider announce for selected model.",
-            help_url="https://todo",
-        )
-    return result
+    return result, discarded
+
+
+def remove_untrusted_packages(
+    model_packages: List[ModelPackageMetadata],
+    verbose: bool = False,
+) -> Tuple[List[ModelPackageMetadata], List[DiscardedPackage]]:
+    result, discarded_packages = [], []
+    for model_package in model_packages:
+        if not model_package.trusted_source:
+            verbose_info(
+                message=f"Model package with id `{model_package.package_id}` is filtered out as come from "
+                f"untrusted source.",
+                verbose_requested=verbose,
+            )
+            discarded_packages.append(
+                DiscardedPackage(
+                    package_id=model_package.package_id,
+                    reason="Package is marked as `untrusted` and auto-loader was used with "
+                    "`allow_untrusted_packages=False`",
+                )
+            )
+            continue
+        result.append(model_package)
+    return result, discarded_packages
 
 
 def select_model_package_by_id(
@@ -219,7 +295,7 @@ def filter_model_packages_by_requested_backend(
     model_packages: List[ModelPackageMetadata],
     requested_backends: Union[str, BackendType, List[Union[str, BackendType]]],
     verbose: bool = False,
-) -> List[ModelPackageMetadata]:
+) -> Tuple[List[ModelPackageMetadata], List[DiscardedPackage]]:
     if not isinstance(requested_backends, list):
         requested_backends = [requested_backends]
     requested_backends_set = set()
@@ -228,33 +304,34 @@ def filter_model_packages_by_requested_backend(
             requested_backend = parse_backend_type(value=requested_backend)
         requested_backends_set.add(requested_backend)
     verbose_info(
-        message=f"Filtering model packages by requested backends: {requested_backends}",
+        message=f"Filtering model packages by requested backends: {requested_backends_set}",
         verbose_requested=verbose,
     )
-    filtered_packages = []
+    requested_backends_serialised = [b.value for b in requested_backends_set]
+    filtered_packages, discarded_packages = [], []
     for model_package in model_packages:
         if model_package.backend not in requested_backends_set:
+            verbose_info(
+                message=f"Model package with id `{model_package.package_id}` does not match requested backends.",
+                verbose_requested=verbose,
+            )
+            discarded_packages.append(
+                DiscardedPackage(
+                    package_id=model_package.package_id,
+                    reason=f"Package backend {model_package.backend.value} does not match requested backends: "
+                    f"{requested_backends_serialised}",
+                )
+            )
             continue
-        verbose_info(
-            message=f"Model package with id `{model_package.package_id}` matches requested backends.",
-            verbose_requested=verbose,
-        )
         filtered_packages.append(model_package)
-    if not filtered_packages:
-        raise NoModelPackagesAvailableError(
-            message=f"Could not find model packages that match the criteria of requested backends: {requested_backends_set}. "
-            f"This error is caused by to strict requirements of model packages backends compared to what weights "
-            f"provider announce for selected model.",
-            help_url="https://todo",
-        )
-    return filtered_packages
+    return filtered_packages, discarded_packages
 
 
 def filter_model_packages_by_requested_batch_size(
     model_packages: List[ModelPackageMetadata],
     requested_batch_size: Union[int, Tuple[int, int]],
     verbose: bool = False,
-) -> List[ModelPackageMetadata]:
+) -> Tuple[List[ModelPackageMetadata], List[DiscardedPackage]]:
     min_batch_size, max_batch_size = parse_batch_size(
         requested_batch_size=requested_batch_size
     )
@@ -262,47 +339,65 @@ def filter_model_packages_by_requested_batch_size(
         message=f"Filtering model packages by supported batch sizes min={min_batch_size} max={max_batch_size}",
         verbose_requested=verbose,
     )
-    filtered_packages = []
+    filtered_packages, discarded_packages = [], []
     for model_package in model_packages:
-        if model_package_matches_batch_size_request(
+        if not model_package_matches_batch_size_request(
             model_package=model_package,
             min_batch_size=min_batch_size,
             max_batch_size=max_batch_size,
             verbose=verbose,
         ):
-            filtered_packages.append(model_package)
-    if not filtered_packages:
-        raise NoModelPackagesAvailableError(
-            message=f"Could not find model packages that match the criteria of requested batch size: "
-            f"[{min_batch_size}, {max_batch_size}]. This error is caused by to strict requirements of "
-            f"supported batch size compared to what weights provider announce for selected model.",
-            help_url="https://todo",
-        )
-    return filtered_packages
+            verbose_info(
+                message=f"Model package with id `{model_package.package_id}` does not match requested batch "
+                f"size <{min_batch_size}, {max_batch_size}>.",
+                verbose_requested=verbose,
+            )
+            discarded_packages.append(
+                DiscardedPackage(
+                    package_id=model_package.package_id,
+                    reason=f"Package batch size does not match requested batch size <{min_batch_size}, {max_batch_size}>",
+                )
+            )
+            continue
+        filtered_packages.append(model_package)
+    return filtered_packages, discarded_packages
 
 
 def filter_model_packages_by_requested_quantization(
     model_packages: List[ModelPackageMetadata],
     requested_quantization: Union[str, Quantization, List[Union[str, Quantization]]],
+    default_quantization_used: bool,
     verbose: bool = False,
-) -> List[ModelPackageMetadata]:
+) -> Tuple[List[ModelPackageMetadata], List[DiscardedPackage]]:
     requested_quantization = parse_requested_quantization(value=requested_quantization)
+    requested_quantization_str = [e.value for e in requested_quantization]
     verbose_info(
-        message=f"Filtering model packages by quantization - allowed values: {requested_quantization}",
+        message=f"Filtering model packages by quantization - allowed values: {requested_quantization_str}",
         verbose_requested=verbose,
     )
-    filtered_packages = []
+    default_quantization_used_str = (
+        " (which was selected by default)."
+        if default_quantization_used
+        else " (which was selected by caller)."
+    )
+    filtered_packages, discarded_packages = [], []
     for model_package in model_packages:
-        if model_package.quantization in requested_quantization:
-            filtered_packages.append(model_package)
-    if not filtered_packages:
-        raise NoModelPackagesAvailableError(
-            message=f"Could not find model packages that match the criteria of quantization: "
-            f"{requested_quantization}. This error is caused by to strict requirements of "
-            f"supported quantization compared to what weights provider announce for selected model.",
-            help_url="https://todo",
-        )
-    return filtered_packages
+        if model_package.quantization not in requested_quantization:
+            verbose_info(
+                message=f"Model package with id `{model_package.package_id}` does not match requested quantization "
+                f"{requested_quantization_str}{default_quantization_used_str}",
+                verbose_requested=verbose,
+            )
+            discarded_packages.append(
+                DiscardedPackage(
+                    package_id=model_package.package_id,
+                    reason=f"Package does not match requested quantization {requested_quantization_str}"
+                    f"{default_quantization_used_str}",
+                )
+            )
+            continue
+        filtered_packages.append(model_package)
+    return filtered_packages, discarded_packages
 
 
 def model_package_matches_batch_size_request(
@@ -333,10 +428,46 @@ def model_package_matches_batch_size_request(
         return True
     verbose_info(
         message=f"Model package with id `{model_package.package_id}` filtered out, as static batch size does not "
-        f"match requested values: ({min_batch_size}, {max_batch_size}).",
+        f"match requested values: ({min_batch_size}, {max_batch_size})."
+        f"If you see this error on Roboflow platform - contact us to get help. "
+        f"Otherwise, consider adjusting requested batch size.",
         verbose_requested=verbose,
     )
     return False
+
+
+def filter_model_packages_matching_runtime_environment(
+    model_packages: List[ModelPackageMetadata],
+    device: torch.device,
+    onnx_execution_providers: Optional[List[Union[str, tuple]]],
+    trt_engine_host_code_allowed: bool,
+    verbose: bool = False,
+) -> Tuple[List[ModelPackageMetadata], List[DiscardedPackage]]:
+    runtime_x_ray = x_ray_runtime_environment()
+    verbose_info(
+        message=f"Selecting model packages matching to runtime: {runtime_x_ray}",
+        verbose_requested=verbose,
+    )
+    results, discarded_packages = [], []
+    for model_package in model_packages:
+        matches, reason = model_package_matches_runtime_environment(
+            model_package=model_package,
+            runtime_x_ray=runtime_x_ray,
+            device=device,
+            onnx_execution_providers=onnx_execution_providers,
+            trt_engine_host_code_allowed=trt_engine_host_code_allowed,
+            verbose=verbose,
+        )
+        if not matches:
+            discarded_packages.append(
+                DiscardedPackage(
+                    package_id=model_package.package_id,
+                    reason=reason,
+                )
+            )
+            continue
+        results.append(model_package)
+    return results, discarded_packages
 
 
 def model_package_matches_runtime_environment(
@@ -346,11 +477,11 @@ def model_package_matches_runtime_environment(
     onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
     trt_engine_host_code_allowed: bool = True,
     verbose: bool = False,
-) -> bool:
+) -> Tuple[bool, Optional[str]]:
     if model_package.backend not in MODEL_TO_RUNTIME_COMPATIBILITY_MATCHERS:
         raise ModelPackageNegotiationError(
             message=f"Model package negotiation protocol not implemented for model backend {model_package.backend}. "
-            f"This is `inference` bug - raise issue: https://github.com/roboflow/inference/issues",
+            f"This is `inference-exp` bug - raise issue: https://github.com/roboflow/inference/issues",
             help_url="https://todo",
         )
     return MODEL_TO_RUNTIME_COMPATIBILITY_MATCHERS[model_package.backend](
@@ -382,7 +513,7 @@ def onnx_package_matches_runtime_environment(
     onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
     trt_engine_host_code_allowed: bool = True,
     verbose: bool = False,
-) -> bool:
+) -> Tuple[bool, Optional[str]]:
     if (
         not runtime_x_ray.onnxruntime_version
         or not runtime_x_ray.available_onnx_execution_providers
@@ -391,15 +522,23 @@ def onnx_package_matches_runtime_environment(
             message=f"Mode package with id '{model_package.package_id}' filtered out as onnxruntime not detected",
             verbose_requested=verbose,
         )
-        return False
+        return False, (
+            "ONNX backend not installed - consider installing relevant ONNX extras: "
+            "`onnx-cpu`, `onnx-cu118`, `onnx-cu12`, `onnx-jp6-cu126` depending on hardware you run `inference-exp`"
+        )
     if model_package.onnx_package_details is None:
         verbose_info(
             message=f"Mode package with id '{model_package.package_id}' filtered out as onnxruntime specification "
             f"not provided by weights provider.",
             verbose_requested=verbose,
         )
-        return False
+        return (
+            False,
+            "Model package metadata delivered by weights provider lack required ONNX package details",
+        )
+    providers_auto_selected = False
     if not onnx_execution_providers:
+        providers_auto_selected = True
         onnx_execution_providers = get_selected_onnx_execution_providers()
     onnx_execution_providers = [
         provider
@@ -407,12 +546,22 @@ def onnx_package_matches_runtime_environment(
         if provider in runtime_x_ray.available_onnx_execution_providers
     ]
     if not onnx_execution_providers:
+        if providers_auto_selected:
+            reason = (
+                "Incorrect ONNX backend installation none of the default ONNX Execution Providers "
+                "available in environment"
+            )
+        else:
+            reason = (
+                "None of the selected ONNX Execution Providers detected in runtime environment - consider "
+                "adjusting the settings"
+            )
         verbose_info(
-            message=f"Mode package with id '{model_package.package_id}' filtered out as `inference` could not find "
+            message=f"Mode package with id '{model_package.package_id}' filtered out as `inference-exp` could not find "
             f"matching execution providers that are available in runtime to run a model.",
             verbose_requested=verbose,
         )
-        return False
+        return False, reason
     incompatible_providers = model_package.onnx_package_details.incompatible_providers
     if incompatible_providers is None:
         incompatible_providers = []
@@ -434,21 +583,27 @@ def onnx_package_matches_runtime_environment(
             f"for model package.",
             verbose_requested=verbose,
         )
-        return False
+        return (
+            False,
+            f"Model package cannot be run with default ONNX Execution Provider: {onnx_execution_providers[0]}",
+        )
     package_opset = model_package.onnx_package_details.opset
     onnx_runtime_simple_version = Version(
         f"{runtime_x_ray.onnxruntime_version.major}.{runtime_x_ray.onnxruntime_version.minor}"
     )
     if onnx_runtime_simple_version not in ONNX_RUNTIME_OPSET_COMPATIBILITY:
         if package_opset <= ONNX_RUNTIME_OPSET_COMPATIBILITY[Version("1.15")]:
-            return True
+            return True, None
         verbose_info(
             message=f"Mode package with id '{model_package.package_id}' filtered out as onnxruntime version "
             f"detected ({runtime_x_ray.onnxruntime_version}) could not be resolved with the matching "
             f"onnx opset. The auto-negotiation assumes that in such case, maximum supported opset is 19.",
             verbose_requested=verbose,
         )
-        return False
+        return (
+            False,
+            "ONNX model package was compiled with opset higher than supported for installed ONNX backend",
+        )
     max_supported_opset = ONNX_RUNTIME_OPSET_COMPATIBILITY[onnx_runtime_simple_version]
     if package_opset > max_supported_opset:
         verbose_info(
@@ -457,8 +612,11 @@ def onnx_package_matches_runtime_environment(
             f"up to {max_supported_opset}, but the package opset is {package_opset}.",
             verbose_requested=verbose,
         )
-        return False
-    return True
+        return (
+            False,
+            "ONNX model package was compiled with opset higher than supported for installed ONNX backend",
+        )
+    return True, None
 
 
 def torch_package_matches_runtime_environment(
@@ -468,13 +626,19 @@ def torch_package_matches_runtime_environment(
     onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
     trt_engine_host_code_allowed: bool = True,
     verbose: bool = False,
-) -> bool:
+) -> Tuple[bool, Optional[str]]:
     if not runtime_x_ray.torch_available:
         verbose_info(
             message="Mode package with id '{model_package.package_id}' filtered out as torch not detected",
             verbose_requested=verbose,
         )
-    return runtime_x_ray.torch_available
+        return (
+            False,
+            "Torch backend not installed - consider installing relevant torch extras: "
+            "`torch-cpu`, `torch-cu118`, `torch-cu124`, `torch-cu126`, `torch-cu128` or `torch-jp6-cu126` \
+            depending on hardware you run `inference-exp`",
+        )
+    return True, None
 
 
 def hf_transformers_package_matches_runtime_environment(
@@ -484,13 +648,17 @@ def hf_transformers_package_matches_runtime_environment(
     onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
     trt_engine_host_code_allowed: bool = True,
     verbose: bool = False,
-) -> bool:
+) -> Tuple[bool, Optional[str]]:
     if not runtime_x_ray.hf_transformers_available:
         verbose_info(
             message=f"Mode package with id '{model_package.package_id}' filtered out as transformers not detected",
             verbose_requested=verbose,
         )
-    return runtime_x_ray.hf_transformers_available
+        return False, (
+            "Transformers backend not installed - this package should be installed by default and probably "
+            "was accidentally deleted - install `inference-exp` package again."
+        )
+    return True, None
 
 
 def ultralytics_package_matches_runtime_environment(
@@ -500,13 +668,14 @@ def ultralytics_package_matches_runtime_environment(
     onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
     trt_engine_host_code_allowed: bool = True,
     verbose: bool = False,
-) -> bool:
+) -> Tuple[bool, Optional[str]]:
     if not runtime_x_ray.ultralytics_available:
         verbose_info(
             message=f"Mode package with id '{model_package.package_id}' filtered out as ultralytics not detected",
             verbose_requested=verbose,
         )
-    return runtime_x_ray.ultralytics_available
+        return False, "Ultralytics backend not installed"
+    return True, None
 
 
 def trt_package_matches_runtime_environment(
@@ -516,26 +685,32 @@ def trt_package_matches_runtime_environment(
     onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
     trt_engine_host_code_allowed: bool = True,
     verbose: bool = False,
-) -> bool:
+) -> Tuple[bool, Optional[str]]:
     if not runtime_x_ray.trt_version:
         verbose_info(
             message=f"Mode package with id '{model_package.package_id}' filtered out as TRT libraries not detected",
             verbose_requested=verbose,
         )
-        return False
+        return False, "TRT backend not installed. Consider installing `trt10` extras."
     if not runtime_x_ray.trt_python_package_available:
         verbose_info(
             message=f"Mode package with id '{model_package.package_id}' filtered out as TRT python package not available",
             verbose_requested=verbose,
         )
-        return False
+        return (
+            False,
+            "Model package metadata delivered by weights provider lack required TRT package details",
+        )
     if model_package.environment_requirements is None:
         verbose_info(
             message=f"Mode package with id '{model_package.package_id}' filtered out as environment requirements "
             f"not provided by backend.",
             verbose_requested=verbose,
         )
-        return False
+        return (
+            False,
+            "Model package metadata delivered by weights provider lack required TRT package details",
+        )
     trt_compiled_with_cc_compatibility = False
     if model_package.trt_package_details is not None:
         trt_compiled_with_cc_compatibility = (
@@ -558,13 +733,19 @@ def trt_package_matches_runtime_environment(
                 message=f"Mode package with id '{model_package.package_id}' filtered out as model TRT version not provided by backend",
                 verbose_requested=verbose,
             )
-            return False
+            return (
+                False,
+                "Model package metadata delivered by weights provider lack required TRT package details",
+            )
         if runtime_x_ray.l4t_version is None:
             verbose_info(
                 message=f"Mode package with id '{model_package.package_id}' filtered out as runtime environment does not declare L4T version",
                 verbose_requested=verbose,
             )
-            return False
+            return (
+                False,
+                "Model package metadata delivered by weights provider lack required TRT package details",
+            )
         device_compatibility = verify_trt_package_compatibility_with_cuda_device(
             all_available_cuda_devices=runtime_x_ray.gpu_devices,
             all_available_devices_cc=runtime_x_ray.gpu_devices_cc,
@@ -578,7 +759,7 @@ def trt_package_matches_runtime_environment(
                 message=f"Model package with id '{model_package.package_id}' filtered out due to device incompatibility.",
                 verbose_requested=verbose,
             )
-            return False
+            return False, "TRT model package is incompatible with your hardware"
         if not verify_versions_up_to_major_and_minor(
             runtime_x_ray.l4t_version, model_environment.l4t_version
         ):
@@ -586,7 +767,7 @@ def trt_package_matches_runtime_environment(
                 message=f"Mode package with id '{model_package.package_id}' filtered out as package L4T {model_environment.l4t_version} does not match runtime L4T: {runtime_x_ray.l4t_version}",
                 verbose_requested=verbose,
             )
-            return False
+            return False, "TRT model package is incompatible with installed L4T version"
         if trt_forward_compatible:
             if runtime_x_ray.trt_version < model_environment.trt_version:
                 verbose_info(
@@ -597,36 +778,42 @@ def trt_package_matches_runtime_environment(
                     f"to the one used for compilation.",
                     verbose_requested=verbose,
                 )
-                return False
+                return (
+                    False,
+                    "TRT model package is incompatible with installed TRT version",
+                )
             if trt_lean_runtime_excluded:
                 # not supported for now
                 verbose_info(
                     message=f"Mode package with id '{model_package.package_id}' filtered out as it was compiled to "
                     f"be forward compatible, but with lean runtime excluded from the engine - this mode is "
-                    f"currently not supported in `inference`.",
+                    f"currently not supported in `inference-exp`.",
                     verbose_requested=verbose,
                 )
-                return False
+                return False, "TRT model package is currently not supported"
             elif not trt_engine_host_code_allowed:
                 verbose_info(
                     message=f"Mode package with id '{model_package.package_id}' filtered out as it contains TRT "
-                    f"Lean Runtime that requires potentially unsafe deserialisation which is forbidden "
-                    f"in this configuration of `inference`. Set `trt_engine_host_code_allowed=True` if "
+                    f"Lean Runtime that requires potentially unsafe deserialization which is forbidden "
+                    f"in this configuration of `inference-exp`. Set `trt_engine_host_code_allowed=True` if "
                     f"you want this package to be supported.",
                     verbose_requested=verbose,
                 )
-                return False
+                return False, (
+                    "TRT model package cannot run with `trt_engine_host_code_allowed=False` - "
+                    "consider settings adjustment."
+                )
         elif runtime_x_ray.trt_version != model_environment.trt_version:
             verbose_info(
                 message=f"Mode package with id '{model_package.package_id}' filtered out as package trt version {model_environment.trt_version} does not match runtime trt version: {runtime_x_ray.trt_version}",
                 verbose_requested=verbose,
             )
-            return False
-        return True
+            return False, "TRT model package is incompatible with installed TRT version"
+        return True, None
     if not isinstance(model_environment, ServerEnvironmentRequirements):
         raise ModelPackageNegotiationError(
             message=f"Model package negotiation protocol not implemented for environment specification detected "
-            f"in runtime. This is `inference` bug - raise issue: https://github.com/roboflow/inference/issues",
+            f"in runtime. This is `inference-exp` bug - raise issue: https://github.com/roboflow/inference/issues",
             help_url="https://todo",
         )
     if model_environment.trt_version is None:
@@ -634,7 +821,10 @@ def trt_package_matches_runtime_environment(
             message=f"Mode package with id '{model_package.package_id}' filtered out as model TRT version not provided by backend",
             verbose_requested=verbose,
         )
-        return False
+        return (
+            False,
+            "Model package metadata delivered by weights provider lack required TRT package details",
+        )
     device_compatibility = verify_trt_package_compatibility_with_cuda_device(
         all_available_cuda_devices=runtime_x_ray.gpu_devices,
         all_available_devices_cc=runtime_x_ray.gpu_devices_cc,
@@ -648,7 +838,7 @@ def trt_package_matches_runtime_environment(
             message=f"Model package with id '{model_package.package_id}' filtered out due to device incompatibility.",
             verbose_requested=verbose,
         )
-        return False
+        return False, "TRT model package is incompatible with your hardware"
     if trt_forward_compatible:
         if runtime_x_ray.trt_version < model_environment.trt_version:
             verbose_info(
@@ -659,32 +849,35 @@ def trt_package_matches_runtime_environment(
                 f"to the one used for compilation.",
                 verbose_requested=verbose,
             )
-            return False
+            return False, "TRT model package is incompatible with installed TRT version"
         if trt_lean_runtime_excluded:
             # not supported for now
             verbose_info(
                 message=f"Mode package with id '{model_package.package_id}' filtered out as it was compiled to "
                 f"be forward compatible, but with lean runtime excluded from the engine - this mode is "
-                f"currently not supported in `inference`.",
+                f"currently not supported in `inference-exp`.",
                 verbose_requested=verbose,
             )
-            return False
+            return False, "TRT model package is currently not supported"
         elif not trt_engine_host_code_allowed:
             verbose_info(
                 message=f"Mode package with id '{model_package.package_id}' filtered out as it contains TRT "
-                f"Lean Runtime that requires potentially unsafe deserialisation which is forbidden "
-                f"in this configuration of `inference`. Set `trt_engine_host_code_allowed=True` if "
+                f"Lean Runtime that requires potentially unsafe deserialization which is forbidden "
+                f"in this configuration of `inference-exp`. Set `trt_engine_host_code_allowed=True` if "
                 f"you want this package to be supported.",
                 verbose_requested=verbose,
             )
-            return False
+            return False, (
+                "TRT model package cannot run with `trt_engine_host_code_allowed=False` - "
+                "consider settings adjustment."
+            )
     elif runtime_x_ray.trt_version != model_environment.trt_version:
         verbose_info(
             message=f"Mode package with id '{model_package.package_id}' filtered out as package trt version {model_environment.trt_version} does not match runtime trt version: {runtime_x_ray.trt_version}",
             verbose_requested=verbose,
         )
-        return False
-    return True
+        return False, "TRT model package is incompatible with installed TRT version"
+    return True, None
 
 
 def verify_trt_package_compatibility_with_cuda_device(
@@ -788,12 +981,13 @@ def parse_batch_size(
 
 def parse_backend_type(value: str) -> BackendType:
     try:
-        return BackendType(value)
+        return BackendType(value.lower())
     except ValueError as error:
+        supported_backends = [e.value for e in BackendType]
         raise UnknownBackendTypeError(
-            message=f"Requested backend of type '{value}' which is not recognized by `inference`. Most likely this "
+            message=f"Requested backend of type '{value}' which is not recognized by `inference-exp`. Most likely this "
             f"error is a result of typo while specifying requested backend. Supported backends: "
-            f"{list(BackendType.__members__)}.",
+            f"{supported_backends}.",
             help_url="https://todo",
         ) from error
 
@@ -816,7 +1010,7 @@ def parse_quantization(value: str) -> Quantization:
         return Quantization(value)
     except ValueError as error:
         raise UnknownQuantizationError(
-            message=f"Requested quantization of type '{value}' which is not recognized by `inference`. Most likely this "
+            message=f"Requested quantization of type '{value}' which is not recognized by `inference-exp`. Most likely this "
             f"error is a result of typo while specifying requested quantization. Supported values: "
             f"{list(Quantization.__members__)}.",
             help_url="https://todo",
