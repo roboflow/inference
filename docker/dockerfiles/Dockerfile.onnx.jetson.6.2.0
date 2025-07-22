@@ -45,7 +45,7 @@ RUN python3 -m pip install --upgrade pip && \
     -r requirements/requirements.gpu.txt \
     "setuptools<=75.5.0" \
     --extra-index-url https://pypi.jetson-ai-lab.dev/jp6/cu126
-RUN python3 -m pip uninstall -y numpy && python3 -m pip install "numpy<=1.26.4" onnxruntime_gpu-1.19.0-cp310-cp310-linux_aarch64.whl
+RUN python3 -m pip install "numpy<=1.26.4"
 
 # Set up the application runtime
 WORKDIR /app
@@ -78,7 +78,8 @@ ENV VERSION_CHECK_MODE=continuous \
     RUNS_ON_JETSON=True \
     ENABLE_PROMETHEUS=True \
     ENABLE_STREAM_API=True \
-    STREAM_API_PRELOADED_PROCESSES=2
+    STREAM_API_PRELOADED_PROCESSES=2 \
+    PYTHONPATH=/app:$PYTHONPATH
 
 # Expose the application port
 EXPOSE 9001
