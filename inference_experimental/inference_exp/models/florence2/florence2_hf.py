@@ -49,24 +49,26 @@ class Florence2HF:
                 base_model_path,
                 torch_dtype=torch_dtype,
                 trust_remote_code=True,
+                local_files_only=True,
             )
             model = PeftModel.from_pretrained(model, model_name_or_path)
             model.merge_and_unload()
             model.to(device)
 
             processor = AutoProcessor.from_pretrained(
-                base_model_path,
-                trust_remote_code=True,
+                base_model_path, trust_remote_code=True, local_files_only=True
             )
         else:
             model = AutoModelForCausalLM.from_pretrained(
                 model_name_or_path,
                 torch_dtype=torch_dtype,
                 trust_remote_code=True,
+                local_files_only=True,
             ).to(device)
             processor = AutoProcessor.from_pretrained(
                 model_name_or_path,
                 trust_remote_code=True,
+                local_files_only=True,
             )
 
         return cls(
