@@ -1,4 +1,6 @@
 name: Build and Push Inference Experimental Images
+permissions:
+  contents: read
 
 on:
   workflow_dispatch:
