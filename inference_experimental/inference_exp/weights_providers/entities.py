@@ -7,6 +7,7 @@ from packaging.version import Version
 
 class BackendType(str, Enum):
     TORCH = "torch"
+    TORCH_SCRIPT = "torch_script"
     ONNX = "onnx"
     TRT = "trt"
     HF = "hugging-face"
@@ -90,6 +91,13 @@ class ONNXPackageDetails:
 
 
 @dataclass(frozen=True)
+class TorchScriptPackageDetails:
+    supported_device_types: List[str]
+    torch_version: Version
+    torch_vision_version: Optional[Version] = field(default=None)
+
+
+@dataclass(frozen=True)
 class ModelPackageMetadata:
     package_id: str
     backend: BackendType
@@ -99,10 +107,12 @@ class ModelPackageMetadata:
     static_batch_size: Optional[int] = field(default=None)
     trt_package_details: Optional[TRTPackageDetails] = field(default=None)
     onnx_package_details: Optional[ONNXPackageDetails] = field(default=None)
+    torch_script_package_details: Optional[TorchScriptPackageDetails] = field(default=None)
     trusted_source: bool = field(default=False)
     environment_requirements: Optional[
         Union[ServerEnvironmentRequirements, JetsonEnvironmentRequirements]
     ] = field(default=None)
+    model_features: Optional[dict] = field(default=None)
 
     def get_summary(self) -> str:
         return (
