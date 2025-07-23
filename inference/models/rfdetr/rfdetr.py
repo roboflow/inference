@@ -371,13 +371,10 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                     topk_labels,
                 )
             )
+            batch_predictions = batch_predictions[batch_predictions[:, 6] < len(self.class_names)]
 
             processed_predictions.append(batch_predictions)
         
-        processed_predictions = [
-            [pred for pred in batch_predictions if pred[6] < len(self.class_names)]
-            for batch_predictions in processed_predictions
-        ]
         res = self.make_response(processed_predictions, img_dims, **kwargs)
         return res
 
