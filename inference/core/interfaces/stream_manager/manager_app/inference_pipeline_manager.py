@@ -596,6 +596,7 @@ class InferencePipelineManager(Process):
                 self._responses_queue.put((request_id, response_payload))
                 return None
             excluded_fields = payload.get("excluded_fields")
+            include_source_frame = payload.get("include_source_frame")
             predictions, frames = self._buffer_sink.consume_prediction()
             self._last_consume_time = time.monotonic()
             predictions = [
@@ -621,6 +622,9 @@ class InferencePipelineManager(Process):
                             "source_id": frame.source_id,
                         }
                     )
+                    if include_source_frame:
+                        frames_metadata[-1]["image"] = frame.image
+                        frames_metadata[-1]["frame_id"] = frame.frame_id
             response_payload = {
                 STATUS_KEY: OperationStatus.SUCCESS,
                 "outputs": predictions,

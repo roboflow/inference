@@ -178,11 +178,13 @@ class StreamManagerClient:
         self,
         pipeline_id: str,
         excluded_fields: List[str],
+        include_source_frame: bool = False,
     ) -> ConsumePipelineResponse:
         command = {
             TYPE_KEY: CommandType.CONSUME_RESULT,
             PIPELINE_ID_KEY: pipeline_id,
             "excluded_fields": excluded_fields,
+            "include_source_frame": include_source_frame,
         }
         response = await self._handle_command(command=command)
         status = response[RESPONSE_KEY][STATUS_KEY]

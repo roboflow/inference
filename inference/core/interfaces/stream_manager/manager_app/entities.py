@@ -124,3 +124,7 @@ class ConsumeResultsPayload(BaseModel):
         default_factory=list,
         description="List of workflow output fields to be filtered out from response",
     )
+    include_source_frame: bool = Field(
+        default=False,
+        description="Whether to include the source frame in the response",
+    )
