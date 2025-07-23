@@ -28,7 +28,8 @@ from inference_exp.weights_providers.entities import (
     ONNXPackageDetails,
     Quantization,
     ServerEnvironmentRequirements,
-    TRTPackageDetails, TorchScriptPackageDetails,
+    TorchScriptPackageDetails,
+    TRTPackageDetails,
 )
 from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, Discriminator, Field, ValidationError
@@ -475,13 +476,17 @@ class TorchScriptModelPackageV1(BaseModel):
     quantization: Quantization
     supported_device_types: List[str] = Field(alias="supportedDeviceTypes")
     torch_version: str = Field(alias="torchVersion")
-    torch_vision_version: Optional[str] = Field(alias="torchVisionVersion", default=None)
+    torch_vision_version: Optional[str] = Field(
+        alias="torchVisionVersion", default=None
+    )
 
 
 def parse_torch_script_model_package(
     metadata: RoboflowModelPackageV1,
 ) -> ModelPackageMetadata:
-    parsed_manifest = TorchScriptModelPackageV1.model_validate(metadata.package_manifest)
+    parsed_manifest = TorchScriptModelPackageV1.model_validate(
+        metadata.package_manifest
+    )
     package_artefacts = parse_package_artefacts(
         package_artefacts=metadata.package_files
     )
@@ -489,7 +494,7 @@ def parse_torch_script_model_package(
     if parsed_manifest.torch_vision_version is not None:
         torch_vision_version = as_version(parsed_manifest.torch_vision_version)
     torch_script_package_details = TorchScriptPackageDetails(
-        supported_device_types=parsed_manifest.supported_device_types,
+        supported_device_types=set(parsed_manifest.supported_device_types),
         torch_version=as_version(parsed_manifest.torch_version),
         torch_vision_version=torch_vision_version,
     )

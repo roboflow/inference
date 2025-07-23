@@ -1,4 +1,5 @@
-from typing import Dict, Tuple
+from dataclasses import dataclass, field
+from typing import Dict, Optional, Set, Tuple, Union
 
 from inference_exp.errors import ModelImplementationLoaderError
 from inference_exp.models.auto_loaders.entities import ModelArchitecture, TaskType
@@ -12,7 +13,15 @@ VLM_TASK = "vlm"
 EMBEDDING_TASK = "embedding"
 
 
-REGISTERED_MODELS: Dict[Tuple[ModelArchitecture, TaskType, BackendType], LazyClass] = {
+@dataclass(frozen=True)
+class RegistryEnry:
+    model_class: LazyClass
+    supported_model_features: Optional[Set[str]] = field(default=None)
+
+
+REGISTERED_MODELS: Dict[
+    Tuple[ModelArchitecture, TaskType, BackendType], Union[LazyClass, RegistryEnry]
+] = {
     ("yolonas", OBJECT_DETECTION_TASK, BackendType.ONNX): LazyClass(
         module_name="inference_exp.models.yolonas.yolonas_object_detection_onnx",
         class_name="YOLONasForObjectDetectionOnnx",
@@ -148,24 +157,38 @@ def resolve_model_class(
     model_architecture: ModelArchitecture,
     task_type: TaskType,
     backend: BackendType,
+    model_features: Optional[Set[str]] = None,
 ) -> type:
     if not model_implementation_exists(
         model_architecture=model_architecture,
         task_type=task_type,
         backend=backend,
+        model_features=model_features,
     ):
         raise ModelImplementationLoaderError(
             message=f"Did not find implementation for model with architecture: {model_architecture}, "
-            f"task type: {task_type} and backend: {backend}",
+            f"task type: {task_type} backend: {backend} and model features: {model_features}",
             help_url="https://todo",
         )
-    return REGISTERED_MODELS[(model_architecture, task_type, backend)].resolve()
+    matched_model = REGISTERED_MODELS[(model_architecture, task_type, backend)]
+    if isinstance(matched_model, RegistryEnry):
+        return matched_model.model_class.resolve()
+    return matched_model.resolve()
 
 
 def model_implementation_exists(
     model_architecture: ModelArchitecture,
     task_type: TaskType,
     backend: BackendType,
+    model_features: Optional[Set[str]] = None,
 ) -> bool:
     lookup_key = (model_architecture, task_type, backend)
-    return lookup_key in REGISTERED_MODELS
+    if lookup_key not in REGISTERED_MODELS:
+        return False
+    if not model_features:
+        return True
+    matched_model = REGISTERED_MODELS[(model_architecture, task_type, backend)]
+    if not isinstance(matched_model, RegistryEnry):
+        # features requested, but no supported features manifested
+        return False
+    return all(f in matched_model.supported_model_features for f in model_features)

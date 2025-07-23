@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Set, Tuple, Union
 
 from packaging.version import Version
 
@@ -92,7 +92,7 @@ class ONNXPackageDetails:
 
 @dataclass(frozen=True)
 class TorchScriptPackageDetails:
-    supported_device_types: List[str]
+    supported_device_types: Set[str]
     torch_version: Version
     torch_vision_version: Optional[Version] = field(default=None)
 
@@ -107,7 +107,9 @@ class ModelPackageMetadata:
     static_batch_size: Optional[int] = field(default=None)
     trt_package_details: Optional[TRTPackageDetails] = field(default=None)
     onnx_package_details: Optional[ONNXPackageDetails] = field(default=None)
-    torch_script_package_details: Optional[TorchScriptPackageDetails] = field(default=None)
+    torch_script_package_details: Optional[TorchScriptPackageDetails] = field(
+        default=None
+    )
     trusted_source: bool = field(default=False)
     environment_requirements: Optional[
         Union[ServerEnvironmentRequirements, JetsonEnvironmentRequirements]

@@ -219,18 +219,22 @@ def remove_packages_not_matching_implementation(
             model_architecture=model_architecture,
             task_type=task_type,
             backend=model_package.backend,
+            model_features=model_package.model_features,
         ):
             verbose_info(
                 message=f"Model package with id `{model_package.package_id}` is filtered out as `inference-exp` "
                 f"does not provide implementation for the model architecture {model_architecture} with "
-                f"task type: {task_type} and backend {model_package.backend}.",
+                f"task type: {task_type}, backend {model_package.backend} and requested model "
+                f"features {model_package.model_features}.",
                 verbose_requested=verbose,
             )
             discarded.append(
                 DiscardedPackage(
                     package_id=model_package.package_id,
                     reason=f"`inference-exp` does not provide implementation for the model {model_architecture} "
-                    f"({task_type}) with backend {model_package.backend.value}",
+                    f"({task_type}) with backend {model_package.backend.value} and "
+                    f"requested model features {model_package.model_features}. If new versions of package available, "
+                    f"consider the upgrade - we may already have this package supported.",
                 )
             )
             continue
@@ -681,7 +685,7 @@ def ultralytics_package_matches_runtime_environment(
 def trt_package_matches_runtime_environment(
     model_package: ModelPackageMetadata,
     runtime_x_ray: RuntimeXRayResult,
-    device: Optional[torch.device] = None,
+    # device: Optional[torch.device] = None,
     onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
     trt_engine_host_code_allowed: bool = True,
     verbose: bool = False,
@@ -900,6 +904,108 @@ def verify_trt_package_compatibility_with_cuda_device(
     return any(dev == compilation_device for dev in all_available_cuda_devices)
 
 
+def torch_script_package_matches_runtime_environment(
+    model_package: ModelPackageMetadata,
+    runtime_x_ray: RuntimeXRayResult,
+    device: Optional[torch.device] = None,
+    onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
+    trt_engine_host_code_allowed: bool = True,
+    verbose: bool = False,
+) -> Tuple[bool, Optional[str]]:
+    if not runtime_x_ray.torch_available:
+        verbose_info(
+            message=f"Mode package with id '{model_package.package_id}' filtered out as torch not detected",
+            verbose_requested=verbose,
+        )
+        return (
+            False,
+            "Torch backend not installed - consider installing relevant torch extras: "
+            "`torch-cpu`, `torch-cu118`, `torch-cu124`, `torch-cu126`, `torch-cu128` or `torch-jp6-cu126` \
+            depending on hardware you run `inference-exp`",
+        )
+    if model_package.torch_script_package_details is None:
+        verbose_info(
+            message=f"Mode package with id '{model_package.package_id}' filtered out as TorchScript package details "
+            f"not provided by backend.",
+            verbose_requested=verbose,
+        )
+        return (
+            False,
+            "Model package metadata delivered by weights provider lack required TorchScript package details",
+        )
+    if device is None:
+        verbose_info(
+            message=f"Mode package with id '{model_package.package_id}' filtered out as auto-negotiation does not "
+            f"specify `device` parameter which makes it impossible to match with compatible devices registered "
+            f"for the package.",
+            verbose_requested=verbose,
+        )
+        return (
+            False,
+            "Auto-negotiation run with `device=None` which makes it impossible to match the request with TorchScript "
+            "model package. Specify the device.",
+        )
+    supported_device_types = (
+        model_package.torch_script_package_details.supported_device_types
+    )
+    if device.type not in supported_device_types:
+        verbose_info(
+            message=f"Mode package with id '{model_package.package_id}' filtered out as requested device type "
+            f"is {device.type}, whereas model package is compatible with the following devices: "
+            f"{supported_device_types}.",
+            verbose_requested=verbose,
+        )
+        return (
+            False,
+            f"Model package is supported with the following device types: {supported_device_types}, but "
+            f"auto-negotiation requested model for device with type: {device.type}",
+        )
+    if not runtime_x_ray.torch_version:
+        verbose_info(
+            message=f"Model package with id '{model_package.package_id}' filtered out as it was not possible "
+            f"to extract torch version from environment. This may be a problem worth reporting at "
+            f"https://github.com/roboflow/inference/issues/",
+            verbose_requested=verbose,
+        )
+        return (
+            False,
+            f"Model package is not supported when torch version cannot be determined. This may be a bug - "
+            f"please report: https://github.com/roboflow/inference/issues/",
+        )
+    requested_torch_version = model_package.torch_script_package_details.torch_version
+    if runtime_x_ray.torch_version < requested_torch_version:
+        verbose_info(
+            message=f"Model package with id '{model_package.package_id}' filtered out as it request torch in version "
+            f"at least {requested_torch_version}, but the version {runtime_x_ray.torch_version} is installed. "
+            f"Consider the upgrade of torch.",
+            verbose_requested=verbose,
+        )
+        return (
+            False,
+            f"Model package requires torch in version at least {requested_torch_version}, but your environment "
+            f"has the following version installed: {runtime_x_ray.torch_version} - consider the upgrade of torch.",
+        )
+    requested_torch_vision_version = (
+        model_package.torch_script_package_details.torch_vision_version
+    )
+    if requested_torch_vision_version is None:
+        return True, None
+    if runtime_x_ray.torchvision_version < requested_torch_vision_version:
+        verbose_info(
+            message=f"Model package with id '{model_package.package_id}' filtered out as it request torchvision in  "
+            f"version at least {requested_torch_vision_version}, but the version "
+            f"{runtime_x_ray.torchvision_version} is installed. Consider the upgrade of torch.",
+            verbose_requested=verbose,
+        )
+        return (
+            False,
+            f"Model package requires torchvision in version at least {requested_torch_vision_version}, but your "
+            f"environment has the following version installed: {runtime_x_ray.torchvision_version} - consider "
+            f"the upgrade of torchvision.",
+        )
+    return True, None
+
+
 def verify_versions_up_to_major_and_minor(x: Version, y: Version) -> bool:
     x_simplified = Version(f"{x.major}.{x.minor}")
     y_simplified = Version(f"{y.major}.{y.minor}")
@@ -912,6 +1018,7 @@ MODEL_TO_RUNTIME_COMPATIBILITY_MATCHERS = {
     BackendType.ONNX: onnx_package_matches_runtime_environment,
     BackendType.TORCH: torch_package_matches_runtime_environment,
     BackendType.ULTRALYTICS: ultralytics_package_matches_runtime_environment,
+    BackendType.TORCH_SCRIPT: torch_script_package_matches_runtime_environment,
 }
 
 
