@@ -26,7 +26,6 @@ from inference.core.models.utils.onnx import has_trt
 from inference.core.utils.image_utils import load_image
 from inference.core.utils.onnx import ImageMetaType, run_session_via_iobinding
 from inference.core.utils.preprocess import letterbox_image
-import time
 
 if USE_PYTORCH_FOR_PREPROCESSING:
     import torch
@@ -190,7 +189,6 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
             disable_preproc_grayscale=disable_preproc_grayscale,
             disable_preproc_static_crop=disable_preproc_static_crop,
         )
-        start_time = time.time()
         img_in = img_in.astype(np.float32)
 
         if self.batching_enabled:
@@ -216,8 +214,7 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                     "This is most likely a bug. Contact Roboflow team through github issues "
                     "(https://github.com/roboflow/inference/issues) providing full context of the problem"
                 )
-        end_time = time.time()
-        #print(f"Preprocessing time: {end_time - start_time} seconds")
+
         return img_in, PreprocessReturnMetadata(
             {
                 "img_dims": img_dims,
@@ -234,14 +231,12 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         Returns:
             Tuple[np.ndarray]: NumPy array representing the predictions, including boxes, confidence scores, and class IDs.
         """
-        start_time = time.time()
         predictions = run_session_via_iobinding(
             self.onnx_session, self.input_name, img_in
         )
         bboxes = predictions[0]
         logits = predictions[1]
-        end_time = time.time()
-        #print(f"Prediction time: {end_time - start_time} seconds")
+
         return (bboxes, logits)
 
     def sigmoid_stable(self, x):
@@ -257,7 +252,6 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         max_detections: int = DEFAUlT_MAX_DETECTIONS,
         **kwargs,
     ) -> List[ObjectDetectionInferenceResponse]:
-        start_time = time.time()
         bboxes, logits = predictions
         bboxes = bboxes.astype(np.float32)
         logits = logits.astype(np.float32)
@@ -347,9 +341,6 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
             )
 
             processed_predictions.append(batch_predictions)
-        
-        end_time = time.time()
-        #print(f"Postprocessing time: {end_time - start_time} seconds")
 
         return self.make_response(processed_predictions, img_dims, **kwargs)
 
