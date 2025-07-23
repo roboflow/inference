@@ -1,25 +1,24 @@
 import os
+import time
 from time import perf_counter
 from typing import Any, List, Tuple, Union
-import time
 
 import cv2
 import numpy as np
 import onnxruntime
-from PIL import Image
 import torchvision.transforms.functional
+from PIL import Image
 
 from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.env import (
     DISABLE_PREPROC_AUTO_ORIENT,
     FIX_BATCH_SIZE,
     MAX_BATCH_SIZE,
-    REQUIRED_ONNX_PROVIDERS,
-    USE_PYTORCH_FOR_PREPROCESSING,
     ONNXRUNTIME_EXECUTION_PROVIDERS,
+    REQUIRED_ONNX_PROVIDERS,
     TENSORRT_CACHE_PATH,
+    USE_PYTORCH_FOR_PREPROCESSING,
 )
-from inference.core.utils.onnx import get_onnxruntime_execution_providers
 from inference.core.exceptions import ModelArtefactError, OnnxProviderNotAvailable
 from inference.core.logger import logger
 from inference.core.models.defaults import DEFAULT_CONFIDENCE, DEFAUlT_MAX_DETECTIONS
@@ -30,13 +29,18 @@ from inference.core.models.object_detection_base import (
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.models.utils.onnx import has_trt
 from inference.core.utils.image_utils import load_image
-from inference.core.utils.onnx import ImageMetaType, run_session_via_iobinding
+from inference.core.utils.onnx import (
+    ImageMetaType,
+    get_onnxruntime_execution_providers,
+    run_session_via_iobinding,
+)
 from inference.core.utils.preprocess import letterbox_image
 
 if USE_PYTORCH_FOR_PREPROCESSING:
     import torch
     import torchvision
     from torchvision.transforms.functional import pil_to_tensor
+
     CUDA_IS_AVAILABLE = torch.cuda.is_available()
 
 ROBOFLOW_BACKGROUND_CLASS = "background_class83422"
@@ -107,7 +111,7 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                 np_image = torch.from_numpy(np_image)
             if torch.cuda.is_available():
                 np_image = np_image.cuda()
-        
+
         preprocessed_image, img_dims = self.preprocess_image(
             np_image,
             disable_preproc_contrast=disable_preproc_contrast,
@@ -123,8 +127,12 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
 
             preprocessed_image /= 255.0
 
-            means = torch.tensor(self.preprocess_means, device=preprocessed_image.device).view(3, 1, 1)
-            stds = torch.tensor(self.preprocess_stds, device=preprocessed_image.device).view(3, 1, 1)
+            means = torch.tensor(
+                self.preprocess_means, device=preprocessed_image.device
+            ).view(3, 1, 1)
+            stds = torch.tensor(
+                self.preprocess_stds, device=preprocessed_image.device
+            ).view(3, 1, 1)
             preprocessed_image = (preprocessed_image - means) / stds
         else:
             preprocessed_image = preprocessed_image.astype(np.float32)
@@ -139,7 +147,6 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
             preprocessed_image[:, :, 2] = (
                 preprocessed_image[:, :, 2] - self.preprocess_means[2]
             ) / self.preprocess_stds[2]
-
 
         if self.resize_method == "Stretch to":
             if isinstance(preprocessed_image, np.ndarray):
@@ -386,7 +393,9 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         logger.debug("Creating inference session")
         if self.load_weights or not self.has_model_metadata:
             t1_session = perf_counter()
-            providers = get_onnxruntime_execution_providers(ONNXRUNTIME_EXECUTION_PROVIDERS)
+            providers = get_onnxruntime_execution_providers(
+                ONNXRUNTIME_EXECUTION_PROVIDERS
+            )
 
             if not self.load_weights:
                 providers = [
@@ -430,7 +439,6 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                     f"Unable to load ONNX session. Cause: {e}"
                 ) from e
             logger.debug(f"Session created in {perf_counter() - t1_session} seconds")
-
 
             inputs = self.onnx_session.get_inputs()[0]
             input_shape = inputs.shape
@@ -499,6 +507,6 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         else:
             self.is_one_indexed = False
         logger.debug("Model initialisation finished.")
-        
+
     def validate_model_classes(self) -> None:
         pass
