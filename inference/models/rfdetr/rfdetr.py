@@ -6,7 +6,6 @@ from typing import Any, List, Tuple, Union
 import cv2
 import numpy as np
 import onnxruntime
-import torchvision.transforms.functional
 from PIL import Image
 
 from inference.core.entities.requests.inference import InferenceRequestImage
@@ -38,8 +37,6 @@ from inference.core.utils.preprocess import letterbox_image
 
 if USE_PYTORCH_FOR_PREPROCESSING:
     import torch
-    import torchvision
-    from torchvision.transforms.functional import pil_to_tensor
 
     CUDA_IS_AVAILABLE = torch.cuda.is_available()
 
