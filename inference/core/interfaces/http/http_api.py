@@ -625,6 +625,7 @@ class HttpInterface(BaseInterface):
                 allow_credentials=True,
                 allow_methods=["*"],
                 allow_headers=["*"],
+                expose_headers=["X-Processing-Time"],
             )
 
         # Optionally add middleware for profiling the FastAPI server and underlying inference API code
