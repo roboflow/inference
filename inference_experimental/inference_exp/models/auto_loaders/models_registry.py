@@ -14,13 +14,13 @@ EMBEDDING_TASK = "embedding"
 
 
 @dataclass(frozen=True)
-class RegistryEnry:
+class RegistryEntry:
     model_class: LazyClass
     supported_model_features: Optional[Set[str]] = field(default=None)
 
 
 REGISTERED_MODELS: Dict[
-    Tuple[ModelArchitecture, TaskType, BackendType], Union[LazyClass, RegistryEnry]
+    Tuple[ModelArchitecture, TaskType, BackendType], Union[LazyClass, RegistryEntry]
 ] = {
     ("yolonas", OBJECT_DETECTION_TASK, BackendType.ONNX): LazyClass(
         module_name="inference_exp.models.yolonas.yolonas_object_detection_onnx",
@@ -171,7 +171,7 @@ def resolve_model_class(
             help_url="https://todo",
         )
     matched_model = REGISTERED_MODELS[(model_architecture, task_type, backend)]
-    if isinstance(matched_model, RegistryEnry):
+    if isinstance(matched_model, RegistryEntry):
         return matched_model.model_class.resolve()
     return matched_model.resolve()
 
@@ -188,7 +188,7 @@ def model_implementation_exists(
     if not model_features:
         return True
     matched_model = REGISTERED_MODELS[(model_architecture, task_type, backend)]
-    if not isinstance(matched_model, RegistryEnry):
+    if not isinstance(matched_model, RegistryEntry):
         # features requested, but no supported features manifested
         return False
     return all(f in matched_model.supported_model_features for f in model_features)
