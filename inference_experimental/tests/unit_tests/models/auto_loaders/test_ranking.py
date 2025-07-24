@@ -7,9 +7,11 @@ from inference_exp.models.auto_loaders import ranking
 from inference_exp.models.auto_loaders.ranking import (
     rank_cuda_versions,
     rank_model_packages,
+    rank_packages_ids,
     rank_trt_versions,
     retrieve_cuda_device_match_score,
     retrieve_driver_version_match_score,
+    retrieve_fused_nms_rank,
     retrieve_jetson_device_name_match_score,
     retrieve_l4t_version_match_score,
     retrieve_onnx_incompatible_providers_score,
@@ -2400,3 +2402,209 @@ def test_retrieve_cuda_device_match_score_when_selected_device_does_not_match_fo
 
     # then
     assert result == 0
+
+
+def test_rank_packages_ids() -> None:
+    # given
+    model_packages = [
+        ModelPackageMetadata(
+            package_id="my-package-id-2",
+            backend=BackendType.TRT,
+            quantization=Quantization.FP32,
+            dynamic_batch_size_supported=True,
+            package_artefacts=[],
+            trt_package_details=TRTPackageDetails(
+                min_dynamic_batch_size=1,
+                opt_dynamic_batch_size=8,
+                max_dynamic_batch_size=32,
+            ),
+        ),
+        ModelPackageMetadata(
+            package_id="my-package-id-1",
+            backend=BackendType.TRT,
+            quantization=Quantization.FP32,
+            dynamic_batch_size_supported=True,
+            package_artefacts=[],
+            trt_package_details=TRTPackageDetails(
+                min_dynamic_batch_size=1,
+                opt_dynamic_batch_size=8,
+                max_dynamic_batch_size=16,
+            ),
+        ),
+    ]
+
+    # when
+    result = rank_packages_ids(model_packages=model_packages)
+
+    # then
+    assert result == [1, 0]
+
+
+def test_retrieve_fused_nms_rank_when_no_model_features_declared() -> None:
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        trt_package_details=TRTPackageDetails(
+            min_dynamic_batch_size=1,
+            opt_dynamic_batch_size=8,
+            max_dynamic_batch_size=32,
+        ),
+    )
+
+    # when
+    result = retrieve_fused_nms_rank(model_package=model_package)
+
+    # then
+    assert result == 0
+
+
+def test_retrieve_fused_nms_rank_when_model_features_declared_but_without_nsm_fused() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        trt_package_details=TRTPackageDetails(
+            min_dynamic_batch_size=1,
+            opt_dynamic_batch_size=8,
+            max_dynamic_batch_size=32,
+        ),
+        model_features={},
+    )
+
+    # when
+    result = retrieve_fused_nms_rank(model_package=model_package)
+
+    # then
+    assert result == 0
+
+
+def test_retrieve_fused_nms_rank_when_model_features_declared_but_with_nms_fused_turned_off() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        trt_package_details=TRTPackageDetails(
+            min_dynamic_batch_size=1,
+            opt_dynamic_batch_size=8,
+            max_dynamic_batch_size=32,
+        ),
+        model_features={"nms_fused": False},
+    )
+
+    # when
+    result = retrieve_fused_nms_rank(model_package=model_package)
+
+    # then
+    assert result == 0
+
+
+def test_retrieve_fused_nms_rank_when_model_features_declared_but_with_nms_fused_turned_on() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        trt_package_details=TRTPackageDetails(
+            min_dynamic_batch_size=1,
+            opt_dynamic_batch_size=8,
+            max_dynamic_batch_size=32,
+        ),
+        model_features={"nms_fused": True},
+    )
+
+    # when
+    result = retrieve_fused_nms_rank(model_package=model_package)
+
+    # then
+    assert result == 1
+
+
+def test_rank_model_packages_when_package_id_should_be_ordered_correctly() -> None:
+    # given
+    model_packages = [
+        ModelPackageMetadata(
+            package_id="my-package-id-1",
+            backend=BackendType.TRT,
+            quantization=Quantization.FP32,
+            dynamic_batch_size_supported=True,
+            package_artefacts=[],
+            trt_package_details=TRTPackageDetails(
+                min_dynamic_batch_size=1,
+                opt_dynamic_batch_size=8,
+                max_dynamic_batch_size=32,
+            ),
+        ),
+        ModelPackageMetadata(
+            package_id="my-package-id-2",
+            backend=BackendType.TRT,
+            quantization=Quantization.FP32,
+            dynamic_batch_size_supported=True,
+            package_artefacts=[],
+            trt_package_details=TRTPackageDetails(
+                min_dynamic_batch_size=1,
+                opt_dynamic_batch_size=8,
+                max_dynamic_batch_size=32,
+            ),
+        ),
+    ]
+
+    # when
+    result = rank_model_packages(model_packages=model_packages)
+
+    # then
+    assert [r.package_id for r in result] == ["my-package-id-2", "my-package-id-1"]
+
+
+def test_rank_model_packages_when_nms_fused_should_be_ordered_correctly() -> None:
+    # given
+    model_packages = [
+        ModelPackageMetadata(
+            package_id="my-package-id-2",
+            backend=BackendType.TRT,
+            quantization=Quantization.FP32,
+            dynamic_batch_size_supported=True,
+            package_artefacts=[],
+            trt_package_details=TRTPackageDetails(
+                min_dynamic_batch_size=1,
+                opt_dynamic_batch_size=8,
+                max_dynamic_batch_size=32,
+            ),
+        ),
+        ModelPackageMetadata(
+            package_id="my-package-id-1",
+            backend=BackendType.TRT,
+            quantization=Quantization.FP32,
+            dynamic_batch_size_supported=True,
+            package_artefacts=[],
+            trt_package_details=TRTPackageDetails(
+                min_dynamic_batch_size=1,
+                opt_dynamic_batch_size=8,
+                max_dynamic_batch_size=32,
+            ),
+            model_features={"nms_fused": True},
+        ),
+    ]
+
+    # when
+    result = rank_model_packages(model_packages=model_packages)
+
+    # then
+    assert [r.package_id for r in result] == ["my-package-id-1", "my-package-id-2"]
