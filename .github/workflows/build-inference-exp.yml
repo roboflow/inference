@@ -96,17 +96,6 @@ jobs:
         if: steps.should-build.outputs.should-build == 'true'
         uses: actions/checkout@v4
 
-      - name: Set up Depot
-        if: steps.should-build.outputs.should-build == 'true'
-        uses: depot/setup-action@v1
-
-      - name: Login to Docker Hub
-        if: steps.should-build.outputs.should-build == 'true' && (github.event_name == 'release' || github.event.inputs.force_push == 'true')
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
       - name: Determine image tags
         if: steps.should-build.outputs.should-build == 'true'
         id: image-tags
@@ -127,14 +116,39 @@ jobs:
           
           echo "tags=${TAGS}" >> $GITHUB_OUTPUT
 
+      - name: Set up Depot
+        if: steps.should-build.outputs.should-build == 'true'
+        uses: depot/setup-action@v1
       - name: Build and push ${{ matrix.platform }} image
         if: steps.should-build.outputs.should-build == 'true'
         uses: depot/build-push-action@v1
         with:
           push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true')}}
-          context: .
-          file: ./inference_experimental/dockerfiles/${{ matrix.dockerfile }}
-          platforms: ${{ matrix.build_platforms }}
+          project: grl7ffzxd7
           tags: ${{ steps.image-tags.outputs.tags }}
-          project: ${{ env.DEPOT_PROJECT_ID }}
+          platforms: ${{ matrix.build_platforms }}
+          file: ./inference_experimental/dockerfiles/${{ matrix.dockerfile }}
+          context: .
 
+      - name: Authenticate gcloud
+        uses: 'google-github-actions/auth@v2'
+        id: auth
+        with:
+          workload_identity_provider: 'projects/391662651862/locations/global/workloadIdentityPools/github-actions/providers/github'
+          service_account: 'github-gcloud-deployer@roboflow-artifacts.iam.gserviceaccount.com'
+          token_format: 'access_token'
+      - name: Login to Google Artifact Registry
+        uses: docker/login-action@v3
+        with:
+          registry: us-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+      - name: Build and push GPU image to GCP Artifact Registry
+        uses: depot/build-push-action@v1
+        with:
+          push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true') }}
+          project: grl7ffzxd7
+          tags: ${{ steps.image-tags.outputs.tags }}
+          platforms: ${{ matrix.build_platforms }}
+          file: ./inference_experimental/dockerfiles/${{ matrix.dockerfile }}
+          context: .
