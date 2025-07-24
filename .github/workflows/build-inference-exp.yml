@@ -137,6 +137,7 @@ jobs:
           context: ./inference_experimental
 
       - name: Authenticate gcloud
+        if: steps.should-build.outputs.should-build == 'true'
         uses: 'google-github-actions/auth@v2'
         id: auth
         with:
@@ -144,12 +145,14 @@ jobs:
           service_account: 'github-gcloud-deployer@roboflow-artifacts.iam.gserviceaccount.com'
           token_format: 'access_token'
       - name: Login to Google Artifact Registry
+        if: steps.should-build.outputs.should-build == 'true'
         uses: docker/login-action@v3
         with:
           registry: us-docker.pkg.dev
           username: oauth2accesstoken
           password: ${{ steps.auth.outputs.access_token }}
       - name: Build and push GPU image to GCP Artifact Registry
+        if: steps.should-build.outputs.should-build == 'true'
         uses: depot/build-push-action@v1
         with:
           push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true') }}
