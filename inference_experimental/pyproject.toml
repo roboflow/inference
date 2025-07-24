@@ -123,6 +123,7 @@ onnxruntime-gpu = [
 
 flash-attn = [
    { index = "jp6-cu126", extra = "torch-jp6-cu126" },
+   { index = "jp6-cu126", extra = "flash-attn" },
 ]
 
 [[tool.uv.index]]
