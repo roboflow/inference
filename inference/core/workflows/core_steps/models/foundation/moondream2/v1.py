@@ -44,6 +44,7 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         description="Optional text prompt to provide additional context to Moondream2.",
         examples=["my prompt", "$inputs.prompt"],
+        default=None
     )
 
     # Standard model configuration for UI, schema, etc.
@@ -151,6 +152,9 @@ class Moondream2BlockV1(WorkflowBlock):
             i.to_inference_format(numpy_preferred=False) for i in images
         ]
 
+        # Use the provided prompt (or an empty string if None) for every image.
+        prompt = prompt or ""
+        
         prompts = [prompt] * len(inference_images)
 
         # Register Moondream2 with the model manager.
