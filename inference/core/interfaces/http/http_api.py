@@ -15,6 +15,7 @@ from fastapi_cprofile.profiler import CProfileMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from inference.core import logger
+from inference.core.constants import PROCESSING_TIME_HEADER
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
 from inference.core.entities.requests.clip import (
     ClipCompareRequest,
@@ -536,7 +537,7 @@ class GCPServerlessMiddleware(BaseHTTPMiddleware):
         t1 = time.time()
         response = await call_next(request)
         t2 = time.time()
-        response.headers["X-Processing-Time"] = str(t2 - t1)
+        response.headers[PROCESSING_TIME_HEADER] = str(t2 - t1)
         return response
 
 
@@ -625,6 +626,7 @@ class HttpInterface(BaseInterface):
                 allow_credentials=True,
                 allow_methods=["*"],
                 allow_headers=["*"],
+                expose_headers=[PROCESSING_TIME_HEADER],
             )
 
         # Optionally add middleware for profiling the FastAPI server and underlying inference API code
