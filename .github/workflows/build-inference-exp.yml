@@ -90,7 +90,8 @@ jobs:
           if [[ "${{ github.event_name }}" == "release" ]] || \
              [[ "${{ github.event.inputs.image_variant }}" == "all" ]] || \
              [[ -z "${{ github.event.inputs.image_variant }}" ]] || \
-             [[ "${{ github.event.inputs.image_variant }}" == "${{ matrix.platform }}" ]]; then
+             [[ "${{ github.event.inputs.image_variant }}" == "${{ matrix.platform }}" ]] || \
+             [[ "${{ github.event.inputs.image_variant }}" == "cpu" && "${{ matrix.platform }}" == "linux/amd64" ]]; then
             echo "should-build=true" >> $GITHUB_OUTPUT
           else
             echo "should-build=false" >> $GITHUB_OUTPUT
