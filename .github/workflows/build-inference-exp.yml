@@ -40,6 +40,7 @@ jobs:
         run: |
           cd inference_experimental
           VERSION=$(grep -E '^version = ' pyproject.toml | cut -d'"' -f2)
+          echo "VERSION=${VERSION}"
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
 
       - name: generate tags
@@ -52,6 +53,7 @@ jobs:
             BASE_TAG="${{ github.event.inputs.custom_tag }}"
           fi
           
+          echo "base-tag=${BASE_TAG}"
           echo "base-tag=${BASE_TAG}" >> $GITHUB_OUTPUT
 
   build:
@@ -114,6 +116,7 @@ jobs:
             TAGS="roboflow/inference-exp:${PLATFORM}-${BASE_TAG}"
           fi
           
+          echo "tags=${TAGS}"
           echo "tags=${TAGS}" >> $GITHUB_OUTPUT
 
       - name: Set up Depot
