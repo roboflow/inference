@@ -125,3 +125,26 @@ function runHomeScript() {
 }
 
 document$.subscribe(runHomeScript);
+
+// Select all anchor tags with href attributes
+const links = document.querySelectorAll('.md-content p a[href], .md-content ul a[href], .md-content a[href]');
+
+links.forEach(link => {
+  const href = link.href;
+
+  // Skip links that start with the excluded domains
+  if (
+    !href.startsWith('https://inference.roboflow.com') &&
+    !href.startsWith('http://inference.roboflow.com') &&
+    !href.startsWith('http://127.0.0.1') &&
+    !href.startsWith('https://127.0.0.1')
+  ) {
+    // Set the target to _blank to open in a new tab
+    link.setAttribute('target', '_blank');
+
+    // Optional: for security, also add rel="noopener noreferrer"
+    link.setAttribute('rel', 'noopener noreferrer');
+    // add .link-caret css
+    link.classList.add('link-caret');
+  }
+});
