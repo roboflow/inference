@@ -65,17 +65,18 @@ COPY Makefile Makefile
 RUN make create_inference_cli_whl PYTHON=python3.9
 RUN python3.9 -m pip install dist/inference_cli*.whl
 
-ENV ORT_TENSORRT_FP16_ENABLE=1
-ENV ORT_TENSORRT_ENGINE_CACHE_ENABLE=1
-ENV CORE_MODEL_SAM_ENABLED=False
-ENV OPENBLAS_CORETYPE=ARMV8 
-ENV LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libgomp.so.1:/usr/local/lib/python3.8/dist-packages/torch.libs/libgomp-d22c30c5.so.1.0.0
-ENV VERSION_CHECK_MODE=continuous
-ENV PROJECT=roboflow-platform
-ENV HOST=0.0.0.0
-ENV PORT=7070
-ENV WORKFLOWS_STEP_EXECUTION_MODE=local
-ENV WORKFLOWS_MAX_CONCURRENT_STEPS=1
-ENV SUPERVISON_DEPRECATION_WARNING=0
+ENV ORT_TENSORRT_FP16_ENABLE=1 \
+    ORT_TENSORRT_ENGINE_CACHE_ENABLE=1 \
+    CORE_MODEL_SAM_ENABLED=False \
+    OPENBLAS_CORETYPE=ARMV8 \
+    LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libgomp.so.1:/usr/local/lib/python3.8/dist-packages/torch.libs/libgomp-d22c30c5.so.1.0.0 \
+    VERSION_CHECK_MODE=continuous \
+    PROJECT=roboflow-platform \
+    HOST=0.0.0.0 \
+    PORT=7070 \
+    WORKFLOWS_STEP_EXECUTION_MODE=local \
+    WORKFLOWS_MAX_CONCURRENT_STEPS=1 \
+    SUPERVISON_DEPRECATION_WARNING=0 \
+    PYTHONPATH=/app:$PYTHONPATH
 
 ENTRYPOINT ["python3.9", "-m", "inference.enterprise.stream_management.manager.app"]
