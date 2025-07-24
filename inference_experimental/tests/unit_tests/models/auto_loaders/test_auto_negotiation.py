@@ -427,6 +427,8 @@ def test_trt_package_matches_runtime_environment_when_trt_not_detected_in_env() 
         l4t_version=Version("36.4.0"),
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -478,6 +480,8 @@ def test_trt_package_matches_runtime_environment_when_trt_python_package_not_det
         l4t_version=Version("36.4.0"),
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -521,6 +525,8 @@ def test_trt_package_matches_runtime_environment_when_environment_requirements_n
         l4t_version=Version("36.4.0"),
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -573,6 +579,8 @@ def test_trt_package_matches_runtime_for_jetson_when_trt_version_not_declared_in
         l4t_version=Version("36.4.0"),
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -623,6 +631,8 @@ def test_trt_package_matches_runtime_for_jetson_when_cpu_device_declared() -> No
         l4t_version=Version("36.4.0"),
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -676,6 +686,8 @@ def test_trt_package_matches_runtime_for_jetson_when_device_not_declared_but_doe
         l4t_version=Version("36.4.0"),
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -729,6 +741,8 @@ def test_trt_package_matches_runtime_for_jetson_when_device_not_declared_but_doe
         l4t_version=Version("36.4.0"),
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -778,6 +792,8 @@ def test_trt_package_matches_runtime_for_jetson_when_trt_versions_missmatch() ->
         l4t_version=Version("36.4.0"),
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -828,6 +844,8 @@ def test_trt_package_matches_runtime_for_jetson_when_l4t_versions_missmatch() ->
         l4t_version=Version("36.0.0"),
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -880,6 +898,8 @@ def test_trt_package_matches_runtime_for_jetson_when_trt_versions_missmatch_desp
         l4t_version=Version("36.4.3"),
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -933,6 +953,8 @@ def test_trt_package_matches_runtime_for_jetson_when_trt_versions_missmatch_but_
         l4t_version=Version("36.4.3"),
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -987,6 +1009,8 @@ def test_trt_package_matches_runtime_for_jetson_when_trt_versions_missmatch_forw
         l4t_version=Version("36.4.3"),
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1039,6 +1063,8 @@ def test_trt_package_matches_runtime_for_jetson_when_trt_versions_missmatch_with
         l4t_version=Version("36.4.3"),
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1085,6 +1111,8 @@ def test_trt_package_matches_runtime_when_unknown_environment_requirements_decla
         l4t_version=Version("36.4.3"),
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1131,6 +1159,8 @@ def test_trt_package_matches_runtime_for_server_when_trt_version_not_declared() 
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1183,6 +1213,8 @@ def test_trt_package_matches_runtime_environment_for_server_when_package_exclude
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1235,6 +1267,8 @@ def test_trt_package_matches_runtime_environment_for_server_when_package_exclude
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1288,6 +1322,8 @@ def test_trt_package_matches_runtime_environment_for_server_when_selected_device
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1341,6 +1377,8 @@ def test_trt_package_matches_runtime_environment_for_server_when_selected_device
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1394,6 +1432,8 @@ def test_trt_package_matches_runtime_environment_for_server_when_selected_device
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1447,6 +1487,8 @@ def test_trt_package_matches_runtime_environment_for_server_when_no_trt_forward_
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1500,6 +1542,8 @@ def test_trt_package_matches_runtime_environment_for_server_when_trt_forward_com
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1554,6 +1598,8 @@ def test_trt_package_matches_runtime_environment_for_server_when_trt_forward_com
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1609,6 +1655,8 @@ def test_trt_package_matches_runtime_environment_for_server_when_trt_forward_com
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1662,6 +1710,8 @@ def test_trt_package_matches_runtime_environment_for_server_when_trt_forward_com
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1706,6 +1756,8 @@ def test_ultralytics_package_matches_runtime_environment_when_ultralytics_not_av
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1748,6 +1800,8 @@ def test_ultralytics_package_matches_runtime_environment_when_ultralytics_availa
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1790,6 +1844,8 @@ def test_hf_transformers_package_matches_runtime_environment_when_ultralytics_no
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1832,6 +1888,8 @@ def test_hf_transformers_package_matches_runtime_environment_when_ultralytics_av
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1874,6 +1932,8 @@ def test_torch_package_matches_runtime_environment_when_ultralytics_not_availabl
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=False,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1914,6 +1974,8 @@ def test_torch_package_matches_runtime_environment_when_ultralytics_available() 
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1957,6 +2019,8 @@ def test_onnx_package_matches_runtime_environment_when_onnx_not_detected_in_envi
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=False,
+        torch_version=None,
+        torchvision_version=None,
         onnxruntime_version=None,
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1998,6 +2062,8 @@ def test_onnx_package_matches_runtime_environment_when_no_available_onnx_ep() ->
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=False,
+        torch_version=None,
+        torchvision_version=None,
         onnxruntime_version=Version("1.15.0"),
         available_onnx_execution_providers=None,
         hf_transformers_available=False,
@@ -2038,6 +2104,8 @@ def test_onnx_package_matches_runtime_environment_when_no_onnx_package_details()
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=False,
+        torch_version=None,
+        torchvision_version=None,
         onnxruntime_version=Version("1.15.0"),
         available_onnx_execution_providers={"CPUExecutionProvider"},
         hf_transformers_available=False,
@@ -2080,6 +2148,8 @@ def test_onnx_package_matches_runtime_environment_when_no_matching_execution_pro
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=False,
+        torch_version=None,
+        torchvision_version=None,
         onnxruntime_version=Version("1.15.0"),
         available_onnx_execution_providers={"CPUExecutionProvider"},
         hf_transformers_available=False,
@@ -2120,6 +2190,8 @@ def test_onnx_package_matches_runtime_environment_when_no_matching_execution_pro
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=False,
+        torch_version=None,
+        torchvision_version=None,
         onnxruntime_version=Version("1.15.0"),
         available_onnx_execution_providers={"CPUExecutionProvider"},
         hf_transformers_available=False,
@@ -2163,6 +2235,8 @@ def test_onnx_package_matches_runtime_environment_when_no_matching_execution_pro
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=False,
+        torch_version=None,
+        torchvision_version=None,
         onnxruntime_version=Version("1.15.0"),
         available_onnx_execution_providers={
             "CPUExecutionProvider",
@@ -2208,6 +2282,8 @@ def test_onnx_package_matches_runtime_environment_when_unknown_onnx_version_spot
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=False,
+        torch_version=None,
+        torchvision_version=None,
         onnxruntime_version=Version("1.10.0"),
         available_onnx_execution_providers={
             "CPUExecutionProvider",
@@ -2253,6 +2329,8 @@ def test_onnx_package_matches_runtime_environment_when_unknown_onnx_version_spot
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=False,
+        torch_version=None,
+        torchvision_version=None,
         onnxruntime_version=Version("1.10.0"),
         available_onnx_execution_providers={
             "CPUExecutionProvider",
@@ -2296,6 +2374,8 @@ def test_onnx_package_matches_runtime_environment_when_opset_matches() -> None:
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=False,
+        torch_version=None,
+        torchvision_version=None,
         onnxruntime_version=Version("1.22.0"),
         available_onnx_execution_providers={
             "CPUExecutionProvider",
@@ -2339,6 +2419,8 @@ def test_onnx_package_matches_runtime_environment_when_opset_to_high() -> None:
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=False,
+        torch_version=None,
+        torchvision_version=None,
         onnxruntime_version=Version("1.22.0"),
         available_onnx_execution_providers={
             "CPUExecutionProvider",
@@ -2384,6 +2466,8 @@ def test_model_package_matches_runtime_environment_when_backend_is_not_registere
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=False,
+        torch_version=None,
+        torchvision_version=None,
         onnxruntime_version=Version("1.22.0"),
         available_onnx_execution_providers={
             "CPUExecutionProvider",
@@ -2424,6 +2508,8 @@ def test_model_package_matches_runtime_environment_when_package_should_be_allowe
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=False,
+        torch_version=None,
+        torchvision_version=None,
         onnxruntime_version=Version("1.22.0"),
         available_onnx_execution_providers={
             "CPUExecutionProvider",
@@ -2916,6 +3002,8 @@ def test_determine_default_allowed_quantization_for_cuda_device_detected_in_runt
         l4t_version=Version("36.4.0"),
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -2957,6 +3045,8 @@ def test_determine_default_allowed_quantization_for_no_cuda_device_detected_in_r
         l4t_version=Version("36.4.0"),
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",

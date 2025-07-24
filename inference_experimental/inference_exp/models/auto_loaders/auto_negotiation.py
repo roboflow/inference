@@ -685,7 +685,7 @@ def ultralytics_package_matches_runtime_environment(
 def trt_package_matches_runtime_environment(
     model_package: ModelPackageMetadata,
     runtime_x_ray: RuntimeXRayResult,
-    # device: Optional[torch.device] = None,
+    device: Optional[torch.device] = None,
     onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
     trt_engine_host_code_allowed: bool = True,
     verbose: bool = False,
