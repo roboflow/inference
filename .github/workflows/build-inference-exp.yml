@@ -107,6 +107,9 @@ jobs:
         run: |
           BASE_TAG="${{ needs.determine-tags.outputs.base-tag }}"
           PLATFORM="${{ matrix.platform }}"
+          if [ "${{ matrix.platform }}" == "linux/amd64" ]; then
+            PLATFORM="cpu"
+          fi
           
           if [ "${{ github.event_name }}" = "release" ]; then
             # For releases, use version tag and latest
