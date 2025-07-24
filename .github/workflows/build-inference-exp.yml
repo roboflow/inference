@@ -59,6 +59,9 @@ jobs:
   build:
     needs: determine-tags
     runs-on: ubuntu-latest
+    permissions:
+      # permission lets the workflow issue OIDC tokens, required by depot.dev auth
+      id-token: write
     strategy:
       matrix:
         include:
