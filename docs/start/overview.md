@@ -4,6 +4,8 @@
 
 Roboflow Inference is a fast, on-device computer vision inference server. With Inference, you can build multi-step "Workflows" that use state-of-the-art models. These Workflows can transform images, run and chain models, ask questions to VLMs, connect to external APIs, and more. Workflows can run on your own hardware, or in the cloud.
 
+Inference runs as a microservice in Docker to which you can make web requests.
+
 Inference supports essential video features, including object tracking, outlier frame detection (powered by embeddings), and tracking the time an object spends in a zone.
 
 Inference runs both on the edge (i.e. on an NVIDIA Jetson) and in the cloud (i.e. AWS, GCP, Roboflow).

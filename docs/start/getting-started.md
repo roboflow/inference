@@ -4,141 +4,112 @@ Inference supports over 100 "blocks" with which you can make a Workflow.
 
 A Workflow is a single or multi-stage computer vision application.
 
-In this guide, we are going to make a Workflow that runs an object detection model and shows the bounding boxes and labels returned by the model.
-
-We will use a pre-trained model to detect vehicles and other common objects in a video.
-
-This Workflow can then be run on images, videos, RTSP streams, and more.
-
-We will then add video tracking to our Workflow.
+In this tutorial, we will build and run a simple Workflow that runs a model. We will then plot the bounding boxes and class labels returned by the model on the input image.
 
 !!! note
 
-    Before we get started, make sure you have [installed Inference](/install/start/).
+    Before you get started, make sure you have [installed Inference](/install/start/).
 
-## Step #1: Choose a Workflow Builder
+**Difficulty:** Easy<br />
+**Time to Complete:** 5 minutes
 
-You can build Workflows both on your own hardware and using the Roboflow web application. No matter where your Workflow is built, it can be deployed to the cloud or your own hardware.
+## Prerequisites
 
-=== "Build with Roboflow"
+=== "Cloud Connected"
+    This tutorial only requires
+    <a href="https://app.roboflow.com/workflows" target="_blank">a free Roboflow account</a>
+    and can run on the Serverless Hosted API with no setup required. This is the
+    easiest way to get started and you can migrate to self-hosting your Workflows
+    later.
+    
+    You can also connect from the cloud platform to an Inference Server running
+    locally by clicking the "Running on" selector at the top-left of the platform UI
+    and pointing it to `localhost` or your server's IP.
 
-    To get started, create a [free Roboflow account](https://app.roboflow.com).
+    Once you have an account,
+    <a href="https://docs.roboflow.com/workflows/create-a-workflow" target="_blank">create a new (empty) Workflow</a>
+    then continue below.
 
-    Then, click "Workflows" in the right sidebar of the Roboflow web interface.
+=== "Detached"
+    In Detached mode, you run both the Inference Server and Workflow Builder UI
+    locally without a Roboflow account or API Key. In Detached mode, you forego
+    cloud connected functionality like remote deployment, monitoring, integration
+    with the cloud model hub and dataset management platform, and are responsible
+    for implementing your own access control.
+    
+    To run on your own machine without a Roboflow account, follow the
+    [installation instructions](/install/index.md) and start your Inference Server
+    in development mode (using `inference server start --dev`).
+    
+    Then, navigate to the local Workflows builder at
+    <a href="http://localhost:9001/build" target="_blank">localhost:9001/build</a>
+    and create an empty Workflow using the purple "Create a Workflow" button.
+    If prompted, choose "Build My Own".
 
-    Click "Create Workflow" to create a blank Workflow.
+You should now have an empty Workflow and be ready to start building.
 
-=== "Build on Device"
+![Empty Workflow](https://media.roboflow.com/workflows/guides/hello-world/01-empty-workflow.webp)
 
-    You can run the Workflow builder on your own hardware.
+## Add a Model
 
-    To get started, [install Inference and set up your server](/install/index/).
+The first step is adding a Model Block. Click "Add a Block" to open the block selection sidebar.
 
-    Use `inference server start --dev` to set up your server.
+![Add a Block](https://media.roboflow.com/workflows/guides/hello-world/02-block-sidebar.webp)
 
-    Then, go to `http://localhost:9001/build`.
+For this guide, choose the object detection model block.
 
-    Click "Create Workflow" to create a blank Workflow.
+![Choose a Model](https://media.roboflow.com/workflows/guides/hello-world/03-choose-model.webp)
 
-You will then see a blank Workflow builder in which you can build your application:
+Then select a model. You can use a pre-trained model (trained on the 80 classes of common objects
+present in the Microsoft COCO dataset). Or, if you have linked your Roboflow account, any of your
+fine-tuned models or from the 100,000+ community-trained models shared on Roboflow Universe.
 
-![](https://media.roboflow.com/inference/get-started/blank.png)
+![Pick a Model](https://media.roboflow.com/workflows/guides/hello-world/04-yolo-nas.webp)
 
-## Step #2: Add a Detection Block
+## Test Your Workflow
 
-You can deploy both base models (i.e. RF-DETR Base) as well as models fine-tuned for a specific use case with Workflows.
+Once you've added a model, you can test it on an image or video. Click "Test Workflow" on the top
+right, then add an image and click "Run". By default, your output will contain a JSON representation
+of the model's predictions.
 
-Let's build an application that detects common objects in an image. For this purpose, we will use a base RF-DETR Base model pre-trained with the Microsoft COCO dataset. This model is free to use, so we don't need to do any set up.
+![Test Your Workflow](https://media.roboflow.com/workflows/guides/hello-world/05-test-workflow.webp)
 
-Want to detect a custom object? [Learn how to fine-tune a model for your use case](https://blog.roboflow.com/getting-started-with-roboflow/).
+## Add a Visualization
 
-Click "Add Model" in Workflows, then choose "Object Detection Model":
+To get a better view of what your model is predicting, add a
+visualization block by clicking the "+" button on the bottom of the
+Object Detection Model block. The "Bounding Box Visualization"
+and "Label Visualization" work well together.
 
-![](https://media.roboflow.com/inference/get-started/add.png)
+![Add Visualization](https://media.roboflow.com/workflows/guides/hello-world/06-add-visualization.webp)
 
-A window will appear in which you can choose the model you want to use. Click "Public Models", then choose "RF-DETR Base":
+Next, we will swap the order of the Outputs to show the visualization
+first (above the JSON) for convenience. Click the "Outputs" block
+then click the "Move Up" button for the visualization you selected.
 
-![](https://media.roboflow.com/inference/get-started/choose-model.png)
+![Arrange Outputs](https://media.roboflow.com/workflows/guides/hello-world/07-arrange-outputs.webp)
 
-Then, click "Save" to add the model to your Workflow.
+Now, when we test our Workflow we see a rendered image in addition
+to the JSON. This can be useful both for debugging and as part of
+an app's UI.
 
-## Step #3: Add a Visualizer
+![Test Again](https://media.roboflow.com/workflows/guides/hello-world/08-test-again.webp)
 
-The Object Detection block runs an object detection model. By default, this block returns the predictions from the model: bounding boxes with their associated labels.
+We can also click on the thumbnail (or the "Visual" output toggle)
+to see a larger version of the image.
 
-You can use Workflows to show bounding boxes and labels.
+![See Visual](https://media.roboflow.com/workflows/guides/hello-world/09-see-visual.webp)
 
-Click "Add Block", then add a "Bounding Box Visualization". Then, add a "Label Visualization". Your Workflow should now look like this:
+## Deploy
 
-![](https://media.roboflow.com/inference/get-started/with-visuals.png)
+Finally, we can use this Workflow as part of a larger application
+using the client code snippet accessible via the "Deploy" button
+at the top of the screen.
 
-Every block in Workflows is configurable. For example, you can change the thickness of the bounding box lines, or the size of the text in the labels.
+![Deploy](https://media.roboflow.com/workflows/guides/hello-world/10-deploy.webp)
 
-## Step #4: Test the Workflow
+## Next Steps
 
-We now have a Workflow ready to test.
-
-To test your Workflow, click the "Test Workflow" button.
-
-If you are running Workflows using a local Inference server or a Dedicated Deployment, you can test your Workflow on a video with the browser. Otherwise, you can test with images.
-
-Let's test with the following image that contains vehicles, one of the objects our pre-trained model can identify. You can also upload an image with commmon objects like cell phones, cups, glasses, chairs -- [the model we are using, trained on the Microsoft COCO dataset, can identify over 80 objects](https://blog.roboflow.com/microsoft-coco-classes/).
-
-![](https://media.roboflow.com/inference/get-started/test-image.png)
-
-## Step #5: Add a Tracker
-
-Workflows has an extensive suite of tools for building applications designed to run on video.
-
-Let's add a tracker that will let us track objects between frames.
-
-Hover over the Object Detection model block, then click the "+" (plus) icon to add a block below. Choose "Byte Tracker".
-
-![](https://media.roboflow.com/inference/get-started/add-tracker.png)
-
-Your Workflow should look like this:
-
-![](https://media.roboflow.com/inference/get-started/final-workflow.png)
-
-Our Workflow can now track objects between frames.
-
-## Step #5: Deploy the Workflow
-
-With a video-capable Workflow ready, let's test our Workflow on our hardware.
-
-Click "Deploy" in the top right corner, then copy the code snippet you see. The code snippet will look like this:
-
-```python
-# Import the InferencePipeline object
-from inference import InferencePipeline
-import cv2
-
-def my_sink(result, video_frame):
-    if result.get("output_image"): # Display an image from the workflow response
-        cv2.imshow("Workflow Image", result["output_image"].numpy_image)
-        cv2.waitKey(1)
-    print(result) # do something with the predictions of each frame
-
-
-# initialize a pipeline object
-pipeline = InferencePipeline.init_with_workflow(
-    api_key="",
-    workspace_name="capjamesg",
-    workflow_id="custom-workflow-84",
-    video_reference=0, # Path to video, device id (int, usually 0 for built in webcams), or RTSP stream url
-    max_fps=30,
-    on_prediction=my_sink
-)
-pipeline.start() #start the pipeline
-pipeline.join() #wait for the pipeline thread to finish
-```
-
-Create a new Python file with this code, then run the file.
-
-You will see your Workflow running live on your webcam.
-
-Want to run on an RTSP stream? Replace the `video_reference` with the URL of your stream.
-
-You have just built your first Workflow!
-
-Ready to build more? [Check out our gallery of tutorials](/guides/written/).
+Now that we've built a simple Workflow and validated that we can connect
+and run models on our Inference Server we can start building more
+complex and powerful Workflows like [comparing the output of two models](compare-models.md).
