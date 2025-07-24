@@ -30,6 +30,7 @@ from inference_exp.models.auto_loaders.auto_negotiation import (
     remove_untrusted_packages,
     select_model_package_by_id,
     torch_package_matches_runtime_environment,
+    torch_script_package_matches_runtime_environment,
     trt_package_matches_runtime_environment,
     ultralytics_package_matches_runtime_environment,
     verify_trt_package_compatibility_with_cuda_device,
@@ -38,11 +39,13 @@ from inference_exp.models.auto_loaders.auto_negotiation import (
 from inference_exp.runtime_introspection.core import RuntimeXRayResult
 from inference_exp.weights_providers.entities import (
     BackendType,
+    FileDownloadSpecs,
     JetsonEnvironmentRequirements,
     ModelPackageMetadata,
     ONNXPackageDetails,
     Quantization,
     ServerEnvironmentRequirements,
+    TorchScriptPackageDetails,
     TRTPackageDetails,
 )
 from packaging.version import Version
@@ -3173,3 +3176,647 @@ def test_remove_packages_not_matching_implementation_when_all_entries_to_be_remo
     assert len(result) == 0
     assert len(discarded) == 1
     assert discarded[0].package_id == "my-package-id-2"
+
+
+def test_torch_script_package_matches_runtime_environment_when_no_torch_available() -> (
+    None
+):
+    # given
+    runtime_xray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["nvidia-l4"],
+        gpu_devices_cc=[Version("8.7")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=None,
+        jetson_type=None,
+        l4t_version=Version("36.4.0"),
+        os_version="ubuntu-20.04",
+        torch_available=False,
+        torch_version=None,
+        torchvision_version=None,
+        onnxruntime_version=Version("1.21.0"),
+        available_onnx_execution_providers={
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
+        },
+        hf_transformers_available=True,
+        ultralytics_available=True,
+        trt_python_package_available=False,
+    )
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={"nms_fused": True},
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    result = torch_script_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_xray,
+        device=torch.device("cpu"),
+    )
+
+    # then
+    assert result[0] is False
+    assert result[1] is not None
+
+
+def test_torch_script_package_matches_runtime_environment_when_no_torch_script_package_details_available() -> (
+    None
+):
+    # given
+    runtime_xray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["nvidia-l4"],
+        gpu_devices_cc=[Version("8.7")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=None,
+        jetson_type=None,
+        l4t_version=Version("36.4.0"),
+        os_version="ubuntu-20.04",
+        torch_available=True,
+        torch_version=Version("2.6.0"),
+        torchvision_version=Version("0.22.0"),
+        onnxruntime_version=Version("1.21.0"),
+        available_onnx_execution_providers={
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
+        },
+        hf_transformers_available=True,
+        ultralytics_available=True,
+        trt_python_package_available=False,
+    )
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={"nms_fused": True},
+        torch_script_package_details=None,
+    )
+
+    # when
+    result = torch_script_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_xray,
+        device=torch.device("cpu"),
+    )
+
+    # then
+    assert result[0] is False
+    assert result[1] is not None
+
+
+def test_torch_script_package_matches_runtime_environment_when_device_not_available() -> (
+    None
+):
+    # given
+    runtime_xray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["nvidia-l4"],
+        gpu_devices_cc=[Version("8.7")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=None,
+        jetson_type=None,
+        l4t_version=Version("36.4.0"),
+        os_version="ubuntu-20.04",
+        torch_available=True,
+        torch_version=Version("2.6.0"),
+        torchvision_version=Version("0.22.0"),
+        onnxruntime_version=Version("1.21.0"),
+        available_onnx_execution_providers={
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
+        },
+        hf_transformers_available=True,
+        ultralytics_available=True,
+        trt_python_package_available=False,
+    )
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={"nms_fused": True},
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    result = torch_script_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_xray,
+        device=None,
+    )
+
+    # then
+    assert result[0] is False
+    assert result[1] is not None
+
+
+def test_torch_script_package_matches_runtime_environment_when_device_not_supported() -> (
+    None
+):
+    # given
+    runtime_xray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["nvidia-l4"],
+        gpu_devices_cc=[Version("8.7")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=None,
+        jetson_type=None,
+        l4t_version=Version("36.4.0"),
+        os_version="ubuntu-20.04",
+        torch_available=True,
+        torch_version=Version("2.6.0"),
+        torchvision_version=Version("0.22.0"),
+        onnxruntime_version=Version("1.21.0"),
+        available_onnx_execution_providers={
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
+        },
+        hf_transformers_available=True,
+        ultralytics_available=True,
+        trt_python_package_available=False,
+    )
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={"nms_fused": True},
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    result = torch_script_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_xray,
+        device=torch.device("cpu"),
+    )
+
+    # then
+    assert result[0] is False
+    assert result[1] is not None
+
+
+def test_torch_script_package_matches_runtime_environment_when_torch_version_not_available_in_env() -> (
+    None
+):
+    # given
+    runtime_xray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["nvidia-l4"],
+        gpu_devices_cc=[Version("8.7")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=None,
+        jetson_type=None,
+        l4t_version=Version("36.4.0"),
+        os_version="ubuntu-20.04",
+        torch_available=True,
+        torch_version=None,
+        torchvision_version=Version("0.22.0"),
+        onnxruntime_version=Version("1.21.0"),
+        available_onnx_execution_providers={
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
+        },
+        hf_transformers_available=True,
+        ultralytics_available=True,
+        trt_python_package_available=False,
+    )
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={"nms_fused": True},
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    result = torch_script_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_xray,
+        device=torch.device("cpu"),
+    )
+
+    # then
+    assert result[0] is False
+    assert result[1] is not None
+
+
+def test_torch_script_package_matches_runtime_environment_when_torch_version_does_not_match() -> (
+    None
+):
+    # given
+    runtime_xray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["nvidia-l4"],
+        gpu_devices_cc=[Version("8.7")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=None,
+        jetson_type=None,
+        l4t_version=Version("36.4.0"),
+        os_version="ubuntu-20.04",
+        torch_available=True,
+        torch_version=Version("2.5.0"),
+        torchvision_version=Version("0.22.0"),
+        onnxruntime_version=Version("1.21.0"),
+        available_onnx_execution_providers={
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
+        },
+        hf_transformers_available=True,
+        ultralytics_available=True,
+        trt_python_package_available=False,
+    )
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={"nms_fused": True},
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    result = torch_script_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_xray,
+        device=torch.device("cpu"),
+    )
+
+    # then
+    assert result[0] is False
+    assert result[1] is not None
+
+
+def test_torch_script_package_matches_runtime_environment_when_torch_version_equal() -> (
+    None
+):
+    # given
+    runtime_xray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["nvidia-l4"],
+        gpu_devices_cc=[Version("8.7")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=None,
+        jetson_type=None,
+        l4t_version=Version("36.4.0"),
+        os_version="ubuntu-20.04",
+        torch_available=True,
+        torch_version=Version("2.6.0"),
+        torchvision_version=Version("0.22.0"),
+        onnxruntime_version=Version("1.21.0"),
+        available_onnx_execution_providers={
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
+        },
+        hf_transformers_available=True,
+        ultralytics_available=True,
+        trt_python_package_available=False,
+    )
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={"nms_fused": True},
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=None,
+        ),
+    )
+
+    # when
+    result = torch_script_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_xray,
+        device=torch.device("cpu"),
+    )
+
+    # then
+    assert result[0] is True
+    assert result[1] is None
+
+
+def test_torch_script_package_matches_runtime_environment_when_torch_version_higher() -> (
+    None
+):
+    # given
+    runtime_xray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["nvidia-l4"],
+        gpu_devices_cc=[Version("8.7")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=None,
+        jetson_type=None,
+        l4t_version=Version("36.4.0"),
+        os_version="ubuntu-20.04",
+        torch_available=True,
+        torch_version=Version("2.6.1"),
+        torchvision_version=Version("0.22.0"),
+        onnxruntime_version=Version("1.21.0"),
+        available_onnx_execution_providers={
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
+        },
+        hf_transformers_available=True,
+        ultralytics_available=True,
+        trt_python_package_available=False,
+    )
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={"nms_fused": True},
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=None,
+        ),
+    )
+
+    # when
+    result = torch_script_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_xray,
+        device=torch.device("cpu"),
+    )
+
+    # then
+    assert result[0] is True
+    assert result[1] is None
+
+
+def test_torch_script_package_matches_runtime_environment_when_torchvision_version_required_but_not_found() -> (
+    None
+):
+    # given
+    runtime_xray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["nvidia-l4"],
+        gpu_devices_cc=[Version("8.7")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=None,
+        jetson_type=None,
+        l4t_version=Version("36.4.0"),
+        os_version="ubuntu-20.04",
+        torch_available=True,
+        torch_version=Version("2.6.0"),
+        torchvision_version=None,
+        onnxruntime_version=Version("1.21.0"),
+        available_onnx_execution_providers={
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
+        },
+        hf_transformers_available=True,
+        ultralytics_available=True,
+        trt_python_package_available=False,
+    )
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={"nms_fused": True},
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    result = torch_script_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_xray,
+        device=torch.device("cpu"),
+    )
+
+    # then
+    assert result[0] is False
+    assert result[1] is not None
+
+
+def test_torch_script_package_matches_runtime_environment_when_torchvision_version_required_and_found_too_low() -> (
+    None
+):
+    # given
+    runtime_xray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["nvidia-l4"],
+        gpu_devices_cc=[Version("8.7")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=None,
+        jetson_type=None,
+        l4t_version=Version("36.4.0"),
+        os_version="ubuntu-20.04",
+        torch_available=True,
+        torch_version=Version("2.6.0"),
+        torchvision_version=Version("0.21.0"),
+        onnxruntime_version=Version("1.21.0"),
+        available_onnx_execution_providers={
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
+        },
+        hf_transformers_available=True,
+        ultralytics_available=True,
+        trt_python_package_available=False,
+    )
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={"nms_fused": True},
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    result = torch_script_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_xray,
+        device=torch.device("cpu"),
+    )
+
+    # then
+    assert result[0] is False
+    assert result[1] is not None
+
+
+def test_torch_script_package_matches_runtime_environment_when_torchvision_version_required_and_matches_exactly() -> (
+    None
+):
+    # given
+    runtime_xray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["nvidia-l4"],
+        gpu_devices_cc=[Version("8.7")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=None,
+        jetson_type=None,
+        l4t_version=Version("36.4.0"),
+        os_version="ubuntu-20.04",
+        torch_available=True,
+        torch_version=Version("2.6.0"),
+        torchvision_version=Version("0.22.0"),
+        onnxruntime_version=Version("1.21.0"),
+        available_onnx_execution_providers={
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
+        },
+        hf_transformers_available=True,
+        ultralytics_available=True,
+        trt_python_package_available=False,
+    )
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={"nms_fused": True},
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    result = torch_script_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_xray,
+        device=torch.device("cpu"),
+    )
+
+    # then
+    assert result[0] is True
+    assert result[1] is None
+
+
+def test_torch_script_package_matches_runtime_environment_when_torchvision_version_required_and_matches_higher() -> (
+    None
+):
+    # given
+    runtime_xray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["nvidia-l4"],
+        gpu_devices_cc=[Version("8.7")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=None,
+        jetson_type=None,
+        l4t_version=Version("36.4.0"),
+        os_version="ubuntu-20.04",
+        torch_available=True,
+        torch_version=Version("2.6.0"),
+        torchvision_version=Version("0.23.0"),
+        onnxruntime_version=Version("1.21.0"),
+        available_onnx_execution_providers={
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
+        },
+        hf_transformers_available=True,
+        ultralytics_available=True,
+        trt_python_package_available=False,
+    )
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={"nms_fused": True},
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    result = torch_script_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_xray,
+        device=torch.device("cpu"),
+    )
+
+    # then
+    assert result[0] is True
+    assert result[1] is None

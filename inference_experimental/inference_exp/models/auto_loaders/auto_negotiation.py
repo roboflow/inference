@@ -990,6 +990,18 @@ def torch_script_package_matches_runtime_environment(
     )
     if requested_torch_vision_version is None:
         return True, None
+    if runtime_x_ray.torchvision_version is None:
+        verbose_info(
+            message=f"Model package with id '{model_package.package_id}' filtered out as it was not possible "
+            f"to extract torchvision version from environment. This may be a problem worth reporting at "
+            f"https://github.com/roboflow/inference/issues/",
+            verbose_requested=verbose,
+        )
+        return (
+            False,
+            f"Model package is not supported when torchvision version cannot be determined. This may be a bug - "
+            f"please report: https://github.com/roboflow/inference/issues/",
+        )
     if runtime_x_ray.torchvision_version < requested_torch_vision_version:
         verbose_info(
             message=f"Model package with id '{model_package.package_id}' filtered out as it request torchvision in  "
