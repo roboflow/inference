@@ -137,3 +137,4 @@ jobs:
           platforms: ${{ matrix.build_platforms }}
           tags: ${{ steps.image-tags.outputs.tags }}
           project: ${{ env.DEPOT_PROJECT_ID }}
+
