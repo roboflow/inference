@@ -134,7 +134,7 @@ jobs:
           tags: ${{ steps.image-tags.outputs.tags }}
           platforms: ${{ matrix.build_platforms }}
           file: ./inference_experimental/dockerfiles/${{ matrix.dockerfile }}
-          context: .
+          context: ./inference_experimental
 
       - name: Authenticate gcloud
         uses: 'google-github-actions/auth@v2'
@@ -157,4 +157,4 @@ jobs:
           tags: ${{ steps.image-tags.outputs.tags }}
           platforms: ${{ matrix.build_platforms }}
           file: ./inference_experimental/dockerfiles/${{ matrix.dockerfile }}
-          context: .
+          context: ./inference_experimental
