@@ -12,8 +12,6 @@ from PIL import Image
 
 ASSETS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "assets"))
 MODELS_DIR = os.path.join(ASSETS_DIR, "models")
-DOG_IMAGE_PATH = os.path.join(ASSETS_DIR, "dog.jpeg")
-DOG_IMAGE_URL = "https://media.roboflow.com/dog.jpeg"
 CLIP_RN50_TORCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/clip_packages/RN50/torch/model.pt"
 CLIP_RN50_ONNX_VISUAL = "https://storage.googleapis.com/roboflow-tests-assets/clip_packages/RN50/onnx/visual.onnx"
 CLIP_RN50_ONNX_TEXTUAL = "https://storage.googleapis.com/roboflow-tests-assets/clip_packages/RN50/onnx/textual.onnx"
@@ -64,26 +62,6 @@ def perception_encoder_path() -> str:
     _download_if_not_exists(file_path=model_path, url=PE_MODEL_URL)
     _download_if_not_exists(file_path=config_path, url=PE_CONFIG_URL)
     return package_path
-
-
-@pytest.fixture(scope="function")
-def dog_image_numpy() -> np.ndarray:
-    _download_if_not_exists(file_path=DOG_IMAGE_PATH, url=DOG_IMAGE_URL)
-    image = cv2.imread(DOG_IMAGE_PATH)
-    assert image is not None, "Could not load test image"
-    return image
-
-
-@pytest.fixture(scope="function")
-def dog_image_torch() -> torch.Tensor:
-    _download_if_not_exists(file_path=DOG_IMAGE_PATH, url=DOG_IMAGE_URL)
-    return torchvision.io.read_image(DOG_IMAGE_PATH)
-
-
-@pytest.fixture(scope="function")
-def dog_image_pil() -> Image.Image:
-    _download_if_not_exists(file_path=DOG_IMAGE_PATH, url=DOG_IMAGE_URL)
-    return Image.open(DOG_IMAGE_PATH)
 
 
 @pytest.fixture(scope="function")
