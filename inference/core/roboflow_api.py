@@ -37,6 +37,7 @@ from inference.core.env import (
     TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL,
     USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS,
     WORKFLOWS_DEFINITION_CACHE_EXPIRY,
+    ROBOFLOW_SERVICE_SECRET,
 )
 from inference.core.exceptions import (
     MalformedRoboflowAPIResponseError,
@@ -259,8 +260,8 @@ def get_roboflow_model_data(
 
         if (
             INTERNAL_WEIGHTS_URL_SUFFIX == "serverless"
-            and countinference
-            and service_secret
+            and countinference == False
+            and service_secret == ROBOFLOW_SERVICE_SECRET
         ):
             params.append(("countinference", str(countinference).lower()))
             params.append(("service_secret", service_secret))
