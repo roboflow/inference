@@ -307,7 +307,7 @@ def get_roboflow_instant_model_data(
 
         if (
             INTERNAL_WEIGHTS_URL_SUFFIX == "serverless"
-            and countinference == False
+            and countinference is False
             and service_secret == ROBOFLOW_SERVICE_SECRET
         ):
             params.append(("countinference", str(countinference).lower()))
