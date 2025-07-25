@@ -275,6 +275,13 @@ def align_instance_segmentation_results(
     original_size: ImageDimensions,
     inference_size: ImageDimensions,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
+    if image_bboxes.shape[0] == 0:
+        empty_masks = torch.empty(
+            size=(0, original_size.height, original_size.width),
+            dtype=torch.bool,
+            device=image_bboxes.device,
+        )
+        return image_bboxes, empty_masks
     pad_left, pad_top, pad_right, pad_bottom = padding
     offsets = torch.tensor(
         [pad_left, pad_top, pad_left, pad_top],
@@ -303,5 +310,5 @@ def align_instance_segmentation_results(
         masks,
         [original_size.height, original_size.width],
         interpolation=functional.InterpolationMode.BILINEAR,
-    ).gt_(0.0)
+    ).gt_(0.0).to(dtype=torch.bool)
     return image_bboxes, masks

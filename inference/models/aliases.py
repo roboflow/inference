@@ -55,6 +55,9 @@ SMOLVLM_ALIASES = {
 RFDETR_ALIASES = {
     "rfdetr-base": "coco/36",
     "rfdetr-large": "coco/37",
+    "rfdetr-nano": "coco/38",
+    "rfdetr-small": "coco/39",
+    "rfdetr-medium": "coco/40",
 }
 
 REGISTERED_ALIASES = {
