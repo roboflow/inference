@@ -40,10 +40,6 @@ class Florence2HF:
 
         adapter_config_path = os.path.join(model_name_or_path, "adapter_config.json")
         if os.path.exists(adapter_config_path):
-            print("Loading LoRA model")
-            lora_config = LoraConfig.from_pretrained(model_name_or_path)
-            # model_id = lora_config.base_model_name_or_path
-            # revision = lora_config.revision
             base_model_path = os.path.join(model_name_or_path, "base")
             model = AutoModelForCausalLM.from_pretrained(
                 base_model_path,
