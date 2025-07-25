@@ -422,7 +422,7 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                             },
                         )
                     expanded_execution_providers.append(ep)
-                
+
                 if "OpenVINOExecutionProvider" in expanded_execution_providers:
                     expanded_execution_providers.remove("OpenVINOExecutionProvider")
 
