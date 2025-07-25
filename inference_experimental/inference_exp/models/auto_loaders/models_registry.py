@@ -121,6 +121,10 @@ REGISTERED_MODELS: Dict[Tuple[ModelArchitecture, TaskType, BackendType], LazyCla
         module_name="inference_exp.models.paligemma.paligemma_hf",
         class_name="PaliGemmaHF",
     ),
+    ("florence-2", VLM_TASK, BackendType.HF): LazyClass(
+        module_name="inference_exp.models.florence2.florence2_hf",
+        class_name="Florence2HF",
+    ),
     ("clip", EMBEDDING_TASK, BackendType.TORCH): LazyClass(
         module_name="inference_exp.models.clip.clip_pytorch",
         class_name="ClipTorch",
