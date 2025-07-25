@@ -391,11 +391,6 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                 ONNXRUNTIME_EXECUTION_PROVIDERS
             )
 
-            if not self.load_weights:
-                providers = [
-                    "CPUExecutionProvider"
-                ]  # "OpenVINOExecutionProvider" dropped until further investigation is done
-
             try:
                 session_options = onnxruntime.SessionOptions()
                 session_options.log_severity_level = 3
@@ -404,7 +399,7 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                     session_options.graph_optimization_level = (
                         onnxruntime.GraphOptimizationLevel.ORT_DISABLE_ALL
                     )
-                expanded_execution_providers = []
+                expanded_execution_providers = providers
                 for ep in self.onnxruntime_execution_providers:
                     if ep == "TensorrtExecutionProvider":
                         ep = (
@@ -422,6 +417,10 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                             },
                         )
                 expanded_execution_providers.append(ep)
+
+                if "OpenVINOExecutionProvider" in expanded_execution_providers:
+                    expanded_execution_providers.remove("OpenVINOExecutionProvider")
+
                 self.onnx_session = onnxruntime.InferenceSession(
                     self.cache_file(self.weights_file),
                     providers=expanded_execution_providers,
