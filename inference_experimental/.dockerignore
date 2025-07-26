@@ -32,7 +32,6 @@ scratch
 lora-bases
 lora-tars
 tmptmp
-dockerfiles
 README.md
 dist
 inference_exp.egg-info
