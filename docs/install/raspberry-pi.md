@@ -24,7 +24,7 @@ Larger models like Segment Anything and VLMs like Florence 2 will struggle to ru
 high performance on the Pi's compute. If you need more power for higher framerates or
 bigger models consider [an NVIDIA Jetson](jetson.md).
 
-## Manually Starting the Container
+## Manually Start the Container
 
 If you want more control of the container settings you can also start it
 manually.

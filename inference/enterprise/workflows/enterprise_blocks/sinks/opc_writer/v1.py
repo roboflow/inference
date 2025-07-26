@@ -32,8 +32,9 @@ from inference.core.workflows.prototypes.block import (
 
 BLOCK_TYPE = "roboflow_enterprise/opc_writer_sink@v1"
 LONG_DESCRIPTION = """
-The **OPC UA Writer** block enables you to write data to a variable on an OPC UA server, leveraging the 
-[asyncua](https://github.com/FreeOpcUa/opcua-asyncio) library for seamless communication.
+The **OPC UA Writer** block enables you to write data to a variable on an OPC UA server.
+
+This block uses the [asyncua](https://github.com/FreeOpcUa/opcua-asyncio) library for seamless communication.
 
 ### Supported Data Types
 This block supports writing the following data types to OPC UA server variables:
@@ -106,6 +107,11 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Roboflow Enterprise License",
             "block_type": "sink",
+            "ui_manifest": {
+                "section": "enterprise_blocks",
+                "icon": "far fa-building",
+                "blockPriority": 1,
+            },
         }
     )
     type: Literal[BLOCK_TYPE]

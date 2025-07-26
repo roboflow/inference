@@ -11,22 +11,29 @@ hide:
 <section class="mdx-container portfolio-section">
   <div class="md-grid md-typeset">
     <div class="text-center">
+    {% if custom_title %}
+      <h1>{{ title }}</h1>
+      <p style="white-space: pre-wrap;">{{ description.strip() }}</p>
+    {% else %}
       <h1>Workflow Blocks</h1>
+      <p>Workflows are made of Blocks. Blocks can be connected to build multi-step computer vision applications.</p>
+      <p>Below is a list of all the Blocks supported in Workflows.</p>
+    {% endif %}
     </div>
-    
+
       {% for section in block_sections %}
       <div class="section">
-        <h2>{{ section.title | capitalize }}</h2>
+        <h2>{{ section.title }}</h2>
         <div class="blocks">
             <div class="custom-grid">
             {% for block in blocks_by_section[section.id] %}
 
 
 
-            <a href="{{block.url}}">
+            <a href="{{block.url}}" style="border: 1px solid {{ block.color }}; border-radius: 0.25rem;">
               <div class="block">
                 
-                <div class="block_name"> <i class="{{block.icon}}" > </i>  {{ block.name }}</div>
+                <div class="block_name"> <i class="{{block.icon}}" style="color: {{ block.color }}; fill: {{ block.color }}"> </i>  {{ block.name }}</div>
                 <div class="block_description">{{ block.description }}</div>
                 <!-- <div class="block_license">{{ block.license }}</div> -->
               </div>
@@ -50,10 +57,9 @@ article > a.md-content__button.md-icon:first-child {
 }
 
 .block {
-  border: 1px solid black;
   border-radius: 4px;
   padding: 10px;
-  height: 100px;
+  height: 100%;
 }
 
 .block_name {
@@ -62,7 +68,6 @@ article > a.md-content__button.md-icon:first-child {
 }
 
 .block_description {
-    font-size: 0.65em;
     padding-top: 5px;
     color: #444;
 }
