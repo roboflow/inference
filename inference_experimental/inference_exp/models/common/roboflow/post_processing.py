@@ -306,9 +306,13 @@ def align_instance_segmentation_results(
     masks = masks[
         :, mask_pad_top : mh - mask_pad_bottom, mask_pad_left : mw - mask_pad_right
     ]
-    masks = functional.resize(
-        masks,
-        [original_size.height, original_size.width],
-        interpolation=functional.InterpolationMode.BILINEAR,
-    ).gt_(0.0).to(dtype=torch.bool)
+    masks = (
+        functional.resize(
+            masks,
+            [original_size.height, original_size.width],
+            interpolation=functional.InterpolationMode.BILINEAR,
+        )
+        .gt_(0.0)
+        .to(dtype=torch.bool)
+    )
     return image_bboxes, masks
