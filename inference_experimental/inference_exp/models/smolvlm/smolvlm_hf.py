@@ -1,7 +1,9 @@
 from typing import List, Optional, Union
+import os
 
 import numpy as np
 import torch
+from peft import PeftModel
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
 from inference_exp.models.common.roboflow.pre_processing import images_to_pillow
@@ -18,14 +20,42 @@ class SmolVLMHF:
         **kwargs,
     ) -> "SmolVLMHF":
         torch_dtype = torch.float16 if device.type == "cuda" else torch.float32
-        model = AutoModelForImageTextToText.from_pretrained(
-            model_name_or_path,
-            torch_dtype=torch_dtype,
-            device_map=device,
-        ).eval()
-        processor = AutoProcessor.from_pretrained(
-            model_name_or_path, padding_side="left"
-        )
+
+        adapter_config_path = os.path.join(model_name_or_path, "adapter_config.json")
+        if os.path.exists(adapter_config_path):
+
+            base_model_path = os.path.join(model_name_or_path, "base")
+            model = AutoModelForImageTextToText.from_pretrained(
+                base_model_path,
+                torch_dtype=torch_dtype,
+                trust_remote_code=True,
+                local_files_only=True,
+            )
+            model = PeftModel.from_pretrained(model, model_name_or_path)
+            model.merge_and_unload()
+            model.to(device)
+
+            processor = AutoProcessor.from_pretrained(
+                base_model_path,
+                padding_side="left",
+                trust_remote_code=True,
+                local_files_only=True,
+            )
+        else:
+            print("smolvlm_hf.from_pretrained", "no adapter_config.json")
+            model = AutoModelForImageTextToText.from_pretrained(
+                model_name_or_path,
+                torch_dtype=torch_dtype,
+                device_map=device,
+                trust_remote_code=True,
+                local_files_only=True,
+            ).eval()
+            processor = AutoProcessor.from_pretrained(
+                model_name_or_path,
+                padding_side="left",
+                trust_remote_code=True,
+                local_files_only=True,
+            )
         return cls(
             model=model, processor=processor, device=device, torch_dtype=torch_dtype
         )

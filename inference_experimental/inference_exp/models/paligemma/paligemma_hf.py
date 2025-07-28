@@ -1,7 +1,9 @@
 from typing import List, Union
+import os
 
 import numpy as np
 import torch
+from peft import PeftModel
 from inference_exp.configuration import DEFAULT_DEVICE
 from transformers import AutoProcessor, PaliGemmaForConditionalGeneration
 
@@ -15,14 +17,37 @@ class PaliGemmaHF:
         device: torch.device = DEFAULT_DEVICE,
         **kwargs,
     ) -> "PaliGemmaHF":
-        # TODO: Add int4/int8 inference
         torch_dtype = torch.float16 if device.type == "cuda" else torch.float32
-        model = PaliGemmaForConditionalGeneration.from_pretrained(
-            model_name_or_path,
-            torch_dtype=torch_dtype,
-            device_map=device,
-        ).eval()
-        processor = AutoProcessor.from_pretrained(model_name_or_path)
+
+        adapter_config_path = os.path.join(model_name_or_path, "adapter_config.json")
+        if os.path.exists(adapter_config_path):
+            print("paligemma_hf.from_pretrained", "adapter_config.json")
+            base_model_path = os.path.join(model_name_or_path, "base")
+            model = PaliGemmaForConditionalGeneration.from_pretrained(
+                base_model_path,
+                torch_dtype=torch_dtype,
+                trust_remote_code=True,
+                local_files_only=True,
+            )
+            model = PeftModel.from_pretrained(model, model_name_or_path)
+            model.merge_and_unload()
+            model.to(device)
+
+            processor = AutoProcessor.from_pretrained(
+                base_model_path, trust_remote_code=True, local_files_only=True
+            )
+        else:
+            print("paligemma_hf.from_pretrained", "no adapter_config.json")
+            model = PaliGemmaForConditionalGeneration.from_pretrained(
+                model_name_or_path,
+                torch_dtype=torch_dtype,
+                device_map=device,
+                trust_remote_code=True,
+                local_files_only=True,
+            ).eval()
+            processor = AutoProcessor.from_pretrained(
+                model_name_or_path, trust_remote_code=True, local_files_only=True
+            )
         return cls(
             model=model, processor=processor, device=device, torch_dtype=torch_dtype
         )
