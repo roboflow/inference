@@ -1,8 +1,8 @@
+import http.client
 import json
 import platform
 import re
 import socket
-import subprocess
 import time
 import uuid
 
@@ -102,28 +102,43 @@ def get_inference_results_for_model(
 
 
 def get_container_stats(docker_socket_path: str) -> dict:
-    """
-    Gets the container stats.
+    """Return container statistics using the Docker Engine's Unix socket.
 
-    Returns:
-        dict: A dictionary containing the container stats.
+    The codebase originally relied on the ``curl`` command line tool to query
+    the Docker Engine's Unix socket because the ``requests`` library does not
+    natively support such connections. To avoid requiring external binaries or
+    the Docker SDK, this implementation performs a minimal HTTP request over the
+    Unix socket using only Python's standard library.
+
+    Parameters
+    ----------
+    docker_socket_path : str
+        Path to the Docker socket mounted inside the container.
+
+    Returns
+    -------
+    dict
+        Container statistics dictionary in the format returned by the Docker
+        Engine API.
     """
+
     try:
         container_id = socket.gethostname()
-        result = subprocess.run(
-            [
-                "curl",
-                "--unix-socket",
-                docker_socket_path,
-                f"http://localhost/containers/{container_id}/stats?stream=false",
-            ],
-            capture_output=True,
-            text=True,
+        connection = http.client.HTTPConnection("localhost")
+        connection.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        connection.sock.connect(docker_socket_path)
+        connection.request(
+            "GET",
+            f"/containers/{container_id}/stats?stream=false",
+            headers={"Host": "localhost"},
         )
-        if result.returncode != 0:
-            raise Exception(result.stderr)
-        stats = json.loads(result.stdout.strip())
+        response = connection.getresponse()
+        data = response.read()
+        connection.close()
+        if response.status != 200:
+            raise Exception(data.decode())
+        stats = json.loads(data.decode())
         return {"stats": stats}
-    except Exception as e:
+    except Exception as e:  # pragma: no cover - system level call
         logger.exception(e)
         raise Exception("An error occurred while fetching container stats.")
