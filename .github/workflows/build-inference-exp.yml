@@ -67,7 +67,7 @@ jobs:
         include:
           - dockerfile: "x86.cpu.base.dockerfile"
             platform: "linux/amd64"
-            build_platforms: "linux/amd64,linux/arm64"
+            build_platforms: "linux/amd64"
           - dockerfile: "x86.cu118.base.dockerfile"
             platform: "cu118"
             build_platforms: "linux/amd64"
