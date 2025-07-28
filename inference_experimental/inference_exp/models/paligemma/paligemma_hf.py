@@ -21,7 +21,6 @@ class PaliGemmaHF:
 
         adapter_config_path = os.path.join(model_name_or_path, "adapter_config.json")
         if os.path.exists(adapter_config_path):
-            print("paligemma_hf.from_pretrained", "adapter_config.json")
             base_model_path = os.path.join(model_name_or_path, "base")
             model = PaliGemmaForConditionalGeneration.from_pretrained(
                 base_model_path,
@@ -37,7 +36,6 @@ class PaliGemmaHF:
                 base_model_path, trust_remote_code=True, local_files_only=True
             )
         else:
-            print("paligemma_hf.from_pretrained", "no adapter_config.json")
             model = PaliGemmaForConditionalGeneration.from_pretrained(
                 model_name_or_path,
                 torch_dtype=torch_dtype,
