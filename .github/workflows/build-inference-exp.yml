@@ -80,9 +80,9 @@ jobs:
           - dockerfile: "x86.cu128.base.dockerfile"
             platform: "cu128"
             build_platforms: "linux/amd64"
-          - dockerfile: "jp61.cu126.base.dockerfile"
-            platform: "jp61"
-            build_platforms: "linux/arm64"
+          # - dockerfile: "jp61.cu126.base.dockerfile"
+          #   platform: "jp61"
+          #   build_platforms: "linux/arm64"
     steps:
       - name: Check if should build
         id: should-build
