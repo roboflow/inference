@@ -1,6 +1,4 @@
 name: Build and Push Inference Experimental Images
-permissions:
-  contents: read
 
 on:
   workflow_dispatch:
@@ -40,6 +38,7 @@ jobs:
         run: |
           cd inference_experimental
           VERSION=$(grep -E '^version = ' pyproject.toml | cut -d'"' -f2)
+          echo "VERSION=${VERSION}"
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
 
       - name: generate tags
@@ -52,17 +51,23 @@ jobs:
             BASE_TAG="${{ github.event.inputs.custom_tag }}"
           fi
           
+          echo "base-tag=${BASE_TAG}"
           echo "base-tag=${BASE_TAG}" >> $GITHUB_OUTPUT
 
   build:
     needs: determine-tags
     runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      # permission lets the workflow issue OIDC tokens, required by depot.dev auth
+      id-token: write
+      contents: read
     strategy:
       matrix:
         include:
           - dockerfile: "x86.cpu.base.dockerfile"
-            platform: "cpu"
-            build_platforms: "linux/amd64,linux/arm64"
+            platform: "linux/amd64"
+            build_platforms: "linux/amd64"
           - dockerfile: "x86.cu118.base.dockerfile"
             platform: "cu118"
             build_platforms: "linux/amd64"
@@ -75,9 +80,9 @@ jobs:
           - dockerfile: "x86.cu128.base.dockerfile"
             platform: "cu128"
             build_platforms: "linux/amd64"
-          - dockerfile: "jp61.cu126.base.dockerfile"
-            platform: "jp61"
-            build_platforms: "linux/arm64"
+          # - dockerfile: "jp61.cu126.base.dockerfile"
+          #   platform: "jp61"
+          #   build_platforms: "linux/arm64"
     steps:
       - name: Check if should build
         id: should-build
@@ -85,7 +90,8 @@ jobs:
           if [[ "${{ github.event_name }}" == "release" ]] || \
              [[ "${{ github.event.inputs.image_variant }}" == "all" ]] || \
              [[ -z "${{ github.event.inputs.image_variant }}" ]] || \
-             [[ "${{ github.event.inputs.image_variant }}" == "${{ matrix.platform }}" ]]; then
+             [[ "${{ github.event.inputs.image_variant }}" == "${{ matrix.platform }}" ]] || \
+             [[ "${{ github.event.inputs.image_variant }}" == "cpu" && "${{ matrix.platform }}" == "linux/amd64" ]]; then
             echo "should-build=true" >> $GITHUB_OUTPUT
           else
             echo "should-build=false" >> $GITHUB_OUTPUT
@@ -96,23 +102,15 @@ jobs:
         if: steps.should-build.outputs.should-build == 'true'
         uses: actions/checkout@v4
 
-      - name: Set up Depot
-        if: steps.should-build.outputs.should-build == 'true'
-        uses: depot/setup-action@v1
-
-      - name: Login to Docker Hub
-        if: steps.should-build.outputs.should-build == 'true' && (github.event_name == 'release' || github.event.inputs.force_push == 'true')
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
       - name: Determine image tags
         if: steps.should-build.outputs.should-build == 'true'
         id: image-tags
         run: |
           BASE_TAG="${{ needs.determine-tags.outputs.base-tag }}"
           PLATFORM="${{ matrix.platform }}"
+          if [ "${{ matrix.platform }}" == "linux/amd64" ]; then
+            PLATFORM="cpu"
+          fi
           
           if [ "${{ github.event_name }}" = "release" ]; then
             # For releases, use version tag and latest
@@ -125,15 +123,24 @@ jobs:
             TAGS="roboflow/inference-exp:${PLATFORM}-${BASE_TAG}"
           fi
           
+          echo "tags=${TAGS}"
           echo "tags=${TAGS}" >> $GITHUB_OUTPUT
 
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Set up Depot
+        if: steps.should-build.outputs.should-build == 'true'
+        uses: depot/setup-action@v1
       - name: Build and push ${{ matrix.platform }} image
         if: steps.should-build.outputs.should-build == 'true'
         uses: depot/build-push-action@v1
         with:
           push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true')}}
-          context: .
-          file: ./inference_experimental/dockerfiles/${{ matrix.dockerfile }}
-          platforms: ${{ matrix.build_platforms }}
+          project: grl7ffzxd7
           tags: ${{ steps.image-tags.outputs.tags }}
-          project: ${{ env.DEPOT_PROJECT_ID }}
+          platforms: ${{ matrix.build_platforms }}
+          file: ./inference_experimental/dockerfiles/${{ matrix.dockerfile }}
+          context: ./inference_experimental
