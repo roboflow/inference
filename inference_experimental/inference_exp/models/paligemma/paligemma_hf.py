@@ -88,6 +88,14 @@ class PaliGemmaHF:
         prompt: str,
         **kwargs,
     ) -> dict:
+        num_images = 1
+        if isinstance(images, list):
+            num_images = len(images)
+        elif hasattr(images, "shape") and len(images.shape) == 4:
+            num_images = images.shape[0]
+
+        if isinstance(prompt, str) and num_images > 1:
+            prompt = [prompt] * num_images
         return self._processor(text=prompt, images=images, return_tensors="pt").to(
             self._device
         )
