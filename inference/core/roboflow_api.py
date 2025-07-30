@@ -7,8 +7,6 @@ from enum import Enum
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
-
-import backoff
 import requests
 from requests import Response, Timeout
 from requests_toolbelt import MultipartEncoder
@@ -34,8 +32,6 @@ from inference.core.env import (
     ROBOFLOW_API_REQUEST_TIMEOUT,
     ROBOFLOW_SERVICE_SECRET,
     TRANSIENT_ROBOFLOW_API_ERRORS,
-    TRANSIENT_ROBOFLOW_API_ERRORS_RETRIES,
-    TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL,
     USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS,
     WORKFLOWS_DEFINITION_CACHE_EXPIRY,
 )
@@ -716,40 +712,37 @@ def get_from_url(
     )
 
 
-@backoff.on_exception(
-    backoff.constant,
-    exception=RetryRequestError,
-    max_tries=TRANSIENT_ROBOFLOW_API_ERRORS_RETRIES,
-    interval=TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL,
-)
 def _get_from_url(
     url: str,
     json_response: bool = True,
     verify_content_length: bool = False,
 ) -> Union[Response, dict]:
     try:
+        headers = build_roboflow_api_headers()
+        wrapped_url = wrap_url(url)
         response = requests.get(
-            wrap_url(url),
-            headers=build_roboflow_api_headers(),
+            wrapped_url,
+            headers=headers,
             timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
         )
-
     except (ConnectionError, Timeout, requests.exceptions.ConnectionError) as error:
         if RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API:
             raise RetryRequestError(
                 message="Connectivity error", inner_error=error
             ) from error
-        raise error
+        raise
+
     try:
-        api_key_safe_raise_for_status(response=response)
+        api_key_safe_raise_for_status(response)
     except Exception as error:
-        if response.status_code in TRANSIENT_ROBOFLOW_API_ERRORS:
+        status_code = response.status_code
+        if status_code in TRANSIENT_ROBOFLOW_API_ERRORS:
             raise RetryRequestError(message=str(error), inner_error=error) from error
-        raise error
+        raise
 
     if verify_content_length:
-        content_length = str(response.headers.get("Content-Length"))
-        if not content_length.isnumeric():
+        content_length = response.headers.get("Content-Length")
+        if not (content_length and content_length.isnumeric()):
             raise RoboflowAPIUnsuccessfulRequestError(
                 "Content-Length header is not numeric"
             )
@@ -796,14 +789,20 @@ def send_inference_results_to_model_monitoring(
 def build_roboflow_api_headers(
     explicit_headers: Optional[Dict[str, Union[str, List[str]]]] = None,
 ) -> Optional[Dict[str, Union[List[str]]]]:
-    if not ROBOFLOW_API_EXTRA_HEADERS:
+    """Efficiently merge base and extra headers. Avoids JSON parsing unless needed."""
+    extra = ROBOFLOW_API_EXTRA_HEADERS
+    if not extra:
         return explicit_headers
+
     try:
-        extra_headers: dict = json.loads(ROBOFLOW_API_EXTRA_HEADERS)
+        # Parse extra headers just once if available
+        extra_headers: Dict[str, Union[str, List[str]]] = json.loads(extra)
         if explicit_headers:
-            extra_headers.update(explicit_headers)
+            # Merge dictionaries, explicit overrides extra (Python 3.5+ syntax)
+            merged = {**extra_headers, **explicit_headers}
+            return merged
         return extra_headers
-    except ValueError:
+    except (ValueError, TypeError):
         logger.warning("Could not decode ROBOFLOW_API_EXTRA_HEADERS")
         return explicit_headers
 
