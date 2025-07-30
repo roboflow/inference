@@ -68,23 +68,27 @@ def test_preprocessed_output_shapes(
 
     # THEN
     # Check shapes for single image inputs
-    assert "pixel_values" in numpy_output and numpy_output["pixel_values"].shape[0] == 1
     assert (
-        "pixel_values" in tensor_output and tensor_output["pixel_values"].shape[0] == 1
+        "image_grid_thw" in numpy_output
+        and numpy_output["image_grid_thw"].shape[0] == 1
+    )
+    assert (
+        "image_grid_thw" in tensor_output
+        and tensor_output["image_grid_thw"].shape[0] == 1
     )
 
     # Check shapes for multi-image inputs
     assert (
-        "pixel_values" in list_numpy_output
-        and list_numpy_output["pixel_values"].shape[0] == 2
+        "image_grid_thw" in list_numpy_output
+        and list_numpy_output["image_grid_thw"].shape[0] == 2
     )
     assert (
-        "pixel_values" in list_tensor_output
-        and list_tensor_output["pixel_values"].shape[0] == 2
+        "image_grid_thw" in list_tensor_output
+        and list_tensor_output["image_grid_thw"].shape[0] == 2
     )
     assert (
-        "pixel_values" in batched_tensor_output
-        and batched_tensor_output["pixel_values"].shape[0] == 2
+        "image_grid_thw" in batched_tensor_output
+        and batched_tensor_output["image_grid_thw"].shape[0] == 2
     )
 
 
@@ -107,7 +111,7 @@ def test_internal_consistency_of_preprocessed_inputs(
     prompt = "What is in the image?"
     rgb_dog_image_numpy = dog_image_numpy[:, :, ::-1]
     numpy_rgb_output = qwen_model.pre_process_generation(
-        images=rgb_dog_image_numpy, prompt=prompt
+        images=rgb_dog_image_numpy, prompt=prompt, input_color_format="rgb"
     )
 
     # THEN

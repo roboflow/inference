@@ -16,5 +16,5 @@ def test_prompt(qwen_model: Qwen25VLHF, dog_image_numpy: np.ndarray):
     # then
     assert (
         result[0]
-        == "The image shows a person carrying a dog on their back. The dog appears to be a Beagle, with its tongue out and ears floppy. The person is wearing a white shirt and a black cap. They have a backpack on, which has a logo on it. The background features a clear blue sky and some buildings, indicating an urban setting.<|im_end|>"
+        == "The image shows a person carrying a dog on their back. The dog appears to be a Beagle, with its tongue out and ears floppy. The person is wearing a white shirt and a black cap. They have a backpack on, which has a logo on it. The background includes a street scene with buildings and a clear blue sky.<|im_end|>"
     )

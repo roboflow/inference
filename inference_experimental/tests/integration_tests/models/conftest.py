@@ -24,7 +24,7 @@ FLORENCE2_LARGE_FT_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/florence2/large-ft.zip"
 )
 QWEN25VL_3B_FT_URL = (
-    "https://storage.googleapis.com/roboflow-tests-assets/qwen25vl/qwen25vl-3b.zip"
+    "https://storage.googleapis.com/roboflow-tests-assets/qwen/qwen25vl-3b.zip"
 )
 PALIGEMMA_BASE_FT_URL = "https://storage.googleapis.com/roboflow-tests-assets/paligemma/paligemma2-3b-pt-224.zip"
 SMOLVLM_BASE_FT_URL = (
