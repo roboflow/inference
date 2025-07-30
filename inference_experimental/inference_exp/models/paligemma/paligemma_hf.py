@@ -1,10 +1,11 @@
-from typing import List, Union
+from typing import List, Union, Optional
 import os
 
 import numpy as np
 import torch
 from peft import PeftModel
 from inference_exp.configuration import DEFAULT_DEVICE
+from inference_exp.entities import ColorFormat
 from transformers import AutoProcessor, PaliGemmaForConditionalGeneration
 
 
@@ -66,12 +67,15 @@ class PaliGemmaHF:
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         prompt: str,
+        input_color_format: Optional[ColorFormat] = None,
         max_new_tokens: int = 400,
         do_sample: bool = False,
         skip_special_tokens: bool = True,
         **kwargs,
     ) -> List[str]:
-        inputs = self.pre_process_generation(images=images, prompt=prompt)
+        inputs = self.pre_process_generation(
+            images=images, prompt=prompt, input_color_format=input_color_format
+        )
         generated_ids = self.generate(
             inputs=inputs,
             max_new_tokens=max_new_tokens,
@@ -86,17 +90,31 @@ class PaliGemmaHF:
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         prompt: str,
+        input_color_format: Optional[ColorFormat] = None,
         **kwargs,
     ) -> dict:
-        num_images = 1
-        if isinstance(images, list):
-            num_images = len(images)
-        elif hasattr(images, "shape") and len(images.shape) == 4:
-            num_images = images.shape[0]
+        def _to_tensor(image: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
+            is_numpy = isinstance(image, np.ndarray)
+            if is_numpy:
+                tensor_image = torch.from_numpy(image.copy()).permute(2, 0, 1)
+            else:
+                tensor_image = image
+            if input_color_format == "bgr" or (is_numpy and input_color_format is None):
+                tensor_image = tensor_image[[2, 1, 0], :, :]
+            return tensor_image
+
+        if isinstance(images, torch.Tensor) and images.ndim > 3:
+            image_list = [_to_tensor(img) for img in images]
+        elif not isinstance(images, list):
+            image_list = [_to_tensor(images)]
+        else:
+            image_list = [_to_tensor(img) for img in images]
+
+        num_images = len(image_list)
 
         if isinstance(prompt, str) and num_images > 1:
             prompt = [prompt] * num_images
-        return self._processor(text=prompt, images=images, return_tensors="pt").to(
+        return self._processor(text=prompt, images=image_list, return_tensors="pt").to(
             self._device
         )
 
