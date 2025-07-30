@@ -125,6 +125,10 @@ REGISTERED_MODELS: Dict[Tuple[ModelArchitecture, TaskType, BackendType], LazyCla
         module_name="inference_exp.models.smolvlm.smolvlm_hf",
         class_name="SmolVLMHF",
     ),
+    ("qwen25vl", VLM_TASK, BackendType.HF): LazyClass(
+        module_name="inference_exp.models.qwen25vl.qwen25vl_hf",
+        class_name="Qwen25VLHF",
+    ),
     ("florence-2", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_exp.models.florence2.florence2_hf",
         class_name="Florence2HF",
