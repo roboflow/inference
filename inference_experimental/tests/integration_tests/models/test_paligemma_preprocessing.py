@@ -107,7 +107,7 @@ def test_internal_consistency_of_preprocessed_inputs(
     prompt = "caption"
     rgb_dog_image_numpy = dog_image_numpy[:, :, ::-1]
     numpy_rgb_output = paligemma_model.pre_process_generation(
-        images=rgb_dog_image_numpy, prompt=prompt
+        images=rgb_dog_image_numpy, prompt=prompt, input_color_format="rgb"
     )
 
     # THEN

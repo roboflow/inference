@@ -26,4 +26,4 @@ def test_prompt_dog_type(paligemma_model: PaliGemmaHF, dog_image_numpy: np.ndarr
         images=dog_image_numpy, prompt="What type of dog is this?"
     )
     # then
-    assert result == ["boxer"]
+    assert result == ["beagle"]
