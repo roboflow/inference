@@ -66,6 +66,7 @@ jobs:
       - name: 🔧 Install CUDA development toolkit
         if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
         run: |
+          uname -a
           mkdir -p ~/apt-cache
 
           sudo mkdir -p /var/cache/apt/archives
