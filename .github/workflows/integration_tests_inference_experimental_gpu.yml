@@ -28,6 +28,7 @@ on:
 
 jobs:
   integration-tests-inference-experimental-gpu:
+    name: ${{ matrix.extras.marker }}:${{ matrix.python-version }}
     runs-on: Roboflow-GPU-VM-Runner
     timeout-minutes: 10
     strategy:

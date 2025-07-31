@@ -29,6 +29,7 @@ on:
 
 jobs:
   integration-tests-inference-experimental-cpu:
+    name: ${{ matrix.extras.marker }}:${{ matrix.python-version }}
     runs-on:
       labels: depot-ubuntu-22.04-4
       group: public-depot
