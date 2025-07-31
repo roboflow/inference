@@ -1,5 +1,6 @@
 .PHONY: style check_code_quality
 
+PYTHON=python
 export PYTHONPATH = .
 check_dirs := inference inference_sdk
 
@@ -51,12 +52,19 @@ create_wheels:
 
 create_wheels_for_gpu_notebook:
 	python -m pip install --upgrade pip
-	python -m pip install wheel twine requests 
+	python -m pip install wheel twine requests
 	rm -f dist/*
 	python .release/pypi/inference.core.setup.py bdist_wheel
 	python .release/pypi/inference.gpu.setup.py bdist_wheel
 	python .release/pypi/inference.sdk.setup.py bdist_wheel
 	python .release/pypi/inference.cli.setup.py bdist_wheel
+
+create_inference_cli_whl:
+	${PYTHON} -m pip install --upgrade pip
+	${PYTHON} -m pip install wheel twine requests
+	rm -f dist/*
+	${PYTHON} .release/pypi/inference.cli.setup.py bdist_wheel
+
 
 upload_wheels:
 	twine upload dist/*.whl

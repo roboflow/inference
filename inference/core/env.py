@@ -309,8 +309,10 @@ MODELS_CACHE_AUTH_ENABLED = str2bool(os.getenv("MODELS_CACHE_AUTH_ENABLED", Fals
 # Models cache auth cache ttl, default is 15 minutes
 MODELS_CACHE_AUTH_CACHE_TTL = int(os.getenv("MODELS_CACHE_AUTH_CACHE_TTL", 15 * 60))
 
-# Models cache auth cache max size, default is 0 (unlimited)
-MODELS_CACHE_AUTH_CACHE_MAX_SIZE = int(os.getenv("MODELS_CACHE_AUTH_CACHE_MAX_SIZE", 0))
+# Models cache auth cache max size, default is 100_000_000 (0 DOES NOT MAKE IT UNLIMITED)
+MODELS_CACHE_AUTH_CACHE_MAX_SIZE = int(
+    os.getenv("MODELS_CACHE_AUTH_CACHE_MAX_SIZE", 100_000_000)
+)
 
 # Metrics enabled flag, default is True
 METRICS_ENABLED = str2bool(os.getenv("METRICS_ENABLED", True))
@@ -464,25 +466,37 @@ CELERY_LOG_LEVEL = os.getenv("CELERY_LOG_LEVEL", "WARNING")
 
 
 LOCAL_INFERENCE_API_URL = os.getenv("LOCAL_INFERENCE_API_URL", "http://127.0.0.1:9001")
-HOSTED_DETECT_URL = (
-    "https://detect.roboflow.com"
-    if PROJECT == "roboflow-platform"
-    else "https://lambda-object-detection.staging.roboflow.com"
+HOSTED_DETECT_URL = os.getenv(
+    "HOSTED_DETECT_URL",
+    (
+        "https://detect.roboflow.com"
+        if PROJECT == "roboflow-platform"
+        else "https://lambda-object-detection.staging.roboflow.com"
+    ),
 )
-HOSTED_INSTANCE_SEGMENTATION_URL = (
-    "https://outline.roboflow.com"
-    if PROJECT == "roboflow-platform"
-    else "https://lambda-instance-segmentation.staging.roboflow.com"
+HOSTED_INSTANCE_SEGMENTATION_URL = os.getenv(
+    "HOSTED_INSTANCE_SEGMENTATION_URL",
+    (
+        "https://outline.roboflow.com"
+        if PROJECT == "roboflow-platform"
+        else "https://lambda-instance-segmentation.staging.roboflow.com"
+    ),
 )
-HOSTED_CLASSIFICATION_URL = (
-    "https://classify.roboflow.com"
-    if PROJECT == "roboflow-platform"
-    else "https://lambda-classification.staging.roboflow.com"
+HOSTED_CLASSIFICATION_URL = os.getenv(
+    "HOSTED_CLASSIFICATION_URL",
+    (
+        "https://classify.roboflow.com"
+        if PROJECT == "roboflow-platform"
+        else "https://lambda-classification.staging.roboflow.com"
+    ),
 )
-HOSTED_CORE_MODEL_URL = (
-    "https://infer.roboflow.com"
-    if PROJECT == "roboflow-platform"
-    else "https://3hkaykeh3j.execute-api.us-east-1.amazonaws.com"
+HOSTED_CORE_MODEL_URL = os.getenv(
+    "HOSTED_CORE_MODEL_URL",
+    (
+        "https://infer.roboflow.com"
+        if PROJECT == "roboflow-platform"
+        else "https://3hkaykeh3j.execute-api.us-east-1.amazonaws.com"
+    ),
 )
 
 DISABLE_WORKFLOW_ENDPOINTS = str2bool(os.getenv("DISABLE_WORKFLOW_ENDPOINTS", False))

@@ -266,7 +266,8 @@ class InferencePipelineManager(Process):
 
             stream_output = None
             if parsed_payload.stream_output:
-                stream_output = parsed_payload.stream_output[0]
+                # TODO: UI sends None as stream_output for wildcard outputs
+                stream_output = parsed_payload.stream_output[0] or ""
             data_output = None
             if parsed_payload.data_output:
                 data_output = parsed_payload.data_output[0]
@@ -279,8 +280,6 @@ class InferencePipelineManager(Process):
                     from_inference_queue=from_inference_queue,
                     asyncio_loop=loop,
                     webcam_fps=webcam_fps,
-                    max_consecutive_timeouts=parsed_payload.max_consecutive_timeouts,
-                    min_consecutive_on_time=parsed_payload.min_consecutive_on_time,
                     processing_timeout=parsed_payload.processing_timeout,
                     fps_probe_frames=parsed_payload.fps_probe_frames,
                     data_output=data_output,
@@ -368,7 +367,7 @@ class InferencePipelineManager(Process):
                             f"Selected data output '{peer_connection.data_output}' not found in workflow outputs"
                         )
 
-                if peer_connection.stream_output:
+                if peer_connection.stream_output is not None:
                     frame: Optional[np.ndarray] = get_frame_from_workflow_output(
                         workflow_output=prediction,
                         frame_output_key=peer_connection.stream_output,

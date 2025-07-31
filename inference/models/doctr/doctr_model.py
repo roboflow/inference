@@ -2,16 +2,13 @@ import os
 import shutil
 import tempfile
 from time import perf_counter
-from typing import Any, List, Union
+from typing import Any
 
-from doctr import models as models
 from doctr.io import DocumentFile
 from doctr.models import ocr_predictor
 from PIL import Image
 
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
-from inference.core.entities.requests.inference import InferenceRequest
-from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.entities.responses.ocr import OCRInferenceResponse
 from inference.core.env import MODEL_CACHE_DIR
 from inference.core.models.roboflow import RoboflowCoreModel

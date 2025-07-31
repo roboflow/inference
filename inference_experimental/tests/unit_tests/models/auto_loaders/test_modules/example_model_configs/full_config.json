@@ -1,0 +1,7 @@
+{
+  "model_architecture": "some",
+  "task_type": "object-detection",
+  "backend_type": "onnx",
+  "model_module": "model.py",
+  "model_class": "MyClassificationModel"
+}

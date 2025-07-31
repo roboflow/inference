@@ -1,0 +1,88 @@
+FROM nvcr.io/nvidia/l4t-jetpack:r36.4.0
+
+ARG DEBIAN_FRONTEND=noninteractive
+ENV LANG=en_US.UTF-8
+
+# Install dependencies
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+    lshw \
+    git \
+    gfortran \
+    build-essential \
+    libopenblas-dev \
+    libatlas-base-dev \
+    libsm6 \
+    libxext6 \
+    wget \
+    gdal-bin \
+    libgdal-dev \
+    rustc \
+    cargo \
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY build_scripts/compile_opencv_jetpack_6_2.sh compile_opencv_jetpack_6_2.sh
+RUN chmod ugo+x compile_opencv_jetpack_6_2.sh
+RUN ./compile_opencv_jetpack_6_2.sh
+
+# Copy all requirements files
+COPY requirements/ ./requirements/
+
+# Upgrade pip and install Python packages
+RUN python3 -m pip install --upgrade pip && \
+    python3 -m pip install "torch>=2.0.1,<2.8.0" "torchvision>=0.15.2" --index-url https://pypi.jetson-ai-lab.dev/jp6/cu126 && \
+    python3 -m pip install \
+    -r requirements/_requirements.txt \
+    -r requirements/requirements.clip.txt \
+    -r requirements/requirements.http.txt \
+    -r requirements/requirements.doctr.txt \
+    -r requirements/requirements.groundingdino.txt \
+    -r requirements/requirements.sdk.http.txt \
+    -r requirements/requirements.yolo_world.txt \
+    -r requirements/requirements.jetson.txt \
+    -r requirements/requirements.transformers.txt \
+    -r requirements/requirements.gpu.txt \
+    "setuptools<=75.5.0" \
+    --extra-index-url https://pypi.jetson-ai-lab.dev/jp6/cu126
+RUN python3 -m pip install "numpy<=1.26.4"
+
+# Set up the application runtime
+WORKDIR /app
+COPY inference/ ./inference/
+COPY inference_cli/ ./inference_cli/
+COPY inference_sdk/ ./inference_sdk/
+COPY docker/config/gpu_http.py ./gpu_http.py
+COPY .release .release
+COPY requirements requirements
+COPY Makefile Makefile
+
+RUN make create_inference_cli_whl PYTHON=python3
+RUN pip3 install dist/inference_cli*.whl
+
+# Set environment variables
+ENV VERSION_CHECK_MODE=continuous \
+    PROJECT=roboflow-platform \
+    ORT_TENSORRT_FP16_ENABLE=1 \
+    ORT_TENSORRT_ENGINE_CACHE_ENABLE=1 \
+    CORE_MODEL_SAM_ENABLED=False \
+    NUM_WORKERS=1 \
+    HOST=0.0.0.0 \
+    PORT=9001 \
+    OPENBLAS_CORETYPE=ARMV8 \
+    LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libgomp.so.1 \
+    WORKFLOWS_STEP_EXECUTION_MODE=local \
+    WORKFLOWS_MAX_CONCURRENT_STEPS=2 \
+    API_LOGGING_ENABLED=True \
+    CORE_MODEL_TROCR_ENABLED=false \
+    RUNS_ON_JETSON=True \
+    ENABLE_PROMETHEUS=True \
+    ENABLE_STREAM_API=True \
+    STREAM_API_PRELOADED_PROCESSES=2 \
+    PYTHONPATH=/app:$PYTHONPATH
+
+# Expose the application port
+EXPOSE 9001
+
+# Set the entrypoint
+ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT
