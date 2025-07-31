@@ -723,7 +723,9 @@ def get_from_url(
     interval=TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL,
 )
 def _get_from_url(
-    url: str, json_response: bool = True, verify_content_length: bool = False
+    url: str,
+    json_response: bool = True,
+    verify_content_length: bool = False,
 ) -> Union[Response, dict]:
     try:
         response = requests.get(
