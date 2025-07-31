@@ -7,10 +7,18 @@ on:
   workflow_dispatch:
     inputs:
       test_name:
-        description: 'Name of specific test to run. Available options: regression_without_torch, regression_with_torch, paligemma, florence, sam2, moondream2. Leave empty to run all tests.'
+        description: 'Name of specific test to run. Leave empty to run all tests.'
         required: false
         default: ''
-        type: string
+        type: choice
+        options:
+          - ''
+          - regression_without_torch
+          - regression_with_torch
+          - paligemma
+          - florence
+          - sam2
+          - moondream2
 
 jobs:
   build:
