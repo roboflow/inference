@@ -310,7 +310,9 @@ MODELS_CACHE_AUTH_ENABLED = str2bool(os.getenv("MODELS_CACHE_AUTH_ENABLED", Fals
 MODELS_CACHE_AUTH_CACHE_TTL = int(os.getenv("MODELS_CACHE_AUTH_CACHE_TTL", 15 * 60))
 
 # Models cache auth cache max size, default is 100_000_000 (0 DOES NOT MAKE IT UNLIMITED)
-MODELS_CACHE_AUTH_CACHE_MAX_SIZE = int(os.getenv("MODELS_CACHE_AUTH_CACHE_MAX_SIZE", 100_000_000))
+MODELS_CACHE_AUTH_CACHE_MAX_SIZE = int(
+    os.getenv("MODELS_CACHE_AUTH_CACHE_MAX_SIZE", 100_000_000)
+)
 
 # Metrics enabled flag, default is True
 METRICS_ENABLED = str2bool(os.getenv("METRICS_ENABLED", True))
