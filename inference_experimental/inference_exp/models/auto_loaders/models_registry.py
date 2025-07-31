@@ -121,7 +121,7 @@ REGISTERED_MODELS: Dict[Tuple[ModelArchitecture, TaskType, BackendType], LazyCla
         module_name="inference_exp.models.paligemma.paligemma_hf",
         class_name="PaliGemmaHF",
     ),
-    ("smolvlm", VLM_TASK, BackendType.HF): LazyClass(
+    ("smolvlm-v2", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_exp.models.smolvlm.smolvlm_hf",
         class_name="SmolVLMHF",
     ),
