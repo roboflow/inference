@@ -1,4 +1,4 @@
-from typing import Dict, TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, Dict
 
 if TYPE_CHECKING:
     from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
