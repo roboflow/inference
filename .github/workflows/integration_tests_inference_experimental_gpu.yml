@@ -66,7 +66,6 @@ jobs:
       - name: 🔧 Install CUDA development toolkit
         if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
         run: |
-          uname -a
           mkdir -p ~/apt-cache
 
           sudo mkdir -p /var/cache/apt/archives
@@ -74,10 +73,10 @@ jobs:
 
           sudo apt-get update
           sudo apt-get install -y \
-              cuda-cudart-dev-12-4 \
-              cuda-nvcc-12-4 \
-              cuda-profiler-api-12-4 \
-              libcurand-dev-12-4
+              cuda-cudart-dev-12-5 \
+              cuda-nvcc-12-5 \
+              cuda-profiler-api-12-5 \
+              libcurand-dev-12-5
 
           sudo cp /var/cache/apt/archives/*.deb ~/apt-cache/ 2>/dev/null || true
           sudo chown -R $(whoami):$(whoami) ~/apt-cache
