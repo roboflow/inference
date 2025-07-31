@@ -108,11 +108,11 @@ jobs:
           }}
         working-directory: inference_experimental
         run: |
-          export CUDA_HOME=/usr/local/cuda-12.4
-          export PATH=/usr/local/cuda-12.4/bin:$PATH
-          export LD_LIBRARY_PATH=/usr/local/cuda-12.4/targets/x86_64-linux/lib64:$LD_LIBRARY_PATH
-          export CPATH=/usr/local/cuda-12.4/targets/x86_64-linux/include:$CPATH
-          export LIBRARY_PATH=/usr/local/cuda-12.4/targets/x86_64-linux/lib64:$LIBRARY_PATH
+          export CUDA_HOME=/usr/local/cuda-12.5
+          export PATH=/usr/local/cuda-12.5/bin:$PATH
+          export LD_LIBRARY_PATH=/usr/local/cuda-12.5/targets/x86_64-linux/lib64:$LD_LIBRARY_PATH
+          export CPATH=/usr/local/cuda-12.5/targets/x86_64-linux/include:$CPATH
+          export LIBRARY_PATH=/usr/local/cuda-12.5/targets/x86_64-linux/lib64:$LIBRARY_PATH
           python -m pip install --upgrade pip
           python -m pip install uv
           python -m uv venv
