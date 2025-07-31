@@ -29,7 +29,13 @@ on:
 
 jobs:
   integration-tests-inference-experimental-cpu:
-    name: ${{ matrix.extras.marker }}:${{ matrix.python-version }}
+    name: |
+      ${{ matrix.extras.marker }}:${{ matrix.python-version }} ${{
+        github.event.inputs.extras && github.event.inputs.python_version && format('[{0}, py{1}]', github.event.inputs.extras, github.event.inputs.python_version) ||
+        github.event.inputs.extras && format('[{0}]', github.event.inputs.extras) ||
+        github.event.inputs.python_version && format('[py{0}]', github.event.inputs.python_version) ||
+        ''
+      }}
     runs-on:
       labels: depot-ubuntu-22.04-4
       group: public-depot
