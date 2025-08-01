@@ -14,10 +14,11 @@ from inference_exp.weights_providers.entities import (
 )
 
 BACKEND_PRIORITY = {
-    BackendType.TRT: 5,
-    BackendType.TORCH: 4,
-    BackendType.HF: 3,
-    BackendType.ONNX: 2,
+    BackendType.TRT: 6,
+    BackendType.TORCH: 5,
+    BackendType.HF: 5,
+    BackendType.ONNX: 3,
+    BackendType.TORCH_SCRIPT: 2,
     BackendType.ULTRALYTICS: 1,
 }
 QUANTIZATION_PRIORITY = {
@@ -49,8 +50,10 @@ def rank_model_packages(
     # discarded in the previous stage.
     cuda_ranking = rank_cuda_versions(model_packages=model_packages)
     trt_ranking = rank_trt_versions(model_packages=model_packages)
-    for model_package, package_cu_rank, package_trt_rank in zip(
-        model_packages, cuda_ranking, trt_ranking
+    # this is to ensure determinism when other methods fail
+    identifiers_ranking = rank_packages_ids(model_packages=model_packages)
+    for model_package, package_cu_rank, package_trt_rank, package_id_rank in zip(
+        model_packages, cuda_ranking, trt_ranking, identifiers_ranking
     ):
         batch_mode = (
             DYNAMIC_BATCH_SIZE_KEY
@@ -82,15 +85,17 @@ def rank_model_packages(
                 package_trt_rank,
                 retrieve_onnx_incompatible_providers_score(model_package),
                 retrieve_trt_dynamic_batch_size_score(model_package),
+                retrieve_fused_nms_rank(model_package),
                 retrieve_trt_lean_runtime_excluded_score(model_package),
                 retrieve_jetson_device_name_match_score(model_package),
                 retrieve_os_version_match_score(model_package),
                 retrieve_l4t_version_match_score(model_package),
                 retrieve_driver_version_match_score(model_package),
+                package_id_rank,
                 model_package,
             )
         )
-    sorted_features = sorted(sorting_features, key=lambda x: x[:17], reverse=True)
+    sorted_features = sorted(sorting_features, key=lambda x: x[:-1], reverse=True)
     return [f[-1] for f in sorted_features]
 
 
@@ -254,6 +259,15 @@ def retrieve_jetson_device_name_match_score(model_package: ModelPackageMetadata)
     )
 
 
+def retrieve_fused_nms_rank(model_package: ModelPackageMetadata) -> int:
+    if not model_package.model_features:
+        return 0
+    nms_fused = model_package.model_features.get("nms_fused")
+    if not isinstance(nms_fused, bool):
+        return 0
+    return int(nms_fused is True)
+
+
 def rank_cuda_versions(model_packages: List[ModelPackageMetadata]) -> List[int]:
     cuda_versions = []
     package_id_to_cuda_version = {}
@@ -306,3 +320,8 @@ def rank_trt_versions(model_packages: List[ModelPackageMetadata]) -> List[int]:
         result = trt_versions_ranking.get(package_trt_version, last_ranking)
         results.append(result)
     return results
+
+
+def rank_packages_ids(model_packages: List[ModelPackageMetadata]) -> List[int]:
+    package_ids = [p.package_id for p in model_packages]
+    return sorted(range(len(package_ids)), key=lambda i: package_ids[i])
