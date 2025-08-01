@@ -137,6 +137,11 @@ class BlockManifest(WorkflowBlockManifest):
         description="Post-processing parameter to dictate tradeoff between fast and accurate.",
         examples=[0.3, "$inputs.tradeoff_factor"],
     )
+    gpu_decode: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
+        default=False,
+        description="Use GPU (cuda or mps) hardware to perform some of the mask decoding steps. (processing mode agnostic)",
+        examples=[True, "$inputs.gpu_decode"],
+    )
     disable_active_learning: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
         description="Boolean flag to disable project-level active learning for this block.",
@@ -202,6 +207,7 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
         max_candidates: Optional[int],
         mask_decode_mode: Literal["accurate", "tradeoff", "fast"],
         tradeoff_factor: Optional[float],
+        gpu_decode: Optional[bool],
         disable_active_learning: Optional[bool],
         active_learning_target_dataset: Optional[str],
     ) -> BlockResult:
@@ -217,6 +223,7 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
                 max_candidates=max_candidates,
                 mask_decode_mode=mask_decode_mode,
                 tradeoff_factor=tradeoff_factor,
+                gpu_decode=gpu_decode,
                 disable_active_learning=disable_active_learning,
                 active_learning_target_dataset=active_learning_target_dataset,
             )
@@ -252,6 +259,7 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
         max_candidates: Optional[int],
         mask_decode_mode: Literal["accurate", "tradeoff", "fast"],
         tradeoff_factor: Optional[float],
+        gpu_decode: Optional[bool],
         disable_active_learning: Optional[bool],
         active_learning_target_dataset: Optional[str],
     ) -> BlockResult:
@@ -270,6 +278,7 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
             max_candidates=max_candidates,
             mask_decode_mode=mask_decode_mode,
             tradeoff_factor=tradeoff_factor,
+            gpu_decode=gpu_decode,
             source="workflow-execution",
         )
         self._model_manager.add_model(

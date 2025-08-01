@@ -1,3 +1,4 @@
+import time
 from typing import Any, List, Tuple, Union
 
 import numpy as np
@@ -22,6 +23,7 @@ from inference.core.utils.postprocess import (
     process_mask_accurate,
     process_mask_fast,
     process_mask_tradeoff,
+    slice_masks,
 )
 
 DEFAULT_CONFIDENCE = 0.4
@@ -60,6 +62,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
         max_detections: int = DEFAUlT_MAX_DETECTIONS,
         return_image_dims: bool = False,
         tradeoff_factor: float = DEFAULT_TRADEOFF_FACTOR,
+        gpu_decode: bool = False,
         **kwargs,
     ) -> Union[PREDICTIONS_TYPE, Tuple[PREDICTIONS_TYPE, List[Tuple[int, int]]]]:
         """
@@ -80,6 +83,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
             disable_preproc_contrast (bool, optional): If true, the auto contrast preprocessing step is disabled for this call. Default is False.
             disable_preproc_grayscale (bool, optional): If true, the grayscale preprocessing step is disabled for this call. Default is False.
             disable_preproc_static_crop (bool, optional): If true, the static crop preprocessing step is disabled for this call. Default is False.
+            gpu_decode (bool, optional): Use GPU (cuda or mps) hardware to perform some of the mask decoding steps. (processing mode agnostic). Default is True.
             **kwargs: Additional parameters to customize the inference process.
 
         Returns:
@@ -108,6 +112,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
             max_detections=max_detections,
             return_image_dims=return_image_dims,
             tradeoff_factor=tradeoff_factor,
+            gpu_decode=gpu_decode,
         )
 
     def postprocess(
@@ -119,6 +124,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
         InstanceSegmentationInferenceResponse,
         List[InstanceSegmentationInferenceResponse],
     ]:
+        t0 = time.time()
         predictions, protos = predictions
         predictions = w_np_non_max_suppression(
             predictions,
@@ -133,6 +139,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
         masks = []
         mask_decode_mode = kwargs["mask_decode_mode"]
         tradeoff_factor = kwargs["tradeoff_factor"]
+        gpu_decode = kwargs["gpu_decode"]
         img_in_shape = preprocess_return_metadata["im_shape"]
 
         predictions = [np.array(p) for p in predictions]
@@ -144,33 +151,41 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
                 masks.append([])
                 continue
             if mask_decode_mode == "accurate":
-                batch_masks = process_mask_accurate(
-                    proto, pred[:, 7:], pred[:, :4], img_in_shape[2:]
+                batch_masks, output_mask_shape = process_mask_accurate(
+                    proto, pred[:, 7:], pred[:, :4], img_in_shape[2:], gpu_decode
                 )
-                output_mask_shape = img_in_shape[2:]
             elif mask_decode_mode == "tradeoff":
                 if not 0 <= tradeoff_factor <= 1:
                     raise InvalidMaskDecodeArgument(
                         f"Invalid tradeoff_factor: {tradeoff_factor}. Must be in [0.0, 1.0]"
                     )
-                batch_masks = process_mask_tradeoff(
+                batch_masks, output_mask_shape = process_mask_tradeoff(
                     proto,
                     pred[:, 7:],
                     pred[:, :4],
                     img_in_shape[2:],
                     tradeoff_factor,
+                    gpu_decode,
                 )
-                output_mask_shape = batch_masks.shape[1:]
             elif mask_decode_mode == "fast":
-                batch_masks = process_mask_fast(
-                    proto, pred[:, 7:], pred[:, :4], img_in_shape[2:]
+                batch_masks, output_mask_shape = process_mask_fast(
+                    proto, pred[:, 7:], pred[:, :4], img_in_shape[2:], gpu_decode
                 )
-                output_mask_shape = batch_masks.shape[1:]
             else:
                 raise InvalidMaskDecodeArgument(
                     f"Invalid mask_decode_mode: {mask_decode_mode}. Must be one of ['accurate', 'fast', 'tradeoff']"
                 )
+
             polys = masks2poly(batch_masks)
+
+            # add bbox location to polys
+            scale_y = infer_shape[1] / output_mask_shape[1]
+            scale_x = infer_shape[0] / output_mask_shape[0]
+            polys = [
+                [[pt[0] * scale_x + bbox[0], pt[1] * scale_y + bbox[1]] for pt in poly]
+                for (poly, bbox) in zip(polys, pred[:, :4])
+            ]
+
             pred[:, :4] = post_process_bboxes(
                 [pred[:, :4]],
                 infer_shape,
@@ -184,11 +199,13 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
             polys = post_process_polygons(
                 img_dim,
                 polys,
-                output_mask_shape,
+                infer_shape,
                 self.preproc,
                 resize_method=self.resize_method,
             )
+
             masks.append(polys)
+
         return self.make_response(
             predictions, masks, preprocess_return_metadata["img_dims"], **kwargs
         )
