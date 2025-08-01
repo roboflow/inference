@@ -4,7 +4,7 @@ import os
 import cv2
 import numpy as np
 import torch
-from peft import LoraConfig, PeftModel
+from peft import PeftModel
 from inference_exp import Detections, InstanceDetections
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ImageDimensions
