@@ -26,8 +26,13 @@ from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlock
 SHORT_DESCRIPTION = "Visualize both single-label and multi-label classification predictions with customizable display options."
 
 LONG_DESCRIPTION = """
-Visualizes classification predictions with customizable labels and positioning options. 
-Perfect for creating clear, informative displays of model predictions!
+The Classification Label Visualization block lets you add labels to an image passed through a classification model.
+
+This block is useful for if you want to see an image that shows the class your classification model returned.
+
+Here is an example of the block in use:
+
+![](https://docs.roboflow.com/~gitbook/image?url=https%3A%2F%2F662926385-files.gitbook.io%2F%7E%2Ffiles%2Fv0%2Fb%2Fgitbook-x-prod.appspot.com%2Fo%2Fspaces%252F-M6S9nPJhEX9FYH6clfW%252Fuploads%252F8dqSUVmX2Jw5nynWKW8r%252FScreenshot%25202025-05-23%2520at%252018.53.54.png%3Falt%3Dmedia%26token%3D0c20af95-be13-48bb-926a-2d73f0017700&width=768&dpr=4&quality=100&sign=308bfd9c&sv=2)
 
 #### How It Works
 

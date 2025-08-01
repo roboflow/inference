@@ -22,9 +22,17 @@ from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlock
 TYPE: str = "roboflow_core/mask_visualization@v1"
 SHORT_DESCRIPTION = "Apply a mask over detected objects in an image."
 LONG_DESCRIPTION = """
-The `MaskVisualization` block uses a detected polygon
-from an instance segmentation to draw a mask using
-`sv.MaskAnnotator`.
+The Mask Visualization block applies a mask over detected objects in an image.
+
+The drawn mask is semi-transparent so you can see the background image through it.
+
+This block is especially useful when you are using an Instance Segmentation model to detect objects in an image.
+
+Here is an example of a yellow mask drawn over a segmented region returned by an Instance Segmentation model:
+
+![](https://media.roboflow.com/inference/workflows/mask.png)
+
+If you only want to draw the boundaries of a segmented region, use the Polygon Visualization instead.
 """
 
 

@@ -1,20 +1,18 @@
-Inference supports running any of the 50,000+ pre-trained public models hosted on [Roboflow Universe](https://universe.roboflow.com), as well as fine-tuned models.
+# Load a Model from Roboflow Cloud
 
-We have defined IDs for common models for ease of use. These models do not require an API key for use unlike other public or private models.
+You can use any model trained on or uploaded to Roboflow in a Workflow.
 
-Using it in `inference` is as simple as:
+You can also use one of [several pre-trained models](/start/aliases/#supported-pre-trained-models), ideal for experimentation, or any of the 50,000+ open source models hosted on [Roboflow Universe](/start/load_from_universe/).
 
-```python
-from inference import get_model
+To use a model trained on or uploaded to Roboflow, open your Workflows editor. Then, add a model block such as an [Object Detection Model](/workflows/blocks/object_detection_model/) or Instance Segmentation Model block.
 
-model = get_model(model_id="yolov8n-640")
+When you add a model block, a window will appear from which you can choose a model.
 
-results = model.infer("https://media.roboflow.com/inference/people-walking.jpg")
-```
+You will see all the models in your Roboflow account:
 
-!!! Tip
+![](https://media.roboflow.com/inference/workflows/select_model.png)
 
-    See the [Use a fine-tuned model](./explore_models.md) guide for an example on how to deploy your own model.
+Select a model, then click "Save" to use the model.
 
 ## Supported Pre-Trained Models
 

@@ -39,6 +39,10 @@ from inference.core.workflows.prototypes.block import (
 )
 
 LONG_DESCRIPTION = """
+!!! warning "Method deprecated"
+
+    This model is deprecated. We recommend using the new model-specific multimodal model blocks like OpenAI, LLaMA, Anthropic Claude, and Google Gemini.
+
 Classify an image into one or more categories using a Large Multimodal Model (LMM).
 
 You can specify arbitrary classes to an LMMBlock.
