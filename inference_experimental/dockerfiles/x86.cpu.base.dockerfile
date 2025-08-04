@@ -1,4 +1,4 @@
-FROM python:3.12
+FROM --platform=linux/amd64 python:3.12
 
 RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     libopencv-dev \

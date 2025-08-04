@@ -137,6 +137,7 @@ from inference.core.env import (
     LMM_ENABLED,
     METLO_KEY,
     METRICS_ENABLED,
+    MOONDREAM2_ENABLED,
     NOTEBOOK_ENABLED,
     NOTEBOOK_PASSWORD,
     NOTEBOOK_PORT,
@@ -1233,7 +1234,7 @@ class HttpInterface(BaseInterface):
                     service_secret=service_secret,
                 )
 
-            if LMM_ENABLED:
+            if LMM_ENABLED or MOONDREAM2_ENABLED:
 
                 @app.post(
                     "/infer/lmm",

@@ -421,7 +421,11 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                                 "trt_dla_enable": False,
                             },
                         )
-                expanded_execution_providers.append(ep)
+                    expanded_execution_providers.append(ep)
+
+                if "OpenVINOExecutionProvider" in expanded_execution_providers:
+                    expanded_execution_providers.remove("OpenVINOExecutionProvider")
+
                 self.onnx_session = onnxruntime.InferenceSession(
                     self.cache_file(self.weights_file),
                     providers=expanded_execution_providers,

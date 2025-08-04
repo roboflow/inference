@@ -1,6 +1,6 @@
 [project]
 name = "inference-exp"
-version = "0.13.0"
+version = "0.14.0"
 description = "Experimental vresion of inference package which is supposed to evolve into inference 1.0"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
@@ -57,7 +57,6 @@ torch-jp6-cu126 = [
   "numpy<2.0.0",
   "torch>=2.0.0,<3.0.0",
   "torchvision",
-  "flash-attn==2.7.4.post1",
   "pycuda>=2025.0.0,<2026.0.0",
 ]
 onnx-cpu = [
@@ -81,9 +80,6 @@ mediapipe = [
 ]
 grounding-dino = [
   "rf_groundingdino==0.2.0"
-]
-flash-attn = [
-  "flash-attn==2.7.4.post1"
 ]
 trt10 = [
   "tensorrt>=10.0.0,<11.0.0; platform_system == 'Linux' or platform_system == 'Windows'",
@@ -119,10 +115,6 @@ torchvision = [
 onnxruntime-gpu = [
   { index = "onnx-cu118", extra = "onnx-cu118"},
   { index = "jp6-cu126", extra = "onnx-jp6-cu126" },
-]
-
-flash-attn = [
-   { index = "jp6-cu126", extra = "torch-jp6-cu126" },
 ]
 
 [[tool.uv.index]]
@@ -186,7 +178,6 @@ name = "tensorrt-lean-cu12-bindings"
 
 
 [tool.uv]
-no-build-isolation-package = ["flash-attn"]
 conflicts = [
   [
     { extra = "torch-cpu" },

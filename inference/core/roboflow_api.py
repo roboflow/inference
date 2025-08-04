@@ -32,6 +32,7 @@ from inference.core.env import (
     RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API,
     ROBOFLOW_API_EXTRA_HEADERS,
     ROBOFLOW_API_REQUEST_TIMEOUT,
+    ROBOFLOW_SERVICE_SECRET,
     TRANSIENT_ROBOFLOW_API_ERRORS,
     TRANSIENT_ROBOFLOW_API_ERRORS_RETRIES,
     TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL,
@@ -259,8 +260,8 @@ def get_roboflow_model_data(
 
         if (
             INTERNAL_WEIGHTS_URL_SUFFIX == "serverless"
-            and countinference
-            and service_secret
+            and countinference is False
+            and service_secret == ROBOFLOW_SERVICE_SECRET
         ):
             params.append(("countinference", str(countinference).lower()))
             params.append(("service_secret", service_secret))
@@ -306,8 +307,8 @@ def get_roboflow_instant_model_data(
 
         if (
             INTERNAL_WEIGHTS_URL_SUFFIX == "serverless"
-            and countinference
-            and service_secret
+            and countinference is False
+            and service_secret == ROBOFLOW_SERVICE_SECRET
         ):
             params.append(("countinference", str(countinference).lower()))
             params.append(("service_secret", service_secret))
@@ -722,7 +723,9 @@ def get_from_url(
     interval=TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL,
 )
 def _get_from_url(
-    url: str, json_response: bool = True, verify_content_length: bool = False
+    url: str,
+    json_response: bool = True,
+    verify_content_length: bool = False,
 ) -> Union[Response, dict]:
     try:
         response = requests.get(
