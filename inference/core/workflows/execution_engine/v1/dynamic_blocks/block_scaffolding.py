@@ -1,4 +1,5 @@
 import types
+import traceback
 from typing import List, Type
 
 from inference.core.env import ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS
@@ -58,7 +59,18 @@ def assembly_custom_python_block(
                 "`ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True`",
                 context="workflow_execution | step_execution | dynamic_step",
             )
-        return run_function(self, *args, **kwargs)
+        try:
+            return run_function(self, *args, **kwargs)
+        except Exception as error:
+            tb = traceback.extract_tb(error.__traceback__)
+            if tb:
+                frame = tb[-1]
+                line_number = frame.lineno - len(_get_python_code_imports(python_code).splitlines())
+                function_name = frame.name
+                message = f"Error in line {line_number}, in {function_name}: {error.__class__.__name__}: {error}"
+            else:
+                message = f"{error.__class__.__name__}: {error}"
+            raise Exception(message) from error
 
     if python_code.init_function_code is not None and not hasattr(
         code_module, python_code.init_function_name
@@ -94,10 +106,14 @@ def assembly_custom_python_block(
     )
 
 
+def _get_python_code_imports(python_code: PythonCode) -> str:
+    return "\n".join(IMPORTS_LINES) + "\n" + "\n".join(python_code.imports) + "\n\n"
+
+
 def create_dynamic_module(
     block_type_name: str, python_code: PythonCode, module_name: str
 ) -> types.ModuleType:
-    imports = "\n".join(IMPORTS_LINES) + "\n" + "\n".join(python_code.imports) + "\n\n"
+    imports = _get_python_code_imports(python_code)
     code = python_code.run_function_code
     if python_code.init_function_code:
         code += "\n\n" + python_code.init_function_code
