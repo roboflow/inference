@@ -19,26 +19,18 @@ rebase_merge=$(echo "$upstream_settings" | jq -r '.rebaseMergeAllowed')
 # Apply repository settings
 if [ "$delete_branch" = "true" ]; then
     gh repo edit roboflow/inference-private --delete-branch-on-merge
-else
-    gh repo edit roboflow/inference-private --delete-branch-on-merge=false
 fi
 
-if [ "$merge_commit" = "false" ]; then
-    gh repo edit roboflow/inference-private --allow-merge-commit=false
-else
-    gh repo edit roboflow/inference-private --allow-merge-commit
+if [ "$merge_commit" = "true" ]; then
+    gh repo edit roboflow/inference-private --enable-merge-commit
 fi
 
-if [ "$squash_merge" = "false" ]; then
-    gh repo edit roboflow/inference-private --allow-squash-merge=false
-else
-    gh repo edit roboflow/inference-private --allow-squash-merge
+if [ "$squash_merge" = "true" ]; then
+    gh repo edit roboflow/inference-private --enable-squash-merge
 fi
 
-if [ "$rebase_merge" = "false" ]; then
-    gh repo edit roboflow/inference-private --allow-rebase-merge=false
-else
-    gh repo edit roboflow/inference-private --allow-rebase-merge
+if [ "$rebase_merge" = "true" ]; then
+    gh repo edit roboflow/inference-private --enable-rebase-merge
 fi
 
 echo "✅ Repository settings synced"
