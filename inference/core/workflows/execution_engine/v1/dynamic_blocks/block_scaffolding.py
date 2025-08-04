@@ -1,5 +1,5 @@
-import types
 import traceback
+import types
 from typing import List, Type
 
 from inference.core.env import ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS
@@ -65,7 +65,9 @@ def assembly_custom_python_block(
             tb = traceback.extract_tb(error.__traceback__)
             if tb:
                 frame = tb[-1]
-                line_number = frame.lineno - len(_get_python_code_imports(python_code).splitlines())
+                line_number = frame.lineno - len(
+                    _get_python_code_imports(python_code).splitlines()
+                )
                 function_name = frame.name
                 message = f"Error in line {line_number}, in {function_name}: {error.__class__.__name__}: {error}"
             else:
