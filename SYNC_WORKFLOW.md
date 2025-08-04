@@ -66,3 +66,40 @@ When your NDA-protected feature is ready to be public:
 - **Feature branches are preserved** during syncs (only main is reset)
 - **Backup branches are created** automatically for safety
 - **Force push is required** since we're rewriting history on main
+
+## Repository Settings Sync
+
+### Syncing All Settings
+
+To sync repository settings (merge options, branch protection rules) from the public repo:
+
+```bash
+./sync-repo-settings.sh
+```
+
+This syncs:
+- Branch deletion on merge settings
+- Merge commit options (merge, squash, rebase)
+- Branch protection rules (PR requirements, admin enforcement)
+- **Note**: Status check requirements are not auto-synced (see below)
+
+### Managing Status Checks
+
+Status checks (CI/CD requirements) need to be managed separately since your private repo might have different workflows:
+
+```bash
+# List current required status checks
+./manage-status-checks.sh list
+
+# Add a specific status check requirement
+./manage-status-checks.sh add "build-dev-test"
+./manage-status-checks.sh add "CodeQL"
+
+# Remove a status check requirement  
+./manage-status-checks.sh remove "old-check-name"
+
+# Copy ALL status checks from public repo (use with caution)
+./manage-status-checks.sh sync-from-upstream
+```
+
+**Recommended approach**: Add status checks individually as you set up CI/CD workflows in your private repo, rather than copying all upstream checks which might not exist yet.
