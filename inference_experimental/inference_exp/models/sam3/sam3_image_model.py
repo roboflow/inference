@@ -192,14 +192,28 @@ class Sam3ImageModel(nn.Module):
         img_pos_embeds = [x.flatten(2).permute(2, 0, 1) for x in vis_pos_enc]
         return img_feats, img_masks, img_pos_embeds, vis_feat_sizes
 
-    def _init_instance_queries(self, B: int, multimask_output: bool = False) -> Dict:
-        """Initializes queries for a single image, equivalent to the first frame of a video."""
-        if self.use_instance_query:
+    def _init_instance_queries(self, B: int, is_instance_prompt: bool = False, multimask_output: bool = False) -> Dict:
+        """Initializes queries for a single image, equivalent to the first frame of a video.
+        
+        Args:
+            B: Batch size
+            is_instance_prompt: Whether this is instance-level tracking (e.g., point prompts)
+            multimask_output: Whether to output multiple masks
+        """
+        if is_instance_prompt and self.use_instance_query:
+            # For instance prompts (e.g., point tracking), use instance queries
             query_embed = self.transformer.decoder.instance_query_embed.weight
-            query_embed = query_embed[1:] if multimask_output else query_embed[:1]
             reference_boxes = self.transformer.decoder.instance_reference_points.weight
-            reference_boxes = reference_boxes[1:] if multimask_output else reference_boxes[:1]
+            if multimask_output:
+                # In multimask mode, skip the first query and use the rest
+                query_embed = query_embed[1:]
+                reference_boxes = reference_boxes[1:]
+            else:
+                # For instance tracking, use only the first query
+                query_embed = query_embed[:1]
+                reference_boxes = reference_boxes[:1]
         else:
+            # For text/box prompts, use ALL decoder queries (200) for multi-object detection
             query_embed = self.transformer.decoder.query_embed.weight
             reference_boxes = self.transformer.decoder.reference_points.weight
         
@@ -281,7 +295,8 @@ class Sam3ImageModel(nn.Module):
 
         # 3. Initialize queries for decoder
         B = encoder_hidden_states.size(1)
-        tracking_queries = self._init_instance_queries(B, multimask_output)
+        # For text/box prompts, is_instance_prompt=False to use all 200 queries
+        tracking_queries = self._init_instance_queries(B, is_instance_prompt=False, multimask_output=multimask_output)
         
         # 4. Run Transformer Decoder
         hs, reference_boxes = self.transformer.decoder(
@@ -339,51 +354,57 @@ class Sam3ImageModel(nn.Module):
     ) -> Dict[str, np.ndarray]:
         """Post-processes the model's raw outputs."""
         # Select outputs from the final decoder layer
+        # Shape: (batch=1, num_queries, ...)
         out_logits = model_outputs["pred_logits"][-1]
         out_boxes_xyxy = model_outputs["pred_boxes_xyxy"][-1]
         out_masks = model_outputs["pred_masks"]
-
-        out_probs = out_logits.sigmoid()
         
-        if not self.training and multimask_output and out_probs.shape[1] > 1:
-            # Multi-mask post-processing
-            best_mask_idx = out_logits.argmax(1).squeeze(1)
-            batch_idx = torch.arange(len(best_mask_idx), device=best_mask_idx.device)
-            
+        # For single image inference, we only have one batch element
+        prompt_idx = 0
+        out_logits_single = out_logits[prompt_idx]  # (num_queries, 1)
+        out_boxes_xyxy_single = out_boxes_xyxy[prompt_idx]  # (num_queries, 4)
+        out_masks_single = out_masks[prompt_idx]  # (num_queries, H, W)
+        
+        # Handle multimask output mode
+        if not self.training and multimask_output and out_logits_single.shape[0] > 1:
+            # Store multi-mask outputs before filtering
             multi_out = {
-                "multi_pred_logits": out_logits.cpu().numpy(),
-                "multi_pred_masks": out_masks.cpu().numpy(),
-                "multi_pred_boxes_xyxy": out_boxes_xyxy.cpu().numpy(),
+                "multi_pred_logits": out_logits_single.cpu().numpy(),
+                "multi_pred_masks": out_masks_single.cpu().numpy(),
+                "multi_pred_boxes_xyxy": out_boxes_xyxy_single.cpu().numpy(),
             }
-            # Select best for standard keys
-            out_logits = out_logits[batch_idx, best_mask_idx].unsqueeze(1)
-            out_masks = out_masks[batch_idx, best_mask_idx].unsqueeze(1)
-            out_boxes_xyxy = out_boxes_xyxy[batch_idx, best_mask_idx].unsqueeze(1)
+            # Select the best mask for standard output
+            best_mask_idx = out_logits_single.argmax(0).squeeze(-1).item()
+            out_logits_single = out_logits_single[best_mask_idx:best_mask_idx+1]
+            out_masks_single = out_masks_single[best_mask_idx:best_mask_idx+1]
+            out_boxes_xyxy_single = out_boxes_xyxy_single[best_mask_idx:best_mask_idx+1]
         else:
-             multi_out = {}
+            multi_out = {}
         
-        # Standard post-processing
-        out_scores = out_logits.squeeze(-1).sigmoid()
+        # Apply score threshold to filter objects
+        out_scores = out_logits_single.squeeze(-1).sigmoid()  # (num_queries,)
         keep = out_scores > output_prob_thresh
         
         out_probs = out_scores[keep]
-        out_boxes_xyxy = out_boxes_xyxy[keep]
-        out_masks = out_masks[keep]
+        out_boxes_xyxy_filtered = out_boxes_xyxy_single[keep]
+        out_masks_filtered = out_masks_single[keep]
 
-        if out_masks.size(0) > 0:
+        # Resize masks to original size
+        if out_masks_filtered.size(0) > 0:
             out_masks_orig_size = torch.nn.functional.interpolate(
-                out_masks.unsqueeze(1), # Add channel dim
+                out_masks_filtered.unsqueeze(1),  # Add channel dim: (N, 1, H, W)
                 size=original_size,
                 mode="bilinear",
                 align_corners=False,
-            ).squeeze(1) # Remove channel dim
+            ).squeeze(1)  # Remove channel dim: (N, H, W)
             out_binary_masks = out_masks_orig_size > 0.0
         else:
             out_binary_masks = torch.zeros(0, *original_size, dtype=torch.bool, device=self.device)
 
+        # Convert to numpy and return
         frame_outputs = {
             "out_probs": out_probs.float().cpu().numpy(),
-            "out_boxes_xywh": box_xyxy_to_xywh(out_boxes_xyxy).float().cpu().numpy(),
+            "out_boxes_xywh": box_xyxy_to_xywh(out_boxes_xyxy_filtered).float().cpu().numpy(),
             "out_binary_masks": out_binary_masks.cpu().numpy(),
         }
         frame_outputs.update(multi_out)
