@@ -169,7 +169,18 @@ class Sam3ImageModel(nn.Module):
     @torch.inference_mode()
     def encode_text(self, text: str) -> Dict[str, torch.Tensor]:
         """Encodes a text string."""
-        return self.backbone.forward_text([text], device=self.device)
+        text_outputs = self.backbone.forward_text([text], device=self.device)
+        # Ensure correct shape: (seq_len, batch=1, dim)
+        # The backbone returns (batch, seq_len, dim), but encoder expects (seq_len, batch, dim)
+        if "language_features" in text_outputs:
+            lang_feat = text_outputs["language_features"]
+            if lang_feat.dim() == 3 and lang_feat.shape[0] == 1:
+                # Transpose from (1, seq_len, dim) to (seq_len, 1, dim)
+                text_outputs["language_features"] = lang_feat.permute(1, 0, 2)
+            elif lang_feat.dim() == 2:
+                # Add batch dimension and make seq-first: (seq_len, dim) -> (seq_len, 1, dim)
+                text_outputs["language_features"] = lang_feat.unsqueeze(1)
+        return text_outputs
 
     def _get_img_feats(self, backbone_out: Dict) -> Tuple:
         """Helper to extract features from backbone output."""
@@ -219,25 +230,39 @@ class Sam3ImageModel(nn.Module):
             img_pos_embeds=img_pos_embeds,
         )
 
-        visual_prompt_embed = torch.zeros((0, geo_feats.shape[1], geo_feats.shape[2]), device=self.device)
-        visual_prompt_mask = torch.zeros((geo_masks.shape[0], 0), device=self.device, dtype=torch.bool)
+        # Initialize empty visual prompt if not provided
         if visual_prompt is not None:
-             visual_prompt_embed, visual_prompt_mask = self.geometry_encoder(
-                 geo_prompt=visual_prompt,
-                 img_feats=img_feats,
-                 img_sizes=vis_feat_sizes,
-                 img_pos_embeds=img_pos_embeds,
-             )
+            visual_prompt_embed, visual_prompt_mask = self.geometry_encoder(
+                geo_prompt=visual_prompt,
+                img_feats=img_feats,
+                img_sizes=vis_feat_sizes,
+                img_pos_embeds=img_pos_embeds,
+            )
+        else:
+            visual_prompt_embed = torch.zeros((0, geo_feats.shape[1], geo_feats.shape[2]), device=self.device)
+            visual_prompt_mask = torch.zeros((geo_masks.shape[0], 0), device=self.device, dtype=torch.bool)
 
-        prompt_list = [geo_feats, visual_prompt_embed]
-        prompt_mask_list = [geo_masks, visual_prompt_mask]
+        # Build prompt list in correct order: [text, geometric, visual]
+        prompt_list = []
+        prompt_mask_list = []
         
         if text_features:
-            prompt_list.insert(0, text_features["language_features"].permute(1,0,2))
-            prompt_mask_list.insert(0, text_features["language_mask"])
+            # Text features should already be in (seq_len, batch, dim) format from encode_text
+            prompt_list.append(text_features["language_features"])
+            prompt_mask_list.append(text_features["language_mask"])
             
-        prompt = torch.cat(prompt_list, dim=0)
-        prompt_mask = torch.cat(prompt_mask_list, dim=1)
+        prompt_list.extend([geo_feats, visual_prompt_embed])
+        prompt_mask_list.extend([geo_masks, visual_prompt_mask])
+        
+        # Only concatenate if we have prompts
+        if prompt_list:
+            prompt = torch.cat(prompt_list, dim=0)
+            prompt_mask = torch.cat(prompt_mask_list, dim=1)
+        else:
+            # Edge case: no prompts at all
+            prompt = torch.zeros((0, 1, self.transformer.d_model), device=self.device)
+            prompt_mask = torch.zeros((1, 0), device=self.device, dtype=torch.bool)
+            
         prompt_pos_embed = torch.zeros_like(prompt)
 
         # 2. Run Transformer Encoder
