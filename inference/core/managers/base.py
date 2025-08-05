@@ -11,7 +11,9 @@ from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import (
     DISABLE_INFERENCE_CACHE,
+    GCP_SERVERLESS,
     INTERNAL_WEIGHTS_URL_SUFFIX,
+    LAMBDA,
     METRICS_ENABLED,
     METRICS_INTERVAL,
     MODELS_CACHE_AUTH_ENABLED,
@@ -181,7 +183,7 @@ class ModelManager:
                     f"inference:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
                     value=to_cachable_inference_item(request, rtn_val),
                     score=finish_time,
-                    expire=METRICS_INTERVAL * 2,
+                    expire=None if (GCP_SERVERLESS or LAMBDA) else METRICS_INTERVAL * 2,
                 )
                 logger.debug(
                     f"ModelManager - caching inference request finished for model_id={model_id}"
@@ -255,7 +257,7 @@ class ModelManager:
                     f"inference:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
                     value=to_cachable_inference_item(request, rtn_val),
                     score=finish_time,
-                    expire=METRICS_INTERVAL * 2,
+                    expire=None if (GCP_SERVERLESS or LAMBDA) else METRICS_INTERVAL * 2,
                 )
                 logger.debug(
                     f"ModelManager - caching inference request finished for model_id={model_id}"
