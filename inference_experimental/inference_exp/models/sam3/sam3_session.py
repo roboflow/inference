@@ -103,9 +103,16 @@ class Sam3Session:
         # Handle visual prompt logic
         is_visual_prompt = not self.has_predicted and self.prompts["boxes_cxcywh"].numel() > 0
         visual_prompt = None
+        text_features_to_use = self.text_features
         
         boxes_for_geo_prompt = self.prompts["boxes_cxcywh"]
         if is_visual_prompt:
+            # When using visual prompt, we need to encode the text "visual" 
+            # This matches the original behavior where text_id=1 corresponds to "visual"
+            if self.text_features is None:
+                # Encode "visual" text for visual prompt mode
+                text_features_to_use = self.model.encode_text("visual")
+            
             visual_prompt_box = boxes_for_geo_prompt[0:1]
             visual_prompt = Prompt(
                 box_embeddings=visual_prompt_box.unsqueeze(0),
@@ -129,7 +136,7 @@ class Sam3Session:
 
         model_outputs = self.model.predict(
             image_features=self.image_features,
-            text_features=self.text_features,
+            text_features=text_features_to_use,
             geometric_prompt=geometric_prompt,
             visual_prompt=visual_prompt,
             multimask_output=multimask_output,
