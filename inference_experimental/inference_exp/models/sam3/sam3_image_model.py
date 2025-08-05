@@ -277,11 +277,11 @@ class Sam3ImageModel(nn.Module):
         reference_boxes = reference_boxes.transpose(1, 2)
 
         # 5. Get scores and boxes
-        # As with the segmentation head, we only use the output of the final decoder layer.
-        assert hs.ndim == 4, f"Expected hs to have 4 dimensions, but got {hs.ndim}"
-        outputs_class = self.dot_prod_scoring(hs[-1], prompt, prompt_mask)
+        # These heads expect the full stack of decoder layer outputs (4D tensors)
+        assert hs.ndim == 4, f"Expecting 4D hs tensor from decoder, got {hs.ndim}"
+        outputs_class = self.dot_prod_scoring(hs, prompt, prompt_mask)
         anchor_box_offsets = self.transformer.decoder.bbox_embed(hs)
-        outputs_coord = (inverse_sigmoid(reference_boxes[-1]) + anchor_box_offsets[-1]).sigmoid()
+        outputs_coord = (inverse_sigmoid(reference_boxes) + anchor_box_offsets).sigmoid()
         outputs_boxes_xyxy = box_cxcywh_to_xyxy(outputs_coord)
 
         out = {
@@ -291,17 +291,16 @@ class Sam3ImageModel(nn.Module):
         }
 
         # 6. Run Segmentation Head
+        # This head also expects the full 4D hs tensor, but only uses the last layer internally
         seg_head_outputs = self.segmentation_head(
             backbone_feats=image_features["backbone_fpn"],
-            obj_queries=hs[-1],
+            obj_queries=hs,
             image_ids=torch.arange(B, device=self.device),
             encoder_hidden_states=encoder_hidden_states,
             prompt=prompt,
             prompt_mask=prompt_mask,
         )
-        # Manually create aux outputs for masks for consistency
-        out["pred_masks"] = seg_head_outputs.pop("pred_masks")
-        out["aux_outputs"] = [{"pred_masks": torch.zeros_like(out["pred_masks"])} for _ in range(len(hs) - 1)]
+        out.update(seg_head_outputs)
 
         return out
 

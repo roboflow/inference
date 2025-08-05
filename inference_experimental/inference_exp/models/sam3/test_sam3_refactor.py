@@ -7,19 +7,14 @@ prompts can be added, and a prediction can be made without runtime errors.
 import torch
 import numpy as np
 import os
-
-# Important: This assumes the script is run from a context where the `sam3` and `inference_experimental`
-# modules are available in the Python path.
+import traceback # Import traceback for detailed error logging
 
 from inference_exp.models.sam3.sam3_image_model import build_sam3_model
 from inference_exp.models.sam3.sam3_session import Sam3Session
 
 # --- USER CONFIGURATION ---
-# Please provide the correct paths to your BPE vocabulary and model checkpoint.
-# The script will not run without a valid BPE file.
-# The checkpoint is optional but recommended for a meaningful test.
-BPE_PATH = "/home/hansent/sam3/assets/bpe_simple_vocab_16e6.txt.gz"  # <--- CHANGE THIS
-CHECKPOINT_PATH = "/home/hansent/weights-sam3/sam3_prod_v12_interactive_5box_image_only.pt" # <--- CHANGE THIS (optional)
+BPE_PATH = "/home/hansent/sam3/assets/bpe_simple_vocab_16e6.txt.gz"
+CHECKPOINT_PATH = "/home/hansent/weights-sam3/sam3_prod_v12_interactive_5box_image_only.pt"
 
 def run_test():
     """
@@ -52,8 +47,9 @@ def run_test():
             eval_mode=True
         )
         print("   Model built successfully.")
-    except Exception as e:
-        print(f"   ERROR: Failed to build model. {e}")
+    except Exception:
+        print(f"   ERROR: Failed to build model.")
+        traceback.print_exc()
         return
 
     # 2. Create a session
@@ -78,8 +74,9 @@ def run_test():
     try:
         predictions = session.predict(output_prob_thresh=0.5)
         print("   Prediction successful!")
-    except Exception as e:
-        print(f"   ERROR: Prediction failed. {e}")
+    except Exception:
+        print(f"   ERROR: Prediction failed.")
+        traceback.print_exc() # Print the full traceback
         return
 
     # 6. Print results
@@ -94,4 +91,3 @@ def run_test():
 
 if __name__ == "__main__":
     run_test()
-
