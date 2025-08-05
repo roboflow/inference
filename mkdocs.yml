@@ -34,6 +34,7 @@ nav:
   - Start:
       - Overview: start/overview.md
       - Getting Started: start/getting-started.md
+      - Downloads: downloads.md
       - Understand:
           - Architecture: understand/architecture.md
           - Features: understand/features.md
@@ -234,6 +235,7 @@ plugins:
       implicit_index: True
   - macros:
       include_dir: docs/include
+      module_name: docs/scripts/macros
 
 
 markdown_extensions:
