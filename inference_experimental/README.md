@@ -161,7 +161,7 @@ like TensorRT engines) or additional **models**.
 
 #### Special Installation: SAM2 Real-Time
 
-The `sam2-real-time` feature requires a Git-based dependency that cannot be distributed via PyPI. To use SAM2 real-time capabilities, you need to manually install it after installing `inference-exp`:
+`sam2 real time` requires a Git-based dependency that cannot be distributed via PyPI. To use SAM2 real-time capabilities, you need to manually install it after installing `inference-exp`:
 
 ```bash
 # First, install inference-exp with your desired extras (e.g., torch-cu124)
