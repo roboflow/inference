@@ -21,6 +21,7 @@ permissions:
 
 jobs:
   build:
+    name: ${{ github.event_name == 'release' && 'Release publish' || (github.event.inputs.publish == 'true' && (github.event.inputs.pre_release == 'true' && 'Manual publish (pre-release)' || 'Manual publish (rejected - non-prerelease)') || 'Manual build only') }}
     runs-on:
       labels: depot-ubuntu-22.04-small
       group: public-depot
@@ -31,13 +32,6 @@ jobs:
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v4
-      - name: 📦 Cache Python packages
-        uses: actions/cache@v3
-        with:
-          path: ~/.cache/uv
-          key: ${{ runner.os }}-uv-${{ matrix.python-version }}-${{ hashFiles('inference_experimental/pyproject.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-uv-${{ matrix.python-version }}-
       - name: 🐍 Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
@@ -48,22 +42,29 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install uv
-          python -m uv build
-      - name: 📤 Publish to PyPI
-        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish == true) }}
+      - name: 🏷️ Modify version for pre-release
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.pre_release == 'true' }}
         working-directory: inference_experimental
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            if [[ "${{ github.event.inputs.pre_release }}" != "true" ]]; then
-              echo "Error: Non-prerelease publishing is only allowed on release events"
-              exit 1
-            fi
-            echo "Publishing to PyPI as a pre-release"
-            python -m uv publish --check-url https://pypi.org/simple/ --prerelease
-          elif [[ "${{ github.event_name }}" == "release" ]]; then
-            echo "Publishing to PyPI"
-            python -m uv publish --check-url https://pypi.org/simple/
+          CURRENT_VERSION=$(grep -m 1 '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "Current version: $CURRENT_VERSION"
+
+          if [[ $CURRENT_VERSION =~ (a|b|rc)[0-9]+$ ]]; then
+            echo "Version already has pre-release suffix, keeping as is"
           else
-            echo "Error: Unexpected event type: ${{ github.event_name }}"
-            exit 1
+            TIMESTAMP=$(date +%Y%m%d%H%M%S)
+            NEW_VERSION="${CURRENT_VERSION}rc${TIMESTAMP}"
+            echo "New pre-release version: $NEW_VERSION"
+            sed -i.bak "s/^version = \"${CURRENT_VERSION}\"/version = \"${NEW_VERSION}\"/" pyproject.toml
+            rm pyproject.toml.bak
           fi
+      - name: 🔨 Build package
+        working-directory: inference_experimental
+        run: |
+          python -m uv build
+      - name: 🚀 Publish to PyPI
+        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true') }}
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: inference_experimental/dist/
+          skip-existing: true
