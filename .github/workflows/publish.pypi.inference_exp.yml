@@ -1,4 +1,4 @@
-name: Publish Wheels to PyPi
+name: Publish Inference Experimental Wheels to PyPi
 on:
   release:
     types: [created]
