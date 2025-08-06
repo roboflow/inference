@@ -81,9 +81,6 @@ mediapipe = [
 grounding-dino = [
   "rf_groundingdino==0.2.0"
 ]
-sam2-real-time = [
-  "sam2 @ git+https://github.com/Gy920/segment-anything-2-real-time.git",
-]
 trt10 = [
   "tensorrt>=10.0.0,<11.0.0; platform_system == 'Linux' or platform_system == 'Windows'",
   "tensorrt-cu12>=10.0.0,<11.0.0; platform_system == 'Linux' or platform_system == 'Windows'",
@@ -97,6 +94,11 @@ test = [
   "pytest-xdist>=3.0.0",
   "pytest-timeout",
   "requests-mock>=1.12.1"
+]
+
+[tool.uv.dev-dependencies]
+sam2-real-time = [
+  "sam2 @ git+https://github.com/Gy920/segment-anything-2-real-time.git",
 ]
 
 [tool.uv.sources]

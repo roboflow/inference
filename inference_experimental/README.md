@@ -156,6 +156,7 @@ like TensorRT engines) or additional **models**.
 |------------------|----------------------------------------------------------------------------------------------------|
 | `mediapipe`      | Enables MediaPipe models, including Face Detector                                                  |
 | `grounding-dino` | Enables Grounding Dino model                                                                       |
+| `sam2-real-time` | Enables SAM2 (based on https://github.com/Gy920/segment-anything-2-real-time.git)                  |
 | `flash-attn`     | *EXPERIMENTAL:* Installs `flash-attn` for faster LLMs/VLMs - usually requires extensive compilation |
 | `test`           | Test dependencies                                                                                  |
 
