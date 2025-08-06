@@ -2,11 +2,12 @@ import json
 from collections import namedtuple
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Optional
+from typing import Annotated, List, Literal, Optional, Tuple, Union
 
 from inference_exp.entities import ImageDimensions
 from inference_exp.errors import CorruptedModelPackageError
 from inference_exp.utils.file_system import read_json, stream_file_lines
+from pydantic import BaseModel, Field
 
 
 def parse_class_names_file(class_names_path: str) -> List[str]:
@@ -254,6 +255,181 @@ def parse_class_map_from_environment_file(environment_file_path: str) -> List[st
     except (IOError, OSError, ValueError, IndexError) as error:
         raise CorruptedModelPackageError(
             message=f"Environment file is malformed: "
+            f"{error}. In case that the package is "
+            f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
+            f"verify its consistency in docs.",
+            help_url="https://todo",
+        ) from error
+
+
+# non_nms_config = {
+#     "image_pre_processing": image_pre_processing,
+#     "network_input": {
+#         "training_input_size": {"height": self.imgsz, "width": self.imgsz},
+#         "dynamic_spatial_size_supported": False,
+#         "color_mode": "rgb",
+#         "resize_mode": resize_mode,
+#         "padding_value": padding_value,
+#         "input_channels": 3,
+#         "scaling_factor": 255,
+#         "normalization": None,
+#     },
+#     "post_processing": {
+#         "type": "nms",
+#         "fused": False,
+#     }
+# }
+
+
+class AutoOrient(BaseModel):
+    enabled: bool
+
+
+class StaticCrop(BaseModel):
+    enabled: bool
+    x_min: int
+    x_max: int
+    y_min: int
+    y_max: int
+
+
+class ContrastType(Enum, str):
+    ADAPTIVE_EQUALIZATION = "Adaptive Equalization"
+    CONTRAST_STRETCHING = "Contrast Stretching"
+    HISTOGRAM_EQUALIZATION = "Histogram Equalization"
+
+
+class Contrast(BaseModel):
+    enabled: bool
+    type: ContrastType
+
+
+class Grayscale(BaseModel):
+    enabled: bool
+
+
+class ImagePreProcessing(BaseModel):
+    auto_orient: Optional[AutoOrient] = Field(alias="auto-orient", default=None)
+    static_crop: Optional[StaticCrop] = Field(alias="static-crop", default=None)
+    contrast: Optional[Contrast] = Field(default=None)
+    grayscale: Optional[Grayscale] = Field(default=None)
+
+
+class TrainingInputSize(BaseModel):
+    height: int
+    width: int
+
+
+class DivisiblePadding(BaseModel):
+    type: Literal["pad-to-be-divisible"]
+    value: int
+
+
+class AnySizePadding(BaseModel):
+    type: Literal["any-size"]
+
+
+class ColorMode(Enum, str):
+    BGR = "bgr"
+    RGB = "rgb"
+
+
+# non_nms_config = {
+#     "image_pre_processing": image_pre_processing,
+#     "network_input": {
+#         "training_input_size": {"height": self.imgsz, "width": self.imgsz},
+#         "dynamic_spatial_size_supported": False,
+#         "color_mode": "rgb",
+#         "resize_mode": resize_mode,
+#         "padding_value": padding_value,
+#         "input_channels": 3,
+#         "scaling_factor": 255,
+#         "normalization": None,
+#     },
+#     "post_processing": {
+#         "type": "nms",
+#         "fused": False,
+#     }
+# }
+#
+#  "post_processing": {
+#                 "type": "nms",
+#                 "fused": True,
+#                 "nms_parameters": nms_parameters_cleaned,
+#             }
+class ResizeMode(Enum, str):
+    STRETCH_TO = "Stretch to"
+    LETTERBOX = "letterbox"
+    CENTER_CROP = "center-crop"
+    FIT_LONGER_EDGE = "fit-longer-edge"
+    LETTERBOX_REFLECT_EDGES = "letterbox-reflect-edges"
+
+
+Number = Union[int, float]
+
+
+class NetworkInput(BaseModel):
+    training_input_size: TrainingInputSize
+    dynamic_spatial_size_supported: bool
+    dynamic_spatial_size_mode: Optional[Union[DivisiblePadding, AnySizePadding]] = (
+        Field(discriminator="type", default=None)
+    )
+    color_mode: ColorMode
+    resize_mode: ResizeMode
+    padding_value: Optional[int]
+    input_channels: int
+    scaling_factor: Optional[Number] = Field(default=None)
+    normalization: Optional[
+        Tuple[Tuple[Number, Number, Number], Tuple[Number, Number, Number]]
+    ] = Field(default=None)
+
+
+class ForwardPassConfiguration(BaseModel):
+    max_dynamic_batch_size: int
+
+
+class FusedNMSParameters(BaseModel):
+    max_detections: int
+    confidence_threshold: float
+    iou_threshold: float
+    class_agnostic: int
+
+
+class NMSPostProcessing(BaseModel):
+    type: Literal["nms"]
+    fused: bool
+    nms_parameters: Optional[FusedNMSParameters] = Field(default=None)
+
+
+class SigmoidPostProcessing(BaseModel):
+    type: Literal["sigmoid"]
+    fused: bool
+
+
+class SoftMaxPostProcessing(BaseModel):
+    type: Literal["softmax"]
+    fused: bool
+
+
+class InferenceConfig(BaseModel):
+    image_pre_processing: ImagePreProcessing
+    network_input: NetworkInput
+    forward_pass: Optional[ForwardPassConfiguration] = Field(default=None)
+    post_processing: Optional[
+        Union[NMSPostProcessing, SoftMaxPostProcessing, SigmoidPostProcessing]
+    ] = Field(default=None, discriminator="type")
+
+
+def parse_inference_config(config_path: str) -> None:
+    try:
+        parsed_config = read_json(path=config_path)
+        if not isinstance(parsed_config, dict):
+            raise ValueError(
+                f"Expected config format is dict, found {type(parsed_config)} instead"
+            )
+    except (IOError, OSError, ValueError) as error:
+        raise CorruptedModelPackageError(
+            message=f"Inference config file of the model package is malformed: "
             f"{error}. In case that the package is "
             f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
             f"verify its consistency in docs.",

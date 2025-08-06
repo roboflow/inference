@@ -78,7 +78,7 @@ class YOLOv8ForObjectDetectionOnnx(
             model_package_dir=model_name_or_path,
             elements=[
                 "class_names.txt",
-                "environment.json",
+                "inference_config.json",
                 "weights.onnx",
             ],
         )

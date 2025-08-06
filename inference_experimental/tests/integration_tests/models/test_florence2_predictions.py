@@ -1,7 +1,6 @@
 import numpy as np
 import pytest
 import torch
-
 from inference_exp.models.florence2.florence2_hf import Florence2HF
 
 
