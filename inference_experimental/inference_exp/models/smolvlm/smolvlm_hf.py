@@ -1,10 +1,11 @@
 from typing import List, Optional, Union
+import os
 
 import numpy as np
 import torch
+from peft import PeftModel
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
-from inference_exp.models.common.roboflow.pre_processing import images_to_pillow
 from transformers import AutoModelForImageTextToText, AutoProcessor
 
 
@@ -18,14 +19,42 @@ class SmolVLMHF:
         **kwargs,
     ) -> "SmolVLMHF":
         torch_dtype = torch.float16 if device.type == "cuda" else torch.float32
-        model = AutoModelForImageTextToText.from_pretrained(
-            model_name_or_path,
-            torch_dtype=torch_dtype,
-            device_map=device,
-        ).eval()
-        processor = AutoProcessor.from_pretrained(
-            model_name_or_path, padding_side="left"
-        )
+
+        adapter_config_path = os.path.join(model_name_or_path, "adapter_config.json")
+        if os.path.exists(adapter_config_path):
+
+            base_model_path = os.path.join(model_name_or_path, "base")
+            model = AutoModelForImageTextToText.from_pretrained(
+                base_model_path,
+                torch_dtype=torch_dtype,
+                trust_remote_code=True,
+                local_files_only=True,
+            )
+            model = PeftModel.from_pretrained(model, model_name_or_path)
+            model.merge_and_unload()
+            model.to(device)
+
+            processor = AutoProcessor.from_pretrained(
+                base_model_path,
+                padding_side="left",
+                trust_remote_code=True,
+                local_files_only=True,
+            )
+        else:
+            print("smolvlm_hf.from_pretrained", "no adapter_config.json")
+            model = AutoModelForImageTextToText.from_pretrained(
+                model_name_or_path,
+                torch_dtype=torch_dtype,
+                device_map=device,
+                trust_remote_code=True,
+                local_files_only=True,
+            ).eval()
+            processor = AutoProcessor.from_pretrained(
+                model_name_or_path,
+                padding_side="left",
+                trust_remote_code=True,
+                local_files_only=True,
+            )
         return cls(
             model=model, processor=processor, device=device, torch_dtype=torch_dtype
         )
@@ -77,20 +106,48 @@ class SmolVLMHF:
         input_color_format: Optional[ColorFormat] = None,
         **kwargs,
     ) -> dict:
-        messages = prepare_chat_messages(
-            images=images,
-            prompt=prompt,
-            images_to_single_prompt=images_to_single_prompt,
-            input_color_format=input_color_format,
+        def _to_tensor(image: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
+            is_numpy = isinstance(image, np.ndarray)
+            if is_numpy:
+                tensor_image = torch.from_numpy(image.copy()).permute(2, 0, 1)
+            else:
+                tensor_image = image
+            if input_color_format == "bgr" or (is_numpy and input_color_format is None):
+                tensor_image = tensor_image[[2, 1, 0], :, :]
+            return tensor_image
+
+        if isinstance(images, torch.Tensor) and images.ndim > 3:
+            image_list = [_to_tensor(img) for img in images]
+        elif not isinstance(images, list):
+            image_list = [_to_tensor(images)]
+        else:
+            image_list = [_to_tensor(img) for img in images]
+
+        if images_to_single_prompt:
+            content = [{"type": "image"}] * len(image_list)
+            content.append({"type": "text", "text": prompt})
+            conversations = [[{"role": "user", "content": content}]]
+        else:
+            conversations = []
+            for _ in image_list:
+                conversations.append(
+                    [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "image"},
+                                {"type": "text", "text": prompt},
+                            ],
+                        }
+                    ]
+                )
+        text_prompts = self._processor.apply_chat_template(
+            conversations, add_generation_prompt=True
         )
-        return self._processor.apply_chat_template(
-            messages,
-            add_generation_prompt=True,
-            tokenize=True,
-            return_dict=True,
-            return_tensors="pt",
-            padding=len(messages) > 1,
-        ).to(self._device, dtype=self._torch_dtype)
+        inputs = self._processor(
+            text=text_prompts, images=image_list, return_tensors="pt", padding=True
+        )
+        return inputs.to(self._device, dtype=self._torch_dtype)
 
     def generate(
         self,
@@ -115,41 +172,3 @@ class SmolVLMHF:
             generated_ids, skip_special_tokens=skip_special_tokens
         )
         return [result.strip() for result in decoded]
-
-
-def prepare_chat_messages(
-    images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-    prompt: str,
-    images_to_single_prompt: bool,
-    input_color_format: Optional[ColorFormat] = None,
-) -> List[List[dict]]:
-    pillow_images, _ = images_to_pillow(
-        images=images, input_color_format=input_color_format, model_color_format="rgb"
-    )
-    if images_to_single_prompt:
-        content = []
-        for image in pillow_images:
-            content.append({"type": "image", "image": image})
-        content.append({"type": "text", "text": prompt})
-        return [
-            [
-                {
-                    "role": "user",
-                    "content": content,
-                },
-            ]
-        ]
-    result = []
-    for image in pillow_images:
-        result.append(
-            [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image", "image": image},
-                        {"type": "text", "text": prompt},
-                    ],
-                },
-            ]
-        )
-    return result
