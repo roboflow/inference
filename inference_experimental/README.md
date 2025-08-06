@@ -156,9 +156,26 @@ like TensorRT engines) or additional **models**.
 |------------------|----------------------------------------------------------------------------------------------------|
 | `mediapipe`      | Enables MediaPipe models, including Face Detector                                                  |
 | `grounding-dino` | Enables Grounding Dino model                                                                       |
-| `sam2-real-time` | Enables SAM2 (based on https://github.com/Gy920/segment-anything-2-real-time.git)                  |
 | `flash-attn`     | *EXPERIMENTAL:* Installs `flash-attn` for faster LLMs/VLMs - usually requires extensive compilation |
 | `test`           | Test dependencies                                                                                  |
+
+#### Special Installation: SAM2 Real-Time
+
+The `sam2-real-time` feature requires a Git-based dependency that cannot be distributed via PyPI. To use SAM2 real-time capabilities, you need to manually install it after installing `inference-exp`:
+
+```bash
+# First, install inference-exp with your desired extras (e.g., torch-cu124)
+pip install "inference-exp[torch-cu124]"
+
+# Then, install SAM2 real-time from GitHub
+pip install git+https://github.com/Gy920/segment-anything-2-real-time.git
+```
+
+For development environments using `uv`:
+```bash
+# Install in development mode with dev dependencies
+uv sync --dev
+```
 
 > [!IMPORTANT]  
 > Not all extras are possible to be installed together in a single environment. We try to make the extras as composable 
