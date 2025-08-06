@@ -42,6 +42,25 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install uv
+      - name: 🏷️ Modify version for pre-release
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.pre_release == 'true' }}
+        working-directory: inference_experimental
+        run: |
+          CURRENT_VERSION=$(grep -m 1 '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "Current version: $CURRENT_VERSION"
+
+          if [[ $CURRENT_VERSION =~ (a|b|rc)[0-9]+$ ]]; then
+            echo "Version already has pre-release suffix, keeping as is"
+          else
+            TIMESTAMP=$(date +%Y%m%d%H%M%S)
+            NEW_VERSION="${CURRENT_VERSION}rc${TIMESTAMP}"
+            echo "New pre-release version: $NEW_VERSION"
+            sed -i.bak "s/^version = \"${CURRENT_VERSION}\"/version = \"${NEW_VERSION}\"/" pyproject.toml
+            rm pyproject.toml.bak
+          fi
+      - name: 🔨 Build package
+        working-directory: inference_experimental
+        run: |
           python -m uv build
       - name: 📤 Publish to PyPI
         if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true') }}
@@ -53,7 +72,7 @@ jobs:
               exit 1
             fi
             echo "Publishing to PyPI as a pre-release"
-            python -m uv publish --check-url https://pypi.org/simple/ --prerelease
+            python -m uv publish --check-url https://pypi.org/simple/
           elif [[ "${{ github.event_name }}" == "release" ]]; then
             echo "Publishing to PyPI"
             python -m uv publish --check-url https://pypi.org/simple/
