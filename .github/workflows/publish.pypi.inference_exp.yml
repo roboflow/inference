@@ -62,21 +62,9 @@ jobs:
         working-directory: inference_experimental
         run: |
           python -m uv build
-      - name: 📤 Publish to PyPI
+      - name: 🚀 Publish to PyPI
         if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true') }}
-        working-directory: inference_experimental
-        run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            if [[ "${{ github.event.inputs.pre_release }}" != "true" ]]; then
-              echo "Error: Non-prerelease publishing is only allowed on release events"
-              exit 1
-            fi
-            echo "Publishing to PyPI as a pre-release"
-            python -m uv publish --trusted-publishing always --check-url https://pypi.org/simple/
-          elif [[ "${{ github.event_name }}" == "release" ]]; then
-            echo "Publishing to PyPI"
-            python -m uv publish --trusted-publishing always --check-url https://pypi.org/simple/
-          else
-            echo "Error: Unexpected event type: ${{ github.event_name }}"
-            exit 1
-          fi
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: inference_experimental/dist/
+          skip-existing: true
