@@ -55,6 +55,9 @@ class DinoV2(nn.Module):
         use_windowed_attn=True,
         gradient_checkpointing=False,
         load_dinov2_weights=True,
+        patch_size=14,
+        num_windows=4,
+        positional_encoding_size=37,
     ):
         super().__init__()
 
@@ -65,6 +68,8 @@ class DinoV2(nn.Module):
         )
 
         self.shape = shape
+        self.patch_size = patch_size
+        self.num_windows = num_windows
 
         # Create the encoder
 
@@ -89,18 +94,33 @@ class DinoV2(nn.Module):
 
             dino_config["return_dict"] = False
             dino_config["out_features"] = [f"stage{i}" for i in out_feature_indexes]
+            implied_resolution = positional_encoding_size * patch_size
+
+            if implied_resolution != dino_config["image_size"]:
+                print(
+                    f"Using a different number of positional encodings than DINOv2, which means we're not loading DINOv2 backbone weights. This is not a problem if finetuning a pretrained RF-DETR model."
+                )
+                dino_config["image_size"] = implied_resolution
+                load_dinov2_weights = False
+
+            if patch_size != 14:
+                print(
+                    f"Using patch size {patch_size} instead of 14, which means we're not loading DINOv2 backbone weights. This is not a problem if finetuning a pretrained RF-DETR model."
+                )
+                dino_config["patch_size"] = patch_size
+                load_dinov2_weights = False
 
             if use_registers:
                 windowed_dino_config = WindowedDinov2WithRegistersConfig(
                     **dino_config,
-                    num_windows=4,
+                    num_windows=num_windows,
                     window_block_indexes=window_block_indexes,
                     gradient_checkpointing=gradient_checkpointing,
                 )
             else:
                 windowed_dino_config = WindowedDinov2WithRegistersConfig(
                     **dino_config,
-                    num_windows=4,
+                    num_windows=num_windows,
                     window_block_indexes=window_block_indexes,
                     num_register_tokens=0,
                     gradient_checkpointing=gradient_checkpointing,
@@ -179,9 +199,10 @@ class DinoV2(nn.Module):
         )
 
     def forward(self, x):
+        block_size = self.patch_size * self.num_windows
         assert (
-            x.shape[2] % 14 == 0 and x.shape[3] % 14 == 0
-        ), f"Dinov2 requires input shape to be divisible by 14, but got {x.shape}"
+            x.shape[2] % block_size == 0 and x.shape[3] % block_size == 0
+        ), f"Backbone requires input shape to be divisible by {block_size}, but got {x.shape}"
         x = self.encoder(x)
         return list(x[0])
 
@@ -214,6 +235,9 @@ class Backbone(BackboneBase):
         backbone_lora: bool = False,
         gradient_checkpointing: bool = False,
         load_dinov2_weights: bool = True,
+        patch_size: int = 14,
+        num_windows: int = 4,
+        positional_encoding_size: bool = False,
     ):
         super().__init__()
         # an example name here would be "dinov2_base" or "dinov2_registers_windowed_base"
@@ -243,6 +267,9 @@ class Backbone(BackboneBase):
             use_windowed_attn=use_windowed_attn,
             gradient_checkpointing=gradient_checkpointing,
             load_dinov2_weights=load_dinov2_weights,
+            patch_size=patch_size,
+            num_windows=num_windows,
+            positional_encoding_size=positional_encoding_size,
         )
         # build encoder + projector as backbone module
         if freeze_encoder:
