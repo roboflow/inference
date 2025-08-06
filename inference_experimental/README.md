@@ -168,20 +168,21 @@ The `sam2-real-time` feature requires a Git-based dependency that cannot be dist
 pip install "inference-exp[torch-cu124]"
 
 # Then, install SAM2 real-time from GitHub
-pip install "SAM 2 @ git+https://github.com/Gy920/segment-anything-2-real-time.git"
+pip install git+https://github.com/Gy920/segment-anything-2-real-time.git
 ```
 
-For development environments you can use uv:
+For development environments:
 ```bash
-# First sync the project (this updates uv.lock but doesn't install "SAM 2")
+# First sync the project
 uv sync --dev
 
-# Then manually install "SAM 2" from the GitHub repository
-uv pip install "SAM 2 @ git+https://github.com/Gy920/segment-anything-2-real-time.git"
+# Then manually install SAM 2 from the GitHub repository
+# Note: The package installs as "SAM 2" (with a space)
+uv pip install git+https://github.com/Gy920/segment-anything-2-real-time.git
 ```
 
 > [!NOTE]
-> The "SAM 2" dependency is listed in dev-dependencies to maintain the lock file, but due to PyPI restrictions on Git dependencies, it must be installed separately even in development environments.
+> Due to PyPI restrictions on Git dependencies, the SAM2 real-time package must be installed separately from the GitHub repository. The package will be installed with the name "SAM 2" (with a space).
 
 > [!IMPORTANT]  
 > Not all extras are possible to be installed together in a single environment. We try to make the extras as composable 
