@@ -72,10 +72,10 @@ jobs:
               exit 1
             fi
             echo "Publishing to PyPI as a pre-release"
-            python -m uv publish --check-url https://pypi.org/simple/
+            python -m uv publish --trusted-publishing always --check-url https://pypi.org/simple/
           elif [[ "${{ github.event_name }}" == "release" ]]; then
             echo "Publishing to PyPI"
-            python -m uv publish --check-url https://pypi.org/simple/
+            python -m uv publish --trusted-publishing always --check-url https://pypi.org/simple/
           else
             echo "Error: Unexpected event type: ${{ github.event_name }}"
             exit 1
