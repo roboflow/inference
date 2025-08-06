@@ -1,48 +1,54 @@
+import math
 from typing import List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
 import PIL
 import torch
+
 from inference_exp.entities import ColorFormat, ImageDimensions
 from inference_exp.errors import ModelRuntimeError
+from inference_exp.logger import LOGGER
 from inference_exp.models.common.roboflow.model_packages import (
     PreProcessingConfig,
     PreProcessingMetadata,
-    PreProcessingMode,
+    PreProcessingMode, ColorMode, ImagePreProcessing, NetworkInputDefinition, ResizeMode,
+    DivisiblePadding, AnySizePadding, StaticCropOffset,
 )
 from PIL.Image import Image
-from torchvision.transforms import functional
+from torchvision.transforms import functional, CenterCrop
 
 
 def pre_process_network_input(
     images: torch.Tensor,
-    pre_processing_config: PreProcessingConfig,
-    expected_network_color_format: ColorFormat,
+    image_pre_processing: ImagePreProcessing,
+    network_input: NetworkInputDefinition,
     target_device: torch.device,
     input_color_format: Optional[ColorFormat] = None,
-    rescaling_constant: Optional[float] = 255.0,
-    normalization: Optional[Tuple[List[float], List[float]]] = None,
+    image_size_wh: Optional[Union[int, Tuple[int, int]]] = None
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
+    input_color_mode = None
+    if input_color_format is not None:
+        input_color_mode = ColorMode(input_color_format)
+    if isinstance(image_size_wh, (int, float)):
+        image_size_wh = int(image_size_wh), int(image_size_wh)
     if isinstance(images, np.ndarray):
         return pre_process_numpy_image(
             image=images,
-            pre_processing_config=pre_processing_config,
-            input_color_format=input_color_format,
-            expected_network_color_format=expected_network_color_format,
+            image_pre_processing=image_pre_processing,
+            network_input=network_input,
             target_device=target_device,
-            rescaling_constant=rescaling_constant,
-            normalization=normalization,
+            input_color_mode=input_color_mode,
+            image_size_wh=image_size_wh,
         )
     if isinstance(images, torch.Tensor):
         return pre_process_images_tensor(
             images=images,
-            pre_processing_config=pre_processing_config,
-            input_color_format=input_color_format,
-            expected_network_color_format=expected_network_color_format,
+            image_pre_processing=image_pre_processing,
+            network_input=network_input,
+            input_color_mode=input_color_mode,
             target_device=target_device,
-            rescaling_constant=rescaling_constant,
-            normalization=normalization,
+            image_size_wh=image_size_wh,
         )
     if not isinstance(images, list):
         raise ModelRuntimeError(
@@ -56,22 +62,20 @@ def pre_process_network_input(
     if isinstance(images[0], np.ndarray):
         return pre_process_numpy_images_list(
             images=images,
-            pre_processing_config=pre_processing_config,
-            input_color_format=input_color_format,
-            expected_network_color_format=expected_network_color_format,
+            image_pre_processing=image_pre_processing,
+            network_input=network_input,
+            input_color_mode=input_color_mode,
             target_device=target_device,
-            rescaling_constant=rescaling_constant,
-            normalization=normalization,
+            image_size_wh=image_size_wh,
         )
     if isinstance(images[0], torch.Tensor):
         return pre_process_images_tensor_list(
             images=images,
-            pre_processing_config=pre_processing_config,
-            input_color_format=input_color_format,
-            expected_network_color_format=expected_network_color_format,
+            image_pre_processing=image_pre_processing,
+            network_input=network_input,
+            input_color_mode=input_color_mode,
             target_device=target_device,
-            rescaling_constant=rescaling_constant,
-            normalization=normalization,
+            image_size_wh=image_size_wh,
         )
     raise ModelRuntimeError(
         message=f"Detected unknown input batch element: {type(images[0])}",
@@ -82,123 +86,309 @@ def pre_process_network_input(
 @torch.inference_mode()
 def pre_process_images_tensor(
     images: torch.Tensor,
-    pre_processing_config: PreProcessingConfig,
-    expected_network_color_format: ColorFormat,
+    image_pre_processing: ImagePreProcessing,
+    network_input: NetworkInputDefinition,
     target_device: torch.device,
-    input_color_format: Optional[ColorFormat] = None,
-    rescaling_constant: Optional[float] = 255.0,
-    normalization: Optional[Tuple[List[float], List[float]]] = None,
+    input_color_mode: Optional[ColorMode] = None,
+    image_size_wh: Optional[Tuple[int, int]] = None,
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-    if (
-        pre_processing_config.mode is PreProcessingMode.NONE
-        or pre_processing_config.target_size is None
-    ):
-        raise ModelRuntimeError(
-            message="Could not pre-process data before model inference - pre-processing configuration "
-            "does not specify input resizing.",
-            help_url="https://todo",
-        )
-    if input_color_format is None:
-        input_color_format = "rgb"
+    if input_color_mode is None:
+        input_color_mode = ColorMode.RGB
+    target_dimensions = (
+        network_input.training_input_size.width,
+        network_input.training_input_size.height,
+    )
+    if image_size_wh is not None and image_size_wh != target_dimensions:
+        if not network_input.dynamic_spatial_size_supported:
+            LOGGER.warning(
+                f"Requested image size: {image_size_wh} cannot be applied for model input, as model was trained with "
+                f"input resolution and does not support inputs of a different shape. `image_size_wh` gets ignored."
+            )
+        elif isinstance(network_input.dynamic_spatial_size_mode, DivisiblePadding):
+            target_dimensions = (
+                make_the_value_divisible(x=image_size_wh[0], by=network_input.dynamic_spatial_size_mode.value),
+                make_the_value_divisible(x=image_size_wh[1], by=network_input.dynamic_spatial_size_mode.value)
+            )
+        elif isinstance(network_input.dynamic_spatial_size_mode, AnySizePadding):
+            target_dimensions = image_size_wh
+        else:
+            raise ModelRuntimeError(
+                message=f"Handler for dynamic spatial mode of type {type(network_input.dynamic_spatial_size_mode)} "
+                f"is not implemented.",
+                help_url="",
+            )
     if images.device != target_device:
         images = images.to(target_device)
     if len(images.shape) == 3:
         images = torch.unsqueeze(images, 0)
-    if images.shape[1] != 3 and images.shape[3] == 3:
+    if images.shape[1] != network_input.input_channels and images.shape[3] == network_input.input_channels:
         images = images.permute(0, 3, 1, 2)
-    original_size = ImageDimensions(height=images.shape[2], width=images.shape[3])
-    if pre_processing_config.mode is PreProcessingMode.STRETCH:
-        if images.device.type == "cuda":
-            images = images.float()
-        images = torch.nn.functional.interpolate(
-            images,
-            [
-                pre_processing_config.target_size.height,
-                pre_processing_config.target_size.width,
-            ],
-            mode="bilinear",
-        )
-        if input_color_format != expected_network_color_format:
-            images = images[:, [2, 1, 0], :, :]
-        if rescaling_constant is not None:
-            images = images / rescaling_constant
-        if normalization:
-            images = functional.normalize(
-                images, mean=normalization[0], std=normalization[1]
-            )
-        metadata = PreProcessingMetadata(
-            pad_left=0,
-            pad_top=0,
-            pad_right=0,
-            pad_bottom=0,
-            original_size=original_size,
-            inference_size=pre_processing_config.target_size,
-            scale_width=pre_processing_config.target_size.width / original_size.width,
-            scale_height=pre_processing_config.target_size.height
-            / original_size.height,
-        )
-        return images.contiguous(), [metadata] * images.shape[0]
-    if pre_processing_config.mode is not PreProcessingMode.LETTERBOX:
+    image, static_crop_offset = apply_pre_processing_to_torch_image(image=images, image_pre_processing=image_pre_processing)
+    if network_input.resize_mode not in NUMPY_IMAGES_PREPARATION_HANDLERS:
         raise ModelRuntimeError(
-            message=f"Cannot find implementation for pre-processing operation: {pre_processing_config.mode}",
+            message=f"Unsupported model input resize mode: {network_input.resize_mode}",
             help_url="https://todo",
         )
-    if pre_processing_config.padding_value is None:
-        raise ModelRuntimeError(
-            message="Could not pre-process data before model inference - pre-processing configuration "
-            "does not specify padding color when letterbox resize mode is selected.",
-            help_url="https://todo",
+    return TORCH_IMAGES_PREPARATION_HANDLERS[network_input.resize_mode](
+        image,
+        network_input,
+        input_color_mode,
+        ImageDimensions(width=target_dimensions[0], height=target_dimensions[1]),
+        static_crop_offset,
+    )
+
+
+def apply_pre_processing_to_torch_image(
+    image: torch.Tensor,
+    image_pre_processing: ImagePreProcessing,
+) -> Tuple[torch.Tensor, StaticCropOffset]:
+    pass
+
+
+def handle_tensor_input_preparation_with_stretch(
+    image: torch.Tensor,
+    network_input: NetworkInputDefinition,
+    input_color_mode: ColorMode,
+    target_size: ImageDimensions,
+    static_crop_offset: StaticCropOffset,
+) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
+    original_size = ImageDimensions(height=image.shape[2], width=image.shape[3])
+    if image.device.type == "cuda":
+        image = image.float()
+    image = torch.nn.functional.interpolate(
+        image, size=[target_size.height, target_size.width], mode="bilinear",
+    )
+    if input_color_mode != network_input.color_mode:
+        image = image[:, [2, 1, 0], :, :]
+    if network_input.scaling_factor is not None:
+        image = image / network_input.scaling_factor
+    if network_input.normalization is not None:
+        image = functional.normalize(
+            image, mean=network_input.normalization[0], std=network_input.normalization[1]
         )
-    original_height, original_width = images.shape[2], images.shape[3]
-    scale_w = pre_processing_config.target_size.width / original_width
-    scale_h = pre_processing_config.target_size.height / original_height
+    metadata = PreProcessingMetadata(
+        pad_left=0,
+        pad_top=0,
+        pad_right=0,
+        pad_bottom=0,
+        original_size=original_size,
+        inference_size=target_size,
+        scale_width=target_size.width / original_size.width,
+        scale_height=target_size.height / original_size.height,
+        static_crop_offset=static_crop_offset,
+    )
+    return image.contiguous(), [metadata] * image.shape[0]
+
+
+def handle_torch_input_preparation_with_letterbox(
+    image: torch.Tensor,
+    network_input: NetworkInputDefinition,
+    input_color_mode: ColorMode,
+    target_size: ImageDimensions,
+    static_crop_offset: StaticCropOffset,
+) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
+    original_height, original_width = image.shape[2], image.shape[3]
+    original_size = ImageDimensions(height=original_height, width=original_width)
+    scale_w = target_size.width / original_width
+    scale_h = target_size.height / original_height
     scale = min(scale_w, scale_h)
     new_width = int(original_width * scale)
     new_height = int(original_height * scale)
-    pad_top = int((pre_processing_config.target_size.height - new_height) / 2)
-    pad_left = int((pre_processing_config.target_size.width - new_width) / 2)
-    if images.device.type == "cuda":
-        images = images.float()
-    images = torch.nn.functional.interpolate(
-        images,
+    pad_top = int((target_size.height - new_height) / 2)
+    pad_left = int((target_size.width - new_width) / 2)
+    if image.device.type == "cuda":
+        image = image.float()
+    image = torch.nn.functional.interpolate(
+        image,
         [new_height, new_width],
         mode="bilinear",
     )
-    if input_color_format != expected_network_color_format:
-        images = images[:, [2, 1, 0], :, :]
+    if input_color_mode != input_color_mode:
+        image = image[:, [2, 1, 0], :, :]
     final_batch = torch.full(
         (
-            images.shape[0],
-            images.shape[1],
-            pre_processing_config.target_size.height,
-            pre_processing_config.target_size.width,
+            image.shape[0],
+            image.shape[1],
+            target_size.height,
+            target_size.width,
         ),
-        pre_processing_config.padding_value,
+        network_input.padding_value or 0,
         dtype=torch.float32,
-        device=target_device,
+        device=image.device,
     )
     final_batch[
         :, :, pad_top : pad_top + new_height, pad_left : pad_left + new_width
-    ] = images
-    pad_right = pre_processing_config.target_size.width - pad_left - new_width
-    pad_bottom = pre_processing_config.target_size.height - pad_top - new_height
+    ] = image
+    pad_right = target_size.width - pad_left - new_width
+    pad_bottom = target_size.height - pad_top - new_height
     metadata = PreProcessingMetadata(
         pad_left=pad_left,
         pad_top=pad_top,
         pad_right=pad_right,
         pad_bottom=pad_bottom,
         original_size=original_size,
-        inference_size=pre_processing_config.target_size,
+        inference_size=target_size,
         scale_width=scale,
         scale_height=scale,
+        static_crop_offset=static_crop_offset,
     )
-    if rescaling_constant is not None:
-        final_batch = final_batch / rescaling_constant
-    if normalization:
+    if network_input.scaling_factor is not None:
+        final_batch = final_batch / network_input.scaling_factor
+    if network_input.normalization is not None:
         final_batch = functional.normalize(
-            final_batch, mean=normalization[0], std=normalization[1]
+            final_batch, mean=network_input.normalization[0], std=network_input.normalization[1]
         )
     return final_batch.contiguous(), [metadata] * final_batch.shape[0]
+
+
+def handle_torch_input_preparation_with_center_crop(
+    image: torch.Tensor,
+    network_input: NetworkInputDefinition,
+    input_color_mode: ColorMode,
+    target_size: ImageDimensions,
+    static_crop_offset: StaticCropOffset,
+) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
+    pass
+    # original_height, original_width = image.shape[0], image.shape[1]
+    # original_size = ImageDimensions(height=original_height, width=original_width)
+    # canvas = np.zeros((target_size.height, target_size.width, 3), dtype=np.uint8)
+    # canvas_ox_padding = target_size.width - image.shape[1]
+    # canvas_padding_left = max(0, canvas_ox_padding // 2)
+    # canvas_padding_left_reminder = max(0, canvas_ox_padding) % 2
+    # canvas_padding_right = max(target_size.width - canvas_padding_left - canvas_padding_left_reminder, 0)
+    # canvas_oy_padding = target_size.height - image.shape[0]
+    # canvas_padding_top = max(0, canvas_oy_padding // 2)
+    # canvas_oy_padding_reminder = max(0, canvas_oy_padding) % 2
+    # canvas_padding_bottom = max(target_size.height - canvas_padding_top - canvas_oy_padding_reminder, 0)
+    # original_image_ox_padding = image.shape[1] - target_size.width
+    # original_image_padding_left = max(0, original_image_ox_padding // 2)
+    # original_image_ox_padding_reminder = max(0, original_image_ox_padding) % 2
+    # original_image_padding_right = max(
+    #     0, image.shape[1] - original_image_padding_left - original_image_ox_padding_reminder
+    # )
+    # original_image_oy_padding = image.shape[0] - target_size.height
+    # original_image_padding_top = max(0, original_image_oy_padding // 2)
+    # original_image_oy_padding_reminder = max(0, original_image_oy_padding) % 2
+    # original_image_padding_bottom = max(
+    #     0, image.shape[0] - original_image_padding_top - original_image_oy_padding_reminder
+    # )
+    # canvas[
+    #     canvas_padding_top:canvas_padding_bottom, canvas_padding_left:canvas_padding_right
+    # ] = image[
+    #     original_image_padding_top:original_image_padding_bottom,
+    #     original_image_padding_left:original_image_padding_right
+    # ]
+    # if canvas.shape[0] > image.shape[0]:
+    #     reported_padding_top = canvas_padding_top
+    #     reported_padding_bottom = canvas.shape[0] - canvas_padding_bottom
+    # else:
+    #     reported_padding_top = -original_image_padding_top
+    #     reported_padding_bottom = -(image.shape[0] - original_image_padding_bottom)
+    # if canvas.shape[1] > image.shape[1]:
+    #     reported_padding_left = canvas_padding_left
+    #     reported_padding_right = canvas.shape[1] - canvas_padding_left
+    # else:
+    #     reported_padding_left = -original_image_padding_left
+    #     reported_padding_right = -(image.shape[1] - original_image_padding_right)
+    # image_metadata = PreProcessingMetadata(
+    #     pad_left=reported_padding_left,
+    #     pad_top=reported_padding_top,
+    #     pad_right=reported_padding_right,
+    #     pad_bottom=reported_padding_bottom,
+    #     original_size=original_size,
+    #     inference_size=target_size,
+    #     scale_width=1.0,
+    #     scale_height=1.0,
+    #     static_crop_offset=static_crop_offset,
+    # )
+    # tensor = torch.from_numpy(canvas).to(device=target_device)
+    # tensor = torch.unsqueeze(tensor, 0)
+    # tensor = tensor.permute(0, 3, 1, 2)
+    # if input_color_mode != network_input.color_mode:
+    #     tensor = tensor[:, [2, 1, 0], :, :]
+    # if network_input.scaling_factor is not None:
+    #     tensor = tensor / network_input.scaling_factor
+    # if network_input.normalization:
+    #     tensor = functional.normalize(
+    #         tensor, mean=network_input.normalization[0], std=network_input.normalization[1]
+    #     )
+    # return tensor.contiguous(), [image_metadata]
+
+
+def handle_torch_input_preparation_fitting_longer_edge(
+    image: torch.Tensor,
+    network_input: NetworkInputDefinition,
+    input_color_mode: ColorMode,
+    target_size: ImageDimensions,
+    static_crop_offset: StaticCropOffset,
+) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
+    image_height, image_width = image.shape[2], image.shape[3]
+    original_size = ImageDimensions(height=image_height, width=image_width)
+    crop_width, crop_height = target_size.width, target_size.height
+    if crop_width > image_width or crop_height > image_height:
+        padding_ltrb = [
+            (crop_width - image_width) // 2 if crop_width > image_width else 0,
+            (crop_height - image_height) // 2 if crop_height > image_height else 0,
+            (crop_width - image_width + 1) // 2 if crop_width > image_width else 0,
+            (crop_height - image_height + 1) // 2 if crop_height > image_height else 0,
+        ]
+        image = functional.pad(image, padding_ltrb, fill=0)  # PIL uses fill value 0
+        image_height, image_width = image.shape[2], image.shape[3]
+        if crop_width == image_width and crop_height == image_height:
+            return image
+
+    crop_top = int(round((image_height - crop_height) / 2.0))
+    crop_left = int(round((image_width - crop_width) / 2.0))
+    return functional.crop(image, crop_top, crop_left, crop_height, crop_width)
+
+    crop = CenterCrop(size=[target_size.height, target_size.width])
+    # original_height, original_width = image.shape[0], image.shape[1]
+    # original_size = ImageDimensions(height=original_height, width=original_width)
+    # scale_ox = target_size.width / original_size.width
+    # scale_oy = target_size.height / original_size.height
+    # if scale_ox < scale_oy:
+    #     actual_target_width = target_size.width
+    #     actual_target_height = round(scale_ox * original_size.height)
+    # else:
+    #     actual_target_width = round(scale_oy * original_size.width)
+    #     actual_target_height = target_size.height
+    # actual_target_size = ImageDimensions(
+    #     height=actual_target_height,
+    #     width=actual_target_width,
+    # )
+    # scaled_image = cv2.resize(image, (actual_target_size.width, actual_target_size.height))
+    # image_metadata = PreProcessingMetadata(
+    #     pad_left=0,
+    #     pad_top=0,
+    #     pad_right=0,
+    #     pad_bottom=0,
+    #     original_size=original_size,
+    #     inference_size=actual_target_size,
+    #     scale_width=actual_target_size.width / original_size.width,
+    #     scale_height=actual_target_size.height / original_size.height,
+    #     static_crop_offset=static_crop_offset,
+    # )
+    # tensor = torch.from_numpy(scaled_image).to(device=target_device)
+    # tensor = torch.unsqueeze(tensor, 0)
+    # tensor = tensor.permute(0, 3, 1, 2)
+    # if input_color_mode != network_input.color_mode:
+    #     tensor = tensor[:, [2, 1, 0], :, :]
+    # if network_input.scaling_factor is not None:
+    #     tensor = tensor / network_input.scaling_factor
+    # if network_input.normalization:
+    #     tensor = functional.normalize(
+    #         tensor, mean=network_input.normalization[0], std=network_input.normalization[1]
+    #     )
+    # return tensor.contiguous(), [image_metadata]
+
+
+TORCH_IMAGES_PREPARATION_HANDLERS = {
+    ResizeMode.STRETCH_TO: handle_tensor_input_preparation_with_stretch,
+    ResizeMode.LETTERBOX: handle_torch_input_preparation_with_letterbox,
+    ResizeMode.CENTER_CROP: handle_torch_input_preparation_with_center_crop,
+    ResizeMode.FIT_LONGER_EDGE: handle_torch_input_preparation_fitting_longer_edge,
+    ResizeMode.LETTERBOX_REFLECT_EDGES: handle_torch_input_preparation_with_letterbox
+}
 
 
 @torch.inference_mode()
@@ -371,113 +561,283 @@ def pre_process_numpy_images_list(
 @torch.inference_mode()
 def pre_process_numpy_image(
     image: np.ndarray,
-    pre_processing_config: PreProcessingConfig,
-    expected_network_color_format: ColorFormat,
+    image_pre_processing: ImagePreProcessing,
+    network_input: NetworkInputDefinition,
     target_device: torch.device,
-    input_color_format: Optional[ColorFormat] = None,
-    rescaling_constant: Optional[float] = 255.0,
-    normalization: Optional[Tuple[List[float], List[float]]] = None,
+    input_color_mode: Optional[ColorMode] = None,
+    image_size_wh: Optional[Tuple[int, int]] = None,
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-    if (
-        pre_processing_config.mode is PreProcessingMode.NONE
-        or pre_processing_config.target_size is None
-    ):
+    if input_color_mode is None:
+        input_color_mode = ColorMode.BGR
+    target_dimensions = (
+        network_input.training_input_size.width,
+        network_input.training_input_size.height,
+    )
+    if image_size_wh is not None and image_size_wh != target_dimensions:
+        if not network_input.dynamic_spatial_size_supported:
+            LOGGER.warning(
+                f"Requested image size: {image_size_wh} cannot be applied for model input, as model was trained with "
+                f"input resolution and does not support inputs of a different shape. `image_size_wh` gets ignored."
+            )
+        elif isinstance(network_input.dynamic_spatial_size_mode, DivisiblePadding):
+            target_dimensions = (
+                make_the_value_divisible(x=image_size_wh[0], by=network_input.dynamic_spatial_size_mode.value),
+                make_the_value_divisible(x=image_size_wh[1], by=network_input.dynamic_spatial_size_mode.value)
+            )
+        elif isinstance(network_input.dynamic_spatial_size_mode, AnySizePadding):
+            target_dimensions = image_size_wh
+        else:
+            raise ModelRuntimeError(
+                message=f"Handler for dynamic spatial mode of type {type(network_input.dynamic_spatial_size_mode)} "
+                f"is not implemented.",
+                help_url="",
+            )
+    image, static_crop_offset = apply_pre_processing_to_numpy_image(image=image, image_pre_processing=image_pre_processing)
+    if network_input.resize_mode not in NUMPY_IMAGES_PREPARATION_HANDLERS:
         raise ModelRuntimeError(
-            message="Could not pre-process data before model inference - pre-processing configuration "
-            "does not specify input resizing.",
+            message=f"Unsupported model input resize mode: {network_input.resize_mode}",
             help_url="https://todo",
         )
-    if input_color_format is None:
-        input_color_format = "bgr"
-    original_size = ImageDimensions(height=image.shape[0], width=image.shape[1])
-    if pre_processing_config.mode is PreProcessingMode.STRETCH:
-        resized_image = cv2.resize(
-            image,
-            (
-                pre_processing_config.target_size.width,
-                pre_processing_config.target_size.height,
-            ),
-        )
-        tensor = torch.from_numpy(resized_image).to(device=target_device)
-        tensor = torch.unsqueeze(tensor, 0)
-        tensor = tensor.permute(0, 3, 1, 2)
-        if input_color_format != expected_network_color_format:
-            tensor = tensor[:, [2, 1, 0], :, :]
-        if rescaling_constant is not None:
-            tensor = tensor / rescaling_constant
-        if normalization:
-            tensor = functional.normalize(
-                tensor, mean=normalization[0], std=normalization[1]
-            )
-        image_metadata = PreProcessingMetadata(
-            pad_left=0,
-            pad_top=0,
-            pad_right=0,
-            pad_bottom=0,
-            original_size=original_size,
-            inference_size=pre_processing_config.target_size,
-            scale_width=pre_processing_config.target_size.width / original_size.width,
-            scale_height=pre_processing_config.target_size.height
-            / original_size.height,
-        )
-        return tensor.contiguous(), [image_metadata]
-    if pre_processing_config.mode is PreProcessingMode.LETTERBOX:
-        if pre_processing_config.padding_value is None:
-            raise ModelRuntimeError(
-                message="Could not pre-process data before model inference - pre-processing configuration "
-                "does not specify padding color when letterbox resize mode is selected.",
-                help_url="https://todo",
-            )
-        original_height, original_width = image.shape[0], image.shape[1]
-        scale_w = pre_processing_config.target_size.width / original_width
-        scale_h = pre_processing_config.target_size.height / original_height
-        scale = min(scale_w, scale_h)
-        new_width = int(original_width * scale)
-        new_height = int(original_height * scale)
-        pad_top = int((pre_processing_config.target_size.height - new_height) / 2)
-        pad_left = int((pre_processing_config.target_size.width - new_width) / 2)
-        scaled_image = cv2.resize(image, (new_width, new_height))
-        scaled_image_tensor = torch.from_numpy(scaled_image).to(target_device)
-        scaled_image_tensor = scaled_image_tensor.permute(2, 0, 1)
-        final_batch = torch.full(
-            (
-                1,
-                image.shape[2],
-                pre_processing_config.target_size.height,
-                pre_processing_config.target_size.width,
-            ),
-            pre_processing_config.padding_value,
-            dtype=torch.float32,
-            device=target_device,
-        )
-        final_batch[
-            0, :, pad_top : pad_top + new_height, pad_left : pad_left + new_width
-        ] = scaled_image_tensor
-        if input_color_format != expected_network_color_format:
-            final_batch = final_batch[:, [2, 1, 0], :, :]
-        pad_right = pre_processing_config.target_size.width - pad_left - new_width
-        pad_bottom = pre_processing_config.target_size.height - pad_top - new_height
-        image_metadata = PreProcessingMetadata(
-            pad_left=pad_left,
-            pad_top=pad_top,
-            pad_right=pad_right,
-            pad_bottom=pad_bottom,
-            original_size=original_size,
-            inference_size=pre_processing_config.target_size,
-            scale_width=scale,
-            scale_height=scale,
-        )
-        if rescaling_constant is not None:
-            final_batch = final_batch / rescaling_constant
-        if normalization:
-            final_batch = functional.normalize(
-                final_batch, mean=normalization[0], std=normalization[1]
-            )
-        return final_batch.contiguous(), [image_metadata]
-    raise ModelRuntimeError(
-        message=f"Unsupported pre-processing mode: {pre_processing_config.mode}",
-        help_url="https://todo",
+    return NUMPY_IMAGES_PREPARATION_HANDLERS[network_input.resize_mode](
+        image,
+        network_input,
+        target_device,
+        input_color_mode,
+        ImageDimensions(width=target_dimensions[0], height=target_dimensions[1]),
+        static_crop_offset,
     )
+
+
+def apply_pre_processing_to_numpy_image(
+    image: np.ndarray,
+    image_pre_processing: ImagePreProcessing,
+) -> Tuple[np.ndarray, StaticCropOffset]:
+    pass
+
+
+def handle_numpy_input_preparation_with_stretch(
+    image: np.ndarray,
+    network_input: NetworkInputDefinition,
+    target_device: torch.device,
+    input_color_mode: ColorMode,
+    target_size: ImageDimensions,
+    static_crop_offset: StaticCropOffset,
+) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
+    original_size = ImageDimensions(height=image.shape[0], width=image.shape[1])
+    resized_image = cv2.resize(image, target_size)
+    tensor = torch.from_numpy(resized_image).to(device=target_device)
+    tensor = torch.unsqueeze(tensor, 0)
+    tensor = tensor.permute(0, 3, 1, 2)
+    if input_color_mode != network_input.color_mode:
+        tensor = tensor[:, [2, 1, 0], :, :]
+    if network_input.scaling_factor is not None:
+        tensor = tensor / network_input.scaling_factor
+    if network_input.normalization:
+        tensor = functional.normalize(
+            tensor, mean=network_input.normalization[0], std=network_input.normalization[1]
+        )
+    image_metadata = PreProcessingMetadata(
+        pad_left=0,
+        pad_top=0,
+        pad_right=0,
+        pad_bottom=0,
+        original_size=original_size,
+        inference_size=target_size,
+        scale_width=target_size.width / original_size.width,
+        scale_height=target_size.height / original_size.height,
+        static_crop_offset=static_crop_offset,
+    )
+    return tensor.contiguous(), [image_metadata]
+
+
+def handle_numpy_input_preparation_with_letterbox(
+    image: np.ndarray,
+    network_input: NetworkInputDefinition,
+    target_device: torch.device,
+    input_color_mode: ColorMode,
+    target_size: ImageDimensions,
+    static_crop_offset: StaticCropOffset,
+) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
+    padding_value = network_input.padding_value or 0
+    original_height, original_width = image.shape[0], image.shape[1]
+    original_size = ImageDimensions(height=original_height, width=original_width)
+    scale_w = target_size.width / original_width
+    scale_h = target_size.height / original_height
+    scale = min(scale_w, scale_h)
+    new_width = int(original_width * scale)
+    new_height = int(original_height * scale)
+    pad_top = int((target_size.height - new_height) / 2)
+    pad_left = int((target_size.width - new_width) / 2)
+    scaled_image = cv2.resize(image, (new_width, new_height))
+    scaled_image_tensor = torch.from_numpy(scaled_image).to(target_device)
+    scaled_image_tensor = scaled_image_tensor.permute(2, 0, 1)
+    final_batch = torch.full(
+        (
+            1,
+            image.shape[2],
+            target_size.height,
+            target_size.width,
+        ),
+        padding_value,
+        dtype=torch.float32,
+        device=target_device,
+    )
+    final_batch[
+        0, :, pad_top: pad_top + new_height, pad_left: pad_left + new_width
+    ] = scaled_image_tensor
+    if input_color_mode != network_input.color_mode:
+        final_batch = final_batch[:, [2, 1, 0], :, :]
+    pad_right = target_size.width - pad_left - new_width
+    pad_bottom = target_size.height - pad_top - new_height
+    image_metadata = PreProcessingMetadata(
+        pad_left=pad_left,
+        pad_top=pad_top,
+        pad_right=pad_right,
+        pad_bottom=pad_bottom,
+        original_size=original_size,
+        inference_size=target_size,
+        scale_width=scale,
+        scale_height=scale,
+        static_crop_offset=static_crop_offset,
+    )
+    if network_input.scaling_factor is not None:
+        final_batch = final_batch / network_input.scaling_factor
+    if network_input.normalization is not None:
+        final_batch = functional.normalize(
+            final_batch, mean=network_input.normalization[0], std=network_input.normalization[1]
+        )
+    return final_batch.contiguous(), [image_metadata]
+
+
+def handle_numpy_input_preparation_with_center_crop(
+    image: np.ndarray,
+    network_input: NetworkInputDefinition,
+    target_device: torch.device,
+    input_color_mode: ColorMode,
+    target_size: ImageDimensions,
+    static_crop_offset: StaticCropOffset,
+) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
+    original_height, original_width = image.shape[0], image.shape[1]
+    original_size = ImageDimensions(height=original_height, width=original_width)
+    canvas = np.zeros((target_size.height, target_size.width, 3), dtype=np.uint8)
+    canvas_ox_padding = target_size.width - image.shape[1]
+    canvas_padding_left = max(0, canvas_ox_padding // 2)
+    canvas_padding_left_reminder = max(0, canvas_ox_padding) % 2
+    canvas_padding_right = max(target_size.width - canvas_padding_left - canvas_padding_left_reminder, 0)
+    canvas_oy_padding = target_size.height - image.shape[0]
+    canvas_padding_top = max(0, canvas_oy_padding // 2)
+    canvas_oy_padding_reminder = max(0, canvas_oy_padding) % 2
+    canvas_padding_bottom = max(target_size.height - canvas_padding_top - canvas_oy_padding_reminder, 0)
+    original_image_ox_padding = image.shape[1] - target_size.width
+    original_image_padding_left = max(0, original_image_ox_padding // 2)
+    original_image_ox_padding_reminder = max(0, original_image_ox_padding) % 2
+    original_image_padding_right = max(
+        0, image.shape[1] - original_image_padding_left - original_image_ox_padding_reminder
+    )
+    original_image_oy_padding = image.shape[0] - target_size.height
+    original_image_padding_top = max(0, original_image_oy_padding // 2)
+    original_image_oy_padding_reminder = max(0, original_image_oy_padding) % 2
+    original_image_padding_bottom = max(
+        0, image.shape[0] - original_image_padding_top - original_image_oy_padding_reminder
+    )
+    canvas[
+        canvas_padding_top:canvas_padding_bottom, canvas_padding_left:canvas_padding_right
+    ] = image[
+        original_image_padding_top:original_image_padding_bottom,
+        original_image_padding_left:original_image_padding_right
+    ]
+    if canvas.shape[0] > image.shape[0]:
+        reported_padding_top = canvas_padding_top
+        reported_padding_bottom = canvas.shape[0] - canvas_padding_bottom
+    else:
+        reported_padding_top = -original_image_padding_top
+        reported_padding_bottom = -(image.shape[0] - original_image_padding_bottom)
+    if canvas.shape[1] > image.shape[1]:
+        reported_padding_left = canvas_padding_left
+        reported_padding_right = canvas.shape[1] - canvas_padding_left
+    else:
+        reported_padding_left = -original_image_padding_left
+        reported_padding_right = -(image.shape[1] - original_image_padding_right)
+    image_metadata = PreProcessingMetadata(
+        pad_left=reported_padding_left,
+        pad_top=reported_padding_top,
+        pad_right=reported_padding_right,
+        pad_bottom=reported_padding_bottom,
+        original_size=original_size,
+        inference_size=target_size,
+        scale_width=1.0,
+        scale_height=1.0,
+        static_crop_offset=static_crop_offset,
+    )
+    tensor = torch.from_numpy(canvas).to(device=target_device)
+    tensor = torch.unsqueeze(tensor, 0)
+    tensor = tensor.permute(0, 3, 1, 2)
+    if input_color_mode != network_input.color_mode:
+        tensor = tensor[:, [2, 1, 0], :, :]
+    if network_input.scaling_factor is not None:
+        tensor = tensor / network_input.scaling_factor
+    if network_input.normalization:
+        tensor = functional.normalize(
+            tensor, mean=network_input.normalization[0], std=network_input.normalization[1]
+        )
+    return tensor.contiguous(), [image_metadata]
+
+
+def handle_numpy_input_preparation_fitting_longer_edge(
+    image: np.ndarray,
+    network_input: NetworkInputDefinition,
+    target_device: torch.device,
+    input_color_mode: ColorMode,
+    target_size: ImageDimensions,
+    static_crop_offset: StaticCropOffset,
+) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
+    original_height, original_width = image.shape[0], image.shape[1]
+    original_size = ImageDimensions(height=original_height, width=original_width)
+    scale_ox = target_size.width / original_size.width
+    scale_oy = target_size.height / original_size.height
+    if scale_ox < scale_oy:
+        actual_target_width = target_size.width
+        actual_target_height = round(scale_ox * original_size.height)
+    else:
+        actual_target_width = round(scale_oy * original_size.width)
+        actual_target_height = target_size.height
+    actual_target_size = ImageDimensions(
+        height=actual_target_height,
+        width=actual_target_width,
+    )
+    scaled_image = cv2.resize(image, (actual_target_size.width, actual_target_size.height))
+    image_metadata = PreProcessingMetadata(
+        pad_left=0,
+        pad_top=0,
+        pad_right=0,
+        pad_bottom=0,
+        original_size=original_size,
+        inference_size=actual_target_size,
+        scale_width=actual_target_size.width / original_size.width,
+        scale_height=actual_target_size.height / original_size.height,
+        static_crop_offset=static_crop_offset,
+    )
+    tensor = torch.from_numpy(scaled_image).to(device=target_device)
+    tensor = torch.unsqueeze(tensor, 0)
+    tensor = tensor.permute(0, 3, 1, 2)
+    if input_color_mode != network_input.color_mode:
+        tensor = tensor[:, [2, 1, 0], :, :]
+    if network_input.scaling_factor is not None:
+        tensor = tensor / network_input.scaling_factor
+    if network_input.normalization:
+        tensor = functional.normalize(
+            tensor, mean=network_input.normalization[0], std=network_input.normalization[1]
+        )
+    return tensor.contiguous(), [image_metadata]
+
+
+NUMPY_IMAGES_PREPARATION_HANDLERS = {
+    ResizeMode.STRETCH_TO: handle_numpy_input_preparation_with_stretch,
+    ResizeMode.LETTERBOX: handle_numpy_input_preparation_with_letterbox,
+    ResizeMode.CENTER_CROP: handle_numpy_input_preparation_with_center_crop,
+    ResizeMode.FIT_LONGER_EDGE: handle_numpy_input_preparation_fitting_longer_edge,
+    ResizeMode.LETTERBOX_REFLECT_EDGES: handle_numpy_input_preparation_with_letterbox
+}
 
 
 def extract_input_images_dimensions(
@@ -579,3 +939,7 @@ def images_to_pillow(
         message=f"Detected unknown input batch element: {type(images[0])}",
         help_url="https://todo",
     )
+
+
+def make_the_value_divisible(x: int, by: int) -> int:
+    return math.ceil(x / by) * by

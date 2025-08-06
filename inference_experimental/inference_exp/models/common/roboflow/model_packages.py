@@ -2,12 +2,12 @@ import json
 from collections import namedtuple
 from dataclasses import dataclass
 from enum import Enum
-from typing import Annotated, List, Literal, Optional, Tuple, Union
+from typing import List, Literal, Optional, Tuple, Union, Set
 
 from inference_exp.entities import ImageDimensions
 from inference_exp.errors import CorruptedModelPackageError
 from inference_exp.utils.file_system import read_json, stream_file_lines
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 
 def parse_class_names_file(class_names_path: str) -> List[str]:
@@ -43,6 +43,7 @@ PADDING_VALUES_MAPPING = {
     "grey edges": 127,
     "white edges": 255,
 }
+StaticCropOffset = namedtuple("StaticCropOffset", ["offset_x", "offset_y"])
 PreProcessingMetadata = namedtuple(
     "PreProcessingMetadata",
     [
@@ -54,6 +55,7 @@ PreProcessingMetadata = namedtuple(
         "inference_size",
         "scale_width",
         "scale_height",
+        "static_crop_offset"
     ],
 )
 
@@ -262,25 +264,6 @@ def parse_class_map_from_environment_file(environment_file_path: str) -> List[st
         ) from error
 
 
-# non_nms_config = {
-#     "image_pre_processing": image_pre_processing,
-#     "network_input": {
-#         "training_input_size": {"height": self.imgsz, "width": self.imgsz},
-#         "dynamic_spatial_size_supported": False,
-#         "color_mode": "rgb",
-#         "resize_mode": resize_mode,
-#         "padding_value": padding_value,
-#         "input_channels": 3,
-#         "scaling_factor": 255,
-#         "normalization": None,
-#     },
-#     "post_processing": {
-#         "type": "nms",
-#         "fused": False,
-#     }
-# }
-
-
 class AutoOrient(BaseModel):
     enabled: bool
 
@@ -293,7 +276,7 @@ class StaticCrop(BaseModel):
     y_max: int
 
 
-class ContrastType(Enum, str):
+class ContrastType(str, Enum):
     ADAPTIVE_EQUALIZATION = "Adaptive Equalization"
     CONTRAST_STRETCHING = "Contrast Stretching"
     HISTOGRAM_EQUALIZATION = "Histogram Equalization"
@@ -329,36 +312,13 @@ class AnySizePadding(BaseModel):
     type: Literal["any-size"]
 
 
-class ColorMode(Enum, str):
+class ColorMode(str, Enum):
     BGR = "bgr"
     RGB = "rgb"
 
 
-# non_nms_config = {
-#     "image_pre_processing": image_pre_processing,
-#     "network_input": {
-#         "training_input_size": {"height": self.imgsz, "width": self.imgsz},
-#         "dynamic_spatial_size_supported": False,
-#         "color_mode": "rgb",
-#         "resize_mode": resize_mode,
-#         "padding_value": padding_value,
-#         "input_channels": 3,
-#         "scaling_factor": 255,
-#         "normalization": None,
-#     },
-#     "post_processing": {
-#         "type": "nms",
-#         "fused": False,
-#     }
-# }
-#
-#  "post_processing": {
-#                 "type": "nms",
-#                 "fused": True,
-#                 "nms_parameters": nms_parameters_cleaned,
-#             }
-class ResizeMode(Enum, str):
-    STRETCH_TO = "Stretch to"
+class ResizeMode(str, Enum):
+    STRETCH_TO = "stretch"
     LETTERBOX = "letterbox"
     CENTER_CROP = "center-crop"
     FIT_LONGER_EDGE = "fit-longer-edge"
@@ -368,7 +328,7 @@ class ResizeMode(Enum, str):
 Number = Union[int, float]
 
 
-class NetworkInput(BaseModel):
+class NetworkInputDefinition(BaseModel):
     training_input_size: TrainingInputSize
     dynamic_spatial_size_supported: bool
     dynamic_spatial_size_mode: Optional[Union[DivisiblePadding, AnySizePadding]] = (
@@ -379,9 +339,7 @@ class NetworkInput(BaseModel):
     padding_value: Optional[int]
     input_channels: int
     scaling_factor: Optional[Number] = Field(default=None)
-    normalization: Optional[
-        Tuple[Tuple[Number, Number, Number], Tuple[Number, Number, Number]]
-    ] = Field(default=None)
+    normalization: Optional[Tuple[List[Number], List[Number]]] = Field(default=None)
 
 
 class ForwardPassConfiguration(BaseModel):
@@ -413,19 +371,22 @@ class SoftMaxPostProcessing(BaseModel):
 
 class InferenceConfig(BaseModel):
     image_pre_processing: ImagePreProcessing
-    network_input: NetworkInput
+    network_input: NetworkInputDefinition
     forward_pass: Optional[ForwardPassConfiguration] = Field(default=None)
     post_processing: Optional[
         Union[NMSPostProcessing, SoftMaxPostProcessing, SigmoidPostProcessing]
     ] = Field(default=None, discriminator="type")
 
 
-def parse_inference_config(config_path: str) -> None:
+def parse_inference_config(
+    config_path: str,
+    allowed_resize_modes: Set[ResizeMode],
+) -> InferenceConfig:
     try:
-        parsed_config = read_json(path=config_path)
-        if not isinstance(parsed_config, dict):
+        decoded_config = read_json(path=config_path)
+        if not isinstance(decoded_config, dict):
             raise ValueError(
-                f"Expected config format is dict, found {type(parsed_config)} instead"
+                f"Expected config format is dict, found {type(decoded_config)} instead"
             )
     except (IOError, OSError, ValueError) as error:
         raise CorruptedModelPackageError(
@@ -435,3 +396,20 @@ def parse_inference_config(config_path: str) -> None:
             f"verify its consistency in docs.",
             help_url="https://todo",
         ) from error
+    try:
+        parsed_config = InferenceConfig.model_validate(decoded_config)
+    except ValidationError as error:
+        raise CorruptedModelPackageError(
+            message=f"Could not parse the inference config from the model package.",
+            help_url="https://todo"
+        ) from error
+    if parsed_config.network_input.resize_mode not in allowed_resize_modes:
+        allowed_resize_modes_str = ", ".join([e.value for e in allowed_resize_modes])
+        raise CorruptedModelPackageError(
+            message=f"Inference configuration shipped with model package defines input resize "
+                    f"{parsed_config.network_input.resize_mode} which is not supported by the model implementation. "
+                    f"Config defines: {parsed_config.network_input.resize_mode.value}, but the allowed values are: "
+                    f"{allowed_resize_modes_str}.",
+            help_url="https://todo"
+        )
+    return parsed_config
