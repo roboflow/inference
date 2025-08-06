@@ -96,11 +96,6 @@ test = [
   "requests-mock>=1.12.1"
 ]
 
-[tool.uv.dev-dependencies]
-sam2-real-time = [
-  "sam2 @ git+https://github.com/Gy920/segment-anything-2-real-time.git",
-]
-
 [tool.uv.sources]
 torch = [
   { index = "torch-cpu", extra = "torch-cpu" },
@@ -183,6 +178,9 @@ name = "tensorrt-lean-cu12-bindings"
 
 
 [tool.uv]
+dev-dependencies = [
+  "sam2 @ git+https://github.com/Gy920/segment-anything-2-real-time.git",
+]
 conflicts = [
   [
     { extra = "torch-cpu" },
