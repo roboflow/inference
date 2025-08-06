@@ -32,13 +32,6 @@ jobs:
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v4
-      - name: 📦 Cache Python packages
-        uses: actions/cache@v3
-        with:
-          path: ~/.cache/uv
-          key: ${{ runner.os }}-uv-${{ matrix.python-version }}-${{ hashFiles('inference_experimental/pyproject.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-uv-${{ matrix.python-version }}-
       - name: 🐍 Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
@@ -51,7 +44,7 @@ jobs:
           python -m pip install uv
           python -m uv build
       - name: 📤 Publish to PyPI
-        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish == true) }}
+        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true') }}
         working-directory: inference_experimental
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
