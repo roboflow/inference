@@ -115,8 +115,8 @@
 .download-container {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 1.5rem;
-  margin: 2rem 0;
+  gap: 1rem;
+  margin: 1rem 0;
   max-width: 700px;
 }
 
