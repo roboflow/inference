@@ -21,6 +21,7 @@ permissions:
 
 jobs:
   build:
+    name: ${{ github.event_name == 'release' && 'Release publish' || (github.event.inputs.publish == 'true' && (github.event.inputs.pre_release == 'true' && 'Manual publish (pre-release)' || 'Manual publish (rejected - non-prerelease)') || 'Manual build only') }}
     runs-on:
       labels: depot-ubuntu-22.04-small
       group: public-depot
