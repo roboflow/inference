@@ -40,7 +40,7 @@ def rank_model_packages(
     model_packages: List[ModelPackageMetadata],
     selected_device: Optional[torch.device] = None,
 ) -> List[ModelPackageMetadata]:
-    # I feel like this will be the biggest liability of new inference :)
+    # I feel like this will be the biggest liability of new inference :))
     # Some dimensions are just hard to rank arbitrarily and reasonably
     sorting_features = []
     # ordering TRT and Cu versions from older to newest -
