@@ -154,7 +154,7 @@ CORE_MODEL_PE_ENABLED = str2bool(os.getenv("CORE_MODEL_PE_ENABLED", True))
 CORE_MODEL_SAM_ENABLED = str2bool(os.getenv("CORE_MODEL_SAM_ENABLED", True))
 CORE_MODEL_SAM2_ENABLED = str2bool(os.getenv("CORE_MODEL_SAM2_ENABLED", True))
 
-CORE_MODEL_OWLV2_ENABLED = str2bool(os.getenv("CORE_MODEL_OWLV2_ENABLED", False))
+CORE_MODEL_OWLV2_ENABLED = str2bool(os.getenv("CORE_MODEL_OWLV2_ENABLED", True))
 
 # Flag to enable GAZE core model, default is True
 CORE_MODEL_GAZE_ENABLED = str2bool(os.getenv("CORE_MODEL_GAZE_ENABLED", True))
@@ -512,6 +512,15 @@ WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS = int(
 ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS = str2bool(
     os.getenv("ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS", True)
 )
+
+# E2B Configuration for Custom Python Blocks remote execution
+WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE = os.getenv(
+    "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "local"
+).lower()  # "local" or "remote"
+E2B_API_KEY = os.getenv("E2B_API_KEY")
+E2B_TEMPLATE_ID = os.getenv("E2B_TEMPLATE_ID")  # If not set, will use default based on inference version
+E2B_SANDBOX_TIMEOUT = int(os.getenv("E2B_SANDBOX_TIMEOUT", "300"))  # 5 minutes default
+E2B_SANDBOX_IDLE_TIMEOUT = int(os.getenv("E2B_SANDBOX_IDLE_TIMEOUT", "60"))  # 1 minute idle timeout
 
 MODEL_VALIDATION_DISABLED = str2bool(os.getenv("MODEL_VALIDATION_DISABLED", "False"))
 

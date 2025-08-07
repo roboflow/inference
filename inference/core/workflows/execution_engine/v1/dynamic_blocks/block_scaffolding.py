@@ -2,7 +2,11 @@ import traceback
 import types
 from typing import List, Type
 
-from inference.core.env import ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS
+from inference.core.env import (
+    ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
+    WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
+    E2B_API_KEY,
+)
 from inference.core.workflows.errors import (
     DynamicBlockError,
     WorkflowEnvironmentConfigurationError,
@@ -59,6 +63,36 @@ def assembly_custom_python_block(
                 "`ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True`",
                 context="workflow_execution | step_execution | dynamic_step",
             )
+        
+        # Check if we should execute remotely in E2B
+        if WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE == "remote" and E2B_API_KEY:
+            from inference.core.workflows.execution_engine.v1.dynamic_blocks.e2b_executor import (
+                get_e2b_executor,
+            )
+            
+            # Get the executor instance
+            executor = get_e2b_executor()
+            
+            # Prepare inputs from args and kwargs
+            # Combine positional and keyword arguments
+            inputs = kwargs.copy()
+            
+            # Get manifest to understand outputs
+            manifest_outputs = {}
+            if hasattr(manifest, 'describe_outputs'):
+                outputs_desc = manifest.describe_outputs()
+                for output in outputs_desc:
+                    manifest_outputs[output.name] = output
+            
+            # Execute in E2B sandbox
+            return executor.execute_in_sandbox(
+                python_code=python_code,
+                block_type_name=block_type_name,
+                inputs=inputs,
+                manifest_outputs=manifest_outputs,
+            )
+        
+        # Local execution (existing behavior)
         try:
             return run_function(self, *args, **kwargs)
         except Exception as error:

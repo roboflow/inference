@@ -1,0 +1,53 @@
+name: Build and Push E2B Template
+
+on:
+  workflow_dispatch:
+    inputs:
+      inference_version:
+        description: 'Inference version to use in template ID'
+        required: true
+        default: '0.51.10'
+      push_template:
+        description: 'Push template to E2B (true/false)'
+        required: true
+        default: 'true'
+
+env:
+  E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
+
+jobs:
+  build-e2b-template:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Install E2B CLI
+      run: |
+        npm install -g @e2b/cli@latest
+    
+    - name: Update template version in files
+      run: |
+        # Update template_id in e2b.toml
+        sed -i "s/template_id = \"inference-sandbox-.*\"/template_id = \"inference-sandbox-${{ github.event.inputs.inference_version }}\"/" docker/e2b/e2b.toml
+        
+        # Update version in Dockerfile comment if needed
+        echo "Updated template ID to: inference-sandbox-${{ github.event.inputs.inference_version }}"
+    
+    - name: Build E2B template
+      working-directory: docker/e2b
+      run: |
+        e2b template build
+    
+    - name: Push E2B template
+      if: github.event.inputs.push_template == 'true'
+      working-directory: docker/e2b
+      run: |
+        e2b template push
+        echo "Template pushed successfully: inference-sandbox-${{ github.event.inputs.inference_version }}"
+    
+    - name: List E2B templates
+      if: github.event.inputs.push_template == 'true'
+      run: |
+        e2b template list | grep inference-sandbox

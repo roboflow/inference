@@ -1,0 +1,20 @@
+# E2B Template Configuration for Inference Custom Python Blocks
+
+# Template settings
+template_id = "inference-sandbox-0.51.10"
+template_name = "Inference Custom Python Block Sandbox"
+dockerfile = "e2b.Dockerfile"
+
+# Python version and environment
+python_version = "3.9"
+
+# Timeout settings (in seconds)
+timeout = 300  # 5 minutes default timeout for sandbox
+idle_timeout = 60  # 1 minute idle timeout
+
+# Resource limits
+memory_mb = 2048
+cpu_count = 2
+
+# Build configuration
+build_context = "../.."  # Root of inference repo
