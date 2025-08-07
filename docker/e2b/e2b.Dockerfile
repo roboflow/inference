@@ -36,5 +36,12 @@ RUN mkdir -p /root/.e2b
 COPY docker/e2b/startup.py /root/.e2b/startup.py
 
 # Set environment variables for E2B
-ENV PYTHONPATH=/app:$PYTHONPATH
+ENV PYTHONPATH=/app:${PYTHONPATH}
 ENV E2B_SANDBOX_TYPE=custom_python_block
+
+# Create a .pth file to permanently add /app to Python path
+# Find the correct site-packages directory and add our path
+RUN python3 -c "import site; import os; path = site.getsitepackages()[0]; os.makedirs(path, exist_ok=True); open(os.path.join(path, 'inference.pth'), 'w').write('/app\n')"
+
+# Set working directory to /home/user for E2B
+WORKDIR /home/user
