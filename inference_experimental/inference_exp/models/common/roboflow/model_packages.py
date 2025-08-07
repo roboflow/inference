@@ -343,7 +343,7 @@ class NetworkInputDefinition(BaseModel):
 
 
 class ForwardPassConfiguration(BaseModel):
-    max_dynamic_batch_size: int
+    max_dynamic_batch_size: Optional[int] = Field(default=None)
 
 
 class FusedNMSParameters(BaseModel):
@@ -372,7 +372,9 @@ class SoftMaxPostProcessing(BaseModel):
 class InferenceConfig(BaseModel):
     image_pre_processing: ImagePreProcessing
     network_input: NetworkInputDefinition
-    forward_pass: Optional[ForwardPassConfiguration] = Field(default=None)
+    forward_pass: ForwardPassConfiguration = Field(
+        default_factory=lambda: ForwardPassConfiguration()
+    )
     post_processing: Optional[
         Union[NMSPostProcessing, SoftMaxPostProcessing, SigmoidPostProcessing]
     ] = Field(default=None, discriminator="type")

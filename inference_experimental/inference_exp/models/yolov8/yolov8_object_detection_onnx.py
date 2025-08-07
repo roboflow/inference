@@ -6,7 +6,11 @@ import torch
 from inference_exp import Detections, ObjectDetectionModel
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
-from inference_exp.errors import EnvironmentConfigurationError, MissingDependencyError
+from inference_exp.errors import (
+    CorruptedModelPackageError,
+    EnvironmentConfigurationError,
+    MissingDependencyError,
+)
 from inference_exp.models.common.model_packages import get_model_package_contents
 from inference_exp.models.common.onnx import (
     run_session_via_iobinding,
@@ -97,15 +101,24 @@ class YOLOv8ForObjectDetectionOnnx(
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
             },
         )
+        if inference_config.post_processing.type != "nms":
+            raise CorruptedModelPackageError(
+                message="Expected NMS to be the post-processing",
+                help_url="https://todo",
+            )
         session = onnxruntime.InferenceSession(
             path_or_bytes=model_package_content["weights.onnx"],
             providers=onnx_execution_providers,
         )
+        input_batch_size = session.get_inputs()[0].shape[0]
+        if isinstance(input_batch_size, str):
+            input_batch_size = None
         return cls(
             session=session,
             class_names=class_names,
             inference_config=inference_config,
             device=device,
+            input_batch_size=input_batch_size,
         )
 
     def __init__(
@@ -114,11 +127,18 @@ class YOLOv8ForObjectDetectionOnnx(
         inference_config: InferenceConfig,
         class_names: List[str],
         device: torch.device,
+        input_batch_size: Optional[int],
     ):
         self._session = session
         self._inference_config = inference_config
         self._class_names = class_names
         self._device = device
+        self._min_batch_size = input_batch_size
+        self._max_batch_size = (
+            input_batch_size
+            if input_batch_size is not None
+            else inference_config.forward_pass.max_dynamic_batch_size
+        )
         self._session_thread_lock = Lock()
 
     @property
@@ -129,14 +149,16 @@ class YOLOv8ForObjectDetectionOnnx(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
+        image_size: Optional[Union[Tuple[int, int], int]] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         return pre_process_network_input(
             images=images,
-            inference_config=self._inference_config,
-            expected_network_color_format="rgb",
+            image_pre_processing=self._inference_config.image_pre_processing,
+            network_input=self._inference_config.network_input,
             target_device=self._device,
             input_color_format=input_color_format,
+            image_size_wh=image_size,
         )
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
@@ -144,8 +166,8 @@ class YOLOv8ForObjectDetectionOnnx(
             return run_session_with_batch_size_limit(
                 session=self._session,
                 inputs={"images": pre_processed_images},
-                min_batch_size=self._input_batch_size,
-                max_batch_size=self._input_batch_size,
+                min_batch_size=self._min_batch_size,
+                max_batch_size=self._max_batch_size,
             )[0]
 
     def post_process(
@@ -158,13 +180,16 @@ class YOLOv8ForObjectDetectionOnnx(
         class_agnostic: bool = False,
         **kwargs,
     ) -> List[Detections]:
-        nms_results = run_nms_for_object_detection(
-            output=model_results,
-            conf_thresh=conf_thresh,
-            iou_thresh=iou_thresh,
-            max_detections=max_detections,
-            class_agnostic=class_agnostic,
-        )
+        if self._inference_config.post_processing.fused:
+            nms_results = model_results
+        else:
+            nms_results = run_nms_for_object_detection(
+                output=model_results,
+                conf_thresh=conf_thresh,
+                iou_thresh=iou_thresh,
+                max_detections=max_detections,
+                class_agnostic=class_agnostic,
+            )
         rescaled_results = rescale_detections(
             detections=nms_results,
             images_metadata=pre_processing_meta,

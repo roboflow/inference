@@ -15,9 +15,7 @@ from inference_exp.models.common.roboflow.model_packages import (
     DivisiblePadding,
     ImagePreProcessing,
     NetworkInputDefinition,
-    PreProcessingConfig,
     PreProcessingMetadata,
-    PreProcessingMode,
     ResizeMode,
     StaticCrop,
     StaticCropOffset,
@@ -28,7 +26,7 @@ from torchvision.transforms import Grayscale, functional
 
 
 def pre_process_network_input(
-    images: torch.Tensor,
+    images: Union[np.ndarray, torch.Tensor, List[np.ndarray], List[torch.Tensor]],
     image_pre_processing: ImagePreProcessing,
     network_input: NetworkInputDefinition,
     target_device: torch.device,
@@ -67,6 +65,8 @@ def pre_process_network_input(
         raise ModelRuntimeError(
             message="Detected empty input to the model", help_url="https://todo"
         )
+    if network_input.resize_mode is ResizeMode.FIT_LONGER_EDGE:
+        raise ModelRuntimeError(message="", help_url="https://todo")
     if isinstance(images[0], np.ndarray):
         return pre_process_numpy_images_list(
             images=images,
@@ -163,14 +163,14 @@ def apply_pre_processing_to_torch_image(
     network_input_channels: int,
 ) -> Tuple[torch.Tensor, StaticCropOffset]:
     static_crop_offset = StaticCropOffset(offset_x=0, offset_y=0)
-    if image_pre_processing.static_crop.enabled:
+    if image_pre_processing.static_crop and image_pre_processing.static_crop.enabled:
         image, static_crop_offset = apply_static_crop_to_torch_image(
             image=image,
             config=image_pre_processing.static_crop,
         )
-    if image_pre_processing.grayscale.enabled:
+    if image_pre_processing.grayscale and image_pre_processing.grayscale.enabled:
         image = Grayscale(num_output_channels=network_input_channels)(image)
-    if image_pre_processing.contrast.enabled:
+    if image_pre_processing.contrast and image_pre_processing.contrast.enabled:
         if (
             image_pre_processing.contrast.type
             not in CONTRAST_ADJUSTMENT_METHODS_FOR_TORCH
@@ -205,19 +205,21 @@ def apply_adaptive_equalization_to_torch_image(image: torch.Tensor) -> torch.Ten
             exposure.equalize_adapthist(image, clip_limit=0.03) * 255
         ).astype(np.uint8)
         results.append(torch.from_numpy(image_adapted).to(original_device))
-    return torch.stack(results, dim=0).permute(0, 2, 3, 1)
+    return torch.stack(results, dim=0).permute(0, 3, 1, 2)
 
 
 def apply_contrast_stretching_to_torch_image(image: torch.Tensor) -> torch.Tensor:
-    n, c, h, w = image.shape
-    flat = image.view(n, -1)
-    p2 = torch.quantile(flat, 0.02, dim=1)
-    p98 = torch.quantile(flat, 0.98, dim=1)
-    p2 = p2.view(n, 1, 1, 1)
-    p98 = p98.view(n, 1, 1, 1)
-    img_clamped = image.clamp(min=p2, max=p98)
-    img_stretched = (img_clamped - p2) / (p98 - p2)
-    return img_stretched.round().to(torch.uint8)
+    original_device = image.device
+    results = []
+    for single_image in image:
+        single_image_numpy = np.transpose(single_image.cpu().numpy(), (1, 2, 0))
+        p2 = np.percentile(single_image_numpy, 2)
+        p98 = np.percentile(single_image_numpy, 98)
+        rescaled_image = exposure.rescale_intensity(
+            single_image_numpy, in_range=(p2, p98)
+        )
+        results.append(torch.from_numpy(rescaled_image).to(original_device))
+    return torch.stack(results, dim=0).permute(0, 3, 1, 2)
 
 
 def apply_histogram_equalization_to_torch_image(image: torch.Tensor) -> torch.Tensor:
@@ -228,7 +230,7 @@ def apply_histogram_equalization_to_torch_image(image: torch.Tensor) -> torch.Te
         single_image_numpy = single_image_numpy.astype(np.float32) / 255
         image_equalized = exposure.equalize_hist(single_image_numpy) * 255
         results.append(torch.from_numpy(image_equalized).to(original_device))
-    return torch.stack(results, dim=0).permute(0, 2, 3, 1)
+    return torch.stack(results, dim=0).permute(0, 3, 1, 2)
 
 
 CONTRAST_ADJUSTMENT_METHODS_FOR_TORCH = {
@@ -486,164 +488,263 @@ TORCH_IMAGES_PREPARATION_HANDLERS = {
 @torch.inference_mode()
 def pre_process_images_tensor_list(
     images: List[torch.Tensor],
-    pre_processing_config: PreProcessingConfig,
-    expected_network_color_format: ColorFormat,
+    image_pre_processing: ImagePreProcessing,
+    network_input: NetworkInputDefinition,
     target_device: torch.device,
-    input_color_format: Optional[ColorFormat] = None,
-    rescaling_constant: Optional[float] = 255.0,
-    normalization: Optional[Tuple[List[float], List[float]]] = None,
+    input_color_mode: Optional[ColorMode] = None,
+    image_size_wh: Optional[Tuple[int, int]] = None,
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-    if (
-        pre_processing_config.mode is PreProcessingMode.NONE
-        or pre_processing_config.target_size is None
-    ):
+    if input_color_mode is None:
+        input_color_mode = ColorMode.RGB
+    target_dimensions = (
+        network_input.training_input_size.width,
+        network_input.training_input_size.height,
+    )
+    if image_size_wh is not None and image_size_wh != target_dimensions:
+        if not network_input.dynamic_spatial_size_supported:
+            LOGGER.warning(
+                f"Requested image size: {image_size_wh} cannot be applied for model input, as model was trained with "
+                f"input resolution and does not support inputs of a different shape. `image_size_wh` gets ignored."
+            )
+        elif isinstance(network_input.dynamic_spatial_size_mode, DivisiblePadding):
+            target_dimensions = (
+                make_the_value_divisible(
+                    x=image_size_wh[0], by=network_input.dynamic_spatial_size_mode.value
+                ),
+                make_the_value_divisible(
+                    x=image_size_wh[1], by=network_input.dynamic_spatial_size_mode.value
+                ),
+            )
+        elif isinstance(network_input.dynamic_spatial_size_mode, AnySizePadding):
+            target_dimensions = image_size_wh
+        else:
+            raise ModelRuntimeError(
+                message=f"Handler for dynamic spatial mode of type {type(network_input.dynamic_spatial_size_mode)} "
+                f"is not implemented.",
+                help_url="",
+            )
+    images, static_crop_offsets = apply_pre_processing_to_list_of_torch_image(
+        images=images,
+        image_pre_processing=image_pre_processing,
+        network_input_channels=network_input.input_channels,
+    )
+    if network_input.resize_mode not in NUMPY_IMAGES_PREPARATION_HANDLERS:
         raise ModelRuntimeError(
-            message="Could not pre-process data before model inference - pre-processing configuration "
-            "does not specify input resizing.",
+            message=f"Unsupported model input resize mode: {network_input.resize_mode}",
             help_url="https://todo",
         )
-    if input_color_format is None:
-        input_color_format = "rgb"
-    target_height = pre_processing_config.target_size.height
-    target_width = pre_processing_config.target_size.width
-    if pre_processing_config.mode is PreProcessingMode.STRETCH:
-        processed = []
-        images_metadata = []
-        for img in images:
-            if len(img.shape) != 3:
-                raise ModelRuntimeError(
-                    message="When providing List[torch.Tensor] as input, model requires tensors to have 3 dimensions.",
-                    help_url="https://todo",
-                )
-            if img.device != target_device:
-                img = img.to(target_device)
-            if img.shape[0] != 3 and img.shape[-1] == 3:
-                img = img.permute(2, 0, 1)
-            original_size = ImageDimensions(height=img.shape[1], width=img.shape[2])
-            if input_color_format != expected_network_color_format:
-                img = img[[2, 1, 0], :, :]
-            img = img.unsqueeze(0)
-            img = functional.resize(
-                img,
-                [target_height, target_width],
-                interpolation=functional.InterpolationMode.BILINEAR,
-            )
-            if rescaling_constant is not None:
-                img = img / rescaling_constant
-            if normalization:
-                img = functional.normalize(
-                    img, mean=normalization[0], std=normalization[1]
-                )
-            processed.append(img.contiguous())
-            image_metadata = PreProcessingMetadata(
-                pad_left=0,
-                pad_top=0,
-                pad_right=0,
-                pad_bottom=0,
-                original_size=original_size,
-                inference_size=pre_processing_config.target_size,
-                scale_width=pre_processing_config.target_size.width
-                / original_size.width,
-                scale_height=pre_processing_config.target_size.height
-                / original_size.height,
-            )
-            images_metadata.append(image_metadata)
-        return torch.concat(processed, dim=0).contiguous(), images_metadata
-    if pre_processing_config.mode is PreProcessingMode.LETTERBOX:
-        if pre_processing_config.padding_value is None:
+    return TORCH_LIST_IMAGES_PREPARATION_HANDLERS[network_input.resize_mode](
+        images,
+        network_input,
+        input_color_mode,
+        ImageDimensions(width=target_dimensions[0], height=target_dimensions[1]),
+        static_crop_offsets,
+        target_device,
+    )
+
+
+def apply_pre_processing_to_list_of_torch_image(
+    images: List[torch.Tensor],
+    image_pre_processing: ImagePreProcessing,
+    network_input_channels: int,
+) -> Tuple[List[torch.Tensor], List[StaticCropOffset]]:
+    result_images, result_offsets = [], []
+    for image in images:
+        result_image, result_offset = apply_pre_processing_to_torch_image(
+            image=image.unsqueeze(0),
+            image_pre_processing=image_pre_processing,
+            network_input_channels=network_input_channels,
+        )
+        result_images.append(result_image)
+        result_offsets.append(result_offset)
+    return result_images, result_offsets
+
+
+def handle_tensor_list_input_preparation_with_stretch(
+    images: List[torch.Tensor],
+    network_input: NetworkInputDefinition,
+    input_color_mode: ColorMode,
+    target_size: ImageDimensions,
+    static_crop_offsets: List[StaticCropOffset],
+    target_device: torch.device,
+) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
+    processed = []
+    images_metadata = []
+    for img, offset in zip(images, static_crop_offsets):
+        if len(img.shape) != 4:
             raise ModelRuntimeError(
-                message="Could not pre-process data before model inference - pre-processing configuration "
-                "does not specify padding color when letterbox resize mode is selected.",
+                message="When providing List[torch.Tensor] as input, model requires tensors to have 3 dimensions.",
                 help_url="https://todo",
             )
-        target_h, target_w = (
-            pre_processing_config.target_size.height,
-            pre_processing_config.target_size.width,
+        if img.device != target_device:
+            img = img.to(target_device)
+        if img.shape[1] != 3 and img.shape[-1] == 3:
+            img = img.permute(0, 3, 1, 2)
+        original_size = ImageDimensions(height=img.shape[2], width=img.shape[3])
+        if input_color_mode != network_input.color_mode:
+            img = img[:, [2, 1, 0], :, :]
+        img = functional.resize(
+            img,
+            [target_size.height, target_size.width],
+            interpolation=functional.InterpolationMode.BILINEAR,
         )
-        num_images = len(images)
-        final_batch = torch.full(
-            (num_images, 3, target_h, target_w),
-            pre_processing_config.padding_value,
-            dtype=torch.float32,
-            device=target_device,
+        if network_input.scaling_factor is not None:
+            img = img / network_input.scaling_factor
+        if network_input.normalization:
+            img = functional.normalize(
+                img,
+                mean=network_input.normalization[0],
+                std=network_input.normalization[1],
+            )
+        processed.append(img.contiguous())
+        image_metadata = PreProcessingMetadata(
+            pad_left=0,
+            pad_top=0,
+            pad_right=0,
+            pad_bottom=0,
+            original_size=original_size,
+            inference_size=target_size,
+            scale_width=target_size.width / original_size.width,
+            scale_height=target_size.height / original_size.height,
+            static_crop_offset=offset,
         )
-        original_shapes = torch.tensor(
-            [[img.shape[1], img.shape[2]] for img in images], dtype=torch.float32
-        )
-        scale_w = target_w / original_shapes[:, 1]
-        scale_h = target_h / original_shapes[:, 0]
-        scales = torch.minimum(scale_w, scale_h)
-        new_ws = (original_shapes[:, 1] * scales).int()
-        new_hs = (original_shapes[:, 0] * scales).int()
-        pad_tops = ((target_h - new_hs) / 2).int()
-        pad_lefts = ((target_w - new_ws) / 2).int()
-        images_metadata = []
-        for i in range(num_images):
-            image_hwc = images[i].to(target_device)  # Ensure on correct device
-            if image_hwc.dtype != torch.float32:
-                image_hwc = image_hwc.float()
-            if input_color_format != expected_network_color_format:
-                image_hwc = image_hwc[..., [2, 1, 0]]
-            if image_hwc.shape[0] != 3 and image_hwc.shape[-1] == 3:
-                image_hwc = image_hwc.permute(2, 0, 1)
-            original_size = ImageDimensions(
-                height=image_hwc.shape[1], width=image_hwc.shape[2]
-            )
-            new_h_i, new_w_i = new_hs[i].item(), new_ws[i].item()
-            resized_chw = functional.resize(
-                image_hwc,
-                [new_h_i, new_w_i],
-                interpolation=functional.InterpolationMode.BILINEAR,
-            )
-            pad_top_i, pad_left_i = pad_tops[i].item(), pad_lefts[i].item()
-            final_batch[
-                i, :, pad_top_i : pad_top_i + new_h_i, pad_left_i : pad_left_i + new_w_i
-            ] = resized_chw
-            pad_right = pre_processing_config.target_size.width - pad_left_i - new_w_i
-            pad_bottom = pre_processing_config.target_size.height - pad_top_i - new_h_i
-            image_metadata = PreProcessingMetadata(
-                pad_left=pad_left_i,
-                pad_top=pad_top_i,
-                pad_right=pad_right,
-                pad_bottom=pad_bottom,
-                original_size=original_size,
-                inference_size=pre_processing_config.target_size,
-                scale_width=scales[i].item(),
-                scale_height=scales[i].item(),
-            )
-            images_metadata.append(image_metadata)
-        if rescaling_constant is not None:
-            final_batch = final_batch / rescaling_constant
-        if normalization:
-            final_batch = functional.normalize(
-                final_batch, mean=normalization[0], std=normalization[1]
-            )
-        return final_batch.contiguous(), images_metadata
-    raise ModelRuntimeError(
-        message=f"Unsupported pre-processing mode: {pre_processing_config.mode}",
-        help_url="https://todo",
+        images_metadata.append(image_metadata)
+    return torch.concat(processed, dim=0).contiguous(), images_metadata
+
+
+def handle_tensor_list_input_preparation_with_letterbox(
+    images: List[torch.Tensor],
+    network_input: NetworkInputDefinition,
+    input_color_mode: ColorMode,
+    target_size: ImageDimensions,
+    static_crop_offsets: List[StaticCropOffset],
+    target_device: torch.device,
+) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
+    num_images = len(images)
+    final_batch = torch.full(
+        (num_images, 3, target_size.height, target_size.width),
+        network_input.padding_value or 0,
+        dtype=torch.float32,
+        device=target_device,
     )
+    original_shapes = torch.tensor(
+        [[img.shape[2], img.shape[3]] for img in images], dtype=torch.float32
+    )
+    scale_w = target_size.width / original_shapes[:, 1]
+    scale_h = target_size.height / original_shapes[:, 0]
+    scales = torch.minimum(scale_w, scale_h)
+    new_ws = (original_shapes[:, 1] * scales).int()
+    new_hs = (original_shapes[:, 0] * scales).int()
+    pad_tops = ((target_size.height - new_hs) / 2).int()
+    pad_lefts = ((target_size.width - new_ws) / 2).int()
+    images_metadata = []
+    for i in range(num_images):
+        img = images[i]
+        if len(img.shape) != 4:
+            raise ModelRuntimeError(
+                message="When providing List[torch.Tensor] as input, model requires tensors to have 3 dimensions.",
+                help_url="https://todo",
+            )
+        if img.device != target_device:
+            img = img.to(target_device)
+        if img.shape[1] != 3 and img.shape[-1] == 3:
+            img = img.permute(0, 3, 1, 2)
+        original_size = ImageDimensions(height=img.shape[2], width=img.shape[3])
+        if input_color_mode != network_input.color_mode:
+            img = img[:, [2, 1, 0], :, :]
+        new_h_i, new_w_i = new_hs[i].item(), new_ws[i].item()
+        img = functional.resize(
+            img,
+            [new_h_i, new_w_i],
+            interpolation=functional.InterpolationMode.BILINEAR,
+        )
+        pad_top_i, pad_left_i = pad_tops[i].item(), pad_lefts[i].item()
+        final_batch[
+            i, :, pad_top_i : pad_top_i + new_h_i, pad_left_i : pad_left_i + new_w_i
+        ] = img
+        pad_right = target_size.width - pad_left_i - new_w_i
+        pad_bottom = target_size.height - pad_top_i - new_h_i
+        image_metadata = PreProcessingMetadata(
+            pad_left=pad_left_i,
+            pad_top=pad_top_i,
+            pad_right=pad_right,
+            pad_bottom=pad_bottom,
+            original_size=original_size,
+            inference_size=target_size,
+            scale_width=scales[i].item(),
+            scale_height=scales[i].item(),
+            static_crop_offset=static_crop_offsets[i],
+        )
+        images_metadata.append(image_metadata)
+    if network_input.scaling_factor is not None:
+        final_batch = final_batch / network_input.scaling_factor
+    if network_input.normalization:
+        final_batch = functional.normalize(
+            final_batch,
+            mean=network_input.normalization[0],
+            std=network_input.normalization[1],
+        )
+    return final_batch.contiguous(), images_metadata
+
+
+def handle_tensor_list_input_preparation_with_center_crop(
+    images: List[torch.Tensor],
+    network_input: NetworkInputDefinition,
+    input_color_mode: ColorMode,
+    target_size: ImageDimensions,
+    static_crop_offsets: List[StaticCropOffset],
+    target_device: torch.device,
+) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
+    result_tensors, result_metadata = [], []
+    for image, offset in zip(images, static_crop_offsets):
+        if len(image.shape) != 4:
+            raise ModelRuntimeError(
+                message="When providing List[torch.Tensor] as input, model requires tensors to have 3 dimensions.",
+                help_url="https://todo",
+            )
+        image = image.to(target_device)
+        if (
+            images.shape[1] != network_input.input_channels
+            and images.shape[3] == network_input.input_channels
+        ):
+            images = images.permute(0, 3, 1, 2)
+        tensor, metadata = handle_torch_input_preparation_with_center_crop(
+            image=image,
+            network_input=network_input,
+            input_color_mode=input_color_mode,
+            static_crop_offset=offset,
+            target_size=target_size,
+        )
+        result_tensors.append(tensor)
+        result_metadata.append(metadata[0])
+    return torch.concat(result_tensors, dim=0), result_metadata
+
+
+TORCH_LIST_IMAGES_PREPARATION_HANDLERS = {
+    ResizeMode.STRETCH_TO: handle_tensor_list_input_preparation_with_stretch,
+    ResizeMode.LETTERBOX: handle_tensor_list_input_preparation_with_letterbox,
+    ResizeMode.CENTER_CROP: handle_tensor_list_input_preparation_with_center_crop,
+    ResizeMode.LETTERBOX_REFLECT_EDGES: handle_tensor_list_input_preparation_with_letterbox,
+}
 
 
 def pre_process_numpy_images_list(
     images: List[np.ndarray],
-    pre_processing_config: PreProcessingConfig,
-    expected_network_color_format: ColorFormat,
+    image_pre_processing: ImagePreProcessing,
+    network_input: NetworkInputDefinition,
     target_device: torch.device,
-    input_color_format: Optional[ColorFormat] = None,
-    rescaling_constant: Optional[float] = 255.0,
-    normalization: Optional[Tuple[List[float], List[float]]] = None,
+    input_color_mode: Optional[ColorMode] = None,
+    image_size_wh: Optional[Tuple[int, int]] = None,
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
     result_tensors, result_metadata = [], []
     for image in images:
         tensor, metadata = pre_process_numpy_image(
             image=image,
-            pre_processing_config=pre_processing_config,
-            expected_network_color_format=expected_network_color_format,
+            image_pre_processing=image_pre_processing,
+            network_input=network_input,
             target_device=target_device,
-            input_color_format=input_color_format,
-            rescaling_constant=rescaling_constant,
-            normalization=normalization,
+            input_color_mode=input_color_mode,
+            image_size_wh=image_size_wh,
         )
         result_tensors.append(tensor)
         result_metadata.extend(metadata)
@@ -691,6 +792,7 @@ def pre_process_numpy_image(
     image, static_crop_offset = apply_pre_processing_to_numpy_image(
         image=image,
         image_pre_processing=image_pre_processing,
+        network_input_channels=network_input.input_channels,
         input_color_mode=input_color_mode,
     )
     if network_input.resize_mode not in NUMPY_IMAGES_PREPARATION_HANDLERS:
@@ -711,24 +813,27 @@ def pre_process_numpy_image(
 def apply_pre_processing_to_numpy_image(
     image: np.ndarray,
     image_pre_processing: ImagePreProcessing,
+    network_input_channels: int,
     input_color_mode: Optional[ColorMode] = None,
 ) -> Tuple[np.ndarray, StaticCropOffset]:
     if input_color_mode is None:
         input_color_mode = ColorMode.BGR
     static_crop_offset = StaticCropOffset(offset_x=0, offset_y=0)
-    if image_pre_processing.static_crop.enabled:
+    if image_pre_processing.static_crop and image_pre_processing.static_crop.enabled:
         image, static_crop_offset = apply_static_crop_to_numpy_image(
             image=image,
             config=image_pre_processing.static_crop,
         )
-    if image_pre_processing.grayscale.enabled:
+    if image_pre_processing.grayscale and image_pre_processing.grayscale.enabled:
         mode = (
             cv2.COLOR_BGR2GRAY
             if input_color_mode is ColorMode.BGR
             else cv2.COLOR_RGB2GRAY
         )
         image = cv2.cvtColor(image, mode)
-    if image_pre_processing.contrast.enabled:
+        if network_input_channels != 1:
+            image = np.stack([image] * network_input_channels, axis=2)
+    if image_pre_processing.contrast and image_pre_processing.contrast.enabled:
         if (
             image_pre_processing.contrast.type
             not in CONTRAST_ADJUSTMENT_METHODS_FOR_NUMPY
@@ -746,7 +851,7 @@ def apply_pre_processing_to_numpy_image(
 def apply_static_crop_to_numpy_image(
     image: np.ndarray, config: StaticCrop
 ) -> Tuple[np.ndarray, StaticCropOffset]:
-    result_image = image[config.y_min : config.y_max, config.x_min : config.x_min]
+    result_image = image[config.y_min : config.y_max, config.x_min : config.x_max]
     return result_image, StaticCropOffset(offset_x=config.x_min, offset_y=config.y_min)
 
 
