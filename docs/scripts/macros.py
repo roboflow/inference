@@ -1,5 +1,5 @@
-import os
 import sys
+from pathlib import Path
 
 def define_env(env):
     """Hook function to define macros for MkDocs."""
@@ -8,9 +8,8 @@ def define_env(env):
     def get_version():
         """Read version from inference/core/version.py"""
         # Get the path to the root of the repository
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        repo_root = os.path.join(current_dir, '..', '..')
-        version_file_path = os.path.join(repo_root, 'inference', 'core', 'version.py')
+        repo_root = Path(__file__).resolve().parents[2]
+        version_file_path = repo_root.joinpath('inference', 'core', 'version.py')
         
         try:
             # Execute the version.py file and extract __version__
