@@ -5,18 +5,23 @@ import cv2
 import numpy as np
 import PIL
 import torch
-
 from inference_exp.entities import ColorFormat, ImageDimensions
 from inference_exp.errors import ModelRuntimeError
 from inference_exp.logger import LOGGER
 from inference_exp.models.common.roboflow.model_packages import (
+    AnySizePadding,
+    ColorMode,
+    DivisiblePadding,
+    ImagePreProcessing,
+    NetworkInputDefinition,
     PreProcessingConfig,
     PreProcessingMetadata,
-    PreProcessingMode, ColorMode, ImagePreProcessing, NetworkInputDefinition, ResizeMode,
-    DivisiblePadding, AnySizePadding, StaticCropOffset,
+    PreProcessingMode,
+    ResizeMode,
+    StaticCropOffset,
 )
 from PIL.Image import Image
-from torchvision.transforms import functional, CenterCrop
+from torchvision.transforms import CenterCrop, functional
 
 
 def pre_process_network_input(
@@ -25,7 +30,7 @@ def pre_process_network_input(
     network_input: NetworkInputDefinition,
     target_device: torch.device,
     input_color_format: Optional[ColorFormat] = None,
-    image_size_wh: Optional[Union[int, Tuple[int, int]]] = None
+    image_size_wh: Optional[Union[int, Tuple[int, int]]] = None,
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
     input_color_mode = None
     if input_color_format is not None:
@@ -106,8 +111,12 @@ def pre_process_images_tensor(
             )
         elif isinstance(network_input.dynamic_spatial_size_mode, DivisiblePadding):
             target_dimensions = (
-                make_the_value_divisible(x=image_size_wh[0], by=network_input.dynamic_spatial_size_mode.value),
-                make_the_value_divisible(x=image_size_wh[1], by=network_input.dynamic_spatial_size_mode.value)
+                make_the_value_divisible(
+                    x=image_size_wh[0], by=network_input.dynamic_spatial_size_mode.value
+                ),
+                make_the_value_divisible(
+                    x=image_size_wh[1], by=network_input.dynamic_spatial_size_mode.value
+                ),
             )
         elif isinstance(network_input.dynamic_spatial_size_mode, AnySizePadding):
             target_dimensions = image_size_wh
@@ -121,9 +130,14 @@ def pre_process_images_tensor(
         images = images.to(target_device)
     if len(images.shape) == 3:
         images = torch.unsqueeze(images, 0)
-    if images.shape[1] != network_input.input_channels and images.shape[3] == network_input.input_channels:
+    if (
+        images.shape[1] != network_input.input_channels
+        and images.shape[3] == network_input.input_channels
+    ):
         images = images.permute(0, 3, 1, 2)
-    image, static_crop_offset = apply_pre_processing_to_torch_image(image=images, image_pre_processing=image_pre_processing)
+    image, static_crop_offset = apply_pre_processing_to_torch_image(
+        image=images, image_pre_processing=image_pre_processing
+    )
     if network_input.resize_mode not in NUMPY_IMAGES_PREPARATION_HANDLERS:
         raise ModelRuntimeError(
             message=f"Unsupported model input resize mode: {network_input.resize_mode}",
@@ -156,7 +170,9 @@ def handle_tensor_input_preparation_with_stretch(
     if image.device.type == "cuda":
         image = image.float()
     image = torch.nn.functional.interpolate(
-        image, size=[target_size.height, target_size.width], mode="bilinear",
+        image,
+        size=[target_size.height, target_size.width],
+        mode="bilinear",
     )
     if input_color_mode != network_input.color_mode:
         image = image[:, [2, 1, 0], :, :]
@@ -164,7 +180,9 @@ def handle_tensor_input_preparation_with_stretch(
         image = image / network_input.scaling_factor
     if network_input.normalization is not None:
         image = functional.normalize(
-            image, mean=network_input.normalization[0], std=network_input.normalization[1]
+            image,
+            mean=network_input.normalization[0],
+            std=network_input.normalization[1],
         )
     metadata = PreProcessingMetadata(
         pad_left=0,
@@ -236,7 +254,9 @@ def handle_torch_input_preparation_with_letterbox(
         final_batch = final_batch / network_input.scaling_factor
     if network_input.normalization is not None:
         final_batch = functional.normalize(
-            final_batch, mean=network_input.normalization[0], std=network_input.normalization[1]
+            final_batch,
+            mean=network_input.normalization[0],
+            std=network_input.normalization[1],
         )
     return final_batch.contiguous(), [metadata] * final_batch.shape[0]
 
@@ -248,71 +268,79 @@ def handle_torch_input_preparation_with_center_crop(
     target_size: ImageDimensions,
     static_crop_offset: StaticCropOffset,
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-    pass
-    # original_height, original_width = image.shape[0], image.shape[1]
-    # original_size = ImageDimensions(height=original_height, width=original_width)
-    # canvas = np.zeros((target_size.height, target_size.width, 3), dtype=np.uint8)
-    # canvas_ox_padding = target_size.width - image.shape[1]
-    # canvas_padding_left = max(0, canvas_ox_padding // 2)
-    # canvas_padding_left_reminder = max(0, canvas_ox_padding) % 2
-    # canvas_padding_right = max(target_size.width - canvas_padding_left - canvas_padding_left_reminder, 0)
-    # canvas_oy_padding = target_size.height - image.shape[0]
-    # canvas_padding_top = max(0, canvas_oy_padding // 2)
-    # canvas_oy_padding_reminder = max(0, canvas_oy_padding) % 2
-    # canvas_padding_bottom = max(target_size.height - canvas_padding_top - canvas_oy_padding_reminder, 0)
-    # original_image_ox_padding = image.shape[1] - target_size.width
-    # original_image_padding_left = max(0, original_image_ox_padding // 2)
-    # original_image_ox_padding_reminder = max(0, original_image_ox_padding) % 2
-    # original_image_padding_right = max(
-    #     0, image.shape[1] - original_image_padding_left - original_image_ox_padding_reminder
-    # )
-    # original_image_oy_padding = image.shape[0] - target_size.height
-    # original_image_padding_top = max(0, original_image_oy_padding // 2)
-    # original_image_oy_padding_reminder = max(0, original_image_oy_padding) % 2
-    # original_image_padding_bottom = max(
-    #     0, image.shape[0] - original_image_padding_top - original_image_oy_padding_reminder
-    # )
-    # canvas[
-    #     canvas_padding_top:canvas_padding_bottom, canvas_padding_left:canvas_padding_right
-    # ] = image[
-    #     original_image_padding_top:original_image_padding_bottom,
-    #     original_image_padding_left:original_image_padding_right
-    # ]
-    # if canvas.shape[0] > image.shape[0]:
-    #     reported_padding_top = canvas_padding_top
-    #     reported_padding_bottom = canvas.shape[0] - canvas_padding_bottom
-    # else:
-    #     reported_padding_top = -original_image_padding_top
-    #     reported_padding_bottom = -(image.shape[0] - original_image_padding_bottom)
-    # if canvas.shape[1] > image.shape[1]:
-    #     reported_padding_left = canvas_padding_left
-    #     reported_padding_right = canvas.shape[1] - canvas_padding_left
-    # else:
-    #     reported_padding_left = -original_image_padding_left
-    #     reported_padding_right = -(image.shape[1] - original_image_padding_right)
-    # image_metadata = PreProcessingMetadata(
-    #     pad_left=reported_padding_left,
-    #     pad_top=reported_padding_top,
-    #     pad_right=reported_padding_right,
-    #     pad_bottom=reported_padding_bottom,
-    #     original_size=original_size,
-    #     inference_size=target_size,
-    #     scale_width=1.0,
-    #     scale_height=1.0,
-    #     static_crop_offset=static_crop_offset,
-    # )
-    # tensor = torch.from_numpy(canvas).to(device=target_device)
-    # tensor = torch.unsqueeze(tensor, 0)
-    # tensor = tensor.permute(0, 3, 1, 2)
-    # if input_color_mode != network_input.color_mode:
-    #     tensor = tensor[:, [2, 1, 0], :, :]
-    # if network_input.scaling_factor is not None:
-    #     tensor = tensor / network_input.scaling_factor
-    # if network_input.normalization:
-    #     tensor = functional.normalize(
-    #         tensor, mean=network_input.normalization[0], std=network_input.normalization[1]
-    #     )
-    # return tensor.contiguous(), [image_metadata]
+    if input_color_mode != input_color_mode:
+        image = image[:, [2, 1, 0], :, :]
+    original_size = ImageDimensions(height=image.shape[2], width=image.shape[3])
+    padding_ltrb = [0, 0, 0, 0]
+    if (
+        target_size.width > original_size.width
+        or target_size.height > original_size.height
+    ):
+        padding_ltrb = [
+            (
+                (target_size.width - original_size.width) // 2
+                if target_size.width > original_size.width
+                else 0
+            ),
+            (
+                (target_size.height - original_size.height) // 2
+                if target_size.height > original_size.height
+                else 0
+            ),
+            (
+                (target_size.width - original_size.width + 1) // 2
+                if target_size.width > original_size.width
+                else 0
+            ),
+            (
+                (target_size.height - original_size.height + 1) // 2
+                if target_size.height > original_size.height
+                else 0
+            ),
+        ]
+        image = functional.pad(image, padding_ltrb, fill=0)
+    crop_ltrb = [0, 0, 0, 0]
+    if target_size.width != image.shape[3] or target_size.height != image.shape[2]:
+        crop_top = int(round((image.shape[2] - target_size.height) / 2.0))
+        crop_bottom = image.shape[2] - target_size.height - crop_top
+        crop_left = int(round((image.shape[3] - target_size.width) / 2.0))
+        crop_right = image.shape[3] - target_size.width - crop_left
+        crop_ltrb = [crop_left, crop_top, crop_right, crop_bottom]
+        image = functional.crop(
+            image, crop_top, crop_left, target_size.height, target_size.width
+        )
+    if target_size.height > original_size.height:
+        reported_padding_top = padding_ltrb[1]
+        reported_padding_bottom = padding_ltrb[3]
+    else:
+        reported_padding_top = -crop_ltrb[1]
+        reported_padding_bottom = -crop_ltrb[3]
+    if target_size.width > original_size.width:
+        reported_padding_left = padding_ltrb[0]
+        reported_padding_right = padding_ltrb[2]
+    else:
+        reported_padding_left = -crop_ltrb[0]
+        reported_padding_right = -crop_ltrb[2]
+    image_metadata = PreProcessingMetadata(
+        pad_left=reported_padding_left,
+        pad_top=reported_padding_top,
+        pad_right=reported_padding_right,
+        pad_bottom=reported_padding_bottom,
+        original_size=original_size,
+        inference_size=target_size,
+        scale_width=1.0,
+        scale_height=1.0,
+        static_crop_offset=static_crop_offset,
+    )
+    if network_input.scaling_factor is not None:
+        image = image / network_input.scaling_factor
+    if network_input.normalization is not None:
+        image = functional.normalize(
+            image,
+            mean=network_input.normalization[0],
+            std=network_input.normalization[1],
+        )
+    return image.contiguous(), [image_metadata] * image.shape[0]
 
 
 def handle_torch_input_preparation_fitting_longer_edge(
@@ -322,64 +350,49 @@ def handle_torch_input_preparation_fitting_longer_edge(
     target_size: ImageDimensions,
     static_crop_offset: StaticCropOffset,
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-    image_height, image_width = image.shape[2], image.shape[3]
-    original_size = ImageDimensions(height=image_height, width=image_width)
-    crop_width, crop_height = target_size.width, target_size.height
-    if crop_width > image_width or crop_height > image_height:
-        padding_ltrb = [
-            (crop_width - image_width) // 2 if crop_width > image_width else 0,
-            (crop_height - image_height) // 2 if crop_height > image_height else 0,
-            (crop_width - image_width + 1) // 2 if crop_width > image_width else 0,
-            (crop_height - image_height + 1) // 2 if crop_height > image_height else 0,
-        ]
-        image = functional.pad(image, padding_ltrb, fill=0)  # PIL uses fill value 0
-        image_height, image_width = image.shape[2], image.shape[3]
-        if crop_width == image_width and crop_height == image_height:
-            return image
-
-    crop_top = int(round((image_height - crop_height) / 2.0))
-    crop_left = int(round((image_width - crop_width) / 2.0))
-    return functional.crop(image, crop_top, crop_left, crop_height, crop_width)
-
-    crop = CenterCrop(size=[target_size.height, target_size.width])
-    # original_height, original_width = image.shape[0], image.shape[1]
-    # original_size = ImageDimensions(height=original_height, width=original_width)
-    # scale_ox = target_size.width / original_size.width
-    # scale_oy = target_size.height / original_size.height
-    # if scale_ox < scale_oy:
-    #     actual_target_width = target_size.width
-    #     actual_target_height = round(scale_ox * original_size.height)
-    # else:
-    #     actual_target_width = round(scale_oy * original_size.width)
-    #     actual_target_height = target_size.height
-    # actual_target_size = ImageDimensions(
-    #     height=actual_target_height,
-    #     width=actual_target_width,
-    # )
-    # scaled_image = cv2.resize(image, (actual_target_size.width, actual_target_size.height))
-    # image_metadata = PreProcessingMetadata(
-    #     pad_left=0,
-    #     pad_top=0,
-    #     pad_right=0,
-    #     pad_bottom=0,
-    #     original_size=original_size,
-    #     inference_size=actual_target_size,
-    #     scale_width=actual_target_size.width / original_size.width,
-    #     scale_height=actual_target_size.height / original_size.height,
-    #     static_crop_offset=static_crop_offset,
-    # )
-    # tensor = torch.from_numpy(scaled_image).to(device=target_device)
-    # tensor = torch.unsqueeze(tensor, 0)
-    # tensor = tensor.permute(0, 3, 1, 2)
-    # if input_color_mode != network_input.color_mode:
-    #     tensor = tensor[:, [2, 1, 0], :, :]
-    # if network_input.scaling_factor is not None:
-    #     tensor = tensor / network_input.scaling_factor
-    # if network_input.normalization:
-    #     tensor = functional.normalize(
-    #         tensor, mean=network_input.normalization[0], std=network_input.normalization[1]
-    #     )
-    # return tensor.contiguous(), [image_metadata]
+    original_height, original_width = image.shape[0], image.shape[1]
+    original_size = ImageDimensions(height=original_height, width=original_width)
+    scale_ox = target_size.width / original_size.width
+    scale_oy = target_size.height / original_size.height
+    if scale_ox < scale_oy:
+        actual_target_width = target_size.width
+        actual_target_height = round(scale_ox * original_size.height)
+    else:
+        actual_target_width = round(scale_oy * original_size.width)
+        actual_target_height = target_size.height
+    actual_target_size = ImageDimensions(
+        height=actual_target_height,
+        width=actual_target_width,
+    )
+    if image.device.type == "cuda":
+        image = image.float()
+    image = torch.nn.functional.interpolate(
+        image,
+        [actual_target_size.height, actual_target_size.width],
+        mode="bilinear",
+    )
+    if input_color_mode != input_color_mode:
+        image = image[:, [2, 1, 0], :, :]
+    image_metadata = PreProcessingMetadata(
+        pad_left=0,
+        pad_top=0,
+        pad_right=0,
+        pad_bottom=0,
+        original_size=original_size,
+        inference_size=actual_target_size,
+        scale_width=actual_target_size.width / original_size.width,
+        scale_height=actual_target_size.height / original_size.height,
+        static_crop_offset=static_crop_offset,
+    )
+    if network_input.scaling_factor is not None:
+        image = image / network_input.scaling_factor
+    if network_input.normalization is not None:
+        image = functional.normalize(
+            image,
+            mean=network_input.normalization[0],
+            std=network_input.normalization[1],
+        )
+    return image.contiguous(), [image_metadata] * image.shape[0]
 
 
 TORCH_IMAGES_PREPARATION_HANDLERS = {
@@ -387,7 +400,7 @@ TORCH_IMAGES_PREPARATION_HANDLERS = {
     ResizeMode.LETTERBOX: handle_torch_input_preparation_with_letterbox,
     ResizeMode.CENTER_CROP: handle_torch_input_preparation_with_center_crop,
     ResizeMode.FIT_LONGER_EDGE: handle_torch_input_preparation_fitting_longer_edge,
-    ResizeMode.LETTERBOX_REFLECT_EDGES: handle_torch_input_preparation_with_letterbox
+    ResizeMode.LETTERBOX_REFLECT_EDGES: handle_torch_input_preparation_with_letterbox,
 }
 
 
@@ -581,8 +594,12 @@ def pre_process_numpy_image(
             )
         elif isinstance(network_input.dynamic_spatial_size_mode, DivisiblePadding):
             target_dimensions = (
-                make_the_value_divisible(x=image_size_wh[0], by=network_input.dynamic_spatial_size_mode.value),
-                make_the_value_divisible(x=image_size_wh[1], by=network_input.dynamic_spatial_size_mode.value)
+                make_the_value_divisible(
+                    x=image_size_wh[0], by=network_input.dynamic_spatial_size_mode.value
+                ),
+                make_the_value_divisible(
+                    x=image_size_wh[1], by=network_input.dynamic_spatial_size_mode.value
+                ),
             )
         elif isinstance(network_input.dynamic_spatial_size_mode, AnySizePadding):
             target_dimensions = image_size_wh
@@ -592,7 +609,9 @@ def pre_process_numpy_image(
                 f"is not implemented.",
                 help_url="",
             )
-    image, static_crop_offset = apply_pre_processing_to_numpy_image(image=image, image_pre_processing=image_pre_processing)
+    image, static_crop_offset = apply_pre_processing_to_numpy_image(
+        image=image, image_pre_processing=image_pre_processing
+    )
     if network_input.resize_mode not in NUMPY_IMAGES_PREPARATION_HANDLERS:
         raise ModelRuntimeError(
             message=f"Unsupported model input resize mode: {network_input.resize_mode}",
@@ -634,7 +653,9 @@ def handle_numpy_input_preparation_with_stretch(
         tensor = tensor / network_input.scaling_factor
     if network_input.normalization:
         tensor = functional.normalize(
-            tensor, mean=network_input.normalization[0], std=network_input.normalization[1]
+            tensor,
+            mean=network_input.normalization[0],
+            std=network_input.normalization[1],
         )
     image_metadata = PreProcessingMetadata(
         pad_left=0,
@@ -683,7 +704,7 @@ def handle_numpy_input_preparation_with_letterbox(
         device=target_device,
     )
     final_batch[
-        0, :, pad_top: pad_top + new_height, pad_left: pad_left + new_width
+        0, :, pad_top : pad_top + new_height, pad_left : pad_left + new_width
     ] = scaled_image_tensor
     if input_color_mode != network_input.color_mode:
         final_batch = final_batch[:, [2, 1, 0], :, :]
@@ -704,7 +725,9 @@ def handle_numpy_input_preparation_with_letterbox(
         final_batch = final_batch / network_input.scaling_factor
     if network_input.normalization is not None:
         final_batch = functional.normalize(
-            final_batch, mean=network_input.normalization[0], std=network_input.normalization[1]
+            final_batch,
+            mean=network_input.normalization[0],
+            std=network_input.normalization[1],
         )
     return final_batch.contiguous(), [image_metadata]
 
@@ -723,28 +746,39 @@ def handle_numpy_input_preparation_with_center_crop(
     canvas_ox_padding = target_size.width - image.shape[1]
     canvas_padding_left = max(0, canvas_ox_padding // 2)
     canvas_padding_left_reminder = max(0, canvas_ox_padding) % 2
-    canvas_padding_right = max(target_size.width - canvas_padding_left - canvas_padding_left_reminder, 0)
+    canvas_padding_right = max(
+        target_size.width - canvas_padding_left - canvas_padding_left_reminder, 0
+    )
     canvas_oy_padding = target_size.height - image.shape[0]
     canvas_padding_top = max(0, canvas_oy_padding // 2)
     canvas_oy_padding_reminder = max(0, canvas_oy_padding) % 2
-    canvas_padding_bottom = max(target_size.height - canvas_padding_top - canvas_oy_padding_reminder, 0)
+    canvas_padding_bottom = max(
+        target_size.height - canvas_padding_top - canvas_oy_padding_reminder, 0
+    )
     original_image_ox_padding = image.shape[1] - target_size.width
     original_image_padding_left = max(0, original_image_ox_padding // 2)
     original_image_ox_padding_reminder = max(0, original_image_ox_padding) % 2
     original_image_padding_right = max(
-        0, image.shape[1] - original_image_padding_left - original_image_ox_padding_reminder
+        0,
+        image.shape[1]
+        - original_image_padding_left
+        - original_image_ox_padding_reminder,
     )
     original_image_oy_padding = image.shape[0] - target_size.height
     original_image_padding_top = max(0, original_image_oy_padding // 2)
     original_image_oy_padding_reminder = max(0, original_image_oy_padding) % 2
     original_image_padding_bottom = max(
-        0, image.shape[0] - original_image_padding_top - original_image_oy_padding_reminder
+        0,
+        image.shape[0]
+        - original_image_padding_top
+        - original_image_oy_padding_reminder,
     )
     canvas[
-        canvas_padding_top:canvas_padding_bottom, canvas_padding_left:canvas_padding_right
+        canvas_padding_top:canvas_padding_bottom,
+        canvas_padding_left:canvas_padding_right,
     ] = image[
         original_image_padding_top:original_image_padding_bottom,
-        original_image_padding_left:original_image_padding_right
+        original_image_padding_left:original_image_padding_right,
     ]
     if canvas.shape[0] > image.shape[0]:
         reported_padding_top = canvas_padding_top
@@ -778,7 +812,9 @@ def handle_numpy_input_preparation_with_center_crop(
         tensor = tensor / network_input.scaling_factor
     if network_input.normalization:
         tensor = functional.normalize(
-            tensor, mean=network_input.normalization[0], std=network_input.normalization[1]
+            tensor,
+            mean=network_input.normalization[0],
+            std=network_input.normalization[1],
         )
     return tensor.contiguous(), [image_metadata]
 
@@ -805,7 +841,9 @@ def handle_numpy_input_preparation_fitting_longer_edge(
         height=actual_target_height,
         width=actual_target_width,
     )
-    scaled_image = cv2.resize(image, (actual_target_size.width, actual_target_size.height))
+    scaled_image = cv2.resize(
+        image, (actual_target_size.width, actual_target_size.height)
+    )
     image_metadata = PreProcessingMetadata(
         pad_left=0,
         pad_top=0,
@@ -826,7 +864,9 @@ def handle_numpy_input_preparation_fitting_longer_edge(
         tensor = tensor / network_input.scaling_factor
     if network_input.normalization:
         tensor = functional.normalize(
-            tensor, mean=network_input.normalization[0], std=network_input.normalization[1]
+            tensor,
+            mean=network_input.normalization[0],
+            std=network_input.normalization[1],
         )
     return tensor.contiguous(), [image_metadata]
 
@@ -836,7 +876,7 @@ NUMPY_IMAGES_PREPARATION_HANDLERS = {
     ResizeMode.LETTERBOX: handle_numpy_input_preparation_with_letterbox,
     ResizeMode.CENTER_CROP: handle_numpy_input_preparation_with_center_crop,
     ResizeMode.FIT_LONGER_EDGE: handle_numpy_input_preparation_fitting_longer_edge,
-    ResizeMode.LETTERBOX_REFLECT_EDGES: handle_numpy_input_preparation_with_letterbox
+    ResizeMode.LETTERBOX_REFLECT_EDGES: handle_numpy_input_preparation_with_letterbox,
 }
 
 

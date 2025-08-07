@@ -14,10 +14,13 @@ from inference_exp.models.common.onnx import (
     set_execution_provider_defaults,
 )
 from inference_exp.models.common.roboflow.model_packages import (
+    InferenceConfig,
     PreProcessingConfig,
     PreProcessingMetadata,
+    ResizeMode,
     parse_class_names_file,
-    parse_pre_processing_config, parse_inference_config, InferenceConfig, ResizeMode,
+    parse_inference_config,
+    parse_pre_processing_config,
 )
 from inference_exp.models.common.roboflow.post_processing import (
     rescale_detections,
@@ -92,7 +95,7 @@ class YOLOv8ForObjectDetectionOnnx(
                 ResizeMode.LETTERBOX,
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
-            }
+            },
         )
         session = onnxruntime.InferenceSession(
             path_or_bytes=model_package_content["weights.onnx"],

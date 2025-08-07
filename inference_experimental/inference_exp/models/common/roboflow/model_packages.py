@@ -2,7 +2,7 @@ import json
 from collections import namedtuple
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Literal, Optional, Tuple, Union, Set
+from typing import List, Literal, Optional, Set, Tuple, Union
 
 from inference_exp.entities import ImageDimensions
 from inference_exp.errors import CorruptedModelPackageError
@@ -55,7 +55,7 @@ PreProcessingMetadata = namedtuple(
         "inference_size",
         "scale_width",
         "scale_height",
-        "static_crop_offset"
+        "static_crop_offset",
     ],
 )
 
@@ -401,15 +401,15 @@ def parse_inference_config(
     except ValidationError as error:
         raise CorruptedModelPackageError(
             message=f"Could not parse the inference config from the model package.",
-            help_url="https://todo"
+            help_url="https://todo",
         ) from error
     if parsed_config.network_input.resize_mode not in allowed_resize_modes:
         allowed_resize_modes_str = ", ".join([e.value for e in allowed_resize_modes])
         raise CorruptedModelPackageError(
             message=f"Inference configuration shipped with model package defines input resize "
-                    f"{parsed_config.network_input.resize_mode} which is not supported by the model implementation. "
-                    f"Config defines: {parsed_config.network_input.resize_mode.value}, but the allowed values are: "
-                    f"{allowed_resize_modes_str}.",
-            help_url="https://todo"
+            f"{parsed_config.network_input.resize_mode} which is not supported by the model implementation. "
+            f"Config defines: {parsed_config.network_input.resize_mode.value}, but the allowed values are: "
+            f"{allowed_resize_modes_str}.",
+            help_url="https://todo",
         )
     return parsed_config
