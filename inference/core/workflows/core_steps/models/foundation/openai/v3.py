@@ -94,7 +94,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "OpenAI",
             "version": "v3",
-            "short_description": "Run OpenAI's GPT-4 with vision capabilities.",
+            "short_description": "Run an OpenAI model with vision capabilities.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",

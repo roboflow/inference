@@ -26,9 +26,22 @@ SHORT_DESCRIPTION = (
     "Apply a mask to cover all areas outside the detected regions in an image."
 )
 LONG_DESCRIPTION = """
-The `BackgroundColorVisualization` block draws all areas
-outside of detected regions in an image with a specified
-color.
+The Background Color Visualization block lets you change the color of regions not detected by a detection model.
+
+This is useful for if you want to highlight detected regions so they are easier to see in an image, or if you want to remove backgrounds from an image.
+
+By default, this block makes regions not detected by a detection model opaque. You can also configure the block to change the colour of undetected regions.
+
+This block works with:
+
+- Object detection models
+- Segmentation models
+
+Here is an example of the block in use:
+
+![](https://docs.roboflow.com/~gitbook/image?url=https%3A%2F%2F662926385-files.gitbook.io%2F%7E%2Ffiles%2Fv0%2Fb%2Fgitbook-x-prod.appspot.com%2Fo%2Fspaces%252F-M6S9nPJhEX9FYH6clfW%252Fuploads%252FSenp0sD01hM934sNQ9cP%252FScreenshot%25202025-05-23%2520at%252018.40.50.png%3Falt%3Dmedia%26token%3Ddf7c9760-7327-4820-954c-9be5baba70ec&width=768&dpr=4&quality=100&sign=f638faf3&sv=2)
+
+You can change the colour and opacity of the background from the block configuration options.
 """
 
 

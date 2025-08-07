@@ -35,12 +35,9 @@ from inference.core.workflows.prototypes.block import (
 LONG_DESCRIPTION = """
 Create dynamic crops from an image based on detections from detections-based model.
 
-This is useful when placed after an ObjectDetection block as part of a multi-stage 
-workflow. For example, you could use an ObjectDetection block to detect objects, then 
-the DynamicCropBlock block to crop objects, then an OCR block to run character recognition on 
-each of the individual cropped regions.
+This block is most useful if you want to crop detections from an object detection model to send into another block (i.e. run object detection, crop, then classify with a classification model).
 
-In addition, for instance segmentation predictions (which provide segmentation mask for each 
+For instance segmentation predictions (which provide segmentation mask for each 
 bounding box) it is possible to remove background in the crops, outside of detected instances.
 To enable that functionality, set `mask_opacity` to positive value and optionally tune 
 `background_color`.

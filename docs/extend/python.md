@@ -1,18 +1,19 @@
-# Dynamic Python blocks
+# Create a Custom Python Block
 
-When the syntax for Workflow definitions was [outlined](/workflows/definitions.md), one key
-aspect was not covered: the ability to define blocks directly within the Workflow definition itself. This section can
-include the manifest and Python code for blocks defined in place, which are dynamically interpreted by the
-Execution Engine. These in-place blocks function similarly to those statically defined in
-[plugins](/workflows/blocks_bundling.md) yet provide much more flexibility.
+The Custom Python Block lets you run Python inside a Workflow block.
 
+This is ideal if you need to implement advanced functionality inside a Workflow that is not supported by an existing block.
+
+We have prepared a video tutorial you can follow to learn how to write your own block:
+
+<iframe width="1052" height="592" src="https://www.youtube.com/embed/C117zm50OGI" title="How to Build a Computer Vision App using Workflows and Custom Python Blocks" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
 
 !!! Warning
 
     Dynamic blocks only work in your local deployment of `inference` and are not supported 
     on the Roboflow hosted platform.
 
-    If you wish to disable the functionality, `export ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=False`
+    If you wish to disable this functionality so custom Python cannot be run, set the `ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=False` variable in your Inference container.
 
 ## Theory
 

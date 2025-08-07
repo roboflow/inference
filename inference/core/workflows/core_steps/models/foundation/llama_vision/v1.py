@@ -142,7 +142,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Llama 3.2 Vision",
             "version": "v1",
-            "short_description": "Run Llama model with Vision capabilities",
+            "short_description": "Run a LLaMA model with vision capabilities",
             "long_description": LONG_DESCRIPTION,
             "license": "Llama 3.2 Community",
             "block_type": "model",

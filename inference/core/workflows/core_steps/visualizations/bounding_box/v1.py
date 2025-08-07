@@ -22,8 +22,15 @@ from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlock
 TYPE: str = "roboflow_core/bounding_box_visualization@v1"
 SHORT_DESCRIPTION = "Draw a box around detected objects in an image."
 LONG_DESCRIPTION = """
-The `BoundingBoxVisualization` block draws a box around detected
-objects in an image using Supervision's `sv.RoundBoxAnnotator`.
+The Bounding Box Visualization block lets you see the bounding boxes from an Object Detection Model on an image.
+
+This block only shows bounding boxes. If you want to see class labels, you will need to add a Label Visualization block.
+
+The Bounding Box Visualization block returns an image with the bounding boxes from an Object Detection model.
+
+Here is an example of the block in use:
+
+![](https://docs.roboflow.com/~gitbook/image?url=https%3A%2F%2F662926385-files.gitbook.io%2F%7E%2Ffiles%2Fv0%2Fb%2Fgitbook-x-prod.appspot.com%2Fo%2Fspaces%252F-M6S9nPJhEX9FYH6clfW%252Fuploads%252F0lLWARvgGlVbTzRdt9gF%252FScreenshot%25202025-05-23%2520at%252018.07.43.png%3Falt%3Dmedia%26token%3Dc5e5e28b-4019-4098-babe-578698d73404&width=768&dpr=3&quality=100&sign=8030de4&sv=2)
 """
 
 
