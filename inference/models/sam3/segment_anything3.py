@@ -52,6 +52,10 @@ class SegmentAnything3(RoboflowCoreModel):
         self.embedding_cache_size: int = 32
         self.task_type = "unsupervised-segmentation"
 
+    # Override to prevent Roboflow API/download flows during initialization
+    def download_weights(self) -> None:
+        return None
+
     def get_infer_bucket_file_list(self) -> List[str]:
         # SAM3 weights managed by env; no core bucket artifacts
         return []

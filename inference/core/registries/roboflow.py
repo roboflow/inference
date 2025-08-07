@@ -97,6 +97,16 @@ class RoboflowModelRegistry(ModelRegistry):
         logger.debug(f"Model type: {model_type}")
 
         if model_type not in self.registry_dict:
+            # Temporary fallback: lazily import SAM3 for local testing when not pre-registered
+            if model_type == ("embed", "sam3"):
+                try:
+                    from inference.models.sam3 import SegmentAnything3
+
+                    return SegmentAnything3
+                except Exception as e:
+                    raise ModelNotRecognisedError(
+                        f"Failed to lazily import SAM3 model: {e}"
+                    )
             raise ModelNotRecognisedError(
                 f"Model type not supported, you may want to try a different inference server configuration or endpoint: {model_type}"
             )

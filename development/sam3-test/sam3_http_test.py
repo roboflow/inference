@@ -3,9 +3,10 @@ import argparse
 import base64
 import json
 from pathlib import Path
+from typing import List, Tuple
 
 import requests
-from PIL import Image
+from PIL import Image, ImageDraw
 
 
 def encode_image_base64(image_path: str) -> str:
@@ -26,6 +27,9 @@ def main():
     )
     parser.add_argument(
         "--threshold", type=float, default=0.5, help="Output prob threshold"
+    )
+    parser.add_argument(
+        "--out", type=str, default="result.jpg", help="Output path for visualization"
     )
     args = parser.parse_args()
 
@@ -61,9 +65,43 @@ def main():
     resp = requests.post(endpoint, json=payload, timeout=120)
     resp.raise_for_status()
 
-    # Pretty-print JSON response
+    # Try to parse JSON and visualize
     try:
-        print(json.dumps(resp.json(), indent=2))
+        data = resp.json()
+        print(json.dumps(data, indent=2))
+        # Visualize predictions
+        preds = data.get("predictions", [])
+        if preds:
+            with Image.open(img_path).convert("RGBA") as base:
+                overlay = Image.new("RGBA", base.size, (0, 0, 0, 0))
+                draw = ImageDraw.Draw(overlay, "RGBA")
+
+                # Simple palette
+                colors = [
+                    (72, 146, 234, 96),   # blue
+                    (0, 238, 195, 96),    # teal
+                    (254, 78, 240, 96),   # magenta
+                    (244, 0, 78, 96),     # red
+                    (250, 114, 0, 96),    # orange
+                    (238, 238, 23, 96),   # yellow
+                    (144, 255, 0, 96),    # green
+                ]
+
+                def to_xy(points: List[List[float]]) -> List[Tuple[float, float]]:
+                    return [(float(x), float(y)) for x, y in points]
+
+                for i, pred in enumerate(preds):
+                    color = colors[i % len(colors)]
+                    for poly in pred.get("masks", []):
+                        if len(poly) >= 3:
+                            draw.polygon(to_xy(poly), fill=color, outline=color[:3] + (180,))
+
+                result = Image.alpha_composite(base, overlay).convert("RGB")
+                out_path = Path(args.out)
+                result.save(out_path, format="JPEG")
+                print(f"Saved visualization to {out_path.resolve()}")
+        else:
+            print("No predictions to visualize.")
     except requests.exceptions.JSONDecodeError:
         print("Non-JSON response received (did you request binary format?)")
         print(f"Status: {resp.status_code}")
