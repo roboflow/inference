@@ -196,9 +196,9 @@ def run_session_via_iobinding(
     )
     device = get_input_device(inputs=inputs)
     if device.type != "cuda":
-        inputs_np = {name: value.numpy() for name, value in inputs.items()}
+        inputs_np = {name: value.cpu().numpy() for name, value in inputs.items()}
         results = session.run(None, inputs_np)
-        return [torch.from_numpy(element) for element in results]
+        return [torch.from_numpy(element).to(device=device) for element in results]
     try:
         import pycuda.driver as cuda
         from inference_exp.models.common.cuda import use_primary_cuda_context

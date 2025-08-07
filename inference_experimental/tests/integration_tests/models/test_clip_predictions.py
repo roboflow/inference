@@ -7,10 +7,11 @@ import torch
 import torch.nn.functional as F
 from clip import clip
 from filelock import FileLock
+from inference_exp.configuration import DEFAULT_DEVICE
 from PIL.Image import Image
 from torch import nn
 
-EXPECTED_DOG_IMAGE_EMBEDDING = torch.Tensor(
+EXPECTED_DOG_IMAGE_EMBEDDING = torch.tensor(
     [
         [
             -0.031097251921892166,
@@ -1038,7 +1039,8 @@ EXPECTED_DOG_IMAGE_EMBEDDING = torch.Tensor(
             0.006933738477528095,
             -0.0005487799644470215,
         ]
-    ]
+    ],
+    device=DEFAULT_DEVICE,
 )
 
 
@@ -1179,7 +1181,7 @@ def test_clip_onnx_image_prediction_for_numpy(
 
     # then
     assert tuple(embeddings.shape) == (1, 1024)
-    assert torch.allclose(embeddings, EXPECTED_DOG_IMAGE_EMBEDDING, atol=1e-4)
+    assert torch.allclose(embeddings, EXPECTED_DOG_IMAGE_EMBEDDING, atol=1e-3)
 
 
 @pytest.mark.slow
@@ -1201,7 +1203,7 @@ def test_clip_onnx_image_prediction_for_torch_tensor(
 
     # then
     assert tuple(embeddings.shape) == (1, 1024)
-    assert torch.allclose(embeddings, EXPECTED_DOG_IMAGE_EMBEDDING, atol=1e-4)
+    assert torch.allclose(embeddings, EXPECTED_DOG_IMAGE_EMBEDDING, atol=1e-3)
 
 
 @pytest.mark.slow

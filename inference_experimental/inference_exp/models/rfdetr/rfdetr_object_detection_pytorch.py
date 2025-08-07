@@ -24,6 +24,9 @@ from inference_exp.models.rfdetr.rfdetr_base_pytorch import (
     LWDETR,
     RFDETRBaseConfig,
     RFDETRLargeConfig,
+    RFDETRMediumConfig,
+    RFDETRNanoConfig,
+    RFDETRSmallConfig,
     build_model,
 )
 
@@ -33,6 +36,9 @@ except:
     pass
 
 CONFIG_FOR_MODEL_TYPE = {
+    "rfdetr-nano": RFDETRNanoConfig,
+    "rfdetr-small": RFDETRSmallConfig,
+    "rfdetr-medium": RFDETRMediumConfig,
     "rfdetr-base": RFDETRBaseConfig,
     "rfdetr-large": RFDETRLargeConfig,
 }

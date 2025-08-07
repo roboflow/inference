@@ -1,8 +1,10 @@
 from typing import List, Literal, Optional, Tuple, Union
+import os
 
 import cv2
 import numpy as np
 import torch
+from peft import PeftModel
 from inference_exp import Detections, InstanceDetections
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ImageDimensions
@@ -18,9 +20,9 @@ GRANULARITY_2TASK = {
     "very_detailed": "<MORE_DETAILED_CAPTION>",
 }
 LABEL_MODE2TASK = {
-    "roi": "<REGION_PROPOSAL>",
-    "class": "<OD>",
-    "caption": "<DENSE_REGION_CAPTION>",
+    "rois": "<REGION_PROPOSAL>",
+    "classes": "<OD>",
+    "captions": "<DENSE_REGION_CAPTION>",
 }
 LOC_BINS = 1000
 
@@ -35,15 +37,36 @@ class Florence2HF:
         **kwargs,
     ) -> "Florence2HF":
         torch_dtype = torch.float16 if device.type == "cuda" else torch.float32
-        model = AutoModelForCausalLM.from_pretrained(
-            model_name_or_path,
-            torch_dtype=torch_dtype,
-            trust_remote_code=True,
-        ).to(device)
-        processor = AutoProcessor.from_pretrained(
-            model_name_or_path,
-            trust_remote_code=True,
-        )
+
+        adapter_config_path = os.path.join(model_name_or_path, "adapter_config.json")
+        if os.path.exists(adapter_config_path):
+            base_model_path = os.path.join(model_name_or_path, "base")
+            model = AutoModelForCausalLM.from_pretrained(
+                base_model_path,
+                torch_dtype=torch_dtype,
+                trust_remote_code=True,
+                local_files_only=True,
+            )
+            model = PeftModel.from_pretrained(model, model_name_or_path)
+            model.merge_and_unload()
+            model.to(device)
+
+            processor = AutoProcessor.from_pretrained(
+                base_model_path, trust_remote_code=True, local_files_only=True
+            )
+        else:
+            model = AutoModelForCausalLM.from_pretrained(
+                model_name_or_path,
+                torch_dtype=torch_dtype,
+                trust_remote_code=True,
+                local_files_only=True,
+            ).to(device)
+            processor = AutoProcessor.from_pretrained(
+                model_name_or_path,
+                trust_remote_code=True,
+                local_files_only=True,
+            )
+
         return cls(
             model=model, processor=processor, device=device, torch_dtype=torch_dtype
         )
