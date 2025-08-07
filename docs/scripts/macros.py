@@ -7,8 +7,16 @@ def define_env(env):
     @env.macro
     def get_version():
         """Read version from inference/core/version.py"""
-        # Get the path to the root of the repository
-        repo_root = Path(__file__).resolve().parents[2]
+        # Find the root of the repository by iterating up parent directories
+        current_path = Path(__file__).resolve()
+        for parent in current_path.parents:
+            # Check if this directory contains the 'inference' subdirectory
+            if (parent / 'inference').is_dir():
+                repo_root = parent
+                break
+        else:
+            raise FileNotFoundError("Could not find repository root with 'inference' directory")
+        
         version_file_path = repo_root.joinpath('inference', 'core', 'version.py')
         
         try:
