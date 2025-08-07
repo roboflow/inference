@@ -121,7 +121,7 @@ class ModelPackageMetadata:
             f"ModelPackageMetadata(package_id={self.package_id}, backend={self.backend.value}, quantization={self.quantization} "
             f"dynamic_batch_size_supported={self.dynamic_batch_size_supported}, "
             f"static_batch_size={self.static_batch_size}, trt_package_details={self.trt_package_details}, "
-            f"environment_requirements={self.environment_requirements})"
+            f"environment_requirements={self.environment_requirements}, model_features={self.model_features})"
         )
 
     def get_dynamic_batch_boundaries(self) -> Tuple[int, int]:

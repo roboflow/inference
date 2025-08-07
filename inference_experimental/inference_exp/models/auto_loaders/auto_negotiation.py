@@ -13,6 +13,13 @@ from inference_exp.errors import (
     UnknownQuantizationError,
 )
 from inference_exp.logger import verbose_info
+from inference_exp.models.auto_loaders.constants import (
+    NMS_CLASS_AGNOSTIC_KEY,
+    NMS_CONFIDENCE_THRESHOLD_KEY,
+    NMS_FUSED_FEATURE,
+    NMS_IOU_THRESHOLD_KEY,
+    NMS_MAX_DETECTIONS_KEY,
+)
 from inference_exp.models.auto_loaders.entities import ModelArchitecture, TaskType
 from inference_exp.models.auto_loaders.models_registry import (
     model_implementation_exists,
@@ -58,6 +65,7 @@ def negotiate_model_packages(
     onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
     allow_untrusted_packages: bool = False,
     trt_engine_host_code_allowed: bool = True,
+    nms_preference: Optional[Union[bool, dict]] = None,
     verbose: bool = False,
 ) -> List[ModelPackageMetadata]:
     verbose_info(
@@ -134,6 +142,14 @@ def negotiate_model_packages(
         )
     )
     discarded_packages.extend(discarded_by_env_matching)
+    model_packages, discarded_by_model_features = (
+        filter_model_packages_based_on_model_features(
+            model_packages=model_packages,
+            nms_preference=nms_preference,
+            model_architecture=model_architecture,
+            task_type=task_type,
+        )
+    )
     if not model_packages:
         rejections_summary = summarise_discarded_packages(
             discarded_packages=discarded_packages
@@ -146,7 +162,8 @@ def negotiate_model_packages(
             help_url="https://todo",
         )
     model_packages = rank_model_packages(
-        model_packages=model_packages, selected_device=device
+        model_packages=model_packages,
+        selected_device=device,
     )
     verbose_info("Eligible packages ranked:", verbose_requested=verbose)
     print_model_packages(model_packages=model_packages, verbose=verbose)
@@ -472,6 +489,119 @@ def filter_model_packages_matching_runtime_environment(
             continue
         results.append(model_package)
     return results, discarded_packages
+
+
+def filter_model_packages_based_on_model_features(
+    model_packages: List[ModelPackageMetadata],
+    nms_preference: Optional[Union[bool, dict]],
+    model_architecture: ModelArchitecture,
+    task_type: Optional[TaskType],
+) -> Tuple[List[ModelPackageMetadata], List[DiscardedPackage]]:
+    results, discarded_packages = [], []
+    for model_package in model_packages:
+        if not model_package.model_features:
+            results.append(model_package)
+            continue
+        nms_fused_config = model_package.model_features.get(NMS_FUSED_FEATURE)
+        if nms_fused_config is None:
+            results.append(model_package)
+            continue
+        if nms_preference is None or nms_preference is False:
+            discarded_packages.append(
+                DiscardedPackage(
+                    package_id=model_package.package_id,
+                    reason=f"Package specifies NMS fusion, but auto-loading used with `nms_preference`={None} rejecting such packages.",
+                )
+            )
+            continue
+        if nms_preference is True:
+            nms_preference = get_default_nms_settings(
+                model_architecture=model_architecture,
+                task_type=task_type,
+            )
+        actual_max_detections = nms_fused_config[NMS_MAX_DETECTIONS_KEY]
+        actual_confidence_threshold = nms_fused_config[NMS_CONFIDENCE_THRESHOLD_KEY]
+        actual_iou_threshold = nms_fused_config[NMS_IOU_THRESHOLD_KEY]
+        actual_class_agnostic = nms_fused_config[NMS_CLASS_AGNOSTIC_KEY]
+        if NMS_MAX_DETECTIONS_KEY in nms_preference:
+            requested_max_detections = nms_preference[NMS_MAX_DETECTIONS_KEY]
+            if isinstance(requested_max_detections, (list, tuple)):
+                min_detections, max_detections = requested_max_detections
+            else:
+                min_detections, max_detections = (
+                    requested_max_detections,
+                    requested_max_detections,
+                )
+            if not min_detections <= actual_max_detections <= max_detections:
+                discarded_packages.append(
+                    DiscardedPackage(
+                        package_id=model_package.package_id,
+                        reason=f"Package specifies NMS fusion with `{NMS_MAX_DETECTIONS_KEY}` not matching the preference passed to "
+                        f"auto-loading.",
+                    )
+                )
+                continue
+        if NMS_CONFIDENCE_THRESHOLD_KEY in nms_preference:
+            requested_confidence = nms_preference[NMS_CONFIDENCE_THRESHOLD_KEY]
+            if isinstance(requested_confidence, (list, tuple)):
+                min_confidence, max_confidence = requested_confidence
+            else:
+                min_confidence, max_confidence = (
+                    requested_confidence,
+                    requested_confidence,
+                )
+            if not min_confidence <= actual_confidence_threshold <= max_confidence:
+                discarded_packages.append(
+                    DiscardedPackage(
+                        package_id=model_package.package_id,
+                        reason=f"Package specifies NMS fusion with `{NMS_CONFIDENCE_THRESHOLD_KEY}` not matching the preference passed to "
+                        f"auto-loading.",
+                    )
+                )
+                continue
+        if NMS_IOU_THRESHOLD_KEY in nms_preference:
+            requested_iou_threshold = nms_preference[NMS_IOU_THRESHOLD_KEY]
+            if isinstance(requested_iou_threshold, (list, tuple)):
+                min_iou_threshold, max_iou_threshold = requested_iou_threshold
+            else:
+                min_iou_threshold, max_iou_threshold = (
+                    requested_iou_threshold,
+                    requested_iou_threshold,
+                )
+            if not min_iou_threshold <= actual_iou_threshold <= max_iou_threshold:
+                discarded_packages.append(
+                    DiscardedPackage(
+                        package_id=model_package.package_id,
+                        reason=f"Package specifies NMS fusion with `{NMS_IOU_THRESHOLD_KEY}` not matching the preference passed to "
+                        f"auto-loading.",
+                    )
+                )
+                continue
+        if NMS_CLASS_AGNOSTIC_KEY in nms_preference:
+            if actual_class_agnostic != nms_preference[NMS_CLASS_AGNOSTIC_KEY]:
+                discarded_packages.append(
+                    DiscardedPackage(
+                        package_id=model_package.package_id,
+                        reason=f"Package specifies NMS fusion with `{NMS_CLASS_AGNOSTIC_KEY}` not matching the preference passed to "
+                        f"auto-loading.",
+                    )
+                )
+                continue
+        results.append(model_package)
+    return results, discarded_packages
+
+
+def get_default_nms_settings(
+    model_architecture: ModelArchitecture,
+    task_type: Optional[TaskType],
+) -> dict:
+    # TODO - over time it may change
+    return {
+        NMS_MAX_DETECTIONS_KEY: 300,
+        NMS_CONFIDENCE_THRESHOLD_KEY: 0.25,
+        NMS_IOU_THRESHOLD_KEY: 0.7,
+        NMS_CLASS_AGNOSTIC_KEY: False,
+    }
 
 
 def model_package_matches_runtime_environment(

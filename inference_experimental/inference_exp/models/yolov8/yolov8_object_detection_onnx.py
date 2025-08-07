@@ -27,6 +27,7 @@ from inference_exp.models.common.roboflow.model_packages import (
     parse_pre_processing_config,
 )
 from inference_exp.models.common.roboflow.post_processing import (
+    post_process_nms_fused_model_output,
     rescale_detections,
     run_nms_for_object_detection,
 )
@@ -181,7 +182,9 @@ class YOLOv8ForObjectDetectionOnnx(
         **kwargs,
     ) -> List[Detections]:
         if self._inference_config.post_processing.fused:
-            nms_results = model_results
+            nms_results = post_process_nms_fused_model_output(
+                output=model_results, conf_thresh=conf_thresh
+            )
         else:
             nms_results = run_nms_for_object_detection(
                 output=model_results,

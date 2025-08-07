@@ -54,9 +54,12 @@ REGISTERED_MODELS: Dict[
         module_name="inference_exp.models.yolov7.yolov7_instance_segmentation_trt",
         class_name="YOLOv7ForInstanceSegmentationTRT",
     ),
-    ("yolov8", OBJECT_DETECTION_TASK, BackendType.ONNX): LazyClass(
-        module_name="inference_exp.models.yolov8.yolov8_object_detection_onnx",
-        class_name="YOLOv8ForObjectDetectionOnnx",
+    ("yolov8", OBJECT_DETECTION_TASK, BackendType.ONNX): RegistryEntry(
+        model_class=LazyClass(
+            module_name="inference_exp.models.yolov8.yolov8_object_detection_onnx",
+            class_name="YOLOv8ForObjectDetectionOnnx",
+        ),
+        supported_model_features={"nms_fused"},
     ),
     ("yolov8", OBJECT_DETECTION_TASK, BackendType.TRT): LazyClass(
         module_name="inference_exp.models.yolov8.yolov8_object_detection_trt",

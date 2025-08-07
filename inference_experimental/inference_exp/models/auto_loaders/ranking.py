@@ -1,6 +1,7 @@
 from typing import List, Optional
 
 import torch
+from inference_exp.models.auto_loaders.constants import NMS_FUSED_FEATURE
 from inference_exp.models.auto_loaders.utils import (
     filter_available_devices_with_selected_device,
 )
@@ -262,7 +263,7 @@ def retrieve_jetson_device_name_match_score(model_package: ModelPackageMetadata)
 def retrieve_fused_nms_rank(model_package: ModelPackageMetadata) -> int:
     if not model_package.model_features:
         return 0
-    nms_fused = model_package.model_features.get("nms_fused")
+    nms_fused = model_package.model_features.get(NMS_FUSED_FEATURE)
     if not isinstance(nms_fused, bool):
         return 0
     return int(nms_fused is True)
