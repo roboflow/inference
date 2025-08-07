@@ -39,6 +39,5 @@ from inference.core.workflows.core_steps.common.deserializers import (
 
 print("Inference modules pre-imported successfully")
 
-# Keep the process running for E2B
-while True:
-    time.sleep(1)
+# Signal that the sandbox is ready
+print("Sandbox ready")

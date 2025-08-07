@@ -38,6 +38,3 @@ COPY docker/e2b/startup.py /root/.e2b/startup.py
 # Set environment variables for E2B
 ENV PYTHONPATH=/app:$PYTHONPATH
 ENV E2B_SANDBOX_TYPE=custom_python_block
-
-# Run the startup script when sandbox starts
-CMD ["python", "/root/.e2b/startup.py"]

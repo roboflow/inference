@@ -1,195 +1,189 @@
 #!/usr/bin/env python3
 """
-Test script for E2B Custom Python Blocks integration.
-This tests both local and remote execution modes.
+Test script for E2B sandbox integration with Custom Python Blocks.
 """
 
 import os
 import json
-import sys
+import base64
+import numpy as np
 
-# Add inference to path
-sys.path.insert(0, '/Users/yeldarb/Code/inference')
+# Set the E2B API key
+os.environ['E2B_API_KEY'] = 'e2b_c57c2691de57c1a7a6112cb2d0973f2f51e2ee8e'
+os.environ['WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE'] = 'remote'
 
-# Set environment variables before importing
-os.environ['WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE'] = 'local'
-os.environ['ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS'] = 'True'
+# Now import the executor
+from inference.core.workflows.core_steps.dynamic_blocks.e2b_executor import E2BExecutor
 
-# Simple test workflow with Custom Python Block
-test_workflow = {
-    "version": "1.0",
-    "inputs": [],
-    "dynamic_blocks_definitions": [
-        {
-            "type": "DynamicBlockDefinition",
-            "manifest": {
-                "type": "ManifestDescription",
-                "block_type": "TestBlock",
-                "inputs": {
-                    "test_input": {
-                        "type": "DynamicInputDefinition",
-                        "value_types": ["string"]
-                    }
-                },
-                "outputs": {
-                    "result": {
-                        "type": "DynamicOutputDefinition",
-                        "kind": []
-                    }
-                }
-            },
-            "code": {
-                "type": "PythonCode",
-                "run_function_code": """
-def run(self, test_input: str):
-    import time
-    current_time = time.time()
-    result = f"Processed '{test_input}' at {current_time}"
-    return {"result": result}
+def test_simple_execution():
+    """Test basic code execution in E2B sandbox."""
+    print("Testing simple code execution...")
+    
+    executor = E2BExecutor()
+    
+    # Simple test code
+    code = """
+result = 2 + 2
+print(f"Result: {result}")
+output = result * 10
 """
-            }
-        }
-    ],
-    "steps": [
-        {
-            "type": "TestBlock",
-            "name": "test_step",
-            "test_input": "Hello from E2B!"
-        }
-    ],
-    "outputs": [
-        {
-            "type": "JsonField",
-            "name": "test_result",
-            "selector": "$steps.test_step.result"
-        }
-    ]
-}
-
-def test_local_execution():
-    """Test Custom Python Block with local execution."""
-    print("Testing LOCAL execution mode...")
-    os.environ['WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE'] = 'local'
     
-    try:
-        from inference.core.workflows.execution_engine.v1.compiler.core import compile_workflow
-        from inference.core.workflows.execution_engine.v1.executor.core import execute_workflow
-        
-        # Compile the workflow
-        execution_graph = compile_workflow(workflow_definition=test_workflow)
-        
-        # Execute the workflow
-        result = execute_workflow(
-            execution_graph=execution_graph,
-            runtime_parameters={}
-        )
-        
-        print(f"Local execution result: {result}")
-        assert "test_result" in result
-        assert "Hello from E2B!" in result["test_result"]
-        print("✅ Local execution test PASSED\n")
-        return True
-    except ImportError as e:
-        print(f"⚠️  Cannot run test - missing dependencies: {e}")
-        print("Please install requirements with: pip install -r requirements/_requirements.txt")
-        return False
-    except Exception as e:
-        print(f"❌ Local execution test failed: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-def test_remote_execution():
-    """Test Custom Python Block with remote E2B execution."""
-    print("Testing REMOTE (E2B) execution mode...")
-    
-    # Check if E2B API key is set
-    if not os.environ.get('E2B_API_KEY'):
-        print("⚠️  E2B_API_KEY not set - skipping remote execution test")
-        print("To test remote execution, set E2B_API_KEY environment variable")
-        return True
-    
-    os.environ['WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE'] = 'remote'
-    
-    try:
-        from inference.core.workflows.execution_engine.v1.compiler.core import compile_workflow
-        from inference.core.workflows.execution_engine.v1.executor.core import execute_workflow
-        
-        # Compile the workflow
-        execution_graph = compile_workflow(workflow_definition=test_workflow)
-        
-        # Execute the workflow
-        result = execute_workflow(
-            execution_graph=execution_graph,
-            runtime_parameters={}
-        )
-        
-        print(f"Remote execution result: {result}")
-        assert "test_result" in result
-        assert "Hello from E2B!" in result["test_result"]
-        print("✅ Remote execution test PASSED\n")
-        return True
-    except ImportError as e:
-        print(f"⚠️  Cannot run test - missing dependencies: {e}")
-        return False
-    except Exception as e:
-        print(f"❌ Remote execution test failed: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-def check_e2b_configuration():
-    """Check E2B configuration and environment."""
-    print("Checking E2B Configuration...")
-    print("-" * 40)
-    
-    # Check environment variables
-    from inference.core.env import (
-        WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
-        E2B_API_KEY,
-        E2B_TEMPLATE_ID,
-        E2B_SANDBOX_TIMEOUT,
-        E2B_SANDBOX_IDLE_TIMEOUT,
+    result = executor.run_custom_code(
+        code=code,
+        inputs={},
+        global_parameters={}
     )
     
-    print(f"Execution Mode: {WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE}")
-    print(f"E2B API Key: {'Set' if E2B_API_KEY else 'Not set'}")
-    print(f"E2B Template ID: {E2B_TEMPLATE_ID or 'Auto-detect from version'}")
-    print(f"Sandbox Timeout: {E2B_SANDBOX_TIMEOUT} seconds")
-    print(f"Sandbox Idle Timeout: {E2B_SANDBOX_IDLE_TIMEOUT} seconds")
+    print(f"Execution result: {result}")
+    assert result['output'] == 40, f"Expected 40, got {result['output']}"
+    print("✅ Simple execution test passed!")
     
-    # Check if E2B package is installed
-    try:
-        import e2b_code_interpreter
-        print(f"E2B Code Interpreter: Installed (version {e2b_code_interpreter.__version__ if hasattr(e2b_code_interpreter, '__version__') else 'unknown'})")
-    except ImportError:
-        print("E2B Code Interpreter: Not installed")
-        print("Install with: pip install -r requirements/requirements.e2b.txt")
-    
-    print("-" * 40)
-    print()
+    return result
 
-if __name__ == "__main__":
+def test_with_inputs():
+    """Test code execution with inputs."""
+    print("\nTesting code execution with inputs...")
+    
+    executor = E2BExecutor()
+    
+    # Test code with inputs
+    code = """
+import numpy as np
+
+# Process the input image
+image = inputs['image']
+prediction = inputs['prediction']
+
+# Calculate average confidence
+avg_confidence = np.mean([det['confidence'] for det in prediction['predictions']])
+
+# Create output
+output = {
+    'image_shape': image.shape,
+    'num_detections': len(prediction['predictions']),
+    'avg_confidence': float(avg_confidence)
+}
+"""
+    
+    # Create test inputs
+    test_image = np.random.randint(0, 255, (640, 480, 3), dtype=np.uint8)
+    test_prediction = {
+        'predictions': [
+            {'confidence': 0.9, 'class': 'person', 'x': 100, 'y': 100},
+            {'confidence': 0.8, 'class': 'car', 'x': 200, 'y': 200},
+            {'confidence': 0.7, 'class': 'dog', 'x': 300, 'y': 300}
+        ]
+    }
+    
+    result = executor.run_custom_code(
+        code=code,
+        inputs={
+            'image': test_image,
+            'prediction': test_prediction
+        },
+        global_parameters={}
+    )
+    
+    print(f"Execution result: {result}")
+    assert result['output']['num_detections'] == 3, "Expected 3 detections"
+    assert result['output']['image_shape'] == [640, 480, 3], "Expected correct image shape"
+    assert 0.7 <= result['output']['avg_confidence'] <= 0.9, "Expected correct avg confidence"
+    print("✅ Input test passed!")
+    
+    return result
+
+def test_with_supervision():
+    """Test code execution with supervision library."""
+    print("\nTesting code execution with supervision...")
+    
+    executor = E2BExecutor()
+    
+    # Test code using supervision
+    code = """
+import supervision as sv
+import numpy as np
+
+# Access the detection from inputs
+detections = inputs['detections']
+
+# Get detection count
+num_detections = len(detections.xyxy) if hasattr(detections, 'xyxy') else 0
+
+# Create output
+output = {
+    'num_detections': num_detections,
+    'has_confidence': detections.confidence is not None
+}
+"""
+    
+    # Create test supervision detections
+    import supervision as sv
+    test_detections = sv.Detections(
+        xyxy=np.array([[10, 10, 50, 50], [100, 100, 200, 200]]),
+        confidence=np.array([0.9, 0.8]),
+        class_id=np.array([0, 1])
+    )
+    
+    result = executor.run_custom_code(
+        code=code,
+        inputs={'detections': test_detections},
+        global_parameters={}
+    )
+    
+    print(f"Execution result: {result}")
+    assert result['output']['num_detections'] == 2, "Expected 2 detections"
+    assert result['output']['has_confidence'] == True, "Expected confidence to be present"
+    print("✅ Supervision test passed!")
+    
+    return result
+
+def test_error_handling():
+    """Test error handling in E2B sandbox."""
+    print("\nTesting error handling...")
+    
+    executor = E2BExecutor()
+    
+    # Code with intentional error
+    code = """
+# This will raise an error
+result = 1 / 0
+output = result
+"""
+    
+    try:
+        result = executor.run_custom_code(
+            code=code,
+            inputs={},
+            global_parameters={}
+        )
+        print("Error: Should have raised an exception!")
+        assert False, "Expected an exception"
+    except Exception as e:
+        print(f"Caught expected exception: {e}")
+        print("✅ Error handling test passed!")
+
+def main():
+    """Run all tests."""
     print("=" * 60)
     print("E2B Custom Python Blocks Integration Test")
     print("=" * 60)
-    print()
     
-    # Check configuration
-    check_e2b_configuration()
-    
-    # Run tests
-    tests_passed = []
-    
-    # Test local execution
-    tests_passed.append(test_local_execution())
-    
-    # Test remote execution (if E2B API key is available)
-    tests_passed.append(test_remote_execution())
-    
-    print("=" * 60)
-    if all(tests_passed):
-        print("All tests completed successfully! ✅")
-    else:
-        print("Some tests were skipped or failed ⚠️")
-    print("=" * 60)
+    try:
+        # Run tests
+        test_simple_execution()
+        test_with_inputs()
+        test_with_supervision()
+        test_error_handling()
+        
+        print("\n" + "=" * 60)
+        print("✅ All tests passed successfully!")
+        print("=" * 60)
+        
+    except Exception as e:
+        print(f"\n❌ Test failed: {e}")
+        import traceback
+        traceback.print_exc()
+        exit(1)
+
+if __name__ == "__main__":
+    main()

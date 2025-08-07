@@ -37,10 +37,14 @@ echo -e "${GREEN}Using Inference version: ${INFERENCE_VERSION}${NC}"
 TEMPLATE_NAME="inference-sandbox-v${INFERENCE_VERSION//./-}"
 echo -e "${GREEN}Building template: ${TEMPLATE_NAME}${NC}"
 
+# Update template_name in e2b.toml
+sed -i.bak "s/template_name = \".*\"/template_name = \"${TEMPLATE_NAME}\"/" e2b.toml
+rm -f e2b.toml.bak
+
 # Build the template
 cd "$E2B_DIR"
-# Build from the root of the repository with name specification
-e2b template build --path ../.. --dockerfile docker/e2b/e2b.Dockerfile --config docker/e2b/e2b.toml --name "${TEMPLATE_NAME}"
+# Build from the root of the repository
+e2b template build --path ../.. --dockerfile docker/e2b/e2b.Dockerfile --config docker/e2b/e2b.toml
 
 # Check if we should push
 if [ "$1" == "push" ]; then
