@@ -234,6 +234,7 @@ plugins:
       implicit_index: True
   - macros:
       include_dir: docs/include
+      module_name: docs/scripts/macros
 
 
 markdown_extensions:
