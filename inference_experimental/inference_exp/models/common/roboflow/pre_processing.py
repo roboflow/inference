@@ -18,10 +18,11 @@ from inference_exp.models.common.roboflow.model_packages import (
     PreProcessingMetadata,
     PreProcessingMode,
     ResizeMode,
-    StaticCropOffset,
+    StaticCropOffset, StaticCrop, ContrastType,
 )
 from PIL.Image import Image
-from torchvision.transforms import CenterCrop, functional
+from torchvision.transforms import functional, Grayscale
+from skimage import exposure
 
 
 def pre_process_network_input(
@@ -136,7 +137,9 @@ def pre_process_images_tensor(
     ):
         images = images.permute(0, 3, 1, 2)
     image, static_crop_offset = apply_pre_processing_to_torch_image(
-        image=images, image_pre_processing=image_pre_processing
+        image=images,
+        image_pre_processing=image_pre_processing,
+        network_input_channels=network_input.input_channels,
     )
     if network_input.resize_mode not in NUMPY_IMAGES_PREPARATION_HANDLERS:
         raise ModelRuntimeError(
@@ -155,8 +158,71 @@ def pre_process_images_tensor(
 def apply_pre_processing_to_torch_image(
     image: torch.Tensor,
     image_pre_processing: ImagePreProcessing,
+    network_input_channels: int,
 ) -> Tuple[torch.Tensor, StaticCropOffset]:
-    pass
+    static_crop_offset = StaticCropOffset(offset_x=0, offset_y=0)
+    if image_pre_processing.static_crop.enabled:
+        image, static_crop_offset = apply_static_crop_to_torch_image(
+            image=image,
+            config=image_pre_processing.static_crop,
+        )
+    if image_pre_processing.grayscale.enabled:
+        image = Grayscale(num_output_channels=network_input_channels)(image)
+    if image_pre_processing.contrast.enabled:
+        if image_pre_processing.contrast.type not in CONTRAST_ADJUSTMENT_METHODS_FOR_TORCH:
+            raise ModelRuntimeError(
+                message=f"Unsupported image contrast adjustment type: {image_pre_processing.contrast.type.value}",
+                help_url="https://todo",
+            )
+        image = CONTRAST_ADJUSTMENT_METHODS_FOR_TORCH[image_pre_processing.contrast.type](image)
+    return image, static_crop_offset
+
+
+def apply_static_crop_to_torch_image(image: torch.Tensor, config: StaticCrop) -> Tuple[torch.Tensor, StaticCropOffset]:
+    cropped_tensor = image[:, :, config.y_min:config.y_max, config.x_min:config.x_max]
+    offset = StaticCropOffset(offset_x=config.x_min, offset_y=config.y_min)
+    return cropped_tensor, offset
+
+
+def apply_adaptive_equalization_to_torch_image(image: torch.Tensor) -> torch.Tensor:
+    original_device = image.device
+    results = []
+    for single_image in image:
+        single_image_numpy = np.transpose(single_image.cpu().numpy(), (1, 2, 0))
+        image = single_image_numpy.astype(np.float32) / 255
+        image_adapted = (exposure.equalize_adapthist(image, clip_limit=0.03) * 255).astype(np.uint8)
+        results.append(torch.from_numpy(image_adapted).to(original_device))
+    return torch.stack(results, dim=0).permute(0, 2, 3, 1)
+
+
+def apply_contrast_stretching_to_torch_image(image: torch.Tensor) -> torch.Tensor:
+    n, c, h, w = image.shape
+    flat = image.view(n, -1)
+    p2 = torch.quantile(flat, 0.02, dim=1)
+    p98 = torch.quantile(flat, 0.98, dim=1)
+    p2 = p2.view(n, 1, 1, 1)
+    p98 = p98.view(n, 1, 1, 1)
+    img_clamped = image.clamp(min=p2, max=p98)
+    img_stretched = (img_clamped - p2) / (p98 - p2)
+    return img_stretched.round().to(torch.uint8)
+
+
+def apply_histogram_equalization_to_torch_image(image: torch.Tensor) -> torch.Tensor:
+    original_device = image.device
+    results = []
+    for single_image in image:
+        single_image_numpy = np.transpose(single_image.cpu().numpy(), (1, 2, 0))
+        single_image_numpy = single_image_numpy.astype(np.float32) / 255
+        image_equalized = exposure.equalize_hist(single_image_numpy) * 255
+        results.append(torch.from_numpy(image_equalized).to(original_device))
+    return torch.stack(results, dim=0).permute(0, 2, 3, 1)
+
+
+CONTRAST_ADJUSTMENT_METHODS_FOR_TORCH = {
+    ContrastType.ADAPTIVE_EQUALIZATION: apply_adaptive_equalization_to_torch_image,
+    ContrastType.CONTRAST_STRETCHING: apply_contrast_stretching_to_torch_image,
+    ContrastType.HISTOGRAM_EQUALIZATION: apply_histogram_equalization_to_torch_image
+}
 
 
 def handle_tensor_input_preparation_with_stretch(
@@ -610,7 +676,9 @@ def pre_process_numpy_image(
                 help_url="",
             )
     image, static_crop_offset = apply_pre_processing_to_numpy_image(
-        image=image, image_pre_processing=image_pre_processing
+        image=image,
+        image_pre_processing=image_pre_processing,
+        input_color_mode=input_color_mode,
     )
     if network_input.resize_mode not in NUMPY_IMAGES_PREPARATION_HANDLERS:
         raise ModelRuntimeError(
@@ -630,8 +698,57 @@ def pre_process_numpy_image(
 def apply_pre_processing_to_numpy_image(
     image: np.ndarray,
     image_pre_processing: ImagePreProcessing,
+    input_color_mode: Optional[ColorMode] = None,
 ) -> Tuple[np.ndarray, StaticCropOffset]:
-    pass
+    if input_color_mode is None:
+        input_color_mode = ColorMode.BGR
+    static_crop_offset = StaticCropOffset(offset_x=0, offset_y=0)
+    if image_pre_processing.static_crop.enabled:
+        image, static_crop_offset = apply_static_crop_to_numpy_image(
+            image=image,
+            config=image_pre_processing.static_crop,
+        )
+    if image_pre_processing.grayscale.enabled:
+        mode = cv2.COLOR_BGR2GRAY if input_color_mode is ColorMode.BGR else cv2.COLOR_RGB2GRAY
+        image = cv2.cvtColor(image, mode)
+    if image_pre_processing.contrast.enabled:
+        if image_pre_processing.contrast.type not in CONTRAST_ADJUSTMENT_METHODS_FOR_NUMPY:
+            raise ModelRuntimeError(
+                message=f"Unsupported image contrast adjustment type: {image_pre_processing.contrast.type.value}",
+                help_url="https://todo",
+            )
+        image = CONTRAST_ADJUSTMENT_METHODS_FOR_NUMPY[image_pre_processing.contrast.type](image)
+    return image, static_crop_offset
+
+
+def apply_static_crop_to_numpy_image(image: np.ndarray, config: StaticCrop) -> Tuple[np.ndarray, StaticCropOffset]:
+    result_image = image[config.y_min:config.y_max, config.x_min:config.x_min]
+    return result_image, StaticCropOffset(offset_x=config.x_min, offset_y=config.y_min)
+
+
+def apply_adaptive_equalization_to_numpy_image(image: np.ndarray) -> np.ndarray:
+    image = image.astype(np.float32) / 255
+    image_adapted = exposure.equalize_adapthist(image, clip_limit=0.03) * 255
+    return image_adapted.astype(np.uint8)
+
+
+def apply_contrast_stretching_to_numpy_image(image: np.ndarray) -> np.ndarray:
+    p2 = np.percentile(image, 2)
+    p98 = np.percentile(image, 98)
+    return exposure.rescale_intensity(image, in_range=(p2, p98))
+
+
+def apply_histogram_equalization_to_numpy_image(image: np.ndarray) -> np.ndarray:
+    image = image.astype(np.float32) / 255
+    image_equalized = exposure.equalize_hist(image) * 255
+    return image_equalized.astype(np.uint8)
+
+
+CONTRAST_ADJUSTMENT_METHODS_FOR_NUMPY = {
+    ContrastType.ADAPTIVE_EQUALIZATION: apply_adaptive_equalization_to_numpy_image,
+    ContrastType.CONTRAST_STRETCHING: apply_contrast_stretching_to_numpy_image,
+    ContrastType.HISTOGRAM_EQUALIZATION: apply_histogram_equalization_to_numpy_image
+}
 
 
 def handle_numpy_input_preparation_with_stretch(
