@@ -1,7 +1,6 @@
 # E2B Template Configuration for Inference Custom Python Blocks
 
 # Template settings
-template_id = "inference-sandbox-0.51.10"
 template_name = "Inference Custom Python Block Sandbox"
 dockerfile = "e2b.Dockerfile"
 

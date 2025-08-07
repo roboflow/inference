@@ -66,7 +66,9 @@ class E2BSandboxExecutor:
         
         # Default to inference version-based template
         inference_version = get_version()
-        return f"inference-sandbox-{inference_version}"
+        # Replace dots with dashes for E2B compatibility
+        version_str = inference_version.replace('.', '-')
+        return f"inference-sandbox-v{version_str}"
     
     def execute_in_sandbox(
         self,

@@ -30,19 +30,17 @@ if [ -z "$E2B_API_KEY" ]; then
 fi
 
 # Get current inference version
-INFERENCE_VERSION=$(grep "__version__" ../../inference/core/version.py | cut -d'"' -f2)
+INFERENCE_VERSION=$(grep "^__version__" ../../inference/core/version.py | head -1 | cut -d'"' -f2)
 echo -e "${GREEN}Using Inference version: ${INFERENCE_VERSION}${NC}"
 
-# Update template_id in e2b.toml
-TEMPLATE_ID="inference-sandbox-${INFERENCE_VERSION}"
-sed -i.bak "s/template_id = \"inference-sandbox-.*\"/template_id = \"${TEMPLATE_ID}\"/" e2b.toml
-rm e2b.toml.bak
-
-echo -e "${GREEN}Building template: ${TEMPLATE_ID}${NC}"
+# Create template name with version
+TEMPLATE_NAME="inference-sandbox-v${INFERENCE_VERSION//./-}"
+echo -e "${GREEN}Building template: ${TEMPLATE_NAME}${NC}"
 
 # Build the template
 cd "$E2B_DIR"
-e2b template build
+# Build from the root of the repository with name specification
+e2b template build --path ../.. --dockerfile docker/e2b/e2b.Dockerfile --config docker/e2b/e2b.toml --name "${TEMPLATE_NAME}"
 
 # Check if we should push
 if [ "$1" == "push" ]; then
@@ -52,10 +50,10 @@ if [ "$1" == "push" ]; then
     fi
     
     echo -e "${GREEN}Pushing template to E2B...${NC}"
-    e2b template push
+    e2b template push --path ../.. --config docker/e2b/e2b.toml
     
     echo -e "${GREEN}Template pushed successfully!${NC}"
-    echo -e "${GREEN}Template ID: ${TEMPLATE_ID}${NC}"
+    echo -e "${GREEN}Template Name: ${TEMPLATE_NAME}${NC}"
     
     # List templates to verify
     echo -e "${GREEN}Verifying template in E2B:${NC}"
