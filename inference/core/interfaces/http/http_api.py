@@ -49,6 +49,10 @@ from inference.core.entities.requests.sam2 import (
     Sam2EmbeddingRequest,
     Sam2SegmentationRequest,
 )
+from inference.core.entities.requests.sam3 import (
+    Sam3EmbeddingRequest,
+    Sam3SegmentationRequest,
+)
 from inference.core.entities.requests.server_state import (
     AddModelRequest,
     ClearModelRequest,
@@ -93,6 +97,10 @@ from inference.core.entities.responses.sam2 import (
     Sam2EmbeddingResponse,
     Sam2SegmentationResponse,
 )
+from inference.core.entities.responses.sam3 import (
+    Sam3EmbeddingResponse,
+    Sam3SegmentationResponse,
+)
 from inference.core.entities.responses.server_state import (
     ModelsDescriptions,
     ServerVersionInfo,
@@ -118,6 +126,7 @@ from inference.core.env import (
     CORE_MODEL_OWLV2_ENABLED,
     CORE_MODEL_PE_ENABLED,
     CORE_MODEL_SAM2_ENABLED,
+    CORE_MODEL_SAM3_ENABLED,
     CORE_MODEL_SAM_ENABLED,
     CORE_MODEL_TROCR_ENABLED,
     CORE_MODEL_YOLO_WORLD_ENABLED,
@@ -910,6 +919,7 @@ class HttpInterface(BaseInterface):
         The SAM model ID.
         """
         load_sam2_model = partial(load_core_model, core_model="sam2")
+        load_sam3_model = partial(load_core_model, core_model="sam3")
         """Loads the SAM2 model into the model manager.
 
         Args:
@@ -2325,6 +2335,72 @@ class HttpInterface(BaseInterface):
                     )
                     model_response = await self.model_manager.infer_from_request(
                         sam2_model_id, inference_request
+                    )
+                    if inference_request.format == "binary":
+                        return Response(
+                            content=model_response,
+                            headers={"Content-Type": "application/octet-stream"},
+                        )
+                    return model_response
+
+            if CORE_MODEL_SAM3_ENABLED:
+                @app.post(
+                    "/sam3/embed_image",
+                    response_model=Sam3EmbeddingResponse,
+                    summary="SAM3 Image Embeddings",
+                    description="Run the Meta AI Segment Anything 3 Model to embed image data.",
+                )
+                @with_route_exceptions
+                @usage_collector("request")
+                async def sam3_embed_image(
+                    inference_request: Sam3EmbeddingRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
+                ):
+                    logger.debug(f"Reached /sam3/embed_image")
+                    sam3_model_id = load_sam3_model(
+                        inference_request,
+                        api_key=api_key,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
+                    model_response = await self.model_manager.infer_from_request(
+                        sam3_model_id, inference_request
+                    )
+                    return model_response
+
+                @app.post(
+                    "/sam3/segment_image",
+                    response_model=Sam3SegmentationResponse,
+                    summary="SAM3 Image Segmentation",
+                    description="Run the Meta AI Segment Anything 3 Model to generate segmentations for image data.",
+                )
+                @with_route_exceptions
+                @usage_collector("request")
+                async def sam3_segment_image(
+                    inference_request: Sam3SegmentationRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
+                ):
+                    logger.debug(f"Reached /sam3/segment_image")
+                    sam3_model_id = load_sam3_model(
+                        inference_request,
+                        api_key=api_key,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
+                    model_response = await self.model_manager.infer_from_request(
+                        sam3_model_id, inference_request
                     )
                     if inference_request.format == "binary":
                         return Response(

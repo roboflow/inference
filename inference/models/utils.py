@@ -6,6 +6,7 @@ from inference.core.env import (
     CORE_MODEL_DOCTR_ENABLED,
     CORE_MODEL_GAZE_ENABLED,
     CORE_MODEL_GROUNDINGDINO_ENABLED,
+    CORE_MODEL_SAM3_ENABLED,
     CORE_MODEL_OWLV2_ENABLED,
     CORE_MODEL_PE_ENABLED,
     CORE_MODEL_SAM2_ENABLED,
@@ -383,6 +384,19 @@ except:
         "Your `inference` configuration does not support SAM2 model. "
         "Use pip install 'inference[sam]' to install missing requirements."
         "To suppress this warning, set CORE_MODEL_SAM2_ENABLED to False.",
+        category=ModelDependencyMissing,
+    )
+
+try:
+    if CORE_MODEL_SAM3_ENABLED:
+        from inference.models import SegmentAnything3
+
+        print("SAM3_REPO_PATH", SAM3_REPO_PATH)
+        ROBOFLOW_MODEL_TYPES[("embed", "sam3")] = SegmentAnything3
+except Exception:
+    warnings.warn(
+        "Your `inference` configuration does not support SAM3 model. "
+        "Install SAM3 dependencies and set CORE_MODEL_SAM3_ENABLED to True.",
         category=ModelDependencyMissing,
     )
 

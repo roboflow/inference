@@ -47,6 +47,7 @@ GENERIC_MODELS = {
     "clip": ("embed", "clip"),
     "sam": ("embed", "sam"),
     "sam2": ("embed", "sam2"),
+    "sam3": ("embed", "sam3"),
     "gaze": ("gaze", "l2cs"),
     "doctr": ("ocr", "doctr"),
     "trocr": ("ocr", "trocr"),

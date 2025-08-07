@@ -36,9 +36,14 @@ app = interface.app
 from functools import partial
 from multiprocessing import Process
 
+from inference.core.env import SAM3_REPO_PATH, CORE_MODEL_SAM3_ENABLED
 
 
 if __name__ == "__main__":
+
+    print("SAM3_REPO_PATH", SAM3_REPO_PATH)
+    print("CORE_MODEL_SAM3_ENABLED", CORE_MODEL_SAM3_ENABLED)
+    
 
     print("Starting Stream Manager...")
     stream_manager_process = Process(
