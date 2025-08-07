@@ -769,7 +769,8 @@ class UsageCollector:
                             execution_duration=execution_duration,
                             func=func,
                             category=category,
-                            exc=None,                            args=args,
+                            exc=None,
+                            args=args,
                             kwargs=kwargs,
                         )
                     )
