@@ -124,6 +124,7 @@ class ResultsCollector:
 
         error_rate = round(errors_number / inferences_made * 100, 2)
         duration = (end_time - start).total_seconds()
+        
         requests_per_second = round(inferences_made / duration, 1)
         images_per_second = round(images_processed / duration, 1)
         return InferenceStatistics(
