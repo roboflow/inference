@@ -175,13 +175,15 @@ class BlockManifest(WorkflowBlockManifest):
             "gpt-4.1",
             "gpt-4.1-mini",
             "gpt-5",
+            "gpt-5-mini",
+            "gpt-5-nano",
             "o3",
             "o4-mini",
         ],
     ] = Field(
-        default="gpt-4o",
+        default="gpt-5",
         description="Model to be used",
-        examples=["gpt-4o", "$inputs.openai_model"],
+        examples=["gpt-5", "$inputs.openai_model"],
     )
     image_detail: Union[
         Selector(kind=[STRING_KIND]), Literal["auto", "high", "low"]
