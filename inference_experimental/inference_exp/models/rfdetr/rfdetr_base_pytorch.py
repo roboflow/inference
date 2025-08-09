@@ -1,7 +1,6 @@
 import argparse
 import copy
 import math
-from dataclasses import asdict, dataclass, field
 from typing import Callable, List, Literal, Optional, Union
 
 import torch
@@ -10,16 +9,19 @@ import torchvision
 from inference_exp.models.rfdetr.backbone_builder import build_backbone
 from inference_exp.models.rfdetr.misc import NestedTensor
 from inference_exp.models.rfdetr.transformer import build_transformer
+from pydantic import BaseModel, ConfigDict
 from torch import Tensor, nn
 
 
-@dataclass
-class ModelConfig:
-    device: Union[Literal["cpu", "cuda", "mps"], torch.device]
+class ModelConfig(BaseModel):
     encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base"]
     out_feature_indexes: List[int]
+    dec_layers: int
+    two_stage: bool = True
     projector_scale: List[Literal["P3", "P4", "P5"]]
     hidden_dim: int
+    patch_size: int
+    num_windows: int
     sa_nheads: int
     ca_nheads: int
     dec_n_points: int
@@ -29,44 +31,75 @@ class ModelConfig:
     amp: bool = True
     num_classes: int = 90
     pretrain_weights: Optional[str] = None
-    dec_layers: int = 3
-    two_stage: bool = True
-    resolution: int = 560
+    device: torch.device
+    resolution: int
     group_detr: int = 13
     gradient_checkpointing: bool = False
+    positional_encoding_size: int
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
-@dataclass
 class RFDETRBaseConfig(ModelConfig):
-    encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base"] = field(
-        default="dinov2_windowed_small"
+    encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base"] = (
+        "dinov2_windowed_small"
     )
-    hidden_dim: int = field(default=256)
-    sa_nheads: int = field(default=8)
-    ca_nheads: int = field(default=16)
-    dec_n_points: int = field(default=2)
-    num_queries: int = field(default=300)
-    num_select: int = field(default=300)
-    projector_scale: List[Literal["P3", "P4", "P5"]] = field(
-        default_factory=lambda: ["P4"]
-    )
-    out_feature_indexes: List[int] = field(default_factory=lambda: [2, 5, 8, 11])
-    pretrain_weights: Optional[str] = field(default="rf-detr-base.pth")
+    hidden_dim: int = 256
+    patch_size: int = 14
+    num_windows: int = 4
+    dec_layers: int = 3
+    sa_nheads: int = 8
+    ca_nheads: int = 16
+    dec_n_points: int = 2
+    num_queries: int = 300
+    num_select: int = 300
+    projector_scale: List[Literal["P3", "P4", "P5"]] = ["P4"]
+    out_feature_indexes: List[int] = [2, 5, 8, 11]
+    pretrain_weights: Optional[str] = "rf-detr-base.pth"
+    resolution: int = 560
+    positional_encoding_size: int = 37
 
 
-@dataclass
 class RFDETRLargeConfig(RFDETRBaseConfig):
-    encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base"] = field(
-        default="dinov2_windowed_base"
+    encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base"] = (
+        "dinov2_windowed_base"
     )
-    hidden_dim: int = field(default=384)
-    sa_nheads: int = field(default=12)
-    ca_nheads: int = field(default=24)
-    dec_n_points: int = field(default=4)
-    projector_scale: List[Literal["P3", "P4", "P5"]] = field(
-        default_factory=lambda: ["P3", "P5"]
-    )
-    pretrain_weights: Optional[str] = field(default="rf-detr-large.pth")
+    hidden_dim: int = 384
+    sa_nheads: int = 12
+    ca_nheads: int = 24
+    dec_n_points: int = 4
+    projector_scale: List[Literal["P3", "P4", "P5"]] = ["P3", "P5"]
+    pretrain_weights: Optional[str] = "rf-detr-large.pth"
+
+
+class RFDETRNanoConfig(RFDETRBaseConfig):
+    out_feature_indexes: List[int] = [3, 6, 9, 12]
+    num_windows: int = 2
+    dec_layers: int = 2
+    patch_size: int = 16
+    resolution: int = 384
+    positional_encoding_size: int = 24
+    pretrain_weights: Optional[str] = "rf-detr-nano.pth"
+
+
+class RFDETRSmallConfig(RFDETRBaseConfig):
+    out_feature_indexes: List[int] = [3, 6, 9, 12]
+    num_windows: int = 2
+    dec_layers: int = 3
+    patch_size: int = 16
+    resolution: int = 512
+    positional_encoding_size: int = 32
+    pretrain_weights: Optional[str] = "rf-detr-small.pth"
+
+
+class RFDETRMediumConfig(RFDETRBaseConfig):
+    out_feature_indexes: List[int] = [3, 6, 9, 12]
+    num_windows: int = 2
+    dec_layers: int = 4
+    patch_size: int = 16
+    resolution: int = 576
+    positional_encoding_size: int = 36
+    pretrain_weights: Optional[str] = "rf-detr-medium.pth"
 
 
 class LWDETR(nn.Module):
@@ -212,24 +245,27 @@ class LWDETR(nn.Module):
             srcs, masks, poss, refpoint_embed_weight, query_feat_weight
         )
 
-        if self.bbox_reparam:
-            outputs_coord_delta = self.bbox_embed(hs)
-            outputs_coord_cxcy = (
-                outputs_coord_delta[..., :2] * ref_unsigmoid[..., 2:]
-                + ref_unsigmoid[..., :2]
-            )
-            outputs_coord_wh = (
-                outputs_coord_delta[..., 2:].exp() * ref_unsigmoid[..., 2:]
-            )
-            outputs_coord = torch.concat([outputs_coord_cxcy, outputs_coord_wh], dim=-1)
-        else:
-            outputs_coord = (self.bbox_embed(hs) + ref_unsigmoid).sigmoid()
+        if hs is not None:
+            if self.bbox_reparam:
+                outputs_coord_delta = self.bbox_embed(hs)
+                outputs_coord_cxcy = (
+                    outputs_coord_delta[..., :2] * ref_unsigmoid[..., 2:]
+                    + ref_unsigmoid[..., :2]
+                )
+                outputs_coord_wh = (
+                    outputs_coord_delta[..., 2:].exp() * ref_unsigmoid[..., 2:]
+                )
+                outputs_coord = torch.concat(
+                    [outputs_coord_cxcy, outputs_coord_wh], dim=-1
+                )
+            else:
+                outputs_coord = (self.bbox_embed(hs) + ref_unsigmoid).sigmoid()
 
-        outputs_class = self.class_embed(hs)
+            outputs_class = self.class_embed(hs)
 
-        out = {"pred_logits": outputs_class[-1], "pred_boxes": outputs_coord[-1]}
-        if self.aux_loss:
-            out["aux_outputs"] = self._set_aux_loss(outputs_class, outputs_coord)
+            out = {"pred_logits": outputs_class[-1], "pred_boxes": outputs_coord[-1]}
+            if self.aux_loss:
+                out["aux_outputs"] = self._set_aux_loss(outputs_class, outputs_coord)
 
         if self.two_stage:
             group_detr = self.group_detr if self.training else 1
@@ -241,7 +277,11 @@ class LWDETR(nn.Module):
                 )
                 cls_enc.append(cls_enc_gidx)
             cls_enc = torch.cat(cls_enc, dim=1)
-            out["enc_outputs"] = {"pred_logits": cls_enc, "pred_boxes": ref_enc}
+            if hs is not None:
+                out["enc_outputs"] = {"pred_logits": cls_enc, "pred_boxes": ref_enc}
+            else:
+                out = {"pred_logits": cls_enc, "pred_boxes": ref_enc}
+
         return out
 
     def forward_export(self, tensors):
@@ -254,19 +294,27 @@ class LWDETR(nn.Module):
             srcs, None, poss, refpoint_embed_weight, query_feat_weight
         )
 
-        if self.bbox_reparam:
-            outputs_coord_delta = self.bbox_embed(hs)
-            outputs_coord_cxcy = (
-                outputs_coord_delta[..., :2] * ref_unsigmoid[..., 2:]
-                + ref_unsigmoid[..., :2]
-            )
-            outputs_coord_wh = (
-                outputs_coord_delta[..., 2:].exp() * ref_unsigmoid[..., 2:]
-            )
-            outputs_coord = torch.concat([outputs_coord_cxcy, outputs_coord_wh], dim=-1)
+        if hs is not None:
+            if self.bbox_reparam:
+                outputs_coord_delta = self.bbox_embed(hs)
+                outputs_coord_cxcy = (
+                    outputs_coord_delta[..., :2] * ref_unsigmoid[..., 2:]
+                    + ref_unsigmoid[..., :2]
+                )
+                outputs_coord_wh = (
+                    outputs_coord_delta[..., 2:].exp() * ref_unsigmoid[..., 2:]
+                )
+                outputs_coord = torch.concat(
+                    [outputs_coord_cxcy, outputs_coord_wh], dim=-1
+                )
+            else:
+                outputs_coord = (self.bbox_embed(hs) + ref_unsigmoid).sigmoid()
+            outputs_class = self.class_embed(hs)
         else:
-            outputs_coord = (self.bbox_embed(hs) + ref_unsigmoid).sigmoid()
-        outputs_class = self.class_embed(hs)
+            assert self.two_stage, "if not using decoder, two_stage must be True"
+            outputs_class = self.transformer.enc_out_class_embed[0](hs_enc)
+            outputs_coord = ref_enc
+
         return outputs_coord, outputs_class
 
     @torch.jit.unused
@@ -399,7 +447,7 @@ def build_model(config: ModelConfig) -> LWDETR:
     # you should pass `num_classes` to be 2 (max_obj_id + 1).
     # For more details on this, check the following discussion
     # https://github.com/facebookresearch/detr/issues/108#issuecomment-650269223
-    args = populate_args(**asdict(config))
+    args = populate_args(**config.dict())
     num_classes = args.num_classes + 1
     backbone = build_backbone(
         encoder=args.encoder,
@@ -429,6 +477,9 @@ def build_model(config: ModelConfig) -> LWDETR:
         force_no_pretrain=args.force_no_pretrain,
         gradient_checkpointing=args.gradient_checkpointing,
         load_dinov2_weights=args.pretrain_weights is None,
+        patch_size=config.patch_size,
+        num_windows=config.num_windows,
+        positional_encoding_size=config.positional_encoding_size,
     )
     if args.encoder_only:
         return backbone[0].encoder, None, None
