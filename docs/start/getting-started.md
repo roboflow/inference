@@ -8,7 +8,7 @@ In this tutorial, we will build and run a simple Workflow that runs a model. We 
 
 !!! note
 
-    Before you get started, make sure you have [installed Inference](/install/start/).
+    Before you get started, make sure you have [installed Inference](/install/setup/).
 
 **Difficulty:** Easy<br />
 **Time to Complete:** 5 minutes
