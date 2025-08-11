@@ -58,7 +58,7 @@ RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
 
 
 LONG_DESCRIPTION = f"""
-Ask a question to OpenAI's GPT models with vision capabilities (including GPT-4o and GPT-5).
+Ask a question to OpenAI's GPT models with vision capabilities (including GPT-5 and GPT-4o).
 
 You can specify arbitrary text prompts or predefined ones, the block supports the following types of prompt:
 
@@ -91,7 +91,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "OpenAI",
             "version": "v3",
-            "short_description": "Run OpenAI's GPT-4 with vision capabilities.",
+            "short_description": "Run OpenAI's GPT models with vision capabilities.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
