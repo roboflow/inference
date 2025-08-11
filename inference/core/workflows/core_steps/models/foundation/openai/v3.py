@@ -8,10 +8,7 @@ from openai import OpenAI
 from openai._types import NOT_GIVEN
 from pydantic import ConfigDict, Field, model_validator
 
-from inference.core.env import (
-    API_BASE_URL,
-    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
-)
+from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import post_to_roboflow_api
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
@@ -61,7 +58,7 @@ RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
 
 
 LONG_DESCRIPTION = f"""
-Ask a question to OpenAI's GPT-4 with Vision model.
+Ask a question to OpenAI's GPT models with vision capabilities (including GPT-5 and GPT-4o).
 
 You can specify arbitrary text prompts or predefined ones, the block supports the following types of prompt:
 
@@ -177,13 +174,16 @@ class BlockManifest(WorkflowBlockManifest):
             "gpt-4o-mini",
             "gpt-4.1",
             "gpt-4.1-mini",
+            "gpt-5",
+            "gpt-5-mini",
+            "gpt-5-nano",
             "o3",
             "o4-mini",
         ],
     ] = Field(
-        default="gpt-4o",
+        default="gpt-5",
         description="Model to be used",
-        examples=["gpt-4o", "$inputs.openai_model"],
+        examples=["gpt-5", "$inputs.openai_model"],
     )
     image_detail: Union[
         Selector(kind=[STRING_KIND]), Literal["auto", "high", "low"]
@@ -394,7 +394,7 @@ def _execute_proxied_openai_request(
     if temperature is not None:
         payload["temperature"] = temperature
 
-    endpoint = f"apiproxy/openai"  # Use relative endpoint
+    endpoint = "apiproxy/openai"  # Use relative endpoint
 
     try:
         # Use the Roboflow API post function (this enures proper auth headers used based on invocation context)
