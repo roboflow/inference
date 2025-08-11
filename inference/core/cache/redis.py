@@ -62,7 +62,6 @@ class RedisCache(BaseCache):
         This method runs in an infinite loop and sleeps for MEMORY_CACHE_EXPIRE_INTERVAL seconds between each iteration.
         """
         while True:
-            logger.debug("Redis cleaner thread starts cleaning...")
             now = time.time()
             for k, v in copy(list(self.zexpires.items())):
                 if v < now:
@@ -71,7 +70,6 @@ class RedisCache(BaseCache):
                         k[0], k[1] - tolerance_factor, k[1] + tolerance_factor
                     )
                     del self.zexpires[k]
-            logger.debug("Redis cleaner finished task.")
             sleep_time = MEMORY_CACHE_EXPIRE_INTERVAL - (time.time() - now)
             time.sleep(max(sleep_time, 0))
 
