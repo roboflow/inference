@@ -134,10 +134,19 @@ links.forEach(link => {
 
   // Skip links that start with the excluded domains
   if (
-    !href.startsWith('https://inference.roboflow.com') &&
-    !href.startsWith('http://inference.roboflow.com') &&
-    !href.startsWith('http://127.0.0.1') &&
-    !href.startsWith('https://127.0.0.1')
+    (() => {
+      try {
+        const url = new URL(href);
+        const allowedHosts = [
+          'inference.roboflow.com',
+          '127.0.0.1'
+        ];
+        return !allowedHosts.includes(url.host);
+      } catch (e) {
+        // If the URL is invalid, treat it as not allowed
+        return true;
+      }
+    })()
   ) {
     // Set the target to _blank to open in a new tab
     link.setAttribute('target', '_blank');
