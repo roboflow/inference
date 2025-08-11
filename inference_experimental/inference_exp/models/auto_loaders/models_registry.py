@@ -153,6 +153,10 @@ REGISTERED_MODELS: Dict[Tuple[ModelArchitecture, TaskType, BackendType], LazyCla
         module_name="inference_exp.models.rfdetr.rfdetr_object_detection_pytorch",
         class_name="RFDetrForObjectDetectionTorch",
     ),
+    ("moondream2", VLM_TASK, BackendType.HF): LazyClass(
+        module_name="inference_exp.models.moondream2.moondream2_hf",
+        class_name="MoonDream2HF",
+    ),
 }
 
 
