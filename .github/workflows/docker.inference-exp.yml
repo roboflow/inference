@@ -55,6 +55,7 @@ jobs:
           echo "base-tag=${BASE_TAG}" >> $GITHUB_OUTPUT
 
   build:
+    name: ${{ matrix.dockerfile }}:${{ matrix.platform }}
     needs: determine-tags
     runs-on: ubuntu-latest
     timeout-minutes: 120
