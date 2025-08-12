@@ -216,6 +216,7 @@ class SegmentAnything3BlockV1(WorkflowBlock):
             inference_request = Sam3SegmentationRequest(
                 image=single_image.to_inference_format(numpy_preferred=True),
                 model_id="sam3",
+                api_key=self._api_key,
                 text=text,
                 boxes=norm_boxes if norm_boxes else None,
                 box_labels=box_labels if box_labels else None,

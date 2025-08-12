@@ -39,7 +39,7 @@ class SegmentAnything3(RoboflowCoreModel):
         #         "SAM3_CHECKPOINT_PATH must be set in environment to load SAM3 weights"
         #     )
 
-        checkpoint = self.cache_file("weights.pt")
+        checkpoint = self.cache_file("sam3_prod_v12_interactive_5box_image_only.pt")
         bpe_path = self.cache_file("bpe_simple_vocab_16e6.txt.gz")
 
         self.model = build_sam3_image_model(
@@ -55,13 +55,13 @@ class SegmentAnything3(RoboflowCoreModel):
         self.embedding_cache_size: int = 32
         self.task_type = "unsupervised-segmentation"
 
-    # Override to prevent Roboflow API/download flows during initialization
-    def download_weights(self) -> None:
-        return None
+    # # Override to prevent Roboflow API/download flows during initialization
+    # def download_weights(self) -> None:
+    #     return None
 
     def get_infer_bucket_file_list(self) -> List[str]:
         # SAM3 weights managed by env; no core bucket artifacts
-        return []
+        return ["sam3_prod_v12_interactive_5box_image_only.pt", "bpe_simple_vocab_16e6.txt.gz"]
 
     def preproc_image(self, image: InferenceRequestImage) -> np.ndarray:
         np_image = load_image_rgb(image)

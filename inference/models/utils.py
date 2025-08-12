@@ -391,7 +391,7 @@ try:
     if CORE_MODEL_SAM3_ENABLED:
         from inference.models import SegmentAnything3
 
-        print("SAM3_REPO_PATH", SAM3_REPO_PATH)
+        
         ROBOFLOW_MODEL_TYPES[("embed", "sam3")] = SegmentAnything3
 except Exception:
     warnings.warn(
