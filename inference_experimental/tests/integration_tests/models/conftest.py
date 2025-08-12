@@ -23,6 +23,16 @@ FLORENCE2_BASE_FT_URL = (
 FLORENCE2_LARGE_FT_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/florence2/large-ft.zip"
 )
+QWEN25VL_3B_FT_URL = (
+    "https://storage.googleapis.com/roboflow-tests-assets/qwen/qwen25vl-3b.zip"
+)
+PALIGEMMA_BASE_FT_URL = "https://storage.googleapis.com/roboflow-tests-assets/paligemma/paligemma2-3b-pt-224.zip"
+SMOLVLM_BASE_FT_URL = (
+    "https://storage.googleapis.com/roboflow-tests-assets/smolvlm/smolvlm-256m.zip"
+)
+MOONDREAM2_BASE_FT_URL = (
+    "https://storage.googleapis.com/roboflow-tests-assets/moondream2/moondream2-2b.zip"
+)
 OCR_TEST_IMAGE_PATH = os.path.join(ASSETS_DIR, "ocr_test_image.png")
 
 
@@ -108,6 +118,66 @@ def florence2_large_ft_path() -> str:
     os.makedirs(package_dir, exist_ok=True)
     zip_path = os.path.join(package_dir, "large-ft.zip")
     _download_if_not_exists(file_path=zip_path, url=FLORENCE2_LARGE_FT_URL)
+    lock_path = f"{unzipped_package_path}.lock"
+    with FileLock(lock_path, timeout=120):
+        if not os.path.exists(unzipped_package_path):
+            with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                zip_ref.extractall(package_dir)
+    return unzipped_package_path
+
+
+@pytest.fixture(scope="module")
+def qwen25vl_3b_path() -> str:
+    package_dir = os.path.join(MODELS_DIR, "qwen25vl-3b")
+    unzipped_package_path = os.path.join(package_dir, "weights")
+    os.makedirs(package_dir, exist_ok=True)
+    zip_path = os.path.join(package_dir, "qwen25vl-3b.zip")
+    _download_if_not_exists(file_path=zip_path, url=QWEN25VL_3B_FT_URL)
+    lock_path = f"{unzipped_package_path}.lock"
+    with FileLock(lock_path, timeout=120):
+        if not os.path.exists(unzipped_package_path):
+            with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                zip_ref.extractall(package_dir)
+    return unzipped_package_path
+
+
+@pytest.fixture(scope="module")
+def paligemma_3b_224_path() -> str:
+    package_dir = os.path.join(MODELS_DIR, "paligemma2-3b-pt-224")
+    unzipped_package_path = os.path.join(package_dir, "weights")
+    os.makedirs(package_dir, exist_ok=True)
+    zip_path = os.path.join(package_dir, "paligemma2-3b-pt-224.zip")
+    _download_if_not_exists(file_path=zip_path, url=PALIGEMMA_BASE_FT_URL)
+    lock_path = f"{unzipped_package_path}.lock"
+    with FileLock(lock_path, timeout=120):
+        if not os.path.exists(unzipped_package_path):
+            with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                zip_ref.extractall(package_dir)
+    return unzipped_package_path
+
+
+@pytest.fixture(scope="module")
+def smolvlm_256m_path() -> str:
+    package_dir = os.path.join(MODELS_DIR, "smolvlm-256m")
+    unzipped_package_path = os.path.join(package_dir, "weights")
+    os.makedirs(package_dir, exist_ok=True)
+    zip_path = os.path.join(package_dir, "smolvlm-256m.zip")
+    _download_if_not_exists(file_path=zip_path, url=SMOLVLM_BASE_FT_URL)
+    lock_path = f"{unzipped_package_path}.lock"
+    with FileLock(lock_path, timeout=120):
+        if not os.path.exists(unzipped_package_path):
+            with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                zip_ref.extractall(package_dir)
+    return unzipped_package_path
+
+
+@pytest.fixture(scope="module")
+def moondream2_path() -> str:
+    package_dir = os.path.join(MODELS_DIR, "moondream2")
+    unzipped_package_path = os.path.join(package_dir, "moondream2-2b")
+    os.makedirs(package_dir, exist_ok=True)
+    zip_path = os.path.join(package_dir, "moondream2-2b.zip")
+    _download_if_not_exists(file_path=zip_path, url=MOONDREAM2_BASE_FT_URL)
     lock_path = f"{unzipped_package_path}.lock"
     with FileLock(lock_path, timeout=120):
         if not os.path.exists(unzipped_package_path):

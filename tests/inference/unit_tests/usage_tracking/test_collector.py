@@ -3,10 +3,10 @@ import json
 import sys
 
 import pytest
+from unittest import mock
 
 from inference.core.env import LAMBDA
 from inference.core.version import __version__ as inference_version
-from inference.usage_tracking.collector import UsageCollector
 from inference.usage_tracking.payload_helpers import (
     get_api_key_usage_containing_resource,
     merge_usage_dicts,
@@ -15,9 +15,9 @@ from inference.usage_tracking.payload_helpers import (
 )
 
 
-def test_create_empty_usage_dict():
+def test_create_empty_usage_dict(usage_collector_with_mocked_threads):
     # given
-    usage_default_dict = UsageCollector.empty_usage_dict(
+    usage_default_dict = usage_collector_with_mocked_threads.empty_usage_dict(
         exec_session_id="exec_session_id"
     )
 
@@ -877,9 +877,9 @@ def test_zip_usage_payloads_with_different_exec_session_ids():
     ]
 
 
-def test_system_info_with_dedicated_deployment_id():
+def test_system_info_with_dedicated_deployment_id(usage_collector_with_mocked_threads):
     # given
-    system_info = UsageCollector.system_info(
+    system_info = usage_collector_with_mocked_threads.system_info(
         ip_address="w.x.y.z",
         hostname="hostname01",
         dedicated_deployment_id="deployment01",
@@ -895,9 +895,9 @@ def test_system_info_with_dedicated_deployment_id():
         assert system_info[k] == v
 
 
-def test_system_info_with_no_dedicated_deployment_id():
+def test_system_info_with_no_dedicated_deployment_id(usage_collector_with_mocked_threads):
     # given
-    system_info = UsageCollector.system_info(
+    system_info = usage_collector_with_mocked_threads.system_info(
         ip_address="w.x.y.z", hostname="hostname01"
     )
 
@@ -911,9 +911,9 @@ def test_system_info_with_no_dedicated_deployment_id():
         assert system_info[k] == v
 
 
-def test_record_malformed_usage():
+def test_record_malformed_usage(usage_collector_with_mocked_threads):
     # given
-    collector = UsageCollector()
+    collector = usage_collector_with_mocked_threads
 
     # when
     collector.record_usage(
@@ -938,3 +938,39 @@ def test_record_malformed_usage():
     assert collector._usage[api_key]["model:None"]["resource_id"] == None
     assert collector._usage[api_key]["model:None"]["resource_details"] == "{}"
     assert collector._usage[api_key]["model:None"]["api_key_hash"] == api_key
+
+
+def test_record_usage_with_exception(usage_collector_with_mocked_threads):
+    # given
+    usage_collector = usage_collector_with_mocked_threads
+
+    @usage_collector(category="model")
+    def test_func(api_key="test_key"):
+        raise Exception("test exception")
+
+    # when
+    with pytest.raises(Exception, match="test exception"):
+        test_func()
+
+    # then
+    assert len(usage_collector._usage) == 0
+
+
+def test_record_usage_with_exception_on_GCP(usage_collector_with_mocked_threads):
+    # given
+    usage_collector = usage_collector_with_mocked_threads
+
+    @usage_collector(category="model")
+    def test_func(api_key="test_key"):
+        raise Exception("test exception")
+
+    # when
+    with mock.patch("inference.usage_tracking.collector.GCP_SERVERLESS", True):
+        with pytest.raises(Exception, match="test exception"):
+            test_func()
+
+    # then
+    assert len(usage_collector._usage) == 1
+    assert "test_key" in usage_collector._usage
+    assert "model:unknown" in usage_collector._usage["test_key"]
+    assert json.loads(usage_collector._usage["test_key"]["model:unknown"]["resource_details"]).get("error") == "test exception"
