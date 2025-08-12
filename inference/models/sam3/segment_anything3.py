@@ -17,7 +17,7 @@ from inference.core.entities.responses.sam3 import (
     Sam3SegmentationPrediction,
     Sam3SegmentationResponse,
 )
-from inference.core.env import SAM3_IMAGE_SIZE, SAM3_REPO_PATH
+from inference.core.env import SAM3_IMAGE_SIZE
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2multipoly
@@ -29,9 +29,9 @@ class SegmentAnything3(RoboflowCoreModel):
     def __init__(self, *args, model_id: str = "sam3", **kwargs):
         super().__init__(*args, model_id=model_id, **kwargs)
         # Lazy import SAM3 to avoid hard dependency when disabled
-        import sys
-        if SAM3_REPO_PATH not in sys.path:
-            sys.path.append(SAM3_REPO_PATH)
+        # import sys
+        # if SAM3_REPO_PATH not in sys.path:
+        #     sys.path.append(SAM3_REPO_PATH)
         from sam3 import build_sam3_image_model
 
         # if SAM3_CHECKPOINT_PATH is None:
