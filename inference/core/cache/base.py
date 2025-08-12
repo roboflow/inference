@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from hashlib import sha256
 from typing import Any, Optional
 
 from inference.core import logger
@@ -95,12 +96,12 @@ class BaseCache:
 
     @contextmanager
     def lock(self, key: str, expire: float = None) -> Any:
-        logger.debug(f"Acquiring lock at cache key: {key}")
+        logger.debug(f"Acquiring lock at cache key (sha256): {sha256(key.encode()).hexdigest()}")
         l = self.acquire_lock(key, expire=expire)
         try:
             yield l
         finally:
-            logger.debug(f"Releasing lock at cache key: {key}")
+            logger.debug(f"Releasing lock at cache key (sha256): {sha256(key.encode()).hexdigest()}")
             l.release()
 
     def set_numpy(self, key: str, value: Any, expire: float = None):
