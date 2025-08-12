@@ -47,27 +47,32 @@ DETECTIONS_CLASS_NAME_FIELD = "class_name"
 DETECTION_ID_FIELD = "detection_id"
 
 
-LONG_DESCRIPTION = """
-Run Segment Anything 3, a zero-shot instance segmentation model, on an image.
+# LONG_DESCRIPTION = """
+# Run Segment Anything 3, a zero-shot instance segmentation model, on an image.
 
-You can pass in boxes/predictions from other models as prompts, or use a text prompt for open-vocabulary segmentation.
-If you pass in box detections from another model, the class names of the boxes will be forwarded to the predicted masks.
-"""
+# You can pass in boxes/predictions from other models as prompts, or use a text prompt for open-vocabulary segmentation.
+# If you pass in box detections from another model, the class names of the boxes will be forwarded to the predicted masks.
+# """
+
+LONG_DESCRIPTION = "Seg Preview"
 
 
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Segment Anything 3 Model",
+            "name": "Seg Preview",
             "version": "v1",
-            "short_description": "Convert bounding boxes to polygons, or run SAM3 with optional text prompt to generate masks.",
+            # "short_description": "Convert bounding boxes to polygons, or run SAM3 with optional text prompt to generate masks.",
+            "short_description": "Seg Preview",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
-            "search_keywords": ["SAM3", "META"],
+            # "search_keywords": ["SAM3", "META"],
+            "search_keywords": ["Seg Preview"],
             "ui_manifest": {
                 "section": "model",
-                "icon": "fa-brands fa-meta",
+                # "icon": "fa-brands fa-meta",
+                "icon": "fa-solid fa-eye",
                 "blockPriority": 9.49,
                 "needsGPU": True,
                 "inference": True,
@@ -76,7 +81,7 @@ class BlockManifest(WorkflowBlockManifest):
         protected_namespaces=(),
     )
 
-    type: Literal["roboflow_core/segment_anything3@v1"]
+    type: Literal["roboflow_core/seg-preview@v1"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     boxes: Optional[
         Selector(
@@ -93,10 +98,11 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={"always_visible": True},
     )
     # SAM3 does not have multiple server-side versions like SAM2 here; keep a placeholder for UI parity
-    version: Union[Selector(kind=[STRING_KIND]), Literal["image"]] = Field(
-        default="image",
-        description="Model variant placeholder (SAM3 local image model).",
-        examples=["image", "$inputs.model_variant"],
+    version: Union[Selector(kind=[STRING_KIND]), Literal["default"]] = Field(
+        default="default",
+        # description="Model variant placeholder (SAM3 local image model).",
+        description="model version",
+        examples=["default", "$inputs.model_variant"],
     )
     text: Union[Optional[str], Selector(kind=[STRING_KIND])] = Field(
         default=None,
@@ -104,13 +110,13 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["a cat", "$inputs.text_prompt"],
     )
     threshold: Union[Selector(kind=[FLOAT_KIND]), float] = Field(
-        default=0.0, description="Threshold for predicted mask scores", examples=[0.3]
+        default=0.5, description="Threshold for predicted mask scores", examples=[0.3]
     )
-    multimask_output: Union[Optional[bool], Selector(kind=[BOOLEAN_KIND])] = Field(
-        default=None,
-        description="Unused for SAM3. Present for UI parity.",
-        examples=[None],
-    )
+    # multimask_output: Union[Optional[bool], Selector(kind=[BOOLEAN_KIND])] = Field(
+    #     default=None,
+    #     description="Unused for SAM3. Present for UI parity.",
+    #     examples=[None],
+    # )
 
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
@@ -157,7 +163,7 @@ class SegmentAnything3BlockV1(WorkflowBlock):
         version: str,
         text: Optional[str],
         threshold: float,
-        multimask_output: Optional[bool],
+        # multimask_output: Optional[bool],
     ) -> BlockResult:
         if self._step_execution_mode is StepExecutionMode.LOCAL:
             return self.run_locally(

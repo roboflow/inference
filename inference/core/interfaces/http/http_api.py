@@ -2338,10 +2338,10 @@ class HttpInterface(BaseInterface):
 
             if CORE_MODEL_SAM3_ENABLED:
                 @app.post(
-                    "/sam3/embed_image",
+                    "/seg-preview/embed_image",
                     response_model=Sam3EmbeddingResponse,
-                    summary="SAM3 Image Embeddings",
-                    description="Run the Meta AI Segment Anything 3 Model to embed image data.",
+                    summary="Seg preview Image Embeddings",
+                    description="Run the  Model to embed image data.",
                 )
                 @with_route_exceptions
                 @usage_collector("request")
@@ -2368,10 +2368,10 @@ class HttpInterface(BaseInterface):
                     return model_response
 
                 @app.post(
-                    "/sam3/segment_image",
+                    "/seg-preview/segment_image",
                     response_model=Sam3SegmentationResponse,
-                    summary="SAM3 Image Segmentation",
-                    description="Run the Meta AI Segment Anything 3 Model to generate segmentations for image data.",
+                    summary="Seg preview Image Segmentation",
+                    description="Run the segmentations for image data.",
                 )
                 @with_route_exceptions
                 @usage_collector("request")

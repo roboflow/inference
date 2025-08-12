@@ -43,6 +43,7 @@ def main():
         "format": "json",
         "image": {"type": "base64", "value": img_b64},
         "output_prob_thresh": args.threshold,
+        "api_key": "bYnuUL7O8JxPMe8KM0N0"
     }
 
     if args.text:
@@ -60,8 +61,9 @@ def main():
         nh = args.h / height
         payload["boxes"] = [[nx, ny, nw, nh]]
         payload["box_labels"] = [1]
+        
 
-    endpoint = args.url.rstrip("/") + "/sam3/segment_image"
+    endpoint = args.url.rstrip("/") + "/seg-preview/segment_image"
     resp = requests.post(endpoint, json=payload, timeout=120)
     resp.raise_for_status()
 
