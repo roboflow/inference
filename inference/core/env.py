@@ -386,8 +386,8 @@ DISABLE_SAM2_LOGITS_CACHE = str2bool(os.getenv("DISABLE_SAM2_LOGITS_CACHE", Fals
 # SAM version ID, default is "vit_h"
 SAM_VERSION_ID = os.getenv("SAM_VERSION_ID", "vit_h")
 SAM2_VERSION_ID = os.getenv("SAM2_VERSION_ID", "hiera_large")
-SAM3_CHECKPOINT_PATH = os.getenv("SAM3_CHECKPOINT_PATH")
-SAM3_BPE_PATH = os.getenv("SAM3_BPE_PATH", "/home/hansent/sam3/assets/bpe_simple_vocab_16e6.txt.gz")
+# SAM3_CHECKPOINT_PATH = os.getenv("SAM3_CHECKPOINT_PATH")
+# SAM3_BPE_PATH = os.getenv("SAM3_BPE_PATH", "/home/hansent/sam3/assets/bpe_simple_vocab_16e6.txt.gz")
 SAM3_IMAGE_SIZE = int(os.getenv("SAM3_IMAGE_SIZE", 1008))
 SAM3_REPO_PATH = os.getenv("SAM3_REPO_PATH", "/home/hansent/sam3")
 
