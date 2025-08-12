@@ -1,7 +1,5 @@
 # Install Inference
 
-# Install Inference
-
 Inference runs as a Docker container. This ensures all dependencies, model weights, and application caching can be managed in one place.
 
 You can make HTTP requests to the Docker container to run models and Workflows.

@@ -13,18 +13,11 @@ def define_env(env):
         version_file_path = os.path.join(repo_root, 'inference', 'core', 'version.py')
         
         try:
-            # Read the version file
+            # Execute the version.py file and extract __version__
+            namespace = {}
             with open(version_file_path, 'r') as f:
-                content = f.read()
-            
-            # Extract version using simple string parsing
-            for line in content.split('\n'):
-                if line.strip().startswith('__version__'):
-                    # Extract version from: __version__ = "0.51.10"
-                    version = line.split('=')[1].strip().strip('"').strip("'")
-                    return version
-            
-            return "unknown"
+                exec(f.read(), namespace)   
+            return namespace['__version__']
         except Exception as e:
             print(f"Warning: Could not read version from {version_file_path}: {e}")
             return "unknown"
