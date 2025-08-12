@@ -15,6 +15,13 @@ RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_
     cargo \
     && rm -rf /var/lib/apt/lists/*
 
+WORKDIR /
+COPY sam3 sam3
+WORKDIR sam3
+RUN pip3 install --no-cache-dir .
+    
+
+WORKDIR /app
 COPY requirements/requirements.sam.txt \
     requirements/requirements.clip.txt \
     requirements/requirements.http.txt \
@@ -82,10 +89,6 @@ RUN ln -s /usr/bin/python3 /usr/bin/python
 RUN /bin/make create_wheels_for_gpu_notebook
 RUN pip3 install --no-cache-dir dist/inference_cli*.whl dist/inference_core*.whl dist/inference_gpu*.whl dist/inference_sdk*.whl "setuptools<=75.5.0"
 
-WORKDIR /
-COPY sam3 sam3
-WORKDIR sam3
-RUN pip3 install --no-cache-dir .
 
 
 WORKDIR /notebooks
