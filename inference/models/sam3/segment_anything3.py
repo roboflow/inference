@@ -17,7 +17,7 @@ from inference.core.entities.responses.sam3 import (
     Sam3SegmentationPrediction,
     Sam3SegmentationResponse,
 )
-from inference.core.env import SAM3_BPE_PATH, SAM3_CHECKPOINT_PATH, SAM3_IMAGE_SIZE, SAM3_REPO_PATH
+from inference.core.env import SAM3_IMAGE_SIZE, SAM3_REPO_PATH
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2multipoly
@@ -34,14 +34,17 @@ class SegmentAnything3(RoboflowCoreModel):
             sys.path.append(SAM3_REPO_PATH)
         from sam3 import build_sam3_image_model
 
-        if SAM3_CHECKPOINT_PATH is None:
-            raise ValueError(
-                "SAM3_CHECKPOINT_PATH must be set in environment to load SAM3 weights"
-            )
+        # if SAM3_CHECKPOINT_PATH is None:
+        #     raise ValueError(
+        #         "SAM3_CHECKPOINT_PATH must be set in environment to load SAM3 weights"
+        #     )
+
+        checkpoint = self.cache_file("weights.pt")
+        bpe_path = self.cache_file("bpe_simple_vocab_16e6.txt.gz")
 
         self.model = build_sam3_image_model(
-            bpe_path=SAM3_BPE_PATH,
-            checkpoint_path=SAM3_CHECKPOINT_PATH,
+            bpe_path=bpe_path,
+            checkpoint_path=checkpoint,
             device="cuda" if torch.cuda.is_available() else "cpu",
             eval_mode=True,
         )

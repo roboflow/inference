@@ -20,13 +20,17 @@ class Sam3InferenceRequest(BaseRequest):
         description="The model ID of SAM3. Use 'sam3' to target the generic core model.",
     )
     sam3_version_id: Optional[str] = Field(
-        default="image",
+        default="default",
         description="Placeholder version field required by core model loader.",
     )
 
     @validator("model_id", always=True)
-    def validate_model_id(cls, value):
-        return value or "sam3"
+    def validate_model_id(cls, value, values):
+        if value is not None:
+            return value
+        if values.get("sam_version_id") is None:
+            return None
+        return f"sam3/{values['sam_version_id']}"
 
 
 class Sam3EmbeddingRequest(Sam3InferenceRequest):

@@ -18,8 +18,8 @@ def test_sam3_embed_and_segment_with_text(monkeypatch):
     # Set required env for SAM3 to run in CI-like environment (user must provide real checkpoint to actually run)
     import os
 
-    if os.getenv("SAM3_CHECKPOINT_PATH") is None:
-        pytest.skip("SAM3_CHECKPOINT_PATH not set")
+    # if os.getenv("SAM3_CHECKPOINT_PATH") is None:
+    #     pytest.skip("SAM3_CHECKPOINT_PATH not set")
 
     # Create a synthetic image
     img = (np.random.rand(256, 256, 3) * 255).astype(np.uint8)
@@ -43,8 +43,8 @@ def test_sam3_embed_and_segment_with_text(monkeypatch):
 def test_sam3_segment_with_box_prompt(monkeypatch):
     import os
 
-    if os.getenv("SAM3_CHECKPOINT_PATH") is None:
-        pytest.skip("SAM3_CHECKPOINT_PATH not set")
+    # if os.getenv("SAM3_CHECKPOINT_PATH") is None:
+    #     pytest.skip("SAM3_CHECKPOINT_PATH not set")
 
     img = (np.random.rand(160, 200, 3) * 255).astype(np.uint8)
     model = SegmentAnything3(model_id="sam3")
