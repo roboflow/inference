@@ -33,9 +33,26 @@ extra_css:
 nav:
   - Start:
       - Overview: start/overview.md
+<<<<<<< HEAD
       - Build Your First Workflow: start/getting-started.md
       - Set Up:
           - Setup Instructions: install/setup.md
+=======
+      - Getting Started: start/getting-started.md
+      - Downloads: downloads.md
+      - Understand:
+          - Architecture: understand/architecture.md
+          - Features: understand/features.md
+          - Vocabulary: understand/vocabulary.md
+          - Alternatives: understand/alternatives.md
+      - Cloud Hosting:
+          - managed/index.md
+          - "Serverless API »": "https://docs.roboflow.com/deploy/serverless"
+          - "Dedicated Deployments »": "https://docs.roboflow.com/deploy/dedicated-deployments"
+          - "Bring Your Own Cloud": "install/cloud/index.md"
+      - Self Hosting:
+          - install/index.md
+>>>>>>> c5adce447 (first version)
           - Minimum Requirements: install/minimum-requirements.md
           - Install Inference (Edge):
             - Install on Linux: install/linux.md
@@ -222,6 +239,7 @@ plugins:
       implicit_index: True
   - macros:
       include_dir: docs/include
+      module_name: docs/scripts/macros
 
 
 markdown_extensions:

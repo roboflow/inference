@@ -111,6 +111,7 @@
   color: #EE0F0F;
 }
 
+<<<<<<< HEAD
 .link-caret::after {
   content: "";
   width: 11px;
@@ -123,3 +124,92 @@
   display: inline-block;
 }
 
+=======
+/* Download page styles */
+.download-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.5rem;
+  margin: 2rem 0;
+  max-width: 700px;
+}
+
+.download-card {
+  background: transparent;
+  padding: 1.5rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.install-link {
+  margin: 0 !important;
+  font-size: 0.875rem !important;
+}
+
+.install-link a {
+  color: var(--md-default-fg-color--light);
+  text-decoration: underline;
+}
+
+.install-link a:hover {
+  color: var(--md-primary-fg-color);
+}
+
+.download-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.625rem;
+  background: transparent;
+  color: var(--md-primary-fg-color) !important;
+  border: 1.5px solid var(--md-primary-fg-color);
+  padding: 0.875rem 1.5rem;
+  border-radius: 8px;
+  text-decoration: none !important;
+  transition: all 0.2s ease;
+  font-weight: 500;
+  font-size: 0.9rem;
+  min-width: 200px;
+  white-space: nowrap;
+}
+
+.download-button:hover {
+  background: var(--md-primary-fg-color);
+  color: white !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(131, 21, 249, 0.25);
+}
+
+.download-button img {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+.download-button:hover img {
+  opacity: 1;
+}
+
+
+@media (max-width: 768px) {
+  .download-container {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+    max-width: 100%;
+  }
+  
+  .download-card {
+    padding: 1.25rem;
+  }
+  
+  .download-button {
+    min-width: 180px;
+    font-size: 0.875rem;
+    padding: 0.75rem 1.25rem;
+  }
+}
+>>>>>>> c5adce447 (first version)
