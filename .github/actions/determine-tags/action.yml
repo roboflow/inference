@@ -60,7 +60,7 @@ runs:
           # Fetch the latest release tag for release events
           if [ "$EVENT_NAME" == "release" ]; then
             RELEASE=$BRANCH
-            NORMALIZED_RELEASE=$(if echo "$RELEASE" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]$'; then echo "$RELEASE" | sed 's/^v//'; else echo "$RELEASE"; fi)
+            NORMALIZED_RELEASE=$(if echo "$RELEASE" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+$'; then echo "$RELEASE" | sed 's/^v//'; else echo "$RELEASE"; fi)
             echo "Normalized release: $NORMALIZED_RELEASE"
 
             LATEST_RELEASE=$(curl -s -H "Authorization: Bearer $TOKEN" \

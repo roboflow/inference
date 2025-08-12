@@ -258,8 +258,6 @@ from inference.usage_tracking.collector import usage_collector
 
 if LAMBDA:
     from inference.core.usage import trackUsage
-if METLO_KEY:
-    from metlo.fastapi import ASGIMiddleware
 
 import time
 
@@ -607,11 +605,6 @@ class HttpInterface(BaseInterface):
         if ENABLE_PROMETHEUS:
             InferenceInstrumentator(
                 app, model_manager=model_manager, endpoint="/metrics"
-            )
-
-        if METLO_KEY:
-            app.add_middleware(
-                ASGIMiddleware, host="https://app.metlo.com", api_key=METLO_KEY
             )
         if LAMBDA:
             app.add_middleware(LambdaMiddleware)

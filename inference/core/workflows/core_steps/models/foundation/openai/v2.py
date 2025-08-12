@@ -55,7 +55,7 @@ RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
 
 
 LONG_DESCRIPTION = f"""
-Ask a question to OpenAI's GPT-4 with Vision model.
+Ask a question to OpenAI's GPT models with vision capabilities (including GPT-4o and GPT-5).
 
 You can specify arbitrary text prompts or predefined ones, the block supports the following types of prompt:
 
@@ -168,6 +168,7 @@ class BlockManifest(WorkflowBlockManifest):
             "gpt-4.1-nano",
             "gpt-4o",
             "gpt-4o-mini",
+            "gpt-5",
         ],
     ] = Field(
         default="gpt-4o",

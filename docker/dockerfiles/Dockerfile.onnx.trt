@@ -14,7 +14,6 @@ RUN apt-get update -y && apt-get install -y \
 COPY requirements/requirements.sam.txt \
     requirements/requirements.clip.txt \
     requirements/requirements.http.txt \
-    requirements/requirements.waf.txt \
     requirements/requirements.gpu.txt \
     requirements/requirements.gaze.txt \
     requirements/requirements.doctr.txt \
@@ -28,7 +27,6 @@ RUN pip install --upgrade pip setuptools && pip install \
     -r requirements.sam.txt \
     -r requirements.clip.txt \
     -r requirements.http.txt \
-    -r requirements.waf.txt \
     -r requirements.gpu.txt \
     -r requirements.gaze.txt \
     -r requirements.doctr.txt \
