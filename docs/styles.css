@@ -112,6 +112,7 @@
 }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 .link-caret::after {
   content: "";
   width: 11px;
@@ -132,6 +133,24 @@
   gap: 1.5rem;
   margin: 2rem 0;
   max-width: 700px;
+=======
+/* Download page styles */
+:root {
+  --download-border-radius: 0.5rem;
+  --download-padding: 0.875rem 1.5rem;
+  --download-gap: 0.625rem;
+  --download-font-size: 0.875rem;
+  --download-icon-size: 1.125rem;
+  --download-shadow: 0 0.25rem 0.75rem var(--md-primary-fg-color--transparent);
+}
+
+.download-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1rem;
+  margin: 1rem 0;
+  max-width: 43.75rem;
+>>>>>>> main
 }
 
 .download-card {
@@ -144,16 +163,26 @@
   gap: 1rem;
 }
 
+<<<<<<< HEAD
 .install-link {
   margin: 0 !important;
   font-size: 0.875rem !important;
 }
 
 .install-link a {
+=======
+.md-typeset .install-link {
+  margin: 0;
+  font-size: var(--download-font-size);
+}
+
+.md-typeset .install-link a {
+>>>>>>> main
   color: var(--md-default-fg-color--light);
   text-decoration: underline;
 }
 
+<<<<<<< HEAD
 .install-link a:hover {
   color: var(--md-primary-fg-color);
 }
@@ -186,6 +215,40 @@
 .download-button img {
   width: 18px;
   height: 18px;
+=======
+.md-typeset .install-link a:hover {
+  color: var(--md-primary-fg-color);
+}
+
+.md-typeset .download-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--download-gap);
+  background: transparent;
+  color: var(--md-primary-fg-color);
+  border: 0.094rem solid var(--md-primary-fg-color);
+  padding: var(--download-padding);
+  border-radius: var(--download-border-radius);
+  text-decoration: none;
+  transition: all 0.2s ease;
+  font-weight: 500;
+  font-size: var(--download-font-size);
+  min-width: 12.5rem;
+  white-space: nowrap;
+}
+
+.md-typeset .download-button:hover {
+  background: var(--md-primary-fg-color);
+  color: white;
+  transform: translateY(-0.063rem);
+  box-shadow: var(--download-shadow);
+}
+
+.download-button img {
+  width: var(--download-icon-size);
+  height: var(--download-icon-size);
+>>>>>>> main
   flex-shrink: 0;
   opacity: 0.8;
 }
@@ -194,11 +257,17 @@
   opacity: 1;
 }
 
+<<<<<<< HEAD
 
 @media (max-width: 768px) {
   .download-container {
     grid-template-columns: 1fr;
     gap: 1rem;
+=======
+@media (max-width: 48rem) {
+  .download-container {
+    grid-template-columns: 1fr;
+>>>>>>> main
     max-width: 100%;
   }
   
@@ -206,6 +275,7 @@
     padding: 1.25rem;
   }
   
+<<<<<<< HEAD
   .download-button {
     min-width: 180px;
     font-size: 0.875rem;
@@ -213,3 +283,10 @@
   }
 }
 >>>>>>> c5adce447 (first version)
+=======
+  .md-typeset .download-button {
+    min-width: 11.25rem;
+    padding: 0.75rem 1.25rem;
+  }
+}
+>>>>>>> main
