@@ -162,9 +162,10 @@ if __name__ == "__main__":
         banner = (
             "\n"
             "┌──────────────────────────────────────────────────────────┐\n"
+            "|                                                          |\n"
             "│  Roboflow Inference is ready                             │\n"
             f"│  Dashboard: {url:<44} │\n"
-            "│  You can watch its logs here in this terminal            │\n"
+            "|                                                          |\n"
             "└──────────────────────────────────────────────────────────┘\n"
         )
         print(banner, flush=True)
