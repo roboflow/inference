@@ -83,8 +83,8 @@ print("sys.path includes /app for inference modules")
 '''
         
         # Write and run initialization
-        self.sandbox.files.write("/tmp/init_env.py", init_script)
-        result = self.sandbox.commands.run("python3 /tmp/init_env.py")
+        self.sandbox.files.write("/home/user/init_env.py", init_script)
+        result = self.sandbox.commands.run("python3 /home/user/init_env.py")
         
         if result.exit_code == 0:
             print("✅ Environment ready!")
@@ -111,8 +111,8 @@ if '/app' not in sys.path:
 '''
         
         # Write code to file and execute
-        self.sandbox.files.write("/tmp/exec.py", wrapped_code)
-        result = self.sandbox.commands.run("python3 /tmp/exec.py")
+        self.sandbox.files.write("/home/user/exec.py", wrapped_code)
+        result = self.sandbox.commands.run("python3 /home/user/exec.py")
         
         # Combine output
         output = []

@@ -1,16 +1,16 @@
 # This is a config for E2B sandbox template.
-# You can use template ID (qfupheopqmf6w7b36h6o) or template name (roboflow-inference-sandbox-v0-52-0-fixed) to create a sandbox:
+# You can use template ID (qfupheopqmf6w7b36h6o) or template name (roboflow-inference-sandbox-v0-52-0-fixed2) to create a sandbox:
 
 # Python SDK
 # from e2b import Sandbox, AsyncSandbox
-# sandbox = Sandbox("roboflow-inference-sandbox-v0-52-0-fixed") # Sync sandbox
-# sandbox = await AsyncSandbox.create("roboflow-inference-sandbox-v0-52-0-fixed") # Async sandbox
+# sandbox = Sandbox("roboflow-inference-sandbox-v0-52-0-fixed2") # Sync sandbox
+# sandbox = await AsyncSandbox.create("roboflow-inference-sandbox-v0-52-0-fixed2") # Async sandbox
 
 # JS SDK
 # import { Sandbox } from 'e2b'
-# const sandbox = await Sandbox.create('roboflow-inference-sandbox-v0-52-0-fixed')
+# const sandbox = await Sandbox.create('roboflow-inference-sandbox-v0-52-0-fixed2')
 
 team_id = "1647872e-e6b7-4797-8e30-d1cd5dbcb671"
 dockerfile = "docker/e2b/e2b.Dockerfile"
-template_name = "roboflow-inference-sandbox-v0-52-0-fixed"
+template_name = "roboflow-inference-sandbox-v0-52-0-fixed2"
 template_id = "qfupheopqmf6w7b36h6o"

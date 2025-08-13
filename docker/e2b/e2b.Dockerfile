@@ -43,12 +43,14 @@ ENV E2B_SANDBOX_TYPE=custom_python_block
 # Find the correct site-packages directory and add our path
 RUN python3 -c "import site; import os; path = site.getsitepackages()[0]; os.makedirs(path, exist_ok=True); open(os.path.join(path, 'inference.pth'), 'w').write('/app\n')"
 
-# PERMISSION FIX: Ensure /home/user directory exists with proper permissions
+# PERMISSION FIX: Ensure writable directories for E2B sandbox user
 # E2B sandboxes run as a non-root user, so we need to ensure write access
 RUN mkdir -p /home/user && \
     chmod 777 /home/user && \
     mkdir -p /home/user/.cache && \
-    chmod 777 /home/user/.cache
+    chmod 777 /home/user/.cache && \
+    chmod 777 /tmp && \
+    chmod 777 /var/tmp
 
 # Set working directory to /home/user for E2B
 WORKDIR /home/user
