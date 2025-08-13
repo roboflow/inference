@@ -3,7 +3,6 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 import torch
-
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.errors import MissingDependencyError
 from inference_exp.models.common.model_packages import get_model_package_contents
@@ -68,9 +67,7 @@ class SAM2ForInstanceSegmentationPyTorch:
                     xyxy = np.array([[x_lt, y_lt, x_rt, y_rt]])
 
                     _, object_ids, mask_logits = self._predictor.add_new_prompt(
-                        frame_idx=0,
-                        obj_id=i,
-                        bbox=xyxy
+                        frame_idx=0, obj_id=i, bbox=xyxy
                     )
             else:
                 object_ids, mask_logits = self._predictor.track(image)
