@@ -1,0 +1,15 @@
+# Development files
+inference/
+dev_logs/
+*.log
+
+# Build artifacts
+build/
+dist/
+*.dmg
+*.zip
+*.icns
+app-icon.iconset/
+
+# PyInstaller spec backup
+*.spec.bak
