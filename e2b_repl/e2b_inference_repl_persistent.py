@@ -224,6 +224,16 @@ else:
         else:
             print("No commands in history yet")
     
+    def terminate_sandbox(self):
+        """Terminate the sandbox to free resources."""
+        if self.sandbox:
+            try:
+                # The E2B SDK uses .kill() to terminate sandboxes
+                self.sandbox.kill()
+                print(f"✅ Sandbox {self.sandbox_id} terminated")
+            except Exception as e:
+                print(f"⚠️  Error terminating sandbox: {e}")
+    
     def reset_session(self):
         """Reset the session to initial state."""
         print("🔄 Resetting session...")
@@ -262,6 +272,8 @@ else:
                 # Handle special commands
                 if not in_multiline and line.startswith('!'):
                     if line in ['!exit', '!quit']:
+                        print("🛑 Terminating sandbox...")
+                        self.terminate_sandbox()
                         print("👋 Goodbye!")
                         break
                     elif line == '!help':
@@ -341,10 +353,13 @@ def main():
         repl.connect()
         repl.run()
     except KeyboardInterrupt:
-        print("\n👋 Goodbye!")
-    finally:
+        print("\n🛑 Interrupted - terminating sandbox...")
+        repl.terminate_sandbox()
+        print("👋 Goodbye!")
+    except Exception as e:
+        print(f"❌ Error: {e}")
         if repl.sandbox_id:
-            print(f"\nℹ️  Sandbox {repl.sandbox_id} still running")
+            print(f"ℹ️  Sandbox {repl.sandbox_id} may still be running")
             print(f"   Reconnect with: python3 {sys.argv[0]} {repl.sandbox_id}")
 
 if __name__ == "__main__":
