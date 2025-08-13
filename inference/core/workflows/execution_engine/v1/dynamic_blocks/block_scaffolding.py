@@ -42,28 +42,32 @@ def assembly_custom_python_block(
     manifest: Type[WorkflowBlockManifest],
     python_code: PythonCode,
 ) -> Type[WorkflowBlock]:
-    code_module = create_dynamic_module(
-        block_type_name=block_type_name,
-        python_code=python_code,
-        module_name=f"dynamic_module_{unique_identifier}",
-    )
-    if not hasattr(code_module, python_code.run_function_name):
-        raise DynamicBlockError(
-            public_message=f"Cannot find function: {python_code.run_function_name} in declared code for "
-            f"dynamic block: `{block_type_name}`",
-            context="workflow_compilation | dynamic_block_compilation | declared_symbols_fetching",
+    # In remote mode, skip local validation - it will be validated in sandbox
+    if WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE == "remote" and E2B_API_KEY:
+        # Create a minimal module for remote execution
+        # The actual code will be validated and executed in E2B sandbox
+        code_module = types.ModuleType(f"dynamic_module_{unique_identifier}")
+        # Add a placeholder function for the run function
+        setattr(code_module, python_code.run_function_name, lambda *args, **kwargs: None)
+        if python_code.init_function_code:
+            setattr(code_module, python_code.init_function_name, lambda: {})
+    else:
+        # Local mode - validate code by creating the module
+        code_module = create_dynamic_module(
+            block_type_name=block_type_name,
+            python_code=python_code,
+            module_name=f"dynamic_module_{unique_identifier}",
         )
+        if not hasattr(code_module, python_code.run_function_name):
+            raise DynamicBlockError(
+                public_message=f"Cannot find function: {python_code.run_function_name} in declared code for "
+                f"dynamic block: `{block_type_name}`",
+                context="workflow_compilation | dynamic_block_compilation | declared_symbols_fetching",
+            )
+    
     run_function = getattr(code_module, python_code.run_function_name)
 
     def run(self, *args, **kwargs) -> BlockResult:
-        if not ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS:
-            raise WorkflowEnvironmentConfigurationError(
-                public_message="Cannot use dynamic blocks with custom Python code in this installation of `workflows`. "
-                "This can be changed by setting environmental variable "
-                "`ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True`",
-                context="workflow_execution | step_execution | dynamic_step",
-            )
-        
         # Check if we should execute remotely in E2B
         if WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE == "remote" and E2B_API_KEY:
             from inference.core.workflows.execution_engine.v1.dynamic_blocks.e2b_executor import (
@@ -92,6 +96,16 @@ def assembly_custom_python_block(
                 manifest_outputs=manifest_outputs,
             )
         
+        # Local execution - check if allowed
+        if not ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS:
+            raise WorkflowEnvironmentConfigurationError(
+                public_message="Cannot use dynamic blocks with custom Python code in local mode. "
+                "This can be changed by setting environmental variable "
+                "`ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True` or use remote execution with "
+                "`WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE=remote` and a valid E2B_API_KEY.",
+                context="workflow_execution | step_execution | dynamic_step",
+            )
+        
         # Local execution (existing behavior)
         try:
             return run_function(self, *args, **kwargs)
@@ -108,14 +122,16 @@ def assembly_custom_python_block(
                 message = f"{error.__class__.__name__}: {error}"
             raise Exception(message) from error
 
-    if python_code.init_function_code is not None and not hasattr(
-        code_module, python_code.init_function_name
-    ):
-        raise DynamicBlockError(
-            public_message=f"Cannot find function: {python_code.init_function_name} in declared code for "
-            f"dynamic block: `{block_type_name}`",
-            context="workflow_compilation | dynamic_block_compilation | declared_symbols_fetching",
-        )
+    # In remote mode, validation of init function is skipped (will be done in sandbox)
+    if WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE != "remote" or not E2B_API_KEY:
+        if python_code.init_function_code is not None and not hasattr(
+            code_module, python_code.init_function_name
+        ):
+            raise DynamicBlockError(
+                public_message=f"Cannot find function: {python_code.init_function_name} in declared code for "
+                f"dynamic block: `{block_type_name}`",
+                context="workflow_compilation | dynamic_block_compilation | declared_symbols_fetching",
+            )
 
     init_function = getattr(code_module, python_code.init_function_name, dict)
 

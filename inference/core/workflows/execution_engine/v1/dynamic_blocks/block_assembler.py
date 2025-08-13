@@ -4,7 +4,11 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
-from inference.core.env import ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS
+from inference.core.env import (
+    ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
+    WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
+    E2B_API_KEY,
+)
 from inference.core.workflows.errors import (
     DynamicBlockError,
     WorkflowEnvironmentConfigurationError,
@@ -75,11 +79,16 @@ def compile_dynamic_blocks(
 
 
 def ensure_dynamic_blocks_allowed(dynamic_blocks_definitions: List[dict]) -> None:
+    # Allow dynamic blocks in remote mode regardless of ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS
+    if WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE == "remote" and E2B_API_KEY:
+        return  # Remote execution is allowed even when local execution is disabled
+    
     if dynamic_blocks_definitions and not ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS:
         raise WorkflowEnvironmentConfigurationError(
-            public_message="Cannot use dynamic blocks with custom Python code in this installation of `workflows`. "
+            public_message="Cannot use dynamic blocks with custom Python code in local mode. "
             "This can be changed by setting environmental variable "
-            "`ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True`",
+            "`ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True` or use remote execution with "
+            "`WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE=remote` and a valid E2B_API_KEY.",
             context="workflow_compilation | dynamic_blocks_compilation",
         )
 

@@ -11,7 +11,7 @@ from uuid import uuid4
 import numpy as np
 from e2b_code_interpreter import Sandbox
 
-from inference import get_version
+from inference.core.version import __version__ as inference_version
 from inference.core.env import (
     E2B_API_KEY,
     E2B_SANDBOX_IDLE_TIMEOUT,
@@ -60,15 +60,13 @@ class E2BSandboxExecutor:
         self._sandbox_cache = {}  # Placeholder for future Redis integration
     
     def _get_template_id(self) -> str:
-        """Get the E2B template ID, defaulting to inference version if not set."""
+        """Get the E2B template ID, defaulting to Python template if not set."""
         if E2B_TEMPLATE_ID:
             return E2B_TEMPLATE_ID
         
-        # Default to inference version-based template
-        inference_version = get_version()
-        # Replace dots with dashes for E2B compatibility
-        version_str = inference_version.replace('.', '-')
-        return f"inference-sandbox-v{version_str}"
+        # Return None to use the default template from e2b-code-interpreter
+        # The Sandbox class from e2b-code-interpreter should handle this correctly
+        return None
     
     def execute_in_sandbox(
         self,
@@ -120,12 +118,38 @@ class E2BSandboxExecutor:
         Future: Check cache for existing sandbox before creating new one.
         """
         try:
-            # Create sandbox with our custom template
-            sandbox = Sandbox(
-                api_key=self.api_key,
-                template_id=self.template_id,
-                timeout=self.timeout,
-            )
+            # Create sandbox with our custom template or default
+            # Only pass template if we have a specific one
+            sandbox_kwargs = {
+                'api_key': self.api_key,
+                'timeout': self.timeout,
+            }
+            if self.template_id:
+                sandbox_kwargs['template'] = self.template_id
+                
+            print(f"🚀 Creating E2B sandbox with timeout={self.timeout}s")
+            sandbox = Sandbox(**sandbox_kwargs)
+            print(f"✅ Sandbox created: {sandbox.sandbox_id}")
+            
+            # Extend the timeout during initialization to prevent premature termination
+            if hasattr(sandbox, 'set_timeout'):
+                # Add extra time for initialization (original timeout + 60s buffer)
+                extended_timeout = self.timeout + 60
+                sandbox.set_timeout(extended_timeout)
+                print(f"⏱️  Extended sandbox timeout to {extended_timeout}s during initialization")
+            
+            # Give sandbox a brief moment to start, but be aggressive about connecting
+            import time
+            time.sleep(0.5)  # Just 500ms initial wait
+            
+            # Verify sandbox is running
+            if hasattr(sandbox, 'is_running'):
+                print(f"📊 Sandbox is_running: {sandbox.is_running}")
+                if not sandbox.is_running:
+                    raise DynamicBlockError(
+                        public_message=f"Sandbox failed to start for block '{block_type_name}'",
+                        context="workflow_execution | e2b_sandbox_creation",
+                    )
             
             # Generate unique sandbox ID
             sandbox_id = str(uuid4())
@@ -152,18 +176,130 @@ class E2BSandboxExecutor:
         python_code: PythonCode,
         block_type_name: str,
     ) -> None:
-        """Initialize the sandbox with the user's custom code."""
+        """Initialize the sandbox with the user's custom code and validate it."""
         # Build the complete code including imports and wrapper
         wrapper_code = self._build_wrapper_code(python_code)
         
         try:
-            # Execute the code definition in sandbox
+            # Ensure sandbox is ready with rapid retries
+            # Be aggressive - try quickly and frequently
+            import time
+            max_retries = 60  # More attempts with shorter delays
+            retry_delay = 0.1  # Start with just 100ms
+            
+            for attempt in range(max_retries):
+                try:
+                    if attempt == 0:
+                        print(f"🔍 Testing sandbox readiness...")
+                    elif attempt % 5 == 0:  # Only log every 5th attempt to reduce noise
+                        print(f"🔍 Still waiting... (attempt {attempt + 1}/{max_retries})")
+                    
+                    test_result = sandbox.run_code("print('Sandbox ready')")
+                    if not test_result.error:
+                        # Sandbox is ready!
+                        elapsed = sum(0.1 * (1.2 ** i) for i in range(attempt)) + 0.5  # Approximate time
+                        print(f"✅ Sandbox ready after {attempt + 1} attempt(s) (~{elapsed:.1f}s total)")
+                        break
+                    
+                    error_msg = str(test_result.error).lower()
+                    
+                    # Check for different error types
+                    if "port is not open" in error_msg:
+                        if attempt < max_retries - 1:
+                            # Rapid retry with gradual backoff
+                            time.sleep(retry_delay)
+                            retry_delay = min(retry_delay * 1.2, 2.0)  # Cap at 2 seconds
+                            continue
+                    elif "sandbox was not found" in error_msg or "sandbox not found" in error_msg:
+                        # Sandbox has been terminated/lost
+                        print(f"❌ Sandbox lost: {test_result.error}")
+                        raise DynamicBlockError(
+                            public_message=f"Sandbox terminated unexpectedly for block '{block_type_name}'",
+                            context="workflow_execution | e2b_sandbox_lost",
+                        )
+                    else:
+                        # Unknown error, try once more with minimal delay
+                        if attempt == 0:
+                            print(f"❌ Error: {test_result.error}")
+                        if attempt < max_retries - 1:
+                            time.sleep(retry_delay)
+                            continue
+                        raise
+                        
+                except Exception as e:
+                    error_msg = str(e).lower()
+                    
+                    if "sandbox was not found" in error_msg or "sandbox not found" in error_msg:
+                        print(f"❌ Sandbox lost (exception): {e}")
+                        raise DynamicBlockError(
+                            public_message=f"Sandbox terminated unexpectedly for block '{block_type_name}'",
+                            context="workflow_execution | e2b_sandbox_lost",
+                        )
+                    elif "port is not open" in error_msg and attempt < max_retries - 1:
+                        time.sleep(retry_delay)
+                        retry_delay = min(retry_delay * 1.2, 2.0)
+                        continue
+                    elif attempt < max_retries - 1:
+                        time.sleep(retry_delay)
+                        continue
+                    raise
+            else:
+                # All retries failed
+                raise DynamicBlockError(
+                    public_message=f"Sandbox not ready after {max_retries} attempts for block '{block_type_name}'",
+                    context="workflow_execution | e2b_sandbox_initialization",
+                )
+            
+            # Restore original timeout after initialization
+            if hasattr(sandbox, 'set_timeout'):
+                sandbox.set_timeout(self.timeout)
+                print(f"⏱️  Restored sandbox timeout to {self.timeout}s")
+            
+            # Execute the code definition in sandbox - this also validates the code
             result = sandbox.run_code(wrapper_code)
             
             if result.error:
+                # Code validation failed - this is untrusted user code that has errors
                 raise DynamicBlockError(
-                    public_message=f"Failed to initialize code in sandbox for block '{block_type_name}': {result.error}",
-                    context="workflow_execution | e2b_code_initialization",
+                    public_message=f"Code validation failed for block '{block_type_name}': {result.error}",
+                    context="workflow_execution | e2b_code_validation",
+                )
+            
+            # Validate that required functions exist
+            validation_code = f"""
+# Check if required functions exist
+import inspect
+
+errors = []
+if '{python_code.run_function_name}' not in globals():
+    errors.append("Cannot find function: {python_code.run_function_name}")
+else:
+    # Check if it's actually a function
+    if not callable(globals()['{python_code.run_function_name}']):
+        errors.append("{python_code.run_function_name} is not a callable function")
+"""
+            
+            # Add init function validation if needed
+            if python_code.init_function_code:
+                validation_code += f"""
+if '{python_code.init_function_name}' not in globals():
+    errors.append("Cannot find function: {python_code.init_function_name}")
+elif not callable(globals()['{python_code.init_function_name}']):
+    errors.append("{python_code.init_function_name} is not a callable function")
+"""
+            
+            validation_code += """
+if errors:
+    raise ValueError("Validation errors: " + "; ".join(errors))
+print("Code validation successful")
+"""
+            
+            validation_result = sandbox.run_code(validation_code)
+            
+            if validation_result.error:
+                raise DynamicBlockError(
+                    public_message=f"Code validation failed for block '{block_type_name}': {validation_result.error}",
+                    context="workflow_execution | e2b_function_validation",
                 )
                 
             # If there's an init function, execute it
@@ -218,6 +354,7 @@ class E2BSandboxExecutor:
         
         # Add the user's run function
         run_code = python_code.run_function_code
+        func_name = python_code.run_function_name
         
         # Create wrapper function for serialization/deserialization
         wrapper = f"""
@@ -267,12 +404,12 @@ def execute_wrapped(serialized_inputs_json: str) -> str:
         # Create mock self object with init results if available
         class MockSelf:
             def __init__(self):
-                self._init_results = globals().get('_init_results', {})
+                self._init_results = globals().get('_init_results', {{}})
         
         mock_self = MockSelf()
         
         # Call the user's run function
-        result = {python_code.run_function_name}(mock_self, **inputs)
+        result = {func_name}(mock_self, **inputs)
         
         # Serialize outputs
         serialized_result = {{}}
