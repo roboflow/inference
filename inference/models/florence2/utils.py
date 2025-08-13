@@ -13,14 +13,12 @@ def import_class_from_file(file_path, class_name, alias_name=None):
     module_dir = os.path.dirname(file_path)
     parent_dir = os.path.dirname(module_dir)
 
+    sys.path.insert(0, module_dir)
     sys.path.insert(0, parent_dir)
 
     try:
         spec = importlib.util.spec_from_file_location(module_name, file_path)
         module = importlib.util.module_from_spec(spec)
-
-        # Manually set the __package__ attribute to the parent package
-        module.__package__ = os.path.basename(module_dir)
 
         spec.loader.exec_module(module)
         cls = getattr(module, class_name)
@@ -28,4 +26,5 @@ def import_class_from_file(file_path, class_name, alias_name=None):
             globals()[alias_name] = cls
         return cls
     finally:
+        sys.path.pop(0)
         sys.path.pop(0)
