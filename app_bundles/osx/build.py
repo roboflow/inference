@@ -31,7 +31,7 @@ BACKGROUND_PNG = os.path.abspath("background.png")
 DS_STORE_SOURCE = os.path.abspath("DMG-DS_Store")
 SOURCE_LANDING_DIR = "../../inference/landing"
 DEST_LANDING_DIR = os.path.join(BUILD_DIR, "inference", "landing")
-LAUNCHER_BINARY_PATH = os.path.abspath("launcher") #need to compile this first from launcher.c if its not already compiled
+# LAUNCHER_BINARY_PATH = os.path.abspath("launcher") # No longer needed with PyInstaller's BUNDLE
 
 CODESIGN_IDENTITY = "Developer ID Application: Roboflow, LLC (7SBQ39NG7G)"
 NOTARY_PROFILE = "roboflow-notary"
@@ -256,46 +256,7 @@ def sign_dmg(dmg_path):
 
 
 
-def create_app_bundle_with_native_launcher(source_dir, app_bundle_path, launcher_binary_path, icon_path=None):
-    app_name = os.path.splitext(os.path.basename(app_bundle_path))[0]
-    contents_dir = os.path.join(app_bundle_path, "Contents")
-    macos_dir = os.path.join(contents_dir, "MacOS")
-    resources_dir = os.path.join(contents_dir, "Resources")
-
-    os.makedirs(macos_dir, exist_ok=True)
-    os.makedirs(resources_dir, exist_ok=True)
-
-    # Copy PyInstaller build into Resources
-    shutil.copytree(source_dir, resources_dir, dirs_exist_ok=True)
-
-    # Copy native launcher binary into MacOS
-    shutil.copy2(launcher_binary_path, os.path.join(macos_dir, "launcher"))
-    os.chmod(os.path.join(macos_dir, "launcher"), 0o755)
-
-    # Minimal Info.plist with CFBundleExecutable = launcher
-    info_plist_contents = f"""<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
- "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleName</key>            <string>{app_name}</string>
-    <key>CFBundleDisplayName</key>     <string>{app_name}</string>
-    <key>CFBundleExecutable</key>      <string>launcher</string>
-    <key>CFBundleIdentifier</key>      <string>com.example.{app_name.lower().replace(' ','')}</string>
-    <key>CFBundleVersion</key>         <string>{VERSION}</string>
-    <key>CFBundlePackageType</key>     <string>APPL</string>
-    <key>LSMinimumSystemVersion</key>  <string>10.13</string>
-    <key>NSHighResolutionCapable</key> <true/>
-    <key>CFBundleIconFile</key>        <string>app-icon.icns</string>
-</dict>
-</plist>
-"""
-    with open(os.path.join(contents_dir, "Info.plist"), "w") as f:
-        f.write(info_plist_contents)
-
-    # Copy icon if provided
-    if icon_path and os.path.isfile(icon_path):
-        shutil.copy2(icon_path, os.path.join(resources_dir, "app-icon.icns"))
+# No longer needed - PyInstaller's BUNDLE creates the app bundle for us
 
 def fix_app_permissions(app_path):
     print("🔧 Ensuring app bundle is readable by user...")
@@ -328,7 +289,7 @@ if __name__ == "__main__":
     generate_icns_from_png(ICON_PNG, ICNS_PATH)
     build_app(ICNS_PATH)
     copy_static_files()
-    create_app_bundle_with_native_launcher(BUILD_DIR, APP_PATH, LAUNCHER_BINARY_PATH, icon_path=ICNS_PATH)
+    # PyInstaller's BUNDLE now creates the app bundle directly
     fix_app_permissions(APP_PATH)
 
     # Signing and Notarization flow

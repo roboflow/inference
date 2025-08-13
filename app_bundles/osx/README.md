@@ -14,7 +14,11 @@ uv pip install pip
 pip install -r requirements.txt
 cd ../..
 make create_wheels
+WHEEL_FILE=$(ls dist/inference-*.whl | head -n 1)
 pip install --find-links=./dist/ "$WHEEL_FILE[sam,transformers,clip,http,yolo-world,gaze,grounding-dino]"
+cd landing
+npm ci
+npm run build
 cd app_bundles/osx
 # skip code sign and notarize for local testing
 python build.py --skip-sign --skip-notarize

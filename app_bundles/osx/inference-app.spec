@@ -22,7 +22,7 @@ BREW_SSL     = "/opt/homebrew/opt/openssl@3/lib"     # change if you vend your o
 
 # ---------------------------------------------------------------------------
 a = Analysis(
-    ['run_inference.py'],
+    ['run_inference_gui.py'],
     pathex=[],
     binaries=[
         *clip_binaries,
@@ -106,7 +106,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=True,
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
@@ -123,4 +123,17 @@ coll = COLLECT(
     upx=True,
     upx_exclude=[],
     name='inference-app',
+)
+
+app = BUNDLE(
+    coll,
+    name='Roboflow Inference.app',
+    icon='app-icon.icns',
+    bundle_identifier='com.roboflow.inference',
+    info_plist={
+        'CFBundleShortVersionString': '0.0.0',
+        'CFBundleVersion': '0.0.0',
+        'NSHighResolutionCapable': True,
+        'LSMinimumSystemVersion': '10.13',
+    },
 )
