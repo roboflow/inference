@@ -5,8 +5,12 @@ if __name__ == "__main__":
     multiprocessing.freeze_support()    
 
 
-print("=== Inference Launcher ===")
-print("Importing system libraries")
+import logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+logger = logging.getLogger("inference.app")
 import os
 import sys
 import certifi
@@ -32,13 +36,7 @@ def setup_runtime_cache_env(app_name="roboflow-inference"):
     os.environ.setdefault("MATPLOTLIBCONFIGDIR", os.path.join(cache_dir, "matplotlib"))
     os.environ.setdefault("MODEL_CACHE_DIR", os.path.join(cache_dir, "models"))
 
-    print("🧠 Runtime cache environment configured:")
-    print(f" - TLD_EXTRACT_CACHE: {os.environ['TLD_EXTRACT_CACHE']}")
-    print(f" - MATPLOTLIBCONFIGDIR: {os.environ['MATPLOTLIBCONFIGDIR']}")
-    print(f" - TRANSFORMERS_CACHE: {os.environ['TRANSFORMERS_CACHE']}")
-    print(f" - TORCH_HOME: {os.environ['TORCH_HOME']}")
-    print(f" - HF_HOME: {os.environ['HF_HOME']}")
-    print(f" - MODEL_CACHE_DIR: {os.environ['MODEL_CACHE_DIR']}")
+    logger.info("Runtime cache configured")
 
     return {
         "cache_dir": cache_dir,
@@ -48,7 +46,7 @@ def setup_runtime_cache_env(app_name="roboflow-inference"):
 
 # Determine app_dir
 if getattr(sys, 'frozen', False):
-    print("Running from PyInstaller bundle")
+    logger.info("Launching Roboflow Inference (bundle)")
 
     app_dir = os.path.dirname(sys.executable)
     
@@ -74,14 +72,14 @@ if getattr(sys, 'frozen', False):
 
 else:
     app_dir = os.path.dirname(os.path.abspath(__file__))
-    print("Running from source")
+    logger.info("Launching Roboflow Inference (source)")
 
 
-print(f"Changing working directory to: {app_dir}")
+logger.info("Initializing services")
 os.chdir(app_dir)
 
 
-print("Configuring environment")
+logger.info("Configuring environment")
 # Fix for SSL certs in PyInstaller bundle
 os.environ["SSL_CERT_FILE"] = certifi.where()
 
@@ -138,13 +136,42 @@ os.environ.setdefault("ENABLE_BUILDER", "True")
 
 
 if __name__ == "__main__":
-    print("Starting infernece server")
+    logger.info("Starting server")
     # Import the FastAPI app
     from cpu_http import app
     import uvicorn
+    import asyncio
+
+    async def _serve_with_banner():
+        port = int(os.environ.get("PORT", "9001"))
+        url = f"http://localhost:{port}/"
+        config = uvicorn.Config(
+            app,
+            host="0.0.0.0",
+            port=port,
+            log_level="info",
+            access_log=False,
+        )
+        server = uvicorn.Server(config)
+        serve_task = asyncio.create_task(server.serve())
+        try:
+            await server.started.wait()
+        except Exception:
+            # Fallback if the readiness event is unavailable
+            await asyncio.sleep(0.5)
+        banner = (
+            "\n"
+            "┌──────────────────────────────────────────────────────────┐\n"
+            "│  Roboflow Inference is ready                             │\n"
+            f"│  Dashboard: {url:<44} │\n"
+            "│  You can watch its logs here in this terminal            │\n"
+            "└──────────────────────────────────────────────────────────┘\n"
+        )
+        print(banner, flush=True)
+        await serve_task
 
     try:
-        uvicorn.run(app, host="0.0.0.0", port=int(os.environ["PORT"]))
+        asyncio.run(_serve_with_banner())
     except Exception as e:
-        print("Error starting server:", e)
+        logger.exception("Error starting server: %s", e)
         sys.exit(1)
