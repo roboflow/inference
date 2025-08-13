@@ -19,6 +19,7 @@ Example Session:
 
 import os
 import sys
+import time
 import traceback
 from typing import Optional
 
@@ -39,21 +40,35 @@ class InferenceREPL:
     def __init__(self, sandbox_id: Optional[str] = None):
         self.sandbox = None
         self.sandbox_id = sandbox_id
+        self.show_timing = False  # Toggle for execution timing
         
     def connect(self):
         """Connect to or create sandbox."""
         try:
             if self.sandbox_id:
                 print(f"🔌 Connecting to sandbox: {self.sandbox_id}")
+                start_time = time.time()
                 self.sandbox = Sandbox.connect(self.sandbox_id)
+                connect_time = time.time() - start_time
+                print(f"✅ Connected in {connect_time:.2f}s")
             else:
                 print(f"🚀 Creating new sandbox...")
+                start_time = time.time()
                 self.sandbox = Sandbox(template=INFERENCE_TEMPLATE)
+                create_time = time.time() - start_time
                 self.sandbox_id = self.sandbox.sandbox_id
                 print(f"✅ Sandbox created: {self.sandbox_id}")
+                print(f"⏱️  Sandbox creation took {create_time:.2f}s")
                 
             # Initialize the environment
+            init_start = time.time()
             self._initialize_environment()
+            init_time = time.time() - init_start
+            print(f"⏱️  Environment initialization took {init_time:.2f}s")
+            
+            if not self.sandbox_id:
+                total_time = time.time() - start_time
+                print(f"⏱️  Total startup time: {total_time:.2f}s")
             
         except Exception as e:
             print(f"❌ Connection failed: {e}")
@@ -83,23 +98,30 @@ print("sys.path includes /app for inference modules")
 '''
         
         # Write and run initialization
+        write_start = time.time()
         self.sandbox.files.write("/home/user/init_env.py", init_script)
+        write_time = time.time() - write_start
+        
+        exec_start = time.time()
         result = self.sandbox.commands.run("python3 /home/user/init_env.py")
+        exec_time = time.time() - exec_start
         
         if result.exit_code == 0:
-            print("✅ Environment ready!")
+            print(f"✅ Environment ready!")
+            print(f"   (File write: {write_time:.3f}s, Script execution: {exec_time:.3f}s)")
             print("\nAvailable packages:")
             print("  - numpy, supervision, opencv (cv2)")
             print("  - inference modules from /app")
             print("\nREPL Commands:")
             print("  !help    - Show this help")
             print("  !info    - Show sandbox info")
+            print("  !timing  - Toggle execution timing")
             print("  !ls      - List files")
             print("  !exit    - Exit REPL")
         else:
             print(f"⚠️  Initialization warning: {result.stderr}")
     
-    def execute_python(self, code: str) -> str:
+    def execute_python(self, code: str, show_timing: bool = False) -> str:
         """Execute Python code in the sandbox."""
         # Create a wrapper that includes sys.path setup
         wrapped_code = f'''
@@ -111,8 +133,10 @@ if '/app' not in sys.path:
 '''
         
         # Write code to file and execute
+        start_time = time.time()
         self.sandbox.files.write("/home/user/exec.py", wrapped_code)
         result = self.sandbox.commands.run("python3 /home/user/exec.py")
+        exec_time = time.time() - start_time
         
         # Combine output
         output = []
@@ -124,6 +148,9 @@ if '/app' not in sys.path:
                            if l and "Matplotlib" not in l]
             if stderr_lines:
                 output.append("[stderr] " + '\n'.join(stderr_lines))
+        
+        if show_timing:
+            output.append(f"[Execution time: {exec_time:.3f}s]")
         
         return '\n'.join(output) if output else ""
     
@@ -154,12 +181,17 @@ if '/app' not in sys.path:
                         print(f"\nSandbox ID: {self.sandbox_id}")
                         print(f"Template: {INFERENCE_TEMPLATE}")
                         print(f"API Key: {E2B_API_KEY[:20]}...")
+                        print(f"Show timing: {'ON' if self.show_timing else 'OFF'}")
+                    elif line == '!timing':
+                        self.show_timing = not self.show_timing
+                        print(f"⏱️  Execution timing: {'ON' if self.show_timing else 'OFF'}")
                     elif line.startswith('!ls'):
                         path = line[3:].strip() or '/app'
                         result = self.sandbox.commands.run(f"ls -la {path}")
                         print(result.stdout if result.exit_code == 0 else result.stderr)
                     else:
                         print(f"Unknown command: {line}")
+                        print("Commands: !help, !info, !timing, !ls, !exit")
                     continue
                 
                 # Handle Python code
@@ -175,7 +207,7 @@ if '/app' not in sys.path:
                         in_multiline = False
                         
                         if code.strip():
-                            output = self.execute_python(code)
+                            output = self.execute_python(code, show_timing=self.show_timing)
                             if output:
                                 print(output)
                     else:
@@ -184,7 +216,7 @@ if '/app' not in sys.path:
                 else:
                     # Single line execution
                     if line.strip():
-                        output = self.execute_python(line)
+                        output = self.execute_python(line, show_timing=self.show_timing)
                         if output:
                             print(output)
                             
