@@ -13,5 +13,5 @@
 team_id = "1647872e-e6b7-4797-8e30-d1cd5dbcb671"
 start_cmd = "docker/e2b/e2b.toml"
 dockerfile = "docker/e2b/e2b.Dockerfile"
-template_name = "roboflow-inference-sandbox-v0-51-10"
+template_name = "inference-sandbox-v"
 template_id = "qfupheopqmf6w7b36h6o"

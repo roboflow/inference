@@ -7,7 +7,18 @@
 # SSL_CERTIFICATE=INDIRECT will try to download roboflow.host wildcard certificate,
 # but will fall back to self-signed certificate if not available.
 
-PROJECT=roboflow-platform ENABLE_BUILDER=True ENABLE_STREAM_API=True ENABLE_SSL=True SSL_CERTIFICATE=INDIRECT watchmedo auto-restart --pattern="*.py" --recursive -- python3 start_server.py
+PROJECT=roboflow-platform \
+ENABLE_BUILDER=True \
+ENABLE_STREAM_API=True \
+ENABLE_SSL=True \
+SSL_CERTIFICATE=INDIRECT \
+E2B_API_KEY=e2b_4b8b2e92f2fe1c6e0033cde5f1e528f617a5adbd \
+E2B_TEMPLATE_ID="qfupheopqmf6w7b36h6o" \
+E2B_SANDBOX_TIMEOUT=120 \
+E2B_SANDBOX_IDLE_TIMEOUT=120 \
+WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE=remote \
+ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=False \
+watchmedo auto-restart --pattern="*.py" --recursive -- uvicorn cpu_http:app --port 9001
 
 # This will start:
 # - HTTP server on port 9001

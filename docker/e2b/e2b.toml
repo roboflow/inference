@@ -1,20 +1,16 @@
-# E2B Template Configuration for Inference Custom Python Blocks
+# This is a config for E2B sandbox template.
+# You can use template ID (qfupheopqmf6w7b36h6o) or template name (roboflow-inference-sandbox-v0-52-0-fixed) to create a sandbox:
 
-# Template settings
+# Python SDK
+# from e2b import Sandbox, AsyncSandbox
+# sandbox = Sandbox("roboflow-inference-sandbox-v0-52-0-fixed") # Sync sandbox
+# sandbox = await AsyncSandbox.create("roboflow-inference-sandbox-v0-52-0-fixed") # Async sandbox
+
+# JS SDK
+# import { Sandbox } from 'e2b'
+# const sandbox = await Sandbox.create('roboflow-inference-sandbox-v0-52-0-fixed')
+
+team_id = "1647872e-e6b7-4797-8e30-d1cd5dbcb671"
+dockerfile = "docker/e2b/e2b.Dockerfile"
+template_name = "roboflow-inference-sandbox-v0-52-0-fixed"
 template_id = "qfupheopqmf6w7b36h6o"
-template_name = "roboflow-inference-sandbox-v0-51-10"
-dockerfile = "e2b.Dockerfile"
-
-# Python version and environment
-python_version = "3.9"
-
-# Timeout settings (in seconds)
-timeout = 300  # 5 minutes default timeout for sandbox
-idle_timeout = 60  # 1 minute idle timeout
-
-# Resource limits
-memory_mb = 2048
-cpu_count = 2
-
-# Build configuration
-build_context = "../.."  # Root of inference repo
