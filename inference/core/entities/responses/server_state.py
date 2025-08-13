@@ -28,7 +28,7 @@ class ModelDescriptionEntity(BaseModel):
         description="Type of the task that the model performs",
         examples=["classification"],
     )
-    batch_size: Optional[Union[int, str]] = Field(
+    batch_size: Optional[int] = Field(
         None,
         description="Batch size accepted by the model (if registered).",
     )
@@ -45,10 +45,14 @@ class ModelDescriptionEntity(BaseModel):
     def from_model_description(
         cls, model_description: ModelDescription
     ) -> "ModelDescriptionEntity":
+        # Convert string batch_size (indicating dynamic batching) to None
+        batch_size = model_description.batch_size
+        if isinstance(batch_size, str):
+            batch_size = None
         return cls(
             model_id=model_description.model_id,
             task_type=model_description.task_type,
-            batch_size=model_description.batch_size,
+            batch_size=batch_size,
             input_height=model_description.input_height,
             input_width=model_description.input_width,
         )
