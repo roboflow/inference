@@ -31,7 +31,7 @@ SMOLVLM_BASE_FT_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/smolvlm/smolvlm-256m.zip"
 )
 MOONDREAM2_BASE_FT_URL = (
-    "https://storage.googleapis.com/roboflow-tests-assets/moondream2/moondream2_2b_jul24.zip"
+    "https://storage.googleapis.com/roboflow-tests-assets/moondream2/moondream2-2b.zip"
 )
 OCR_TEST_IMAGE_PATH = os.path.join(ASSETS_DIR, "ocr_test_image.png")
 
@@ -174,9 +174,9 @@ def smolvlm_256m_path() -> str:
 @pytest.fixture(scope="module")
 def moondream2_path() -> str:
     package_dir = os.path.join(MODELS_DIR, "moondream2")
-    unzipped_package_path = os.path.join(package_dir, "moondream2_2b_jul24")
+    unzipped_package_path = os.path.join(package_dir, "moondream2-2b")
     os.makedirs(package_dir, exist_ok=True)
-    zip_path = os.path.join(package_dir, "moondream2_2b_jul24.zip")
+    zip_path = os.path.join(package_dir, "moondream2-2b.zip")
     _download_if_not_exists(file_path=zip_path, url=MOONDREAM2_BASE_FT_URL)
     lock_path = f"{unzipped_package_path}.lock"
     with FileLock(lock_path, timeout=120):

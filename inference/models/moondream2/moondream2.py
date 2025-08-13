@@ -23,9 +23,9 @@ class Moondream2(TransformerModel):
     version_id = None
     default_dtype = torch.bfloat16
     load_weights_as_transformers = True
-    endpoint = "moondream2/moondream2_2b_jul24"
+    endpoint = "moondream2/moondream2-2b"
     trust_remote_code = True
-    revision = "2025-07-24"
+    revision = "2025-03-27"
 
     def __init__(self, *args, **kwargs):
         # if model_id in kwargs, delete
