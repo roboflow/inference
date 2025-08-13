@@ -61,10 +61,10 @@ class SAM2ForInstanceSegmentationPyTorch:
                     if len(pts) < 4:
                         continue
                     x1, y1, x2, y2 = pts[:4]
-                    x_lt = min(x1, x2)
-                    y_lt = min(y1, y2)
-                    x_rt = max(x1, x2)
-                    y_rt = max(y1, y2)
+                    x_lt = int(round(min(x1, x2)))
+                    y_lt = int(round(min(y1, y2)))
+                    x_rt = int(round(max(x1, x2)))
+                    y_rt = int(round(max(y1, y2)))
                     xyxy = np.array([[x_lt, y_lt, x_rt, y_rt]])
 
                     _, object_ids, mask_logits = self._predictor.add_new_prompt(
