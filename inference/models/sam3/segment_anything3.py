@@ -70,6 +70,7 @@ class SegmentAnything3(RoboflowCoreModel):
     def _init_and_cache_state(
         self, image: Optional[InferenceRequestImage], image_id: Optional[str]
     ) -> Tuple[dict, str]:
+        # Fast path if caller provided an id that is already cached
         if image_id and image_id in self.embedding_cache:
             return self.embedding_cache[image_id]["state"], image_id
 
@@ -80,6 +81,10 @@ class SegmentAnything3(RoboflowCoreModel):
             image_id = image_id or generated_id
         elif image_id is None:
             raise ValueError("Must provide either image or image_id")
+
+        # If we computed or resolved an image_id above, check cache again to avoid recomputation
+        if image_id in self.embedding_cache:
+            return self.embedding_cache[image_id]["state"], image_id
 
         # Save the image temporarily to a buffer path because SAM3 expects a file path
         # We keep it simple by using a temporary file in memory via PIL path-like not supported, so write to tmp
@@ -103,10 +108,14 @@ class SegmentAnything3(RoboflowCoreModel):
                 pass
 
         self.embedding_cache[image_id] = {"state": inference_state}
+        # De-duplicate before appending to maintain order without duplicates
+        if image_id in self.embedding_cache_keys:
+            self.embedding_cache_keys.remove(image_id)
         self.embedding_cache_keys.append(image_id)
         if len(self.embedding_cache_keys) > self.embedding_cache_size:
             old = self.embedding_cache_keys.pop(0)
-            del self.embedding_cache[old]
+            # Use pop with default to avoid KeyError in rare race/out-of-sync cases
+            self.embedding_cache.pop(old, None)
         return inference_state, image_id
 
     def embed_image(
