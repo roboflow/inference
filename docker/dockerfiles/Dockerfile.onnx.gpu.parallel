@@ -16,7 +16,6 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.clip.txt \
     requirements/requirements.http.txt \
     requirements/requirements.gpu.txt \
-    requirements/requirements.waf.txt \
     requirements/requirements.gaze.txt \
     requirements/requirements.parallel.txt \
     requirements/_requirements.txt \
@@ -28,7 +27,6 @@ RUN pip3 install --upgrade pip  && pip3 install \
     -r requirements.clip.txt \
     -r requirements.http.txt \
     -r requirements.gpu.txt \
-    -r requirements.waf.txt \
     -r requirements.gaze.txt \
     -r requirements.parallel.txt \
     "setuptools<=75.5.0" \

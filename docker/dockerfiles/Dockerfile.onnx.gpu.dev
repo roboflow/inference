@@ -20,7 +20,6 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.clip.txt \
     requirements/requirements.http.txt \
     requirements/requirements.gpu.txt \
-    requirements/requirements.waf.txt \
     requirements/requirements.gaze.txt \
     requirements/requirements.doctr.txt \
     requirements/requirements.groundingdino.txt \
@@ -39,7 +38,6 @@ RUN python3 -m pip install \
     -r requirements.clip.txt \
     -r requirements.http.txt \
     -r requirements.gpu.txt \
-    -r requirements.waf.txt \
     -r requirements.gaze.txt \
     -r requirements.groundingdino.txt \
     -r requirements.doctr.txt \
