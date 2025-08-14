@@ -77,6 +77,13 @@ export default function Home() {
           </div>
           <div className="flex items-center justify-center gap-2 md:gap-4 flex-col sm:flex-row flex-nowrap sm:flex-wrap px-6">
             <HeaderLink
+              href="/dashboard"
+              className=""
+              label="View Server Dashboard"
+              icon="📊"
+              target="_top"
+            />
+            <HeaderLink
               href="/build"
               className=""
               label="Start building locally"
