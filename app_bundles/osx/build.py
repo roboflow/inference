@@ -40,11 +40,6 @@ NOTARY_PROFILE = "roboflow-notary"
 def parse_args():
     parser = argparse.ArgumentParser(description="Build the macOS Inference app bundle")
     parser.add_argument(
-        "--skip-codesign",
-        action="store_true",
-        help="Skip codesigning and notarization steps",
-    )
-    parser.add_argument(
         "--skip-sign",
         action="store_true",
         help="Skip codesigning step only (useful for dev testing)",
@@ -67,7 +62,7 @@ def parse_args():
     parser.add_argument(
         "--fast",
         action="store_true",
-        help="Skip codesign, notarize, and DMG creation (alias for dev fast path)",
+        help="Skip codesigning, notarization, and DMG creation (development fast path)",
     )
     return parser.parse_args()
 
@@ -122,7 +117,16 @@ def copy_static_files():
         raise FileNotFoundError(f"STATIC LANDING FILES SOURCE DIRECTORY NOT FOUND: {SOURCE_LANDING_DIR} not found!")
 
     os.makedirs(DEST_LANDING_DIR, exist_ok=True)
-    shutil.copytree(SOURCE_LANDING_DIR, DEST_LANDING_DIR, dirs_exist_ok=True)
+    
+    # Define ignore patterns to exclude node_modules
+    def ignore_patterns(path, names):
+        ignored = []
+        for name in names:
+            if name == 'node_modules':
+                ignored.append(name)
+        return ignored
+    
+    shutil.copytree(SOURCE_LANDING_DIR, DEST_LANDING_DIR, dirs_exist_ok=True, ignore=ignore_patterns)
 
 
 
@@ -205,7 +209,7 @@ def codesign_and_notarize(app_path, zip_path, identity: str):
     notarize_app(zip_path)
     staple_app(app_path)
 
-def create_dmg(app_path, dmg_path):
+def create_dmg(app_path, dmg_path, skip_sign=False):
     print("💾 Creating DMG via shell script...")
     script_path = os.path.abspath("make_dmg.sh")
 
@@ -220,7 +224,13 @@ def create_dmg(app_path, dmg_path):
     unversioned_dmg_filename = f"{APP_NAME.replace(' ', '-')}.dmg" # Should be "Roboflow-Inference.dmg"
 
     print(f"Running {script_path}. Expecting it to create {unversioned_dmg_filename}, which will then be ensured to be {dmg_path}.")
-    subprocess.run([script_path], check=True)
+    
+    # Set environment variable to skip DMG signing if requested
+    env = os.environ.copy()
+    if skip_sign:
+        env['SKIP_SIGN_DMG'] = '1'
+    
+    subprocess.run([script_path], check=True, env=env)
 
     # Check if make_dmg.sh created the unversioned file
     if os.path.exists(unversioned_dmg_filename) and unversioned_dmg_filename != dmg_path:
@@ -308,12 +318,12 @@ if __name__ == "__main__":
     args = parse_args()
 
     # Derived flags for convenience/backwards compatibility
-    skip_sign = bool(args.skip_sign or args.skip_codesign or args.fast)
-    skip_notarize = bool(args.skip_notarize or args.skip_codesign or args.fast)
+    skip_sign = bool(args.skip_sign or args.fast)
+    skip_notarize = bool(args.skip_notarize or args.fast)
     skip_dmg = bool(args.skip_dmg or args.fast)
 
     # Determine signing identity
-    adhoc_sign = bool(args.adhoc_sign and not skip_sign)
+    adhoc_sign = bool(args.adhoc_sign)
     identity = "-" if adhoc_sign else CODESIGN_IDENTITY
 
     # Adjust incompatible combinations
@@ -345,7 +355,7 @@ if __name__ == "__main__":
     if skip_dmg:
         print("⏭️ Skipping DMG creation as requested.")
     else:
-        create_dmg(APP_PATH, DMG_PATH)
+        create_dmg(APP_PATH, DMG_PATH, skip_sign=skip_sign)
         # sign_dmg(DMG_PATH) # Temporarily disabled DMG signing
 
     print("\n✅ macOS app build complete.")
