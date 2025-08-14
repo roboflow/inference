@@ -150,7 +150,7 @@ def sign_app_bundle(app_path: str, identity: str):
                     "--sign", identity,
                 ]
                 if not is_adhoc_identity:
-                    cmd.insert(3, "--timestamp")
+                    cmd.insert(4, "--timestamp")
                 cmd.append(file_path)
                 try:
                     subprocess.run(cmd, check=True, capture_output=True, text=True)
