@@ -15,6 +15,9 @@ RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_
     cargo \
     && rm -rf /var/lib/apt/lists/*
 
+
+# rigth now just copyinh the sam3 code into the project root and gitignoring it
+# and then copyin to container here to install it since there is no pip package yet
 WORKDIR /
 COPY sam3 sam3
 WORKDIR sam3
