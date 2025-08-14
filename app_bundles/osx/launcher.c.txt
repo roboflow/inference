@@ -23,8 +23,12 @@ int main(int argc, char *argv[]) {
     char command[2048];
 
     // Escape quotes inside AppleScript to handle paths with spaces
+    // Also activate Terminal to bring it to the foreground
     snprintf(command, sizeof(command),
-        "osascript -e 'tell application \"Terminal\" to do script \"cd \\\"%s/../Resources\\\" && ./inference-app\"'",
+        "osascript -e 'tell application \"Terminal\"' "
+        "-e 'activate' "
+        "-e 'do script \"cd \\\"%s/../Resources\\\" && ./inference-app\"' "
+        "-e 'end tell'",
         dir);
 
     return system(command);

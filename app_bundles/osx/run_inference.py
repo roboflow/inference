@@ -36,7 +36,13 @@ def setup_runtime_cache_env(app_name="roboflow-inference"):
     os.environ.setdefault("MATPLOTLIBCONFIGDIR", os.path.join(cache_dir, "matplotlib"))
     os.environ.setdefault("MODEL_CACHE_DIR", os.path.join(cache_dir, "models"))
 
-    logger.info("Runtime cache configured")
+    logger.info("🧠 Runtime cache environment configured:")
+    logger.info(f" - TLD_EXTRACT_CACHE: {os.environ['TLD_EXTRACT_CACHE']}")
+    logger.info(f" - MATPLOTLIBCONFIGDIR: {os.environ['MATPLOTLIBCONFIGDIR']}")
+    logger.info(f" - TRANSFORMERS_CACHE: {os.environ['TRANSFORMERS_CACHE']}")
+    logger.info(f" - TORCH_HOME: {os.environ['TORCH_HOME']}")
+    logger.info(f" - HF_HOME: {os.environ['HF_HOME']}")
+    logger.info(f" - MODEL_CACHE_DIR: {os.environ['MODEL_CACHE_DIR']}")
 
     return {
         "cache_dir": cache_dir,
@@ -142,15 +148,30 @@ if __name__ == "__main__":
     import uvicorn
     import asyncio
 
+    class FilteredAccessLogConfig(logging.Filter):
+        """Filter out static file requests from access logs"""
+        def filter(self, record):
+            # Get the log message
+            message = record.getMessage()
+            # Filter out static paths and root requests (any HTTP method)
+            if '/static' in message or '/_next/static' in message or ' / HTTP' in message:
+                return False
+            return True
+
     async def _serve_with_banner():
         port = int(os.environ.get("PORT", "9001"))
         url = f"http://localhost:{port}/"
+        
+        # Configure access log filtering
+        access_logger = logging.getLogger("uvicorn.access")
+        access_logger.addFilter(FilteredAccessLogConfig())
+        
         config = uvicorn.Config(
             app,
             host="0.0.0.0",
             port=port,
             log_level="info",
-            access_log=False,
+            access_log=True,
         )
         server = uvicorn.Server(config)
         serve_task = asyncio.create_task(server.serve())
@@ -160,13 +181,13 @@ if __name__ == "__main__":
             # Fallback if the readiness event is unavailable
             await asyncio.sleep(0.5)
         banner = (
-            "\n"
-            "┌──────────────────────────────────────────────────────────┐\n"
-            "|                                                          |\n"
-            "│  Roboflow Inference is ready                             │\n"
-            f"│  Dashboard: {url:<44} │\n"
-            "|                                                          |\n"
-            "└──────────────────────────────────────────────────────────┘\n"
+            "\n\n\n\n\n\n\n\n\n"
+            "─────────────────────────────────────────────────────────── \n"
+            "                                                           \n"
+            "  Roboflow Inference is ready                              \n"
+            f"  Dashboard: {url:<44} │\n"
+            "                                                           \n"
+            "───────────────────────────────────────────────────────────\n"
         )
         print(banner, flush=True)
         await serve_task
