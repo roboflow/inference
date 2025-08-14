@@ -144,7 +144,6 @@ if __name__ == "__main__":
     class FilteredAccessLogConfig(logging.Filter):
         """Filter out static file requests from access logs"""
         def filter(self, record):
-            print(record)
             # Get the log message
             message = record.getMessage()
             # Filter out static paths and root requests (any HTTP method)
