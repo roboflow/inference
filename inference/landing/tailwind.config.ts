@@ -1,4 +1,5 @@
 import type { Config } from 'tailwindcss'
+import colors from 'tailwindcss/colors'
 
 const config: Config = {
   content: [
@@ -9,18 +10,7 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        primary: {
-          50: '#faf7ff',
-          100: '#f3ecff', 
-          200: '#e9d8ff',
-          300: '#d8b4fe',
-          400: '#c084fc',
-          500: '#A351FB', // Main Roboflow brand purple
-          600: '#8B5CF6',
-          700: '#7C3AED',
-          800: '#6B21A8',
-          900: '#581C87',
-        },
+        primary: colors.violet,
         accent: {
           purple: '#A351FB',
           'purple-light': '#8B5CF6',

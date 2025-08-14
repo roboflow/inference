@@ -14,7 +14,6 @@ export function RequestStatsCard({ requestStats, loading = false, error }: Reque
   return (
     <BaseDashboardCard 
       title="Inference API Requests"
-      hover={true}
     >
       <div className="space-y-3">
         {loading ? (

@@ -6,7 +6,6 @@ interface BaseDashboardCardProps {
   title?: string;
   badge?: React.ReactNode;
   className?: string;
-  hover?: boolean;
   noPadding?: boolean;
 }
 
@@ -15,15 +14,13 @@ export function BaseDashboardCard({
   title, 
   badge, 
   className = '', 
-  hover = false,
   noPadding = false 
 }: BaseDashboardCardProps) {
   return (
     <div 
       className={classNames(
-        'bg-white rounded-lg shadow-lg border border-gray-100',
+        'bg-white rounded-lg shadow-sm border border-gray-100',
         {
-          'hover:shadow-xl transition-shadow duration-200': hover,
           'p-6': !noPadding,
           'mb-6': !className.includes('mb-'),
           'mb-8': title && !className.includes('mb-'), // More space for cards with titles

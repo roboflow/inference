@@ -19,7 +19,6 @@ export function ModelsCard({ models, loading = false, error }: ModelsCardProps) 
     <BaseDashboardCard 
       title="Loaded Models" 
       badge={modelsBadge}
-      hover={true}
     >
       <div className="space-y-2">
         {loading ? (

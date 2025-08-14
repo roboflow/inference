@@ -11,13 +11,13 @@ export function QuickActions({ onRefresh }: QuickActionsProps) {
       <div className="flex flex-wrap gap-4">
         <a
           href="/"
-          className="inline-flex items-center px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors"
+          className="inline-flex items-center px-4 py-2 rounded-md bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 hover:border-gray-400 transition-colors shadow-sm"
         >
-          Back to Home
+          Home
         </a>
         <button
           onClick={onRefresh}
-          className="inline-flex items-center px-4 py-2 bg-primary-500 text-white rounded-md hover:bg-primary-600 transition-colors"
+          className="inline-flex items-center px-4 py-2 rounded-md bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 hover:border-gray-400 transition-colors shadow-sm"
         >
           Refresh Data
         </button>

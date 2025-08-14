@@ -18,7 +18,7 @@ function DashboardHeader() {
   return (
     <div className="mb-8">
       <h1 className="text-4xl font-bold text-gray-900 mb-2">
-      <span className="text-primary-500">Inference</span> Dashboard
+      <span className="text-primary-700">Inference</span> Dashboard
       </h1>
       <p className="text-gray-600">
         Here are your Roboflow Inference server status and metrics
