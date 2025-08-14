@@ -1,5 +1,6 @@
 import React from 'react';
 import { ModelInfo } from '../types';
+import { BaseDashboardCard } from './BaseDashboardCard';
 
 interface ModelsCardProps {
   models: ModelInfo[];
@@ -8,17 +9,18 @@ interface ModelsCardProps {
 }
 
 export function ModelsCard({ models, loading = false, error }: ModelsCardProps) {
+  const modelsBadge = (
+    <div className="bg-primary-100 text-primary-800 px-3 py-1 rounded-full text-sm font-medium">
+      {models.length}
+    </div>
+  );
+
   return (
-    <div className="bg-white rounded-lg shadow-md p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-semibold text-gray-900">
-          Loaded Models
-        </h2>
-        <div className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium">
-          {models.length}
-        </div>
-      </div>
-      
+    <BaseDashboardCard 
+      title="Loaded Models" 
+      badge={modelsBadge}
+      hover={true}
+    >
       <div className="space-y-2">
         {loading ? (
           <p className="text-gray-500 text-sm">Loading models...</p>
@@ -44,6 +46,6 @@ export function ModelsCard({ models, loading = false, error }: ModelsCardProps) 
           </div>
         )}
       </div>
-    </div>
+    </BaseDashboardCard>
   );
 }

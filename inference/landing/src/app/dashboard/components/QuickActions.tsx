@@ -1,4 +1,5 @@
 import React from 'react';
+import { BaseDashboardCard } from './BaseDashboardCard';
 
 interface QuickActionsProps {
   onRefresh: () => void;
@@ -6,7 +7,7 @@ interface QuickActionsProps {
 
 export function QuickActions({ onRefresh }: QuickActionsProps) {
   return (
-    <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+    <BaseDashboardCard>
       <div className="flex flex-wrap gap-4">
         <a
           href="/"
@@ -16,11 +17,11 @@ export function QuickActions({ onRefresh }: QuickActionsProps) {
         </a>
         <button
           onClick={onRefresh}
-          className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+          className="inline-flex items-center px-4 py-2 bg-primary-500 text-white rounded-md hover:bg-primary-600 transition-colors"
         >
           Refresh Data
         </button>
       </div>
-    </div>
+    </BaseDashboardCard>
   );
 }

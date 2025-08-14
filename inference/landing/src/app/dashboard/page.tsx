@@ -18,10 +18,10 @@ function DashboardHeader() {
   return (
     <div className="mb-8">
       <h1 className="text-4xl font-bold text-gray-900 mb-2">
-        Inference Dashboard
+      <span className="text-primary-500">Inference</span> Dashboard
       </h1>
       <p className="text-gray-600">
-        Monitor your Roboflow Inference server status and metrics
+        Here are your Roboflow Inference server status and metrics
       </p>
     </div>
   );
@@ -66,7 +66,7 @@ export default function Dashboard() {
   }
 
   return (
-    <main className="flex min-h-screen flex-col p-8 bg-gray-50">
+    <main className="flex min-h-screen flex-col p-8 bg-gradient-to-br from-gray-50 to-primary-50">
       <div className="max-w-7xl mx-auto w-full">
         <DashboardHeader />
         <ErrorBanner errors={allErrors} />

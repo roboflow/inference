@@ -2,6 +2,7 @@ import React from 'react';
 import { roboto_mono } from '../../fonts';
 import classNames from 'classnames';
 import { RequestStats } from '../types';
+import { BaseDashboardCard } from './BaseDashboardCard';
 
 interface RequestStatsCardProps {
   requestStats: RequestStats;
@@ -11,11 +12,10 @@ interface RequestStatsCardProps {
 
 export function RequestStatsCard({ requestStats, loading = false, error }: RequestStatsCardProps) {
   return (
-    <div className="bg-white rounded-lg shadow-md p-6">
-      <h2 className="text-xl font-semibold text-gray-900 mb-4">
-        Inference API Requests
-      </h2>
-      
+    <BaseDashboardCard 
+      title="Inference API Requests"
+      hover={true}
+    >
       <div className="space-y-3">
         {loading ? (
           <p className="text-gray-500 text-sm">Loading request statistics...</p>
@@ -72,6 +72,6 @@ export function RequestStatsCard({ requestStats, loading = false, error }: Reque
           </>
         )}
       </div>
-    </div>
+    </BaseDashboardCard>
   );
 }

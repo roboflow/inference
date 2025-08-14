@@ -10,8 +10,8 @@ export function ErrorBanner({ errors }: ErrorBannerProps) {
   }
 
   return (
-    <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-      <p className="text-yellow-800 text-sm">
+    <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+      <p className="text-red-800 text-sm">
         {errors.join(" • ")}
       </p>
     </div>
