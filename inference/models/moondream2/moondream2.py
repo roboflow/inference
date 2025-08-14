@@ -68,7 +68,7 @@ class Moondream2(TransformerModel):
                 "vision.py",
                 "vision_encoder.py",
                 "vocab.json",
-                "weights.py"
+                "weights.py",
             ]
         else:
             return super().get_infer_bucket_file_list()
