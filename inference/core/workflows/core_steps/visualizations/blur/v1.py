@@ -18,8 +18,17 @@ from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlock
 TYPE: str = "roboflow_core/blur_visualization@v1"
 SHORT_DESCRIPTION = "Blur detected objects in an image."
 LONG_DESCRIPTION = """
-The `BlurVisualization` block blurs detected
-objects in an image using Supervision's `sv.BlurAnnotator`.
+The Blur Visualization block blurs detected regions.
+
+This block is useful if you want to censor parts of an image.
+
+The below example shows a box being blurred in an image:
+
+![](https://media.roboflow.com/inference/workflows/blur.png)
+
+You can configure the kernel size -- strength of the blur -- from the block settings. The larger the kernel size, the stronger the blur effect.
+
+Note: Light blurs can be reversed. To censor information, we recommend applying a heavy blur, or applying a block colour using the Color Visualization block.
 """
 
 

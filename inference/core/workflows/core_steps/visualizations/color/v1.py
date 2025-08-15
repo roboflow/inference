@@ -21,8 +21,17 @@ from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlock
 TYPE: str = "roboflow_core/color_visualization@v1"
 SHORT_DESCRIPTION = "Paint a solid color on detected objects in an image."
 LONG_DESCRIPTION = """
-The `ColorVisualization` block paints a solid color on detected
-objects in an image using Supervision's `sv.ColorAnnotator`.
+The Color Visualization block replaces a detected region with a solid color.
+
+This block is useful if you want to highlight obscure parts of an image.
+
+By default, the overlay is semi-transparent, but you can adjust the opacity to make it more or less transparent.
+
+Here is an example of the block in use with a 0.5 (half) opacity:
+
+![](https://media.roboflow.com/inference/workflows/color.png)
+
+If you want to use this block to censor information, apply a 1.0 (full) opacity, which will completely cover the detected region with a solid color.
 """
 
 

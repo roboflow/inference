@@ -29,9 +29,9 @@ helping to manage resource usage and prevent over-execution.
 
 **Rate Limiter** is useful when you have two blocks that are directly connected, as shown below:
 
---- input_a --> ┌───────────┐                    ┌───────────┐
---- input_b --> │   step_1  │ -->  output_a -->  │   step_2  │
---- input_c --> └───────────┘                    └───────────┘
+    --- input_a --> ┌───────────┐                    ┌───────────┐
+    --- input_b --> │   step_1  │ -->  output_a -->  │   step_2  │
+    --- input_c --> └───────────┘                    └───────────┘
 
 If you want to throttle the *Step 2* execution rate - you should apply rate limiter in between:
 

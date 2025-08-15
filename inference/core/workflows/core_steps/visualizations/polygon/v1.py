@@ -24,9 +24,17 @@ from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlock
 TYPE: str = "roboflow_core/polygon_visualization@v1"
 SHORT_DESCRIPTION = "Draw a polygon around detected objects in an image."
 LONG_DESCRIPTION = """
-The `PolygonVisualization` block uses a detections from an
-instance segmentation to draw polygons around objects using
-`sv.PolygonAnnotator`.
+The Polygon Visualization block draws polygons around detected regions in an image.
+
+This block is useful if you want to highlight the boundaries of detected regions.
+
+This block needs to be used with an Instance or Semantic Segmentation model that returns polygons as predictions.
+
+Here is an example of the block in use:
+
+![](https://media.roboflow.com/inference/workflows/polygon.png)
+
+If you want to apply a mask over segmented regions instead, use the Mask Visualization block.
 """
 
 
