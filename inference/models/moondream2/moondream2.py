@@ -127,7 +127,7 @@ class Moondream2(TransformerModel):
                             "width": width,
                             "height": height,
                             "confidence": 1.0,  # confidence is not returned by the model
-                            "class": prompt,
+                            "class": prompt if prompt is not None else "",
                             "class_id": 0,  # you can only prompt for one object at once
                         }
                     )
