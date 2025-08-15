@@ -8,7 +8,7 @@ In this tutorial, we will build and run a simple Workflow that runs a model. We 
 
 !!! note
 
-    Before you get started, make sure you have [installed Inference](/install/).
+    Before you get started, make sure you have [installed Inference](/install/setup.md).
 
 **Difficulty:** Easy<br />
 **Time to Complete:** 5 minutes
@@ -38,7 +38,7 @@ In this tutorial, we will build and run a simple Workflow that runs a model. We 
     for implementing your own access control.
     
     To run on your own machine without a Roboflow account, follow the
-    [installation instructions](/install/index.md) and start your Inference Server
+    [installation instructions](/install/setup.md) and start your Inference Server
     in development mode (using `inference server start --dev`).
     
     Then, navigate to the local Workflows builder at

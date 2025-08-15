@@ -1,10 +1,42 @@
 # Install Inference
 
-Inference runs as a Docker container. This ensures all dependencies, model weights, and application caching can be managed in one place.
+Inference is designed to run both on the edge and in the cloud. When used as a server, the primary interface is HTTP for running models and Workflows. You can install and run it in several ways: Docker images for many CPU/GPU platforms, native desktop apps for Windows and macOS, or as a Python package to run locally. Choose the option below that best fits your environment for step-by-step instructions.
 
-You can make HTTP requests to the Docker container to run models and Workflows.
 
-Inference is designed to run both on the edge and in the cloud.
+<h2 id="native">Windows and macOS Native Installers</h2>
+
+You can now run Roboflow Inference Server on your Windows or macOS machine with our native desktop applications! This is the quickest and most effortless way to get up and running.
+
+<div class="download-container">
+    <div class="download-card">
+        <a href="https://github.com/roboflow/inference/releases/download/v{{ VERSION }}/inference-{{ VERSION }}-installer.exe" class="download-button">
+            <img src="/images/windows-icon.svg" alt="Windows" /> Download for Windows
+        </a>
+    </div>
+    
+    <div class="download-card">
+        <a href="https://github.com/roboflow/inference/releases/download/v{{ VERSION }}/Roboflow-Inference-{{ VERSION }}.dmg" class="download-button">
+            <img src="/images/macos-icon.svg" alt="macOS" /> Download for Mac
+        </a>
+    </div>
+</div>
+
+<p style="text-align: center; font-size: 0.9em; margin-top: 0.5rem;">
+    <a href="https://github.com/roboflow/inference/releases" >I need a previous release</a>
+</p>
+
+### Windows (x86)
+ - [Download the latest installer](https://github.com/roboflow/inference/releases/download/v{{ VERSION }}/inference-{{ VERSION }}-installer.exe) and run it to install Roboflow Inference
+ - When the install is finished it will offer to launch the Inference server after the setup completes
+ - To stop the inference server simply close the terminal window it opens
+ - To start it again later, you can find Roboflow Inference in your Start Menu
+
+### MacOS (Apple Silicon)
+ - [Download the Roboflow Inference DMG](https://github.com/roboflow/inference/releases/download/v{{ VERSION }}/Roboflow-Inference-{{ VERSION }}.dmg) 
+ - Mount the DMG by double clicking it
+ - Drag the Roboflow Inference App to the Application Folder
+ - Go to your Application Folder and double click the Roboflow Inference App to start the server
+
 
 ## Run on the Edge
 

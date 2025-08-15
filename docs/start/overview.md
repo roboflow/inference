@@ -12,7 +12,7 @@ Inference runs both on the edge (i.e. on an NVIDIA Jetson) and in the cloud (i.e
 
 Inference is licensed under an [Apache 2.0 license](https://github.com/roboflow/inference/). Models supported by Inference are subject to their own licenses.
 
-Ready to get started? [Let's build your first vision application with Inference](/start/getting-started/).
+Ready to get started? [Let's build your first vision application with Inference](/start/getting-started.md).
 
 Need inspiration? Check out these guides:
 

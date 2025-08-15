@@ -35,7 +35,7 @@ models custom-trained on domain-specific objects of interest.
     for implementing your own access control.
     
     To run on your own machine without a Roboflow account, follow the
-    [installation instructions](/install/index.md) and start your Inference Server
+    [installation instructions](/install/setup.md) and start your Inference Server
     in development mode (using `inference server start --dev`).
     
     Then, navigate to the local Workflows builder at
