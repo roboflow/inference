@@ -44,8 +44,7 @@ def test_moondream2_inference_object_detection(
     # then
     response.raise_for_status()
     data = response.json()
-    assert len(data["response"]) > 0, "Expected non empty generation"
-
+    assert len(data["predictions"]) > 0, "Expected non empty generation"
 
 
 @pytest.mark.skipif(
@@ -77,7 +76,7 @@ def test_moondream2_inference_caption(
     # then
     response.raise_for_status()
     data = response.json()
-    assert len(data["response"]) > 0, "Expected non empty generation"
+    assert len(data["predictions"]) > 0, "Expected non empty generation"
 
 
 @pytest.mark.skipif(
@@ -110,5 +109,5 @@ def test_moondream2_inference_vqa(
     # then
     response.raise_for_status()
     data = response.json()
-    assert len(data["response"]) > 0, "Expected non empty generation"
+    assert len(data["predictions"]) > 0, "Expected non empty generation"
 
