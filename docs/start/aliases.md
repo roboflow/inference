@@ -2,7 +2,7 @@
 
 You can use any model trained on or uploaded to Roboflow in a Workflow.
 
-You can also use one of [several pre-trained models](/start/aliases/#supported-pre-trained-models), ideal for experimentation, or any of the 50,000+ open source models hosted on [Roboflow Universe](/start/load_from_universe/).
+You can also use one of [several pre-trained models](#supported-pre-trained-models), ideal for experimentation, or any of the 50,000+ open source models hosted on [Roboflow Universe](/start/load_from_universe/).
 
 To use a model trained on or uploaded to Roboflow, open your Workflows editor. Then, add a model block such as an [Object Detection Model](/workflows/blocks/object_detection_model/) or Instance Segmentation Model block.
 

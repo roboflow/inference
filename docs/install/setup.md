@@ -61,5 +61,3 @@ You can run Workflows developed with Inference in the Roboflow Cloud. You can us
 
 - [Dedicated Deployments](https://docs.roboflow.com/deploy/dedicated-deployments), cloud CPUs or GPUs dedicated to your Workflows.
 - [Serverless API](https://docs.roboflow.com/deploy/serverless), which auto-scales with your workloads.
-
-Running on another device? [Learn more about the architectures on which Inference is designed to run](/install/other/).
