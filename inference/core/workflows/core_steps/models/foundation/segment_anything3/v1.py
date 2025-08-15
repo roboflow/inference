@@ -246,6 +246,7 @@ class SegmentAnything3BlockV1(WorkflowBlock):
                 prompt_class_names=prompt_class_names,
                 prompt_detection_ids=prompt_detection_ids,
                 threshold=threshold,
+                text_prompt=text
             )
             predictions.append(prediction)
 
@@ -281,6 +282,7 @@ def convert_sam3_segmentation_response_to_inference_instances_seg_response(
     prompt_class_names: List[Optional[str]],
     prompt_detection_ids: List[Optional[str]],
     threshold: float,
+    text_prompt: Optional[str] = None,
 ) -> InstanceSegmentationInferenceResponse:
     image_width = image.numpy_image.shape[1]
     image_height = image.numpy_image.shape[0]
@@ -288,7 +290,7 @@ def convert_sam3_segmentation_response_to_inference_instances_seg_response(
     if len(prompt_class_ids) == 0:
         prompt_class_ids = [0 for _ in range(len(sam3_segmentation_predictions))]
         prompt_class_names = [
-            "foreground" for _ in range(len(sam3_segmentation_predictions))
+            text_prompt if text_prompt else "foreground" for _ in range(len(sam3_segmentation_predictions))
         ]
         prompt_detection_ids = [None for _ in range(len(sam3_segmentation_predictions))]
     for prediction, class_id, class_name, detection_id in zip(
