@@ -39,7 +39,7 @@ MANIFEST
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 
-inference/landing/**
+osx/inference/landing/**
 
 # Installer logs
 pip-log.txt
