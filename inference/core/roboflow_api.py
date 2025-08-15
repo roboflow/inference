@@ -28,6 +28,7 @@ from inference.core.entities.types import (
 from inference.core.env import (
     API_BASE_URL,
     INTERNAL_WEIGHTS_URL_SUFFIX,
+    MD5_VERIFICATION_ENABLED,
     MODEL_CACHE_DIR,
     MODELS_CACHE_AUTH_ENABLED,
     RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API,
@@ -748,7 +749,7 @@ def _get_from_url(
             raise RetryRequestError(message=str(error), inner_error=error) from error
         raise error
 
-    if "x-goog-hash" in response.headers:
+    if MD5_VERIFICATION_ENABLED and "x-goog-hash" in response.headers:
         x_goog_hash = response.headers["x-goog-hash"]
         md5_part = None
         for part in x_goog_hash.split(","):
