@@ -28,6 +28,8 @@ env:
 jobs:
   determine-tags:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       base-tag: ${{ steps.tags.outputs.base-tag }}
     steps:
