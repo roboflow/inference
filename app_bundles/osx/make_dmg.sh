@@ -51,7 +51,11 @@ hdiutil convert "$SPARSE_IMAGE" -format UDZO -imagekey zlib-level=9 -o "$DMG_NAM
 echo "🧹 Cleaning up sparse image..."
 rm "$SPARSE_IMAGE"
 
-echo "🔐 Signing DMG with identity: $IDENTITY"
-codesign --sign "$IDENTITY" --timestamp --options runtime "$DMG_NAME"
-
-echo "✅ Signed DMG created at: $DMG_NAME"
+if [[ "${SKIP_SIGN_DMG:-}" != "1" ]]; then
+    echo "🔐 Signing DMG with identity: $IDENTITY"
+    codesign --sign "$IDENTITY" --timestamp --options runtime "$DMG_NAME"
+    echo "✅ Signed DMG created at: $DMG_NAME"
+else
+    echo "⏭️ Skipping DMG signing as requested"
+    echo "✅ Unsigned DMG created at: $DMG_NAME"
+fi
