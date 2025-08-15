@@ -47,7 +47,9 @@ class ModelDescriptionEntity(BaseModel):
     ) -> "ModelDescriptionEntity":
         # Convert string batch_size (indicating dynamic batching) to None
         batch_size = model_description.batch_size
-        if isinstance(batch_size, str):
+        try:
+            batch_size = int(batch_size)
+        except (TypeError, ValueError):
             batch_size = None
         return cls(
             model_id=model_description.model_id,
