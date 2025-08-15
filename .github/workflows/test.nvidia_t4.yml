@@ -126,8 +126,7 @@ jobs:
 #        if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'qwen25' }}
 #        run: make stop_test_docker
       - name: 🔋 Start Test Docker - MoonDream
-        # TODO: enable this test once moondream2 is fixed at source
-        if: ${{ github.event.inputs.test_name == 'moondream2' }}
+        if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'moondream2' }}
         run: |
           PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
       - name: 🧪 Regression Tests - MoonDream
