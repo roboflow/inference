@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import sys
 import glob
+import argparse
 
 import importlib.util
 
@@ -34,6 +35,36 @@ LAUNCHER_BINARY_PATH = os.path.abspath("launcher") #need to compile this first f
 
 CODESIGN_IDENTITY = "Developer ID Application: Roboflow, LLC (7SBQ39NG7G)"
 NOTARY_PROFILE = "roboflow-notary"
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Build the macOS Inference app bundle")
+    parser.add_argument(
+        "--skip-sign",
+        action="store_true",
+        help="Skip codesigning step only (useful for dev testing)",
+    )
+    parser.add_argument(
+        "--skip-notarize",
+        action="store_true",
+        help="Skip notarization step only (useful for dev testing)",
+    )
+    parser.add_argument(
+        "--skip-dmg",
+        action="store_true",
+        help="Skip DMG creation step",
+    )
+    parser.add_argument(
+        "--adhoc-sign",
+        action="store_true",
+        help="Use ad-hoc signing identity ('-') instead of Developer ID (cannot be notarized)",
+    )
+    parser.add_argument(
+        "--fast",
+        action="store_true",
+        help="Skip codesigning, notarization, and DMG creation (development fast path)",
+    )
+    return parser.parse_args()
 
 
 def clean():
@@ -86,12 +117,22 @@ def copy_static_files():
         raise FileNotFoundError(f"STATIC LANDING FILES SOURCE DIRECTORY NOT FOUND: {SOURCE_LANDING_DIR} not found!")
 
     os.makedirs(DEST_LANDING_DIR, exist_ok=True)
-    shutil.copytree(SOURCE_LANDING_DIR, DEST_LANDING_DIR, dirs_exist_ok=True)
+    
+    # Define ignore patterns to exclude node_modules
+    def ignore_patterns(path, names):
+        ignored = []
+        for name in names:
+            if name == 'node_modules':
+                ignored.append(name)
+        return ignored
+    
+    shutil.copytree(SOURCE_LANDING_DIR, DEST_LANDING_DIR, dirs_exist_ok=True, ignore=ignore_patterns)
 
 
 
-def sign_app_bundle(app_path: str):
+def sign_app_bundle(app_path: str, identity: str):
     print("🔒 Recursively signing all executables and libraries...")
+    is_adhoc_identity = identity.strip() == "-"
 
     # Walk through all files in the .app bundle
     for root, dirs, files in os.walk(app_path):
@@ -106,10 +147,11 @@ def sign_app_bundle(app_path: str):
                     "codesign",
                     "--force",
                     "--options", "runtime",
-                    "--timestamp",
-                    "--sign", CODESIGN_IDENTITY,
-                    file_path
+                    "--sign", identity,
                 ]
+                if not is_adhoc_identity:
+                    cmd.insert(4, "--timestamp")
+                cmd.append(file_path)
                 try:
                     subprocess.run(cmd, check=True, capture_output=True, text=True)
                 except subprocess.CalledProcessError as e:
@@ -123,10 +165,11 @@ def sign_app_bundle(app_path: str):
         "codesign",
         "--force",
         "--options", "runtime",
-        "--timestamp",
-        "--sign", CODESIGN_IDENTITY,
-        app_path
+        "--sign", identity,
     ]
+    if not is_adhoc_identity:
+        cmd_bundle.insert(4, "--timestamp")
+    cmd_bundle.append(app_path)
     try:
         subprocess.run(cmd_bundle, check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError as e:
@@ -160,13 +203,13 @@ def staple_app(app_path):
     print("📎 Stapling notarization ticket...")
     subprocess.run(["xcrun", "stapler", "staple", app_path], check=True)
 
-def codesign_and_notarize(app_path, zip_path):
-    sign_app_bundle(app_path)
+def codesign_and_notarize(app_path, zip_path, identity: str):
+    sign_app_bundle(app_path, identity)
     zip_app(app_path, zip_path)
     notarize_app(zip_path)
     staple_app(app_path)
 
-def create_dmg(app_path, dmg_path):
+def create_dmg(app_path, dmg_path, skip_sign=False):
     print("💾 Creating DMG via shell script...")
     script_path = os.path.abspath("make_dmg.sh")
 
@@ -181,7 +224,13 @@ def create_dmg(app_path, dmg_path):
     unversioned_dmg_filename = f"{APP_NAME.replace(' ', '-')}.dmg" # Should be "Roboflow-Inference.dmg"
 
     print(f"Running {script_path}. Expecting it to create {unversioned_dmg_filename}, which will then be ensured to be {dmg_path}.")
-    subprocess.run([script_path], check=True)
+    
+    # Set environment variable to skip DMG signing if requested
+    env = os.environ.copy()
+    if skip_sign:
+        env['SKIP_SIGN_DMG'] = '1'
+    
+    subprocess.run([script_path], check=True, env=env)
 
     # Check if make_dmg.sh created the unversioned file
     if os.path.exists(unversioned_dmg_filename) and unversioned_dmg_filename != dmg_path:
@@ -266,17 +315,50 @@ def fix_app_permissions(app_path):
 
 
 if __name__ == "__main__":
-    
+    args = parse_args()
+
+    # Derived flags for convenience/backwards compatibility
+    skip_sign = bool(args.skip_sign or args.fast)
+    skip_notarize = bool(args.skip_notarize or args.fast)
+    skip_dmg = bool(args.skip_dmg or args.fast)
+
+    # Determine signing identity
+    adhoc_sign = bool(args.adhoc_sign)
+    identity = "-" if adhoc_sign else CODESIGN_IDENTITY
+
+    # Adjust incompatible combinations
+    if skip_sign and not skip_notarize:
+        print("⚠️ Notarization requires a signed app. Skipping notarization because signing is skipped.")
+        skip_notarize = True
+    if adhoc_sign and not skip_notarize:
+        print("⚠️ Ad-hoc signed apps cannot be notarized. Skipping notarization.")
+        skip_notarize = True
+
     clean()
     generate_icns_from_png(ICON_PNG, ICNS_PATH)
     build_app(ICNS_PATH)
     copy_static_files()
     create_app_bundle_with_native_launcher(BUILD_DIR, APP_PATH, LAUNCHER_BINARY_PATH, icon_path=ICNS_PATH)
     fix_app_permissions(APP_PATH)
-    codesign_and_notarize(APP_PATH, ZIP_PATH)
-    create_dmg(APP_PATH, DMG_PATH)
-    # sign_dmg(DMG_PATH) # Temporarily disabled DMG signing
 
-    print("\n✅ macOS app built, signed, notarized, and packed into DMG!")
+    # Signing and Notarization flow
+    if skip_sign and skip_notarize:
+        print("⏭️ Skipping codesigning and notarization as requested.")
+    elif not skip_sign and not skip_notarize:
+        print(f"🔏 Signing with identity: {'ad-hoc (-)' if adhoc_sign else identity}")
+        codesign_and_notarize(APP_PATH, ZIP_PATH, identity)
+    elif not skip_sign and skip_notarize:
+        print(f"🔏 Signing only with identity: {'ad-hoc (-)' if adhoc_sign else identity}")
+        sign_app_bundle(APP_PATH, identity)
+
+    # DMG creation
+    if skip_dmg:
+        print("⏭️ Skipping DMG creation as requested.")
+    else:
+        create_dmg(APP_PATH, DMG_PATH, skip_sign=skip_sign)
+        # sign_dmg(DMG_PATH) # Temporarily disabled DMG signing
+
+    print("\n✅ macOS app build complete.")
     print(f"   App: {APP_PATH}")
-    print(f"   DMG: {DMG_PATH}")
+    if not skip_dmg:
+        print(f"   DMG: {DMG_PATH}")
