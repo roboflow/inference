@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import json
 import os
@@ -746,6 +747,20 @@ def _get_from_url(
         if response.status_code in TRANSIENT_ROBOFLOW_API_ERRORS:
             raise RetryRequestError(message=str(error), inner_error=error) from error
         raise error
+
+    if "x-goog-hash" in response.headers:
+        x_goog_hash = response.headers["x-goog-hash"]
+        md5_part = None
+        for part in x_goog_hash.split(","):
+            if part.strip().startswith("md5="):
+                md5_part = part.strip()[4:]
+                break
+        if md5_part is not None:
+            md5_from_header = base64.b64decode(md5_part)
+            if md5_from_header != hashlib.md5(response.content).digest():
+                raise RoboflowAPIUnsuccessfulRequestError(
+                    "MD5 hash does not match MD5 received from x-goog-hash header"
+                )
 
     if verify_content_length:
         content_length = str(response.headers.get("Content-Length"))
