@@ -1,20 +1,33 @@
 # Divert the program flow in worker sub-process as soon as possible,
 # before importing heavy-weight modules.
 import multiprocessing
+
 if __name__ == "__main__":
-    multiprocessing.freeze_support()    
+    multiprocessing.freeze_support()
 
 
 import logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-)
-logger = logging.getLogger("inference.app")
 import os
 import sys
+
+# Set up logging configuration for bundled app
+# Enable in-memory logging for the FastAPI server to use
+os.environ.setdefault("ENABLE_IN_MEMORY_LOGS", "true")
+
+# Set up minimal console logging (only warnings and errors)
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.WARNING)
+console_formatter = logging.Formatter("%(levelname)s: %(message)s")
+console_handler.setFormatter(console_formatter)
+
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+root_logger.addHandler(console_handler)
+
+logger = logging.getLogger("inference.app")
 import certifi
 from platformdirs import user_cache_dir, user_data_dir
+
 
 def setup_runtime_cache_env(app_name="roboflow-inference"):
     """
@@ -44,32 +57,32 @@ def setup_runtime_cache_env(app_name="roboflow-inference"):
     logger.info(f" - HF_HOME: {os.environ['HF_HOME']}")
     logger.info(f" - MODEL_CACHE_DIR: {os.environ['MODEL_CACHE_DIR']}")
 
-    return {
-        "cache_dir": cache_dir,
-        "data_dir": data_dir
-    }
+    return {"cache_dir": cache_dir, "data_dir": data_dir}
 
 
 # Determine app_dir
-if getattr(sys, 'frozen', False):
+if getattr(sys, "frozen", False):
     logger.info("Launching Roboflow Inference (bundle)")
 
     app_dir = os.path.dirname(sys.executable)
-    
-    bundled_site_packages = os.path.join(os.path.dirname(sys.executable), 'site-packages')
+
+    bundled_site_packages = os.path.join(
+        os.path.dirname(sys.executable), "site-packages"
+    )
     sys.path.insert(0, bundled_site_packages)
 
     # Set GDAL_DATA environment variable
     import rasterio
-    gdal_data = os.path.join(os.path.dirname(rasterio.__file__), 'gdal_data')
-    os.environ['GDAL_DATA'] = gdal_data
 
-    #setup global cache env needed for tldexract and other packages
+    gdal_data = os.path.join(os.path.dirname(rasterio.__file__), "gdal_data")
+    os.environ["GDAL_DATA"] = gdal_data
+
+    # setup global cache env needed for tldexract and other packages
     setup_runtime_cache_env()
 
-
-    #force load the correct openssl libs, cv2 includes its own old ones
+    # force load the correct openssl libs, cv2 includes its own old ones
     import ctypes
+
     crypto_path = os.path.join(app_dir, "_internal", "libcrypto.3.dylib")
     ssl_path = os.path.join(app_dir, "_internal", "libssl.3.dylib")
     ctypes.CDLL(crypto_path, mode=ctypes.RTLD_GLOBAL)
@@ -106,7 +119,7 @@ os.environ.setdefault("ENABLE_PROMETHEUS", "True")
 os.environ.setdefault("ENABLE_BUILDER", "True")
 
 
-# # Force all foundational model imports 
+# # Force all foundational model imports
 # can uncomment this to to debug missing dependencies or hidden
 # modules needed for pyinstaller (the improt errors otherewise get
 # swallowed in inference )
@@ -140,7 +153,6 @@ os.environ.setdefault("ENABLE_BUILDER", "True")
 # import inference.models.rfdetr as _rfdetr
 
 
-
 if __name__ == "__main__":
     logger.info("Starting server")
     # Import the FastAPI app
@@ -150,22 +162,27 @@ if __name__ == "__main__":
 
     class FilteredAccessLogConfig(logging.Filter):
         """Filter out static file requests from access logs"""
+
         def filter(self, record):
             # Get the log message
             message = record.getMessage()
             # Filter out static paths and root requests (any HTTP method)
-            if '/static' in message or '/_next/static' in message or ' / HTTP' in message:
+            if (
+                "/static" in message
+                or "/_next/static" in message
+                or " / HTTP" in message
+            ):
                 return False
             return True
 
     async def _serve_with_banner():
         port = int(os.environ.get("PORT", "9001"))
         url = f"http://localhost:{port}/"
-        
+
         # Configure access log filtering
         access_logger = logging.getLogger("uvicorn.access")
         access_logger.addFilter(FilteredAccessLogConfig())
-        
+
         config = uvicorn.Config(
             app,
             host="0.0.0.0",
