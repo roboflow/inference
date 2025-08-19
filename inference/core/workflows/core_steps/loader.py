@@ -391,6 +391,9 @@ from inference.core.workflows.core_steps.visualizations.grid.v1 import (
 from inference.core.workflows.core_steps.visualizations.halo.v1 import (
     HaloVisualizationBlockV1,
 )
+from inference.core.workflows.core_steps.visualizations.icon.v1 import (
+    IconVisualizationBlockV1,
+)
 from inference.core.workflows.core_steps.visualizations.keypoint.v1 import (
     KeypointVisualizationBlockV1,
 )
@@ -582,6 +585,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         GoogleVisionOCRBlockV1,
         GridVisualizationBlockV1,
         HaloVisualizationBlockV1,
+        IconVisualizationBlockV1,
         ImageBlurBlockV1,
         ImageContoursDetectionBlockV1,
         ImagePreprocessingBlockV1,
