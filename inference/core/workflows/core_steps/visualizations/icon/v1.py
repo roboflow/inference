@@ -59,6 +59,16 @@ class IconManifest(VisualizationManifest):
         }
     )
 
+    icon: Selector(kind=[IMAGE_KIND]) = Field(
+        title="Icon Image",
+        description="The icon image to place on the input image (PNG with transparency recommended)",
+        examples=["$inputs.icon", "$steps.image_loader.image"],
+        json_schema_extra={
+            "always_visible": True,
+            "order": 3,
+        },
+    )
+
     mode: Union[
         Literal["static", "dynamic"],
         Selector(kind=[STRING_KIND]),
@@ -69,16 +79,6 @@ class IconManifest(VisualizationManifest):
         json_schema_extra={
             "always_visible": True,
             "order": 1,
-        },
-    )
-
-    icon: Selector(kind=[IMAGE_KIND]) = Field(
-        title="Icon Image",
-        description="The icon image to place on the input image (PNG with transparency recommended)",
-        examples=["$inputs.icon", "$steps.image_loader.image"],
-        json_schema_extra={
-            "always_visible": True,
-            "order": 3,
         },
     )
 
