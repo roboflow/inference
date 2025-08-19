@@ -118,15 +118,7 @@ def copy_static_files():
 
     os.makedirs(DEST_LANDING_DIR, exist_ok=True)
     
-    # Define ignore patterns to exclude node_modules
-    def ignore_patterns(path, names):
-        ignored = []
-        for name in names:
-            if name == 'node_modules':
-                ignored.append(name)
-        return ignored
-    
-    shutil.copytree(SOURCE_LANDING_DIR, DEST_LANDING_DIR, dirs_exist_ok=True, ignore=ignore_patterns)
+    shutil.copytree(SOURCE_LANDING_DIR, DEST_LANDING_DIR, dirs_exist_ok=True)
 
 
 
@@ -312,9 +304,11 @@ def fix_app_permissions(app_path):
     subprocess.run(["chmod", "-R", "u+rwX", app_path], check=True)
 
 
-
-
 if __name__ == "__main__":
+    copy_static_files()
+
+
+if __name__ == "__main__2":
     args = parse_args()
 
     # Derived flags for convenience/backwards compatibility

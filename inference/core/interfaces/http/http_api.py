@@ -585,15 +585,12 @@ class HttpInterface(BaseInterface):
             },
             root_path=root_path,
         )
-
-        # Set up in-memory logging if enabled
-        def is_memory_logging_enabled():
-            return os.environ.get("ENABLE_IN_MEMORY_LOGS", "").lower() == "true"
-        
-        if is_memory_logging_enabled():
+        # Ensure in-memory logging is initialized as early as possible for all runtimes
+        try:
             from inference.core.logging.memory_handler import setup_memory_logging
             setup_memory_logging()
-            logger.info("In-memory logging enabled for /logs endpoint")
+        except Exception:
+            pass
 
         app.mount(
             "/static",
@@ -611,10 +608,9 @@ class HttpInterface(BaseInterface):
             logger.info("Shutting down %s", description)
             await usage_collector.async_push_usage_payloads()
 
-        if ENABLE_PROMETHEUS:
-            InferenceInstrumentator(
-                app, model_manager=model_manager, endpoint="/metrics"
-            )
+        InferenceInstrumentator(
+            app, model_manager=model_manager, endpoint="/metrics"
+        )
         if LAMBDA:
             app.add_middleware(LambdaMiddleware)
         if GCP_SERVERLESS:
@@ -1012,11 +1008,12 @@ class HttpInterface(BaseInterface):
                 List of log entries with timestamp, level, logger, and message
             """
             # Check if in-memory logging is enabled
+            from inference.core.logging.memory_handler import get_recent_logs, is_memory_logging_enabled
+            
             if not is_memory_logging_enabled():
                 raise HTTPException(status_code=404, detail="Logs endpoint not available")
             
             try:
-                from inference.core.logging.memory_handler import get_recent_logs
                 
                 logs = get_recent_logs(limit=limit or 100, level=level, since=since)
                 return {

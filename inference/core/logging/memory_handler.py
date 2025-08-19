@@ -11,12 +11,14 @@ from collections import deque
 from threading import Lock
 from typing import List, Dict, Any
 from datetime import datetime
+import os
 
 
 # Global log storage
 _log_entries = deque(maxlen=1000)  # Keep last 1000 log entries
 _log_lock = Lock()
-
+logger = logging.getLogger(__name__)
+_uvicorn_config_patched = False
 
 class MemoryLogHandler(logging.Handler):
     """Custom log handler that stores log records in memory for dashboard access"""
@@ -68,8 +70,14 @@ def get_recent_logs(
     return logs[-limit:] if limit else logs
 
 
+def is_memory_logging_enabled():
+    return os.environ.get("ENABLE_IN_MEMORY_LOGS", "").lower() == "true"
+
 def setup_memory_logging():
     """Set up memory logging handler for the current logger hierarchy"""
+    if not is_memory_logging_enabled():
+        return
+    logger.info("Setting up memory logging")
     memory_handler = MemoryLogHandler()
     memory_handler.setLevel(logging.DEBUG)  # Capture all levels
     memory_formatter = logging.Formatter(
@@ -77,8 +85,60 @@ def setup_memory_logging():
     )
     memory_handler.setFormatter(memory_formatter)
 
-    # Add to root logger to capture all logs
+    # Add to root logger to capture all logs immediately
     root_logger = logging.getLogger()
-    root_logger.addHandler(memory_handler)
+    if memory_handler not in root_logger.handlers:
+        root_logger.addHandler(memory_handler)
+
+    # Specifically add to uvicorn.access logger to ensure access logs are captured now
+    access_logger = logging.getLogger("uvicorn.access")
+    if memory_handler not in access_logger.handlers:
+        access_logger.addHandler(memory_handler)
+
+    # Also patch uvicorn's default LOGGING_CONFIG so when uvicorn applies dictConfig,
+    # our in-memory handler remains attached
+    global _uvicorn_config_patched
+    if not _uvicorn_config_patched:
+        try:
+            from uvicorn.config import LOGGING_CONFIG as UVICORN_LOGGING_CONFIG
+
+            # Modify in-place (safe: uvicorn makes a deep copy later)
+            log_config = UVICORN_LOGGING_CONFIG
+
+            log_config.setdefault("formatters", {})
+            if "default" not in log_config["formatters"]:
+                log_config["formatters"]["default"] = {
+                    "()": "uvicorn.logging.DefaultFormatter",
+                    "fmt": "%(levelprefix)s %(message)s",
+                    "use_colors": None,
+                }
+
+            log_config.setdefault("handlers", {})["inmemory"] = {
+                "class": "inference.core.logging.memory_handler.MemoryLogHandler",
+                "level": "DEBUG",
+                "formatter": "default",
+            }
+
+            log_config.setdefault("loggers", {})
+            log_config["loggers"].setdefault("uvicorn.access", {
+                "handlers": ["default"],
+                "level": "INFO",
+                "propagate": False,
+            })
+            if "inmemory" not in log_config["loggers"]["uvicorn.access"]["handlers"]:
+                log_config["loggers"]["uvicorn.access"]["handlers"].append("inmemory")
+
+            log_config["loggers"].setdefault("uvicorn", {"handlers": ["default"], "level": "INFO"})
+            log_config["loggers"].setdefault("uvicorn.error", {"level": "INFO"})
+
+            root_cfg = log_config.setdefault("root", {"handlers": ["default"], "level": "INFO"})
+            if "inmemory" not in root_cfg.get("handlers", []):
+                root_cfg.setdefault("handlers", []).append("inmemory")
+
+            _uvicorn_config_patched = True
+            logger.info("Patched uvicorn LOGGING_CONFIG to include MemoryLogHandler")
+        except Exception:
+            # Avoid hard failure if uvicorn is not available
+            pass
 
     return memory_handler

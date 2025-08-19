@@ -197,6 +197,16 @@ if __name__ == "__main__":
         except Exception:
             # Fallback if the readiness event is unavailable
             await asyncio.sleep(0.5)
+
+        # After startup: remove console stream handlers (keeps non-stream handlers like memory handlers)
+        def _remove_console_handlers(logger_name: str):
+            lg = logging.getLogger(logger_name)
+            for handler in list(lg.handlers):
+                if isinstance(handler, logging.StreamHandler):
+                    lg.removeHandler(handler)
+
+        for name in ("", "uvicorn", "uvicorn.error", "uvicorn.access", "inference", "inference.app"):
+            _remove_console_handlers(name)
         banner = (
             "\n\n\n\n\n\n\n\n\n"
             "─────────────────────────────────────────────────────────── \n"
