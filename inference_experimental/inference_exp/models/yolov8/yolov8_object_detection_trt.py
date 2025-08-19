@@ -6,18 +6,25 @@ import torch
 from inference_exp import Detections, ObjectDetectionModel
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
-from inference_exp.errors import MissingDependencyError, ModelRuntimeError
+from inference_exp.errors import (
+    CorruptedModelPackageError,
+    MissingDependencyError,
+    ModelRuntimeError,
+)
 from inference_exp.models.common.cuda import use_cuda_context, use_primary_cuda_context
 from inference_exp.models.common.model_packages import get_model_package_contents
 from inference_exp.models.common.roboflow.model_packages import (
+    InferenceConfig,
     PreProcessingConfig,
     PreProcessingMetadata,
+    ResizeMode,
     TRTConfig,
     parse_class_names_file,
-    parse_pre_processing_config,
+    parse_inference_config,
     parse_trt_config,
 )
 from inference_exp.models.common.roboflow.post_processing import (
+    post_process_nms_fused_model_output,
     rescale_detections,
     run_nms_for_object_detection,
 )
@@ -69,7 +76,7 @@ class YOLOv8ForObjectDetectionTRT(
             model_package_dir=model_name_or_path,
             elements=[
                 "class_names.txt",
-                "environment.json",
+                "inference_config.json",
                 "trt_config.json",
                 "engine.plan",
             ],
@@ -77,9 +84,20 @@ class YOLOv8ForObjectDetectionTRT(
         class_names = parse_class_names_file(
             class_names_path=model_package_content["class_names.txt"]
         )
-        pre_processing_config = parse_pre_processing_config(
-            config_path=model_package_content["environment.json"],
+        inference_config = parse_inference_config(
+            config_path=model_package_content["inference_config.json"],
+            allowed_resize_modes={
+                ResizeMode.STRETCH_TO,
+                ResizeMode.LETTERBOX,
+                ResizeMode.CENTER_CROP,
+                ResizeMode.LETTERBOX_REFLECT_EDGES,
+            },
         )
+        if inference_config.post_processing.type != "nms":
+            raise CorruptedModelPackageError(
+                message="Expected NMS to be the post-processing",
+                help_url="https://todo",
+            )
         trt_config = parse_trt_config(
             config_path=model_package_content["trt_config.json"]
         )
@@ -94,7 +112,7 @@ class YOLOv8ForObjectDetectionTRT(
         return cls(
             engine=engine,
             class_names=class_names,
-            pre_processing_config=pre_processing_config,
+            inference_config=inference_config,
             trt_config=trt_config,
             device=device,
             cuda_context=cuda_context,
@@ -105,7 +123,7 @@ class YOLOv8ForObjectDetectionTRT(
         self,
         engine: trt.ICudaEngine,
         class_names: List[str],
-        pre_processing_config: PreProcessingConfig,
+        inference_config: InferenceConfig,
         trt_config: TRTConfig,
         device: torch.device,
         cuda_context: cuda.Context,
@@ -113,7 +131,7 @@ class YOLOv8ForObjectDetectionTRT(
     ):
         self._engine = engine
         self._class_names = class_names
-        self._pre_processing_config = pre_processing_config
+        self._inference_config = inference_config
         self._trt_config = trt_config
         self._device = device
         self._cuda_context = cuda_context
@@ -132,8 +150,8 @@ class YOLOv8ForObjectDetectionTRT(
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         return pre_process_network_input(
             images=images,
-            pre_processing_config=self._pre_processing_config,
-            expected_network_color_format="rgb",
+            image_pre_processing=self._inference_config.image_pre_processing,
+            network_input=self._inference_config.network_input,
             target_device=self._device,
             input_color_format=input_color_format,
         )
@@ -161,13 +179,18 @@ class YOLOv8ForObjectDetectionTRT(
         class_agnostic: bool = False,
         **kwargs,
     ) -> List[Detections]:
-        nms_results = run_nms_for_object_detection(
-            output=model_results,
-            conf_thresh=conf_thresh,
-            iou_thresh=iou_thresh,
-            max_detections=max_detections,
-            class_agnostic=class_agnostic,
-        )
+        if self._inference_config.post_processing.fused:
+            nms_results = post_process_nms_fused_model_output(
+                output=model_results, conf_thresh=conf_thresh
+            )
+        else:
+            nms_results = run_nms_for_object_detection(
+                output=model_results,
+                conf_thresh=conf_thresh,
+                iou_thresh=iou_thresh,
+                max_detections=max_detections,
+                class_agnostic=class_agnostic,
+            )
         rescaled_results = rescale_detections(
             detections=nms_results,
             images_metadata=pre_processing_meta,

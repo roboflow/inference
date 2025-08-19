@@ -6,17 +6,22 @@ import torch
 from inference_exp import Detections, ObjectDetectionModel
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
-from inference_exp.errors import EnvironmentConfigurationError, MissingDependencyError
+from inference_exp.errors import (
+    CorruptedModelPackageError,
+    EnvironmentConfigurationError,
+    MissingDependencyError,
+)
 from inference_exp.models.common.model_packages import get_model_package_contents
 from inference_exp.models.common.onnx import (
     run_session_with_batch_size_limit,
     set_execution_provider_defaults,
 )
 from inference_exp.models.common.roboflow.model_packages import (
-    PreProcessingConfig,
+    InferenceConfig,
     PreProcessingMetadata,
+    ResizeMode,
     parse_class_names_file,
-    parse_pre_processing_config,
+    parse_inference_config,
 )
 from inference_exp.models.common.roboflow.post_processing import rescale_detections
 from inference_exp.models.common.roboflow.pre_processing import (
@@ -75,16 +80,32 @@ class YOLONasForObjectDetectionOnnx(
             model_package_dir=model_name_or_path,
             elements=[
                 "class_names.txt",
-                "environment.json",
+                "inference_config.json",
                 "weights.onnx",
             ],
         )
         class_names = parse_class_names_file(
             class_names_path=model_package_content["class_names.txt"]
         )
-        pre_processing_config = parse_pre_processing_config(
-            config_path=model_package_content["environment.json"],
+        inference_config = parse_inference_config(
+            config_path=model_package_content["inference_config.json"],
+            allowed_resize_modes={
+                ResizeMode.STRETCH_TO,
+                ResizeMode.LETTERBOX,
+                ResizeMode.CENTER_CROP,
+                ResizeMode.LETTERBOX_REFLECT_EDGES,
+            },
         )
+        if inference_config.post_processing.type != "nms":
+            raise CorruptedModelPackageError(
+                message="Expected NMS to be the post-processing",
+                help_url="https://todo",
+            )
+        if inference_config.post_processing.fused is True:
+            raise CorruptedModelPackageError(
+                message="Model implementation does not support fused NMS",
+                help_url="https://todo",
+            )
         session = onnxruntime.InferenceSession(
             path_or_bytes=model_package_content["weights.onnx"],
             providers=onnx_execution_providers,
@@ -95,7 +116,7 @@ class YOLONasForObjectDetectionOnnx(
         return cls(
             session=session,
             class_names=class_names,
-            pre_processing_config=pre_processing_config,
+            inference_config=inference_config,
             device=device,
             input_batch_size=input_batch_size,
         )
@@ -103,13 +124,13 @@ class YOLONasForObjectDetectionOnnx(
     def __init__(
         self,
         session: onnxruntime.InferenceSession,
-        pre_processing_config: PreProcessingConfig,
+        inference_config: InferenceConfig,
         class_names: List[str],
         device: torch.device,
         input_batch_size: Optional[int],
     ):
         self._session = session
-        self._pre_processing_config = pre_processing_config
+        self._inference_config = inference_config
         self._class_names = class_names
         self._device = device
         self._input_batch_size = input_batch_size
@@ -127,8 +148,8 @@ class YOLONasForObjectDetectionOnnx(
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         return pre_process_network_input(
             images=images,
-            pre_processing_config=self._pre_processing_config,
-            expected_network_color_format="rgb",
+            image_pre_processing=self._inference_config.image_pre_processing,
+            network_input=self._inference_config.network_input,
             target_device=self._device,
             input_color_format=input_color_format,
         )

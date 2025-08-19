@@ -6,18 +6,22 @@ import torch
 from inference_exp import ClassificationModel, ClassificationPrediction
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
-from inference_exp.errors import EnvironmentConfigurationError, MissingDependencyError
+from inference_exp.errors import (
+    CorruptedModelPackageError,
+    EnvironmentConfigurationError,
+    MissingDependencyError,
+)
 from inference_exp.models.base.types import PreprocessedInputs, RawPrediction
 from inference_exp.models.common.model_packages import get_model_package_contents
 from inference_exp.models.common.onnx import (
-    run_session_via_iobinding,
     run_session_with_batch_size_limit,
     set_execution_provider_defaults,
 )
 from inference_exp.models.common.roboflow.model_packages import (
-    PreProcessingConfig,
-    parse_class_map_from_environment_file,
-    parse_pre_processing_config,
+    InferenceConfig,
+    ResizeMode,
+    parse_class_names_file,
+    parse_inference_config,
 )
 from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
@@ -71,16 +75,28 @@ class VITForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
             elements=[
-                "environment.json",
+                "class_names.txt",
+                "inference_config.json",
                 "best.onnx",
             ],
         )
-        class_names = parse_class_map_from_environment_file(
-            environment_file_path=model_package_content["environment.json"],
+        class_names = parse_class_names_file(
+            class_names_path=model_package_content["class_names.txt"]
         )
-        pre_processing_config = parse_pre_processing_config(
-            config_path=model_package_content["environment.json"],
+        inference_config = parse_inference_config(
+            config_path=model_package_content["inference_config.json"],
+            allowed_resize_modes={
+                ResizeMode.STRETCH_TO,
+                ResizeMode.LETTERBOX,
+                ResizeMode.CENTER_CROP,
+                ResizeMode.LETTERBOX_REFLECT_EDGES,
+            },
         )
+        if inference_config.post_processing.type != "softmax":
+            raise CorruptedModelPackageError(
+                message="Expected Softmax to be the post-processing",
+                help_url="https://todo",
+            )
         session = onnxruntime.InferenceSession(
             path_or_bytes=model_package_content["best.onnx"],
             providers=onnx_execution_providers,
@@ -90,7 +106,7 @@ class VITForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):
             input_batch_size = None
         return cls(
             session=session,
-            pre_processing_config=pre_processing_config,
+            inference_config=inference_config,
             class_names=class_names,
             device=device,
             input_batch_size=input_batch_size,
@@ -99,13 +115,13 @@ class VITForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):
     def __init__(
         self,
         session: onnxruntime.InferenceSession,
-        pre_processing_config: PreProcessingConfig,
+        inference_config: InferenceConfig,
         class_names: List[str],
         device: torch.device,
         input_batch_size: Optional[int],
     ):
         self._session = session
-        self._pre_processing_config = pre_processing_config
+        self._inference_config = inference_config
         self._class_names = class_names
         self._device = device
         self._input_batch_size = input_batch_size
@@ -123,8 +139,8 @@ class VITForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):
     ) -> torch.Tensor:
         return pre_process_network_input(
             images=images,
-            pre_processing_config=self._pre_processing_config,
-            expected_network_color_format="rgb",
+            image_pre_processing=self._inference_config.image_pre_processing,
+            network_input=self._inference_config.network_input,
             target_device=self._device,
             input_color_format=input_color_format,
         )[0]
@@ -145,7 +161,10 @@ class VITForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):
         model_results: torch.Tensor,
         **kwargs,
     ) -> ClassificationPrediction:
-        confidence = torch.nn.functional.softmax(model_results, dim=-1)
+        if self._inference_config.post_processing.fused:
+            confidence = model_results
+        else:
+            confidence = torch.nn.functional.softmax(model_results, dim=-1)
         return ClassificationPrediction(
             class_id=confidence.argmax(dim=-1),
             confidence=confidence,

@@ -10,11 +10,12 @@ from inference_exp.errors import CorruptedModelPackageError, ModelRuntimeError
 from inference_exp.logger import LOGGER
 from inference_exp.models.common.model_packages import get_model_package_contents
 from inference_exp.models.common.roboflow.model_packages import (
-    PreProcessingConfig,
+    InferenceConfig,
     PreProcessingMetadata,
+    ResizeMode,
     parse_class_names_file,
+    parse_inference_config,
     parse_model_characteristics,
-    parse_pre_processing_config,
 )
 from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
@@ -59,7 +60,7 @@ class RFDetrForObjectDetectionTorch(
             model_package_dir=model_name_or_path,
             elements=[
                 "class_names.txt",
-                "environment.json",
+                "inference_config.json",
                 "model_type.json",
                 "weights.pth",
             ],
@@ -67,8 +68,14 @@ class RFDetrForObjectDetectionTorch(
         class_names = parse_class_names_file(
             class_names_path=model_package_content["class_names.txt"]
         )
-        pre_processing_config = parse_pre_processing_config(
-            config_path=model_package_content["environment.json"],
+        inference_config = parse_inference_config(
+            config_path=model_package_content["inference_config.json"],
+            allowed_resize_modes={
+                ResizeMode.STRETCH_TO,
+                ResizeMode.LETTERBOX,
+                ResizeMode.CENTER_CROP,
+                ResizeMode.LETTERBOX_REFLECT_EDGES,
+            },
         )
         weights_dict = torch.load(
             model_package_content["weights.pth"],
@@ -96,7 +103,7 @@ class RFDetrForObjectDetectionTorch(
             model=model,
             class_names=class_names,
             device=device,
-            pre_processing_config=pre_processing_config,
+            inference_config=inference_config,
             post_processor=post_processor,
             resolution=model_config.resolution,
         )
@@ -104,14 +111,14 @@ class RFDetrForObjectDetectionTorch(
     def __init__(
         self,
         model: LWDETR,
-        pre_processing_config: PreProcessingConfig,
+        inference_config: InferenceConfig,
         class_names: List[str],
         device: torch.device,
         post_processor: PostProcess,
         resolution: int,
     ):
         self._model = model
-        self._pre_processing_config = pre_processing_config
+        self._inference_config = inference_config
         self._class_names = class_names
         self._post_processor = post_processor
         self._device = device
@@ -167,11 +174,10 @@ class RFDetrForObjectDetectionTorch(
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         return pre_process_network_input(
             images=images,
-            pre_processing_config=self._pre_processing_config,
-            expected_network_color_format="rgb",
+            image_pre_processing=self._inference_config.image_pre_processing,
+            network_input=self._inference_config.network_input,
             target_device=self._device,
             input_color_format=input_color_format,
-            normalization=([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
         )
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> dict:
