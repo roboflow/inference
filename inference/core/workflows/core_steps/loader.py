@@ -299,9 +299,6 @@ from inference.core.workflows.core_steps.sinks.webhook.v1 import WebhookSinkBloc
 from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1 import (
     AbsoluteStaticCropBlockV1,
 )
-from inference.core.workflows.core_steps.transformations.load_image_from_url.v1 import (
-    LoadImageFromUrlBlockV1,
-)
 from inference.core.workflows.core_steps.transformations.bounding_rect.v1 import (
     BoundingRectBlockV1,
 )
@@ -340,6 +337,9 @@ from inference.core.workflows.core_steps.transformations.image_slicer.v1 import 
 )
 from inference.core.workflows.core_steps.transformations.image_slicer.v2 import (
     ImageSlicerBlockV2,
+)
+from inference.core.workflows.core_steps.transformations.load_image_from_url.v1 import (
+    LoadImageFromUrlBlockV1,
 )
 from inference.core.workflows.core_steps.transformations.perspective_correction.v1 import (
     PerspectiveCorrectionBlockV1,
