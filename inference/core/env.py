@@ -53,6 +53,8 @@ API_BASE_URL = os.getenv(
 # This is only expected to be used in Roboflow internal hosting environments.
 INTERNAL_WEIGHTS_URL_SUFFIX = os.getenv("INTERNAL_WEIGHTS_URL_SUFFIX", "")
 
+MD5_VERIFICATION_ENABLED = str2bool(os.getenv("MD5_VERIFICATION_ENABLED", False))
+
 # Base URL for metrics collector
 METRICS_COLLECTOR_BASE_URL = os.getenv(
     "METRICS_COLLECTOR_BASE_URL",
