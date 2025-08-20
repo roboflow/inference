@@ -1,5 +1,8 @@
 from typing import List, Literal, Optional, Type, Union
 from uuid import uuid4
+import time
+import threading
+from collections import OrderedDict
 
 import numpy as np
 from pydantic import ConfigDict, Field
@@ -158,7 +161,13 @@ def generate_qr_code(
     back_color: str = "white",
 ) -> WorkflowImageData:
     """Generate a QR code PNG image from text input."""
-    global _ERROR_LEVELS
+    global _ERROR_LEVELS, _QR_CACHE
+    
+    # Check cache first
+    cached_result = _QR_CACHE.get(text, version, box_size, error_correct, border, fill_color, back_color)
+    if cached_result is not None:
+        return cached_result
+    
     try:
         import qrcode
     except ImportError:
@@ -216,10 +225,79 @@ def generate_qr_code(
 
     # Create WorkflowImageData
     parent_metadata = ImageParentMetadata(parent_id=f"qr_code.{uuid4()}")
-    return WorkflowImageData(
+    result = WorkflowImageData(
         parent_metadata=parent_metadata,
         numpy_image=numpy_image,
     )
+    
+    # Store in cache
+    _QR_CACHE.put(text, version, box_size, error_correct, border, fill_color, back_color, result)
+    
+    return result
+
+
+class _QRCodeLRUCache:
+    """LRU Cache with TTL for QR code generation results."""
+    
+    def __init__(self, max_size: int = 100, ttl_seconds: int = 3600):
+        self.max_size = max_size
+        self.ttl_seconds = ttl_seconds
+        self._cache = OrderedDict()
+        self._lock = threading.RLock()
+    
+    def _make_key(self, text: str, version: Optional[int], box_size: int, 
+                  error_correct: str, border: int, fill_color: str, back_color: str) -> str:
+        """Create cache key from QR code parameters."""
+        return f"{text}|{version}|{box_size}|{error_correct}|{border}|{fill_color}|{back_color}"
+    
+    def _is_expired(self, timestamp: float) -> bool:
+        """Check if cache entry is expired."""
+        return time.time() - timestamp > self.ttl_seconds
+    
+    def _cleanup_expired(self):
+        """Remove expired entries from cache."""
+        current_time = time.time()
+        expired_keys = [
+            key for key, (_, timestamp) in self._cache.items()
+            if current_time - timestamp > self.ttl_seconds
+        ]
+        for key in expired_keys:
+            del self._cache[key]
+    
+    def get(self, text: str, version: Optional[int], box_size: int, 
+            error_correct: str, border: int, fill_color: str, back_color: str) -> Optional:
+        """Get cached QR code result if available and not expired."""
+        key = self._make_key(text, version, box_size, error_correct, border, fill_color, back_color)
+        
+        with self._lock:
+            if key in self._cache:
+                result, timestamp = self._cache[key]
+                if not self._is_expired(timestamp):
+                    # Move to end (most recently used)
+                    self._cache.move_to_end(key)
+                    return result
+                else:
+                    # Remove expired entry
+                    del self._cache[key]
+        
+        return None
+    
+    def put(self, text: str, version: Optional[int], box_size: int, 
+            error_correct: str, border: int, fill_color: str, back_color: str, result) -> None:
+        """Store QR code result in cache."""
+        key = self._make_key(text, version, box_size, error_correct, border, fill_color, back_color)
+        
+        with self._lock:
+            # Clean up expired entries periodically
+            if len(self._cache) % 10 == 0:  # Every 10th insertion
+                self._cleanup_expired()
+            
+            # Remove oldest entries if at capacity
+            while len(self._cache) >= self.max_size:
+                self._cache.popitem(last=False)  # Remove oldest (FIFO when at capacity)
+            
+            # Add new entry
+            self._cache[key] = (result, time.time())
 
 
 def _get_error_levels():
@@ -249,3 +327,4 @@ def _get_error_levels():
 
 
 _ERROR_LEVELS = None
+_QR_CACHE = _QRCodeLRUCache(max_size=100, ttl_seconds=3600)
