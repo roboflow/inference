@@ -39,7 +39,7 @@ class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Load Image From URL",
-            "version": "v1", 
+            "version": "v1",
             "short_description": "Load an image from a URL.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
@@ -54,12 +54,12 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/load_image_from_url@v1"]
     url: Union[str, Selector(kind=[STRING_KIND])] = Field(
         description="URL of the image to load",
-        examples=["https://example.com/image.jpg", "$inputs.image_url"]
+        examples=["https://example.com/image.jpg", "$inputs.image_url"],
     )
     cache: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
         description="Whether to cache the downloaded image to avoid re-fetching",
-        examples=[True, False, "$inputs.cache_image"]
+        examples=[True, False, "$inputs.cache_image"],
     )
 
     @classmethod
@@ -82,29 +82,28 @@ class LoadImageFromUrlBlockV1(WorkflowBlock):
         try:
             # Generate cache key using URL hash (following common pattern)
             cache_key = hashlib.md5(url.encode("utf-8")).hexdigest()
-            
+
             # Check cache if enabled
             if cache:
                 cached_image = image_cache.get(cache_key)
                 if cached_image is not None:
                     return {"image": cached_image}
-            
+
             # Load image using secure utility
             numpy_image = load_image_from_url(value=url)
-            
+
             # Create proper parent metadata
             parent_metadata = ImageParentMetadata(parent_id=str(uuid4()))
-            
+
             workflow_image = WorkflowImageData(
                 parent_metadata=parent_metadata,
                 numpy_image=numpy_image,
             )
-            
+
             # Store in cache if enabled
             if cache:
                 image_cache.set(cache_key, workflow_image)
-            
+
             return {"image": workflow_image}
         except Exception as e:
             raise RuntimeError(f"Failed to load image from URL {url}: {str(e)}")
-    
