@@ -167,11 +167,7 @@ if __name__ == "__main__":
             # Get the log message
             message = record.getMessage()
             # Filter out static paths and root requests (any HTTP method)
-            if (
-                "/static" in message
-                or "/_next/static" in message
-                or " / HTTP" in message
-            ):
+            if '/static' in message or '/_next/static' in message or ' / HTTP' in message:
                 return False
             return True
 
