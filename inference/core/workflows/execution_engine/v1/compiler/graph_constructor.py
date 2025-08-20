@@ -159,6 +159,11 @@ def add_input_nodes_for_graph(
                 )
             data_lineage = [WORKFLOW_INPUT_BATCH_LINEAGE_ID]
             for _ in range(input_spec.dimensionality - 1):
+                # TODO: this may end up being a bug - with ability for multi-step debugging, if we will
+                #  ever have a situation that there will be multiple step outputs with nested
+                #  dimensionality with the same lineage, this re-construction method will
+                #  assign a different lineage identifier, causing the inputs being non-composable in
+                #  a single execution branch
                 data_lineage.append(f"{uuid4()}")
         else:
             data_lineage = []
@@ -690,20 +695,44 @@ def denote_data_flow_for_step(
         node=node,
         expected_type=StepNode,
     )
+    parsed_step_input_selectors: List[ParsedSelector] = execution_graph.nodes[node][
+        PARSED_NODE_INPUT_SELECTORS_PROPERTY
+    ]
+    batch_compatibility_of_properties = retrieve_batch_compatibility_of_input_selectors(
+        input_selectors=parsed_step_input_selectors
+    )
+    scalar_parameters_to_be_batched = verify_declared_batch_compatibility_against_actual_inputs(
+        node=node,
+        step_node_data=step_node_data,
+        input_data=input_data,
+        batch_compatibility_of_properties=batch_compatibility_of_properties,
+    )
+    step_node_data.scalar_parameters_to_be_batched = scalar_parameters_to_be_batched
+    input_dimensionality_offsets = manifest.get_input_dimensionality_offsets()
+    print("input_dimensionality_offsets", input_dimensionality_offsets)
+    verify_step_input_dimensionality_offsets(
+        step_name=step_name,
+        input_dimensionality_offsets=input_dimensionality_offsets,
+    )
     inputs_dimensionalities = get_inputs_dimensionalities(
         step_name=step_name,
         step_type=manifest.type,
         input_data=input_data,
+        scalar_parameters_to_be_batched=scalar_parameters_to_be_batched,
+        input_dimensionality_offsets=input_dimensionality_offsets,
     )
+    print("inputs_dimensionalities", inputs_dimensionalities)
     logger.debug(
         f"For step: {node}, detected the following input dimensionalities: {inputs_dimensionalities}"
     )
     parameters_with_batch_inputs = grab_parameters_defining_batch_inputs(
         inputs_dimensionalities=inputs_dimensionalities,
     )
+    print("parameters_with_batch_inputs", parameters_with_batch_inputs)
     dimensionality_reference_property = manifest.get_dimensionality_reference_property()
-    input_dimensionality_offsets = manifest.get_input_dimensionality_offsets()
+    print("dimensionality_reference_property", dimensionality_reference_property)
     output_dimensionality_offset = manifest.get_output_dimensionality_offset()
+    print("output_dimensionality_offset", output_dimensionality_offset)
     verify_step_input_dimensionality_offsets(
         step_name=step_name,
         input_dimensionality_offsets=input_dimensionality_offsets,
@@ -722,7 +751,12 @@ def denote_data_flow_for_step(
         inputs_dimensionalities=inputs_dimensionalities,
         dimensionality_offstes=input_dimensionality_offsets,
     )
-    all_lineages = get_input_data_lineage(step_name=step_name, input_data=input_data)
+    all_lineages = get_input_data_lineage_including_auto_batch_casting(
+        step_name=step_name,
+        input_data=input_data,
+        scalar_parameters_to_be_batched=scalar_parameters_to_be_batched,
+        inputs_dimensionalities=inputs_dimensionalities,
+    )
     verify_compatibility_of_input_data_lineage_with_control_flow_lineage(
         step_name=step_name,
         inputs_lineage=all_lineages,
@@ -738,58 +772,18 @@ def denote_data_flow_for_step(
             output_dimensionality_offset=output_dimensionality_offset,
         )
     )
-    parsed_step_input_selectors: List[ParsedSelector] = execution_graph.nodes[node][
-        PARSED_NODE_INPUT_SELECTORS_PROPERTY
-    ]
-    input_property2batch_expected = defaultdict(set)
-    for parsed_selector in parsed_step_input_selectors:
-        for reference in parsed_selector.definition.allowed_references:
-            input_property2batch_expected[
-                parsed_selector.definition.property_name
-            ].update(reference.points_to_batch)
-    for property_name, input_definition in input_data.items():
-        if property_name not in input_property2batch_expected:
-            # only values plugged vi selectors are to be validated
-            continue
-        if input_definition.is_compound_input():
-            actual_input_is_batch = {
-                element.is_batch_oriented()
-                for element in input_definition.iterate_through_definitions()
-            }
+    truly_batch_parameters = parameters_with_batch_inputs.difference(scalar_parameters_to_be_batched)
+    if len(scalar_parameters_to_be_batched) > 0:
+        if len(truly_batch_parameters) > 0:
+            data_lineage = [WORKFLOW_INPUT_BATCH_LINEAGE_ID]
         else:
-            actual_input_is_batch = {input_definition.is_batch_oriented()}
-        batch_input_expected = input_property2batch_expected[property_name]
-        step_accepts_batch_input = step_node_data.step_manifest.accepts_batch_input()
-        if (
-            step_accepts_batch_input
-            and batch_input_expected == {False}
-            and True in actual_input_is_batch
-        ):
-            raise ExecutionGraphStructureError(
-                public_message=f"Detected invalid reference plugged "
-                f"into property `{property_name}` of step `{node}` - the step "
-                f"property do not accept batch-oriented inputs, yet the input selector "
-                f"holds one - this indicates the problem with "
-                f"construction of your Workflow - usually the problem occurs when non-batch oriented "
-                f"step inputs are filled with outputs of batch-oriented steps or batch-oriented inputs.",
-                context="workflow_compilation | execution_graph_construction",
+            auto_casted_batch_min_dimensionality = min(
+                dim for p in scalar_parameters_to_be_batched for dim in inputs_dimensionalities[p]
             )
-        if (
-            step_accepts_batch_input
-            and batch_input_expected == {True}
-            and False in actual_input_is_batch
-        ):
-            raise ExecutionGraphStructureError(
-                public_message=f"Detected invalid reference plugged "
-                f"into property `{property_name}` of step `{node}` - the step "
-                f"property strictly requires batch-oriented inputs, yet the input selector "
-                f"holds non-batch oriented input - this indicates the "
-                f"problem with construction of your Workflow - usually the problem occurs when "
-                f"non-batch oriented step inputs are filled with outputs of non batch-oriented "
-                f"steps or non batch-oriented inputs.",
-                context="workflow_compilation | execution_graph_construction",
-            )
-    if not parameters_with_batch_inputs:
+            data_lineage = [WORKFLOW_INPUT_BATCH_LINEAGE_ID]
+            for i in range(auto_casted_batch_min_dimensionality - 1):
+                data_lineage.append(f"auto-casted-dim-{i}")
+    elif not truly_batch_parameters:
         data_lineage = []
     else:
         data_lineage = establish_batch_oriented_step_lineage(
@@ -1181,6 +1175,8 @@ def verify_output_offset(
     output_dimensionality_offset: int,
 ) -> None:
     if not parameters_with_batch_inputs and output_dimensionality_offset != 0:
+        # TODO: this needs to be changed - we should take into account the params which will be
+        #   batch auto-casted here, otherwise we will not be able to operate normally with BAC
         raise BlockInterfaceError(
             public_message=f"Block defining step {step_name} defines dimensionality offset different "
             f"than zero while taking only non-batch parameters, which is not allowed.",
@@ -1403,10 +1399,36 @@ def get_batch_lineage_prefixes(lineage: List[str]) -> List[List[str]]:
 
 
 def get_inputs_dimensionalities(
-    step_name: str, step_type: str, input_data: StepInputData
+    step_name: str,
+    step_type: str,
+    input_data: StepInputData,
+    scalar_parameters_to_be_batched: Set[str],
+    input_dimensionality_offsets: Dict[str, int],
 ) -> Dict[str, Set[int]]:
     result = defaultdict(set)
     dimensionalities_spotted = set()
+    offset_parameters = {parameter: value for parameter,value in input_dimensionality_offsets.items() if value > 0}
+    non_offset_parameters_dimensionality = {
+        property_name: input_definition.get_dimensionality()
+        for property_name, input_definition in input_data.items()
+        if input_definition.is_batch_oriented() and property_name not in offset_parameters
+    }
+    non_offset_parameters_dimensionality_values = set(non_offset_parameters_dimensionality.values())
+    if len(non_offset_parameters_dimensionality_values) > 1:
+        raise StepInputDimensionalityError(
+            public_message=f"For step {step_name} attempted to plug input data that are in different dimensions, "
+                           f"whereas block defines the inputs to be equal in that terms. Problematic properties and "
+                           f"their dimensionalities: {non_offset_parameters_dimensionality}",
+            context="workflow_compilation | execution_graph_construction | collecting_step_input_data",
+            blocks_errors=[
+                WorkflowBlockError(
+                    block_id=step_name,
+                    block_type=step_type,
+                    block_details=f"Dimensionality of input parameters differs by more than 1. Detected dimensions: {dict(result)}",
+                )
+            ],
+        )
+    non_offset_parameters_dimensionality_value = non_offset_parameters_dimensionality_values.pop() if len(non_offset_parameters_dimensionality_values) > 0 else 1
     for property_name, input_definition in input_data.items():
         if input_definition.is_compound_input():
             result[property_name] = get_compound_input_dimensionality(
@@ -1414,9 +1436,18 @@ def get_inputs_dimensionalities(
                 step_type=step_type,
                 property_name=property_name,
                 input_definition=input_definition,
+                scalar_parameters_to_be_batched=scalar_parameters_to_be_batched,
+                non_offset_parameters_dimensionality_value=non_offset_parameters_dimensionality_value,
+                offset_parameters=offset_parameters,
             )
         else:
-            result[property_name] = {input_definition.get_dimensionality()}
+            if property_name in scalar_parameters_to_be_batched:
+                if property_name not in offset_parameters:
+                    result[property_name] = {non_offset_parameters_dimensionality_value}
+                else:
+                    result[property_name] = non_offset_parameters_dimensionality_value + offset_parameters[property_name]
+            else:
+                result[property_name] = {input_definition.get_dimensionality()}
         dimensionalities_spotted.update(result[property_name])
     non_zero_dimensionalities_spotted = {d for d in dimensionalities_spotted if d != 0}
     if len(non_zero_dimensionalities_spotted) > 0:
@@ -1443,10 +1474,18 @@ def get_compound_input_dimensionality(
     property_name: str,
     step_type: str,
     input_definition: CompoundStepInputDefinition,
+    scalar_parameters_to_be_batched: Set[str],
+    offset_parameters: Dict[str, int],
+    non_offset_parameters_dimensionality_value: int,
 ) -> Set[int]:
     dimensionalities_spotted = set()
     for definition in input_definition.iterate_through_definitions():
-        dimensionalities_spotted.add(definition.get_dimensionality())
+        if property_name not in scalar_parameters_to_be_batched or definition.is_batch_oriented():
+            dimensionalities_spotted.add(definition.get_dimensionality())
+        elif property_name not in offset_parameters:
+            dimensionalities_spotted.add(non_offset_parameters_dimensionality_value)
+        else:
+            dimensionalities_spotted.add(non_offset_parameters_dimensionality_value + offset_parameters[property_name])
     non_zero_dimensionalities = {e for e in dimensionalities_spotted if e != 0}
     if len(non_zero_dimensionalities) > 1:
         raise StepInputDimensionalityError(
@@ -1476,12 +1515,67 @@ def grab_parameters_defining_batch_inputs(
     return result
 
 
-def get_input_data_lineage(
+def retrieve_batch_compatibility_of_input_selectors(input_selectors: List[ParsedSelector]) -> Dict[str, Set[bool]]:
+    batch_compatibility_of_properties = defaultdict(set)
+    for parsed_selector in input_selectors:
+        for reference in parsed_selector.definition.allowed_references:
+            batch_compatibility_of_properties[
+                parsed_selector.definition.property_name
+            ].update(reference.points_to_batch)
+    return batch_compatibility_of_properties
+
+
+def verify_declared_batch_compatibility_against_actual_inputs(
+    node: str,
+    step_node_data: StepNode,
+    input_data: StepInputData,
+    batch_compatibility_of_properties: Dict[str, Set[bool]],
+) -> Set[str]:
+    scalar_parameters_to_be_batched = set()
+    for property_name, input_definition in input_data.items():
+        if property_name not in batch_compatibility_of_properties:
+            # only values plugged via selectors are to be validated
+            continue
+        if input_definition.is_compound_input():
+            actual_input_is_batch = {
+                element.is_batch_oriented()
+                for element in input_definition.iterate_through_definitions()
+            }
+        else:
+            actual_input_is_batch = {input_definition.is_batch_oriented()}
+        batch_compatibility = batch_compatibility_of_properties[property_name]
+        step_accepts_batch_input = step_node_data.step_manifest.accepts_batch_input()
+        if (
+            step_accepts_batch_input
+            and batch_compatibility == {False}
+            and True in actual_input_is_batch
+        ):
+            raise ExecutionGraphStructureError(
+                public_message=f"Detected invalid reference plugged "
+                f"into property `{property_name}` of step `{node}` - the step "
+                f"property do not accept batch-oriented inputs, yet the input selector "
+                f"holds one - this indicates the problem with "
+                f"construction of your Workflow - usually the problem occurs when non-batch oriented "
+                f"step inputs are filled with outputs of batch-oriented steps or batch-oriented inputs.",
+                context="workflow_compilation | execution_graph_construction",
+            )
+        if (
+            step_accepts_batch_input
+            and batch_compatibility == {True}
+            and False in actual_input_is_batch
+        ):
+            scalar_parameters_to_be_batched.add(property_name)
+    return scalar_parameters_to_be_batched
+
+
+def get_input_data_lineage_including_auto_batch_casting(
     step_name: str,
     input_data: StepInputData,
+    scalar_parameters_to_be_batched: Set[str],
+    inputs_dimensionalities: Dict[str, Set[int]],
 ) -> List[List[str]]:
     lineage_deduplication_set = set()
-    lineages = []
+    property_to_lineage: Dict[str, List[List[str]]] = {}
     for property_name, input_definition in input_data.items():
         new_lineages_detected_within_property_data = get_lineage_for_input_property(
             step_name=step_name,
@@ -1489,11 +1583,17 @@ def get_input_data_lineage(
             input_definition=input_definition,
             lineage_deduplication_set=lineage_deduplication_set,
         )
-        lineages.extend(new_lineages_detected_within_property_data)
-    if not lineages:
-        return lineages
-    verify_lineages(step_name=step_name, detected_lineages=lineages)
-    return lineages
+        property_to_lineage[property_name] = new_lineages_detected_within_property_data
+    if not property_to_lineage:
+        return []
+    for property_name in scalar_parameters_to_be_batched:
+        if inputs_dimensionalities[property_name] == 1:
+            property_to_lineage[property_name] = [[WORKFLOW_INPUT_BATCH_LINEAGE_ID]]
+        else:
+            pass
+    all_lineages = [lineage for lineages in property_to_lineage.values() for lineage in lineages]
+    verify_lineages(step_name=step_name, detected_lineages=all_lineages)
+    return all_lineages
 
 
 def get_lineage_for_input_property(

@@ -377,6 +377,7 @@ def prepare_parameters(
                 runtime_parameters=runtime_parameters,
                 execution_cache=execution_cache,
                 guard_of_indices_wrapping=guard_of_indices_wrapping,
+                scalar_parameters_to_be_batched=step_node.scalar_parameters_to_be_batched,
             )
             compound_inputs.add(parameter_name)
         else:
@@ -392,6 +393,7 @@ def prepare_parameters(
                 runtime_parameters=runtime_parameters,
                 execution_cache=execution_cache,
                 guard_of_indices_wrapping=guard_of_indices_wrapping,
+                scalar_parameters_to_be_batched=step_node.scalar_parameters_to_be_batched,
             )
         contains_empty_scalar_step_output_selector = (
             contains_empty_scalar_step_output_selector
@@ -434,6 +436,7 @@ def get_compound_parameter_value(
     runtime_parameters: Dict[str, Any],
     execution_cache: ExecutionCache,
     guard_of_indices_wrapping: GuardForIndicesWrapping,
+    scalar_parameters_to_be_batched: Set[str],
 ) -> Tuple[Union[list, Dict[str, Any]], Optional[List[DynamicBatchIndex]], bool]:
     contains_empty_scalar_step_output_selector = False
     batch_indices = []
@@ -452,6 +455,7 @@ def get_compound_parameter_value(
                 runtime_parameters=runtime_parameters,
                 execution_cache=execution_cache,
                 guard_of_indices_wrapping=guard_of_indices_wrapping,
+                scalar_parameters_to_be_batched=scalar_parameters_to_be_batched,
             )
             result.append(non_compound_parameter_value)
             contains_empty_scalar_step_output_selector = (
@@ -475,6 +479,7 @@ def get_compound_parameter_value(
                 runtime_parameters=runtime_parameters,
                 execution_cache=execution_cache,
                 guard_of_indices_wrapping=guard_of_indices_wrapping,
+                scalar_parameters_to_be_batched=scalar_parameters_to_be_batched,
             )
             result[nested_element.parameter_specification.nested_element_key] = (
                 non_compound_parameter_value
@@ -500,23 +505,40 @@ def get_non_compound_parameter_value(
     runtime_parameters: Dict[str, Any],
     execution_cache: ExecutionCache,
     guard_of_indices_wrapping: GuardForIndicesWrapping,
+    scalar_parameters_to_be_batched: Set[str],
 ) -> Union[Any, Optional[List[DynamicBatchIndex]], bool]:
     if not parameter.is_batch_oriented():
+        requested_as_batch = parameter.parameter_specification.parameter_name in scalar_parameters_to_be_batched
         if parameter.points_to_input():
             input_parameter: DynamicStepInputDefinition = parameter  # type: ignore
             parameter_name = get_last_chunk_of_selector(
                 selector=input_parameter.selector
             )
-            return runtime_parameters[parameter_name], None, False
+            if not requested_as_batch:
+                return runtime_parameters[parameter_name], None, False
+            else:
+                indices = [(0, )]
+                batched_value = Batch(content=[runtime_parameters[parameter_name]], indices=indices)
+                return batched_value, indices, False
         elif parameter.points_to_step_output():
             input_parameter: DynamicStepInputDefinition = parameter  # type: ignore
             value = execution_cache.get_non_batch_output(
                 selector=input_parameter.selector
             )
-            return value, None, value is None
+            if not requested_as_batch:
+                return value, None, value is None
+            else:
+                indices = [(0,)]
+                batched_value = Batch(content=[value], indices=indices)
+                return batched_value, indices, value is None
         else:
             static_input: StaticStepInputDefinition = parameter  # type: ignore
-            return static_input.value, None, False
+            if not requested_as_batch:
+                return static_input.value, None, False
+            else:
+                indices = [(0,)]
+                batched_value = Batch(content=[static_input.value], indices=indices)
+                return batched_value, indices, False
     dynamic_parameter: DynamicStepInputDefinition = parameter  # type: ignore
     parameter_dimensionality = dynamic_parameter.get_dimensionality()
     lineage_indices = dynamic_batches_manager.get_indices_for_data_lineage(
