@@ -227,7 +227,7 @@ def rescale_image_detections(
             dtype=image_detections.dtype,
             device=image_detections.device,
         )
-        image_detections[:, :4].sub_(static_crop_offsets)
+        image_detections[:, :4].add_(static_crop_offsets)
     return image_detections
 
 

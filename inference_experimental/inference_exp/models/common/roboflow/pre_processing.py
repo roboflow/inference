@@ -188,10 +188,13 @@ def apply_pre_processing_to_torch_image(
 def apply_static_crop_to_torch_image(
     image: torch.Tensor, config: StaticCrop
 ) -> Tuple[torch.Tensor, StaticCropOffset]:
-    cropped_tensor = image[
-        :, :, config.y_min : config.y_max, config.x_min : config.x_max
-    ]
-    offset = StaticCropOffset(offset_x=config.x_min, offset_y=config.y_min)
+    width, height = image.shape[3], image.shape[2]
+    x_min = int(config.x_min / 100 * width)
+    y_min = int(config.y_min / 100 * height)
+    x_max = int(config.x_max / 100 * width)
+    y_max = int(config.y_max / 100 * height)
+    cropped_tensor = image[:, :, y_min:y_max, x_min:x_max]
+    offset = StaticCropOffset(offset_x=x_min, offset_y=y_min)
     return cropped_tensor, offset
 
 
@@ -851,8 +854,13 @@ def apply_pre_processing_to_numpy_image(
 def apply_static_crop_to_numpy_image(
     image: np.ndarray, config: StaticCrop
 ) -> Tuple[np.ndarray, StaticCropOffset]:
-    result_image = image[config.y_min : config.y_max, config.x_min : config.x_max]
-    return result_image, StaticCropOffset(offset_x=config.x_min, offset_y=config.y_min)
+    width, height = image.shape[1], image.shape[0]
+    x_min = int(config.x_min / 100 * width)
+    y_min = int(config.y_min / 100 * height)
+    x_max = int(config.x_max / 100 * width)
+    y_max = int(config.y_max / 100 * height)
+    result_image = image[y_min:y_max, x_min:x_max]
+    return result_image, StaticCropOffset(offset_x=x_min, offset_y=y_min)
 
 
 def apply_adaptive_equalization_to_numpy_image(image: np.ndarray) -> np.ndarray:
