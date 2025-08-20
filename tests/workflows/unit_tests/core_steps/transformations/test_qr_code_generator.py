@@ -126,11 +126,50 @@ class TestGenerateQRCode:
         text = "Color test"
         
         # when/then - should handle various color formats
+        # Test with standard color names (case-insensitive)
         result1 = generate_qr_code(text=text, fill_color="black", back_color="white")
         assert isinstance(result1, WorkflowImageData)
         
-        result2 = generate_qr_code(text=text, fill_color="(255, 0, 0)", back_color="(0, 255, 0)")
+        # Test with uppercase standard names (matches supervision constants)
+        result2 = generate_qr_code(text=text, fill_color="BLACK", back_color="WHITE")
         assert isinstance(result2, WorkflowImageData)
+        
+        # Test with hex colors
+        result3 = generate_qr_code(text=text, fill_color="#FF0000", back_color="#00FF00")
+        assert isinstance(result3, WorkflowImageData)
+        
+        # Test with rgb format
+        result4 = generate_qr_code(text=text, fill_color="rgb(255, 0, 0)", back_color="rgb(0, 255, 0)")
+        assert isinstance(result4, WorkflowImageData)
+        
+        # Test with CSS3 color names (fallback)
+        result5 = generate_qr_code(text=text, fill_color="mediumpurple", back_color="lightblue")
+        assert isinstance(result5, WorkflowImageData)
+        
+    def test_generate_qr_code_supervision_color_compatibility(self):
+        """Test that all supervision standard colors work with QR code generation."""
+        # given
+        text = "Supervision color test"
+        
+        # Test all standard supervision colors
+        standard_colors = ["BLACK", "WHITE", "RED", "GREEN", "BLUE", "YELLOW", "ROBOFLOW"]
+        
+        for color_name in standard_colors:
+            # when - using supervision standard color names
+            result = generate_qr_code(text=text, fill_color=color_name, back_color="WHITE")
+            
+            # then - should successfully generate QR code
+            assert isinstance(result, WorkflowImageData)
+            assert result.numpy_image is not None
+            assert result.numpy_image.shape[2] == 3  # RGB image
+            
+        # Test mixed formats to ensure conversions work
+        result_mixed = generate_qr_code(
+            text=text, 
+            fill_color="ROBOFLOW",  # supervision constant
+            back_color="#FFFFFF"     # hex format
+        )
+        assert isinstance(result_mixed, WorkflowImageData)
         
     def test_generate_qr_code_box_size_and_border(self):
         # given

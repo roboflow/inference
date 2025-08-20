@@ -13,6 +13,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
 )
+from inference.core.workflows.core_steps.visualizations.common.utils import str_to_color
 from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     INTEGER_KIND,
@@ -91,16 +92,16 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[2, 4, 6, "$inputs.border"],
     )
     fill_color: Union[str, Selector(kind=[STRING_KIND])] = Field(
-        default="black",
+        default="BLACK",
         title="Fill Color",
-        description='Block color, either RGB e.g. (163, 81, 251) or CSS3 color name, e.g. "mediumpurple". Default: black',
-        examples=["black", "mediumpurple", "(163, 81, 251)", "$inputs.fill_color"],
+        description='QR code block color. Supports hex (#FF0000), rgb(255, 0, 0), standard names (BLACK, WHITE, RED, etc.), or CSS3 color names.',
+        examples=["BLACK", "#000000", "rgb(0, 0, 0)", "$inputs.fill_color"],
     )
     back_color: Union[str, Selector(kind=[STRING_KIND])] = Field(
-        default="white",
+        default="WHITE",
         title="Background Color",
-        description='Background color, either RGB e.g. (255, 255, 255) or CSS3 color name, e.g. "white". Default: white',
-        examples=["white", "lightblue", "(255, 255, 255)", "$inputs.back_color"],
+        description='QR code background color. Supports hex (#FFFFFF), rgb(255, 255, 255), standard names (BLACK, WHITE, RED, etc.), or CSS3 color names.',
+        examples=["WHITE", "#FFFFFF", "rgb(255, 255, 255)", "$inputs.back_color"],
     )
 
     @classmethod
@@ -134,8 +135,8 @@ class QRCodeGeneratorBlockV1(WorkflowBlock):
             "High (~30% word recovery / lowest data capacity)",
         ] = "Medium (~15% word recovery)",
         border: int = 4,
-        fill_color: str = "black",
-        back_color: str = "white",
+        fill_color: str = "BLACK",
+        back_color: str = "WHITE",
     ) -> BlockResult:
 
         qr_image = generate_qr_code(
@@ -157,8 +158,8 @@ def generate_qr_code(
     box_size: int = 10,
     error_correct: str = "M",
     border: int = 4,
-    fill_color: str = "black",
-    back_color: str = "white",
+    fill_color: str = "BLACK",
+    back_color: str = "WHITE",
 ) -> WorkflowImageData:
     """Generate a QR code PNG image from text input."""
     global _ERROR_LEVELS, _QR_CACHE
@@ -178,20 +179,22 @@ def generate_qr_code(
     if _ERROR_LEVELS is None:
         _ERROR_LEVELS = _get_error_levels()
 
-    # Parse colors - handle both color names and RGB tuples
-    def parse_color(color_str: str):
-        color_str = color_str.strip()
-        if color_str and color_str[0] == "(" and color_str[-1] == ")":
-            # Parse RGB tuple string like "(255, 0, 0)"
-            try:
-                rgb_values = color_str[1:-1].split(",")
-                return tuple(int(val.strip()) for val in rgb_values)
-            except Exception:
-                return color_str
-        return color_str
-
-    fill = parse_color(fill_color)
-    back = parse_color(back_color)
+    # Parse colors using the common utility that handles hex, rgb, bgr, and standard names
+    try:
+        # Convert to supervision Color object, then to RGB tuple for qrcode library
+        fill_sv_color = str_to_color(fill_color)
+        fill = fill_sv_color.as_rgb()  # Returns (R, G, B) tuple
+    except (ValueError, AttributeError):
+        # Fallback to original string if not a recognized format
+        # This allows qrcode library to handle CSS3 color names directly
+        fill = fill_color
+    
+    try:
+        back_sv_color = str_to_color(back_color)
+        back = back_sv_color.as_rgb()  # Returns (R, G, B) tuple
+    except (ValueError, AttributeError):
+        # Fallback to original string if not a recognized format
+        back = back_color
 
     error_level = _ERROR_LEVELS.get(
         error_correct.upper(), qrcode.constants.ERROR_CORRECT_M
