@@ -70,10 +70,10 @@ def get_recent_logs(
     return logs[-limit:] if limit else logs
 
 
-def is_memory_logging_enabled():
+def is_memory_logging_enabled() -> bool:
     return os.environ.get("ENABLE_IN_MEMORY_LOGS", "").lower() == "true"
 
-def setup_memory_logging():
+def setup_memory_logging() -> None:
     """Set up memory logging handler for the current logger hierarchy"""
     if not is_memory_logging_enabled():
         return

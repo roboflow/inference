@@ -14,6 +14,8 @@ windows/inference/**
 windows/installer
 inference-installer.iss
 
+osx/inference/**
+
 # Distribution / packaging
 .Python
 build/
@@ -39,7 +41,6 @@ MANIFEST
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 
-osx/inference/landing/**
 
 # Installer logs
 pip-log.txt
