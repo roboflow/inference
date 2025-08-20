@@ -1,4 +1,3 @@
-import io
 from typing import List, Literal, Optional, Type, Union
 from uuid import uuid4
 
@@ -159,6 +158,7 @@ def generate_qr_code(
     back_color: str = "white",
 ) -> WorkflowImageData:
     """Generate a QR code PNG image from text input."""
+    global _ERROR_LEVELS
     try:
         import qrcode
     except ImportError:
@@ -166,42 +166,27 @@ def generate_qr_code(
             "qrcode library is required for QR code generation. "
             "Install it with: pip install qrcode"
         )
-
-    # Map error correction levels - using display names per spec 9c
-    error_levels = {
-        "Low (~7% word recovery / highest data capacity)".upper(): qrcode.constants.ERROR_CORRECT_L,
-        "Medium (~15% word recovery)".upper(): qrcode.constants.ERROR_CORRECT_M,
-        "Quartile (~25% word recovery)".upper(): qrcode.constants.ERROR_CORRECT_Q,
-        "High (~30% word recovery / lowest data capacity)".upper(): qrcode.constants.ERROR_CORRECT_H,
-        # Legacy support for constant names and single letters (for backward compatibility)
-        "ERROR_CORRECT_L": qrcode.constants.ERROR_CORRECT_L,
-        "ERROR_CORRECT_M": qrcode.constants.ERROR_CORRECT_M,
-        "ERROR_CORRECT_Q": qrcode.constants.ERROR_CORRECT_Q,
-        "ERROR_CORRECT_H": qrcode.constants.ERROR_CORRECT_H,
-        "L": qrcode.constants.ERROR_CORRECT_L,
-        "M": qrcode.constants.ERROR_CORRECT_M,
-        "Q": qrcode.constants.ERROR_CORRECT_Q,
-        "H": qrcode.constants.ERROR_CORRECT_H,
-    }
-
-    error_level = error_levels.get(
-        error_correct.upper(), qrcode.constants.ERROR_CORRECT_M
-    )
+    if _ERROR_LEVELS is None:
+        _ERROR_LEVELS = _get_error_levels()
 
     # Parse colors - handle both color names and RGB tuples
     def parse_color(color_str: str):
         color_str = color_str.strip()
-        if color_str.startswith("(") and color_str.endswith(")"):
+        if color_str and color_str[0] == "(" and color_str[-1] == ")":
             # Parse RGB tuple string like "(255, 0, 0)"
             try:
                 rgb_values = color_str[1:-1].split(",")
                 return tuple(int(val.strip()) for val in rgb_values)
-            except (ValueError, IndexError):
-                return color_str  # Fallback to string
+            except Exception:
+                return color_str
         return color_str
 
     fill = parse_color(fill_color)
     back = parse_color(back_color)
+
+    error_level = _ERROR_LEVELS.get(
+        error_correct.upper(), qrcode.constants.ERROR_CORRECT_M
+    )
 
     # Create QR code
     qr = qrcode.QRCode(
@@ -212,26 +197,21 @@ def generate_qr_code(
     )
 
     qr.add_data(text)
-    qr.make(fit=True if version is None else False)
+    qr.make(fit=(version is None))
 
     # Generate image using default image factory
     img = qr.make_image(
         fill_color=fill,
         back_color=back,
-    )
+    ).convert(
+        "RGB"
+    )  # Ensure always RGB
 
-    # Convert PIL image to numpy array
-    img_bytes = io.BytesIO()
-    img.save(img_bytes, format="PNG")
-    img_bytes.seek(0)
+    # Direct conversion from PIL.Image to numpy array (much faster than encode/decode)
+    numpy_image = np.array(img)
 
-    # Load as numpy array
-    import cv2
-
-    nparr = np.frombuffer(img_bytes.getvalue(), np.uint8)
-    numpy_image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-
-    if numpy_image is None:
+    # Defensive: numpy_image should never be None; original code checks for None on OpenCV decode failure
+    if numpy_image is None or numpy_image.size == 0:
         raise ValueError("Failed to generate QR code image")
 
     # Create WorkflowImageData
@@ -240,3 +220,32 @@ def generate_qr_code(
         parent_metadata=parent_metadata,
         numpy_image=numpy_image,
     )
+
+
+def _get_error_levels():
+    try:
+        import qrcode
+
+        C = qrcode.constants
+        return {
+            "LOW (~7% WORD RECOVERY / HIGHEST DATA CAPACITY)": C.ERROR_CORRECT_L,
+            "MEDIUM (~15% WORD RECOVERY)": C.ERROR_CORRECT_M,
+            "QUARTILE (~25% WORD RECOVERY)": C.ERROR_CORRECT_Q,
+            "HIGH (~30% WORD RECOVERY / LOWEST DATA CAPACITY)": C.ERROR_CORRECT_H,
+            "ERROR_CORRECT_L": C.ERROR_CORRECT_L,
+            "ERROR_CORRECT_M": C.ERROR_CORRECT_M,
+            "ERROR_CORRECT_Q": C.ERROR_CORRECT_Q,
+            "ERROR_CORRECT_H": C.ERROR_CORRECT_H,
+            "L": C.ERROR_CORRECT_L,
+            "M": C.ERROR_CORRECT_M,
+            "Q": C.ERROR_CORRECT_Q,
+            "H": C.ERROR_CORRECT_H,
+        }
+    except ImportError:
+        raise ImportError(
+            "qrcode library is required for QR code generation. "
+            "Install it with: pip install qrcode"
+        )
+
+
+_ERROR_LEVELS = None
