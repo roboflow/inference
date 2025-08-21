@@ -1,19 +1,19 @@
+import threading
+import time
+from collections import OrderedDict
 from typing import List, Literal, Optional, Type, Union
 from uuid import uuid4
-import time
-import threading
-from collections import OrderedDict
 
 import numpy as np
 from pydantic import ConfigDict, Field
 
+from inference.core.workflows.core_steps.visualizations.common.utils import str_to_color
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     ImageParentMetadata,
     OutputDefinition,
     WorkflowImageData,
 )
-from inference.core.workflows.core_steps.visualizations.common.utils import str_to_color
 from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     INTEGER_KIND,
@@ -94,13 +94,13 @@ class BlockManifest(WorkflowBlockManifest):
     fill_color: Union[str, Selector(kind=[STRING_KIND])] = Field(
         default="BLACK",
         title="Fill Color",
-        description='QR code block color. Supports hex (#FF0000), rgb(255, 0, 0), standard names (BLACK, WHITE, RED, etc.), or CSS3 color names.',
+        description="QR code block color. Supports hex (#FF0000), rgb(255, 0, 0), standard names (BLACK, WHITE, RED, etc.), or CSS3 color names.",
         examples=["BLACK", "#000000", "rgb(0, 0, 0)", "$inputs.fill_color"],
     )
     back_color: Union[str, Selector(kind=[STRING_KIND])] = Field(
         default="WHITE",
         title="Background Color",
-        description='QR code background color. Supports hex (#FFFFFF), rgb(255, 255, 255), standard names (BLACK, WHITE, RED, etc.), or CSS3 color names.',
+        description="QR code background color. Supports hex (#FFFFFF), rgb(255, 255, 255), standard names (BLACK, WHITE, RED, etc.), or CSS3 color names.",
         examples=["WHITE", "#FFFFFF", "rgb(255, 255, 255)", "$inputs.back_color"],
     )
 
@@ -163,12 +163,14 @@ def generate_qr_code(
 ) -> WorkflowImageData:
     """Generate a QR code PNG image from text input."""
     global _ERROR_LEVELS, _QR_CACHE
-    
+
     # Check cache first
-    cached_result = _QR_CACHE.get(text, version, box_size, error_correct, border, fill_color, back_color)
+    cached_result = _QR_CACHE.get(
+        text, version, box_size, error_correct, border, fill_color, back_color
+    )
     if cached_result is not None:
         return cached_result
-    
+
     try:
         import qrcode
     except ImportError:
@@ -188,7 +190,7 @@ def generate_qr_code(
         # Fallback to original string if not a recognized format
         # This allows qrcode library to handle CSS3 color names directly
         fill = fill_color
-    
+
     try:
         back_sv_color = str_to_color(back_color)
         back = back_sv_color.as_rgb()  # Returns (R, G, B) tuple
@@ -236,46 +238,67 @@ def generate_qr_code(
         parent_metadata=parent_metadata,
         numpy_image=numpy_image,
     )
-    
+
     # Store in cache
-    _QR_CACHE.put(text, version, box_size, error_correct, border, fill_color, back_color, result)
-    
+    _QR_CACHE.put(
+        text, version, box_size, error_correct, border, fill_color, back_color, result
+    )
+
     return result
 
 
 class _QRCodeLRUCache:
     """LRU Cache with TTL for QR code generation results."""
-    
+
     def __init__(self, max_size: int = 100, ttl_seconds: int = 3600):
         self.max_size = max_size
         self.ttl_seconds = ttl_seconds
         self._cache = OrderedDict()
         self._lock = threading.RLock()
-    
-    def _make_key(self, text: str, version: Optional[int], box_size: int, 
-                  error_correct: str, border: int, fill_color: str, back_color: str) -> str:
+
+    def _make_key(
+        self,
+        text: str,
+        version: Optional[int],
+        box_size: int,
+        error_correct: str,
+        border: int,
+        fill_color: str,
+        back_color: str,
+    ) -> str:
         """Create cache key from QR code parameters."""
         return f"{text}|{version}|{box_size}|{error_correct}|{border}|{fill_color}|{back_color}"
-    
+
     def _is_expired(self, timestamp: float) -> bool:
         """Check if cache entry is expired."""
         return time.time() - timestamp > self.ttl_seconds
-    
+
     def _cleanup_expired(self):
         """Remove expired entries from cache."""
         current_time = time.time()
         expired_keys = [
-            key for key, (_, timestamp) in self._cache.items()
+            key
+            for key, (_, timestamp) in self._cache.items()
             if current_time - timestamp > self.ttl_seconds
         ]
         for key in expired_keys:
             del self._cache[key]
-    
-    def get(self, text: str, version: Optional[int], box_size: int, 
-            error_correct: str, border: int, fill_color: str, back_color: str) -> Optional:
+
+    def get(
+        self,
+        text: str,
+        version: Optional[int],
+        box_size: int,
+        error_correct: str,
+        border: int,
+        fill_color: str,
+        back_color: str,
+    ) -> Optional:
         """Get cached QR code result if available and not expired."""
-        key = self._make_key(text, version, box_size, error_correct, border, fill_color, back_color)
-        
+        key = self._make_key(
+            text, version, box_size, error_correct, border, fill_color, back_color
+        )
+
         with self._lock:
             if key in self._cache:
                 result, timestamp = self._cache[key]
@@ -286,23 +309,34 @@ class _QRCodeLRUCache:
                 else:
                     # Remove expired entry
                     del self._cache[key]
-        
+
         return None
-    
-    def put(self, text: str, version: Optional[int], box_size: int, 
-            error_correct: str, border: int, fill_color: str, back_color: str, result) -> None:
+
+    def put(
+        self,
+        text: str,
+        version: Optional[int],
+        box_size: int,
+        error_correct: str,
+        border: int,
+        fill_color: str,
+        back_color: str,
+        result,
+    ) -> None:
         """Store QR code result in cache."""
-        key = self._make_key(text, version, box_size, error_correct, border, fill_color, back_color)
-        
+        key = self._make_key(
+            text, version, box_size, error_correct, border, fill_color, back_color
+        )
+
         with self._lock:
             # Clean up expired entries periodically
             if len(self._cache) % 10 == 0:  # Every 10th insertion
                 self._cleanup_expired()
-            
+
             # Remove oldest entries if at capacity
             while len(self._cache) >= self.max_size:
                 self._cache.popitem(last=False)  # Remove oldest (FIFO when at capacity)
-            
+
             # Add new entry
             self._cache[key] = (result, time.time())
 
