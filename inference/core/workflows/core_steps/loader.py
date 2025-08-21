@@ -341,6 +341,9 @@ from inference.core.workflows.core_steps.transformations.image_slicer.v2 import 
 from inference.core.workflows.core_steps.transformations.perspective_correction.v1 import (
     PerspectiveCorrectionBlockV1,
 )
+from inference.core.workflows.core_steps.transformations.qr_code_generator.v1 import (
+    QRCodeGeneratorBlockV1,
+)
 from inference.core.workflows.core_steps.transformations.relative_static_crop.v1 import (
     RelativeStaticCropBlockV1,
 )
@@ -667,6 +670,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         Moondream2BlockV1,
         OverlapBlockV1,
         ONVIFSinkBlockV1,
+        QRCodeGeneratorBlockV1,
     ]
 
 
