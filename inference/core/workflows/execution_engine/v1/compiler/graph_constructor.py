@@ -1397,18 +1397,21 @@ def get_inputs_dimensionalities(
 ) -> Dict[str, Set[int]]:
     result = defaultdict(set)
     dimensionalities_spotted = set()
-    offset_parameters = {parameter: value for parameter,value in input_dimensionality_offsets.items() if value > 0}
-    non_offset_parameters_dimensionality = {
-        property_name: input_definition.get_dimensionality()
-        for property_name, input_definition in input_data.items()
-        if input_definition.is_batch_oriented() and property_name not in offset_parameters
-    }
-    non_offset_parameters_dimensionality_values = set(non_offset_parameters_dimensionality.values())
+    offset_parameters = {parameter: value for parameter, value in input_dimensionality_offsets.items() if value > 0}
+    non_offset_parameters_dimensionality_values = set()
+    for property_name, input_definition in input_data.items():
+        if property_name in offset_parameters:
+            continue
+        if input_definition.is_compound_input():
+            for value in input_definition.iterate_through_definitions():
+                if value.is_batch_oriented():
+                    non_offset_parameters_dimensionality_values.add(value.get_dimensionality())
+        elif input_definition.is_batch_oriented():
+            non_offset_parameters_dimensionality_values.add(input_definition.get_dimensionality())
     if len(non_offset_parameters_dimensionality_values) > 1:
         raise StepInputDimensionalityError(
             public_message=f"For step {step_name} attempted to plug input data that are in different dimensions, "
-                           f"whereas block defines the inputs to be equal in that terms. Problematic properties and "
-                           f"their dimensionalities: {non_offset_parameters_dimensionality}",
+                           f"whereas block defines the inputs to be equal in that terms.",
             context="workflow_compilation | execution_graph_construction | collecting_step_input_data",
             blocks_errors=[
                 WorkflowBlockError(
