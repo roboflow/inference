@@ -27,7 +27,6 @@ class AtomicPath:
         self.temp_file = None
 
     def __enter__(self) -> str:
-        # Check write permissions and create parent dirs
         ensure_write_is_allowed(
             path=self.target_path, allow_override=self.allow_override
         )
@@ -35,23 +34,16 @@ class AtomicPath:
 
         dir_name = os.path.dirname(os.path.abspath(self.target_path))
         base_name = os.path.basename(self.target_path)
-
-        # Create temp file in same directory for atomic rename
         self.temp_file = tempfile.NamedTemporaryFile(
             dir=dir_name, prefix=".tmp_", suffix="_" + base_name, delete=False
         )
         self.temp_path = self.temp_file.name
-        self.temp_file.close()  # Close it so other functions can write to it
+        self.temp_file.close()
         return self.temp_path
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         if exc_type is None:
             try:
-                # Fsync the temp file to ensure durability
-                with open(self.temp_path, "rb") as f:
-                    os.fsync(f.fileno())
-
-                # Atomic rename
                 if os.name == "nt":  # Windows
                     if os.path.exists(self.target_path):
                         os.remove(self.target_path)
@@ -97,19 +89,25 @@ def read_json(path: str, **kwargs) -> Optional[Union[dict, list]]:
 
 
 def dump_json(
-    path: str, content: Union[dict, list], allow_override: bool = False, **kwargs
+    path: str,
+    content: Union[dict, list],
+    allow_override: bool = False,
+    fsync: bool = False,
+    **kwargs,
 ) -> None:
     ensure_write_is_allowed(path=path, allow_override=allow_override)
     ensure_parent_dir_exists(path=path)
     with open(path, "w") as f:
         json.dump(content, fp=f, **kwargs)
+        if fsync:
+            os.fsync(f.fileno())
 
 
 def dump_json_atomic(
     path: str, content: Union[dict, list], allow_override: bool = False, **kwargs
 ) -> None:
     with AtomicPath(path, allow_override=allow_override) as temp_path:
-        dump_json(temp_path, content, allow_override=True, **kwargs)
+        dump_json(temp_path, content, allow_override=True, fsync=True, **kwargs)
 
 
 def dump_text_lines(
@@ -117,11 +115,14 @@ def dump_text_lines(
     content: List[str],
     allow_override: bool = False,
     lines_connector: str = "\n",
+    fsync: bool = False,
 ) -> None:
     ensure_write_is_allowed(path=path, allow_override=allow_override)
     ensure_parent_dir_exists(path=path)
     with open(path, "w") as f:
         f.write(lines_connector.join(content))
+        if fsync:
+            os.fsync(f.fileno())
 
 
 def dump_text_lines_atomic(
@@ -132,20 +133,28 @@ def dump_text_lines_atomic(
 ) -> None:
     with AtomicPath(path, allow_override=allow_override) as temp_path:
         dump_text_lines(
-            temp_path, content, allow_override=True, lines_connector=lines_connector
+            temp_path,
+            content,
+            allow_override=True,
+            lines_connector=lines_connector,
+            fsync=True,
         )
 
 
-def dump_bytes(path: str, content: bytes, allow_override: bool = False) -> None:
+def dump_bytes(
+    path: str, content: bytes, allow_override: bool = False, fsync: bool = False
+) -> None:
     ensure_write_is_allowed(path=path, allow_override=allow_override)
     ensure_parent_dir_exists(path=path)
     with open(path, "wb") as f:
         f.write(content)
+        if fsync:
+            os.fsync(f.fileno())
 
 
 def dump_bytes_atomic(path: str, content: bytes, allow_override: bool = False) -> None:
     with AtomicPath(path, allow_override=allow_override) as temp_path:
-        dump_bytes(temp_path, content, allow_override=True)
+        dump_bytes(temp_path, content, allow_override=True, fsync=True)
 
 
 def ensure_parent_dir_exists(path: str) -> None:
