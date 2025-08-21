@@ -1,7 +1,76 @@
 import json
+import os
 import os.path
 import re
+import tempfile
 from typing import List, Optional, Union
+
+
+class AtomicPath:
+    """Context manager for atomic file writes.
+
+    Ensures that files are either written completely or not at all,
+    preventing partial/corrupted files from power failures or crashes.
+
+    Usage:
+        with AtomicPath(target_path, allow_override=False) as temp_path:
+            # Write to temp_path
+            with open(temp_path, 'w') as f:
+                f.write(data)
+        # File is atomically moved to target_path on successful exit
+    """
+
+    def __init__(self, target_path: str, allow_override: bool = False):
+        self.target_path = target_path
+        self.allow_override = allow_override
+        self.temp_path: Optional[str] = None
+        self.temp_file = None
+
+    def __enter__(self) -> str:
+        # Check write permissions and create parent dirs
+        ensure_write_is_allowed(
+            path=self.target_path, allow_override=self.allow_override
+        )
+        ensure_parent_dir_exists(path=self.target_path)
+
+        dir_name = os.path.dirname(os.path.abspath(self.target_path))
+        base_name = os.path.basename(self.target_path)
+
+        # Create temp file in same directory for atomic rename
+        self.temp_file = tempfile.NamedTemporaryFile(
+            dir=dir_name, prefix=".tmp_", suffix="_" + base_name, delete=False
+        )
+        self.temp_path = self.temp_file.name
+        self.temp_file.close()  # Close it so other functions can write to it
+        return self.temp_path
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is None:
+            try:
+                # Fsync the temp file to ensure durability
+                with open(self.temp_path, "rb") as f:
+                    os.fsync(f.fileno())
+
+                # Atomic rename
+                if os.name == "nt":  # Windows
+                    if os.path.exists(self.target_path):
+                        os.remove(self.target_path)
+                    os.rename(self.temp_path, self.target_path)
+                else:  # POSIX
+                    os.replace(self.temp_path, self.target_path)
+            except Exception:
+                try:
+                    os.unlink(self.temp_path)
+                except OSError:
+                    pass
+                raise
+        else:
+            # Error occurred - clean up temp file
+            try:
+                os.unlink(self.temp_path)
+            except OSError:
+                pass
+        return False  # Don't suppress exceptions
 
 
 def read_text_file(
@@ -36,6 +105,13 @@ def dump_json(
         json.dump(content, fp=f, **kwargs)
 
 
+def dump_json_atomic(
+    path: str, content: Union[dict, list], allow_override: bool = False, **kwargs
+) -> None:
+    with AtomicPath(path, allow_override=allow_override) as temp_path:
+        dump_json(temp_path, content, allow_override=True, **kwargs)
+
+
 def dump_text_lines(
     path: str,
     content: List[str],
@@ -48,11 +124,28 @@ def dump_text_lines(
         f.write(lines_connector.join(content))
 
 
+def dump_text_lines_atomic(
+    path: str,
+    content: List[str],
+    allow_override: bool = False,
+    lines_connector: str = "\n",
+) -> None:
+    with AtomicPath(path, allow_override=allow_override) as temp_path:
+        dump_text_lines(
+            temp_path, content, allow_override=True, lines_connector=lines_connector
+        )
+
+
 def dump_bytes(path: str, content: bytes, allow_override: bool = False) -> None:
     ensure_write_is_allowed(path=path, allow_override=allow_override)
     ensure_parent_dir_exists(path=path)
     with open(path, "wb") as f:
         f.write(content)
+
+
+def dump_bytes_atomic(path: str, content: bytes, allow_override: bool = False) -> None:
+    with AtomicPath(path, allow_override=allow_override) as temp_path:
+        dump_bytes(temp_path, content, allow_override=True)
 
 
 def ensure_parent_dir_exists(path: str) -> None:

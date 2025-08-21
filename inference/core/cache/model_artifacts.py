@@ -7,12 +7,15 @@ from typing import List, Optional, Union
 
 from filelock import FileLock
 
-from inference.core.env import MODEL_CACHE_DIR
+from inference.core.env import ATOMIC_CACHE_WRITES_ENABLED, MODEL_CACHE_DIR
 from inference.core.logger import logger
 from inference.core.utils.file_system import (
     dump_bytes,
+    dump_bytes_atomic,
     dump_json,
+    dump_json_atomic,
     dump_text_lines,
+    dump_text_lines_atomic,
     read_json,
     read_text_file,
 )
@@ -77,7 +80,14 @@ def save_bytes_in_cache(
     allow_override: bool = True,
 ) -> None:
     cached_file_path = get_cache_file_path(file=file, model_id=model_id)
-    dump_bytes(path=cached_file_path, content=content, allow_override=allow_override)
+    if ATOMIC_CACHE_WRITES_ENABLED:
+        dump_bytes_atomic(
+            path=cached_file_path, content=content, allow_override=allow_override
+        )
+    else:
+        dump_bytes(
+            path=cached_file_path, content=content, allow_override=allow_override
+        )
 
 
 def save_json_in_cache(
@@ -88,9 +98,20 @@ def save_json_in_cache(
     **kwargs,
 ) -> None:
     cached_file_path = get_cache_file_path(file=file, model_id=model_id)
-    dump_json(
-        path=cached_file_path, content=content, allow_override=allow_override, **kwargs
-    )
+    if ATOMIC_CACHE_WRITES_ENABLED:
+        dump_json_atomic(
+            path=cached_file_path,
+            content=content,
+            allow_override=allow_override,
+            **kwargs,
+        )
+    else:
+        dump_json(
+            path=cached_file_path,
+            content=content,
+            allow_override=allow_override,
+            **kwargs,
+        )
 
 
 def save_text_lines_in_cache(
@@ -100,9 +121,14 @@ def save_text_lines_in_cache(
     allow_override: bool = True,
 ) -> None:
     cached_file_path = get_cache_file_path(file=file, model_id=model_id)
-    dump_text_lines(
-        path=cached_file_path, content=content, allow_override=allow_override
-    )
+    if ATOMIC_CACHE_WRITES_ENABLED:
+        dump_text_lines_atomic(
+            path=cached_file_path, content=content, allow_override=allow_override
+        )
+    else:
+        dump_text_lines(
+            path=cached_file_path, content=content, allow_override=allow_override
+        )
 
 
 def get_cache_file_path(file: str, model_id: Optional[str] = None) -> str:
