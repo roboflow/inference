@@ -8,7 +8,15 @@ from uuid import uuid4
 
 import asgi_correlation_id
 import uvicorn
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Path, Query, Request
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    HTTPException,
+    Path,
+    Query,
+    Request,
+)
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
@@ -588,6 +596,7 @@ class HttpInterface(BaseInterface):
         # Ensure in-memory logging is initialized as early as possible for all runtimes
         try:
             from inference.core.logging.memory_handler import setup_memory_logging
+
             setup_memory_logging()
         except Exception:
             pass
@@ -608,9 +617,7 @@ class HttpInterface(BaseInterface):
             logger.info("Shutting down %s", description)
             await usage_collector.async_push_usage_payloads()
 
-        InferenceInstrumentator(
-            app, model_manager=model_manager, endpoint="/metrics"
-        )
+        InferenceInstrumentator(app, model_manager=model_manager, endpoint="/metrics")
         if LAMBDA:
             app.add_middleware(LambdaMiddleware)
         if GCP_SERVERLESS:
@@ -989,39 +996,54 @@ class HttpInterface(BaseInterface):
                 uuid=GLOBAL_INFERENCE_SERVER_ID,
             )
 
-        @app.get("/logs", summary="Get Recent Logs", description="Get recent application logs for debugging")
+        @app.get(
+            "/logs",
+            summary="Get Recent Logs",
+            description="Get recent application logs for debugging",
+        )
         async def get_logs(
-            limit: Optional[int] = Query(100, description="Maximum number of log entries to return"),
-            level: Optional[str] = Query(None, description="Filter by log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)"),
-            since: Optional[str] = Query(None, description="Return logs since this ISO timestamp")
+            limit: Optional[int] = Query(
+                100, description="Maximum number of log entries to return"
+            ),
+            level: Optional[str] = Query(
+                None,
+                description="Filter by log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
+            ),
+            since: Optional[str] = Query(
+                None, description="Return logs since this ISO timestamp"
+            ),
         ):
             """Get recent application logs from memory.
-            
+
             Only available when ENABLE_IN_MEMORY_LOGS environment variable is set to 'true'.
-            
+
             Args:
                 limit: Maximum number of log entries (default 100)
-                level: Filter by log level 
+                level: Filter by log level
                 since: ISO timestamp to filter logs since
-                
+
             Returns:
                 List of log entries with timestamp, level, logger, and message
             """
             # Check if in-memory logging is enabled
-            from inference.core.logging.memory_handler import get_recent_logs, is_memory_logging_enabled
-            
+            from inference.core.logging.memory_handler import (
+                get_recent_logs,
+                is_memory_logging_enabled,
+            )
+
             if not is_memory_logging_enabled():
-                raise HTTPException(status_code=404, detail="Logs endpoint not available")
-            
+                raise HTTPException(
+                    status_code=404, detail="Logs endpoint not available"
+                )
+
             try:
-                
+
                 logs = get_recent_logs(limit=limit or 100, level=level, since=since)
-                return {
-                    "logs": logs,
-                    "total_count": len(logs)
-                }
+                return {"logs": logs, "total_count": len(logs)}
             except (ImportError, ModuleNotFoundError):
-                raise HTTPException(status_code=500, detail="Logging system not properly initialized")
+                raise HTTPException(
+                    status_code=500, detail="Logging system not properly initialized"
+                )
 
         # The current AWS Lambda authorizer only supports path parameters, therefore we can only use the legacy infer route. This case statement excludes routes which won't work for the current Lambda authorizer.
         if not (LAMBDA or GCP_SERVERLESS):

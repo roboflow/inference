@@ -20,6 +20,7 @@ _log_lock = Lock()
 logger = logging.getLogger(__name__)
 _uvicorn_config_patched = False
 
+
 class MemoryLogHandler(logging.Handler):
     """Custom log handler that stores log records in memory for dashboard access"""
 
@@ -73,6 +74,7 @@ def get_recent_logs(
 def is_memory_logging_enabled() -> bool:
     return os.environ.get("ENABLE_IN_MEMORY_LOGS", "").lower() == "true"
 
+
 def setup_memory_logging() -> None:
     """Set up memory logging handler for the current logger hierarchy"""
     if not is_memory_logging_enabled():
@@ -120,18 +122,25 @@ def setup_memory_logging() -> None:
             }
 
             log_config.setdefault("loggers", {})
-            log_config["loggers"].setdefault("uvicorn.access", {
-                "handlers": ["default"],
-                "level": "INFO",
-                "propagate": False,
-            })
+            log_config["loggers"].setdefault(
+                "uvicorn.access",
+                {
+                    "handlers": ["default"],
+                    "level": "INFO",
+                    "propagate": False,
+                },
+            )
             if "inmemory" not in log_config["loggers"]["uvicorn.access"]["handlers"]:
                 log_config["loggers"]["uvicorn.access"]["handlers"].append("inmemory")
 
-            log_config["loggers"].setdefault("uvicorn", {"handlers": ["default"], "level": "INFO"})
+            log_config["loggers"].setdefault(
+                "uvicorn", {"handlers": ["default"], "level": "INFO"}
+            )
             log_config["loggers"].setdefault("uvicorn.error", {"level": "INFO"})
 
-            root_cfg = log_config.setdefault("root", {"handlers": ["default"], "level": "INFO"})
+            root_cfg = log_config.setdefault(
+                "root", {"handlers": ["default"], "level": "INFO"}
+            )
             if "inmemory" not in root_cfg.get("handlers", []):
                 root_cfg.setdefault("handlers", []).append("inmemory")
 
