@@ -8,7 +8,7 @@ from typing import List, Optional, Union
 
 from filelock import FileLock
 
-from build.lib.inference.core.exceptions import ModelArtefactError
+from inference.core.exceptions import ModelArtefactError
 from inference.core.env import ATOMIC_CACHE_WRITES_ENABLED, MODEL_CACHE_DIR
 from inference.core.logger import logger
 from inference.core.utils.file_system import (
