@@ -8,7 +8,7 @@ from inference.core.workflows.execution_engine.v1.compiler.entities import (
     DynamicStepInputDefinition,
     StaticStepInputDefinition,
     StepInputDefinition,
-    StepNode,
+    StepNode, AutoBatchCastingConfig,
 )
 from inference.core.workflows.execution_engine.v1.compiler.utils import (
     get_last_chunk_of_selector,
@@ -377,7 +377,7 @@ def prepare_parameters(
                 runtime_parameters=runtime_parameters,
                 execution_cache=execution_cache,
                 guard_of_indices_wrapping=guard_of_indices_wrapping,
-                scalar_parameters_to_be_batched=step_node.scalar_parameters_to_be_batched,
+                auto_batch_casting_lineage_supports=step_node.auto_batch_casting_lineage_supports,
             )
             compound_inputs.add(parameter_name)
         else:
@@ -393,12 +393,13 @@ def prepare_parameters(
                 runtime_parameters=runtime_parameters,
                 execution_cache=execution_cache,
                 guard_of_indices_wrapping=guard_of_indices_wrapping,
-                scalar_parameters_to_be_batched=step_node.scalar_parameters_to_be_batched,
+                auto_batch_casting_lineage_supports=step_node.auto_batch_casting_lineage_supports,
             )
         contains_empty_scalar_step_output_selector = (
             contains_empty_scalar_step_output_selector
             or value_contains_empty_scalar_step_output_selector
         )
+    print("indices_for_parameter", indices_for_parameter)
     batch_parameters_indices = [
         i for i in indices_for_parameter.values() if i is not None
     ]
@@ -436,7 +437,7 @@ def get_compound_parameter_value(
     runtime_parameters: Dict[str, Any],
     execution_cache: ExecutionCache,
     guard_of_indices_wrapping: GuardForIndicesWrapping,
-    scalar_parameters_to_be_batched: Set[str],
+    auto_batch_casting_lineage_supports: Dict[str, AutoBatchCastingConfig],
 ) -> Tuple[Union[list, Dict[str, Any]], Optional[List[DynamicBatchIndex]], bool]:
     contains_empty_scalar_step_output_selector = False
     batch_indices = []
@@ -455,7 +456,7 @@ def get_compound_parameter_value(
                 runtime_parameters=runtime_parameters,
                 execution_cache=execution_cache,
                 guard_of_indices_wrapping=guard_of_indices_wrapping,
-                scalar_parameters_to_be_batched=scalar_parameters_to_be_batched,
+                auto_batch_casting_lineage_supports=auto_batch_casting_lineage_supports,
             )
             result.append(non_compound_parameter_value)
             contains_empty_scalar_step_output_selector = (
@@ -479,7 +480,7 @@ def get_compound_parameter_value(
                 runtime_parameters=runtime_parameters,
                 execution_cache=execution_cache,
                 guard_of_indices_wrapping=guard_of_indices_wrapping,
-                scalar_parameters_to_be_batched=scalar_parameters_to_be_batched,
+                auto_batch_casting_lineage_supports=auto_batch_casting_lineage_supports,
             )
             result[nested_element.parameter_specification.nested_element_key] = (
                 non_compound_parameter_value
@@ -505,10 +506,10 @@ def get_non_compound_parameter_value(
     runtime_parameters: Dict[str, Any],
     execution_cache: ExecutionCache,
     guard_of_indices_wrapping: GuardForIndicesWrapping,
-    scalar_parameters_to_be_batched: Set[str],
-) -> Union[Any, Optional[List[DynamicBatchIndex]], bool]:
+    auto_batch_casting_lineage_supports: Dict[str, AutoBatchCastingConfig],
+) -> Tuple[Any, Optional[List[DynamicBatchIndex]], bool]:
     if not parameter.is_batch_oriented():
-        requested_as_batch = parameter.parameter_specification.parameter_name in scalar_parameters_to_be_batched
+        requested_as_batch = parameter.parameter_specification.parameter_name in auto_batch_casting_lineage_supports
         if parameter.points_to_input():
             input_parameter: DynamicStepInputDefinition = parameter  # type: ignore
             parameter_name = get_last_chunk_of_selector(
@@ -517,9 +518,17 @@ def get_non_compound_parameter_value(
             if not requested_as_batch:
                 return runtime_parameters[parameter_name], None, False
             else:
-                indices = [(0, )]
-                batched_value = Batch(content=[runtime_parameters[parameter_name]], indices=indices)
-                return batched_value, indices, False
+                return apply_auto_batch_casting(
+                    parameter_name=parameter_name,
+                    value=runtime_parameters[parameter_name],
+                    auto_batch_casting_config=auto_batch_casting_lineage_supports[
+                        parameter.parameter_specification.parameter_name
+                    ],
+                    contains_empty_scalar_step_output_selector=False,
+                    dynamic_batches_manager=dynamic_batches_manager,
+                    step_execution_dimensionality=step_execution_dimensionality,
+                    guard_of_indices_wrapping=guard_of_indices_wrapping,
+                )
         elif parameter.points_to_step_output():
             input_parameter: DynamicStepInputDefinition = parameter  # type: ignore
             value = execution_cache.get_non_batch_output(
@@ -528,17 +537,33 @@ def get_non_compound_parameter_value(
             if not requested_as_batch:
                 return value, None, value is None
             else:
-                indices = [(0,)]
-                batched_value = Batch(content=[value], indices=indices)
-                return batched_value, indices, value is None
+                return apply_auto_batch_casting(
+                    parameter_name=parameter.parameter_specification.parameter_name,
+                    value=value,
+                    auto_batch_casting_config=auto_batch_casting_lineage_supports[
+                        parameter.parameter_specification.parameter_name
+                    ],
+                    contains_empty_scalar_step_output_selector=value is None,
+                    dynamic_batches_manager=dynamic_batches_manager,
+                    step_execution_dimensionality=step_execution_dimensionality,
+                    guard_of_indices_wrapping=guard_of_indices_wrapping,
+                )
         else:
             static_input: StaticStepInputDefinition = parameter  # type: ignore
             if not requested_as_batch:
                 return static_input.value, None, False
             else:
-                indices = [(0,)]
-                batched_value = Batch(content=[static_input.value], indices=indices)
-                return batched_value, indices, False
+                return apply_auto_batch_casting(
+                    parameter_name=parameter.parameter_specification.parameter_name,
+                    value=static_input.value,
+                    auto_batch_casting_config=auto_batch_casting_lineage_supports[
+                        parameter.parameter_specification.parameter_name
+                    ],
+                    contains_empty_scalar_step_output_selector=False,
+                    dynamic_batches_manager=dynamic_batches_manager,
+                    step_execution_dimensionality=step_execution_dimensionality,
+                    guard_of_indices_wrapping=guard_of_indices_wrapping,
+                )
     dynamic_parameter: DynamicStepInputDefinition = parameter  # type: ignore
     parameter_dimensionality = dynamic_parameter.get_dimensionality()
     lineage_indices = dynamic_batches_manager.get_indices_for_data_lineage(
@@ -610,6 +635,83 @@ def get_non_compound_parameter_value(
         guard_of_indices_wrapping=guard_of_indices_wrapping,
     )
     return result, result.indices, False
+
+
+def apply_auto_batch_casting(
+    parameter_name: str,
+    value: Any,
+    auto_batch_casting_config: AutoBatchCastingConfig,
+    contains_empty_scalar_step_output_selector: bool,
+    dynamic_batches_manager: DynamicBatchesManager,
+    step_execution_dimensionality: int,
+    guard_of_indices_wrapping: GuardForIndicesWrapping,
+) -> Tuple[Any, List[DynamicBatchIndex], bool]:
+    print(f"parameter_name: {parameter_name} - auto_batch_casting_config: {auto_batch_casting_config}")
+    if auto_batch_casting_config.lineage_support is None:
+        indices = [(0, ) * auto_batch_casting_config.casted_dimensionality]
+    else:
+        indices = dynamic_batches_manager.get_indices_for_data_lineage(
+            lineage=auto_batch_casting_config.lineage_support,
+        )
+        missing_dimensions = auto_batch_casting_config.casted_dimensionality - len(
+            auto_batch_casting_config.lineage_support
+        )
+        if missing_dimensions > 0:
+            padding = (0, ) * missing_dimensions
+            indices = [i + padding for i in indices]
+    batch_content = [value] * len(indices)
+    created_batch = Batch(content=batch_content, indices=indices)
+    if step_execution_dimensionality == auto_batch_casting_config.casted_dimensionality:
+        return created_batch, indices, contains_empty_scalar_step_output_selector
+    if step_execution_dimensionality > auto_batch_casting_config.casted_dimensionality:
+        raise ExecutionEngineRuntimeError(
+            public_message=f"Detected a situation when parameter: "
+            f"{parameter_name}"
+            f"has auto-batch casted dimensionality {auto_batch_casting_config.casted_dimensionality} larger "
+            f"than step execution dimensionality: {step_execution_dimensionality}. "
+            f"This is most likely a bug. "
+            f"Contact Roboflow team through github issues "
+            f"(https://github.com/roboflow/inference/issues) providing full context of"
+            f"the problem - including workflow definition you use.",
+            context="workflow_execution | step_input_assembling",
+        )
+    if abs(auto_batch_casting_config.casted_dimensionality - step_execution_dimensionality) > 1:
+        raise ExecutionEngineRuntimeError(
+            public_message=f"Detected a situation when parameter: "
+            f"{parameter_name} has auto batch casted "
+            f"dimensionality {auto_batch_casting_config.casted_dimensionality} differing more than one level "
+            f"from step execution dimensionality: {step_execution_dimensionality}. "
+            f"This is most likely a bug. "
+            f"Contact Roboflow team through github issues "
+            f"(https://github.com/roboflow/inference/issues) providing full context of"
+            f"the problem - including workflow definition you use.",
+            context="workflow_execution | step_input_assembling",
+        )
+    if auto_batch_casting_config.lineage_support is None:
+        upper_level_indices = [indices[0][:-1]]
+    else:
+        upper_level_lineage_dimensionality = auto_batch_casting_config.casted_dimensionality - 1
+        upper_level_lineage = auto_batch_casting_config.lineage_support[:upper_level_lineage_dimensionality]
+        if upper_level_lineage_dimensionality < 1 or len(upper_level_lineage) < upper_level_lineage_dimensionality:
+            raise ExecutionEngineRuntimeError(
+                public_message=f"Detected a situation when parameter: {parameter_name} requires dimensionality "
+                               f"wrapping, but registered lineage support is incompatible which should be detected "
+                               f"by the compiler. This is most likely a bug. "
+                               f"Contact Roboflow team through github issues "
+                               f"(https://github.com/roboflow/inference/issues) providing full context of"
+                               f"the problem - including workflow definition you use.",
+                context="workflow_execution | step_input_assembling",
+            )
+        upper_level_indices = dynamic_batches_manager.get_indices_for_data_lineage(
+            lineage=upper_level_lineage,
+        )
+    result = reduce_batch_dimensionality(
+        indices=indices,
+        upper_level_index=upper_level_indices,
+        data=batch_content,
+        guard_of_indices_wrapping=guard_of_indices_wrapping,
+    )
+    return result, result.indices, contains_empty_scalar_step_output_selector
 
 
 def _flatten_batch_oriented_inputs(

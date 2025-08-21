@@ -793,14 +793,17 @@ def test_workflow_when_non_batch_oriented_step_feeds_batch_oriented_step_operati
         "workflows_core.api_key": None,
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_NON_BATCH_ORIENTED_STEP_FEEDING_BATCH_ORIENTED_STEP_OPERATING_BATCH_WISE,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
 
     # when
-    with pytest.raises(ExecutionGraphStructureError):
-        _ = ExecutionEngine.init(
-            workflow_definition=WORKFLOW_WITH_NON_BATCH_ORIENTED_STEP_FEEDING_BATCH_ORIENTED_STEP_OPERATING_BATCH_WISE,
-            init_parameters=workflow_init_parameters,
-            max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
-        )
+    result = execution_engine.run(runtime_parameters={"non_batch_parameter": "some"})
+
+    # then
+    assert result == [{"result": 0.4}]
 
 
 WORKFLOW_WITH_NON_BATCH_ORIENTED_STEP_FEEDING_MIXED_INPUT_STEP = {
@@ -1326,14 +1329,21 @@ def test_workflow_when_non_batch_oriented_step_feeds_compound_strictly_batch_ori
         "workflows_core.api_key": None,
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_NON_BATCH_ORIENTED_STEP_FEEDING_COMPOUND_STRICTLY_BATCH_ORIENTED_STEP,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    results = execution_engine.run(
+        runtime_parameters={
+            "non_batch_parameter": "some"
+        }
+    )
 
     # then
-    with pytest.raises(ExecutionGraphStructureError):
-        _ = ExecutionEngine.init(
-            workflow_definition=WORKFLOW_WITH_NON_BATCH_ORIENTED_STEP_FEEDING_COMPOUND_STRICTLY_BATCH_ORIENTED_STEP,
-            init_parameters=workflow_init_parameters,
-            max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
-        )
+    assert results == [{"result": 0.4}]
 
 
 WORKFLOW_WITH_BATCH_ORIENTED_STEP_FEEDING_COMPOUND_NON_BATCH_ORIENTED_STEP = {
@@ -1740,14 +1750,17 @@ def test_workflow_when_non_batch_oriented_input_feeds_compound_strictly_batch_or
         "workflows_core.api_key": None,
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_NON_BATCH_ORIENTED_INPUT_FEEDING_COMPOUND_STRICTLY_BATCH_ORIENTED_STEP,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(runtime_parameters={"data": "some"})
 
     # then
-    with pytest.raises(ExecutionGraphStructureError):
-        _ = ExecutionEngine.init(
-            workflow_definition=WORKFLOW_WITH_NON_BATCH_ORIENTED_INPUT_FEEDING_COMPOUND_STRICTLY_BATCH_ORIENTED_STEP,
-            init_parameters=workflow_init_parameters,
-            max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
-        )
+    assert result == [{'result': 0.4}]
 
 
 WORKFLOW_WITH_BATCH_ORIENTED_INPUT_FEEDING_COMPOUND_NON_BATCH_ORIENTED_STEP = {

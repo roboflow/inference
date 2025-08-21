@@ -1,8 +1,9 @@
 import json
-from typing import Literal, List, Optional, Type, Any
+from typing import Literal, List, Optional, Type, Any, Tuple
 from uuid import uuid4
 
 import numpy as np
+from pydantic import Field
 
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition, WorkflowImageData, \
     ImageParentMetadata, Batch
@@ -12,6 +13,7 @@ from inference.core.workflows.prototypes.block import WorkflowBlockManifest, Wor
 
 class ImageProducerBlockManifest(WorkflowBlockManifest):
     type: Literal["ImageProducer"]
+    shape: Tuple[int, int, int] = Field(default=(192, 168, 3))
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -28,10 +30,10 @@ class ImageProducerBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return ImageProducerBlockManifest
 
-    def run(self) -> BlockResult:
+    def run(self, shape: Tuple[int, int, int]) -> BlockResult:
         image = WorkflowImageData(
             parent_metadata=ImageParentMetadata(parent_id=f"image_producer.{uuid4()}"),
-            numpy_image=np.zeros((192, 168, 3), dtype=np.uint8)
+            numpy_image=np.zeros(shape, dtype=np.uint8)
         )
         return {"image": image}
 
@@ -66,6 +68,29 @@ class SingleImageConsumer(WorkflowBlock):
         return results
 
 
+class SingleImageConsumerNonSIMDManifest(WorkflowBlockManifest):
+    type: Literal["ImageConsumerNonSIMD"]
+    images: Selector(kind=[IMAGE_KIND])
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [OutputDefinition(name="shapes", kind=[STRING_KIND])]
+
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return ">=1.3.0,<2.0.0"
+
+
+class SingleImageConsumerNonSIMD(WorkflowBlock):
+
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return SingleImageConsumerNonSIMDManifest
+
+    def run(self, images: WorkflowImageData) -> BlockResult:
+        return {"shapes": json.dumps(images.numpy_image.shape)}
+
+
 class MultiSIMDImageConsumerManifest(WorkflowBlockManifest):
     type: Literal["MultiSIMDImageConsumer"]
     images_x: Selector(kind=[IMAGE_KIND])
@@ -93,7 +118,7 @@ class MultiSIMDImageConsumer(WorkflowBlock):
     def run(self, images_x: Batch[WorkflowImageData], images_y: Batch[WorkflowImageData]) -> BlockResult:
         results = []
         for image_x, image_y in zip(images_x, images_y):
-            results.append({"shapes": json.dumps(image_x.numpy_image.shape) + json.dumps(image_y.numpy_image.shape)})
+            results.append({"metadata": json.dumps(image_x.numpy_image.shape) + json.dumps(image_y.numpy_image.shape)})
         return results
 
 
@@ -104,7 +129,7 @@ class MultiImageConsumerManifest(WorkflowBlockManifest):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
-        return [OutputDefinition(name="metadata", kind=[STRING_KIND])]
+        return [OutputDefinition(name="shapes", kind=[STRING_KIND])]
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
@@ -128,7 +153,7 @@ class MultiImageConsumerRaisingDimManifest(WorkflowBlockManifest):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
-        return [OutputDefinition(name="metadata", kind=[STRING_KIND])]
+        return [OutputDefinition(name="shapes", kind=[STRING_KIND])]
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
@@ -156,7 +181,7 @@ class MultiSIMDImageConsumerRaisingDimManifest(WorkflowBlockManifest):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
-        return [OutputDefinition(name="metadata", kind=[STRING_KIND])]
+        return [OutputDefinition(name="shapes", kind=[STRING_KIND])]
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
@@ -178,6 +203,37 @@ class MultiSIMDImageConsumerRaisingDim(WorkflowBlock):
         for image_x, image_y in zip(images_x, images_y):
             results.append([{"shapes": json.dumps(image_x.numpy_image.shape) + json.dumps(image_y.numpy_image.shape)}])
         return results
+
+
+class MultiSIMDImageConsumerDecreasingDimManifest(WorkflowBlockManifest):
+    type: Literal["MultiSIMDImageConsumerDecreasingDim"]
+    images_x: Selector(kind=[IMAGE_KIND])
+    images_y: Selector(kind=[IMAGE_KIND])
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [OutputDefinition(name="shapes", kind=[STRING_KIND])]
+
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return ">=1.3.0,<2.0.0"
+
+    @classmethod
+    def get_output_dimensionality_offset(cls) -> int:
+        return -1
+
+
+class MultiSIMDImageConsumerDecreasingDim(WorkflowBlock):
+
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return MultiSIMDImageConsumerDecreasingDimManifest
+
+    def run(self, images_x: Batch[WorkflowImageData], images_y: Batch[WorkflowImageData]) -> BlockResult:
+        results = []
+        for image_x, image_y in zip(images_x, images_y):
+            results.append(json.dumps(image_x.numpy_image.shape) + json.dumps(image_y.numpy_image.shape))
+        return {"shapes": "\n".join(results)}
 
 
 class IdentityManifest(WorkflowBlockManifest):
@@ -215,6 +271,10 @@ class IdentitySIMDManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
 
+    @classmethod
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["x"]
+
 
 class IdentitySIMDBlock(WorkflowBlock):
 
@@ -231,10 +291,12 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
     return [
         ImageProducerBlock,
         SingleImageConsumer,
+        SingleImageConsumerNonSIMD,
         MultiSIMDImageConsumer,
         MultiImageConsumer,
         MultiImageConsumerRaisingDim,
         MultiSIMDImageConsumerRaisingDim,
         IdentityBlock,
-        IdentitySIMDBlock
+        IdentitySIMDBlock,
+        MultiSIMDImageConsumerDecreasingDim
     ]

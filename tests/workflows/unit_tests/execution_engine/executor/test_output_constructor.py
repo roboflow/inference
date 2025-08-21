@@ -8,6 +8,7 @@ from networkx import DiGraph
 
 from inference.core.workflows.core_steps.loader import KINDS_SERIALIZERS
 from inference.core.workflows.errors import AssumptionError, ExecutionEngineRuntimeError
+from inference.core.workflows.execution_engine.constants import TOP_LEVEL_LINEAGE_KEY, WORKFLOW_INPUT_BATCH_LINEAGE_ID
 from inference.core.workflows.execution_engine.entities.base import JsonField
 from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
@@ -497,6 +498,7 @@ def test_construct_workflow_output_when_batch_outputs_present() -> None:
     data_lookup = {
         "$steps.other.c": "c_value",
     }
+    execution_graph.graph[TOP_LEVEL_LINEAGE_KEY] = WORKFLOW_INPUT_BATCH_LINEAGE_ID
 
     def get_non_batch_data(selector: str) -> Any:
         return data_lookup[selector]

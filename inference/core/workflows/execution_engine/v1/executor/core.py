@@ -304,15 +304,6 @@ def run_non_simd_step(
         },
     ):
         step_result = step_instance.run(**step_input)
-    if isinstance(step_result, list):
-        raise ExecutionEngineRuntimeError(
-            public_message=f"Error in execution engine. Non-SIMD step {step_name} "
-            f"produced list of results which is not expected. This is most likely bug. "
-            f"Contact Roboflow team through github issues "
-            f"(https://github.com/roboflow/inference/issues) providing full context of"
-            f"the problem - including workflow definition you use.",
-            context="workflow_execution | step_output_registration",
-        )
     with profiler.profile_execution_phase(
         name="step_output_registration",
         categories=["execution_engine_operation"],

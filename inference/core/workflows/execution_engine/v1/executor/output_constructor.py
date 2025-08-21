@@ -11,7 +11,7 @@ from inference.core.workflows.core_steps.common.utils import (
 )
 from inference.core.workflows.errors import AssumptionError, ExecutionEngineRuntimeError
 from inference.core.workflows.execution_engine.constants import (
-    WORKFLOW_INPUT_BATCH_LINEAGE_ID,
+    WORKFLOW_INPUT_BATCH_LINEAGE_ID, TOP_LEVEL_LINEAGE_KEY,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     CoordinatesSystem,
@@ -45,6 +45,7 @@ def construct_workflow_output(
         output_name2indices[output.name] = execution_data_manager.get_selector_indices(
             selector=output.selector
         )
+    print("output_name2indices", output_name2indices)
     batch_oriented_outputs = {
         output for output, indices in output_name2indices.items() if indices is not None
     }
@@ -93,11 +94,15 @@ def construct_workflow_output(
         for output in workflow_outputs
         if output.coordinates_system is CoordinatesSystem.PARENT
     }
-    major_batch_size = len(
-        execution_data_manager.get_lineage_indices(
-            lineage=[WORKFLOW_INPUT_BATCH_LINEAGE_ID]
+    top_level_data_lineage_marker = execution_graph.graph.get(TOP_LEVEL_LINEAGE_KEY)
+    if top_level_data_lineage_marker:
+        major_batch_size = len(
+            execution_data_manager.get_lineage_indices(
+                lineage=[top_level_data_lineage_marker]
+            )
         )
-    )
+    else:
+        major_batch_size = 0
     for name in batch_oriented_outputs:
         array = outputs_arrays[name]
         indices = output_name2indices[name]
@@ -105,6 +110,8 @@ def construct_workflow_output(
             selector=name2selector[name],
             indices=indices,
         )
+        print(f"Retrieved data for {name} - {data}")
+        print(f"output array: {array}")
         for index, data_piece in zip(indices, data):
             if (
                 name in outputs_requested_in_parent_coordinates
@@ -134,7 +141,9 @@ def construct_workflow_output(
                     f"the problem - including workflow definition you use.",
                     context="workflow_execution | output_construction",
                 )
+    print("outputs_arrays", outputs_arrays)
     results = []
+    print("major_batch_size", major_batch_size)
     for i in range(major_batch_size):
         single_result = {}
         for name, value in non_batch_outputs.items():

@@ -217,6 +217,12 @@ StepInputData = Dict[str, Union[StepInputDefinition, CompoundStepInputDefinition
 
 
 @dataclass
+class AutoBatchCastingConfig:
+    casted_dimensionality: int
+    lineage_support: Optional[List[str]]
+
+
+@dataclass
 class StepNode(ExecutionGraphNode):
     step_manifest: WorkflowBlockManifest
     input_data: StepInputData = field(default_factory=dict)
@@ -224,7 +230,7 @@ class StepNode(ExecutionGraphNode):
     child_execution_branches: Dict[str, str] = field(default_factory=dict)
     execution_branches_impacting_inputs: Set[str] = field(default_factory=set)
     batch_oriented_parameters: Set[str] = field(default_factory=set)
-    scalar_parameters_to_be_batched: Set[str] = field(default_factory=set)
+    auto_batch_casting_lineage_supports: Dict[str, AutoBatchCastingConfig] = field(default_factory=dict)
     step_execution_dimensionality: int = 0
 
     def controls_flow(self) -> bool:
