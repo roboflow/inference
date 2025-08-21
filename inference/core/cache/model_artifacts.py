@@ -1,4 +1,5 @@
 import errno
+import json
 import os.path
 import re
 import shutil
@@ -7,6 +8,7 @@ from typing import List, Optional, Union
 
 from filelock import FileLock
 
+from build.lib.inference.core.exceptions import ModelArtefactError
 from inference.core.env import ATOMIC_CACHE_WRITES_ENABLED, MODEL_CACHE_DIR
 from inference.core.logger import logger
 from inference.core.utils.file_system import (
@@ -70,7 +72,10 @@ def load_json_from_cache(
     file: str, model_id: Optional[str] = None, **kwargs
 ) -> Optional[Union[dict, list]]:
     cached_file_path = get_cache_file_path(file=file, model_id=model_id)
-    return read_json(path=cached_file_path, **kwargs)
+    try:
+        return read_json(path=cached_file_path, **kwargs)
+    except json.JSONDecodeError as e:
+        raise ModelArtefactError(f"Error loading JSON from cache: {e}")
 
 
 def save_bytes_in_cache(
