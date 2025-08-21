@@ -222,6 +222,10 @@ def generate_qr_code(
     # Direct conversion from PIL.Image to numpy array (much faster than encode/decode)
     numpy_image = np.array(img)
 
+    # Convert from RGB (PIL format) to BGR (OpenCV/WorkflowImageData format)
+    # PIL creates RGB images, but WorkflowImageData expects BGR format
+    numpy_image = numpy_image[:, :, ::-1]  # RGB -> BGR
+
     # Defensive: numpy_image should never be None; original code checks for None on OpenCV decode failure
     if numpy_image is None or numpy_image.size == 0:
         raise ValueError("Failed to generate QR code image")
