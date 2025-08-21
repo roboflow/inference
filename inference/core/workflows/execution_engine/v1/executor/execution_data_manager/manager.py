@@ -220,6 +220,39 @@ class ExecutionDataManager:
             node=step_selector,
             expected_type=StepNode,
         )
+        print(
+            f"Output data lineage: ",
+            step_node.data_lineage,
+            step_node.output_dimensionality,
+            step_node.step_execution_dimensionality,
+        )
+        step_name = get_last_chunk_of_selector(selector=step_selector)
+        if step_node.output_dimensionality == 0:
+            print("COLLAPSE")
+            # SIMD step collapsing into scalar (can happen for auto-batch casting of parameters)
+            if not isinstance(outputs, list) or len(outputs) != 1:
+                raise ExecutionEngineRuntimeError(
+                    public_message=f"Error in execution engine. In context of SIMD step: {step_selector} attempts to "
+                                   f"register output which should collapse into a scalar, but detected batched output "
+                                   f"with more than a single element (or incompatible output), "
+                                   f"making the operation not possible. This is most likely bug (either a block or "
+                                   f"Execution Engine is faulty). Contact Roboflow team through github issues "
+                                   f"(https://github.com/roboflow/inference/issues) providing full context of"
+                                   f"the problem - including workflow definition you use.",
+                    context="workflow_execution | step_output_registration",
+                )
+            output = outputs[0]
+            if isinstance(output, FlowControl):
+                self._register_flow_control_output_for_non_simd_step(
+                    step_node=step_node,
+                    output=output,
+                )
+                return None
+            self._execution_cache.register_non_batch_step_outputs(
+                step_name=step_name,
+                outputs=output,
+            )
+            return None
         if (
             step_node.output_dimensionality - step_node.step_execution_dimensionality
         ) > 0:
@@ -231,7 +264,6 @@ class ExecutionDataManager:
                 lineage=step_node.data_lineage,
                 indices=indices,
             )
-        step_name = get_last_chunk_of_selector(selector=step_selector)
         if step_node.child_execution_branches:
             if not all(isinstance(element, FlowControl) for element in outputs):
                 raise ExecutionEngineRuntimeError(
@@ -320,7 +352,23 @@ class ExecutionDataManager:
             return self._runtime_parameters[input_name]
         elif is_step_selector(
             selector_or_value=potential_step_selector
-        ) and not self.is_step_simd(step_selector=potential_step_selector):
+        ):
+            step_node_data = node_as(
+                execution_graph=self._execution_graph,
+                node=potential_step_selector,
+                expected_type=StepNode,
+            )
+            if step_node_data.output_dimensionality != 0:
+                raise ExecutionEngineRuntimeError(
+                    public_message=f"Error in execution engine. Attempted to get value of: {selector}, "
+                                   f"which was supposed to be registered as scalar output, but in fact Execution "
+                                   f"Engine denoted the output as batched one (with dimensionality: "
+                                   f"{step_node_data.output_dimensionality}). "
+                                   f"This is most likely bug. Contact Roboflow team through github issues "
+                                   f"(https://github.com/roboflow/inference/issues) providing full context of"
+                                   f"the problem - including workflow definition you use.",
+                    context="workflow_execution | getting_workflow_data",
+                )
             step_name = get_last_chunk_of_selector(selector=potential_step_selector)
             if selector.endswith(".*"):
                 return self._execution_cache.get_all_non_batch_step_outputs(

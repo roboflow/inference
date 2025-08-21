@@ -48,6 +48,7 @@ def construct_workflow_output(
     batch_oriented_outputs = {
         output for output, indices in output_name2indices.items() if indices is not None
     }
+    print("batch_oriented_outputs", batch_oriented_outputs)
     kinds_of_output_nodes = {
         output.name: node_as(
             execution_graph=execution_graph,
@@ -60,6 +61,7 @@ def construct_workflow_output(
     for output in workflow_outputs:
         if output.name in batch_oriented_outputs:
             continue
+        print(f"taking {output.name} from {output.selector} as non batch")
         data_piece = execution_data_manager.get_non_batch_data(selector=output.selector)
         if serialize_results:
             output_kind = kinds_of_output_nodes[output.name]

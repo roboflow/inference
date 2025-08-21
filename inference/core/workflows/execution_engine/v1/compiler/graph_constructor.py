@@ -751,11 +751,10 @@ def denote_data_flow_for_step(
         inputs_dimensionalities=inputs_dimensionalities,
         dimensionality_offstes=input_dimensionality_offsets,
     )
-    all_lineages = get_input_data_lineage_including_auto_batch_casting(
+    all_lineages = get_input_data_lineage_excluding_auto_batch_casting(
         step_name=step_name,
         input_data=input_data,
         scalar_parameters_to_be_batched=scalar_parameters_to_be_batched,
-        inputs_dimensionalities=inputs_dimensionalities,
     )
     verify_compatibility_of_input_data_lineage_with_control_flow_lineage(
         step_name=step_name,
@@ -773,17 +772,7 @@ def denote_data_flow_for_step(
         )
     )
     truly_batch_parameters = parameters_with_batch_inputs.difference(scalar_parameters_to_be_batched)
-    if len(scalar_parameters_to_be_batched) > 0:
-        if len(truly_batch_parameters) > 0:
-            data_lineage = [WORKFLOW_INPUT_BATCH_LINEAGE_ID]
-        else:
-            auto_casted_batch_min_dimensionality = min(
-                dim for p in scalar_parameters_to_be_batched for dim in inputs_dimensionalities[p]
-            )
-            data_lineage = [WORKFLOW_INPUT_BATCH_LINEAGE_ID]
-            for i in range(auto_casted_batch_min_dimensionality - 1):
-                data_lineage.append(f"auto-casted-dim-{i}")
-    elif not truly_batch_parameters:
+    if not truly_batch_parameters:
         data_lineage = []
     else:
         data_lineage = establish_batch_oriented_step_lineage(
@@ -793,6 +782,7 @@ def denote_data_flow_for_step(
             dimensionality_reference_property=dimensionality_reference_property,
             output_dimensionality_offset=output_dimensionality_offset,
         )
+    print("Data lineage of block output", data_lineage)
     step_node_data.data_lineage = data_lineage
     return execution_graph
 
@@ -1568,6 +1558,29 @@ def verify_declared_batch_compatibility_against_actual_inputs(
     return scalar_parameters_to_be_batched
 
 
+def get_input_data_lineage_excluding_auto_batch_casting(
+    step_name: str,
+    input_data: StepInputData,
+    scalar_parameters_to_be_batched: Set[str],
+) -> List[List[str]]:
+    lineage_deduplication_set = set()
+    lineages = []
+    for property_name, input_definition in input_data.items():
+        if property_name in scalar_parameters_to_be_batched:
+            continue
+        new_lineages_detected_within_property_data = get_lineage_for_input_property(
+            step_name=step_name,
+            property_name=property_name,
+            input_definition=input_definition,
+            lineage_deduplication_set=lineage_deduplication_set,
+        )
+        lineages.extend(new_lineages_detected_within_property_data)
+    if not lineages:
+        return lineages
+    verify_lineages(step_name=step_name, detected_lineages=lineages)
+    return lineages
+
+
 def get_input_data_lineage_including_auto_batch_casting(
     step_name: str,
     input_data: StepInputData,
@@ -1586,12 +1599,24 @@ def get_input_data_lineage_including_auto_batch_casting(
         property_to_lineage[property_name] = new_lineages_detected_within_property_data
     if not property_to_lineage:
         return []
+    all_lineages = [lineage for lineages in property_to_lineage.values() for lineage in lineages if len(lineage) > 0]
+    if len(all_lineages):
+        verify_lineages(step_name=step_name, detected_lineages=all_lineages)
+        max_len_lineage = all_lineages[0]
+        for lineage in all_lineages:
+            if len(lineage) > len(max_len_lineage):
+                max_len_lineage = lineage
+    else:
+        max_len_lineage = [WORKFLOW_INPUT_BATCH_LINEAGE_ID]
     for property_name in scalar_parameters_to_be_batched:
-        if inputs_dimensionalities[property_name] == 1:
-            property_to_lineage[property_name] = [[WORKFLOW_INPUT_BATCH_LINEAGE_ID]]
-        else:
-            pass
-    all_lineages = [lineage for lineages in property_to_lineage.values() for lineage in lineages]
+        max_dimensionality_for_compound_property = max(inputs_dimensionalities[property_name])
+        auto_casted_lineage = max_len_lineage[:min(len(max_len_lineage), max_dimensionality_for_compound_property)]
+        for i in range(max(0, max_dimensionality_for_compound_property - len(max_len_lineage))):
+            auto_casted_lineage.append(f"auto-casted-lineage-{len(max_len_lineage) + 1}")
+        lineage_id = identify_lineage(lineage=auto_casted_lineage)
+        if lineage_id not in lineage_deduplication_set:
+            lineage_deduplication_set.add(lineage_id)
+            all_lineages.append(auto_casted_lineage)
     verify_lineages(step_name=step_name, detected_lineages=all_lineages)
     return all_lineages
 
