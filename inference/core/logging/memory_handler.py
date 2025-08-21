@@ -7,12 +7,11 @@ ENABLE_IN_MEMORY_LOGS environment variable is set to 'true'.
 """
 
 import logging
-from collections import deque
-from threading import Lock
-from typing import List, Dict, Any
-from datetime import datetime
 import os
-
+from collections import deque
+from datetime import datetime
+from threading import Lock
+from typing import Any, Dict, List
 
 # Global log storage
 _log_entries = deque(maxlen=1000)  # Keep last 1000 log entries
