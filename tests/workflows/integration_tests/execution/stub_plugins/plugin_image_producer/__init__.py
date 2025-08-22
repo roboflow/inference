@@ -1,6 +1,6 @@
 import json
 from collections import defaultdict
-from typing import Any, List, Literal, Optional, Tuple, Type, Union, Dict
+from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 from uuid import uuid4
 
 import numpy as np
@@ -276,7 +276,10 @@ class MultiNonSIMDImageConsumerDecreasingDim(WorkflowBlock):
         return MultiNonSIMDImageConsumerDecreasingDimManifest
 
     def run(
-        self, images_x: Batch[WorkflowImageData], images_y: Batch[WorkflowImageData], additional: Any
+        self,
+        images_x: Batch[WorkflowImageData],
+        images_y: Batch[WorkflowImageData],
+        additional: Any,
     ) -> BlockResult:
         assert not isinstance(additional, Batch)
         print("images_x", images_x, "images_y", images_y)
@@ -319,7 +322,10 @@ class MultiSIMDImageConsumerDecreasingDim(WorkflowBlock):
         return MultiSIMDImageConsumerDecreasingDimManifest
 
     def run(
-        self, images_x: Batch[Batch[WorkflowImageData]], images_y: Batch[Batch[WorkflowImageData]], additional: Any
+        self,
+        images_x: Batch[Batch[WorkflowImageData]],
+        images_y: Batch[Batch[WorkflowImageData]],
+        additional: Any,
     ) -> BlockResult:
         assert not isinstance(additional, Batch)
         print("images_x", images_x, "images_y", images_y)
@@ -488,7 +494,9 @@ class SIMDConsumerAcceptingListBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return SIMDConsumerAcceptingListManifest
 
-    def run(self, x: List[Batch[WorkflowImageData]], y: List[Batch[WorkflowImageData]]) -> BlockResult:
+    def run(
+        self, x: List[Batch[WorkflowImageData]], y: List[Batch[WorkflowImageData]]
+    ) -> BlockResult:
         idx2x = defaultdict(list)
         idx2y = defaultdict(list)
         for batch_x in x:
@@ -672,10 +680,12 @@ class SIMDConsumerAcceptingDictIncDimBlock(WorkflowBlock):
         assert reference_indices is not None
         results = []
         for idx in reference_indices:
-            results.append([
-                {"x": [keys_stashes[k][idx] for k in sorted_keys]},
-                {"x": [keys_stashes[k][idx] for k in sorted_keys]}
-            ])
+            results.append(
+                [
+                    {"x": [keys_stashes[k][idx] for k in sorted_keys]},
+                    {"x": [keys_stashes[k][idx] for k in sorted_keys]},
+                ]
+            )
         return results
 
 
@@ -694,7 +704,7 @@ class NonSIMDConsumerAcceptingListDecDimManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_output_dimensionality_offset(
-            cls,
+        cls,
     ) -> int:
         return -1
 
@@ -713,6 +723,48 @@ class NonSIMDConsumerAcceptingListDecDimBlock(WorkflowBlock):
         return {"x": [f for e in x for f in e]}
 
 
+class SIMDConsumerAcceptingListDecDimManifest(WorkflowBlockManifest):
+    type: Literal["SIMDConsumerAcceptingListDecDim"]
+    x: List[Selector(kind=[IMAGE_KIND])]
+    y: Union[Selector(), str]
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [OutputDefinition(name="x")]
+
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return ">=1.3.0,<2.0.0"
+
+    @classmethod
+    def get_output_dimensionality_offset(
+        cls,
+    ) -> int:
+        return -1
+
+    @classmethod
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["x"]
+
+
+class SIMDConsumerAcceptingListDecDimBlock(WorkflowBlock):
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return SIMDConsumerAcceptingListDecDimManifest
+
+    def run(self, x: List[Batch[Batch[WorkflowImageData]]], y: str) -> BlockResult:
+        assert not isinstance(y, Batch)
+        idx2x = defaultdict(list)
+        for batch_x in x:
+            for idx, el in enumerate(batch_x):
+                idx2x[idx].extend(list(el))
+        indices_x = sorted(idx2x.keys())
+        results = []
+        for idx in indices_x:
+            results.append({"x": idx2x[idx]})
+        return results
+
+
 class NonSIMDConsumerAcceptingDictDecDimManifest(WorkflowBlockManifest):
     type: Literal["NonSIMDConsumerAcceptingDictDecDim"]
     x: Dict[str, Selector(kind=[IMAGE_KIND])]
@@ -727,7 +779,7 @@ class NonSIMDConsumerAcceptingDictDecDimManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_output_dimensionality_offset(
-            cls,
+        cls,
     ) -> int:
         return -1
 
@@ -766,7 +818,7 @@ class SIMDConsumerAcceptingDictDecDimManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_output_dimensionality_offset(
-            cls,
+        cls,
     ) -> int:
         return -1
 
@@ -799,17 +851,9 @@ class SIMDConsumerAcceptingDictDecDimBlock(WorkflowBlock):
         for idx in reference_indices:
             merged = []
             for k in sorted_keys:
-                merged.extend(keys_stashes[k][idx])
+                merged.append(keys_stashes[k][idx])
             results.append({"x": merged})
         return results
-        # results = []
-        # sorted_keys = sorted(x.keys())
-        # for k in sorted_keys:
-        #     v = x[k]
-        #     assert isinstance(v, Batch)
-        #     result = [e for e in v]
-        #     results.append(result)
-        # return {"x": results}
 
 
 def load_blocks() -> List[Type[WorkflowBlock]]:
@@ -836,5 +880,6 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         SIMDConsumerAcceptingListBlock,
         SIMDConsumerAcceptingDictBlock,
         SIMDConsumerAcceptingDictIncDimBlock,
-        SIMDConsumerAcceptingDictDecDimBlock
+        SIMDConsumerAcceptingDictDecDimBlock,
+        SIMDConsumerAcceptingListDecDimBlock,
     ]

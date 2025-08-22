@@ -610,7 +610,7 @@ WORKFLOW_WITH_NON_SIMD_CONSUMER_DECREASING_OUTPUT_DIM_FED_BY_SCALAR_PRODUCERS = 
             "name": "image_consumer",
             "images_x": "$steps.identity_simd.x",
             "images_y": "$steps.image_producer_y.image",
-            "additional": "$inputs.confidence"
+            "additional": "$inputs.confidence",
         },
     ],
     "outputs": [
@@ -671,7 +671,7 @@ WORKFLOW_WITH_NON_SIMD_CONSUMER_DECREASING_OUTPUT_DIM_FED_BY_SCALAR_PRODUCER_AND
             "name": "image_consumer",
             "images_x": "$steps.identity_simd.x",
             "images_y": "$inputs.image",
-            "additional": "$inputs.confidence"
+            "additional": "$inputs.confidence",
         },
     ],
     "outputs": [
@@ -742,7 +742,7 @@ WORKFLOW_WITH_SIMD_CONSUMER_DECREASING_OUTPUT_DIM_FED_BY_SCALAR_PRODUCERS = {
             "name": "image_consumer",
             "images_x": "$steps.identity_simd.x",
             "images_y": "$steps.image_producer_y.image",
-            "additional": "$inputs.confidence"
+            "additional": "$inputs.confidence",
         },
     ],
     "outputs": [
@@ -803,7 +803,7 @@ WORKFLOW_WITH_SIMD_CONSUMER_DECREASING_OUTPUT_DIM_FED_BY_SCALAR_PRODUCER_AND_BAT
             "name": "image_consumer",
             "images_x": "$steps.identity_simd.x",
             "images_y": "$inputs.image",
-            "additional": "$inputs.confidence"
+            "additional": "$inputs.confidence",
         },
     ],
     "outputs": [
@@ -870,7 +870,7 @@ WORKFLOW_WITH_SIMD_CONSUMER_DECREASING_OUTPUT_DIM_FED_BY_BATCH_INPUTS_AT_DIM_1 =
             "name": "image_consumer",
             "images_x": "$steps.identity_simd.x",
             "images_y": "$steps.identity_non_simd.x",
-            "additional": "$inputs.confidence"
+            "additional": "$inputs.confidence",
         },
         {
             "type": "IdentitySIMD",
@@ -913,10 +913,12 @@ def test_workflow_with_batched_inputs_at_dim_1_fed_into_consumer_decreasing_the_
     )
 
     # when
-    result = execution_engine.run(runtime_parameters={
-        "image_1": [image_1, image_2],
-        "image_2": [image_3, image_4],
-    })
+    result = execution_engine.run(
+        runtime_parameters={
+            "image_1": [image_1, image_2],
+            "image_2": [image_3, image_4],
+        }
+    )
 
     # then
     assert result == [
@@ -947,7 +949,7 @@ WORKFLOW_WITH_SIMD_CONSUMER_DECREASING_OUTPUT_DIM_FED_BY_BATCH_INPUTS_AT_DIM_1_B
             "name": "image_consumer",
             "images_x": "$steps.identity_simd.x",
             "images_y": "$steps.identity_non_simd.x",
-            "additional": "$inputs.confidence"
+            "additional": "$inputs.confidence",
         },
         {
             "type": "IdentitySIMD",
@@ -957,8 +959,8 @@ WORKFLOW_WITH_SIMD_CONSUMER_DECREASING_OUTPUT_DIM_FED_BY_BATCH_INPUTS_AT_DIM_1_B
         {
             "type": "BoostDimensionality",
             "name": "dimensionality_boost",
-            "x": "$steps.identity_simd_2.x"
-        }
+            "x": "$steps.identity_simd_2.x",
+        },
     ],
     "outputs": [
         {
@@ -1015,7 +1017,7 @@ WORKFLOW_WITH_SIMD_CONSUMER_DECREASING_OUTPUT_DIM_FED_BY_BATCH_INPUTS_AT_DIM_2 =
             "name": "image_consumer",
             "images_x": "$steps.dimensionality_boost.x",
             "images_y": "$steps.dimensionality_boost.y",
-            "additional": "$inputs.confidence"
+            "additional": "$inputs.confidence",
         },
         {
             "type": "IdentitySIMD",
@@ -1058,15 +1060,17 @@ def test_workflow_with_batched_inputs_at_dim_2_fed_into_consumer_decreasing_the_
     )
 
     # when
-    result = execution_engine.run(runtime_parameters={
-        "image_1": [image_1, image_2],
-        "image_2": [image_3, image_4],
-    })
+    result = execution_engine.run(
+        runtime_parameters={
+            "image_1": [image_1, image_2],
+            "image_2": [image_3, image_4],
+        }
+    )
 
     # then
     assert result == [
         {"shapes": "[200, 100, 3][400, 100, 3]\n[200, 100, 3][400, 100, 3]"},
-        {"shapes": "[300, 100, 3][500, 100, 3]\n[300, 100, 3][500, 100, 3]"}
+        {"shapes": "[300, 100, 3][500, 100, 3]\n[300, 100, 3][500, 100, 3]"},
     ]
 
 
@@ -1089,7 +1093,7 @@ WORKFLOW_WITH_SIMD_CONSUMER_DECREASING_OUTPUT_DIM_FED_BY_SCALAR_INPUTS_BOOSTING_
             "name": "image_consumer",
             "images_x": "$steps.image_producer_x.image",
             "images_y": "$steps.image_producer_y.image",
-            "additional": "$inputs.confidence"
+            "additional": "$inputs.confidence",
         },
         {
             "type": "IdentitySIMD",
@@ -1099,8 +1103,8 @@ WORKFLOW_WITH_SIMD_CONSUMER_DECREASING_OUTPUT_DIM_FED_BY_SCALAR_INPUTS_BOOSTING_
         {
             "type": "BoostDimensionality",
             "name": "dimensionality_boost",
-            "x": "$steps.identity_simd_2.x"
-        }
+            "x": "$steps.identity_simd_2.x",
+        },
     ],
     "outputs": [
         {
@@ -1138,7 +1142,7 @@ def test_workflow_with_scalar_inputs_fed_into_consumer_decreasing_the_dimensiona
     # then
     assert results == [
         {"shapes": "[192, 168, 3][192, 168, 3]"},
-        {"shapes": "[192, 168, 3][192, 168, 3]"}
+        {"shapes": "[192, 168, 3][192, 168, 3]"},
     ]
 
 
@@ -1146,11 +1150,7 @@ WORKFLOW_WITH_NON_SIMD_CUSTOMER_ACCEPTING_LIST_OF_SCALAR_IMAGES = {
     "version": "1.1",
     "inputs": [],
     "steps": [
-        {
-            "type": "ImageProducer",
-            "name": "image_producer_x",
-            "shape": (100, 100, 3)
-        },
+        {"type": "ImageProducer", "name": "image_producer_x", "shape": (100, 100, 3)},
         {
             "type": "ImageProducer",
             "name": "image_producer_y",
@@ -1170,8 +1170,8 @@ WORKFLOW_WITH_NON_SIMD_CUSTOMER_ACCEPTING_LIST_OF_SCALAR_IMAGES = {
         {
             "type": "BoostDimensionality",
             "name": "dimensionality_boost",
-            "x": "$steps.image_consumer.x"
-        }
+            "x": "$steps.image_consumer.x",
+        },
     ],
     "outputs": [
         {
@@ -1213,9 +1213,15 @@ def test_workflow_with_non_simd_consumers_accepting_list_of_scalar_selector(
 
     # then
     assert len(results) == 2, "Expected dim increase to happen"
-    assert [i.numpy_image.shape for i in results[0]["x"]] == [(100, 100, 3), (200, 200, 3)]
+    assert [i.numpy_image.shape for i in results[0]["x"]] == [
+        (100, 100, 3),
+        (200, 200, 3),
+    ]
     assert [i.numpy_image.shape for i in results[0]["y"]] == [(300, 300, 3)]
-    assert [i.numpy_image.shape for i in results[1]["x"]] == [(100, 100, 3), (200, 200, 3)]
+    assert [i.numpy_image.shape for i in results[1]["x"]] == [
+        (100, 100, 3),
+        (200, 200, 3),
+    ]
     assert [i.numpy_image.shape for i in results[1]["y"]] == [(300, 300, 3)]
 
 
@@ -1270,17 +1276,25 @@ def test_workflow_with_non_simd_consumers_accepting_list_of_batch_selector(
     )
 
     # when
-    results = execution_engine.run(runtime_parameters={
-        "image_1": [np.zeros((100, 100, 3)), np.zeros((120, 120, 3))],
-        "image_2": [np.zeros((200, 200, 3)), np.zeros((220, 220, 3))],
-        "image_3": [np.zeros((300, 300, 3)), np.zeros((320, 320, 3))],
-    })
+    results = execution_engine.run(
+        runtime_parameters={
+            "image_1": [np.zeros((100, 100, 3)), np.zeros((120, 120, 3))],
+            "image_2": [np.zeros((200, 200, 3)), np.zeros((220, 220, 3))],
+            "image_3": [np.zeros((300, 300, 3)), np.zeros((320, 320, 3))],
+        }
+    )
 
     # then
     assert len(results) == 2
-    assert [i.numpy_image.shape for i in results[0]["x"]] == [(100, 100, 3), (200, 200, 3)]
+    assert [i.numpy_image.shape for i in results[0]["x"]] == [
+        (100, 100, 3),
+        (200, 200, 3),
+    ]
     assert [i.numpy_image.shape for i in results[0]["y"]] == [(300, 300, 3)]
-    assert [i.numpy_image.shape for i in results[1]["x"]] == [(120, 120, 3), (220, 220, 3)]
+    assert [i.numpy_image.shape for i in results[1]["x"]] == [
+        (120, 120, 3),
+        (220, 220, 3),
+    ]
     assert [i.numpy_image.shape for i in results[1]["y"]] == [(320, 320, 3)]
 
 
@@ -1291,11 +1305,7 @@ WORKFLOW_WITH_NON_SIMD_CUSTOMER_ACCEPTING_LIST_OF_BATCH_AND_SCALAR_IMAGES = {
         {"type": "WorkflowImage", "name": "image_3"},
     ],
     "steps": [
-        {
-            "type": "ImageProducer",
-            "name": "image_producer_x",
-            "shape": (50, 50, 3)
-        },
+        {"type": "ImageProducer", "name": "image_producer_x", "shape": (50, 50, 3)},
         {
             "type": "NonSIMDConsumerAcceptingList",
             "name": "image_consumer",
@@ -1339,16 +1349,24 @@ def test_workflow_with_non_simd_consumers_accepting_list_of_batch_and_scalar_sel
     )
 
     # when
-    results = execution_engine.run(runtime_parameters={
-        "image_1": [np.zeros((100, 100, 3)), np.zeros((120, 120, 3))],
-        "image_3": [np.zeros((300, 300, 3)), np.zeros((320, 320, 3))],
-    })
+    results = execution_engine.run(
+        runtime_parameters={
+            "image_1": [np.zeros((100, 100, 3)), np.zeros((120, 120, 3))],
+            "image_3": [np.zeros((300, 300, 3)), np.zeros((320, 320, 3))],
+        }
+    )
 
     # then
     assert len(results) == 2
-    assert [i.numpy_image.shape for i in results[0]["x"]] == [(100, 100, 3), (50, 50, 3)]
+    assert [i.numpy_image.shape for i in results[0]["x"]] == [
+        (100, 100, 3),
+        (50, 50, 3),
+    ]
     assert [i.numpy_image.shape for i in results[0]["y"]] == [(300, 300, 3)]
-    assert [i.numpy_image.shape for i in results[1]["x"]] == [(120, 120, 3), (50, 50, 3)]
+    assert [i.numpy_image.shape for i in results[1]["x"]] == [
+        (120, 120, 3),
+        (50, 50, 3),
+    ]
     assert [i.numpy_image.shape for i in results[1]["y"]] == [(320, 320, 3)]
 
 
@@ -1359,18 +1377,14 @@ WORKFLOW_WITH_NON_SIMD_CUSTOMER_ACCEPTING_DICT_OF_BATCH_AND_SCALAR_IMAGES = {
         {"type": "WorkflowImage", "name": "image_3"},
     ],
     "steps": [
-        {
-            "type": "ImageProducer",
-            "name": "image_producer_x",
-            "shape": (50, 50, 3)
-        },
+        {"type": "ImageProducer", "name": "image_producer_x", "shape": (50, 50, 3)},
         {
             "type": "NonSIMDConsumerAcceptingDict",
             "name": "image_consumer",
             "x": {
                 "a": "$inputs.image_1",
                 "b": "$steps.image_producer_x.image",
-                "c": "$inputs.image_3"
+                "c": "$inputs.image_3",
             },
         },
     ],
@@ -1405,15 +1419,25 @@ def test_workflow_with_non_simd_consumers_accepting_dict_of_batch_and_scalar_sel
     )
 
     # when
-    results = execution_engine.run(runtime_parameters={
-        "image_1": [np.zeros((100, 100, 3)), np.zeros((120, 120, 3))],
-        "image_3": [np.zeros((300, 300, 3)), np.zeros((320, 320, 3))],
-    })
+    results = execution_engine.run(
+        runtime_parameters={
+            "image_1": [np.zeros((100, 100, 3)), np.zeros((120, 120, 3))],
+            "image_3": [np.zeros((300, 300, 3)), np.zeros((320, 320, 3))],
+        }
+    )
 
     # then
     assert len(results) == 2
-    assert [i.numpy_image.shape for i in results[0]["x"]] == [(100, 100, 3), (50, 50, 3), (300, 300, 3)]
-    assert [i.numpy_image.shape for i in results[1]["x"]] == [(120, 120, 3), (50, 50, 3), (320, 320, 3)]
+    assert [i.numpy_image.shape for i in results[0]["x"]] == [
+        (100, 100, 3),
+        (50, 50, 3),
+        (300, 300, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[1]["x"]] == [
+        (120, 120, 3),
+        (50, 50, 3),
+        (320, 320, 3),
+    ]
 
 
 WORKFLOW_WITH_NON_SIMD_CUSTOMER_ACCEPTING_DICT_OF_BATCH_AND_SCALAR_IMAGES_AT_DIM_2 = {
@@ -1429,11 +1453,7 @@ WORKFLOW_WITH_NON_SIMD_CUSTOMER_ACCEPTING_DICT_OF_BATCH_AND_SCALAR_IMAGES_AT_DIM
             "x": "$inputs.image_1",
             "y": "$inputs.image_3",
         },
-        {
-            "type": "ImageProducer",
-            "name": "image_producer_x",
-            "shape": (50, 50, 3)
-        },
+        {"type": "ImageProducer", "name": "image_producer_x", "shape": (50, 50, 3)},
         {
             "type": "NonSIMDConsumerAcceptingDict",
             "name": "image_consumer",
@@ -1475,17 +1495,35 @@ def test_workflow_with_non_simd_consumers_accepting_dict_of_batch_and_scalar_sel
     )
 
     # when
-    results = execution_engine.run(runtime_parameters={
-        "image_1": [np.zeros((100, 100, 3)), np.zeros((120, 120, 3))],
-        "image_3": [np.zeros((300, 300, 3)), np.zeros((320, 320, 3))],
-    })
+    results = execution_engine.run(
+        runtime_parameters={
+            "image_1": [np.zeros((100, 100, 3)), np.zeros((120, 120, 3))],
+            "image_3": [np.zeros((300, 300, 3)), np.zeros((320, 320, 3))],
+        }
+    )
 
     # then
     assert len(results) == 2
-    assert [i.numpy_image.shape for i in results[0]["x"][0]] == [(100, 100, 3), (50, 50, 3), (300, 300, 3)]
-    assert [i.numpy_image.shape for i in results[0]["x"][1]] == [(100, 100, 3), (50, 50, 3), (300, 300, 3)]
-    assert [i.numpy_image.shape for i in results[1]["x"][0]] == [(120, 120, 3), (50, 50, 3), (320, 320, 3)]
-    assert [i.numpy_image.shape for i in results[1]["x"][1]] == [(120, 120, 3), (50, 50, 3), (320, 320, 3)]
+    assert [i.numpy_image.shape for i in results[0]["x"][0]] == [
+        (100, 100, 3),
+        (50, 50, 3),
+        (300, 300, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[0]["x"][1]] == [
+        (100, 100, 3),
+        (50, 50, 3),
+        (300, 300, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[1]["x"][0]] == [
+        (120, 120, 3),
+        (50, 50, 3),
+        (320, 320, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[1]["x"][1]] == [
+        (120, 120, 3),
+        (50, 50, 3),
+        (320, 320, 3),
+    ]
 
 
 WORKFLOW_WITH_NON_SIMD_CUSTOMER_INCREASING_DIMENSIONALITY_ACCEPTING_DICT_OF_BATCH_AND_SCALAR_IMAGES_AT_DIM_2 = {
@@ -1501,11 +1539,7 @@ WORKFLOW_WITH_NON_SIMD_CUSTOMER_INCREASING_DIMENSIONALITY_ACCEPTING_DICT_OF_BATC
             "x": "$inputs.image_1",
             "y": "$inputs.image_3",
         },
-        {
-            "type": "ImageProducer",
-            "name": "image_producer_x",
-            "shape": (50, 50, 3)
-        },
+        {"type": "ImageProducer", "name": "image_producer_x", "shape": (50, 50, 3)},
         {
             "type": "NonSIMDConsumerAcceptingDictIncDim",
             "name": "image_consumer",
@@ -1547,21 +1581,55 @@ def test_workflow_with_non_simd_consumer_inc_dim_accepting_dict_of_batch_and_sca
     )
 
     # when
-    results = execution_engine.run(runtime_parameters={
-        "image_1": [np.zeros((100, 100, 3)), np.zeros((120, 120, 3))],
-        "image_3": [np.zeros((300, 300, 3)), np.zeros((320, 320, 3))],
-    })
+    results = execution_engine.run(
+        runtime_parameters={
+            "image_1": [np.zeros((100, 100, 3)), np.zeros((120, 120, 3))],
+            "image_3": [np.zeros((300, 300, 3)), np.zeros((320, 320, 3))],
+        }
+    )
 
     # then
     assert len(results) == 2
-    assert [i.numpy_image.shape for i in results[0]["x"][0][0]] == [(100, 100, 3), (50, 50, 3), (300, 300, 3)]
-    assert [i.numpy_image.shape for i in results[0]["x"][0][1]] == [(100, 100, 3), (50, 50, 3), (300, 300, 3)]
-    assert [i.numpy_image.shape for i in results[0]["x"][1][0]] == [(100, 100, 3), (50, 50, 3), (300, 300, 3)]
-    assert [i.numpy_image.shape for i in results[0]["x"][1][1]] == [(100, 100, 3), (50, 50, 3), (300, 300, 3)]
-    assert [i.numpy_image.shape for i in results[1]["x"][0][0]] == [(120, 120, 3), (50, 50, 3), (320, 320, 3)]
-    assert [i.numpy_image.shape for i in results[1]["x"][0][1]] == [(120, 120, 3), (50, 50, 3), (320, 320, 3)]
-    assert [i.numpy_image.shape for i in results[1]["x"][1][0]] == [(120, 120, 3), (50, 50, 3), (320, 320, 3)]
-    assert [i.numpy_image.shape for i in results[1]["x"][1][1]] == [(120, 120, 3), (50, 50, 3), (320, 320, 3)]
+    assert [i.numpy_image.shape for i in results[0]["x"][0][0]] == [
+        (100, 100, 3),
+        (50, 50, 3),
+        (300, 300, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[0]["x"][0][1]] == [
+        (100, 100, 3),
+        (50, 50, 3),
+        (300, 300, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[0]["x"][1][0]] == [
+        (100, 100, 3),
+        (50, 50, 3),
+        (300, 300, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[0]["x"][1][1]] == [
+        (100, 100, 3),
+        (50, 50, 3),
+        (300, 300, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[1]["x"][0][0]] == [
+        (120, 120, 3),
+        (50, 50, 3),
+        (320, 320, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[1]["x"][0][1]] == [
+        (120, 120, 3),
+        (50, 50, 3),
+        (320, 320, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[1]["x"][1][0]] == [
+        (120, 120, 3),
+        (50, 50, 3),
+        (320, 320, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[1]["x"][1][1]] == [
+        (120, 120, 3),
+        (50, 50, 3),
+        (320, 320, 3),
+    ]
 
 
 WORKFLOW_WITH_NON_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_DICT_OF_BATCH_AND_SCALAR_IMAGES_AT_DIM_2 = {
@@ -1577,11 +1645,7 @@ WORKFLOW_WITH_NON_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_DICT_OF_BATC
             "x": "$inputs.image_1",
             "y": "$inputs.image_3",
         },
-        {
-            "type": "ImageProducer",
-            "name": "image_producer_x",
-            "shape": (50, 50, 3)
-        },
+        {"type": "ImageProducer", "name": "image_producer_x", "shape": (50, 50, 3)},
         {
             "type": "NonSIMDConsumerAcceptingDictDecDim",
             "name": "image_consumer",
@@ -1623,19 +1687,39 @@ def test_workflow_with_non_simd_consumer_dec_dim_accepting_dict_of_batch_and_sca
     )
 
     # when
-    results = execution_engine.run(runtime_parameters={
-        "image_1": [np.zeros((100, 100, 3)), np.zeros((120, 120, 3))],
-        "image_3": [np.zeros((300, 300, 3)), np.zeros((320, 320, 3))],
-    })
+    results = execution_engine.run(
+        runtime_parameters={
+            "image_1": [np.zeros((100, 100, 3)), np.zeros((120, 120, 3))],
+            "image_3": [np.zeros((300, 300, 3)), np.zeros((320, 320, 3))],
+        }
+    )
 
     # then
     assert len(results) == 2
-    assert [i.numpy_image.shape for i in results[0]["x"][0]] == [(100, 100, 3), (100, 100, 3)]
-    assert [i.numpy_image.shape for i in results[0]["x"][1]] == [(50, 50, 3), (50, 50, 3)]
-    assert [i.numpy_image.shape for i in results[0]["x"][2]] == [(300, 300, 3), (300, 300, 3)]
-    assert [i.numpy_image.shape for i in results[1]["x"][0]] == [(120, 120, 3), (120, 120, 3)]
-    assert [i.numpy_image.shape for i in results[1]["x"][1]] == [(50, 50, 3), (50, 50, 3)]
-    assert [i.numpy_image.shape for i in results[1]["x"][2]] == [(320, 320, 3), (320, 320, 3)]
+    assert [i.numpy_image.shape for i in results[0]["x"][0]] == [
+        (100, 100, 3),
+        (100, 100, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[0]["x"][1]] == [
+        (50, 50, 3),
+        (50, 50, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[0]["x"][2]] == [
+        (300, 300, 3),
+        (300, 300, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[1]["x"][0]] == [
+        (120, 120, 3),
+        (120, 120, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[1]["x"][1]] == [
+        (50, 50, 3),
+        (50, 50, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[1]["x"][2]] == [
+        (320, 320, 3),
+        (320, 320, 3),
+    ]
 
 
 WORKFLOW_WITH_NON_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_DICT_OF_BATCH_AND_SCALAR_IMAGES_AT_DIM_1 = {
@@ -1645,11 +1729,7 @@ WORKFLOW_WITH_NON_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_DICT_OF_BATC
         {"type": "WorkflowImage", "name": "image_3"},
     ],
     "steps": [
-        {
-            "type": "ImageProducer",
-            "name": "image_producer_x",
-            "shape": (50, 50, 3)
-        },
+        {"type": "ImageProducer", "name": "image_producer_x", "shape": (50, 50, 3)},
         {
             "type": "NonSIMDConsumerAcceptingDictDecDim",
             "name": "image_consumer",
@@ -1691,32 +1771,35 @@ def test_workflow_with_non_simd_consumer_dec_dim_accepting_dict_of_batch_and_sca
     )
 
     # when
-    results = execution_engine.run(runtime_parameters={
-        "image_1": [np.zeros((100, 100, 3)), np.zeros((120, 120, 3))],
-        "image_3": [np.zeros((300, 300, 3)), np.zeros((320, 320, 3))],
-    })
+    results = execution_engine.run(
+        runtime_parameters={
+            "image_1": [np.zeros((100, 100, 3)), np.zeros((120, 120, 3))],
+            "image_3": [np.zeros((300, 300, 3)), np.zeros((320, 320, 3))],
+        }
+    )
 
     # then
     assert len(results) == 1
-    assert [i.numpy_image.shape for i in results[0]["x"][0]] == [(100, 100, 3), (120, 120, 3)]
-    assert [i.numpy_image.shape for i in results[0]["x"][1]] == [(50, 50, 3), (50, 50, 3)]
-    assert [i.numpy_image.shape for i in results[0]["x"][2]] == [(300, 300, 3), (320, 320, 3)]
+    assert [i.numpy_image.shape for i in results[0]["x"][0]] == [
+        (100, 100, 3),
+        (120, 120, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[0]["x"][1]] == [
+        (50, 50, 3),
+        (50, 50, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[0]["x"][2]] == [
+        (300, 300, 3),
+        (320, 320, 3),
+    ]
 
 
 WORKFLOW_WITH_NON_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_DICT_OF_SCALARS = {
     "version": "1.1",
     "inputs": [],
     "steps": [
-        {
-            "type": "ImageProducer",
-            "name": "image_producer_x",
-            "shape": (50, 50, 3)
-        },
-        {
-            "type": "ImageProducer",
-            "name": "image_producer_y",
-            "shape": (60, 60, 3)
-        },
+        {"type": "ImageProducer", "name": "image_producer_x", "shape": (50, 50, 3)},
+        {"type": "ImageProducer", "name": "image_producer_y", "shape": (60, 60, 3)},
         {
             "type": "NonSIMDConsumerAcceptingDictDecDim",
             "name": "image_consumer",
@@ -1778,11 +1861,7 @@ WORKFLOW_WITH_NON_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_LIST_OF_BATC
             "x": "$inputs.image_1",
             "y": "$inputs.image_3",
         },
-        {
-            "type": "ImageProducer",
-            "name": "image_producer_x",
-            "shape": (50, 50, 3)
-        },
+        {"type": "ImageProducer", "name": "image_producer_x", "shape": (50, 50, 3)},
         {
             "type": "NonSIMDConsumerAcceptingListDecDim",
             "name": "image_consumer",
@@ -1791,7 +1870,7 @@ WORKFLOW_WITH_NON_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_LIST_OF_BATC
                 "$steps.image_producer_x.image",
                 "$steps.dimensionality_boost.y",
             ],
-            "y": "some-value"
+            "y": "some-value",
         },
     ],
     "outputs": [
@@ -1825,15 +1904,31 @@ def test_workflow_with_non_simd_consumer_dec_dim_accepting_list_of_batch_and_sca
     )
 
     # when
-    results = execution_engine.run(runtime_parameters={
-        "image_1": [np.zeros((100, 100, 3)), np.zeros((120, 120, 3))],
-        "image_3": [np.zeros((300, 300, 3)), np.zeros((320, 320, 3))],
-    })
+    results = execution_engine.run(
+        runtime_parameters={
+            "image_1": [np.zeros((100, 100, 3)), np.zeros((120, 120, 3))],
+            "image_3": [np.zeros((300, 300, 3)), np.zeros((320, 320, 3))],
+        }
+    )
 
     # then
     assert len(results) == 2
-    assert [i.numpy_image.shape for i in results[0]["x"]] == [(100, 100, 3), (100, 100, 3), (50, 50, 3), (50, 50, 3), (300, 300, 3), (300, 300, 3)]
-    assert [i.numpy_image.shape for i in results[1]["x"]] == [(120, 120, 3), (120, 120, 3), (50, 50, 3), (50, 50, 3), (320, 320, 3), (320, 320, 3)]
+    assert [i.numpy_image.shape for i in results[0]["x"]] == [
+        (100, 100, 3),
+        (100, 100, 3),
+        (50, 50, 3),
+        (50, 50, 3),
+        (300, 300, 3),
+        (300, 300, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[1]["x"]] == [
+        (120, 120, 3),
+        (120, 120, 3),
+        (50, 50, 3),
+        (50, 50, 3),
+        (320, 320, 3),
+        (320, 320, 3),
+    ]
 
 
 WORKFLOW_WITH_NON_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_LIST_OF_BATCH_AND_SCALAR_IMAGES_AT_DIM_1 = {
@@ -1843,16 +1938,16 @@ WORKFLOW_WITH_NON_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_LIST_OF_BATC
         {"type": "WorkflowImage", "name": "image_3"},
     ],
     "steps": [
-        {
-            "type": "ImageProducer",
-            "name": "image_producer_x",
-            "shape": (50, 50, 3)
-        },
+        {"type": "ImageProducer", "name": "image_producer_x", "shape": (50, 50, 3)},
         {
             "type": "NonSIMDConsumerAcceptingListDecDim",
             "name": "image_consumer",
-            "x": ["$inputs.image_1", "$steps.image_producer_x.image", "$inputs.image_3"],
-            "y": "some-value"
+            "x": [
+                "$inputs.image_1",
+                "$steps.image_producer_x.image",
+                "$inputs.image_3",
+            ],
+            "y": "some-value",
         },
     ],
     "outputs": [
@@ -1886,35 +1981,36 @@ def test_workflow_with_non_simd_consumer_dec_dim_accepting_list_of_batch_and_sca
     )
 
     # when
-    results = execution_engine.run(runtime_parameters={
-        "image_1": [np.zeros((100, 100, 3)), np.zeros((120, 120, 3))],
-        "image_3": [np.zeros((300, 300, 3)), np.zeros((320, 320, 3))],
-    })
+    results = execution_engine.run(
+        runtime_parameters={
+            "image_1": [np.zeros((100, 100, 3)), np.zeros((120, 120, 3))],
+            "image_3": [np.zeros((300, 300, 3)), np.zeros((320, 320, 3))],
+        }
+    )
 
     # then
     assert len(results) == 1
-    assert [i.numpy_image.shape for i in results[0]["x"]] == [(100, 100, 3), (120, 120, 3), (50, 50, 3), (50, 50, 3), (300, 300, 3), (320, 320, 3)]
+    assert [i.numpy_image.shape for i in results[0]["x"]] == [
+        (100, 100, 3),
+        (120, 120, 3),
+        (50, 50, 3),
+        (50, 50, 3),
+        (300, 300, 3),
+        (320, 320, 3),
+    ]
 
 
 WORKFLOW_WITH_NON_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_LIST_OF_SCALARS = {
     "version": "1.1",
     "inputs": [],
     "steps": [
-        {
-            "type": "ImageProducer",
-            "name": "image_producer_x",
-            "shape": (50, 50, 3)
-        },
-        {
-            "type": "ImageProducer",
-            "name": "image_producer_y",
-            "shape": (60, 60, 3)
-        },
+        {"type": "ImageProducer", "name": "image_producer_x", "shape": (50, 50, 3)},
+        {"type": "ImageProducer", "name": "image_producer_y", "shape": (60, 60, 3)},
         {
             "type": "NonSIMDConsumerAcceptingListDecDim",
             "name": "image_consumer",
             "x": ["$steps.image_producer_x.image", "$steps.image_producer_y.image"],
-            "y": "some-value"
+            "y": "some-value",
         },
     ],
     "outputs": [
@@ -1959,11 +2055,7 @@ WORKFLOW_WITH_SIMD_CUSTOMER_ACCEPTING_LIST_OF_SCALAR_IMAGES = {
     "version": "1.1",
     "inputs": [],
     "steps": [
-        {
-            "type": "ImageProducer",
-            "name": "image_producer_x",
-            "shape": (100, 100, 3)
-        },
+        {"type": "ImageProducer", "name": "image_producer_x", "shape": (100, 100, 3)},
         {
             "type": "ImageProducer",
             "name": "image_producer_y",
@@ -1983,8 +2075,8 @@ WORKFLOW_WITH_SIMD_CUSTOMER_ACCEPTING_LIST_OF_SCALAR_IMAGES = {
         {
             "type": "BoostDimensionality",
             "name": "dimensionality_boost",
-            "x": "$steps.image_consumer.x"
-        }
+            "x": "$steps.image_consumer.x",
+        },
     ],
     "outputs": [
         {
@@ -2026,9 +2118,15 @@ def test_workflow_with_simd_consumers_accepting_list_of_scalar_selector(
 
     # then
     assert len(results) == 2, "Expected dim increase to happen"
-    assert [i.numpy_image.shape for i in results[0]["x"]] == [(100, 100, 3), (200, 200, 3)]
+    assert [i.numpy_image.shape for i in results[0]["x"]] == [
+        (100, 100, 3),
+        (200, 200, 3),
+    ]
     assert [i.numpy_image.shape for i in results[0]["y"]] == [(300, 300, 3)]
-    assert [i.numpy_image.shape for i in results[1]["x"]] == [(100, 100, 3), (200, 200, 3)]
+    assert [i.numpy_image.shape for i in results[1]["x"]] == [
+        (100, 100, 3),
+        (200, 200, 3),
+    ]
     assert [i.numpy_image.shape for i in results[1]["y"]] == [(300, 300, 3)]
 
 
@@ -2083,17 +2181,25 @@ def test_workflow_with_simd_consumers_accepting_list_of_batch_selector(
     )
 
     # when
-    results = execution_engine.run(runtime_parameters={
-        "image_1": [np.zeros((100, 100, 3)), np.zeros((120, 120, 3))],
-        "image_2": [np.zeros((200, 200, 3)), np.zeros((220, 220, 3))],
-        "image_3": [np.zeros((300, 300, 3)), np.zeros((320, 320, 3))],
-    })
+    results = execution_engine.run(
+        runtime_parameters={
+            "image_1": [np.zeros((100, 100, 3)), np.zeros((120, 120, 3))],
+            "image_2": [np.zeros((200, 200, 3)), np.zeros((220, 220, 3))],
+            "image_3": [np.zeros((300, 300, 3)), np.zeros((320, 320, 3))],
+        }
+    )
 
     # then
     assert len(results) == 2
-    assert [i.numpy_image.shape for i in results[0]["x"]] == [(100, 100, 3), (200, 200, 3)]
+    assert [i.numpy_image.shape for i in results[0]["x"]] == [
+        (100, 100, 3),
+        (200, 200, 3),
+    ]
     assert [i.numpy_image.shape for i in results[0]["y"]] == [(300, 300, 3)]
-    assert [i.numpy_image.shape for i in results[1]["x"]] == [(120, 120, 3), (220, 220, 3)]
+    assert [i.numpy_image.shape for i in results[1]["x"]] == [
+        (120, 120, 3),
+        (220, 220, 3),
+    ]
     assert [i.numpy_image.shape for i in results[1]["y"]] == [(320, 320, 3)]
 
 
@@ -2104,11 +2210,7 @@ WORKFLOW_WITH_SIMD_CUSTOMER_ACCEPTING_LIST_OF_BATCH_AND_SCALAR_IMAGES = {
         {"type": "WorkflowImage", "name": "image_3"},
     ],
     "steps": [
-        {
-            "type": "ImageProducer",
-            "name": "image_producer_x",
-            "shape": (50, 50, 3)
-        },
+        {"type": "ImageProducer", "name": "image_producer_x", "shape": (50, 50, 3)},
         {
             "type": "SIMDConsumerAcceptingList",
             "name": "image_consumer",
@@ -2152,16 +2254,24 @@ def test_workflow_with_simd_consumers_accepting_list_of_batch_and_scalar_selecto
     )
 
     # when
-    results = execution_engine.run(runtime_parameters={
-        "image_1": [np.zeros((100, 100, 3)), np.zeros((120, 120, 3))],
-        "image_3": [np.zeros((300, 300, 3)), np.zeros((320, 320, 3))],
-    })
+    results = execution_engine.run(
+        runtime_parameters={
+            "image_1": [np.zeros((100, 100, 3)), np.zeros((120, 120, 3))],
+            "image_3": [np.zeros((300, 300, 3)), np.zeros((320, 320, 3))],
+        }
+    )
 
     # then
     assert len(results) == 2
-    assert [i.numpy_image.shape for i in results[0]["x"]] == [(100, 100, 3), (50, 50, 3)]
+    assert [i.numpy_image.shape for i in results[0]["x"]] == [
+        (100, 100, 3),
+        (50, 50, 3),
+    ]
     assert [i.numpy_image.shape for i in results[0]["y"]] == [(300, 300, 3)]
-    assert [i.numpy_image.shape for i in results[1]["x"]] == [(120, 120, 3), (50, 50, 3)]
+    assert [i.numpy_image.shape for i in results[1]["x"]] == [
+        (120, 120, 3),
+        (50, 50, 3),
+    ]
     assert [i.numpy_image.shape for i in results[1]["y"]] == [(320, 320, 3)]
 
 
@@ -2172,18 +2282,14 @@ WORKFLOW_WITH_SIMD_CUSTOMER_ACCEPTING_DICT_OF_BATCH_AND_SCALAR_IMAGES = {
         {"type": "WorkflowImage", "name": "image_3"},
     ],
     "steps": [
-        {
-            "type": "ImageProducer",
-            "name": "image_producer_x",
-            "shape": (50, 50, 3)
-        },
+        {"type": "ImageProducer", "name": "image_producer_x", "shape": (50, 50, 3)},
         {
             "type": "SIMDConsumerAcceptingDict",
             "name": "image_consumer",
             "x": {
                 "a": "$inputs.image_1",
                 "b": "$steps.image_producer_x.image",
-                "c": "$inputs.image_3"
+                "c": "$inputs.image_3",
             },
         },
     ],
@@ -2218,15 +2324,25 @@ def test_workflow_with_simd_consumers_accepting_dict_of_batch_and_scalar_selecto
     )
 
     # when
-    results = execution_engine.run(runtime_parameters={
-        "image_1": [np.zeros((100, 100, 3)), np.zeros((120, 120, 3))],
-        "image_3": [np.zeros((300, 300, 3)), np.zeros((320, 320, 3))],
-    })
+    results = execution_engine.run(
+        runtime_parameters={
+            "image_1": [np.zeros((100, 100, 3)), np.zeros((120, 120, 3))],
+            "image_3": [np.zeros((300, 300, 3)), np.zeros((320, 320, 3))],
+        }
+    )
 
     # then
     assert len(results) == 2
-    assert [i.numpy_image.shape for i in results[0]["x"]] == [(100, 100, 3), (50, 50, 3), (300, 300, 3)]
-    assert [i.numpy_image.shape for i in results[1]["x"]] == [(120, 120, 3), (50, 50, 3), (320, 320, 3)]
+    assert [i.numpy_image.shape for i in results[0]["x"]] == [
+        (100, 100, 3),
+        (50, 50, 3),
+        (300, 300, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[1]["x"]] == [
+        (120, 120, 3),
+        (50, 50, 3),
+        (320, 320, 3),
+    ]
 
 
 WORKFLOW_WITH_SIMD_CUSTOMER_ACCEPTING_DICT_OF_BATCH_AND_SCALAR_IMAGES_AT_DIM_2 = {
@@ -2242,11 +2358,7 @@ WORKFLOW_WITH_SIMD_CUSTOMER_ACCEPTING_DICT_OF_BATCH_AND_SCALAR_IMAGES_AT_DIM_2 =
             "x": "$inputs.image_1",
             "y": "$inputs.image_3",
         },
-        {
-            "type": "ImageProducer",
-            "name": "image_producer_x",
-            "shape": (50, 50, 3)
-        },
+        {"type": "ImageProducer", "name": "image_producer_x", "shape": (50, 50, 3)},
         {
             "type": "SIMDConsumerAcceptingDict",
             "name": "image_consumer",
@@ -2288,17 +2400,35 @@ def test_workflow_with_simd_consumers_accepting_dict_of_batch_and_scalar_selecto
     )
 
     # when
-    results = execution_engine.run(runtime_parameters={
-        "image_1": [np.zeros((100, 100, 3)), np.zeros((120, 120, 3))],
-        "image_3": [np.zeros((300, 300, 3)), np.zeros((320, 320, 3))],
-    })
+    results = execution_engine.run(
+        runtime_parameters={
+            "image_1": [np.zeros((100, 100, 3)), np.zeros((120, 120, 3))],
+            "image_3": [np.zeros((300, 300, 3)), np.zeros((320, 320, 3))],
+        }
+    )
 
     # then
     assert len(results) == 2
-    assert [i.numpy_image.shape for i in results[0]["x"][0]] == [(100, 100, 3), (50, 50, 3), (300, 300, 3)]
-    assert [i.numpy_image.shape for i in results[0]["x"][1]] == [(100, 100, 3), (50, 50, 3), (300, 300, 3)]
-    assert [i.numpy_image.shape for i in results[1]["x"][0]] == [(120, 120, 3), (50, 50, 3), (320, 320, 3)]
-    assert [i.numpy_image.shape for i in results[1]["x"][1]] == [(120, 120, 3), (50, 50, 3), (320, 320, 3)]
+    assert [i.numpy_image.shape for i in results[0]["x"][0]] == [
+        (100, 100, 3),
+        (50, 50, 3),
+        (300, 300, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[0]["x"][1]] == [
+        (100, 100, 3),
+        (50, 50, 3),
+        (300, 300, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[1]["x"][0]] == [
+        (120, 120, 3),
+        (50, 50, 3),
+        (320, 320, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[1]["x"][1]] == [
+        (120, 120, 3),
+        (50, 50, 3),
+        (320, 320, 3),
+    ]
 
 
 ######### ============
@@ -2317,11 +2447,7 @@ WORKFLOW_WITH_SIMD_CUSTOMER_INCREASING_DIMENSIONALITY_ACCEPTING_DICT_OF_BATCH_AN
             "x": "$inputs.image_1",
             "y": "$inputs.image_3",
         },
-        {
-            "type": "ImageProducer",
-            "name": "image_producer_x",
-            "shape": (50, 50, 3)
-        },
+        {"type": "ImageProducer", "name": "image_producer_x", "shape": (50, 50, 3)},
         {
             "type": "SIMDConsumerAcceptingDictIncDim",
             "name": "image_consumer",
@@ -2363,21 +2489,55 @@ def test_workflow_with_simd_consumer_inc_dim_accepting_dict_of_batch_and_scalar_
     )
 
     # when
-    results = execution_engine.run(runtime_parameters={
-        "image_1": [np.zeros((100, 100, 3)), np.zeros((120, 120, 3))],
-        "image_3": [np.zeros((300, 300, 3)), np.zeros((320, 320, 3))],
-    })
+    results = execution_engine.run(
+        runtime_parameters={
+            "image_1": [np.zeros((100, 100, 3)), np.zeros((120, 120, 3))],
+            "image_3": [np.zeros((300, 300, 3)), np.zeros((320, 320, 3))],
+        }
+    )
 
     # then
     assert len(results) == 2
-    assert [i.numpy_image.shape for i in results[0]["x"][0][0]] == [(100, 100, 3), (50, 50, 3), (300, 300, 3)]
-    assert [i.numpy_image.shape for i in results[0]["x"][0][1]] == [(100, 100, 3), (50, 50, 3), (300, 300, 3)]
-    assert [i.numpy_image.shape for i in results[0]["x"][1][0]] == [(100, 100, 3), (50, 50, 3), (300, 300, 3)]
-    assert [i.numpy_image.shape for i in results[0]["x"][1][1]] == [(100, 100, 3), (50, 50, 3), (300, 300, 3)]
-    assert [i.numpy_image.shape for i in results[1]["x"][0][0]] == [(120, 120, 3), (50, 50, 3), (320, 320, 3)]
-    assert [i.numpy_image.shape for i in results[1]["x"][0][1]] == [(120, 120, 3), (50, 50, 3), (320, 320, 3)]
-    assert [i.numpy_image.shape for i in results[1]["x"][1][0]] == [(120, 120, 3), (50, 50, 3), (320, 320, 3)]
-    assert [i.numpy_image.shape for i in results[1]["x"][1][1]] == [(120, 120, 3), (50, 50, 3), (320, 320, 3)]
+    assert [i.numpy_image.shape for i in results[0]["x"][0][0]] == [
+        (100, 100, 3),
+        (50, 50, 3),
+        (300, 300, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[0]["x"][0][1]] == [
+        (100, 100, 3),
+        (50, 50, 3),
+        (300, 300, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[0]["x"][1][0]] == [
+        (100, 100, 3),
+        (50, 50, 3),
+        (300, 300, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[0]["x"][1][1]] == [
+        (100, 100, 3),
+        (50, 50, 3),
+        (300, 300, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[1]["x"][0][0]] == [
+        (120, 120, 3),
+        (50, 50, 3),
+        (320, 320, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[1]["x"][0][1]] == [
+        (120, 120, 3),
+        (50, 50, 3),
+        (320, 320, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[1]["x"][1][0]] == [
+        (120, 120, 3),
+        (50, 50, 3),
+        (320, 320, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[1]["x"][1][1]] == [
+        (120, 120, 3),
+        (50, 50, 3),
+        (320, 320, 3),
+    ]
 
 
 WORKFLOW_WITH_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_DICT_OF_BATCH_AND_SCALAR_IMAGES_AT_DIM_2 = {
@@ -2393,11 +2553,7 @@ WORKFLOW_WITH_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_DICT_OF_BATCH_AN
             "x": "$inputs.image_1",
             "y": "$inputs.image_3",
         },
-        {
-            "type": "ImageProducer",
-            "name": "image_producer_x",
-            "shape": (50, 50, 3)
-        },
+        {"type": "ImageProducer", "name": "image_producer_x", "shape": (50, 50, 3)},
         {
             "type": "SIMDConsumerAcceptingDictDecDim",
             "name": "image_consumer",
@@ -2439,36 +2595,51 @@ def test_workflow_with_simd_consumer_dec_dim_accepting_dict_of_batch_and_scalar_
     )
 
     # when
-    results = execution_engine.run(runtime_parameters={
-        "image_1": [np.zeros((100, 100, 3)), np.zeros((120, 120, 3))],
-        "image_3": [np.zeros((300, 300, 3)), np.zeros((320, 320, 3))],
-    })
+    results = execution_engine.run(
+        runtime_parameters={
+            "image_1": [np.zeros((100, 100, 3)), np.zeros((120, 120, 3))],
+            "image_3": [np.zeros((300, 300, 3)), np.zeros((320, 320, 3))],
+        }
+    )
 
     # then
-    print(results)
     assert len(results) == 2
-    assert [i.numpy_image.shape for i in results[0]["x"][0]] == [(100, 100, 3), (100, 100, 3)]
-    assert [i.numpy_image.shape for i in results[0]["x"][1]] == [(50, 50, 3), (50, 50, 3)]
-    assert [i.numpy_image.shape for i in results[0]["x"][2]] == [(300, 300, 3), (300, 300, 3)]
-    assert [i.numpy_image.shape for i in results[1]["x"][0]] == [(120, 120, 3), (120, 120, 3)]
-    assert [i.numpy_image.shape for i in results[1]["x"][1]] == [(50, 50, 3), (50, 50, 3)]
-    assert [i.numpy_image.shape for i in results[1]["x"][2]] == [(320, 320, 3), (320, 320, 3)]
+    assert [i.numpy_image.shape for i in results[0]["x"][0]] == [
+        (100, 100, 3),
+        (100, 100, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[0]["x"][1]] == [
+        (50, 50, 3),
+        (50, 50, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[0]["x"][2]] == [
+        (300, 300, 3),
+        (300, 300, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[1]["x"][0]] == [
+        (120, 120, 3),
+        (120, 120, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[1]["x"][1]] == [
+        (50, 50, 3),
+        (50, 50, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[1]["x"][2]] == [
+        (320, 320, 3),
+        (320, 320, 3),
+    ]
 
 
-WORKFLOW_WITH_NON_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_DICT_OF_BATCH_AND_SCALAR_IMAGES_AT_DIM_1 = {
+WORKFLOW_WITH_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_DICT_OF_BATCH_AND_SCALAR_IMAGES_AT_DIM_1 = {
     "version": "1.1",
     "inputs": [
         {"type": "WorkflowImage", "name": "image_1"},
         {"type": "WorkflowImage", "name": "image_3"},
     ],
     "steps": [
+        {"type": "ImageProducer", "name": "image_producer_x", "shape": (50, 50, 3)},
         {
-            "type": "ImageProducer",
-            "name": "image_producer_x",
-            "shape": (50, 50, 3)
-        },
-        {
-            "type": "NonSIMDConsumerAcceptingDictDecDim",
+            "type": "SIMDConsumerAcceptingDictDecDim",
             "name": "image_consumer",
             "x": {
                 "a": "$inputs.image_1",
@@ -2488,7 +2659,7 @@ WORKFLOW_WITH_NON_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_DICT_OF_BATC
 
 
 @mock.patch.object(blocks_loader, "get_plugin_modules")
-def test_workflow_with_non_simd_consumer_dec_dim_accepting_dict_of_batch_and_scalar_selector_when_batch_at_dim_1(
+def test_workflow_with_simd_consumer_dec_dim_accepting_dict_of_batch_and_scalar_selector_when_batch_at_dim_1(
     get_plugin_modules_mock: MagicMock,
     model_manager: ModelManager,
 ) -> None:
@@ -2502,40 +2673,43 @@ def test_workflow_with_non_simd_consumer_dec_dim_accepting_dict_of_batch_and_sca
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
-        workflow_definition=WORKFLOW_WITH_NON_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_DICT_OF_BATCH_AND_SCALAR_IMAGES_AT_DIM_1,
+        workflow_definition=WORKFLOW_WITH_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_DICT_OF_BATCH_AND_SCALAR_IMAGES_AT_DIM_1,
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
 
     # when
-    results = execution_engine.run(runtime_parameters={
-        "image_1": [np.zeros((100, 100, 3)), np.zeros((120, 120, 3))],
-        "image_3": [np.zeros((300, 300, 3)), np.zeros((320, 320, 3))],
-    })
+    results = execution_engine.run(
+        runtime_parameters={
+            "image_1": [np.zeros((100, 100, 3)), np.zeros((120, 120, 3))],
+            "image_3": [np.zeros((300, 300, 3)), np.zeros((320, 320, 3))],
+        }
+    )
 
     # then
     assert len(results) == 1
-    assert [i.numpy_image.shape for i in results[0]["x"][0]] == [(100, 100, 3), (120, 120, 3)]
-    assert [i.numpy_image.shape for i in results[0]["x"][1]] == [(50, 50, 3), (50, 50, 3)]
-    assert [i.numpy_image.shape for i in results[0]["x"][2]] == [(300, 300, 3), (320, 320, 3)]
+    assert [i.numpy_image.shape for i in results[0]["x"][0]] == [
+        (100, 100, 3),
+        (120, 120, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[0]["x"][1]] == [
+        (50, 50, 3),
+        (50, 50, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[0]["x"][2]] == [
+        (300, 300, 3),
+        (320, 320, 3),
+    ]
 
 
-WORKFLOW_WITH_NON_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_DICT_OF_SCALARS = {
+WORKFLOW_WITH_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_DICT_OF_SCALARS = {
     "version": "1.1",
     "inputs": [],
     "steps": [
+        {"type": "ImageProducer", "name": "image_producer_x", "shape": (50, 50, 3)},
+        {"type": "ImageProducer", "name": "image_producer_y", "shape": (60, 60, 3)},
         {
-            "type": "ImageProducer",
-            "name": "image_producer_x",
-            "shape": (50, 50, 3)
-        },
-        {
-            "type": "ImageProducer",
-            "name": "image_producer_y",
-            "shape": (60, 60, 3)
-        },
-        {
-            "type": "NonSIMDConsumerAcceptingDictDecDim",
+            "type": "SIMDConsumerAcceptingDictDecDim",
             "name": "image_consumer",
             "x": {
                 "a": "$steps.image_producer_x.image",
@@ -2554,7 +2728,7 @@ WORKFLOW_WITH_NON_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_DICT_OF_SCAL
 
 
 @mock.patch.object(blocks_loader, "get_plugin_modules")
-def test_workflow_with_non_simd_consumer_dec_dim_accepting_dict_of_batch_and_scalar_selectors(
+def test_workflow_with_simd_consumer_dec_dim_accepting_dict_of_batch_and_scalar_selectors(
     get_plugin_modules_mock: MagicMock,
     model_manager: ModelManager,
 ) -> None:
@@ -2568,7 +2742,7 @@ def test_workflow_with_non_simd_consumer_dec_dim_accepting_dict_of_batch_and_sca
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
-        workflow_definition=WORKFLOW_WITH_NON_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_DICT_OF_SCALARS,
+        workflow_definition=WORKFLOW_WITH_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_DICT_OF_SCALARS,
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
@@ -2582,7 +2756,7 @@ def test_workflow_with_non_simd_consumer_dec_dim_accepting_dict_of_batch_and_sca
     assert [i.numpy_image.shape for i in results[0]["x"][1]] == [(60, 60, 3)]
 
 
-WORKFLOW_WITH_NON_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_LIST_OF_BATCH_AND_SCALAR_IMAGES_AT_DIM_2 = {
+WORKFLOW_WITH_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_LIST_OF_BATCH_AND_SCALAR_IMAGES_AT_DIM_2 = {
     "version": "1.1",
     "inputs": [
         {"type": "WorkflowImage", "name": "image_1"},
@@ -2595,20 +2769,16 @@ WORKFLOW_WITH_NON_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_LIST_OF_BATC
             "x": "$inputs.image_1",
             "y": "$inputs.image_3",
         },
+        {"type": "ImageProducer", "name": "image_producer_x", "shape": (50, 50, 3)},
         {
-            "type": "ImageProducer",
-            "name": "image_producer_x",
-            "shape": (50, 50, 3)
-        },
-        {
-            "type": "NonSIMDConsumerAcceptingListDecDim",
+            "type": "SIMDConsumerAcceptingListDecDim",
             "name": "image_consumer",
             "x": [
                 "$steps.dimensionality_boost.x",
                 "$steps.image_producer_x.image",
                 "$steps.dimensionality_boost.y",
             ],
-            "y": "some-value"
+            "y": "some-value",
         },
     ],
     "outputs": [
@@ -2622,7 +2792,7 @@ WORKFLOW_WITH_NON_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_LIST_OF_BATC
 
 
 @mock.patch.object(blocks_loader, "get_plugin_modules")
-def test_workflow_with_non_simd_consumer_dec_dim_accepting_list_of_batch_and_scalar_selector_when_batch_at_dim_2(
+def test_workflow_with_simd_consumer_dec_dim_accepting_list_of_batch_and_scalar_selector_when_batch_at_dim_2(
     get_plugin_modules_mock: MagicMock,
     model_manager: ModelManager,
 ) -> None:
@@ -2636,40 +2806,56 @@ def test_workflow_with_non_simd_consumer_dec_dim_accepting_list_of_batch_and_sca
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
-        workflow_definition=WORKFLOW_WITH_NON_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_LIST_OF_BATCH_AND_SCALAR_IMAGES_AT_DIM_2,
+        workflow_definition=WORKFLOW_WITH_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_LIST_OF_BATCH_AND_SCALAR_IMAGES_AT_DIM_2,
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
 
     # when
-    results = execution_engine.run(runtime_parameters={
-        "image_1": [np.zeros((100, 100, 3)), np.zeros((120, 120, 3))],
-        "image_3": [np.zeros((300, 300, 3)), np.zeros((320, 320, 3))],
-    })
+    results = execution_engine.run(
+        runtime_parameters={
+            "image_1": [np.zeros((100, 100, 3)), np.zeros((120, 120, 3))],
+            "image_3": [np.zeros((300, 300, 3)), np.zeros((320, 320, 3))],
+        }
+    )
 
     # then
     assert len(results) == 2
-    assert [i.numpy_image.shape for i in results[0]["x"]] == [(100, 100, 3), (100, 100, 3), (50, 50, 3), (50, 50, 3), (300, 300, 3), (300, 300, 3)]
-    assert [i.numpy_image.shape for i in results[1]["x"]] == [(120, 120, 3), (120, 120, 3), (50, 50, 3), (50, 50, 3), (320, 320, 3), (320, 320, 3)]
+    assert [i.numpy_image.shape for i in results[0]["x"]] == [
+        (100, 100, 3),
+        (100, 100, 3),
+        (50, 50, 3),
+        (50, 50, 3),
+        (300, 300, 3),
+        (300, 300, 3),
+    ]
+    assert [i.numpy_image.shape for i in results[1]["x"]] == [
+        (120, 120, 3),
+        (120, 120, 3),
+        (50, 50, 3),
+        (50, 50, 3),
+        (320, 320, 3),
+        (320, 320, 3),
+    ]
 
 
-WORKFLOW_WITH_NON_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_LIST_OF_BATCH_AND_SCALAR_IMAGES_AT_DIM_1 = {
+WORKFLOW_WITH_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_LIST_OF_BATCH_AND_SCALAR_IMAGES_AT_DIM_1 = {
     "version": "1.1",
     "inputs": [
         {"type": "WorkflowImage", "name": "image_1"},
         {"type": "WorkflowImage", "name": "image_3"},
     ],
     "steps": [
+        {"type": "ImageProducer", "name": "image_producer_x", "shape": (50, 50, 3)},
         {
-            "type": "ImageProducer",
-            "name": "image_producer_x",
-            "shape": (50, 50, 3)
-        },
-        {
-            "type": "NonSIMDConsumerAcceptingListDecDim",
+            "type": "SIMDConsumerAcceptingListDecDim",
             "name": "image_consumer",
-            "x": ["$inputs.image_1", "$steps.image_producer_x.image", "$inputs.image_3"],
-            "y": "some-value"
+            "x": [
+                "$inputs.image_1",
+                "$steps.image_producer_x.image",
+                "$inputs.image_3",
+            ],
+            "y": "some-value",
         },
     ],
     "outputs": [
@@ -2683,7 +2869,7 @@ WORKFLOW_WITH_NON_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_LIST_OF_BATC
 
 
 @mock.patch.object(blocks_loader, "get_plugin_modules")
-def test_workflow_with_non_simd_consumer_dec_dim_accepting_list_of_batch_and_scalar_selector_when_batch_at_dim_1(
+def test_workflow_with_simd_consumer_dec_dim_accepting_list_of_batch_and_scalar_selector_when_batch_at_dim_1(
     get_plugin_modules_mock: MagicMock,
     model_manager: ModelManager,
 ) -> None:
@@ -2697,41 +2883,42 @@ def test_workflow_with_non_simd_consumer_dec_dim_accepting_list_of_batch_and_sca
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
-        workflow_definition=WORKFLOW_WITH_NON_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_LIST_OF_BATCH_AND_SCALAR_IMAGES_AT_DIM_1,
+        workflow_definition=WORKFLOW_WITH_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_LIST_OF_BATCH_AND_SCALAR_IMAGES_AT_DIM_1,
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
 
     # when
-    results = execution_engine.run(runtime_parameters={
-        "image_1": [np.zeros((100, 100, 3)), np.zeros((120, 120, 3))],
-        "image_3": [np.zeros((300, 300, 3)), np.zeros((320, 320, 3))],
-    })
+    results = execution_engine.run(
+        runtime_parameters={
+            "image_1": [np.zeros((100, 100, 3)), np.zeros((120, 120, 3))],
+            "image_3": [np.zeros((300, 300, 3)), np.zeros((320, 320, 3))],
+        }
+    )
 
     # then
     assert len(results) == 1
-    assert [i.numpy_image.shape for i in results[0]["x"]] == [(100, 100, 3), (120, 120, 3), (50, 50, 3), (50, 50, 3), (300, 300, 3), (320, 320, 3)]
+    assert [i.numpy_image.shape for i in results[0]["x"]] == [
+        (100, 100, 3),
+        (120, 120, 3),
+        (50, 50, 3),
+        (50, 50, 3),
+        (300, 300, 3),
+        (320, 320, 3),
+    ]
 
 
-WORKFLOW_WITH_NON_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_LIST_OF_SCALARS = {
+WORKFLOW_WITH_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_LIST_OF_SCALARS = {
     "version": "1.1",
     "inputs": [],
     "steps": [
+        {"type": "ImageProducer", "name": "image_producer_x", "shape": (50, 50, 3)},
+        {"type": "ImageProducer", "name": "image_producer_y", "shape": (60, 60, 3)},
         {
-            "type": "ImageProducer",
-            "name": "image_producer_x",
-            "shape": (50, 50, 3)
-        },
-        {
-            "type": "ImageProducer",
-            "name": "image_producer_y",
-            "shape": (60, 60, 3)
-        },
-        {
-            "type": "NonSIMDConsumerAcceptingListDecDim",
+            "type": "SIMDConsumerAcceptingListDecDim",
             "name": "image_consumer",
             "x": ["$steps.image_producer_x.image", "$steps.image_producer_y.image"],
-            "y": "some-value"
+            "y": "some-value",
         },
     ],
     "outputs": [
@@ -2745,7 +2932,7 @@ WORKFLOW_WITH_NON_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_LIST_OF_SCAL
 
 
 @mock.patch.object(blocks_loader, "get_plugin_modules")
-def test_workflow_with_non_simd_consumer_dec_dim_accepting_list_of_batch_and_scalar_selectors(
+def test_workflow_with_simd_consumer_dec_dim_accepting_list_of_batch_and_scalar_selectors(
     get_plugin_modules_mock: MagicMock,
     model_manager: ModelManager,
 ) -> None:
@@ -2759,7 +2946,7 @@ def test_workflow_with_non_simd_consumer_dec_dim_accepting_list_of_batch_and_sca
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
-        workflow_definition=WORKFLOW_WITH_NON_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_LIST_OF_SCALARS,
+        workflow_definition=WORKFLOW_WITH_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_LIST_OF_SCALARS,
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
@@ -2770,4 +2957,3 @@ def test_workflow_with_non_simd_consumer_dec_dim_accepting_list_of_batch_and_sca
     # then
     assert len(results) == 1
     assert [i.numpy_image.shape for i in results[0]["x"]] == [(50, 50, 3), (60, 60, 3)]
-

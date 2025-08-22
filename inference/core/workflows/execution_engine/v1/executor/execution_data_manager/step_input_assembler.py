@@ -647,11 +647,11 @@ def get_non_compound_parameter_value(
         if not step_requests_batch_input:
             raise AssumptionError(
                 public_message=f"Parameter: {parameter.parameter_specification.parameter_name} "
-                               f"requires dimensionality wrapping, but registered lineage support is incompatible "
-                               f"which should be detected by the compiler. This is most likely a bug. "
-                               f"Contact Roboflow team through github issues "
-                               f"(https://github.com/roboflow/inference/issues) providing full context of"
-                               f"the problem - including workflow definition you use.",
+                f"requires dimensionality wrapping, but registered lineage support is incompatible "
+                f"which should be detected by the compiler. This is most likely a bug. "
+                f"Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full context of"
+                f"the problem - including workflow definition you use.",
                 context="workflow_execution | step_input_assembling",
             )
         upper_level_indices = [()]

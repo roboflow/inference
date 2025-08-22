@@ -1634,7 +1634,10 @@ def get_input_data_lineage_excluding_auto_batch_casting(
             input_definition=input_definition,
             lineage_deduplication_set=lineage_deduplication_set,
         )
-        if property_name in scalar_parameters_to_be_batched and len(new_lineages_detected_within_property_data) == 0:
+        if (
+            property_name in scalar_parameters_to_be_batched
+            and len(new_lineages_detected_within_property_data) == 0
+        ):
             continue
         lineages.extend(new_lineages_detected_within_property_data)
     if not lineages:
