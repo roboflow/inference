@@ -222,6 +222,10 @@ class MultiSIMDImageConsumerRaisingDimManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
     @classmethod
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images_x", "images_y"]
+
+    @classmethod
     def get_output_dimensionality_offset(cls) -> int:
         return 1
 

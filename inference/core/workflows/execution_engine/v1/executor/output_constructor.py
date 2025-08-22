@@ -99,6 +99,13 @@ def construct_workflow_output(
                 lineage=[top_level_data_lineage_marker]
             )
         )
+        if (
+            major_batch_size == 0
+            and top_level_data_lineage_marker != WORKFLOW_INPUT_BATCH_LINEAGE_ID
+        ):
+            # we had some dynamic dimensionality increase on top of auto-batch casting, but we
+            # failed to register indices due to conditional execution
+            major_batch_size = 1
     else:
         major_batch_size = 0
     for name in batch_oriented_outputs:

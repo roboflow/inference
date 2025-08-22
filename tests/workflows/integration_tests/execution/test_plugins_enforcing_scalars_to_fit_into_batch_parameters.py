@@ -3907,3 +3907,417 @@ def test_workflow_with_multiple_scalar_producers_feeding_non_simd_consumer_raisi
 
     # then
     assert result == [{"shapes": None}]
+
+
+WORKFLOW_WITH_SIMD_CONSUMER_RAISING_OUTPUT_DIM_FED_BY_SCALAR_PRODUCERS = {
+    "version": "1.1",
+    "inputs": [],
+    "steps": [
+        {
+            "type": "ImageProducer",
+            "name": "image_producer_x",
+        },
+        {
+            "type": "IdentitySIMD",
+            "name": "identity_simd",
+            "x": "$steps.image_producer_x.image",
+        },
+        {
+            "type": "ImageProducer",
+            "name": "image_producer_y",
+            "shape": (220, 230, 3),
+        },
+        {
+            "type": "MultiSIMDImageConsumerRaisingDim",
+            "name": "image_consumer",
+            "images_x": "$steps.identity_simd.x",
+            "images_y": "$steps.image_producer_y.image",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "shapes",
+            "selector": "$steps.image_consumer.shapes",
+        },
+    ],
+}
+
+
+@mock.patch.object(blocks_loader, "get_plugin_modules")
+def test_workflow_with_multiple_scalar_producers_feeding_simd_consumer_raising_dim(
+    get_plugin_modules_mock: MagicMock,
+    model_manager: ModelManager,
+) -> None:
+    # given
+    get_plugin_modules_mock.return_value = [
+        "tests.workflows.integration_tests.execution.stub_plugins.plugin_image_producer"
+    ]
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+
+    # then
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_SIMD_CONSUMER_RAISING_OUTPUT_DIM_FED_BY_SCALAR_PRODUCERS,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(runtime_parameters={})
+
+    # then
+    assert result == [{"shapes": "[192, 168, 3][220, 230, 3]"}]
+
+
+WORKFLOW_WITH_SIMD_CONSUMER_RAISING_OUTPUT_DIM_TWICE_FED_BY_SCALAR_PRODUCERS = {
+    "version": "1.1",
+    "inputs": [],
+    "steps": [
+        {
+            "type": "ImageProducer",
+            "name": "image_producer_x",
+        },
+        {
+            "type": "IdentitySIMD",
+            "name": "identity_simd",
+            "x": "$steps.image_producer_x.image",
+        },
+        {
+            "type": "ImageProducer",
+            "name": "image_producer_y",
+            "shape": (220, 230, 3),
+        },
+        {
+            "type": "MultiSIMDImageConsumerRaisingDim",
+            "name": "image_consumer",
+            "images_x": "$steps.identity_simd.x",
+            "images_y": "$steps.image_producer_y.image",
+        },
+        {
+            "type": "BoostDimensionality",
+            "name": "dim_boost",
+            "x": "$steps.image_consumer.shapes",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "shapes",
+            "selector": "$steps.dim_boost.x",
+        },
+    ],
+}
+
+
+@mock.patch.object(blocks_loader, "get_plugin_modules")
+def test_workflow_with_multiple_scalar_producers_feeding_simd_consumer_raising_dim_twice(
+    get_plugin_modules_mock: MagicMock,
+    model_manager: ModelManager,
+) -> None:
+    # given
+    get_plugin_modules_mock.return_value = [
+        "tests.workflows.integration_tests.execution.stub_plugins.plugin_image_producer"
+    ]
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+
+    # then
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_SIMD_CONSUMER_RAISING_OUTPUT_DIM_TWICE_FED_BY_SCALAR_PRODUCERS,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(runtime_parameters={})
+
+    # then
+    assert result == [
+        {"shapes": ["[192, 168, 3][220, 230, 3]", "[192, 168, 3][220, 230, 3]"]}
+    ]
+
+
+WORKFLOW_WITH_SIMD_CONSUMER_RAISING_OUTPUT_DIM_FED_BY_SCALAR_PRODUCERS_AND_FLOW_CONTROL_AT_DIM_0 = {
+    "version": "1.1",
+    "inputs": [],
+    "steps": [
+        {
+            "type": "ImageProducer",
+            "name": "image_producer_x",
+        },
+        {
+            "type": "AlwaysTerminate",
+            "name": "condition_batch_2",
+            "x": "$steps.image_producer_x.image",
+            "next_steps": ["$steps.identity_simd"],
+        },
+        {
+            "type": "IdentitySIMD",
+            "name": "identity_simd",
+            "x": "$steps.image_producer_x.image",
+        },
+        {
+            "type": "ImageProducer",
+            "name": "image_producer_y",
+            "shape": (220, 230, 3),
+        },
+        {
+            "type": "MultiSIMDImageConsumerRaisingDim",
+            "name": "image_consumer",
+            "images_x": "$steps.identity_simd.x",
+            "images_y": "$steps.image_producer_y.image",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "shapes",
+            "selector": "$steps.image_consumer.shapes",
+        },
+    ],
+}
+
+
+@mock.patch.object(blocks_loader, "get_plugin_modules")
+def test_workflow_with_multiple_scalar_producers_feeding_simd_consumer_raising_dim_and_flow_control_at_dim_0(
+    get_plugin_modules_mock: MagicMock,
+    model_manager: ModelManager,
+) -> None:
+    # given
+    get_plugin_modules_mock.return_value = [
+        "tests.workflows.integration_tests.execution.stub_plugins.plugin_image_producer"
+    ]
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+
+    # then
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_SIMD_CONSUMER_RAISING_OUTPUT_DIM_FED_BY_SCALAR_PRODUCERS_AND_FLOW_CONTROL_AT_DIM_0,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(runtime_parameters={})
+
+    # then
+    assert result == [{"shapes": None}]
+
+
+WORKFLOW_WITH_SIMD_CONSUMER_RAISING_OUTPUT_DIM_FED_BY_SCALAR_PRODUCERS_AND_FLOW_CONTROL_AT_DIM_1 = {
+    "version": "1.1",
+    "inputs": [],
+    "steps": [
+        {
+            "type": "ImageProducer",
+            "name": "image_producer_x",
+        },
+        {
+            "type": "IdentitySIMD",
+            "name": "identity_simd",
+            "x": "$steps.image_producer_x.image",
+        },
+        {
+            "type": "ImageProducer",
+            "name": "image_producer_y",
+            "shape": (220, 230, 3),
+        },
+        {
+            "type": "MultiSIMDImageConsumerRaisingDim",
+            "name": "image_consumer",
+            "images_x": "$steps.identity_simd.x",
+            "images_y": "$steps.image_producer_y.image",
+        },
+        {
+            "type": "AlwaysTerminate",
+            "name": "condition_batch_2",
+            "x": "$steps.image_consumer.shapes",
+            "next_steps": ["$steps.identity_simd_2"],
+        },
+        {
+            "type": "IdentitySIMD",
+            "name": "identity_simd_2",
+            "x": "$steps.image_consumer.shapes",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "shapes",
+            "selector": "$steps.identity_simd_2.x",
+        },
+    ],
+}
+
+
+@mock.patch.object(blocks_loader, "get_plugin_modules")
+def test_workflow_with_multiple_scalar_producers_feeding_simd_consumer_raising_dim_and_flow_control_at_dim_1(
+    get_plugin_modules_mock: MagicMock,
+    model_manager: ModelManager,
+) -> None:
+    # given
+    get_plugin_modules_mock.return_value = [
+        "tests.workflows.integration_tests.execution.stub_plugins.plugin_image_producer"
+    ]
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+
+    # then
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_SIMD_CONSUMER_RAISING_OUTPUT_DIM_FED_BY_SCALAR_PRODUCERS_AND_FLOW_CONTROL_AT_DIM_1,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(runtime_parameters={})
+
+    # then
+    assert result == [{"shapes": None}]
+
+
+WORKFLOW_WITH_SIMD_CONSUMER_RAISING_OUTPUT_DIM_FED_BY_SCALAR_PRODUCER_AND_BATCH_INPUT = {
+    "version": "1.1",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image_1"},
+    ],
+    "steps": [
+        {
+            "type": "ImageProducer",
+            "name": "image_producer_x",
+        },
+        {
+            "type": "IdentitySIMD",
+            "name": "identity_simd",
+            "x": "$steps.image_producer_x.image",
+        },
+        {
+            "type": "MultiSIMDImageConsumerRaisingDim",
+            "name": "image_consumer",
+            "images_x": "$steps.identity_simd.x",
+            "images_y": "$inputs.image_1",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "shapes",
+            "selector": "$steps.image_consumer.shapes",
+        },
+    ],
+}
+
+
+@mock.patch.object(blocks_loader, "get_plugin_modules")
+def test_workflow_with_scalar_producer_and_batch_input_feeding_simd_consumer_raising_dim(
+    get_plugin_modules_mock: MagicMock,
+    model_manager: ModelManager,
+) -> None:
+    # given
+    get_plugin_modules_mock.return_value = [
+        "tests.workflows.integration_tests.execution.stub_plugins.plugin_image_producer"
+    ]
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+
+    # then
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_SIMD_CONSUMER_RAISING_OUTPUT_DIM_FED_BY_SCALAR_PRODUCER_AND_BATCH_INPUT,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image_1": [np.zeros((292, 168, 3)), np.zeros((392, 168, 3))]
+        }
+    )
+
+    # then
+    assert result == [
+        {"shapes": ["[192, 168, 3][292, 168, 3]"]},
+        {"shapes": ["[192, 168, 3][392, 168, 3]"]},
+    ]
+
+
+WORKFLOW_WITH_SIMD_CONSUMER_RAISING_OUTPUT_DIM_FED_BY_BATCH_INPUTS = {
+    "version": "1.1",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image_1"},
+        {"type": "WorkflowImage", "name": "image_2"},
+    ],
+    "steps": [
+        {
+            "type": "IdentitySIMD",
+            "name": "identity_simd",
+            "x": "$inputs.image_1",
+        },
+        {
+            "type": "MultiSIMDImageConsumerRaisingDim",
+            "name": "image_consumer",
+            "images_x": "$steps.identity_simd.x",
+            "images_y": "$inputs.image_2",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "shapes",
+            "selector": "$steps.image_consumer.shapes",
+        },
+    ],
+}
+
+
+@mock.patch.object(blocks_loader, "get_plugin_modules")
+def test_workflow_with_batch_inputs_feeding_simd_consumer_raising_dim(
+    get_plugin_modules_mock: MagicMock,
+    model_manager: ModelManager,
+) -> None:
+    # given
+    get_plugin_modules_mock.return_value = [
+        "tests.workflows.integration_tests.execution.stub_plugins.plugin_image_producer"
+    ]
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+
+    # then
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_SIMD_CONSUMER_RAISING_OUTPUT_DIM_FED_BY_BATCH_INPUTS,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image_1": [np.zeros((292, 168, 3)), np.zeros((392, 168, 3))],
+            "image_2": [np.zeros((293, 168, 3)), np.zeros((393, 168, 3))],
+        }
+    )
+
+    # then
+    assert result == [
+        {"shapes": ["[292, 168, 3][293, 168, 3]"]},
+        {"shapes": ["[392, 168, 3][393, 168, 3]"]},
+    ]
