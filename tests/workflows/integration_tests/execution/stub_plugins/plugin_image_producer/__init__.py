@@ -1,4 +1,5 @@
 import json
+from collections import defaultdict
 from typing import Any, List, Literal, Optional, Tuple, Type, Union, Dict
 from uuid import uuid4
 
@@ -464,6 +465,47 @@ class NonSIMDConsumerAcceptingListBlock(WorkflowBlock):
         return {"x": x, "y": y}
 
 
+class SIMDConsumerAcceptingListManifest(WorkflowBlockManifest):
+    type: Literal["SIMDConsumerAcceptingList"]
+    x: List[Selector(kind=[IMAGE_KIND])]
+    y: List[Selector(kind=[IMAGE_KIND])]
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [OutputDefinition(name="x"), OutputDefinition(name="y")]
+
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return ">=1.3.0,<2.0.0"
+
+    @classmethod
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["x", "y"]
+
+
+class SIMDConsumerAcceptingListBlock(WorkflowBlock):
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return SIMDConsumerAcceptingListManifest
+
+    def run(self, x: List[Batch[WorkflowImageData]], y: List[Batch[WorkflowImageData]]) -> BlockResult:
+        idx2x = defaultdict(list)
+        idx2y = defaultdict(list)
+        for batch_x in x:
+            for idx, el in enumerate(batch_x):
+                idx2x[idx].append(el)
+        for batch_y in y:
+            for idx, el in enumerate(batch_y):
+                idx2y[idx].append(el)
+        indices_x = sorted(idx2x.keys())
+        indices_y = sorted(idx2y.keys())
+        assert indices_x == indices_y
+        results = []
+        for idx in indices_x:
+            results.append({"x": idx2x[idx], "y": idx2y[idx]})
+        return results
+
+
 class NonSIMDConsumerAcceptingDictManifest(WorkflowBlockManifest):
     type: Literal["NonSIMDConsumerAcceptingDict"]
     x: Dict[str, Selector(kind=[IMAGE_KIND])]
@@ -485,6 +527,48 @@ class NonSIMDConsumerAcceptingDictBlock(WorkflowBlock):
     def run(self, x: dict) -> BlockResult:
         sorted_keys = sorted(x.keys())
         return {"x": [x[k] for k in sorted_keys]}
+
+
+class SIMDConsumerAcceptingDictManifest(WorkflowBlockManifest):
+    type: Literal["SIMDConsumerAcceptingDict"]
+    x: Dict[str, Selector(kind=[IMAGE_KIND])]
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [OutputDefinition(name="x")]
+
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return ">=1.3.0,<2.0.0"
+
+    @classmethod
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["x"]
+
+
+class SIMDConsumerAcceptingDictBlock(WorkflowBlock):
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return SIMDConsumerAcceptingDictManifest
+
+    def run(self, x: Dict[str, Batch[Any]]) -> BlockResult:
+        sorted_keys = sorted(x.keys())
+        keys_stashes = {k: {} for k in sorted_keys}
+        for key, key_batch in x.items():
+            assert isinstance(key_batch, Batch)
+            for idx, key_batch_el in enumerate(key_batch):
+                keys_stashes[key][idx] = key_batch_el
+        reference_indices = None
+        for stash in keys_stashes.values():
+            sorted_idx = sorted(stash.keys())
+            if reference_indices is None:
+                reference_indices = sorted_idx
+            assert sorted_idx == reference_indices
+        assert reference_indices is not None
+        results = []
+        for idx in reference_indices:
+            results.append({"x": [keys_stashes[k][idx] for k in sorted_keys]})
+        return results
 
 
 class NonSIMDConsumerAcceptingListIncDimManifest(WorkflowBlockManifest):
@@ -542,6 +626,57 @@ class NonSIMDConsumerAcceptingDictIncDimBlock(WorkflowBlock):
     def run(self, x: dict) -> BlockResult:
         sorted_keys = sorted(x.keys())
         return [{"x": [x[k] for k in sorted_keys]}, {"x": [x[k] for k in sorted_keys]}]
+
+
+class SIMDConsumerAcceptingDictIncDimManifest(WorkflowBlockManifest):
+    type: Literal["SIMDConsumerAcceptingDictIncDim"]
+    x: Dict[str, Selector(kind=[IMAGE_KIND])]
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [OutputDefinition(name="x")]
+
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return ">=1.3.0,<2.0.0"
+
+    @classmethod
+    def get_output_dimensionality_offset(
+        cls,
+    ) -> int:
+        return 1
+
+    @classmethod
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["x"]
+
+
+class SIMDConsumerAcceptingDictIncDimBlock(WorkflowBlock):
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return SIMDConsumerAcceptingDictIncDimManifest
+
+    def run(self, x: Dict[str, Batch[Any]]) -> BlockResult:
+        sorted_keys = sorted(x.keys())
+        keys_stashes = {k: {} for k in sorted_keys}
+        for key, key_batch in x.items():
+            assert isinstance(key_batch, Batch)
+            for idx, key_batch_el in enumerate(key_batch):
+                keys_stashes[key][idx] = key_batch_el
+        reference_indices = None
+        for stash in keys_stashes.values():
+            sorted_idx = sorted(stash.keys())
+            if reference_indices is None:
+                reference_indices = sorted_idx
+            assert sorted_idx == reference_indices
+        assert reference_indices is not None
+        results = []
+        for idx in reference_indices:
+            results.append([
+                {"x": [keys_stashes[k][idx] for k in sorted_keys]},
+                {"x": [keys_stashes[k][idx] for k in sorted_keys]}
+            ])
+        return results
 
 
 class NonSIMDConsumerAcceptingListDecDimManifest(WorkflowBlockManifest):
@@ -617,6 +752,66 @@ class NonSIMDConsumerAcceptingDictDecDimBlock(WorkflowBlock):
         return {"x": results}
 
 
+class SIMDConsumerAcceptingDictDecDimManifest(WorkflowBlockManifest):
+    type: Literal["SIMDConsumerAcceptingDictDecDim"]
+    x: Dict[str, Selector(kind=[IMAGE_KIND])]
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [OutputDefinition(name="x")]
+
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return ">=1.3.0,<2.0.0"
+
+    @classmethod
+    def get_output_dimensionality_offset(
+            cls,
+    ) -> int:
+        return -1
+
+    @classmethod
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["x"]
+
+
+class SIMDConsumerAcceptingDictDecDimBlock(WorkflowBlock):
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return SIMDConsumerAcceptingDictDecDimManifest
+
+    def run(self, x: Dict[str, Batch[Batch[Any]]]) -> BlockResult:
+        sorted_keys = sorted(x.keys())
+        keys_stashes = {k: {} for k in sorted_keys}
+        for key, key_batch in x.items():
+            assert isinstance(key_batch, Batch)
+            for idx, key_batch_el in enumerate(key_batch):
+                assert isinstance(key_batch_el, Batch)
+                keys_stashes[key][idx] = list(key_batch_el)
+        reference_indices = None
+        for stash in keys_stashes.values():
+            sorted_idx = sorted(stash.keys())
+            if reference_indices is None:
+                reference_indices = sorted_idx
+            assert sorted_idx == reference_indices
+        assert reference_indices is not None
+        results = []
+        for idx in reference_indices:
+            merged = []
+            for k in sorted_keys:
+                merged.extend(keys_stashes[k][idx])
+            results.append({"x": merged})
+        return results
+        # results = []
+        # sorted_keys = sorted(x.keys())
+        # for k in sorted_keys:
+        #     v = x[k]
+        #     assert isinstance(v, Batch)
+        #     result = [e for e in v]
+        #     results.append(result)
+        # return {"x": results}
+
+
 def load_blocks() -> List[Type[WorkflowBlock]]:
     return [
         ImageProducerBlock,
@@ -637,5 +832,9 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         NonSIMDConsumerAcceptingListIncDimBlock,
         NonSIMDConsumerAcceptingDictIncDimBlock,
         NonSIMDConsumerAcceptingListDecDimBlock,
-        NonSIMDConsumerAcceptingDictDecDimBlock
+        NonSIMDConsumerAcceptingDictDecDimBlock,
+        SIMDConsumerAcceptingListBlock,
+        SIMDConsumerAcceptingDictBlock,
+        SIMDConsumerAcceptingDictIncDimBlock,
+        SIMDConsumerAcceptingDictDecDimBlock
     ]
