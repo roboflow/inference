@@ -9,12 +9,12 @@ def test_basic_object_detection_visualization(reference_image: np.ndarray) -> No
     # given
     model = get_model("yolov8n-640")
     box_annotator = sv.BoxAnnotator(
-        color=sv.ColorPalette.from_hex(['#FF8C00', '#00BFFF', '#FF1493', '#FFD700']),
-        thickness=2
+        color=sv.ColorPalette.from_hex(["#FF8C00", "#00BFFF", "#FF1493", "#FFD700"]),
+        thickness=2,
     )
     label_annotator = sv.LabelAnnotator(
-        color=sv.ColorPalette.from_hex(['#FF8C00', '#00BFFF', '#FF1493', '#FFD700']),
-        text_color=sv.Color.from_hex('#000000')
+        color=sv.ColorPalette.from_hex(["#FF8C00", "#00BFFF", "#FF1493", "#FFD700"]),
+        text_color=sv.Color.from_hex("#000000"),
     )
 
     # when
@@ -23,17 +23,15 @@ def test_basic_object_detection_visualization(reference_image: np.ndarray) -> No
     annotated_frame = reference_image.copy()
     labels = [
         f"{class_name} {confidence:.2f}"
-        for class_name, confidence
-        in zip(detections["class_name"], detections.confidence)
+        for class_name, confidence in zip(
+            detections["class_name"], detections.confidence
+        )
     ]
     annotated_frame = box_annotator.annotate(
-        scene=annotated_frame,
-        detections=detections
+        scene=annotated_frame, detections=detections
     )
     annotated_frame = label_annotator.annotate(
-        scene=annotated_frame,
-        detections=detections,
-        labels=labels
+        scene=annotated_frame, detections=detections, labels=labels
     )
 
     # then
@@ -45,11 +43,11 @@ def test_basic_instance_segmentation_visualization(reference_image: np.ndarray) 
     # given
     model = get_model("yolov8n-seg-640")
     mask_annotator = sv.MaskAnnotator(
-        color=sv.ColorPalette.from_hex(['#FF8C00', '#00BFFF', '#FF1493', '#FFD700']),
+        color=sv.ColorPalette.from_hex(["#FF8C00", "#00BFFF", "#FF1493", "#FFD700"]),
     )
     label_annotator = sv.LabelAnnotator(
-        color=sv.ColorPalette.from_hex(['#FF8C00', '#00BFFF', '#FF1493', '#FFD700']),
-        text_color=sv.Color.from_hex('#000000')
+        color=sv.ColorPalette.from_hex(["#FF8C00", "#00BFFF", "#FF1493", "#FFD700"]),
+        text_color=sv.Color.from_hex("#000000"),
     )
 
     # when
@@ -58,17 +56,15 @@ def test_basic_instance_segmentation_visualization(reference_image: np.ndarray) 
     annotated_frame = reference_image.copy()
     labels = [
         f"{class_name} {confidence:.2f}"
-        for class_name, confidence
-        in zip(detections["class_name"], detections.confidence)
+        for class_name, confidence in zip(
+            detections["class_name"], detections.confidence
+        )
     ]
     annotated_frame = mask_annotator.annotate(
-        scene=annotated_frame,
-        detections=detections
+        scene=annotated_frame, detections=detections
     )
     annotated_frame = label_annotator.annotate(
-        scene=annotated_frame,
-        detections=detections,
-        labels=labels
+        scene=annotated_frame, detections=detections, labels=labels
     )
 
     # then
@@ -87,8 +83,7 @@ def test_basic_pose_estimation_visualization(reference_image: np.ndarray) -> Non
     key_points = sv.KeyPoints.from_inference(result_raw)
     annotated_frame = reference_image.copy()
     annotated_frame = vertex_annotator.annotate(
-        scene=annotated_frame,
-        key_points=key_points
+        scene=annotated_frame, key_points=key_points
     )
     annotated_frame = label_annotator.annotate(
         scene=annotated_frame,
@@ -107,8 +102,8 @@ def test_basic_tracking(reference_image: np.ndarray) -> None:
     tracker.reset()
     tracker_annotator = sv.TraceAnnotator()
     box_annotator = sv.BoxAnnotator(
-        color=sv.ColorPalette.from_hex(['#FF8C00', '#00BFFF', '#FF1493', '#FFD700']),
-        thickness=2
+        color=sv.ColorPalette.from_hex(["#FF8C00", "#00BFFF", "#FF1493", "#FFD700"]),
+        thickness=2,
     )
 
     # when

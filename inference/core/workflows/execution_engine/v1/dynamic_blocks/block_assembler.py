@@ -381,6 +381,12 @@ def assembly_manifest_class_methods(
         "get_parameters_accepting_batches_and_scalars",
         classmethod(get_parameters_accepting_batches_and_scalars),
     )
+    get_parameters_enforcing_auto_batch_casting = lambda cls: list()
+    setattr(
+        manifest_class,
+        "get_parameters_enforcing_auto_batch_casting",
+        classmethod(get_parameters_enforcing_auto_batch_casting),
+    )
     input_dimensionality_offsets = collect_input_dimensionality_offsets(
         inputs=manifest_description.inputs
     )

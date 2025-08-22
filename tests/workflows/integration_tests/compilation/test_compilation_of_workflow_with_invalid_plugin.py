@@ -145,7 +145,10 @@ def test_compilation_of_workflow_where_block_is_not_simd_but_defines_output_offs
     )
 
     # then
-    assert compiled_workflow.execution_graph.graph[TOP_LEVEL_LINEAGE_KEY] == "$steps.problematic_dimensions"
+    assert (
+        compiled_workflow.execution_graph.graph[TOP_LEVEL_LINEAGE_KEY]
+        == "$steps.problematic_dimensions"
+    )
 
 
 WORKFLOW_WITH_INVALID_BLOCK_DECLARING_DIMENSIONALITY_REFERENCE_PROPERTY_AS_NON_BATCH = {

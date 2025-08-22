@@ -156,7 +156,9 @@ def run_step(
     execution_data_manager: ExecutionDataManager,
     profiler: WorkflowsProfiler,
 ) -> None:
-    print(f"{step_selector} - IS SIMD: {execution_data_manager.is_step_simd(step_selector=step_selector)}")
+    print(
+        f"{step_selector} - IS SIMD: {execution_data_manager.is_step_simd(step_selector=step_selector)}"
+    )
     if execution_data_manager.is_step_simd(step_selector=step_selector):
         return run_simd_step(
             step_selector=step_selector,
@@ -181,8 +183,22 @@ def run_simd_step(
     step_name = get_last_chunk_of_selector(selector=step_selector)
     step_instance = workflow.steps[step_name].step
     step_manifest = workflow.steps[step_name].manifest
-    print(f"{step_selector} - accepts_batch_input: {step_manifest.accepts_batch_input()}")
-    if step_manifest.accepts_batch_input():
+    print(
+        f"{step_selector} - accepts_batch_input: {step_manifest.accepts_batch_input()}"
+    )
+    collapse_of_batch_to_scalar_expected = (
+        step_manifest.get_output_dimensionality_offset() < 0
+        and not execution_data_manager.does_step_produce_batches(
+            step_selector=step_selector
+        )
+    )
+    print(
+        "collapse_of_batch_to_scalar_expected",
+        collapse_of_batch_to_scalar_expected,
+        step_manifest.get_output_dimensionality_offset(),
+        execution_data_manager.does_step_produce_batches(step_selector=step_selector),
+    )
+    if step_manifest.accepts_batch_input() or collapse_of_batch_to_scalar_expected:
         return run_simd_step_in_batch_mode(
             step_selector=step_selector,
             step_instance=step_instance,

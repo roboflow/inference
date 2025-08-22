@@ -1,7 +1,7 @@
 import itertools
 from collections import defaultdict
 from copy import copy, deepcopy
-from typing import Any, Dict, List, Optional, Set, Tuple, Union, Callable
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 from uuid import uuid4
 
 import networkx as nx
@@ -22,7 +22,8 @@ from inference.core.workflows.errors import (
 from inference.core.workflows.execution_engine.constants import (
     NODE_COMPILATION_OUTPUT_PROPERTY,
     PARSED_NODE_INPUT_SELECTORS_PROPERTY,
-    WORKFLOW_INPUT_BATCH_LINEAGE_ID, TOP_LEVEL_LINEAGE_KEY,
+    TOP_LEVEL_LINEAGE_KEY,
+    WORKFLOW_INPUT_BATCH_LINEAGE_ID,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     InputType,
@@ -44,6 +45,7 @@ from inference.core.workflows.execution_engine.profiling.core import (
     execution_phase,
 )
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
+    AutoBatchCastingConfig,
     CompoundStepInputDefinition,
     DictOfStepInputDefinitions,
     DynamicStepInputDefinition,
@@ -60,7 +62,7 @@ from inference.core.workflows.execution_engine.v1.compiler.entities import (
     StaticStepInputDefinition,
     StepInputData,
     StepInputDefinition,
-    StepNode, AutoBatchCastingConfig,
+    StepNode,
 )
 from inference.core.workflows.execution_engine.v1.compiler.graph_traversal import (
     traverse_graph_ensuring_parents_are_reached_first,
@@ -609,18 +611,20 @@ def denote_data_flow_in_workflow(
             execution_graph=execution_graph,
             node=node,
             block_manifest_by_step_name=block_manifest_by_step_name,
-            on_top_level_lineage_denoted=lambda element: top_level_data_lineage.add(element)
+            on_top_level_lineage_denoted=lambda element: top_level_data_lineage.add(
+                element
+            ),
         )
     execution_graph.remove_node(super_input_node)
     if len(top_level_data_lineage) > 1:
         raise AssumptionError(
             public_message=f"Workflow Compiler detected that the workflow contains multiple elements which create "
-                           f"top-level data batches - for instance inputs and blocks that create batched outputs from "
-                           f"scalar parameters. We know it sounds convoluted, but the bottom line is that this "
-                           f"situation is known limitation of Workflows Compiler. "
-                           f"Contact Roboflow team through github issues "
-                           f"(https://github.com/roboflow/inference/issues) providing full "
-                           f"context of the problem - including workflow definition you use.",
+            f"top-level data batches - for instance inputs and blocks that create batched outputs from "
+            f"scalar parameters. We know it sounds convoluted, but the bottom line is that this "
+            f"situation is known limitation of Workflows Compiler. "
+            f"Contact Roboflow team through github issues "
+            f"(https://github.com/roboflow/inference/issues) providing full "
+            f"context of the problem - including workflow definition you use.",
             context="workflow_compilation | execution_graph_construction | verification_of_batches_sources",
         )
     if len(top_level_data_lineage) > 0:
@@ -697,7 +701,7 @@ def denote_data_flow_for_step(
     execution_graph: DiGraph,
     node: str,
     manifest: WorkflowBlockManifest,
-    on_top_level_lineage_denoted: Callable[[str], None]
+    on_top_level_lineage_denoted: Callable[[str], None],
 ) -> DiGraph:
     all_control_flow_predecessors, all_non_control_flow_predecessors = (
         separate_flow_control_predecessors_from_data_providers(
@@ -722,11 +726,13 @@ def denote_data_flow_for_step(
     batch_compatibility_of_properties = retrieve_batch_compatibility_of_input_selectors(
         input_selectors=parsed_step_input_selectors
     )
-    scalar_parameters_to_be_batched = verify_declared_batch_compatibility_against_actual_inputs(
-        node=node,
-        step_node_data=step_node_data,
-        input_data=input_data,
-        batch_compatibility_of_properties=batch_compatibility_of_properties,
+    scalar_parameters_to_be_batched = (
+        verify_declared_batch_compatibility_against_actual_inputs(
+            node=node,
+            step_node_data=step_node_data,
+            input_data=input_data,
+            batch_compatibility_of_properties=batch_compatibility_of_properties,
+        )
     )
     input_dimensionality_offsets = manifest.get_input_dimensionality_offsets()
     print("input_dimensionality_offsets", input_dimensionality_offsets)
@@ -734,6 +740,7 @@ def denote_data_flow_for_step(
         step_name=step_name,
         input_dimensionality_offsets=input_dimensionality_offsets,
     )
+    print("scalar_parameters_to_be_batched", scalar_parameters_to_be_batched)
     inputs_dimensionalities = get_inputs_dimensionalities(
         step_name=step_name,
         step_type=manifest.type,
@@ -791,7 +798,9 @@ def denote_data_flow_for_step(
             output_dimensionality_offset=output_dimensionality_offset,
         )
     )
-    truly_batch_parameters = parameters_with_batch_inputs.difference(scalar_parameters_to_be_batched)
+    truly_batch_parameters = parameters_with_batch_inputs.difference(
+        scalar_parameters_to_be_batched
+    )
     if not truly_batch_parameters:
         if manifest.get_output_dimensionality_offset() > 0:
             # brave decision to open a Pandora box
@@ -809,7 +818,7 @@ def denote_data_flow_for_step(
     lineage_supports = get_lineage_support_for_auto_batch_casted_parameters(
         input_dimensionalities=inputs_dimensionalities,
         all_lineages_of_batch_parameters=all_lineages,
-        scalar_parameters_to_be_batched=scalar_parameters_to_be_batched
+        scalar_parameters_to_be_batched=scalar_parameters_to_be_batched,
     )
     step_node_data.auto_batch_casting_lineage_supports = lineage_supports
     print("lineage_supports", lineage_supports)
@@ -1200,7 +1209,7 @@ def verify_output_offset(
     if not parameters_with_batch_inputs and output_dimensionality_offset < 0:
         raise StepInputDimensionalityError(
             public_message=f"Block defining step {step_name} defines negative dimensionality offset while only "
-                           f"scalar inputs being provided - the block cannot run as there is no dimension to collapse.",
+            f"scalar inputs being provided - the block cannot run as there is no dimension to collapse.",
             context="workflow_compilation | execution_graph_construction | verification_of_output_offset",
         )
     if (
@@ -1428,7 +1437,11 @@ def get_inputs_dimensionalities(
 ) -> Dict[str, Set[int]]:
     result = defaultdict(set)
     dimensionalities_spotted = set()
-    offset_parameters = {parameter: value for parameter, value in input_dimensionality_offsets.items() if value > 0}
+    offset_parameters = {
+        parameter: value
+        for parameter, value in input_dimensionality_offsets.items()
+        if value > 0
+    }
     non_offset_parameters_dimensionality_values = set()
     for property_name, input_definition in input_data.items():
         if property_name in offset_parameters:
@@ -1436,13 +1449,17 @@ def get_inputs_dimensionalities(
         if input_definition.is_compound_input():
             for value in input_definition.iterate_through_definitions():
                 if value.is_batch_oriented():
-                    non_offset_parameters_dimensionality_values.add(value.get_dimensionality())
+                    non_offset_parameters_dimensionality_values.add(
+                        value.get_dimensionality()
+                    )
         elif input_definition.is_batch_oriented():
-            non_offset_parameters_dimensionality_values.add(input_definition.get_dimensionality())
+            non_offset_parameters_dimensionality_values.add(
+                input_definition.get_dimensionality()
+            )
     if len(non_offset_parameters_dimensionality_values) > 1:
         raise StepInputDimensionalityError(
             public_message=f"For step {step_name} attempted to plug input data that are in different dimensions, "
-                           f"whereas block defines the inputs to be equal in that terms.",
+            f"whereas block defines the inputs to be equal in that terms.",
             context="workflow_compilation | execution_graph_construction | collecting_step_input_data",
             blocks_errors=[
                 WorkflowBlockError(
@@ -1452,7 +1469,11 @@ def get_inputs_dimensionalities(
                 )
             ],
         )
-    non_offset_parameters_dimensionality_value = non_offset_parameters_dimensionality_values.pop() if len(non_offset_parameters_dimensionality_values) > 0 else 1
+    non_offset_parameters_dimensionality_value = (
+        non_offset_parameters_dimensionality_values.pop()
+        if len(non_offset_parameters_dimensionality_values) > 0
+        else 1
+    )
     for property_name, input_definition in input_data.items():
         if input_definition.is_compound_input():
             result[property_name] = get_compound_input_dimensionality(
@@ -1469,7 +1490,10 @@ def get_inputs_dimensionalities(
                 if property_name not in offset_parameters:
                     result[property_name] = {non_offset_parameters_dimensionality_value}
                 else:
-                    result[property_name] = non_offset_parameters_dimensionality_value + offset_parameters[property_name]
+                    result[property_name] = (
+                        non_offset_parameters_dimensionality_value
+                        + offset_parameters[property_name]
+                    )
             else:
                 result[property_name] = {input_definition.get_dimensionality()}
         dimensionalities_spotted.update(result[property_name])
@@ -1504,12 +1528,18 @@ def get_compound_input_dimensionality(
 ) -> Set[int]:
     dimensionalities_spotted = set()
     for definition in input_definition.iterate_through_definitions():
-        if property_name not in scalar_parameters_to_be_batched or definition.is_batch_oriented():
+        if (
+            property_name not in scalar_parameters_to_be_batched
+            or definition.is_batch_oriented()
+        ):
             dimensionalities_spotted.add(definition.get_dimensionality())
         elif property_name not in offset_parameters:
             dimensionalities_spotted.add(non_offset_parameters_dimensionality_value)
         else:
-            dimensionalities_spotted.add(non_offset_parameters_dimensionality_value + offset_parameters[property_name])
+            dimensionalities_spotted.add(
+                non_offset_parameters_dimensionality_value
+                + offset_parameters[property_name]
+            )
     non_zero_dimensionalities = {e for e in dimensionalities_spotted if e != 0}
     if len(non_zero_dimensionalities) > 1:
         raise StepInputDimensionalityError(
@@ -1539,7 +1569,9 @@ def grab_parameters_defining_batch_inputs(
     return result
 
 
-def retrieve_batch_compatibility_of_input_selectors(input_selectors: List[ParsedSelector]) -> Dict[str, Set[bool]]:
+def retrieve_batch_compatibility_of_input_selectors(
+    input_selectors: List[ParsedSelector],
+) -> Dict[str, Set[bool]]:
     batch_compatibility_of_properties = defaultdict(set)
     for parsed_selector in input_selectors:
         for reference in parsed_selector.definition.allowed_references:
@@ -1583,12 +1615,11 @@ def verify_declared_batch_compatibility_against_actual_inputs(
                 f"step inputs are filled with outputs of batch-oriented steps or batch-oriented inputs.",
                 context="workflow_compilation | execution_graph_construction",
             )
-        if (
-            step_accepts_batch_input
-            and batch_compatibility == {True}
-            and False in actual_input_is_batch
-        ):
+        if batch_compatibility == {True} and False in actual_input_is_batch:
             scalar_parameters_to_be_batched.add(property_name)
+        print(
+            f"property_name: {property_name}, batch_compatibility={batch_compatibility}, actual_input_is_batch={actual_input_is_batch}, step_accepts_batch_input={step_accepts_batch_input}"
+        )
     return scalar_parameters_to_be_batched
 
 
@@ -1638,7 +1669,9 @@ def get_lineage_support_for_auto_batch_casted_parameters(
     return result
 
 
-def find_longest_lineage_support(all_lineages_of_batch_parameters: List[List[str]]) -> Optional[List[str]]:
+def find_longest_lineage_support(
+    all_lineages_of_batch_parameters: List[List[str]],
+) -> Optional[List[str]]:
     longest_longest_lineage_support = []
     for lineage in all_lineages_of_batch_parameters:
         if len(lineage) > len(longest_longest_lineage_support):
@@ -1764,13 +1797,13 @@ def establish_batch_oriented_step_lineage(
     )
     if output_dimensionality_offset < 0:
         result_dimensionality = reference_lineage[:output_dimensionality_offset]
-        if len(result_dimensionality) == 0:
-            raise StepOutputLineageError(
-                public_message=f"Step {step_selector} is to decrease dimensionality, but it is not possible if "
-                f"input dimensionality is not greater or equal 2, otherwise output would not "
-                f"be batch-oriented.",
-                context="workflow_compilation | execution_graph_construction | establishing_step_output_lineage",
-            )
+        # if len(result_dimensionality) == 0:
+        #     raise StepOutputLineageError(
+        #         public_message=f"Step {step_selector} is to decrease dimensionality, but it is not possible if "
+        #         f"input dimensionality is not greater or equal 2, otherwise output would not "
+        #         f"be batch-oriented.",
+        #         context="workflow_compilation | execution_graph_construction | establishing_step_output_lineage",
+        #     )
         return result_dimensionality
     if output_dimensionality_offset == 0:
         return reference_lineage
@@ -1793,7 +1826,7 @@ def get_reference_lineage(
             f"This is most likely the bug. Contact Roboflow team through github issues "
             f"(https://github.com/roboflow/inference/issues) providing full "
             f"context of the problem - including workflow definition you use.",
-            context="workflow_compilation | execution_graph_construction | collecting_step_inputs",
+            context="workflow_compilation | execution_graph_construction | collecting_step_inputs_lineage",
         )
     property_data = input_data[dimensionality_reference_property]
     if property_data.is_compound_input():
@@ -1809,7 +1842,7 @@ def get_reference_lineage(
                 f"Contact Roboflow team through github issues "
                 f"(https://github.com/roboflow/inference/issues) providing full "
                 f"context of the problem - including workflow definition you use.",
-                context="workflow_compilation | execution_graph_construction | collecting_step_inputs",
+                context="workflow_compilation | execution_graph_construction | collecting_step_inputs_lineage",
             )
     if not property_data.is_batch_oriented():
         raise AssumptionError(
@@ -1818,7 +1851,7 @@ def get_reference_lineage(
             f"Contact Roboflow team through github issues "
             f"(https://github.com/roboflow/inference/issues) providing full "
             f"context of the problem - including workflow definition you use.",
-            context="workflow_compilation | execution_graph_construction | collecting_step_inputs",
+            context="workflow_compilation | execution_graph_construction | collecting_step_inputs_lineage",
         )
     return copy(property_data.data_lineage)
 

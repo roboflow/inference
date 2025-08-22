@@ -101,7 +101,11 @@ class ExecutionCache:
             self._cache_content[step_name].register_outputs(
                 indices=indices, outputs=outputs
             )
-            print("VERIF", id(self._cache_content[step_name]), self._cache_content[step_name]._cache_content)
+            print(
+                "VERIF",
+                id(self._cache_content[step_name]),
+                self._cache_content[step_name]._cache_content,
+            )
             self._step_outputs_registered.add(step_name)
         except (TypeError, AttributeError) as e:
             # checking this case defensively as there is no guarantee on block

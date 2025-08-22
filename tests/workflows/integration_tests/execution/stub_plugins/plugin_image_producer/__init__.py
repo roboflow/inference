@@ -1,14 +1,26 @@
 import json
-from typing import Literal, List, Optional, Type, Any, Tuple
+from typing import Any, List, Literal, Optional, Tuple, Type
 from uuid import uuid4
 
 import numpy as np
 from pydantic import Field
 
-from inference.core.workflows.execution_engine.entities.base import OutputDefinition, WorkflowImageData, \
-    ImageParentMetadata, Batch
-from inference.core.workflows.execution_engine.entities.types import IMAGE_KIND, Selector, STRING_KIND
-from inference.core.workflows.prototypes.block import WorkflowBlockManifest, WorkflowBlock, BlockResult
+from inference.core.workflows.execution_engine.entities.base import (
+    Batch,
+    ImageParentMetadata,
+    OutputDefinition,
+    WorkflowImageData,
+)
+from inference.core.workflows.execution_engine.entities.types import (
+    IMAGE_KIND,
+    STRING_KIND,
+    Selector,
+)
+from inference.core.workflows.prototypes.block import (
+    BlockResult,
+    WorkflowBlock,
+    WorkflowBlockManifest,
+)
 
 
 class ImageProducerBlockManifest(WorkflowBlockManifest):
@@ -33,7 +45,7 @@ class ImageProducerBlock(WorkflowBlock):
     def run(self, shape: Tuple[int, int, int]) -> BlockResult:
         image = WorkflowImageData(
             parent_metadata=ImageParentMetadata(parent_id=f"image_producer.{uuid4()}"),
-            numpy_image=np.zeros(shape, dtype=np.uint8)
+            numpy_image=np.zeros(shape, dtype=np.uint8),
         )
         return {"image": image}
 
@@ -115,10 +127,17 @@ class MultiSIMDImageConsumer(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return MultiSIMDImageConsumerManifest
 
-    def run(self, images_x: Batch[WorkflowImageData], images_y: Batch[WorkflowImageData]) -> BlockResult:
+    def run(
+        self, images_x: Batch[WorkflowImageData], images_y: Batch[WorkflowImageData]
+    ) -> BlockResult:
         results = []
         for image_x, image_y in zip(images_x, images_y):
-            results.append({"metadata": json.dumps(image_x.numpy_image.shape) + json.dumps(image_y.numpy_image.shape)})
+            results.append(
+                {
+                    "metadata": json.dumps(image_x.numpy_image.shape)
+                    + json.dumps(image_y.numpy_image.shape)
+                }
+            )
         return results
 
 
@@ -142,8 +161,13 @@ class MultiImageConsumer(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return MultiImageConsumerManifest
 
-    def run(self, images_x: WorkflowImageData, images_y: WorkflowImageData) -> BlockResult:
-        return {"shapes": json.dumps(images_x.numpy_image.shape) + json.dumps(images_y.numpy_image.shape)}
+    def run(
+        self, images_x: WorkflowImageData, images_y: WorkflowImageData
+    ) -> BlockResult:
+        return {
+            "shapes": json.dumps(images_x.numpy_image.shape)
+            + json.dumps(images_y.numpy_image.shape)
+        }
 
 
 class MultiImageConsumerRaisingDimManifest(WorkflowBlockManifest):
@@ -170,8 +194,15 @@ class MultiImageConsumerRaisingDim(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return MultiImageConsumerRaisingDimManifest
 
-    def run(self, images_x: WorkflowImageData, images_y: WorkflowImageData) -> BlockResult:
-        return [{"shapes": json.dumps(images_x.numpy_image.shape) + json.dumps(images_y.numpy_image.shape)}]
+    def run(
+        self, images_x: WorkflowImageData, images_y: WorkflowImageData
+    ) -> BlockResult:
+        return [
+            {
+                "shapes": json.dumps(images_x.numpy_image.shape)
+                + json.dumps(images_y.numpy_image.shape)
+            }
+        ]
 
 
 class MultiSIMDImageConsumerRaisingDimManifest(WorkflowBlockManifest):
@@ -198,21 +229,34 @@ class MultiSIMDImageConsumerRaisingDim(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return MultiSIMDImageConsumerRaisingDimManifest
 
-    def run(self, images_x: Batch[WorkflowImageData], images_y: Batch[WorkflowImageData]) -> BlockResult:
+    def run(
+        self, images_x: Batch[WorkflowImageData], images_y: Batch[WorkflowImageData]
+    ) -> BlockResult:
         results = []
         for image_x, image_y in zip(images_x, images_y):
-            results.append([{"shapes": json.dumps(image_x.numpy_image.shape) + json.dumps(image_y.numpy_image.shape)}])
+            results.append(
+                [
+                    {
+                        "shapes": json.dumps(image_x.numpy_image.shape)
+                        + json.dumps(image_y.numpy_image.shape)
+                    }
+                ]
+            )
         return results
 
 
-class MultiSIMDImageConsumerDecreasingDimManifest(WorkflowBlockManifest):
-    type: Literal["MultiSIMDImageConsumerDecreasingDim"]
+class MultiNonSIMDImageConsumerDecreasingDimManifest(WorkflowBlockManifest):
+    type: Literal["MultiNonSIMDImageConsumerDecreasingDim"]
     images_x: Selector(kind=[IMAGE_KIND])
     images_y: Selector(kind=[IMAGE_KIND])
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [OutputDefinition(name="shapes", kind=[STRING_KIND])]
+
+    @classmethod
+    def get_parameters_enforcing_auto_batch_casting(cls) -> List[str]:
+        return ["images_x", "images_y"]
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
@@ -223,16 +267,22 @@ class MultiSIMDImageConsumerDecreasingDimManifest(WorkflowBlockManifest):
         return -1
 
 
-class MultiSIMDImageConsumerDecreasingDim(WorkflowBlock):
+class MultiNonSIMDImageConsumerDecreasingDim(WorkflowBlock):
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
-        return MultiSIMDImageConsumerDecreasingDimManifest
+        return MultiNonSIMDImageConsumerDecreasingDimManifest
 
-    def run(self, images_x: Batch[WorkflowImageData], images_y: Batch[WorkflowImageData]) -> BlockResult:
+    def run(
+        self, images_x: Batch[WorkflowImageData], images_y: Batch[WorkflowImageData]
+    ) -> BlockResult:
+        print("images_x", images_x, "images_y", images_y)
         results = []
         for image_x, image_y in zip(images_x, images_y):
-            results.append(json.dumps(image_x.numpy_image.shape) + json.dumps(image_y.numpy_image.shape))
+            results.append(
+                json.dumps(image_x.numpy_image.shape)
+                + json.dumps(image_y.numpy_image.shape)
+            )
         return {"shapes": "\n".join(results)}
 
 
@@ -298,5 +348,5 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         MultiSIMDImageConsumerRaisingDim,
         IdentityBlock,
         IdentitySIMDBlock,
-        MultiSIMDImageConsumerDecreasingDim
+        MultiNonSIMDImageConsumerDecreasingDim,
     ]

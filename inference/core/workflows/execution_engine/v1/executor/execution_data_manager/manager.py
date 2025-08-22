@@ -3,7 +3,7 @@ from typing import Any, Dict, Generator, List, Optional, Set, Tuple, Union
 from networkx import DiGraph
 
 from inference.core import logger
-from inference.core.workflows.errors import ExecutionEngineRuntimeError, AssumptionError
+from inference.core.workflows.errors import AssumptionError, ExecutionEngineRuntimeError
 from inference.core.workflows.execution_engine.constants import (
     NODE_COMPILATION_OUTPUT_PROPERTY,
 )
@@ -140,8 +140,10 @@ class ExecutionDataManager:
         )
         if step_node.output_dimensionality == 1:
             # we only allow +1 dim increase for now, so it is fine to only handle this case
-            indices = [(i, ) for i in range(len(output))]
-            print(f"DIMENSIONALITY WAS JUST BORN FOR LINEAGE: {step_node.data_lineage}  with indices: {indices} :)")
+            indices = [(i,) for i in range(len(output))]
+            print(
+                f"DIMENSIONALITY WAS JUST BORN FOR LINEAGE: {step_node.data_lineage}  with indices: {indices} :)"
+            )
             self._dynamic_batches_manager.register_element_indices_for_lineage(
                 lineage=step_node.data_lineage,
                 indices=indices,
@@ -150,10 +152,10 @@ class ExecutionDataManager:
                 if not all(isinstance(element, FlowControl) for element in output):
                     raise ExecutionEngineRuntimeError(
                         public_message=f"Error in execution engine. Flow control step {step_name} "
-                                       f"expected to only produce FlowControl objects. This is most likely bug. "
-                                       f"Contact Roboflow team through github issues "
-                                       f"(https://github.com/roboflow/inference/issues) providing full context of"
-                                       f"the problem - including workflow definition you use.",
+                        f"expected to only produce FlowControl objects. This is most likely bug. "
+                        f"Contact Roboflow team through github issues "
+                        f"(https://github.com/roboflow/inference/issues) providing full context of"
+                        f"the problem - including workflow definition you use.",
                         context="workflow_execution | step_output_registration",
                     )
                 self._register_flow_control_output_for_simd_step(
@@ -268,19 +270,23 @@ class ExecutionDataManager:
         step_name = get_last_chunk_of_selector(selector=step_selector)
         if step_node.output_dimensionality == 0:
             print("COLLAPSE")
+            print("outputs", outputs)
             # SIMD step collapsing into scalar (can happen for auto-batch casting of parameters)
-            if not isinstance(outputs, list) or len(outputs) != 1:
-                raise ExecutionEngineRuntimeError(
-                    public_message=f"Error in execution engine. In context of SIMD step: {step_selector} attempts to "
-                                   f"register output which should collapse into a scalar, but detected batched output "
-                                   f"with more than a single element (or incompatible output), "
-                                   f"making the operation not possible. This is most likely bug (either a block or "
-                                   f"Execution Engine is faulty). Contact Roboflow team through github issues "
-                                   f"(https://github.com/roboflow/inference/issues) providing full context of"
-                                   f"the problem - including workflow definition you use.",
-                    context="workflow_execution | step_output_registration",
-                )
-            output = outputs[0]
+            if isinstance(outputs, list):
+                if len(outputs) != 1:
+                    raise ExecutionEngineRuntimeError(
+                        public_message=f"Error in execution engine. In context of SIMD step: {step_selector} attempts to "
+                        f"register output which should collapse into a scalar, but detected batched output "
+                        f"with more than a single element (or incompatible output), "
+                        f"making the operation not possible. This is most likely bug (either a block or "
+                        f"Execution Engine is faulty). Contact Roboflow team through github issues "
+                        f"(https://github.com/roboflow/inference/issues) providing full context of"
+                        f"the problem - including workflow definition you use.",
+                        context="workflow_execution | step_output_registration",
+                    )
+                output = outputs[0]
+            else:
+                output = outputs
             if isinstance(output, FlowControl):
                 self._register_flow_control_output_for_non_simd_step(
                     step_node=step_node,
@@ -360,7 +366,9 @@ class ExecutionDataManager:
                 f"the problem - including workflow definition you use.",
                 context="workflow_execution | getting_workflow_data_indices",
             )
-        print(f"get_selector_indices(selector={selector}): - selector_lineage: {selector_lineage}")
+        print(
+            f"get_selector_indices(selector={selector}): - selector_lineage: {selector_lineage}"
+        )
         if not selector_lineage:
             return None
         return self.get_lineage_indices(lineage=selector_lineage)
@@ -390,9 +398,7 @@ class ExecutionDataManager:
         ) and not self.does_input_represent_batch(input_selector=selector):
             input_name = get_last_chunk_of_selector(selector=selector)
             return self._runtime_parameters[input_name]
-        elif is_step_selector(
-            selector_or_value=potential_step_selector
-        ):
+        elif is_step_selector(selector_or_value=potential_step_selector):
             step_node_data = node_as(
                 execution_graph=self._execution_graph,
                 node=potential_step_selector,
@@ -401,12 +407,12 @@ class ExecutionDataManager:
             if step_node_data.output_dimensionality != 0:
                 raise ExecutionEngineRuntimeError(
                     public_message=f"Error in execution engine. Attempted to get value of: {selector}, "
-                                   f"which was supposed to be registered as scalar output, but in fact Execution "
-                                   f"Engine denoted the output as batched one (with dimensionality: "
-                                   f"{step_node_data.output_dimensionality}). "
-                                   f"This is most likely bug. Contact Roboflow team through github issues "
-                                   f"(https://github.com/roboflow/inference/issues) providing full context of"
-                                   f"the problem - including workflow definition you use.",
+                    f"which was supposed to be registered as scalar output, but in fact Execution "
+                    f"Engine denoted the output as batched one (with dimensionality: "
+                    f"{step_node_data.output_dimensionality}). "
+                    f"This is most likely bug. Contact Roboflow team through github issues "
+                    f"(https://github.com/roboflow/inference/issues) providing full context of"
+                    f"the problem - including workflow definition you use.",
                     context="workflow_execution | getting_workflow_data",
                 )
             step_name = get_last_chunk_of_selector(selector=potential_step_selector)
@@ -460,7 +466,9 @@ class ExecutionDataManager:
                     step_name=step_name,
                     batch_elements_indices=indices,
                 )
-            print(f"Getting batch results with selector: {selector} from indices: {indices}")
+            print(
+                f"Getting batch results with selector: {selector} from indices: {indices}"
+            )
             return self._execution_cache.get_batch_output(
                 selector=selector,
                 batch_elements_indices=indices,

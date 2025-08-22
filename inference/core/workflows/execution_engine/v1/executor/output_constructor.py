@@ -11,7 +11,8 @@ from inference.core.workflows.core_steps.common.utils import (
 )
 from inference.core.workflows.errors import AssumptionError, ExecutionEngineRuntimeError
 from inference.core.workflows.execution_engine.constants import (
-    WORKFLOW_INPUT_BATCH_LINEAGE_ID, TOP_LEVEL_LINEAGE_KEY,
+    TOP_LEVEL_LINEAGE_KEY,
+    WORKFLOW_INPUT_BATCH_LINEAGE_ID,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     CoordinatesSystem,

@@ -1336,11 +1336,7 @@ def test_workflow_when_non_batch_oriented_step_feeds_compound_strictly_batch_ori
     )
 
     # when
-    results = execution_engine.run(
-        runtime_parameters={
-            "non_batch_parameter": "some"
-        }
-    )
+    results = execution_engine.run(runtime_parameters={"non_batch_parameter": "some"})
 
     # then
     assert results == [{"result": 0.4}]
@@ -1760,7 +1756,7 @@ def test_workflow_when_non_batch_oriented_input_feeds_compound_strictly_batch_or
     result = execution_engine.run(runtime_parameters={"data": "some"})
 
     # then
-    assert result == [{'result': 0.4}]
+    assert result == [{"result": 0.4}]
 
 
 WORKFLOW_WITH_BATCH_ORIENTED_INPUT_FEEDING_COMPOUND_NON_BATCH_ORIENTED_STEP = {

@@ -4,11 +4,12 @@ from typing import Any, Dict, Generator, List, Optional, Set, Tuple, TypeVar, Un
 from inference.core.workflows.errors import AssumptionError, ExecutionEngineRuntimeError
 from inference.core.workflows.execution_engine.entities.base import Batch
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
+    AutoBatchCastingConfig,
     CompoundStepInputDefinition,
     DynamicStepInputDefinition,
     StaticStepInputDefinition,
     StepInputDefinition,
-    StepNode, AutoBatchCastingConfig,
+    StepNode,
 )
 from inference.core.workflows.execution_engine.v1.compiler.utils import (
     get_last_chunk_of_selector,
@@ -358,6 +359,7 @@ def prepare_parameters(
     runtime_parameters: Dict[str, Any],
     execution_cache: ExecutionCache,
 ) -> BatchModeSIMDStepInput:
+    print("DDD", step_node.auto_batch_casting_lineage_supports)
     result = {}
     indices_for_parameter = {}
     guard_of_indices_wrapping = GuardForIndicesWrapping()
@@ -399,7 +401,7 @@ def prepare_parameters(
             contains_empty_scalar_step_output_selector
             or value_contains_empty_scalar_step_output_selector
         )
-    print("indices_for_parameter", indices_for_parameter)
+    print("indices_for_parameter", indices_for_parameter, result)
     batch_parameters_indices = [
         i for i in indices_for_parameter.values() if i is not None
     ]
@@ -509,7 +511,10 @@ def get_non_compound_parameter_value(
     auto_batch_casting_lineage_supports: Dict[str, AutoBatchCastingConfig],
 ) -> Tuple[Any, Optional[List[DynamicBatchIndex]], bool]:
     if not parameter.is_batch_oriented():
-        requested_as_batch = parameter.parameter_specification.parameter_name in auto_batch_casting_lineage_supports
+        requested_as_batch = (
+            parameter.parameter_specification.parameter_name
+            in auto_batch_casting_lineage_supports
+        )
         if parameter.points_to_input():
             input_parameter: DynamicStepInputDefinition = parameter  # type: ignore
             parameter_name = get_last_chunk_of_selector(
@@ -625,6 +630,8 @@ def get_non_compound_parameter_value(
             f"the problem - including workflow definition you use.",
             context="workflow_execution | step_input_assembling",
         )
+    if step_execution_dimensionality == 0:
+        return Batch(batch_input, lineage_indices), lineage_indices, False
     upper_level_indices = dynamic_batches_manager.get_indices_for_data_lineage(
         lineage=dynamic_parameter.data_lineage[:-1],
     )
@@ -646,9 +653,11 @@ def apply_auto_batch_casting(
     step_execution_dimensionality: int,
     guard_of_indices_wrapping: GuardForIndicesWrapping,
 ) -> Tuple[Any, List[DynamicBatchIndex], bool]:
-    print(f"parameter_name: {parameter_name} - auto_batch_casting_config: {auto_batch_casting_config}")
+    print(
+        f"parameter_name: {parameter_name} - auto_batch_casting_config: {auto_batch_casting_config}"
+    )
     if auto_batch_casting_config.lineage_support is None:
-        indices = [(0, ) * auto_batch_casting_config.casted_dimensionality]
+        indices = [(0,) * auto_batch_casting_config.casted_dimensionality]
     else:
         indices = dynamic_batches_manager.get_indices_for_data_lineage(
             lineage=auto_batch_casting_config.lineage_support,
@@ -657,7 +666,7 @@ def apply_auto_batch_casting(
             auto_batch_casting_config.lineage_support
         )
         if missing_dimensions > 0:
-            padding = (0, ) * missing_dimensions
+            padding = (0,) * missing_dimensions
             indices = [i + padding for i in indices]
     batch_content = [value] * len(indices)
     created_batch = Batch(content=batch_content, indices=indices)
@@ -675,7 +684,13 @@ def apply_auto_batch_casting(
             f"the problem - including workflow definition you use.",
             context="workflow_execution | step_input_assembling",
         )
-    if abs(auto_batch_casting_config.casted_dimensionality - step_execution_dimensionality) > 1:
+    if (
+        abs(
+            auto_batch_casting_config.casted_dimensionality
+            - step_execution_dimensionality
+        )
+        > 1
+    ):
         raise ExecutionEngineRuntimeError(
             public_message=f"Detected a situation when parameter: "
             f"{parameter_name} has auto batch casted "
@@ -687,24 +702,36 @@ def apply_auto_batch_casting(
             f"the problem - including workflow definition you use.",
             context="workflow_execution | step_input_assembling",
         )
+    print(f"SSSS, step_execution_dimensionality: {step_execution_dimensionality}")
+    upper_level_lineage_dimensionality = (
+        auto_batch_casting_config.casted_dimensionality - 1
+    )
+    if upper_level_lineage_dimensionality == 0:
+        # for batch collapse into scalar
+        return created_batch, indices, contains_empty_scalar_step_output_selector
     if auto_batch_casting_config.lineage_support is None:
         upper_level_indices = [indices[0][:-1]]
     else:
-        upper_level_lineage_dimensionality = auto_batch_casting_config.casted_dimensionality - 1
-        upper_level_lineage = auto_batch_casting_config.lineage_support[:upper_level_lineage_dimensionality]
-        if upper_level_lineage_dimensionality < 1 or len(upper_level_lineage) < upper_level_lineage_dimensionality:
-            raise ExecutionEngineRuntimeError(
+        upper_level_lineage = auto_batch_casting_config.lineage_support[
+            :upper_level_lineage_dimensionality
+        ]
+        if (
+            upper_level_lineage_dimensionality < 1
+            or len(upper_level_lineage) < upper_level_lineage_dimensionality
+        ):
+            raise AssumptionError(
                 public_message=f"Detected a situation when parameter: {parameter_name} requires dimensionality "
-                               f"wrapping, but registered lineage support is incompatible which should be detected "
-                               f"by the compiler. This is most likely a bug. "
-                               f"Contact Roboflow team through github issues "
-                               f"(https://github.com/roboflow/inference/issues) providing full context of"
-                               f"the problem - including workflow definition you use.",
+                f"wrapping, but registered lineage support is incompatible which should be detected "
+                f"by the compiler. This is most likely a bug. "
+                f"Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full context of"
+                f"the problem - including workflow definition you use.",
                 context="workflow_execution | step_input_assembling",
             )
         upper_level_indices = dynamic_batches_manager.get_indices_for_data_lineage(
             lineage=upper_level_lineage,
         )
+    print("REDUCTION!")
     result = reduce_batch_dimensionality(
         indices=indices,
         upper_level_index=upper_level_indices,

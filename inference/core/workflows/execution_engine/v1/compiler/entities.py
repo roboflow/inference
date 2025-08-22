@@ -230,7 +230,9 @@ class StepNode(ExecutionGraphNode):
     child_execution_branches: Dict[str, str] = field(default_factory=dict)
     execution_branches_impacting_inputs: Set[str] = field(default_factory=set)
     batch_oriented_parameters: Set[str] = field(default_factory=set)
-    auto_batch_casting_lineage_supports: Dict[str, AutoBatchCastingConfig] = field(default_factory=dict)
+    auto_batch_casting_lineage_supports: Dict[str, AutoBatchCastingConfig] = field(
+        default_factory=dict
+    )
     step_execution_dimensionality: int = 0
 
     def controls_flow(self) -> bool:
