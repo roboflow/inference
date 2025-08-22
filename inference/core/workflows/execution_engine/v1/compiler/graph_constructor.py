@@ -798,10 +798,7 @@ def denote_data_flow_for_step(
             output_dimensionality_offset=output_dimensionality_offset,
         )
     )
-    truly_batch_parameters = parameters_with_batch_inputs.difference(
-        scalar_parameters_to_be_batched
-    )
-    if not truly_batch_parameters:
+    if not all_lineages:
         if manifest.get_output_dimensionality_offset() > 0:
             # brave decision to open a Pandora box
             data_lineage = [node]
@@ -1631,14 +1628,14 @@ def get_input_data_lineage_excluding_auto_batch_casting(
     lineage_deduplication_set = set()
     lineages = []
     for property_name, input_definition in input_data.items():
-        if property_name in scalar_parameters_to_be_batched:
-            continue
         new_lineages_detected_within_property_data = get_lineage_for_input_property(
             step_name=step_name,
             property_name=property_name,
             input_definition=input_definition,
             lineage_deduplication_set=lineage_deduplication_set,
         )
+        if property_name in scalar_parameters_to_be_batched and len(new_lineages_detected_within_property_data) == 0:
+            continue
         lineages.extend(new_lineages_detected_within_property_data)
     if not lineages:
         return lineages
