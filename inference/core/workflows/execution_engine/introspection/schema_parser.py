@@ -263,10 +263,13 @@ def retrieve_selectors_from_schema(
     inputs_accepting_batches_and_scalars: Set[str],
     inputs_enforcing_auto_batch_casting: Set[str],
 ) -> Dict[str, SelectorDefinition]:
-    result = []
-    for property_name, property_definition in schema[PROPERTIES_KEY].items():
+    # Optimize by directly building OrderedDict and reducing intermediate list allocations
+    result = OrderedDict()
+    properties = schema[PROPERTIES_KEY]
+    for property_name, property_definition in properties.items():
         if property_name in EXCLUDED_PROPERTIES:
             continue
+
         property_dimensionality_offset = inputs_dimensionality_offsets.get(
             property_name, 0
         )
@@ -274,6 +277,8 @@ def retrieve_selectors_from_schema(
             property_name == dimensionality_reference_property
         )
         property_description = property_definition.get(DESCRIPTION_KEY, "not available")
+
+        # Fast-path branching with early returns to avoid unnecessary function calls
         if ITEMS_KEY in property_definition:
             selector = retrieve_selectors_from_simple_property(
                 property_name=property_name,
@@ -312,8 +317,8 @@ def retrieve_selectors_from_schema(
                 inputs_enforcing_auto_batch_casting=inputs_enforcing_auto_batch_casting,
             )
         if selector is not None:
-            result.append(selector)
-    return OrderedDict((r.property_name, r) for r in result)
+            result[property_name] = selector
+    return result
 
 
 def retrieve_selectors_from_simple_property(
@@ -328,27 +333,34 @@ def retrieve_selectors_from_simple_property(
     is_list_element: bool = False,
     is_dict_element: bool = False,
 ) -> Optional[SelectorDefinition]:
-    if REFERENCE_KEY in property_definition:
-        declared_points_to_batch = property_definition.get(
-            SELECTOR_POINTS_TO_BATCH_KEY, False
-        )
+    # Optimize membership tests and avoid repeated property accesses
+    pd = property_definition
+
+    if REFERENCE_KEY in pd:
+        declared_points_to_batch = pd.get(SELECTOR_POINTS_TO_BATCH_KEY, False)
         if declared_points_to_batch == "dynamic":
-            if property_name in inputs_accepting_batches_and_scalars:
+            in_batches_and_scalars = (
+                property_name in inputs_accepting_batches_and_scalars
+            )
+            if in_batches_and_scalars:
                 points_to_batch = {True, False}
             else:
-                points_to_batch = {
-                    property_name in inputs_accepting_batches
-                    or property_name in inputs_enforcing_auto_batch_casting
-                }
+                # Only evaluate set membership once
+                in_batches = property_name in inputs_accepting_batches
+                in_auto_cast = property_name in inputs_enforcing_auto_batch_casting
+                points_to_batch = {in_batches or in_auto_cast}
         else:
             points_to_batch = {declared_points_to_batch}
+        kinds = pd.get(KIND_KEY, [])
+        # Avoid list comprehension if empty
+        if kinds:
+            kind_list = [Kind.model_validate(k) for k in kinds]
+        else:
+            kind_list = []
         allowed_references = [
             ReferenceDefinition(
-                selected_element=property_definition[SELECTED_ELEMENT_KEY],
-                kind=[
-                    Kind.model_validate(k)
-                    for k in property_definition.get(KIND_KEY, [])
-                ],
+                selected_element=pd[SELECTED_ELEMENT_KEY],
+                kind=kind_list,
                 points_to_batch=points_to_batch,
             )
         ]
@@ -361,14 +373,15 @@ def retrieve_selectors_from_simple_property(
             dimensionality_offset=property_dimensionality_offset,
             is_dimensionality_reference_property=is_dimensionality_reference_property,
         )
-    if ITEMS_KEY in property_definition:
+
+    if ITEMS_KEY in pd:
         if is_list_element or is_dict_element:
             # ignoring nested references above first level of depth
             return None
         return retrieve_selectors_from_simple_property(
             property_name=property_name,
             property_description=property_description,
-            property_definition=property_definition[ITEMS_KEY],
+            property_definition=pd[ITEMS_KEY],
             property_dimensionality_offset=property_dimensionality_offset,
             is_dimensionality_reference_property=is_dimensionality_reference_property,
             inputs_accepting_batches=inputs_accepting_batches,
@@ -376,11 +389,12 @@ def retrieve_selectors_from_simple_property(
             inputs_enforcing_auto_batch_casting=inputs_enforcing_auto_batch_casting,
             is_list_element=True,
         )
-    if property_defines_union(property_definition=property_definition):
+
+    if property_defines_union(property_definition=pd):
         return retrieve_selectors_from_union_definition(
             property_name=property_name,
             property_description=property_description,
-            union_definition=property_definition,
+            union_definition=pd,
             is_list_element=is_list_element,
             is_dict_element=is_dict_element,
             property_dimensionality_offset=property_dimensionality_offset,
