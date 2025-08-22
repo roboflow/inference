@@ -246,7 +246,7 @@ def construct_simd_step_input(
     dynamic_batches_manager: DynamicBatchesManager,
     branching_manager: BranchingManager,
 ) -> BatchModeSIMDStepInput:
-    masks = construct_mask_for_all_inputs_dimensionalities(
+    masks, scalars_discarded = construct_mask_for_all_inputs_dimensionalities(
         step_node=step_node,
         branching_manager=branching_manager,
     )
@@ -254,6 +254,7 @@ def construct_simd_step_input(
         step_node=step_node,
         dynamic_batches_manager=dynamic_batches_manager,
         masks=masks,
+        scalars_discarded=scalars_discarded,
         runtime_parameters=runtime_parameters,
         execution_cache=execution_cache,
     )
@@ -262,33 +263,41 @@ def construct_simd_step_input(
 def construct_mask_for_all_inputs_dimensionalities(
     step_node: StepNode,
     branching_manager: BranchingManager,
-) -> Any:
+) -> Tuple[Any, bool]:
+    print(f"Collecting masks for: {step_node.name}")
     inputs_dimensionalities = collect_inputs_dimensionalities(step_node=step_node)
     all_dimensionalities = {dim for dim in inputs_dimensionalities.values() if dim > 0}
+    print("all_dimensionalities", all_dimensionalities)
     batch_masks, non_batch_masks = [], set()
+    print(f"Execution branches impacting inputs: {step_node.execution_branches_impacting_inputs}")
     for execution_branch in step_node.execution_branches_impacting_inputs:
         if not branching_manager.is_execution_branch_registered(
             execution_branch=execution_branch
         ):
+            print(f"EXECUTION BRANCH: {execution_branch} not registered")
             non_batch_masks.add(False)
             continue
         if branching_manager.is_execution_branch_batch_oriented(
             execution_branch=execution_branch
         ):
             mask = branching_manager.get_mask(execution_branch=execution_branch)
+            print(f"EXECUTION BRANCH: {execution_branch} is batch oriented - mask: {mask}")
             batch_masks.append(mask)
         else:
             mask = branching_manager.get_mask(execution_branch=execution_branch)
+            print(f"EXECUTION BRANCH: {execution_branch} is not batch oriented - mask: {mask}")
             non_batch_masks.add(mask)
-    if False in non_batch_masks:
-        return {dimension: set() for dimension in all_dimensionalities}
+    scalar_mask_contains_false = False in non_batch_masks
+    if scalar_mask_contains_false:
+        print("CANCELLING OUT!")
+        return {dimension: set() for dimension in all_dimensionalities}, scalar_mask_contains_false
     return {
         dimension: get_masks_intersection_up_to_dimension(
             batch_masks=batch_masks,
             dimension=dimension,
         )
         for dimension in all_dimensionalities
-    }
+    }, scalar_mask_contains_false
 
 
 def collect_inputs_dimensionalities(
@@ -356,9 +365,11 @@ def prepare_parameters(
     step_node: StepNode,
     dynamic_batches_manager: DynamicBatchesManager,
     masks: Dict[int, Optional[Set[DynamicBatchIndex]]],
+    scalars_discarded: bool,
     runtime_parameters: Dict[str, Any],
     execution_cache: ExecutionCache,
 ) -> BatchModeSIMDStepInput:
+    print(f"PREPARING PARAMS FOR: {step_node.name} - masks: {masks}")
     print("DDD", step_node.auto_batch_casting_lineage_supports)
     step_requests_batch_input = step_node.step_manifest.accepts_batch_input()
     result = {}
@@ -376,6 +387,7 @@ def prepare_parameters(
                 parameter=parameter_specs,
                 step_execution_dimensionality=step_node.step_execution_dimensionality,
                 masks=masks,
+                scalars_discarded=scalars_discarded,
                 dynamic_batches_manager=dynamic_batches_manager,
                 runtime_parameters=runtime_parameters,
                 execution_cache=execution_cache,
@@ -393,6 +405,7 @@ def prepare_parameters(
                 parameter=parameter_specs,
                 step_execution_dimensionality=step_node.step_execution_dimensionality,
                 masks=masks,
+                scalars_discarded=scalars_discarded,
                 dynamic_batches_manager=dynamic_batches_manager,
                 runtime_parameters=runtime_parameters,
                 execution_cache=execution_cache,
@@ -438,6 +451,7 @@ def get_compound_parameter_value(
     parameter: CompoundStepInputDefinition,
     step_execution_dimensionality: int,
     masks: Dict[int, Optional[Set[DynamicBatchIndex]]],
+    scalars_discarded: bool,
     dynamic_batches_manager: DynamicBatchesManager,
     runtime_parameters: Dict[str, Any],
     execution_cache: ExecutionCache,
@@ -458,6 +472,7 @@ def get_compound_parameter_value(
                 parameter=nested_element,
                 step_execution_dimensionality=step_execution_dimensionality,
                 masks=masks,
+                scalars_discarded=scalars_discarded,
                 dynamic_batches_manager=dynamic_batches_manager,
                 runtime_parameters=runtime_parameters,
                 execution_cache=execution_cache,
@@ -483,6 +498,7 @@ def get_compound_parameter_value(
                 parameter=nested_element,
                 step_execution_dimensionality=step_execution_dimensionality,
                 masks=masks,
+                scalars_discarded=scalars_discarded,
                 dynamic_batches_manager=dynamic_batches_manager,
                 runtime_parameters=runtime_parameters,
                 execution_cache=execution_cache,
@@ -510,6 +526,7 @@ def get_non_compound_parameter_value(
     parameter: StepInputDefinition,
     step_execution_dimensionality: int,
     masks: Dict[int, Optional[Set[DynamicBatchIndex]]],
+    scalars_discarded: bool,
     dynamic_batches_manager: DynamicBatchesManager,
     runtime_parameters: Dict[str, Any],
     execution_cache: ExecutionCache,
@@ -541,6 +558,8 @@ def get_non_compound_parameter_value(
                     step_execution_dimensionality=step_execution_dimensionality,
                     guard_of_indices_wrapping=guard_of_indices_wrapping,
                     step_requests_batch_input=step_requests_batch_input,
+                    masks=masks,
+                    scalars_discarded=False,
                 )
         elif parameter.points_to_step_output():
             input_parameter: DynamicStepInputDefinition = parameter  # type: ignore
@@ -561,24 +580,12 @@ def get_non_compound_parameter_value(
                     step_execution_dimensionality=step_execution_dimensionality,
                     guard_of_indices_wrapping=guard_of_indices_wrapping,
                     step_requests_batch_input=step_requests_batch_input,
+                    masks=masks,
+                    scalars_discarded=scalars_discarded,
                 )
         else:
             static_input: StaticStepInputDefinition = parameter  # type: ignore
-            if not requested_as_batch:
-                return static_input.value, None, False
-            else:
-                return apply_auto_batch_casting(
-                    parameter_name=parameter.parameter_specification.parameter_name,
-                    value=static_input.value,
-                    auto_batch_casting_config=auto_batch_casting_lineage_supports[
-                        parameter.parameter_specification.parameter_name
-                    ],
-                    contains_empty_scalar_step_output_selector=False,
-                    dynamic_batches_manager=dynamic_batches_manager,
-                    step_execution_dimensionality=step_execution_dimensionality,
-                    guard_of_indices_wrapping=guard_of_indices_wrapping,
-                    step_requests_batch_input=step_requests_batch_input,
-                )
+            return static_input.value, None, False
     dynamic_parameter: DynamicStepInputDefinition = parameter  # type: ignore
     parameter_dimensionality = dynamic_parameter.get_dimensionality()
     lineage_indices = dynamic_batches_manager.get_indices_for_data_lineage(
@@ -677,6 +684,8 @@ def apply_auto_batch_casting(
     step_execution_dimensionality: int,
     guard_of_indices_wrapping: GuardForIndicesWrapping,
     step_requests_batch_input: bool,
+    masks: Dict[int, Optional[Set[DynamicBatchIndex]]],
+    scalars_discarded: bool,
 ) -> Tuple[Any, List[DynamicBatchIndex], bool]:
     print(
         f"parameter_name: {parameter_name} - auto_batch_casting_config: {auto_batch_casting_config}"
@@ -693,10 +702,25 @@ def apply_auto_batch_casting(
         if missing_dimensions > 0:
             padding = (0,) * missing_dimensions
             indices = [i + padding for i in indices]
-    batch_content = [value] * len(indices)
+    if scalars_discarded:
+        batch_content = [None] * len(indices)
+    elif auto_batch_casting_config.lineage_support is None:
+        batch_content = [value] * len(indices)
+    else:
+        support_dimensionality = len(auto_batch_casting_config.lineage_support)
+        mask_for_support_dimensionality = masks[support_dimensionality]
+        if mask_for_support_dimensionality is None:
+            batch_content = [value] * len(indices)
+        else:
+            batch_content = []
+            for index in indices:
+                if index[:support_dimensionality] in mask_for_support_dimensionality:
+                    batch_content.append(value)
+                else:
+                    batch_content.append(None)
     created_batch = Batch(content=batch_content, indices=indices)
     if step_execution_dimensionality == auto_batch_casting_config.casted_dimensionality:
-        return created_batch, indices, contains_empty_scalar_step_output_selector
+        return created_batch, indices, contains_empty_scalar_step_output_selector or scalars_discarded
     if step_execution_dimensionality > auto_batch_casting_config.casted_dimensionality:
         raise ExecutionEngineRuntimeError(
             public_message=f"Detected a situation when parameter: "
@@ -733,7 +757,7 @@ def apply_auto_batch_casting(
     )
     if upper_level_lineage_dimensionality == 0 and not step_requests_batch_input:
         # for batch collapse into scalar
-        return created_batch, indices, contains_empty_scalar_step_output_selector
+        return created_batch, indices, contains_empty_scalar_step_output_selector or scalars_discarded
     if auto_batch_casting_config.lineage_support is None:
         upper_level_indices = [indices[0][:-1]]
     else:
@@ -767,7 +791,7 @@ def apply_auto_batch_casting(
         data=batch_content,
         guard_of_indices_wrapping=guard_of_indices_wrapping,
     )
-    return result, result.indices, contains_empty_scalar_step_output_selector
+    return result, result.indices, contains_empty_scalar_step_output_selector or scalars_discarded
 
 
 def _flatten_batch_oriented_inputs(

@@ -180,6 +180,7 @@ class ExecutionDataManager:
                 context="workflow_execution | step_output_registration",
             )
         if isinstance(output, FlowControl):
+            print("FLOW", step_node.name, output)
             self._register_flow_control_output_for_non_simd_step(
                 step_node=step_node,
                 output=output,
@@ -273,6 +274,10 @@ class ExecutionDataManager:
             print("outputs", outputs)
             # SIMD step collapsing into scalar (can happen for auto-batch casting of parameters)
             if isinstance(outputs, list):
+                if len(outputs) == 0:
+                    print("TERMINATING", step_selector)
+                    # termination of the computation as in NON-SIMD case
+                    return None
                 if len(outputs) != 1:
                     raise ExecutionEngineRuntimeError(
                         public_message=f"Error in execution engine. In context of SIMD step: {step_selector} attempts to "
@@ -482,26 +487,6 @@ class ExecutionDataManager:
                 f"the problem - including workflow definition you use.",
                 context="workflow_execution | step_output_registration",
             )
-
-    # def should_simd_step_output_be_casted_to_scalar(self, step_selector: str) -> bool:
-    #     if not self.is_step_simd(step_selector=step_selector):
-    #         raise AssumptionError(
-    #             public_message=f"Error in execution engine. Attempted to verify SIMD step output auto-casting to "
-    #                            f"scalar for step {step_selector} which is not registered as SIMD step. "
-    #                            f"This is most likely bug. Contact Roboflow team through github issues "
-    #                            f"(https://github.com/roboflow/inference/issues) providing full context of"
-    #                            f"the problem - including workflow definition you use.",
-    #             context="workflow_execution | step_output_registration",
-    #         )
-    #     step_node_data = node_as(
-    #         execution_graph=self._execution_graph,
-    #         node=step_selector,
-    #         expected_type=StepNode,
-    #     )
-    #     if not step_node_data.scalar_parameters_to_be_batched:
-    #         return False
-    #     a = step_node_data.output_dimensionality - step_node_data.step_execution_dimensionality
-    #     return len(step_node_data.batch_oriented_parameters) == 0
 
     def is_step_simd(self, step_selector: str) -> bool:
         step_node_data = node_as(

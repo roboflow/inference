@@ -15,8 +15,9 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     STRING_KIND,
-    Selector,
+    Selector, StepSelector,
 )
+from inference.core.workflows.execution_engine.v1.entities import FlowControl
 from inference.core.workflows.prototypes.block import (
     BlockResult,
     WorkflowBlock,
@@ -856,6 +857,91 @@ class SIMDConsumerAcceptingDictDecDimBlock(WorkflowBlock):
         return results
 
 
+class AlwaysTerminateManifest(WorkflowBlockManifest):
+    type: Literal["AlwaysTerminate"]
+    x: Union[Selector(), Any]
+    next_steps: List[StepSelector] = Field(
+        description="Steps to execute if the condition evaluates to true.",
+        examples=[["$steps.on_true"]],
+    )
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return []
+
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return ">=1.3.0,<2.0.0"
+
+
+class AlwaysTerminateBlock(WorkflowBlock):
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return AlwaysTerminateManifest
+
+    def run(self, x: Any, next_steps: List[StepSelector]) -> BlockResult:
+        return FlowControl(mode="terminate_branch")
+
+
+class AlwaysPassManifest(WorkflowBlockManifest):
+    type: Literal["AlwaysPass"]
+    x: Union[Selector(), Any]
+    next_steps: List[StepSelector] = Field(
+        description="Steps to execute if the condition evaluates to true.",
+        examples=[["$steps.on_true"]],
+    )
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return []
+
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return ">=1.3.0,<2.0.0"
+
+
+class AlwaysPassBlock(WorkflowBlock):
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return AlwaysPassManifest
+
+    def run(self, x: Any, next_steps: List[StepSelector]) -> BlockResult:
+        return FlowControl(mode="select_step", context=next_steps)
+
+
+class EachSecondPassManifest(WorkflowBlockManifest):
+    type: Literal["EachSecondPass"]
+    x: Union[Selector(), Any]
+    next_steps: List[StepSelector] = Field(
+        description="Steps to execute if the condition evaluates to true.",
+        examples=[["$steps.on_true"]],
+    )
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return []
+
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return ">=1.3.0,<2.0.0"
+
+
+class EachSecondPassBlock(WorkflowBlock):
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return EachSecondPassManifest
+
+    def __init__(self):
+        self._last_passed = False
+
+    def run(self, x: Any, next_steps: List[StepSelector]) -> BlockResult:
+        if self._last_passed:
+            self._last_passed = False
+            return FlowControl(mode="terminate_branch")
+        self._last_passed = True
+        return FlowControl(mode="select_step", context=next_steps)
+
+
 def load_blocks() -> List[Type[WorkflowBlock]]:
     return [
         ImageProducerBlock,
@@ -882,4 +968,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         SIMDConsumerAcceptingDictIncDimBlock,
         SIMDConsumerAcceptingDictDecDimBlock,
         SIMDConsumerAcceptingListDecDimBlock,
+        AlwaysTerminateBlock,
+        AlwaysPassBlock,
+        EachSecondPassBlock,
     ]
