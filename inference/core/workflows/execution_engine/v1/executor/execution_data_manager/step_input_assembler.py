@@ -269,7 +269,9 @@ def construct_mask_for_all_inputs_dimensionalities(
     all_dimensionalities = {dim for dim in inputs_dimensionalities.values() if dim > 0}
     print("all_dimensionalities", all_dimensionalities)
     batch_masks, non_batch_masks = [], set()
-    print(f"Execution branches impacting inputs: {step_node.execution_branches_impacting_inputs}")
+    print(
+        f"Execution branches impacting inputs: {step_node.execution_branches_impacting_inputs}"
+    )
     for execution_branch in step_node.execution_branches_impacting_inputs:
         if not branching_manager.is_execution_branch_registered(
             execution_branch=execution_branch
@@ -281,16 +283,22 @@ def construct_mask_for_all_inputs_dimensionalities(
             execution_branch=execution_branch
         ):
             mask = branching_manager.get_mask(execution_branch=execution_branch)
-            print(f"EXECUTION BRANCH: {execution_branch} is batch oriented - mask: {mask}")
+            print(
+                f"EXECUTION BRANCH: {execution_branch} is batch oriented - mask: {mask}"
+            )
             batch_masks.append(mask)
         else:
             mask = branching_manager.get_mask(execution_branch=execution_branch)
-            print(f"EXECUTION BRANCH: {execution_branch} is not batch oriented - mask: {mask}")
+            print(
+                f"EXECUTION BRANCH: {execution_branch} is not batch oriented - mask: {mask}"
+            )
             non_batch_masks.add(mask)
     scalar_mask_contains_false = False in non_batch_masks
     if scalar_mask_contains_false:
         print("CANCELLING OUT!")
-        return {dimension: set() for dimension in all_dimensionalities}, scalar_mask_contains_false
+        return {
+            dimension: set() for dimension in all_dimensionalities
+        }, scalar_mask_contains_false
     return {
         dimension: get_masks_intersection_up_to_dimension(
             batch_masks=batch_masks,
@@ -720,7 +728,11 @@ def apply_auto_batch_casting(
                     batch_content.append(None)
     created_batch = Batch(content=batch_content, indices=indices)
     if step_execution_dimensionality == auto_batch_casting_config.casted_dimensionality:
-        return created_batch, indices, contains_empty_scalar_step_output_selector or scalars_discarded
+        return (
+            created_batch,
+            indices,
+            contains_empty_scalar_step_output_selector or scalars_discarded,
+        )
     if step_execution_dimensionality > auto_batch_casting_config.casted_dimensionality:
         raise ExecutionEngineRuntimeError(
             public_message=f"Detected a situation when parameter: "
@@ -757,7 +769,11 @@ def apply_auto_batch_casting(
     )
     if upper_level_lineage_dimensionality == 0 and not step_requests_batch_input:
         # for batch collapse into scalar
-        return created_batch, indices, contains_empty_scalar_step_output_selector or scalars_discarded
+        return (
+            created_batch,
+            indices,
+            contains_empty_scalar_step_output_selector or scalars_discarded,
+        )
     if auto_batch_casting_config.lineage_support is None:
         upper_level_indices = [indices[0][:-1]]
     else:
@@ -791,7 +807,11 @@ def apply_auto_batch_casting(
         data=batch_content,
         guard_of_indices_wrapping=guard_of_indices_wrapping,
     )
-    return result, result.indices, contains_empty_scalar_step_output_selector or scalars_discarded
+    return (
+        result,
+        result.indices,
+        contains_empty_scalar_step_output_selector or scalars_discarded,
+    )
 
 
 def _flatten_batch_oriented_inputs(

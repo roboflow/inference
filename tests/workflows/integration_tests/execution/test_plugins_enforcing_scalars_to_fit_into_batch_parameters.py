@@ -2960,7 +2960,12 @@ TEST_WORKFLOW_WITH_FLOW_CONTROL_BLOCKING_SIMD_PRODUCER = {
     "version": "1.1",
     "inputs": [],
     "steps": [
-        {"type": "AlwaysTerminate", "name": "condition", "x": "dummy", "next_steps": ["$steps.image_producer_x"]},
+        {
+            "type": "AlwaysTerminate",
+            "name": "condition",
+            "x": "dummy",
+            "next_steps": ["$steps.image_producer_x"],
+        },
         {"type": "ImageProducer", "name": "image_producer_x", "shape": (50, 50, 3)},
         {"type": "ImageProducer", "name": "image_producer_y", "shape": (60, 60, 3)},
         {
@@ -3012,7 +3017,12 @@ TEST_WORKFLOW_WITH_FLOW_CONTROL_PASSING_SIMD_PRODUCER = {
     "version": "1.1",
     "inputs": [],
     "steps": [
-        {"type": "AlwaysPass", "name": "condition", "x": "dummy", "next_steps": ["$steps.image_producer_x"]},
+        {
+            "type": "AlwaysPass",
+            "name": "condition",
+            "x": "dummy",
+            "next_steps": ["$steps.image_producer_x"],
+        },
         {"type": "ImageProducer", "name": "image_producer_x", "shape": (50, 50, 3)},
         {"type": "ImageProducer", "name": "image_producer_y", "shape": (60, 60, 3)},
         {
@@ -3065,7 +3075,12 @@ TEST_WORKFLOW_WITH_FLOW_CONTROL_BLOCKING_SIMD_PRODUCER_AFTER_PRODUCTION = {
     "inputs": [],
     "steps": [
         {"type": "ImageProducer", "name": "image_producer_x", "shape": (50, 50, 3)},
-        {"type": "AlwaysTerminate", "name": "condition", "x": "$steps.image_producer_x.image", "next_steps": ["$steps.image_consumer"]},
+        {
+            "type": "AlwaysTerminate",
+            "name": "condition",
+            "x": "$steps.image_producer_x.image",
+            "next_steps": ["$steps.image_consumer"],
+        },
         {"type": "ImageProducer", "name": "image_producer_y", "shape": (60, 60, 3)},
         {
             "type": "SIMDConsumerAcceptingListDecDim",
@@ -3117,7 +3132,12 @@ TEST_WORKFLOW_WITH_FLOW_CONTROL_PASSING_SIMD_PRODUCER_AFTER_PRODUCTION = {
     "inputs": [],
     "steps": [
         {"type": "ImageProducer", "name": "image_producer_x", "shape": (50, 50, 3)},
-        {"type": "AlwaysPass", "name": "condition", "x": "$steps.image_producer_x.image", "next_steps": ["$steps.image_consumer"]},
+        {
+            "type": "AlwaysPass",
+            "name": "condition",
+            "x": "$steps.image_producer_x.image",
+            "next_steps": ["$steps.image_consumer"],
+        },
         {"type": "ImageProducer", "name": "image_producer_y", "shape": (60, 60, 3)},
         {
             "type": "SIMDConsumerAcceptingListDecDim",
@@ -3164,7 +3184,6 @@ def test_workflow_always_passing_simd_producer_after_production(
     assert [i.numpy_image.shape for i in results[0]["x"]] == [(50, 50, 3), (60, 60, 3)]
 
 
-
 WORKFLOW_WITH_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_LIST_OF_BATCH_AND_SCALAR_IMAGES_AT_DIM_1_AND_FLOW_CONTROLL = {
     "version": "1.1",
     "inputs": [
@@ -3173,7 +3192,12 @@ WORKFLOW_WITH_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_LIST_OF_BATCH_AN
     ],
     "steps": [
         {"type": "ImageProducer", "name": "image_producer_x", "shape": (50, 50, 3)},
-        {"type": "EachSecondPass", "name": "condition", "x": "$inputs.image_1", "next_steps": ["$steps.image_consumer"]},
+        {
+            "type": "EachSecondPass",
+            "name": "condition",
+            "x": "$inputs.image_1",
+            "next_steps": ["$steps.image_consumer"],
+        },
         {
             "type": "SIMDConsumerAcceptingListDecDim",
             "name": "image_consumer",
@@ -3225,7 +3249,9 @@ def test_workflow_with_simd_consumer_dec_dim_accepting_list_of_batch_and_scalar_
 
     # then
     assert len(results) == 1
-    assert [i.numpy_image.shape if i is not None else None for i in results[0]["x"]] == [
+    assert [
+        i.numpy_image.shape if i is not None else None for i in results[0]["x"]
+    ] == [
         (100, 100, 3),
         None,
         (50, 50, 3),
@@ -3243,8 +3269,18 @@ WORKFLOW_WITH_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_LIST_OF_BATCH_AN
     ],
     "steps": [
         {"type": "ImageProducer", "name": "image_producer_x", "shape": (50, 50, 3)},
-        {"type": "EachSecondPass", "name": "condition", "x": "$inputs.image_1", "next_steps": ["$steps.image_consumer"]},
-        {"type": "AlwaysPass", "name": "condition_scalar", "x": "$steps.image_producer_x.image", "next_steps": ["$steps.image_consumer"]},
+        {
+            "type": "EachSecondPass",
+            "name": "condition",
+            "x": "$inputs.image_1",
+            "next_steps": ["$steps.image_consumer"],
+        },
+        {
+            "type": "AlwaysPass",
+            "name": "condition_scalar",
+            "x": "$steps.image_producer_x.image",
+            "next_steps": ["$steps.image_consumer"],
+        },
         {
             "type": "SIMDConsumerAcceptingListDecDim",
             "name": "image_consumer",
@@ -3296,7 +3332,9 @@ def test_workflow_with_simd_consumer_dec_dim_accepting_list_of_batch_and_scalar_
 
     # then
     assert len(results) == 1
-    assert [i.numpy_image.shape if i is not None else None for i in results[0]["x"]] == [
+    assert [
+        i.numpy_image.shape if i is not None else None for i in results[0]["x"]
+    ] == [
         (100, 100, 3),
         None,
         (50, 50, 3),
@@ -3315,8 +3353,18 @@ WORKFLOW_WITH_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_LIST_OF_BATCH_AN
     ],
     "steps": [
         {"type": "ImageProducer", "name": "image_producer_x", "shape": (50, 50, 3)},
-        {"type": "EachSecondPass", "name": "condition", "x": "$inputs.image_1", "next_steps": ["$steps.image_consumer"]},
-        {"type": "AlwaysTerminate", "name": "condition_scalar", "x": "$steps.image_producer_x.image", "next_steps": ["$steps.image_consumer"]},
+        {
+            "type": "EachSecondPass",
+            "name": "condition",
+            "x": "$inputs.image_1",
+            "next_steps": ["$steps.image_consumer"],
+        },
+        {
+            "type": "AlwaysTerminate",
+            "name": "condition_scalar",
+            "x": "$steps.image_producer_x.image",
+            "next_steps": ["$steps.image_consumer"],
+        },
         {
             "type": "SIMDConsumerAcceptingListDecDim",
             "name": "image_consumer",
@@ -3386,8 +3434,12 @@ WORKFLOW_WITH_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_LIST_OF_BATCH_AN
             "y": "$inputs.image_3",
         },
         {"type": "ImageProducer", "name": "image_producer_x", "shape": (50, 50, 3)},
-        {"type": "AlwaysTerminate", "name": "condition_scalar", "x": "$steps.image_producer_x.image",
-         "next_steps": ["$steps.image_consumer"]},
+        {
+            "type": "AlwaysTerminate",
+            "name": "condition_scalar",
+            "x": "$steps.image_producer_x.image",
+            "next_steps": ["$steps.image_consumer"],
+        },
         {
             "type": "SIMDConsumerAcceptingListDecDim",
             "name": "image_consumer",
@@ -3450,8 +3502,12 @@ WORKFLOW_WITH_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_LIST_OF_BATCH_AN
         {"type": "WorkflowImage", "name": "image_3"},
     ],
     "steps": [
-        {"type": "AlwaysTerminate", "name": "condition_scalar", "x": "$inputs.image_1",
-         "next_steps": ["$steps.dimensionality_boost"]},
+        {
+            "type": "AlwaysTerminate",
+            "name": "condition_scalar",
+            "x": "$inputs.image_1",
+            "next_steps": ["$steps.dimensionality_boost"],
+        },
         {
             "type": "DoubleBoostDimensionality",
             "name": "dimensionality_boost",
@@ -3528,8 +3584,12 @@ WORKFLOW_WITH_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_LIST_OF_BATCH_AN
             "y": "$inputs.image_3",
         },
         {"type": "ImageProducer", "name": "image_producer_x", "shape": (50, 50, 3)},
-        {"type": "EachSecondPass", "name": "condition_scalar", "x": "$steps.dimensionality_boost.x",
-         "next_steps": ["$steps.image_consumer"]},
+        {
+            "type": "EachSecondPass",
+            "name": "condition_scalar",
+            "x": "$steps.dimensionality_boost.x",
+            "next_steps": ["$steps.image_consumer"],
+        },
         {
             "type": "SIMDConsumerAcceptingListDecDim",
             "name": "image_consumer",
@@ -3581,7 +3641,9 @@ def test_workflow_with_simd_consumer_dec_dim_accepting_list_of_batch_and_scalar_
 
     # then
     assert len(results) == 2
-    assert [i.numpy_image.shape if i is not None else None for i in results[0]["x"]] == [
+    assert [
+        i.numpy_image.shape if i is not None else None for i in results[0]["x"]
+    ] == [
         (100, 100, 3),
         None,
         (50, 50, 3),
@@ -3589,7 +3651,9 @@ def test_workflow_with_simd_consumer_dec_dim_accepting_list_of_batch_and_scalar_
         (300, 300, 3),
         None,
     ]
-    assert [i.numpy_image.shape if i is not None else None for i in results[1]["x"]] == [
+    assert [
+        i.numpy_image.shape if i is not None else None for i in results[1]["x"]
+    ] == [
         (120, 120, 3),
         None,
         (50, 50, 3),
@@ -3613,10 +3677,18 @@ WORKFLOW_WITH_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_LIST_OF_BATCH_AN
             "y": "$inputs.image_3",
         },
         {"type": "ImageProducer", "name": "image_producer_x", "shape": (50, 50, 3)},
-        {"type": "AlwaysTerminate", "name": "condition_scalar", "x": "$steps.image_producer_x.image",
-         "next_steps": ["$steps.image_consumer"]},
-        {"type": "EachSecondPass", "name": "condition_batch", "x": "$steps.dimensionality_boost.x",
-         "next_steps": ["$steps.image_consumer"]},
+        {
+            "type": "AlwaysTerminate",
+            "name": "condition_scalar",
+            "x": "$steps.image_producer_x.image",
+            "next_steps": ["$steps.image_consumer"],
+        },
+        {
+            "type": "EachSecondPass",
+            "name": "condition_batch",
+            "x": "$steps.dimensionality_boost.x",
+            "next_steps": ["$steps.image_consumer"],
+        },
         {
             "type": "SIMDConsumerAcceptingListDecDim",
             "name": "image_consumer",
@@ -3679,8 +3751,12 @@ WORKFLOW_WITH_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_LIST_OF_BATCH_AN
         {"type": "WorkflowImage", "name": "image_3"},
     ],
     "steps": [
-        {"type": "EachSecondPass", "name": "condition_batch_1", "x": "$inputs.image_1",
-         "next_steps": ["$steps.dimensionality_boost"]},
+        {
+            "type": "EachSecondPass",
+            "name": "condition_batch_1",
+            "x": "$inputs.image_1",
+            "next_steps": ["$steps.dimensionality_boost"],
+        },
         {
             "type": "DoubleBoostDimensionality",
             "name": "dimensionality_boost",
@@ -3688,8 +3764,12 @@ WORKFLOW_WITH_SIMD_CUSTOMER_DECREASING_DIMENSIONALITY_ACCEPTING_LIST_OF_BATCH_AN
             "y": "$inputs.image_3",
         },
         {"type": "ImageProducer", "name": "image_producer_x", "shape": (50, 50, 3)},
-        {"type": "EachSecondPass", "name": "condition_batch_2", "x": "$steps.dimensionality_boost.x",
-         "next_steps": ["$steps.image_consumer"]},
+        {
+            "type": "EachSecondPass",
+            "name": "condition_batch_2",
+            "x": "$steps.dimensionality_boost.x",
+            "next_steps": ["$steps.image_consumer"],
+        },
         {
             "type": "SIMDConsumerAcceptingListDecDim",
             "name": "image_consumer",
@@ -3741,7 +3821,9 @@ def test_workflow_with_simd_consumer_dec_dim_accepting_list_of_batch_and_scalar_
 
     # then
     assert len(results) == 2
-    assert [i.numpy_image.shape if i is not None else None for i in results[0]["x"]] == [
+    assert [
+        i.numpy_image.shape if i is not None else None for i in results[0]["x"]
+    ] == [
         (100, 100, 3),
         None,
         (50, 50, 3),
@@ -3776,8 +3858,12 @@ WORKFLOW_WITH_NON_SIMD_CONSUMER_RAISING_OUTPUT_DIM_FED_BY_SCALAR_PRODUCERS_WITH_
             "images_x": "$steps.identity_simd.x",
             "images_y": "$steps.image_producer_y.image",
         },
-        {"type": "AlwaysTerminate", "name": "condition_batch_2", "x": "$steps.image_consumer.shapes",
-         "next_steps": ["$steps.identity_simd_2"]},
+        {
+            "type": "AlwaysTerminate",
+            "name": "condition_batch_2",
+            "x": "$steps.image_consumer.shapes",
+            "next_steps": ["$steps.identity_simd_2"],
+        },
         {
             "type": "IdentitySIMD",
             "name": "identity_simd_2",

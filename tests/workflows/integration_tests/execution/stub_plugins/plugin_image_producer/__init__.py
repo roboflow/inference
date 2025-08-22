@@ -15,7 +15,8 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     STRING_KIND,
-    Selector, StepSelector,
+    Selector,
+    StepSelector,
 )
 from inference.core.workflows.execution_engine.v1.entities import FlowControl
 from inference.core.workflows.prototypes.block import (
