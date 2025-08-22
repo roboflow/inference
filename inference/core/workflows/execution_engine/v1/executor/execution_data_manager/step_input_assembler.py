@@ -264,38 +264,25 @@ def construct_mask_for_all_inputs_dimensionalities(
     step_node: StepNode,
     branching_manager: BranchingManager,
 ) -> Tuple[Any, bool]:
-    print(f"Collecting masks for: {step_node.name}")
     inputs_dimensionalities = collect_inputs_dimensionalities(step_node=step_node)
     all_dimensionalities = {dim for dim in inputs_dimensionalities.values() if dim > 0}
-    print("all_dimensionalities", all_dimensionalities)
     batch_masks, non_batch_masks = [], set()
-    print(
-        f"Execution branches impacting inputs: {step_node.execution_branches_impacting_inputs}"
-    )
     for execution_branch in step_node.execution_branches_impacting_inputs:
         if not branching_manager.is_execution_branch_registered(
             execution_branch=execution_branch
         ):
-            print(f"EXECUTION BRANCH: {execution_branch} not registered")
             non_batch_masks.add(False)
             continue
         if branching_manager.is_execution_branch_batch_oriented(
             execution_branch=execution_branch
         ):
             mask = branching_manager.get_mask(execution_branch=execution_branch)
-            print(
-                f"EXECUTION BRANCH: {execution_branch} is batch oriented - mask: {mask}"
-            )
             batch_masks.append(mask)
         else:
             mask = branching_manager.get_mask(execution_branch=execution_branch)
-            print(
-                f"EXECUTION BRANCH: {execution_branch} is not batch oriented - mask: {mask}"
-            )
             non_batch_masks.add(mask)
     scalar_mask_contains_false = False in non_batch_masks
     if scalar_mask_contains_false:
-        print("CANCELLING OUT!")
         return {
             dimension: set() for dimension in all_dimensionalities
         }, scalar_mask_contains_false
@@ -377,8 +364,6 @@ def prepare_parameters(
     runtime_parameters: Dict[str, Any],
     execution_cache: ExecutionCache,
 ) -> BatchModeSIMDStepInput:
-    print(f"PREPARING PARAMS FOR: {step_node.name} - masks: {masks}")
-    print("DDD", step_node.auto_batch_casting_lineage_supports)
     step_requests_batch_input = step_node.step_manifest.accepts_batch_input()
     result = {}
     indices_for_parameter = {}
@@ -425,7 +410,6 @@ def prepare_parameters(
             contains_empty_scalar_step_output_selector
             or value_contains_empty_scalar_step_output_selector
         )
-    print("indices_for_parameter", indices_for_parameter, result)
     batch_parameters_indices = [
         i for i in indices_for_parameter.values() if i is not None
     ]
@@ -695,9 +679,6 @@ def apply_auto_batch_casting(
     masks: Dict[int, Optional[Set[DynamicBatchIndex]]],
     scalars_discarded: bool,
 ) -> Tuple[Any, List[DynamicBatchIndex], bool]:
-    print(
-        f"parameter_name: {parameter_name} - auto_batch_casting_config: {auto_batch_casting_config}"
-    )
     if auto_batch_casting_config.lineage_support is None:
         indices = [(0,) * auto_batch_casting_config.casted_dimensionality]
     else:
@@ -763,7 +744,6 @@ def apply_auto_batch_casting(
             f"the problem - including workflow definition you use.",
             context="workflow_execution | step_input_assembling",
         )
-    print(f"SSSS, step_execution_dimensionality: {step_execution_dimensionality}")
     upper_level_lineage_dimensionality = (
         auto_batch_casting_config.casted_dimensionality - 1
     )
@@ -799,8 +779,6 @@ def apply_auto_batch_casting(
             upper_level_indices = dynamic_batches_manager.get_indices_for_data_lineage(
                 lineage=upper_level_lineage,
             )
-    print("REDUCTION!")
-    print("upper_level_indices", upper_level_indices)
     result = reduce_batch_dimensionality(
         indices=indices,
         upper_level_index=upper_level_indices,

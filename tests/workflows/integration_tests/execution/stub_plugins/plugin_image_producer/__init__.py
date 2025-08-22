@@ -284,7 +284,6 @@ class MultiNonSIMDImageConsumerDecreasingDim(WorkflowBlock):
         additional: Any,
     ) -> BlockResult:
         assert not isinstance(additional, Batch)
-        print("images_x", images_x, "images_y", images_y)
         results = []
         for image_x, image_y in zip(images_x, images_y):
             results.append(
@@ -330,10 +329,8 @@ class MultiSIMDImageConsumerDecreasingDim(WorkflowBlock):
         additional: Any,
     ) -> BlockResult:
         assert not isinstance(additional, Batch)
-        print("images_x", images_x, "images_y", images_y)
         results = []
         for image_x_batch, image_y_batch in zip(images_x, images_y):
-            print("image_x_batch", image_x_batch, "image_x_batch", image_y_batch)
             result = []
             for image_x, image_y in zip(image_x_batch, image_y_batch):
                 result.append(

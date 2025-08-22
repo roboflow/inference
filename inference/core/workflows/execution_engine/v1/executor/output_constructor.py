@@ -46,11 +46,9 @@ def construct_workflow_output(
         output_name2indices[output.name] = execution_data_manager.get_selector_indices(
             selector=output.selector
         )
-    print("output_name2indices", output_name2indices)
     batch_oriented_outputs = {
         output for output, indices in output_name2indices.items() if indices is not None
     }
-    print("batch_oriented_outputs", batch_oriented_outputs)
     kinds_of_output_nodes = {
         output.name: node_as(
             execution_graph=execution_graph,
@@ -63,7 +61,6 @@ def construct_workflow_output(
     for output in workflow_outputs:
         if output.name in batch_oriented_outputs:
             continue
-        print(f"taking {output.name} from {output.selector} as non batch")
         data_piece = execution_data_manager.get_non_batch_data(selector=output.selector)
         if serialize_results:
             output_kind = kinds_of_output_nodes[output.name]
@@ -111,8 +108,6 @@ def construct_workflow_output(
             selector=name2selector[name],
             indices=indices,
         )
-        print(f"Retrieved data for {name} - {data}")
-        print(f"output array: {array}")
         for index, data_piece in zip(indices, data):
             if (
                 name in outputs_requested_in_parent_coordinates
@@ -142,9 +137,7 @@ def construct_workflow_output(
                     f"the problem - including workflow definition you use.",
                     context="workflow_execution | output_construction",
                 )
-    print("outputs_arrays", outputs_arrays)
     results = []
-    print("major_batch_size", major_batch_size)
     for i in range(major_batch_size):
         single_result = {}
         for name, value in non_batch_outputs.items():

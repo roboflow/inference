@@ -28,7 +28,6 @@ class DynamicBatchesManager:
             execution_graph=execution_graph,
             runtime_parameters=runtime_parameters,
         )
-        print("lineage2indices", lineage2indices)
         return cls(lineage2indices=lineage2indices)
 
     def __init__(

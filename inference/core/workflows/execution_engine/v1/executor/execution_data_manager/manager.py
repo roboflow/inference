@@ -141,9 +141,6 @@ class ExecutionDataManager:
         if step_node.output_dimensionality == 1:
             # we only allow +1 dim increase for now, so it is fine to only handle this case
             indices = [(i,) for i in range(len(output))]
-            print(
-                f"DIMENSIONALITY WAS JUST BORN FOR LINEAGE: {step_node.data_lineage}  with indices: {indices} :)"
-            )
             self._dynamic_batches_manager.register_element_indices_for_lineage(
                 lineage=step_node.data_lineage,
                 indices=indices,
@@ -180,7 +177,6 @@ class ExecutionDataManager:
                 context="workflow_execution | step_output_registration",
             )
         if isinstance(output, FlowControl):
-            print("FLOW", step_node.name, output)
             self._register_flow_control_output_for_non_simd_step(
                 step_node=step_node,
                 output=output,
@@ -262,20 +258,11 @@ class ExecutionDataManager:
             node=step_selector,
             expected_type=StepNode,
         )
-        print(
-            f"Output data lineage: ",
-            step_node.data_lineage,
-            step_node.output_dimensionality,
-            step_node.step_execution_dimensionality,
-        )
         step_name = get_last_chunk_of_selector(selector=step_selector)
         if step_node.output_dimensionality == 0:
-            print("COLLAPSE")
-            print("outputs", outputs)
             # SIMD step collapsing into scalar (can happen for auto-batch casting of parameters)
             if isinstance(outputs, list):
                 if len(outputs) == 0:
-                    print("TERMINATING", step_selector)
                     # termination of the computation as in NON-SIMD case
                     return None
                 if len(outputs) != 1:
@@ -371,9 +358,6 @@ class ExecutionDataManager:
                 f"the problem - including workflow definition you use.",
                 context="workflow_execution | getting_workflow_data_indices",
             )
-        print(
-            f"get_selector_indices(selector={selector}): - selector_lineage: {selector_lineage}"
-        )
         if not selector_lineage:
             return None
         return self.get_lineage_indices(lineage=selector_lineage)
@@ -471,9 +455,6 @@ class ExecutionDataManager:
                     step_name=step_name,
                     batch_elements_indices=indices,
                 )
-            print(
-                f"Getting batch results with selector: {selector} from indices: {indices}"
-            )
             return self._execution_cache.get_batch_output(
                 selector=selector,
                 batch_elements_indices=indices,

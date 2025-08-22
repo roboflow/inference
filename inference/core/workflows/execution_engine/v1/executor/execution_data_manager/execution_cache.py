@@ -87,7 +87,6 @@ class ExecutionCache:
         indices: List[DynamicBatchIndex],
         outputs: List[Dict[str, Any]],
     ) -> None:
-        print(f"REGISTERING {step_name} - {indices} - {outputs}")
         if not self.step_outputs_batches(step_name=step_name):
             raise ExecutionEngineRuntimeError(
                 public_message=f"Error in execution engine. Attempted to register batch outputs for "
@@ -100,11 +99,6 @@ class ExecutionCache:
         try:
             self._cache_content[step_name].register_outputs(
                 indices=indices, outputs=outputs
-            )
-            print(
-                "VERIF",
-                id(self._cache_content[step_name]),
-                self._cache_content[step_name]._cache_content,
             )
             self._step_outputs_registered.add(step_name)
         except (TypeError, AttributeError) as e:
