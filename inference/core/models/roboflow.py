@@ -748,9 +748,9 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                 expanded_execution_providers.append(ep)
             self.onnxruntime_execution_providers = expanded_execution_providers
 
-        self.initialize_model()
         self.image_loader_threadpool = ThreadPoolExecutor(max_workers=None)
         try:
+            self.initialize_model()
             self.validate_model()
         except ModelArtefactError as e:
             logger.error(f"Unable to validate model artifacts, clearing cache: {e}")
