@@ -1,143 +1,115 @@
-# Installation
+# Build and Run a Workflow
 
-You can install `inference` in a [Python>=3.8](https://www.python.org/) environment.
+Inference supports over 100 "blocks" with which you can make a Workflow.
 
-!!! example "Installation Command"
+A Workflow is a single or multi-stage computer vision application.
 
-    === "CPU"
-        ```bash
-        pip install inference
-        ```
-
-    === "Nvidia GPU"
-        ```bash
-        pip install inference-gpu
-        ```
-
-# Quickstart
-
-With the following code snippet, we can load a model and then we used that model's `infer(...)` method to run an image through it.
-
-```python
-# import a utility function for loading Roboflow models
-from inference import get_model
-
-# define the image url to use for inference
-image = "https://media.roboflow.com/inference/people-walking.jpg"
-
-# load a pre-trained yolov8n model
-model = get_model(model_id="yolov8n-640")
-
-# run inference on our chosen image, image can be a url, a numpy array, a PIL image, etc.
-results = model.infer(image)
-```
+In this tutorial, we will build and run a simple Workflow that runs a model. We will then plot the bounding boxes and class labels returned by the model on the input image.
 
 !!! note
-	
-	For a more detailed example, please refer to the tutorial on [running a model](../quickstart/run_a_model).
 
-# Choosing a Deployment Method
+    Before you get started, make sure you have [installed Inference](/install/setup.md).
 
-There are three primary ways to deploy Inference:
+**Difficulty:** Easy<br />
+**Time to Complete:** 5 minutes
 
-* [Serverless Hosted API](#serverless-hosted-api) - for smaller image models.
-* [Dedicated Deployment](#dedicated-deployments) - for bigger models and streaming video.
-* [Self Hosted](#self-hosting) - on your own edge device or server.
+## Prerequisites
 
-Each has pros and cons and which one you should choose depends on your particular
-use-case and organizational constraints.
-
-|                         | Serverless | Dedicated | Self-Hosted |
-|-------------------------|------------|-----------|-------------|
-| Workflows               | ✅         | ✅         | ✅          |
-| Basic Logic Blocks      | ✅         | ✅         | ✅          |
-| Pre-Trained Models      | ✅         | ✅         | ✅          |
-| Fine-Tuned Models       | ✅         | ✅         | ✅          |
-| Universe Models         | ✅         | ✅         | ✅          |
-| Active Learning         | ✅         | ✅         | ✅          |
-| Model Monitoring        | ✅         | ✅         | ✅          |
-| Foundation Models       |            | ✅         | ✅          |
-| Video Stream Management |            | ✅         | ✅          |
-| Dynamic Python Blocks   |            | ✅         | ✅          |
-| Device Management       |            | ✅         | ✅          |
-| Access Local Devices    |            |            | ✅          |
-| Can Run Offline         |            |            | ✅          |
-| Billing                 | Per-Call   | Hourly     | [See Below](#self-hosting) |
-
-## Cloud Hosting
-
-By far the easiest way to get started is with Roboflow's managed services. You can
-jump straight to building without having to setup any infrastructure. It's often
-the front-door to using Inference even for those who know they will eventually want
-to self host.
-
-There are two cloud hosted offerings with different targeted use-cases, capabilities,
-and pricing models.
-
-### Serverless Hosted API
-
-The [Serverless Hosted API](https://docs.roboflow.com/deploy/hosted-api) supports running Workflows on
-pre-trained & fine-tuned models, chaining models, basic logic, visualizations, and
-external integrations.
-
-It supports cloud-hosted VLMs like ChatGPT and Anthropic Claude, but does not support
-running heavy models like Florence-2 or SAM 2. It also does not support streaming
-video.
-
-The Serverless API scales down to zero when you're not using it (and up to infinity
-under load) with quick (a couple of seconds) cold-start time. You pay per model
-inference with no minimums. Roboflow's free tier credits may be used.
-
-### Dedicated Deployments
-
-[Dedicated Deployments](https://docs.roboflow.com/deploy/dedicated-deployments) are single-tenant virtual machines that
-are allocated for your exclusive use. They can optionally be configured with a GPU
-and used in development mode (where you may be evicted if capacity is needed for a
-higher priority task & are limited to 3-hour sessions) or production mode (guaranteed
-capacity and no session time limit).
-
-On a Dedicated Deployment, you can stream video, run custom Python code, access
-heavy foundation models like SAM 2, Florence-2, and Paligemma (including your fine-tunes
-of those models), and install additional dependencies. They are much higher performance
-machines than the instances backing the Serverless Hosted API.
-
-Scale-up time is on the order of a minute or two.
-
-!!! info "Dedicated Deployments Availability"
-    Dedicated Deployments are only available to Roboflow Workspaces with an active
-    subscription (and are not available on the free trial). They are billed hourly.
-
-## Self Hosting
-
-[Running at the edge](/install/index.md) is a core priority and focus area of Inference. For many use-cases
-latency matters, bandwidth is limited, interfacing with local devices is key, and
-resiliency to Internet outages is mandatory.
-
-Running locally on a development machine, an AI computer, or an edge device is as simple
-as starting a Docker container.
-
-!!! info "Self-Hosted Pricing"
-    Basic usage of self-hosted Inference Servers is completely free.
+=== "Cloud Connected"
+    This tutorial only requires
+    <a href="https://app.roboflow.com/workflows" target="_blank">a free Roboflow account</a>
+    and can run on the Serverless Hosted API with no setup required. This is the
+    easiest way to get started and you can migrate to self-hosting your Workflows
+    later.
     
-    Workflows and Models that require
-    [a Roboflow API Key](https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key)
-    to access Roboflow Cloud powered features (for example: the private model repository)
-    are [metered and consume credits](https://roboflow.com/pricing)
-    (which cost money after a generous free tier is used up) based on the number of images
-    or the hours of video processed.
+    You can also connect from the cloud platform to an Inference Server running
+    locally by clicking the "Running on" selector at the top-left of the platform UI
+    and pointing it to `localhost` or your server's IP.
 
-Detailed [installation instructions and device-specific performance tips are here](/install/index.md).
+    Once you have an account,
+    <a href="https://docs.roboflow.com/workflows/create-a-workflow" target="_blank">create a new (empty) Workflow</a>
+    then continue below.
 
-## Bring Your Own Cloud
+=== "Detached"
+    In Detached mode, you run both the Inference Server and Workflow Builder UI
+    locally without a Roboflow account or API Key. In Detached mode, you forego
+    cloud connected functionality like remote deployment, monitoring, integration
+    with the cloud model hub and dataset management platform, and are responsible
+    for implementing your own access control.
+    
+    To run on your own machine without a Roboflow account, follow the
+    [installation instructions](/install/setup.md) and start your Inference Server
+    in development mode (using `inference server start --dev`).
+    
+    Then, navigate to the local Workflows builder at
+    <a href="http://localhost:9001/build" target="_blank">localhost:9001/build</a>
+    and create an empty Workflow using the purple "Create a Workflow" button.
+    If prompted, choose "Build My Own".
 
-Sometimes enterprise compliance policies regarding sensitive data requires running
-workloads on-premises. This is supported via
-[self-hosting on your own cloud](../install/cloud/index.md). Billing is the same
-as for self-hosting on an edge device.
+You should now have an empty Workflow and be ready to start building.
 
-<br />
+![Empty Workflow](https://media.roboflow.com/workflows/guides/hello-world/01-empty-workflow.webp)
 
-# Next Steps
+## Add a Model
 
-Once you've decided on a deployment method and have a server running,
-[interfacing with it is easy](../start/next.md).
+The first step is adding a Model Block. Click "Add a Block" to open the block selection sidebar.
+
+![Add a Block](https://media.roboflow.com/workflows/guides/hello-world/02-block-sidebar.webp)
+
+For this guide, choose the object detection model block.
+
+![Choose a Model](https://media.roboflow.com/workflows/guides/hello-world/03-choose-model.webp)
+
+Then select a model. You can use a pre-trained model (trained on the 80 classes of common objects
+present in the Microsoft COCO dataset). Or, if you have linked your Roboflow account, any of your
+fine-tuned models or from the 100,000+ community-trained models shared on Roboflow Universe.
+
+![Pick a Model](https://media.roboflow.com/workflows/guides/hello-world/04-yolo-nas.webp)
+
+## Test Your Workflow
+
+Once you've added a model, you can test it on an image or video. Click "Test Workflow" on the top
+right, then add an image and click "Run". By default, your output will contain a JSON representation
+of the model's predictions.
+
+![Test Your Workflow](https://media.roboflow.com/workflows/guides/hello-world/05-test-workflow.webp)
+
+## Add a Visualization
+
+To get a better view of what your model is predicting, add a
+visualization block by clicking the "+" button on the bottom of the
+Object Detection Model block. The "Bounding Box Visualization"
+and "Label Visualization" work well together.
+
+![Add Visualization](https://media.roboflow.com/workflows/guides/hello-world/06-add-visualization.webp)
+
+Next, we will swap the order of the Outputs to show the visualization
+first (above the JSON) for convenience. Click the "Outputs" block
+then click the "Move Up" button for the visualization you selected.
+
+![Arrange Outputs](https://media.roboflow.com/workflows/guides/hello-world/07-arrange-outputs.webp)
+
+Now, when we test our Workflow we see a rendered image in addition
+to the JSON. This can be useful both for debugging and as part of
+an app's UI.
+
+![Test Again](https://media.roboflow.com/workflows/guides/hello-world/08-test-again.webp)
+
+We can also click on the thumbnail (or the "Visual" output toggle)
+to see a larger version of the image.
+
+![See Visual](https://media.roboflow.com/workflows/guides/hello-world/09-see-visual.webp)
+
+## Deploy
+
+Finally, we can use this Workflow as part of a larger application
+using the client code snippet accessible via the "Deploy" button
+at the top of the screen.
+
+![Deploy](https://media.roboflow.com/workflows/guides/hello-world/10-deploy.webp)
+
+## Next Steps
+
+Now that we've built a simple Workflow and validated that we can connect
+and run models on our Inference Server we can start building more
+complex and powerful Workflows like [comparing the output of two models](compare-models.md).

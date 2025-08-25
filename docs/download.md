@@ -50,7 +50,7 @@
         }
         
         if (os === 'other') {
-            window.location.href = '/install/';
+            window.location.href = '/install/setup';
             return;
         }
         

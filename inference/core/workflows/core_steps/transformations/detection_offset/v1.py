@@ -30,9 +30,9 @@ from inference.core.workflows.prototypes.block import (
 LONG_DESCRIPTION = """
 Apply a fixed offset to the width and height of a detection.
 
-You can use this block to add padding around the result of a detection. This is useful 
-to ensure that you can analyze bounding boxes that may be within the region of an 
-object instead of being around an object.
+You can use this block to add padding around the result of a detection.
+
+This is useful when you want to ensure that you can analyze bounding boxes that may be within the region of an object instead of being around an object.
 """
 
 SHORT_DESCRIPTION = "Apply a padding around the width and height of detections."

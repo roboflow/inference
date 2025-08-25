@@ -22,8 +22,18 @@ from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlock
 TYPE: str = "roboflow_core/crop_visualization@v1"
 SHORT_DESCRIPTION = "Draw scaled up crops of detections on the scene."
 LONG_DESCRIPTION = """
-The `CropVisualization` block draws scaled up crops of detections
-on the scene using Supervision's `sv.CropAnnotator`.
+The Crop Visualization block crops detected regions from an image, makes them bigger, then adds the regions back above the detected region.
+
+This block is useful if you want to highlight detections in an image.
+
+This block works with:
+
+- Object detection models
+- Segmentation models
+
+Here is an example of the block in use:
+
+![](https://docs.roboflow.com/~gitbook/image?url=https%3A%2F%2F662926385-files.gitbook.io%2F%7E%2Ffiles%2Fv0%2Fb%2Fgitbook-x-prod.appspot.com%2Fo%2Fspaces%252F-M6S9nPJhEX9FYH6clfW%252Fuploads%252Fm86iCEQCxnbJo3Omt7yX%252FScreenshot%25202025-05-23%2520at%252019.21.57.png%3Falt%3Dmedia%26token%3Debd10f42-55ce-4afd-9df6-b25d0a5b4b91&width=768&dpr=4&quality=100&sign=21c84d6e&sv=2)
 """
 
 

@@ -32,13 +32,15 @@ from inference.core.workflows.prototypes.block import (
 OUTPUT_KEY: str = "velocity_detections"
 SHORT_DESCRIPTION = "Calculate the velocity and speed of tracked objects with smoothing and unit conversion."
 LONG_DESCRIPTION = """
-The `VelocityBlock` computes the velocity and speed of objects tracked across video frames.
-It includes options to smooth the velocity and speed measurements over time and to convert units from pixels per second to meters per second.
-It requires detections from Byte Track with unique `tracker_id` assigned to each object, which persists between frames.
+The Velocity block calculates the velocity and speed of objects tracked across video frames.
+
+This block includes options to smooth the velocity and speed measurements over time and to convert units from pixels per second to meters per second.
+
+To use this block, you need to provide detections from a tracker (e.g., ByteTrack). Tracked predictions are required to calculate the velocity of objects across frames.
+
 The velocities are calculated based on the displacement of object centers over time.
 
 Note: due to perspective and camera distortions calculated velocity will be different depending on object position in relation to the camera.
-
 """
 
 

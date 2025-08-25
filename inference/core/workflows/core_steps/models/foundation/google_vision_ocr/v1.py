@@ -49,7 +49,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Google Vision OCR",
             "version": "v1",
-            "short_description": "Detect text in images using Google Vision API",
+            "short_description": "Detect text in images using the Google Vision API.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",

@@ -1,34 +1,30 @@
-# Benchmarking `inference`
+# How to Benchmark Inference
 
-`inference benchmark` offers you an easy way to check the performance of `inference` in your setup. The command 
-is capable of benchmarking both `inference` server and `inference` Python package.
+You can benchmark Inference on your machine using the `inference benchmark` command.
 
-!!! Tip "Discovering command capabilities"
+## Benchmark a Workflow (Recommended)
 
-    To check detail of the command, run:
-    
-    ```bash
-    inference benchmark --help
-    ```
+You can benchmark a Workflow using the following code:
 
-    Additionally, help guide is also available for each sub-command:
+```
+python -m inference_cli.main benchmark api-speed -wid your-workflow-id -wn your-workspace-name -d path/to/dataset -rps 5 -br 500 -h http://localhost:9001 --yes --output_location test_results.json --max_error_rate 5.0
+```
 
-    ```bash
-    inference benchmark api-speed --help
-    ```
+Above, replace:
 
-## Benchmarking `inference` Python package
+- `your-workflow-id` with your Roboflow Workflow ID.
+- `your-workspace-name` with your Roboflow Workspace Name.
+- `path/to/dataset` with the path to a folder of images that you want to use as inputs to your Workflow.
 
-!!! Important "`inference` needs to be installed"
+If you want to benchmark your Workflow on the [Roboflow Serverless API](https://docs.roboflow.com/deploy/serverless-hosted-api-v2) or [Dedicated Deployment](https://docs.roboflow.com/deploy/dedicated-deployments), replace the `-h` URL with the URL to `https://serverless.roboflow.com` or your Dedicated Deployment URL.
 
-    Running this command, make sure `inference` package is installed.
+Results will be printed to your terminal and saved to a file called `test_results.json`.
 
-    ```bash
-    pip install inference
-    ```
+## Benchmark the `inference` Python SDK (Advanced) 
 
+You can benchmark the raw Python code that is used to run a model. This is ideal if you are using a model outside of a Workflow.
 
-Basic benchmark can be run using the following command: 
+You can benchmark a model using the following code:
 
 ```bash
 inference benchmark python-package-speed \
@@ -39,17 +35,11 @@ inference benchmark python-package-speed \
 Command runs specified number of inferences using pointed model and saves statistics (including benchmark 
 parameter, throughput, latency, errors and platform details) in pointed directory.
 
+##  Benchmark a Model with the Inference `inference` Server (Advanced)
 
-##  Benchmarking `inference` server
+You can benchmark the HTTP endpoint associated with a model running on Inference. This is ideal if you expect to make direct HTTP requests to the model endpoints that Inference makes available.
 
-!!! note
-
-    Before running API benchmark of your local `inference` server - make sure the server is up and running:
-    
-    ```bash
-    inference server start
-    ```
-Basic benchmark can be run using the following command: 
+You can benchmark a model HTTP endpoint using the following code:
 
 ```bash
 inference benchmark api-speed \
@@ -57,6 +47,7 @@ inference benchmark api-speed \
   -d {pre-configured dataset name or path to directory with images} \
   -o {output_directory}  
 ```
+
 Command runs specified number of inferences using pointed model and saves statistics (including benchmark 
 parameter, throughput, latency, errors and platform details) in pointed directory.
 
