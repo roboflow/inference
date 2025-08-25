@@ -2,42 +2,54 @@
 
 Below you can find the changelog for Execution Engine.
 
-## Execution Engine `v1.2.0` | inference `v0.23.0`
+## Execution Engine `v1.5.0` | inference `v0.38.0`
 
-* The [`video_metadata` kind](/workflows/kinds/video_metadata.md) has been deprecated, and we **strongly recommend discontinuing its use for building 
-blocks moving forward**. As an alternative, the [`image` kind](/workflows/kinds/image.md) has been extended to support the same metadata as 
-[`video_metadata` kind](/workflows/kinds/video_metadata.md), which can now be provided optionally. This update is 
-**non-breaking** for existing blocks, but **some older blocks** that produce images **may become incompatible** with 
-**future** video processing blocks.
+!!! Note "Change does not require any action"
+  
+    This change does not require any change from Workflows users. This is just performance optimisation.
 
-??? warning "Potential blocks incompatibility"
+* Exposed new parameter in the init method of `BaseExecutionEngine` class - `executor` which can accept instance of 
+Python `ThreadPoolExecutor` to be used by execution engine. Thanks to this change, processing should be faster, as 
+each `BaseExecutionEngine.run(...)` will not require dedicated instance of `ThreadPoolExecutor` as it was so far.
+Additionally, we are significantly limiting threads spawning which may also be a benefit in some installations.
 
-    As previously mentioned, adding `video_metadata` as an optional field to the internal representation of 
-    [`image` kind](/workflows/kinds/image.md) (`WorkflowImageData` class) 
-    may introduce some friction between existing blocks that output the [`image` kind](/workflows/kinds/image.md) and 
-    future video processing blocks that rely on `video_metadata` being part of `image` representation. 
+* Despite the change, Execution Engine maintains the limit of concurrently executed steps - by limiting the number of
+steps that run through the executor at a time (since  Execution Engine is no longer in control of `ThreadPoolExecutor` 
+creation, and it is possible for the pool to have more workers available).
+
+??? Hint "How to inject `ThreadPoolExecutor` to Execution Engine?"
     
-    The issue arises because, while we can provide **default** values for `video_metadata` in `image` without 
-    explicitly copying them from the input, any non-default metadata that was added upstream may be lost. 
-    This can lead to downstream blocks that depend on the `video_metadata` not functioning as expected.
+    ```python
+    from concurrent.futures import ThreadPoolExecutor
+    workflow_init_parameters = { ... }
+    with ThreadPoolExecutor(max_workers=...) as thread_pool_executor:
+        execution_engine = ExecutionEngine.init(
+            init_parameters=workflow_init_parameters,
+            max_concurrent_steps=4,
+            workflow_id="your-workflow-id",
+            executor=thread_pool_executor,
+        )
+        runtime_parameters = {
+          "image": cv2.imread("your-image-path")
+        }
+        results = execution_engine.run(runtime_parameters=runtime_parameters)
+    ```
 
-    We've updated all existing `roboflow_core` blocks to account for this, but blocks created before this change in
-    external repositories may cause issues in workflows where their output images are used by video processing blocks.
+## Execution Engine `v1.4.0` | inference `v0.29.0`
 
+* Added new kind - [`secret`](/workflows/kinds/secret.md) to represent credentials. **No action needed** for existing 
+blocks, yet it is expected that over time blocks developers should use this kind, whenever block is to accept secret 
+value as parameter.
 
-* While the deprecated [`video_metadata` kind](/workflows/kinds/video_metadata.md) is still available for use, it will be fully removed in 
-Execution Engine version `v2.0.0`.
+* Fixed issue with results serialization introduced in `v1.3.0` - by mistake, Execution Engine was not serializing 
+non-batch oriented outputs.
 
-!!! warning "Breaking change planned - Execution Engine `v2.0.0`"
-
-    [`video_metadata` kind](/workflows/kinds/video_metadata.md) got deprecated and will be removed in `v2.0.0`
-
-
-* As a result of the changes mentioned above, the internal representation of the [`image` kind](/workflows/kinds/image.md) has been updated to 
-include a new `video_metadata` property. This property can be optionally set in the constructor; if not provided, 
-a default value with reasonable defaults will be used. To simplify metadata manipulation within blocks, we have 
-introduced two new class methods: `WorkflowImageData.copy_and_replace(...)` and `WorkflowImageData.create_crop(...)`. 
-For more details, refer to the updated [`WoorkflowImageData` usage guide](/workflows/internal_data_types.md#workflowimagedata).
+* Fixed Execution Engine bug with preparing inputs for steps. For non-SIMD steps before, while collecting inputs 
+in runtime, `WorkflowBlockManifest.accepts_empty_input()` method result was being ignored - causing the bug when
+one non-SIMD step was feeding empty values to downstream blocks. Additionally, in the light of changes made in `v1.3.0`,
+thanks to which non-SIMD blocks can easily feed inputs for downstream SIMD steps - it is needed to check if 
+upstream non-SIMD block yielded non-empty results (as SIMD block may not accept empty results). This check was added.
+**No action needed** for existing blocks, but this fix may fix previously broken Workflows.
 
 
 ## Execution Engine `v1.3.0` | inference `v0.27.0`
@@ -303,52 +315,41 @@ subsets of steps**, enabling building such tools as debuggers.
         serializer/deserializer defined as the last one will be in use.
 
 
-## Execution Engine `v1.4.0` | inference `v0.29.0`
+## Execution Engine `v1.2.0` | inference `v0.23.0`
 
-* Added new kind - [`secret`](/workflows/kinds/secret.md) to represent credentials. **No action needed** for existing 
-blocks, yet it is expected that over time blocks developers should use this kind, whenever block is to accept secret 
-value as parameter.
+* The [`video_metadata` kind](/workflows/kinds/video_metadata.md) has been deprecated, and we **strongly recommend discontinuing its use for building 
+blocks moving forward**. As an alternative, the [`image` kind](/workflows/kinds/image.md) has been extended to support the same metadata as 
+[`video_metadata` kind](/workflows/kinds/video_metadata.md), which can now be provided optionally. This update is 
+**non-breaking** for existing blocks, but **some older blocks** that produce images **may become incompatible** with 
+**future** video processing blocks.
 
-* Fixed issue with results serialization introduced in `v1.3.0` - by mistake, Execution Engine was not serializing 
-non-batch oriented outputs.
+??? warning "Potential blocks incompatibility"
 
-* Fixed Execution Engine bug with preparing inputs for steps. For non-SIMD steps before, while collecting inputs 
-in runtime, `WorkflowBlockManifest.accepts_empty_input()` method result was being ignored - causing the bug when
-one non-SIMD step was feeding empty values to downstream blocks. Additionally, in the light of changes made in `v1.3.0`,
-thanks to which non-SIMD blocks can easily feed inputs for downstream SIMD steps - it is needed to check if 
-upstream non-SIMD block yielded non-empty results (as SIMD block may not accept empty results). This check was added.
-**No action needed** for existing blocks, but this fix may fix previously broken Workflows.
-
-
-## Execution Engine `v1.5.0` | inference `v0.38.0`
-
-!!! Note "Change does not require any action"
-  
-    This change does not require any change from Workflows users. This is just performance optimisation.
-
-* Exposed new parameter in the init method of `BaseExecutionEngine` class - `executor` which can accept instance of 
-Python `ThreadPoolExecutor` to be used by execution engine. Thanks to this change, processing should be faster, as 
-each `BaseExecutionEngine.run(...)` will not require dedicated instance of `ThreadPoolExecutor` as it was so far.
-Additionally, we are significantly limiting threads spawning which may also be a benefit in some installations.
-
-* Despite the change, Execution Engine maintains the limit of concurrently executed steps - by limiting the number of
-steps that run through the executor at a time (since  Execution Engine is no longer in control of `ThreadPoolExecutor` 
-creation, and it is possible for the pool to have more workers available).
-
-??? Hint "How to inject `ThreadPoolExecutor` to Execution Engine?"
+    As previously mentioned, adding `video_metadata` as an optional field to the internal representation of 
+    [`image` kind](/workflows/kinds/image.md) (`WorkflowImageData` class) 
+    may introduce some friction between existing blocks that output the [`image` kind](/workflows/kinds/image.md) and 
+    future video processing blocks that rely on `video_metadata` being part of `image` representation. 
     
-    ```python
-    from concurrent.futures import ThreadPoolExecutor
-    workflow_init_parameters = { ... }
-    with ThreadPoolExecutor(max_workers=...) as thread_pool_executor:
-        execution_engine = ExecutionEngine.init(
-            init_parameters=workflow_init_parameters,
-            max_concurrent_steps=4,
-            workflow_id="your-workflow-id",
-            executor=thread_pool_executor,
-        )
-        runtime_parameters = {
-          "image": cv2.imread("your-image-path")
-        }
-        results = execution_engine.run(runtime_parameters=runtime_parameters)
-    ```
+    The issue arises because, while we can provide **default** values for `video_metadata` in `image` without 
+    explicitly copying them from the input, any non-default metadata that was added upstream may be lost. 
+    This can lead to downstream blocks that depend on the `video_metadata` not functioning as expected.
+
+    We've updated all existing `roboflow_core` blocks to account for this, but blocks created before this change in
+    external repositories may cause issues in workflows where their output images are used by video processing blocks.
+
+
+* While the deprecated [`video_metadata` kind](/workflows/kinds/video_metadata.md) is still available for use, it will be fully removed in 
+Execution Engine version `v2.0.0`.
+
+!!! warning "Breaking change planned - Execution Engine `v2.0.0`"
+
+    [`video_metadata` kind](/workflows/kinds/video_metadata.md) got deprecated and will be removed in `v2.0.0`
+
+
+* As a result of the changes mentioned above, the internal representation of the [`image` kind](/workflows/kinds/image.md) has been updated to 
+include a new `video_metadata` property. This property can be optionally set in the constructor; if not provided, 
+a default value with reasonable defaults will be used. To simplify metadata manipulation within blocks, we have 
+introduced two new class methods: `WorkflowImageData.copy_and_replace(...)` and `WorkflowImageData.create_crop(...)`. 
+For more details, refer to the updated [`WoorkflowImageData` usage guide](/workflows/internal_data_types.md#workflowimagedata).
+
+
