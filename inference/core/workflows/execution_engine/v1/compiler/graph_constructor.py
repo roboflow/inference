@@ -1785,13 +1785,6 @@ def establish_batch_oriented_step_lineage(
     )
     if output_dimensionality_offset < 0:
         result_dimensionality = reference_lineage[:output_dimensionality_offset]
-        # if len(result_dimensionality) == 0:
-        #     raise StepOutputLineageError(
-        #         public_message=f"Step {step_selector} is to decrease dimensionality, but it is not possible if "
-        #         f"input dimensionality is not greater or equal 2, otherwise output would not "
-        #         f"be batch-oriented.",
-        #         context="workflow_compilation | execution_graph_construction | establishing_step_output_lineage",
-        #     )
         return result_dimensionality
     if output_dimensionality_offset == 0:
         return reference_lineage
