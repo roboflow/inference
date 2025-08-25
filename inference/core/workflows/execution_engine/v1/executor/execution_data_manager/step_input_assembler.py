@@ -431,8 +431,9 @@ def prepare_parameters(
                 parameters={},
             )
         empty_indices = get_empty_batch_elements_indices(value=result)
-        indices = [e for e in indices if e not in empty_indices]
-        result = remove_indices(value=result, indices=empty_indices)
+        if empty_indices:
+            indices = [e for e in indices if e not in empty_indices]
+            result = remove_indices(value=result, indices=empty_indices)
     return BatchModeSIMDStepInput(
         indices=indices,
         parameters=result,
