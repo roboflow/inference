@@ -58,3 +58,25 @@ export interface MetricsDataState {
   error: string | null;
   refetch: () => void;
 }
+
+export interface LogEntry {
+  timestamp: string;
+  level: string;
+  logger: string;
+  message: string;
+  module: string;
+  line: number;
+}
+
+export interface LogsResponse {
+  logs: LogEntry[];
+  total_count: number;
+}
+
+export interface LogsDataState {
+  logs: LogEntry[];
+  loading: boolean;
+  error: string | null;
+  logsAvailable: boolean;
+  refetch: () => void;
+}
