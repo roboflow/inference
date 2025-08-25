@@ -1,8 +1,10 @@
+import base64
+
+import cv2
 import numpy as np
 import pytest
 import supervision as sv
-import base64
-import cv2
+
 from inference.core.workflows.core_steps.visualizations.icon.v1 import (
     IconVisualizationBlockV1,
 )
