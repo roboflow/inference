@@ -2,6 +2,92 @@
 
 Below you can find the changelog for Execution Engine.
 
+## Execution Engine `v1.6.0` | inference `v0.53.0`
+
+!!! Note "Change may require attention"
+
+    This release introduces upgrades and new features with **no changes required** to existing workflows. 
+    Some blocks may need to be upgraded to take advantage of the latest Execution Engine capabilities.
+
+Prior versions of the Execution Engine had significant limitations when interacting with certain types of 
+blocks - specifically those operating in Single Instruction, Multiple Data (SIMD) mode. These blocks are designed to 
+process batches of inputs at once, apply the same operation to each element, and return results for the entire batch.
+
+For example, the `run(...)` method of such a block might look like:
+
+```python
+def run(self, image: Batch[WorkflowImageData], confidence: float):
+    pass
+```
+
+In the manifest, the `image` field is declared as accepting batches.
+
+The issue arose when the input image came from a block that did not operate on batches. In such cases, the 
+Execution Engine was unable to construct a batch from individual images, which often resulted in frustrating 
+compilation errors such as:
+
+```
+Detected invalid reference plugged into property `images` of step `$steps.model` - the step property 
+strictly requires batch-oriented inputs, yet the input selector holds non-batch oriented input - this indicates 
+the problem with construction of your Workflow - usually the problem occurs when non-batch oriented step inputs are 
+filled with outputs of non batch-oriented steps or non batch-oriented inputs.
+```
+
+In Execution Engine `v1.6.0`, this limitation has been removed, introducing the following behaviour:
+
+* When it is detected that a given input must be batch-oriented, a procedure called **Auto Batch Casting** is applied. 
+This automatically converts the input into a `Batch[T]`. Since all batch-mode inputs were already explicitly denoted in 
+manifests, most blocks (with exceptions noted below) benefit from this upgrade without requiring any internal changes.
+
+* The dimensionality (level of nesting) of an auto-batch cast parameter is determined at compilation time, based on the 
+context of the specific block in the workflow as well as its manifest. If other batch-oriented inputs are present 
+(referred to as *lineage supports*), the Execution Engine uses them as references when constructing auto-casted 
+batches. This ensures that the number of elements in each batch dimension matches the other data fed into the step 
+(simulating what would have been asserted if an actual batch input had been provided). If there are no 
+*lineage supports*, or if the block manifest requires it (e.g. input dimensionality offset is set), the missing 
+dimensions are generated similarly to the
+[`torch.unsqueeze(...)` operation](https://docs.pytorch.org/docs/stable/generated/torch.unsqueeze.html).
+
+* Step outputs are then evaluated against the presence of an Auto Batch Casting context. Based on the evaluation, 
+outputs are saved either as batches or as scalars, ensuring that the effect of casting remains local, with the only 
+exception being output dimensionality changes introduced by the block itself. As a side effect, it is now possible to:
+
+    * **create output batches from scalars** (when the step increases dimensionality), and
+
+    * **collapse batches into scalars** (when the block decreases dimensionality).
+
+* The only potential friction point arises **when a block that does not accept batches** (and thus does not denote 
+batch-accepting inputs) **decreases output dimensionality**. In previous versions, the Execution Engine handled this by 
+applying dimensionality wrapping: all batch-oriented inputs were wrapped with an additional `Batch[T]` dimension, 
+allowing the block’s `run(...)` method to perform reduce operations across the list dimension. With Auto Batch Casting, 
+however, such blocks no longer provide the Execution Engine with a clear signal about whether certain inputs are 
+scalars or batches, making casting nondeterministic. To address this, a new manifest method was introduced: 
+`get_parameters_enforcing_auto_batch_casting(...)`. This method must return the list of parameters for which batch 
+casting should be enforced when dimensionality is decreased. It is not expected to be used in any other context.
+
+* In earlier versions, a hard constraint existed: dimensionality collapse could only occur at levels ≥ 2 (i.e. only 
+on nested batches). This limitation is now removed. Dimensionality collapse blocks may also operate on scalars, with 
+the output dimensionality “bouncing off” the zero ground.
+
+* There is one **important limitation** uncovered by these changes. Since Auto Batch Casting allows scalars to be 
+converted into batches (when a scalar is fed into a block that increases dimensionality), it is possible to end up with 
+multiple batches at the first nesting level, each with a different origin (lineage). In this case, the current 
+Execution Engine implementation cannot deterministically construct the output. Previous versions assumed that outputs 
+were always lists of elements, with the order determined by the input batch. With dynamically generated batches, 
+this assumption no longer holds. Fixing this design flaw would require a breaking change for all customers, 
+so it is deferred to **Execution Engine v2.0**. For now, an assertion has been introduced in the code, raising the 
+following error:
+
+```
+Workflow Compiler detected that the workflow contains multiple elements which create 
+top-level data batches - for instance inputs and blocks that create batched outputs from 
+scalar parameters. We know it sounds convoluted, but the bottom line is that this
+situation is known limitation of Workflows Compiler. 
+Contact Roboflow team through github issues (https://github.com/roboflow/inference/issues) 
+providing full context of the problem - including workflow definition you use.
+```
+
+
 ## Execution Engine `v1.5.0` | inference `v0.38.0`
 
 !!! Note "Change does not require any action"
