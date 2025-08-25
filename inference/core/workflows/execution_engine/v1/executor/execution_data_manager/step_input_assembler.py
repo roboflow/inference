@@ -577,7 +577,30 @@ def get_non_compound_parameter_value(
                 )
         else:
             static_input: StaticStepInputDefinition = parameter  # type: ignore
-            return static_input.value, None, False
+            if not requested_as_batch or static_input.value is None:
+                # when we have Optional[Selector()] in manifest - we must retain
+                # ability to inject None into the run(...) parameters - as
+                # if we treat that as actual batch and broadcast Batch[None],
+                # we would behave exactly as condition execution does -
+                # and the logic executing after this, will filter-out empty
+                # elements - so on None, we behave "the old way" regardless of the fact that ABC
+                # was requested
+                return static_input.value, None, False
+            else:
+                return apply_auto_batch_casting(
+                    parameter_name=parameter.parameter_specification.parameter_name,
+                    value=static_input.value,
+                    auto_batch_casting_config=auto_batch_casting_lineage_supports[
+                        parameter.parameter_specification.parameter_name
+                    ],
+                    contains_empty_scalar_step_output_selector=False,
+                    dynamic_batches_manager=dynamic_batches_manager,
+                    step_execution_dimensionality=step_execution_dimensionality,
+                    guard_of_indices_wrapping=guard_of_indices_wrapping,
+                    step_requests_batch_input=step_requests_batch_input,
+                    masks=masks,
+                    scalars_discarded=False,
+                )
     dynamic_parameter: DynamicStepInputDefinition = parameter  # type: ignore
     parameter_dimensionality = dynamic_parameter.get_dimensionality()
     lineage_indices = dynamic_batches_manager.get_indices_for_data_lineage(

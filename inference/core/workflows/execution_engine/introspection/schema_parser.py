@@ -334,7 +334,10 @@ def retrieve_selectors_from_simple_property(
         )
         if declared_points_to_batch == "dynamic":
             if property_name in inputs_accepting_batches_and_scalars:
-                points_to_batch = {True, False}
+                if property_name in inputs_enforcing_auto_batch_casting:
+                    points_to_batch = {True}
+                else:
+                    points_to_batch = {True, False}
             else:
                 points_to_batch = {
                     property_name in inputs_accepting_batches

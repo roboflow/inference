@@ -1577,18 +1577,31 @@ def verify_declared_batch_compatibility_against_actual_inputs(
     batch_compatibility_of_properties: Dict[str, Set[bool]],
 ) -> Set[str]:
     scalar_parameters_to_be_batched = set()
+    parameters_accepting_batches_and_scalars = set(
+        step_node_data.step_manifest.get_parameters_accepting_batches_and_scalars()
+    )
+    hardcoded_inputs_to_be_batch_compatible = set(
+        step_node_data.step_manifest.get_parameters_enforcing_auto_batch_casting()
+        + step_node_data.step_manifest.get_parameters_accepting_batches()
+    )
     for property_name, input_definition in input_data.items():
         if property_name not in batch_compatibility_of_properties:
-            # only values plugged via selectors are to be validated
-            continue
-        if input_definition.is_compound_input():
+            actual_input_is_batch = {False}
+            if property_name in parameters_accepting_batches_and_scalars:
+                batch_compatibility = {True, False}
+            elif property_name in hardcoded_inputs_to_be_batch_compatible:
+                batch_compatibility = {True}
+            else:
+                continue
+        elif input_definition.is_compound_input():
             actual_input_is_batch = {
                 element.is_batch_oriented()
                 for element in input_definition.iterate_through_definitions()
             }
+            batch_compatibility = batch_compatibility_of_properties[property_name]
         else:
             actual_input_is_batch = {input_definition.is_batch_oriented()}
-        batch_compatibility = batch_compatibility_of_properties[property_name]
+            batch_compatibility = batch_compatibility_of_properties[property_name]
         step_accepts_batch_input = step_node_data.step_manifest.accepts_batch_input()
         if (
             step_accepts_batch_input

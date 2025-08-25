@@ -381,7 +381,9 @@ def assembly_manifest_class_methods(
         "get_parameters_accepting_batches_and_scalars",
         classmethod(get_parameters_accepting_batches_and_scalars),
     )
-    get_parameters_enforcing_auto_batch_casting = lambda cls: list()
+    get_parameters_enforcing_auto_batch_casting = (
+        lambda cls: manifest_description.get_parameters_enforcing_auto_batch_casting
+    )
     setattr(
         manifest_class,
         "get_parameters_enforcing_auto_batch_casting",

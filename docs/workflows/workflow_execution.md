@@ -124,6 +124,14 @@ influencing the processing for all elements in the batch and this type of data w
     the reference images remain unchanged as you process each input. Thus, the reference images are considered 
     *scalar* data, while the list of input images is *batch-oriented*.
 
+    **Great news!**
+    
+    Since Execution Engine `v1.6.0`, the practical aspects of dealing with *scalars* and *batches* are offloaded to 
+    the Execution Engine (refer to [changelog](./execution_engine_changelog.md) for more details). As a block 
+    developer, it is still important to understand the difference, but when building blocks you are not forced to 
+    think about the nuances that much.
+
+
 To illustrate the distinction, Workflow definitions hold inputs of the two categories:
 
 - **Scalar inputs** - like `WorkflowParameter`

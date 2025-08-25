@@ -222,7 +222,11 @@ class MultiSIMDImageConsumerRaisingDimManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
     @classmethod
-    def get_parameters_accepting_batches(cls) -> List[str]:
+    def get_parameters_accepting_batches_and_scalars(cls) -> List[str]:
+        return ["images_x", "images_y"]
+
+    @classmethod
+    def get_parameters_enforcing_auto_batch_casting(cls) -> List[str]:
         return ["images_x", "images_y"]
 
     @classmethod
@@ -898,6 +902,10 @@ class AlwaysPassManifest(WorkflowBlockManifest):
         return []
 
     @classmethod
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["x"]
+
+    @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
 
@@ -907,8 +915,12 @@ class AlwaysPassBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return AlwaysPassManifest
 
-    def run(self, x: Any, next_steps: List[StepSelector]) -> BlockResult:
-        return FlowControl(mode="select_step", context=next_steps)
+    def run(self, x: Batch[Any], next_steps: List[StepSelector]) -> BlockResult:
+        assert isinstance(x, Batch)
+        results = []
+        for _ in x:
+            results.append(FlowControl(mode="select_step", context=next_steps))
+        return results
 
 
 class EachSecondPassManifest(WorkflowBlockManifest):

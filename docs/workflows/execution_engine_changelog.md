@@ -56,7 +56,7 @@ exception being output dimensionality changes introduced by the block itself. As
 
     * **collapse batches into scalars** (when the block decreases dimensionality).
 
-* The only potential friction point arises **when a block that does not accept batches** (and thus does not denote 
+* The two potential friction point arises - first **when a block that does not accept batches** (and thus does not denote 
 batch-accepting inputs) **decreases output dimensionality**. In previous versions, the Execution Engine handled this by 
 applying dimensionality wrapping: all batch-oriented inputs were wrapped with an additional `Batch[T]` dimension, 
 allowing the block’s `run(...)` method to perform reduce operations across the list dimension. With Auto Batch Casting, 
@@ -64,6 +64,22 @@ however, such blocks no longer provide the Execution Engine with a clear signal 
 scalars or batches, making casting nondeterministic. To address this, a new manifest method was introduced: 
 `get_parameters_enforcing_auto_batch_casting(...)`. This method must return the list of parameters for which batch 
 casting should be enforced when dimensionality is decreased. It is not expected to be used in any other context.
+
+!!! warning "Impact of new method on existing blocks"
+
+    The requirement of defining `get_parameters_enforcing_auto_batch_casting(...)` method to fully use 
+    Auto Batch Casting feature in the case described above is non-strict. If the block will not be changed,
+    the only effect will be that workflows wchich were **previously failing** with compilation error may 
+    work or fail with **runtime error**, dependent on the details of block `run(...)` method implementation.
+
+* The second friction point arises when there is a block declaring input fields supporting batches and scalars using 
+`get_parameters_accepting_batches_and_scalars(...)` - by default, Execution Engine will skip auto-casting for such 
+parameters, as the method was historically **always a way to declare that block itself has ability to broadcast scalars 
+into batches** - see 
+[implementation of `roboflow_core/detections_transformation@v1`](/inference/core/workflows/core_steps/transformations/detections_transformation/v1.py) 
+block. In a way, Auto Batch Casting is *redundant* for those blocks - so we propose leaving them as is and 
+upgrade to use `get_parameters_enforcing_auto_batch_casting(...)` instead of 
+`get_parameters_accepting_batches_and_scalars(...)` in new versions of such blocks.
 
 * In earlier versions, a hard constraint existed: dimensionality collapse could only occur at levels ≥ 2 (i.e. only 
 on nested batches). This limitation is now removed. Dimensionality collapse blocks may also operate on scalars, with 
@@ -86,7 +102,88 @@ situation is known limitation of Workflows Compiler.
 Contact Roboflow team through github issues (https://github.com/roboflow/inference/issues) 
 providing full context of the problem - including workflow definition you use.
 ```
+### Migration guide
 
+??? Hint "Adding `get_parameters_enforcing_auto_batch_casting(...)` method"
+
+    Blocks which decrease output dimensionality and do not define batch-oriented inputs needs to 
+    declare all inputs which implementation expects to have wrapped in `Batch[T]` with the new class 
+    method of block manifest called `get_parameters_enforcing_auto_batch_casting(...)`
+
+    ```{ .py linenums="1" hl_lines="34-36 53-54"}
+    from typing import List, Literal, Type, Union
+
+    import supervision as sv
+    
+    from inference.core.workflows.execution_engine.entities.base import (
+        Batch,
+        OutputDefinition,
+        WorkflowImageData,
+    )
+    from inference.core.workflows.execution_engine.entities.types import (
+        IMAGE_KIND,
+        OBJECT_DETECTION_PREDICTION_KIND,
+        Selector,
+    )
+    from inference.core.workflows.prototypes.block import (
+        BlockResult,
+        WorkflowBlock,
+        WorkflowBlockManifest,
+    )
+    
+    
+    class BlockManifest(WorkflowBlockManifest):
+        type: Literal["my_plugin/tile_detections@v1"]
+        crops: Selector(kind=[IMAGE_KIND])
+        crops_predictions: Selector(
+            kind=[OBJECT_DETECTION_PREDICTION_KIND]
+        )
+        scalar_parameter: Union[float, Selector()]
+    
+        @classmethod
+        def get_output_dimensionality_offset(cls) -> int:
+            return -1
+    
+        @classmethod
+        def get_parameters_enforcing_auto_batch_casting(cls) -> List[str]:
+            return ["crops", "crops_predictions"]
+        
+        @classmethod
+        def describe_outputs(cls) -> List[OutputDefinition]:
+            return [
+                OutputDefinition(name="visualisations", kind=[IMAGE_KIND]),
+            ]
+    
+    
+    class TileDetectionsBlock(WorkflowBlock):
+    
+        @classmethod
+        def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+            return BlockManifest
+    
+        def run(
+            self,
+            crops: Batch[WorkflowImageData],
+            crops_predictions: Batch[sv.Detections],
+            scalar_parameter: float,
+        ) -> BlockResult:
+            print("This is parameter which will not be auto-batch cast!", scalar_parameter)
+            annotator = sv.BoxAnnotator()
+            visualisations = []
+            for image, prediction in zip(crops, crops_predictions):
+                annotated_image = annotator.annotate(
+                    image.numpy_image.copy(),
+                    prediction,
+                )
+                visualisations.append(annotated_image)
+            tile = sv.create_tiles(visualisations)
+            return {"visualisations": tile}
+    ```
+
+    * in lines `34-36` one needs to add declaration of fields that will be subject to enforced auto-batch casting
+
+    * as a result of the above, input parameters of run method (lines `53-54`) will be wrapped into `Batch[T]` by 
+    Execution Engine.
 
 ## Execution Engine `v1.5.0` | inference `v0.38.0`
 

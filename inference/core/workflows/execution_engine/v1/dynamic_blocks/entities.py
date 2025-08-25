@@ -116,6 +116,13 @@ class ManifestDescription(BaseModel):
         "Value will override `accepts_batch_input` if non-empty "
         "list is provided, `accepts_batch_input` is kept not to break backward compatibility.",
     )
+    get_parameters_enforcing_auto_batch_casting: List[str] = Field(
+        default_factory=list,
+        description="List of parameters, for which auto-batch casting should be enforced, making sure that the block "
+        "run(...) method will always receive the parameters as batches, not scalars. This property is important for "
+        "blocks decreasing output dimensionality which do not define neither `batch_oriented_parameters` nor "
+        "`parameters_with_scalars_and_batches`.",
+    )
 
 
 class PythonCode(BaseModel):
