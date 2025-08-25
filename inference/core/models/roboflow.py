@@ -5,6 +5,7 @@ import random
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
+from threading import Lock
 from time import perf_counter
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -749,6 +750,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             self.onnxruntime_execution_providers = expanded_execution_providers
 
         self.image_loader_threadpool = ThreadPoolExecutor(max_workers=None)
+        self._session_lock = Lock()
         try:
             self.initialize_model()
             self.validate_model()
