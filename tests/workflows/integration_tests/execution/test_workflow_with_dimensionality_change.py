@@ -132,8 +132,6 @@ def test_workflow_with_detections_coordinates_transformation_in_batch_variant(
         result[0]["predictions_in_own_coordinates"],
         result[0]["predictions_in_original_coordinates"],
     ):
-        print(own_coords_detection["parent_id"])
-        print(original_coords_detection["parent_id"])
         assert len(own_coords_detection) == len(
             original_coords_detection
         ), "Expected number of bounding boxes in nested sv.Detections not to change"

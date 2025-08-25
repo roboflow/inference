@@ -658,9 +658,7 @@ def test_load_nested_batches_of_inference_input_when_single_element_is_given(
     load_static_inference_input_mock: MagicMock,
 ) -> None:
     # given
-    load_static_inference_input_mock.side_effect = [
-        ["image_1"]
-    ]
+    load_static_inference_input_mock.side_effect = [["image_1"]]
 
     # when
     result = load_nested_batches_of_inference_input(
@@ -668,7 +666,9 @@ def test_load_nested_batches_of_inference_input_when_single_element_is_given(
     )
 
     # then
-    assert result == "image_1", "Expected direct result from load_static_inference_input()"
+    assert (
+        result == "image_1"
+    ), "Expected direct result from load_static_inference_input()"
 
 
 @mock.patch.object(loaders, "load_static_inference_input")
@@ -679,7 +679,7 @@ def test_load_nested_batches_of_inference_input_when_1d_batch_is_given(
     load_static_inference_input_mock.side_effect = [
         ["image_1"],
         ["image_2"],
-        ["image_3"]
+        ["image_3"],
     ]
 
     # when
@@ -688,7 +688,11 @@ def test_load_nested_batches_of_inference_input_when_1d_batch_is_given(
     )
 
     # then
-    assert result == ["image_1", "image_2", "image_3"], "Expected direct result from load_static_inference_input()"
+    assert result == [
+        "image_1",
+        "image_2",
+        "image_3",
+    ], "Expected direct result from load_static_inference_input()"
 
 
 @mock.patch.object(loaders, "load_static_inference_input")

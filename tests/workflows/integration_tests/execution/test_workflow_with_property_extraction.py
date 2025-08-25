@@ -4,6 +4,7 @@ import os
 import cv2 as cv
 import numpy as np
 import pytest
+import supervision as sv
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.interfaces.camera.video_source import VideoSource
@@ -12,7 +13,6 @@ from inference.core.interfaces.stream.inference_pipeline import InferencePipelin
 from inference.core.interfaces.stream.watchdog import BasePipelineWatchDog
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.errors import StepOutputLineageError
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
     add_to_workflows_gallery,
@@ -724,14 +724,29 @@ def test_workflow_when_there_is_faulty_application_of_aggregation_step_at_batch_
         "workflows_core.api_key": roboflow_api_key,
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_INVALID_AGGREGATION,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
 
     # when
-    with pytest.raises(StepOutputLineageError):
-        _ = ExecutionEngine.init(
-            workflow_definition=WORKFLOW_WITH_INVALID_AGGREGATION,
-            init_parameters=workflow_init_parameters,
-            max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
-        )
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": [
+                np.zeros((192, 168, 3), dtype=np.uint8),
+                np.zeros((200, 168, 3), dtype=np.uint8),
+            ]
+        }
+    )
+
+    # then
+    assert len(result) == 1, "Expected result to collapse"
+    assert (
+        len(result[0]["result"]) == 2
+    ), "Expected both predictions to be placed in the list"
+    assert isinstance(result[0]["result"][0], sv.Detections)
+    assert isinstance(result[0]["result"][1], sv.Detections)
 
 
 WORKFLOW_WITH_ASPECT_RATIO_EXTRACTION = {

@@ -11,6 +11,7 @@ def usage_collector_with_mocked_threads():
     This prevents the actual threads from starting during tests.
     """
     import threading
+
     original_thread = threading.Thread
     original_event = threading.Event
 
@@ -19,6 +20,7 @@ def usage_collector_with_mocked_threads():
         threading.Event = MagicMock()
 
         from inference.usage_tracking import collector as collector_module
+
         importlib.reload(collector_module)
 
         usage_collector = collector_module.usage_collector

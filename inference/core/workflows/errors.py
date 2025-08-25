@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 
 
 class WorkflowBlockError(BaseModel):
-    block_id: str
+    block_id: Optional[str] = None
     block_type: Optional[str] = None
     block_details: Optional[str] = None
     property_name: Optional[str] = None

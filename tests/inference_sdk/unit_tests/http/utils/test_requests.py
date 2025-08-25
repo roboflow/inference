@@ -160,7 +160,9 @@ def test_inject_nested_batches_of_images_into_payload_when_single_image_given() 
     assert result == {"image": {"type": "base64", "value": "img1"}}
 
 
-def test_inject_nested_batches_of_images_into_payload_when_1d_batch_of_images_given() -> None:
+def test_inject_nested_batches_of_images_into_payload_when_1d_batch_of_images_given() -> (
+    None
+):
     # when
     result = inject_nested_batches_of_images_into_payload(
         payload={},
@@ -176,7 +178,9 @@ def test_inject_nested_batches_of_images_into_payload_when_1d_batch_of_images_gi
     }
 
 
-def test_inject_nested_batches_of_images_into_payload_when_nested_batch_of_images_given() -> None:
+def test_inject_nested_batches_of_images_into_payload_when_nested_batch_of_images_given() -> (
+    None
+):
     # when
     result = inject_nested_batches_of_images_into_payload(
         payload={},

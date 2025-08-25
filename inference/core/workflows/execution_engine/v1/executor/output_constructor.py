@@ -11,6 +11,7 @@ from inference.core.workflows.core_steps.common.utils import (
 )
 from inference.core.workflows.errors import AssumptionError, ExecutionEngineRuntimeError
 from inference.core.workflows.execution_engine.constants import (
+    TOP_LEVEL_LINEAGE_KEY,
     WORKFLOW_INPUT_BATCH_LINEAGE_ID,
 )
 from inference.core.workflows.execution_engine.entities.base import (
@@ -91,11 +92,22 @@ def construct_workflow_output(
         for output in workflow_outputs
         if output.coordinates_system is CoordinatesSystem.PARENT
     }
-    major_batch_size = len(
-        execution_data_manager.get_lineage_indices(
-            lineage=[WORKFLOW_INPUT_BATCH_LINEAGE_ID]
+    top_level_data_lineage_marker = execution_graph.graph.get(TOP_LEVEL_LINEAGE_KEY)
+    if top_level_data_lineage_marker:
+        major_batch_size = len(
+            execution_data_manager.get_lineage_indices(
+                lineage=[top_level_data_lineage_marker]
+            )
         )
-    )
+        if (
+            major_batch_size == 0
+            and top_level_data_lineage_marker != WORKFLOW_INPUT_BATCH_LINEAGE_ID
+        ):
+            # we had some dynamic dimensionality increase on top of auto-batch casting, but we
+            # failed to register indices due to conditional execution
+            major_batch_size = 1
+    else:
+        major_batch_size = 0
     for name in batch_oriented_outputs:
         array = outputs_arrays[name]
         indices = output_name2indices[name]

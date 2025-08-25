@@ -54,5 +54,5 @@ def test_manifest_parsing_when_the_input_is_valid() -> None:
         camera_update_rate_limit=500,
         camera_port=1981,
         flip_x_movement=True,
-        flip_y_movement=True
+        flip_y_movement=True,
     )

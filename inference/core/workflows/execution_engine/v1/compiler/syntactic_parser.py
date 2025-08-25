@@ -77,7 +77,6 @@ def parse_workflow_definition(
                 property_name = None
                 if len(loc) > 3 and loc[2] == element_type:
                     property_name = str(loc[3])
-
                 block_error = WorkflowBlockError(
                     block_id=element_name,
                     block_type=element_type,

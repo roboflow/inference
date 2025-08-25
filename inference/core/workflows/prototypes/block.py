@@ -56,8 +56,9 @@ class WorkflowBlockManifest(BaseModel, ABC):
 
     @classmethod
     def accepts_batch_input(cls) -> bool:
-        return len(cls.get_parameters_accepting_batches()) > 0 or len(
-            cls.get_parameters_accepting_batches_and_scalars()
+        return (
+            len(cls.get_parameters_accepting_batches()) > 0
+            or len(cls.get_parameters_accepting_batches_and_scalars()) > 0
         )
 
     @classmethod
@@ -66,6 +67,10 @@ class WorkflowBlockManifest(BaseModel, ABC):
 
     @classmethod
     def get_parameters_accepting_batches_and_scalars(cls) -> List[str]:
+        return []
+
+    @classmethod
+    def get_parameters_enforcing_auto_batch_casting(cls) -> List[str]:
         return []
 
     @classmethod

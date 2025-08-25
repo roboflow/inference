@@ -48,6 +48,7 @@ PERCEPTION_ENCODER_WORKFLOW = {
     ],
 }
 
+
 @pytest.mark.skip(reason="Known problem of race condition in execution engine")
 def test_perception_encoder_embedding_model(
     model_manager: ModelManager,
@@ -76,6 +77,7 @@ def test_perception_encoder_embedding_model(
     assert -1.0 <= result[0]["similarity"] <= 1.0
     assert len(result[0]["image_embeddings"]) >= 1024
 
+
 PERCEPTION_ENCODER_TEXT_WORKFLOW = {
     "version": "1.0",
     "inputs": [
@@ -98,6 +100,7 @@ PERCEPTION_ENCODER_TEXT_WORKFLOW = {
         },
     ],
 }
+
 
 @pytest.mark.skip(reason="Known problem of race condition in execution engine")
 def test_perception_encoder_text_embedding_model(

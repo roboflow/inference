@@ -103,14 +103,10 @@ class DetectionsToParentCoordinatesBatchBlock(WorkflowBlock):
     ) -> BlockResult:
         result = []
         for i, (image, image_predictions) in enumerate(zip(images, images_predictions)):
-            print("Processing image", i)
             parent_id = image.parent_metadata.parent_id
             parent_coordinates = image.parent_metadata.origin_coordinates
             transformed_predictions = []
             for j, prediction in enumerate(image_predictions):
-                print(
-                    f"Processing prediction {j} - start {len(prediction)} - {prediction['parent_id']}"
-                )
                 prediction_copy = deepcopy(prediction)
                 prediction_copy["parent_id"] = np.array([parent_id] * len(prediction))
                 if parent_coordinates:
@@ -125,9 +121,6 @@ class DetectionsToParentCoordinatesBatchBlock(WorkflowBlock):
                     prediction_copy["parent_dimensions"] = np.array(
                         [dimensions] * len(prediction)
                     )
-                print(
-                    f"Processing prediction {j} - end {len(prediction_copy)} - {prediction_copy['parent_id']}"
-                )
                 transformed_predictions.append({"predictions": prediction_copy})
             result.append(transformed_predictions)
         return result

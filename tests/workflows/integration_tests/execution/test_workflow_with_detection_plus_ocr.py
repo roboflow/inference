@@ -130,7 +130,6 @@ def test_detection_plus_ocr_workflow_when_minimal_valid_input_provided(
     # then
     assert isinstance(result, list), "Expected list to be delivered"
     assert len(result) == 1, "Expected 1 element in the output for one input image"
-    print(result[0])
     assert set(result[0].keys()) == {
         "plates_ocr",
         "plates_crops",

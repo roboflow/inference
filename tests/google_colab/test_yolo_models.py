@@ -305,7 +305,6 @@ def test_yolov11n_instance_segmentation_inference(reference_image: np.ndarray) -
     assert len(result.mask) > 0, "At least one prediction is expected"
 
 
-
 def test_yolov11s_instance_segmentation_inference(reference_image: np.ndarray) -> None:
     # given
     model = get_model("yolov11s-seg-640")

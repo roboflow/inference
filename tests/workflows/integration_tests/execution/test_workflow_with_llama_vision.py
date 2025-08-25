@@ -393,7 +393,6 @@ def test_workflow_with_multi_class_classifier_prompt_and_legacy_parser(
         "top_class",
         "parsed_prediction",
     }, "Expected all outputs to be delivered"
-    print(result[0]["llama_result"])
     assert (
         isinstance(result[0]["llama_result"], str)
         and len(result[0]["llama_result"]) > 0
@@ -500,7 +499,6 @@ def test_workflow_with_multi_class_classifier_prompt(
         "top_class",
         "parsed_prediction",
     }, "Expected all outputs to be delivered"
-    print(result[0]["llama_result"])
     assert (
         isinstance(result[0]["llama_result"], str)
         and len(result[0]["llama_result"]) > 0
@@ -695,7 +693,6 @@ def test_workflow_with_structured_prompt(
         "result",
         "llama_output",
     }, "Expected all outputs to be delivered"
-    print(result[0]["llama_output"])
     assert isinstance(result[0]["result"], str)
 
 

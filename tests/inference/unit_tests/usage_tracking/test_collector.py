@@ -895,7 +895,9 @@ def test_system_info_with_dedicated_deployment_id(usage_collector_with_mocked_th
         assert system_info[k] == v
 
 
-def test_system_info_with_no_dedicated_deployment_id(usage_collector_with_mocked_threads):
+def test_system_info_with_no_dedicated_deployment_id(
+    usage_collector_with_mocked_threads,
+):
     # given
     system_info = usage_collector_with_mocked_threads.system_info(
         ip_address="w.x.y.z", hostname="hostname01"
@@ -973,4 +975,9 @@ def test_record_usage_with_exception_on_GCP(usage_collector_with_mocked_threads)
     assert len(usage_collector._usage) == 1
     assert "test_key" in usage_collector._usage
     assert "model:unknown" in usage_collector._usage["test_key"]
-    assert json.loads(usage_collector._usage["test_key"]["model:unknown"]["resource_details"]).get("error") == "test exception"
+    assert (
+        json.loads(
+            usage_collector._usage["test_key"]["model:unknown"]["resource_details"]
+        ).get("error")
+        == "test exception"
+    )

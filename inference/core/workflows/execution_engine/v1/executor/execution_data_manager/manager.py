@@ -3,7 +3,7 @@ from typing import Any, Dict, Generator, List, Optional, Set, Tuple, Union
 from networkx import DiGraph
 
 from inference.core import logger
-from inference.core.workflows.errors import ExecutionEngineRuntimeError
+from inference.core.workflows.errors import AssumptionError, ExecutionEngineRuntimeError
 from inference.core.workflows.execution_engine.constants import (
     NODE_COMPILATION_OUTPUT_PROPERTY,
 )
@@ -121,7 +121,7 @@ class ExecutionDataManager:
         )
 
     def register_non_simd_step_output(
-        self, step_selector: str, output: Union[Dict[str, Any], FlowControl]
+        self, step_selector: str, output: Union[Dict[str, Any], FlowControl, list]
     ) -> None:
         if self.is_step_simd(step_selector=step_selector):
             raise ExecutionEngineRuntimeError(
@@ -138,6 +138,44 @@ class ExecutionDataManager:
             node=step_selector,
             expected_type=StepNode,
         )
+        if step_node.output_dimensionality == 1:
+            # we only allow +1 dim increase for now, so it is fine to only handle this case
+            indices = [(i,) for i in range(len(output))]
+            self._dynamic_batches_manager.register_element_indices_for_lineage(
+                lineage=step_node.data_lineage,
+                indices=indices,
+            )
+            if step_node.child_execution_branches:
+                if not all(isinstance(element, FlowControl) for element in output):
+                    raise ExecutionEngineRuntimeError(
+                        public_message=f"Error in execution engine. Flow control step {step_name} "
+                        f"expected to only produce FlowControl objects. This is most likely bug. "
+                        f"Contact Roboflow team through github issues "
+                        f"(https://github.com/roboflow/inference/issues) providing full context of"
+                        f"the problem - including workflow definition you use.",
+                        context="workflow_execution | step_output_registration",
+                    )
+                self._register_flow_control_output_for_simd_step(
+                    step_node=step_node,
+                    indices=indices,
+                    outputs=output,
+                )
+                return None
+            self._execution_cache.register_batch_of_step_outputs(
+                step_name=step_name,
+                indices=indices,
+                outputs=output,
+            )
+            return None
+        if isinstance(output, list):
+            raise ExecutionEngineRuntimeError(
+                public_message=f"Error in execution engine. Non-SIMD step {step_name} "
+                f"produced list of results which is not expected. This is most likely bug. "
+                f"Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full context of"
+                f"the problem - including workflow definition you use.",
+                context="workflow_execution | step_output_registration",
+            )
         if isinstance(output, FlowControl):
             self._register_flow_control_output_for_non_simd_step(
                 step_node=step_node,
@@ -220,7 +258,90 @@ class ExecutionDataManager:
             node=step_selector,
             expected_type=StepNode,
         )
+        step_name = get_last_chunk_of_selector(selector=step_selector)
+        if step_node.output_dimensionality == 0:
+            # SIMD step collapsing into scalar (can happen for auto-batch casting of parameters)
+            if isinstance(outputs, list):
+                if len(outputs) == 0:
+                    # termination of the computation as in NON-SIMD case
+                    return None
+                if len(outputs) != 1:
+                    raise ExecutionEngineRuntimeError(
+                        public_message=f"Error in execution engine. In context of SIMD step: {step_selector} attempts to "
+                        f"register output which should collapse into a scalar, but detected batched output "
+                        f"with more than a single element (or incompatible output), "
+                        f"making the operation not possible. This is most likely bug (either a block or "
+                        f"Execution Engine is faulty). Contact Roboflow team through github issues "
+                        f"(https://github.com/roboflow/inference/issues) providing full context of"
+                        f"the problem - including workflow definition you use.",
+                        context="workflow_execution | step_output_registration",
+                    )
+                output = outputs[0]
+            else:
+                output = outputs
+            if isinstance(output, FlowControl):
+                self._register_flow_control_output_for_non_simd_step(
+                    step_node=step_node,
+                    output=output,
+                )
+                return None
+            self._execution_cache.register_non_batch_step_outputs(
+                step_name=step_name,
+                outputs=output,
+            )
+            return None
         if (
+            step_node.output_dimensionality - step_node.step_execution_dimensionality
+            == 0
+            and step_node.step_manifest.get_output_dimensionality_offset() > 0
+        ):
+            # artificial increase in output dimensionality due to ABC which should be unwrapped
+            if isinstance(outputs, list) and len(outputs) == 0:
+                self._dynamic_batches_manager.register_element_indices_for_lineage(
+                    lineage=step_node.data_lineage,
+                    indices=indices,
+                )
+                if step_node.child_execution_branches:
+                    if not all(isinstance(element, FlowControl) for element in outputs):
+                        raise ExecutionEngineRuntimeError(
+                            public_message=f"Error in execution engine. Flow control step {step_name} "
+                            f"expected to only produce FlowControl objects. This is most likely bug. "
+                            f"Contact Roboflow team through github issues "
+                            f"(https://github.com/roboflow/inference/issues) providing full context of"
+                            f"the problem - including workflow definition you use.",
+                            context="workflow_execution | step_output_registration",
+                        )
+                    self._register_flow_control_output_for_simd_step(
+                        step_node=step_node,
+                        indices=indices,
+                        outputs=outputs,
+                    )
+                    return None
+                self._execution_cache.register_batch_of_step_outputs(
+                    step_name=step_name,
+                    indices=indices,
+                    outputs=outputs,
+                )
+                return None
+            if not isinstance(outputs, list) or len(outputs) != 1:
+                raise AssumptionError(
+                    public_message=f"Error in execution engine. In context of SIMD step: {step_selector} attempts to "
+                    f"register output which should be nested, 1-element batch, but detected batched "
+                    f"output with more than a single element (or incompatible output), "
+                    f"making the operation not possible. This is most likely bug (either a block or "
+                    f"Execution Engine is faulty). Contact Roboflow team through github issues "
+                    f"(https://github.com/roboflow/inference/issues) providing full context of"
+                    f"the problem - including workflow definition you use.",
+                    context="workflow_execution | step_output_registration",
+                )
+            index_base = indices[0][:-1]
+            outputs = outputs[0]
+            indices = [index_base + (i,) for i in range(len(outputs))]
+            self._dynamic_batches_manager.register_element_indices_for_lineage(
+                lineage=step_node.data_lineage,
+                indices=indices,
+            )
+        elif (
             step_node.output_dimensionality - step_node.step_execution_dimensionality
         ) > 0:
             # increase in dimensionality
@@ -231,7 +352,6 @@ class ExecutionDataManager:
                 lineage=step_node.data_lineage,
                 indices=indices,
             )
-        step_name = get_last_chunk_of_selector(selector=step_selector)
         if step_node.child_execution_branches:
             if not all(isinstance(element, FlowControl) for element in outputs):
                 raise ExecutionEngineRuntimeError(
@@ -275,7 +395,7 @@ class ExecutionDataManager:
                 ]
                 selector_lineage = input_node.data_lineage
         elif is_step_selector(selector_or_value=potential_step_selector):
-            if self.is_step_simd(step_selector=potential_step_selector):
+            if self.does_step_produce_batches(step_selector=potential_step_selector):
                 step_node_data: StepNode = self._execution_graph.nodes[
                     potential_step_selector
                 ][NODE_COMPILATION_OUTPUT_PROPERTY]
@@ -318,9 +438,23 @@ class ExecutionDataManager:
         ) and not self.does_input_represent_batch(input_selector=selector):
             input_name = get_last_chunk_of_selector(selector=selector)
             return self._runtime_parameters[input_name]
-        elif is_step_selector(
-            selector_or_value=potential_step_selector
-        ) and not self.is_step_simd(step_selector=potential_step_selector):
+        elif is_step_selector(selector_or_value=potential_step_selector):
+            step_node_data = node_as(
+                execution_graph=self._execution_graph,
+                node=potential_step_selector,
+                expected_type=StepNode,
+            )
+            if step_node_data.output_dimensionality != 0:
+                raise ExecutionEngineRuntimeError(
+                    public_message=f"Error in execution engine. Attempted to get value of: {selector}, "
+                    f"which was supposed to be registered as scalar output, but in fact Execution "
+                    f"Engine denoted the output as batched one (with dimensionality: "
+                    f"{step_node_data.output_dimensionality}). "
+                    f"This is most likely bug. Contact Roboflow team through github issues "
+                    f"(https://github.com/roboflow/inference/issues) providing full context of"
+                    f"the problem - including workflow definition you use.",
+                    context="workflow_execution | getting_workflow_data",
+                )
             step_name = get_last_chunk_of_selector(selector=potential_step_selector)
             if selector.endswith(".*"):
                 return self._execution_cache.get_all_non_batch_step_outputs(
@@ -365,7 +499,7 @@ class ExecutionDataManager:
             ]
         elif is_step_selector(
             selector_or_value=potential_step_selector
-        ) and self.is_step_simd(step_selector=potential_step_selector):
+        ) and self.does_step_produce_batches(step_selector=potential_step_selector):
             step_name = get_last_chunk_of_selector(selector=potential_step_selector)
             if selector.endswith(".*"):
                 return self._execution_cache.get_all_batch_step_outputs(
@@ -393,6 +527,14 @@ class ExecutionDataManager:
             expected_type=StepNode,
         )
         return step_node_data.is_batch_oriented()
+
+    def does_step_produce_batches(self, step_selector: str) -> bool:
+        step_node_data = node_as(
+            execution_graph=self._execution_graph,
+            node=step_selector,
+            expected_type=StepNode,
+        )
+        return step_node_data.output_dimensionality > 0
 
     def does_input_represent_batch(self, input_selector: str) -> bool:
         input_node = node_as(

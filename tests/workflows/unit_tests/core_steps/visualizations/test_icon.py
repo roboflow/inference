@@ -115,7 +115,7 @@ def test_icon_validation_when_dynamic_mode_with_default_position() -> None:
 
     # when
     result = IconManifest.model_validate(data)
-    
+
     # then
     assert result.position == "TOP_CENTER"  # Check default value is used
 
@@ -142,13 +142,13 @@ def test_icon_validation_when_invalid_image_is_given() -> None:
 def test_icon_visualization_block_static_mode():
     # given
     block = IconVisualizationBlockV1()
-    
+
     # Create test images
     test_image = WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id="test"),
         numpy_image=np.zeros((1000, 1000, 3), dtype=np.uint8),
     )
-    
+
     # Create test icon (red square)
     test_icon_np = np.zeros((32, 32, 3), dtype=np.uint8)
     test_icon_np[:, :, 2] = 255  # Make it red
@@ -185,13 +185,13 @@ def test_icon_visualization_block_static_mode():
 def test_icon_visualization_block_dynamic_mode():
     # given
     block = IconVisualizationBlockV1()
-    
+
     # Create test images
     test_image = WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id="test"),
         numpy_image=np.zeros((1000, 1000, 3), dtype=np.uint8),
     )
-    
+
     # Create test icon (blue square)
     test_icon_np = np.zeros((32, 32, 3), dtype=np.uint8)
     test_icon_np[:, :, 0] = 255  # Make it blue
@@ -234,13 +234,13 @@ def test_icon_visualization_block_dynamic_mode():
 def test_icon_visualization_block_static_mode_negative_positioning():
     # given
     block = IconVisualizationBlockV1()
-    
+
     # Create test images
     test_image = WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id="test"),
         numpy_image=np.zeros((1000, 1000, 3), dtype=np.uint8),
     )
-    
+
     # Create test icon (green square)
     test_icon_np = np.zeros((50, 50, 3), dtype=np.uint8)
     test_icon_np[:, :, 1] = 255  # Make it green
@@ -287,7 +287,7 @@ def test_icon_validation_when_static_mode_with_defaults() -> None:
 
     # when
     result = IconManifest.model_validate(data)
-    
+
     # then
     assert result.x_position == 10
     assert result.y_position == 10

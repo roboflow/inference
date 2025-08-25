@@ -64,12 +64,16 @@ def parse_block_manifest(
     inputs_accepting_batches_and_scalars = set(
         manifest_type.get_parameters_accepting_batches_and_scalars()
     )
+    inputs_enforcing_auto_batch_casting = set(
+        manifest_type.get_parameters_enforcing_auto_batch_casting()
+    )
     return parse_block_manifest_schema(
         schema=schema,
         inputs_dimensionality_offsets=inputs_dimensionality_offsets,
         dimensionality_reference_property=dimensionality_reference_property,
         inputs_accepting_batches=inputs_accepting_batches,
         inputs_accepting_batches_and_scalars=inputs_accepting_batches_and_scalars,
+        inputs_enforcing_auto_batch_casting=inputs_enforcing_auto_batch_casting,
     )
 
 
@@ -79,6 +83,7 @@ def parse_block_manifest_schema(
     dimensionality_reference_property: Optional[str],
     inputs_accepting_batches: Set[str],
     inputs_accepting_batches_and_scalars: Set[str],
+    inputs_enforcing_auto_batch_casting: Set[str],
 ) -> BlockManifestMetadata:
     primitive_types = retrieve_primitives_from_schema(
         schema=schema,
@@ -89,6 +94,7 @@ def parse_block_manifest_schema(
         dimensionality_reference_property=dimensionality_reference_property,
         inputs_accepting_batches=inputs_accepting_batches,
         inputs_accepting_batches_and_scalars=inputs_accepting_batches_and_scalars,
+        inputs_enforcing_auto_batch_casting=inputs_enforcing_auto_batch_casting,
     )
     return BlockManifestMetadata(
         primitive_types=primitive_types,
@@ -255,6 +261,7 @@ def retrieve_selectors_from_schema(
     dimensionality_reference_property: Optional[str],
     inputs_accepting_batches: Set[str],
     inputs_accepting_batches_and_scalars: Set[str],
+    inputs_enforcing_auto_batch_casting: Set[str],
 ) -> Dict[str, SelectorDefinition]:
     result = []
     for property_name, property_definition in schema[PROPERTIES_KEY].items():
@@ -277,6 +284,7 @@ def retrieve_selectors_from_schema(
                 is_list_element=True,
                 inputs_accepting_batches=inputs_accepting_batches,
                 inputs_accepting_batches_and_scalars=inputs_accepting_batches_and_scalars,
+                inputs_enforcing_auto_batch_casting=inputs_enforcing_auto_batch_casting,
             )
         elif property_definition.get(TYPE_KEY) == OBJECT_TYPE and isinstance(
             property_definition.get(ADDITIONAL_PROPERTIES_KEY), dict
@@ -290,6 +298,7 @@ def retrieve_selectors_from_schema(
                 is_dict_element=True,
                 inputs_accepting_batches=inputs_accepting_batches,
                 inputs_accepting_batches_and_scalars=inputs_accepting_batches_and_scalars,
+                inputs_enforcing_auto_batch_casting=inputs_enforcing_auto_batch_casting,
             )
         else:
             selector = retrieve_selectors_from_simple_property(
@@ -300,6 +309,7 @@ def retrieve_selectors_from_schema(
                 is_dimensionality_reference_property=is_dimensionality_reference_property,
                 inputs_accepting_batches=inputs_accepting_batches,
                 inputs_accepting_batches_and_scalars=inputs_accepting_batches_and_scalars,
+                inputs_enforcing_auto_batch_casting=inputs_enforcing_auto_batch_casting,
             )
         if selector is not None:
             result.append(selector)
@@ -314,6 +324,7 @@ def retrieve_selectors_from_simple_property(
     is_dimensionality_reference_property: bool,
     inputs_accepting_batches: Set[str],
     inputs_accepting_batches_and_scalars: Set[str],
+    inputs_enforcing_auto_batch_casting: Set[str],
     is_list_element: bool = False,
     is_dict_element: bool = False,
 ) -> Optional[SelectorDefinition]:
@@ -323,9 +334,15 @@ def retrieve_selectors_from_simple_property(
         )
         if declared_points_to_batch == "dynamic":
             if property_name in inputs_accepting_batches_and_scalars:
-                points_to_batch = {True, False}
+                if property_name in inputs_enforcing_auto_batch_casting:
+                    points_to_batch = {True}
+                else:
+                    points_to_batch = {True, False}
             else:
-                points_to_batch = {property_name in inputs_accepting_batches}
+                points_to_batch = {
+                    property_name in inputs_accepting_batches
+                    or property_name in inputs_enforcing_auto_batch_casting
+                }
         else:
             points_to_batch = {declared_points_to_batch}
         allowed_references = [
@@ -359,6 +376,7 @@ def retrieve_selectors_from_simple_property(
             is_dimensionality_reference_property=is_dimensionality_reference_property,
             inputs_accepting_batches=inputs_accepting_batches,
             inputs_accepting_batches_and_scalars=inputs_accepting_batches_and_scalars,
+            inputs_enforcing_auto_batch_casting=inputs_enforcing_auto_batch_casting,
             is_list_element=True,
         )
     if property_defines_union(property_definition=property_definition):
@@ -372,6 +390,7 @@ def retrieve_selectors_from_simple_property(
             is_dimensionality_reference_property=is_dimensionality_reference_property,
             inputs_accepting_batches=inputs_accepting_batches,
             inputs_accepting_batches_and_scalars=inputs_accepting_batches_and_scalars,
+            inputs_enforcing_auto_batch_casting=inputs_enforcing_auto_batch_casting,
         )
     return None
 
@@ -394,6 +413,7 @@ def retrieve_selectors_from_union_definition(
     is_dimensionality_reference_property: bool,
     inputs_accepting_batches: Set[str],
     inputs_accepting_batches_and_scalars: Set[str],
+    inputs_enforcing_auto_batch_casting: Set[str],
 ) -> Optional[SelectorDefinition]:
     union_types = (
         union_definition.get(ANY_OF_KEY, [])
@@ -410,6 +430,7 @@ def retrieve_selectors_from_union_definition(
             is_dimensionality_reference_property=is_dimensionality_reference_property,
             inputs_accepting_batches=inputs_accepting_batches,
             inputs_accepting_batches_and_scalars=inputs_accepting_batches_and_scalars,
+            inputs_enforcing_auto_batch_casting=inputs_enforcing_auto_batch_casting,
             is_list_element=is_list_element,
         )
         if result is None:
