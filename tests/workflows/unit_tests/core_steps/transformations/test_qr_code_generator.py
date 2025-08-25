@@ -1,5 +1,5 @@
-import pytest
 import numpy as np
+import pytest
 
 from inference.core.workflows.core_steps.transformations.qr_code_generator.v1 import (
     QRCodeGeneratorBlockV1,

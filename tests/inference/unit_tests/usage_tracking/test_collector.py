@@ -1,9 +1,9 @@
 import hashlib
 import json
 import sys
+from unittest import mock
 
 import pytest
-from unittest import mock
 
 from inference.core.env import LAMBDA
 from inference.core.version import __version__ as inference_version
