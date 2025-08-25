@@ -1,5 +1,6 @@
-import torch
 from unittest.mock import MagicMock
+
+import torch
 
 from inference.models.owlv2 import owlv2
 
