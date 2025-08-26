@@ -1,5 +1,6 @@
 import base64
 from io import BytesIO
+from threading import Lock
 from time import perf_counter
 from typing import Any, List, Optional, Union
 
@@ -61,6 +62,7 @@ class SegmentAnything(RoboflowCoreModel):
                 "CPUExecutionProvider",
             ],
         )
+        self._ort_session_lock = Lock()
         self.embedding_cache = {}
         self.image_size_cache = {}
         self.embedding_cache_keys = []
@@ -304,7 +306,8 @@ class SegmentAnything(RoboflowCoreModel):
             ),
             "orig_im_size": np.array(original_image_size, dtype=np.float32),
         }
-        masks, _, low_res_logits = self.ort_session.run(None, ort_inputs)
+        with self._ort_session_lock:
+            masks, _, low_res_logits = self.ort_session.run(None, ort_inputs)
         if image_id:
             self.low_res_logits_cache[image_id] = low_res_logits
             if image_id not in self.segmentation_cache_keys:
