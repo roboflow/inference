@@ -22,7 +22,6 @@ import sys
 import numpy as np
 from typing import Dict, Any
 from pathlib import Path
-import configparser
 
 
 def load_modal_credentials():
@@ -43,36 +42,79 @@ def load_modal_credentials():
     modal_toml_path = Path.home() / ".modal.toml"
     if modal_toml_path.exists():
         try:
-            config = configparser.ConfigParser()
-            config.read(modal_toml_path)
-            
-            # Find the active profile or use the first available profile
-            active_profile = None
-            available_profiles = []
-            
-            for section in config.sections():
-                available_profiles.append(section)
-                # Check if this profile is marked as active
-                if config.getboolean(section, "active", fallback=False):
-                    active_profile = section
-            
-            # Use active profile, or fall back to 'default', or use first available
-            profile_to_use = active_profile
-            if not profile_to_use and "default" in config:
-                profile_to_use = "default"
-            elif not profile_to_use and available_profiles:
-                profile_to_use = available_profiles[0]
-            
-            if profile_to_use:
-                token_id = config.get(profile_to_use, "token_id", fallback=None)
-                token_secret = config.get(profile_to_use, "token_secret", fallback=None)
+            # Try using toml if available, otherwise parse manually
+            try:
+                import toml
+                config = toml.load(modal_toml_path)
                 
-                if token_id and token_secret:
-                    print(f"✓ Using Modal credentials from {modal_toml_path} (profile: {profile_to_use})")
-                    # Set environment variables for the Modal client
-                    os.environ["MODAL_TOKEN_ID"] = token_id
-                    os.environ["MODAL_TOKEN_SECRET"] = token_secret
-                    return token_id, token_secret
+                # Find the active profile or use the first available profile
+                active_profile = None
+                for section, values in config.items():
+                    if isinstance(values, dict) and values.get("active", False):
+                        active_profile = section
+                        break
+                
+                # Use active profile, or fall back to first available
+                if not active_profile and config:
+                    active_profile = list(config.keys())[0]
+                
+                if active_profile and active_profile in config:
+                    profile = config[active_profile]
+                    token_id = profile.get("token_id")
+                    token_secret = profile.get("token_secret")
+                    
+                    if token_id and token_secret:
+                        print(f"✓ Using Modal credentials from {modal_toml_path} (profile: {active_profile})")
+                        os.environ["MODAL_TOKEN_ID"] = token_id
+                        os.environ["MODAL_TOKEN_SECRET"] = token_secret
+                        return token_id, token_secret
+                        
+            except ImportError:
+                # Fallback: Parse TOML file manually for basic key-value pairs
+                import re
+                content = modal_toml_path.read_text()
+                
+                # Find sections and their content
+                sections = re.findall(r'\[([^\]]+)\](.*?)(?=\[|$)', content, re.DOTALL)
+                
+                active_profile = None
+                profiles = {}
+                
+                for section_name, section_content in sections:
+                    # Parse key-value pairs in section
+                    profile_data = {}
+                    
+                    # Match lines like: key = "value" or key = 'value'
+                    for match in re.finditer(r'^(\w+)\s*=\s*["\']([^"\']+)["\']', section_content, re.MULTILINE):
+                        key, value = match.groups()
+                        profile_data[key] = value
+                    
+                    # Also match boolean values
+                    for match in re.finditer(r'^(\w+)\s*=\s*(true|false)', section_content, re.MULTILINE):
+                        key, value = match.groups()
+                        profile_data[key] = value == 'true'
+                    
+                    profiles[section_name] = profile_data
+                    
+                    # Check if this is the active profile
+                    if profile_data.get('active', False):
+                        active_profile = section_name
+                
+                # Use active profile or first available
+                if not active_profile and profiles:
+                    active_profile = list(profiles.keys())[0]
+                
+                if active_profile and active_profile in profiles:
+                    profile = profiles[active_profile]
+                    token_id = profile.get("token_id")
+                    token_secret = profile.get("token_secret")
+                    
+                    if token_id and token_secret:
+                        print(f"✓ Using Modal credentials from {modal_toml_path} (profile: {active_profile})")
+                        os.environ["MODAL_TOKEN_ID"] = token_id
+                        os.environ["MODAL_TOKEN_SECRET"] = token_secret
+                        return token_id, token_secret
+                    
         except Exception as e:
             print(f"Warning: Could not parse {modal_toml_path}: {e}")
     
@@ -91,8 +133,8 @@ if not token_id or not token_secret:
     print("\n2. Run 'modal setup' to create ~/.modal.toml")
     print("\n3. Create ~/.modal.toml manually with a profile like:")
     print("   [default]  # or [your-profile-name]")
-    print("   token_id = 'your_token_id'")
-    print("   token_secret = 'your_token_secret'")
+    print("   token_id = \"your_token_id\"")
+    print("   token_secret = \"your_token_secret\"")
     print("   active = true  # optional, marks this as the active profile")
     sys.exit(1)
 
