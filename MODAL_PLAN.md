@@ -24,15 +24,29 @@ Implementing Custom Python Blocks for Roboflow Workflows using Modal sandboxes f
 - [x] Updated block_scaffolding.py to support Modal execution
 - [x] Updated Serverless v2 Dockerfile to include Modal SDK
 - [x] Created test script (modal/test_modal_blocks.py)
+- [x] Committed initial implementation
 
-### 🚧 In Progress
-- [ ] Fix Modal Function creation approach (needs different strategy)
+### 🚧 Known Issues & Next Steps
+
+1. **Modal Function Creation Strategy**: The current approach needs refinement for dynamic function creation in Modal.
+   - Consider using Modal Sandboxes API directly instead of Functions
+   - Or pre-create a generic executor function that loads and executes code dynamically
+   - Modal functions typically need to be defined at module/deployment time
+
+2. **Workspace ID Threading**: Ensure workspace_id is properly passed through the workflow execution context.
+
+3. **Image Management**: The shared Modal Image needs to be pre-built and deployed before use.
+
+4. **Testing**: Requires Modal credentials and deployed image to run tests.
 
 ### 📝 TODO
-- [ ] Push Modal Image to workspace
+- [ ] Refactor to use Modal Sandboxes API or alternative approach
+- [ ] Push Modal Image to workspace  
 - [ ] Test end-to-end workflow
+- [ ] Add workspace_id propagation through request context
 - [ ] Performance testing
 - [ ] Security validation
+- [ ] Documentation
 
 ## Implementation Details
 
@@ -57,31 +71,38 @@ Implementing Custom Python Blocks for Roboflow Workflows using Modal sandboxes f
 - restrict_modal_access=True
 - max_inputs=1 (fresh containers)
 - 20-second timeout
-- Code validation in Modal Function
+- Code validation in Modal sandbox
 
 ### 5. Environment Variables
 - WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE=modal
 - MODAL_TOKEN_ID
-- MODAL_TOKEN_SECRET
+- MODAL_TOKEN_SECRET  
 - MODAL_WORKSPACE_NAME
 
 ## File Structure
 ```
 inference/
 ├── core/workflows/execution_engine/v1/dynamic_blocks/
-│   ├── block_scaffolding.py (modify)
-│   └── modal_executor.py (new)
-├── core/env.py (modify)
+│   ├── block_scaffolding.py (modified)
+│   ├── modal_executor.py (new)
+│   └── serializers.py (new)
+├── core/env.py (modified)
 ├── requirements/requirements.modal.txt (new)
-├── docker/dockerfiles/Dockerfile.onnx.gpu (modify)
+├── docker/dockerfiles/Dockerfile.onnx.gpu (modified)
 └── modal/
     ├── build_modal_image.py (new)
     └── test_modal_blocks.py (new)
 ```
 
-## Notes
-- Workspace ID needs to be passed through from request context
-- No network blocking (users may need external services)
-- No pre-checking for Function existence (try-catch pattern)
-- Use existing inference serializers
-- No hardcoded secrets in code
+## Notes for Next Developer
+
+The core implementation is complete but needs adjustment in how Modal Functions are created dynamically. The current approach tries to create functions on-the-fly, but Modal's architecture expects functions to be defined at deployment time.
+
+Consider these alternatives:
+1. **Use Modal Sandboxes directly** - More flexible for dynamic code execution
+2. **Pre-deploy generic executor** - Deploy a single function that accepts code as input
+3. **Use Modal's experimental features** - Check if they have new APIs for dynamic execution
+
+The serialization layer is complete and tested. The integration with block_scaffolding.py properly routes to Modal when configured. The main blocker is the Modal Function creation strategy.
+
+Workspace ID needs to be threaded through from the HTTP request context to the block execution layer.
