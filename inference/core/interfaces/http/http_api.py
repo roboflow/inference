@@ -1940,7 +1940,7 @@ class HttpInterface(BaseInterface):
 
                 def load_model(model_id):
                     try:
-                        async with semaphore:
+                        with semaphore:
                             # Add a timeout to prevent indefinite hanging
                             # TODO: how to add timeout here? Probably best to timeout model loading?
                             model_add(
