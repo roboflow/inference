@@ -86,7 +86,7 @@ batch-oriented input, it will be treated as a SIMD step.
 Non-SIMD steps, by contrast, are expected to deliver a single result for the input data. In the case of non-SIMD 
 flow-control steps, they affect all downstream steps as a whole, rather than individually for each element in a batch.
 
-Historically, Execution Engine could not handle well al scenarios when non-SIMD steps' outputs were fed into SIMD steps
+Historically, Execution Engine could not handle well all scenarios when non-SIMD steps' outputs were fed into SIMD steps
 inputs - causing compilation error due to lack of ability to automatically cast such outputs into batches when feeding
 into SIMD seps. Starting with Execution Engine `v1.6.0`, the handling of SIMD and non-SIMD blocks has been improved 
 through the introduction of **Auto Batch Casting**:
@@ -98,22 +98,6 @@ batch-oriented inputs when available. Missing dimensions are generated in a mann
 
 * Outputs are evaluated against the casting context - leaving them as scalars when block keeps or decreases output 
 dimensionality or **creating new batches** when increase of dimensionality is expected.
-
-!!! warning "We don't support multiple sources of batch-oriented data"
-
-    While Auto Batch Casting simplifies mixing SIMD and non-SIMD blocks, there is one major limitation to be aware of.
-
-    If multiple first-level batches are created from different origins (for instance inputs and steps taking scalars
-    and raising output dimensionality into batch at first level of depth), the Execution Engine cannot deterministically 
-    construct the output. In previous versions, the assumption was that **outputs were lists directly tied to inputs 
-    batch order**. With Auto Batch Casting, batches may also be generated dynamically, and no deterministic ordering 
-    can be guaranteed (imagine scenario when you feed batch of 4 images, and there is a block generating dynamic batch 
-    with 3 images - when results are to be returned, Execution Engine is unable to determine a single input batch which 
-    would dictate output order alignment, which is a hard requirement caused by falty design choices). 
-
-    To prevent unpredictable behaviour, the Execution Engine asserts in this scenario and raises an error instead of 
-    proceeding. Resolving this design flaw requires breaking changes and is therefore deferred to 
-    **Execution Engine v2.0.**
 
 
 ### Preparing step inputs

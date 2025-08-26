@@ -4345,3 +4345,162 @@ def test_workflow_with_batch_inputs_feeding_simd_consumer_raising_dim(
         {"shapes": ["[292, 168, 3][293, 168, 3]"]},
         {"shapes": ["[392, 168, 3][393, 168, 3]"]},
     ]
+
+
+WORKFLOW_WITH_INPUTS_DERIVED_NESTED_DIMS_AND_EMERGED_NESTED_DIMS = {
+    "version": "1.1",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+    ],
+    "steps": [
+        {
+            "type": "ObjectDetectionModel",
+            "name": "general_detection",
+            "image": "$inputs.image",
+            "model_id": "yolov8n-640",
+            "class_filter": ["dog"],
+        },
+        {
+            "type": "Crop",
+            "name": "cropping",
+            "image": "$inputs.image",
+            "predictions": "$steps.general_detection.predictions",
+        },
+        {
+            "type": "EachSecondPass",
+            "name": "condition_batch_1",
+            "x": "$steps.cropping.crops",
+            "next_steps": ["$steps.breds_classification"],
+        },
+        {
+            "type": "ClassificationModel",
+            "name": "breds_classification",
+            "image": "$steps.cropping.crops",
+            "model_id": "dog-breed-xpaq6/1",
+            "confidence": 0.09,
+        },
+        {
+            "type": "ImageProducer",
+            "name": "image_producer_x",
+            "shape": (192, 168, 3),
+        },
+        {
+            "type": "ImageProducer",
+            "name": "image_producer_y",
+            "shape": (292, 168, 3),
+        },
+        {
+            "type": "IdentitySIMD",
+            "name": "identity_simd",
+            "x": "$steps.image_producer_x.image",
+        },
+        {
+            "type": "MultiSIMDImageConsumerRaisingDim",
+            "name": "image_consumer",
+            "images_x": "$steps.identity_simd.x",
+            "images_y": "$steps.image_producer_y.image",
+        },
+        {
+            "type": "DimensionCollapse",
+            "name": "inputs_concatenation",
+            "data": "$inputs.image",
+        },
+        {
+            "type": "DimensionCollapse",
+            "name": "outputs_concatenation",
+            "data": "$steps.image_consumer.shapes",
+        },
+        {
+            "type": "DimensionCollapse",
+            "name": "outputs_concatenation_2",
+            "data": "$steps.outputs_concatenation.output",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "input_image",
+            "selector": "$inputs.image",
+        },
+        {
+            "type": "JsonField",
+            "name": "shapes",
+            "selector": "$steps.image_consumer.shapes",
+        },
+        {
+            "type": "JsonField",
+            "name": "collapsed_input",
+            "selector": "$steps.inputs_concatenation.output",
+        },
+        {
+            "type": "JsonField",
+            "name": "collapsed_output",
+            "selector": "$steps.outputs_concatenation.output",
+        },
+        {
+            "type": "JsonField",
+            "name": "collapsed_output_2",
+            "selector": "$steps.outputs_concatenation_2.output",
+        },
+        {
+            "type": "JsonField",
+            "name": "breds_classification",
+            "selector": "$steps.breds_classification.predictions",
+        },
+    ],
+}
+
+
+@mock.patch.object(blocks_loader, "get_plugin_modules")
+def test_workflow_with_input_derived_dims_and_emergent_dims(
+    get_plugin_modules_mock: MagicMock,
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    crowd_image: np.ndarray,
+) -> None:
+    # given
+    get_plugin_modules_mock.return_value = [
+        "tests.workflows.integration_tests.execution.stub_plugins.plugin_image_producer"
+    ]
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+
+    # then
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_INPUTS_DERIVED_NESTED_DIMS_AND_EMERGED_NESTED_DIMS,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": [dogs_image, crowd_image],
+        }
+    )
+
+    # then
+    assert (
+        len(result) == 2
+    ), "Two inputs provided, their dimensions survived to the output, hence 2 outputs expected"
+    assert len(result[0]["collapsed_input"]) == 2
+    assert np.allclose(result[0]["collapsed_input"][0].numpy_image, dogs_image)
+    assert np.allclose(result[0]["collapsed_input"][1].numpy_image, crowd_image)
+    assert np.allclose(result[0]["input_image"].numpy_image, dogs_image)
+    assert result[0]["shapes"] == ["[192, 168, 3][292, 168, 3]"]
+    assert result[0]["collapsed_output"] == ["[192, 168, 3][292, 168, 3]"]
+    assert result[0]["collapsed_output_2"] == [["[192, 168, 3][292, 168, 3]"]]
+    assert [
+        e["top"] if e is not None else None for e in result[0]["breds_classification"]
+    ] == ["116.Parson_russell_terrier", None]
+    assert len(result[1]["collapsed_input"]) == 2
+    assert np.allclose(result[1]["collapsed_input"][0].numpy_image, dogs_image)
+    assert np.allclose(result[1]["collapsed_input"][1].numpy_image, crowd_image)
+    assert np.allclose(result[1]["input_image"].numpy_image, crowd_image)
+    assert result[1]["shapes"] == ["[192, 168, 3][292, 168, 3]"]
+    assert result[1]["collapsed_output"] == ["[192, 168, 3][292, 168, 3]"]
+    assert result[1]["collapsed_output_2"] == [["[192, 168, 3][292, 168, 3]"]]
+    assert result[1]["breds_classification"] == []

@@ -85,23 +85,41 @@ upgrade to use `get_parameters_enforcing_auto_batch_casting(...)` instead of
 on nested batches). This limitation is now removed. Dimensionality collapse blocks may also operate on scalars, with 
 the output dimensionality “bouncing off” the zero ground.
 
-* There is one **important limitation** uncovered by these changes. Since Auto Batch Casting allows scalars to be 
-converted into batches (when a scalar is fed into a block that increases dimensionality), it is possible to end up with 
-multiple batches at the first nesting level, each with a different origin (lineage). In this case, the current 
-Execution Engine implementation cannot deterministically construct the output. Previous versions assumed that outputs 
-were always lists of elements, with the order determined by the input batch. With dynamically generated batches, 
-this assumption no longer holds. Fixing this design flaw would require a breaking change for all customers, 
-so it is deferred to **Execution Engine v2.0**. For now, an assertion has been introduced in the code, raising the 
-following error:
+
+There is one **key change in how outputs are built.** In earlier versions of Execution Error, a block was not allowed 
+to produce a `Batch[X]` directly at the first dimension level — that space was reserved for mapping onto input batches.
+Starting with version `v1.6.0`, this restriction has been removed. 
+
+Previously, outputs were always returned as a list of elements:
+
+* aligned with the input batches, or
+
+* a single-element list if only scalars were given as inputs.
+
+This raised a question: what should happen if a block now produces a batch at the first dimension level?
+We cannot simply `zip(...)` it with input-based outputs, since the size of these newly generated batches might not 
+match the number of input elements — making the operation ambiguous.
+
+To resolve this, we adopted the following rule:
+
+* Treat the situation as if there were a **"dummy" input batch of size 1**.
+
+* Consider all batches produced from scalar inputs as being one level deeper than they appear.
+
+* This follows the principle of broadcasting, allowing such outputs to expand consistently across all elements.
+
+* Input batch may vanish as a result of execution, but when this happens and new first-level dimension emerges, it 
+is still going to be virtually nested to ensure outputs consistency.
+
+**Example:**
 
 ```
-Workflow Compiler detected that the workflow contains multiple elements which create 
-top-level data batches - for instance inputs and blocks that create batched outputs from 
-scalar parameters. We know it sounds convoluted, but the bottom line is that this
-situation is known limitation of Workflows Compiler. 
-Contact Roboflow team through github issues (https://github.com/roboflow/inference/issues) 
-providing full context of the problem - including workflow definition you use.
+(NO INPUTS)    IMAGE FETCHER BLOCK --> image --> OD MODEL --> predictons --> CROPS --> output will be: ["crops": [<crop>, <crop>, ...]] 
 ```
+
+It is important to note that **results generated from previously created workflows valid will be the same** and the 
+change will only affect new workflows created to utilise new functionalities.
+
 ### Migration guide
 
 ??? Hint "Adding `get_parameters_enforcing_auto_batch_casting(...)` method"
