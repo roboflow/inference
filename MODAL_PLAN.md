@@ -54,17 +54,17 @@ Set environment variable `WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE=modal` in deplo
 - [x] Created MODAL_PLAN.md tracking document
 - [x] Created Modal requirements file (requirements.modal.txt)
 - [x] Added Modal environment variables to env.py
-- [x] Created Modal Image builder script (modal/build_modal_image.py)
-- [x] Implemented modal_executor.py with ModalExecutor class
-- [x] ~~Created serializers.py for data serialization/deserialization~~ Removed - using existing serializers
+- [x] Created Modal Image builder script using uv_pip_install
+- [x] Implemented modal_executor.py with Parameterized Functions
+- [x] Integrated with existing inference serializers (removed duplicate)
 - [x] Updated block_scaffolding.py to support Modal execution
-- [x] Updated Serverless v2 Dockerfiles (both GPU and CPU) to include Modal SDK
+- [x] Updated both Dockerfile.onnx.gpu and Dockerfile.onnx.cpu with Modal SDK
 - [x] Created test script (modal/test_modal_blocks.py)
-- [x] Committed initial implementation
-- [x] Refactored to use Modal Parameterized Functions for workspace-based isolation
-- [x] Updated to use uv_pip_install for better optimization
-- [x] Integrated with existing inference serializers (no new serializers.py)
 - [x] Created deployment script (modal/deploy_modal_app.py)
+- [x] Added anonymous workspace fallback for non-authenticated users
+- [x] Added graceful handling for missing Modal installation
+- [x] Added graceful handling for missing Modal credentials
+- [x] Created WORKSPACE_ID_FLOW.md documentation
 
 ### 🚧 Known Issues & Next Steps
 
