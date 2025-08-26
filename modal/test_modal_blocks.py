@@ -60,8 +60,8 @@ def compute(x: int, y: int) -> Dict[str, Any]:
     
     print(f"  Input: {inputs}")
     print(f"  Result: {result}")
-    assert result["sum"] == 8
-    assert result["squared"] == 64
+    assert result.get("sum") == 8
+    assert result.get("squared") == 64
     print("  ✅ Simple computation test passed!")
 
 
@@ -106,7 +106,7 @@ def process_array(data: np.ndarray) -> Dict[str, Any]:
     
     print(f"  Array shape: {test_array.shape}")
     print(f"  Result: {result}")
-    assert result["shape"] == [10, 20]
+    assert tuple(result.get("shape", [])) == test_array.shape
     assert "mean" in result
     assert "std" in result
     print("  ✅ Numpy processing test passed!")
@@ -159,9 +159,9 @@ def process_image(image: WorkflowImageData) -> Dict[str, Any]:
     
     print(f"  Image shape: {test_image.shape}")
     print(f"  Result: {result}")
-    assert result["width"] == 150
-    assert result["height"] == 100
-    assert result["has_image"] is True
+    assert result.get("width") == 150
+    assert result.get("height") == 100
+    assert result.get("has_image") is True
     print("  ✅ WorkflowImageData processing test passed!")
 
 

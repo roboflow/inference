@@ -28,6 +28,7 @@ Implementing Custom Python Blocks for Roboflow Workflows using Modal sandboxes f
 - [x] Refactored to use Modal Parameterized Functions for workspace-based isolation
 - [x] Updated to use uv_pip_install for better optimization
 - [x] Integrated with existing inference serializers (no new serializers.py)
+- [x] Created deployment script (modal/deploy_modal_app.py)
 
 ### 🚧 Known Issues & Next Steps
 
