@@ -1,4 +1,5 @@
 import json
+import os
 import os.path
 from unittest import mock
 from unittest.mock import MagicMock, call
@@ -314,3 +315,194 @@ def test_clear_cache_when_nothing_to_delete(
     get_cache_dir_mock.assert_called_once_with(model_id="some/2")
     assert os.listdir(empty_local_dir) == ["some"]
     assert os.listdir(os.path.join(empty_local_dir, "some")) == ["1"]
+
+
+# Tests for atomic cache writes feature
+
+
+@mock.patch.object(model_artifacts, "ATOMIC_CACHE_WRITES_ENABLED", True)
+@mock.patch.object(model_artifacts, "get_cache_dir")
+@mock.patch.object(model_artifacts, "dump_bytes_atomic")
+@mock.patch.object(model_artifacts, "dump_bytes")
+def test_save_bytes_in_cache_uses_atomic_when_enabled(
+    dump_bytes_mock: MagicMock,
+    dump_bytes_atomic_mock: MagicMock,
+    get_cache_dir_mock: MagicMock,
+    empty_local_dir: str,
+) -> None:
+    # given
+    cache_dir = os.path.join(empty_local_dir, "some", "2")
+    get_cache_dir_mock.return_value = cache_dir
+    content = b"test content"
+    expected_path = os.path.join(cache_dir, "file.dat")
+
+    # when
+    save_bytes_in_cache(content=content, file="file.dat", model_id="some/2")
+
+    # then
+    dump_bytes_atomic_mock.assert_called_once_with(
+        path=expected_path, content=content, allow_override=True
+    )
+    dump_bytes_mock.assert_not_called()
+
+
+@mock.patch.object(model_artifacts, "ATOMIC_CACHE_WRITES_ENABLED", False)
+@mock.patch.object(model_artifacts, "get_cache_dir")
+@mock.patch.object(model_artifacts, "dump_bytes_atomic")
+@mock.patch.object(model_artifacts, "dump_bytes")
+def test_save_bytes_in_cache_uses_regular_when_disabled(
+    dump_bytes_mock: MagicMock,
+    dump_bytes_atomic_mock: MagicMock,
+    get_cache_dir_mock: MagicMock,
+    empty_local_dir: str,
+) -> None:
+    # given
+    cache_dir = os.path.join(empty_local_dir, "some", "2")
+    get_cache_dir_mock.return_value = cache_dir
+    content = b"test content"
+    expected_path = os.path.join(cache_dir, "file.dat")
+
+    # when
+    save_bytes_in_cache(content=content, file="file.dat", model_id="some/2")
+
+    # then
+    dump_bytes_mock.assert_called_once_with(
+        path=expected_path, content=content, allow_override=True
+    )
+    dump_bytes_atomic_mock.assert_not_called()
+
+
+@mock.patch.object(model_artifacts, "ATOMIC_CACHE_WRITES_ENABLED", True)
+@mock.patch.object(model_artifacts, "get_cache_dir")
+@mock.patch.object(model_artifacts, "dump_json_atomic")
+@mock.patch.object(model_artifacts, "dump_json")
+def test_save_json_in_cache_uses_atomic_when_enabled(
+    dump_json_mock: MagicMock,
+    dump_json_atomic_mock: MagicMock,
+    get_cache_dir_mock: MagicMock,
+    empty_local_dir: str,
+) -> None:
+    # given
+    cache_dir = os.path.join(empty_local_dir, "some", "2")
+    get_cache_dir_mock.return_value = cache_dir
+    content = {"key": "value"}
+    expected_path = os.path.join(cache_dir, "file.json")
+
+    # when
+    save_json_in_cache(content=content, file="file.json", model_id="some/2", indent=2)
+
+    # then
+    dump_json_atomic_mock.assert_called_once_with(
+        path=expected_path, content=content, allow_override=True, indent=2
+    )
+    dump_json_mock.assert_not_called()
+
+
+@mock.patch.object(model_artifacts, "ATOMIC_CACHE_WRITES_ENABLED", False)
+@mock.patch.object(model_artifacts, "get_cache_dir")
+@mock.patch.object(model_artifacts, "dump_json_atomic")
+@mock.patch.object(model_artifacts, "dump_json")
+def test_save_json_in_cache_uses_regular_when_disabled(
+    dump_json_mock: MagicMock,
+    dump_json_atomic_mock: MagicMock,
+    get_cache_dir_mock: MagicMock,
+    empty_local_dir: str,
+) -> None:
+    # given
+    cache_dir = os.path.join(empty_local_dir, "some", "2")
+    get_cache_dir_mock.return_value = cache_dir
+    content = {"key": "value"}
+    expected_path = os.path.join(cache_dir, "file.json")
+
+    # when
+    save_json_in_cache(content=content, file="file.json", model_id="some/2", indent=2)
+
+    # then
+    dump_json_mock.assert_called_once_with(
+        path=expected_path, content=content, allow_override=True, indent=2
+    )
+    dump_json_atomic_mock.assert_not_called()
+
+
+@mock.patch.object(model_artifacts, "ATOMIC_CACHE_WRITES_ENABLED", True)
+@mock.patch.object(model_artifacts, "get_cache_dir")
+@mock.patch.object(model_artifacts, "dump_text_lines_atomic")
+@mock.patch.object(model_artifacts, "dump_text_lines")
+def test_save_text_lines_in_cache_uses_atomic_when_enabled(
+    dump_text_lines_mock: MagicMock,
+    dump_text_lines_atomic_mock: MagicMock,
+    get_cache_dir_mock: MagicMock,
+    empty_local_dir: str,
+) -> None:
+    # given
+    cache_dir = os.path.join(empty_local_dir, "some", "2")
+    get_cache_dir_mock.return_value = cache_dir
+    content = ["line1", "line2"]
+    expected_path = os.path.join(cache_dir, "file.txt")
+
+    # when
+    save_text_lines_in_cache(content=content, file="file.txt", model_id="some/2")
+
+    # then
+    dump_text_lines_atomic_mock.assert_called_once_with(
+        path=expected_path, content=content, allow_override=True
+    )
+    dump_text_lines_mock.assert_not_called()
+
+
+@mock.patch.object(model_artifacts, "ATOMIC_CACHE_WRITES_ENABLED", False)
+@mock.patch.object(model_artifacts, "get_cache_dir")
+@mock.patch.object(model_artifacts, "dump_text_lines_atomic")
+@mock.patch.object(model_artifacts, "dump_text_lines")
+def test_save_text_lines_in_cache_uses_regular_when_disabled(
+    dump_text_lines_mock: MagicMock,
+    dump_text_lines_atomic_mock: MagicMock,
+    get_cache_dir_mock: MagicMock,
+    empty_local_dir: str,
+) -> None:
+    # given
+    cache_dir = os.path.join(empty_local_dir, "some", "2")
+    get_cache_dir_mock.return_value = cache_dir
+    content = ["line1", "line2"]
+    expected_path = os.path.join(cache_dir, "file.txt")
+
+    # when
+    save_text_lines_in_cache(content=content, file="file.txt", model_id="some/2")
+
+    # then
+    dump_text_lines_mock.assert_called_once_with(
+        path=expected_path, content=content, allow_override=True
+    )
+    dump_text_lines_atomic_mock.assert_not_called()
+
+
+# Integration test with actual atomic writes
+@mock.patch.object(model_artifacts, "ATOMIC_CACHE_WRITES_ENABLED", True)
+@mock.patch.object(model_artifacts, "get_cache_dir")
+def test_save_json_in_cache_atomic_integration(
+    get_cache_dir_mock: MagicMock,
+    empty_local_dir: str,
+) -> None:
+    # given
+    cache_dir = os.path.join(empty_local_dir, "some", "2")
+    get_cache_dir_mock.return_value = cache_dir
+    os.makedirs(cache_dir, exist_ok=True)
+    content = {"test": "data", "number": 42}
+
+    # when
+    save_json_in_cache(
+        content=content,
+        file="test.json",
+        model_id="some/2",
+        indent=2,
+    )
+
+    # then
+    expected_file = os.path.join(cache_dir, "test.json")
+    assert os.path.exists(expected_file)
+    with open(expected_file) as f:
+        loaded = json.load(f)
+    assert loaded == content
+    # Verify no temp files remain
+    temp_files = [f for f in os.listdir(cache_dir) if f.startswith(".tmp_")]
+    assert len(temp_files) == 0

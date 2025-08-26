@@ -1528,7 +1528,7 @@ the method signatures.
         In this example, the block visualises crops predictions and creates tiles
         presenting all crops predictions in single output image.
 
-        ```{ .py linenums="1" hl_lines="29-31 48-49 59-60"}
+        ```{ .py linenums="1" hl_lines="30-32 34-36 53-55 65-66"}
         from typing import List, Literal, Type, Union
 
         import supervision as sv
@@ -1556,10 +1556,15 @@ the method signatures.
             crops_predictions: Selector(
                 kind=[OBJECT_DETECTION_PREDICTION_KIND]
             )
+            scalar_parameter: Union[float, Selector()]
         
             @classmethod
             def get_output_dimensionality_offset(cls) -> int:
                 return -1
+
+            @classmethod
+            def get_parameters_enforcing_auto_batch_casting(cls) -> List[str]:
+                return ["crops", "crops_predictions"]
         
             @classmethod
             def describe_outputs(cls) -> List[OutputDefinition]:
@@ -1578,6 +1583,7 @@ the method signatures.
                 self,
                 crops: Batch[WorkflowImageData],
                 crops_predictions: Batch[sv.Detections],
+                scalar_parameter: float,
             ) -> BlockResult:
                 annotator = sv.BoxAnnotator()
                 visualisations = []
@@ -1591,18 +1597,22 @@ the method signatures.
                 return {"visualisations": tile}
         ```
 
-        * in lines `29-31` manifest class declares output dimensionality 
+        * in lines `30-32` manifest class declares output dimensionality 
         offset - value `-1` should be understood as decreasing dimensionality level by `1`
 
-        * in lines `48-49` you can see the impact of output dimensionality decrease
-        on the method signature. Both inputs are artificially wrapped in `Batch[]` container.
-        This is done by Execution Engine automatically on output dimensionality decrease when 
-        all inputs have the same dimensionality to enable access to all elements occupying 
-        the last dimensionality level. Obviously, only elements related to the same element 
+        * in lines `34-36` manifest class declares `run(...)` method inputs that will be subject to auto-batch casting
+        ensuring that the signature is always stable. Auto-batch casting was introduced in Execution Engine `v0.1.6.0` 
+        - refer to [changelog](./execution_engine_changelog.md) for more details.
+
+        * in lines `53-55` you can see the impact of output dimensionality decrease
+        on the method signature. First two inputs (declared in line `36`) are artificially wrapped in `Batch[]`
+        container, whereas `scalar_parameter` remains primitive type. This is done by Execution Engine automatically 
+        on output dimensionality decrease when all inputs have the same dimensionality to enable access to 
+        all elements occupying the last dimensionality level. Obviously, only elements related to the same element 
         from top-level batch will be grouped. For instance, if you had two input images that you 
         cropped - crops from those two different images will be grouped separately.
 
-        * lines `59-60` illustrate how output is constructed - single value is returned and that value 
+        * lines `65-66` illustrate how output is constructed - single value is returned and that value 
         will be indexed by Execution Engine in output batch with reduced dimensionality
 
     === "different input dimensionalities"
