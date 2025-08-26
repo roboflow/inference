@@ -4457,6 +4457,7 @@ def test_workflow_with_input_derived_dims_and_emergent_dims(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
     crowd_image: np.ndarray,
+    roboflow_api_key: str,
 ) -> None:
     # given
     get_plugin_modules_mock.return_value = [
@@ -4464,7 +4465,7 @@ def test_workflow_with_input_derived_dims_and_emergent_dims(
     ]
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
-        "workflows_core.api_key": None,
+        "workflows_core.api_key": roboflow_api_key,
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
 
