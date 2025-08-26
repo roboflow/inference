@@ -70,11 +70,9 @@ def assembly_custom_python_block(
                 # Try to extract from self or context
                 workspace_id = getattr(self, "workspace_id", None)
             
+            # Fall back to "anonymous" for non-authenticated users
             if not workspace_id:
-                raise DynamicBlockError(
-                    public_message="Workspace ID is required for Modal execution of Custom Python Blocks",
-                    context="workflow_execution | modal_execution | workspace_validation"
-                )
+                workspace_id = "anonymous"
             
             executor = ModalExecutor(workspace_id)
             return executor.execute_remote(
@@ -162,14 +160,11 @@ def create_dynamic_module(
             validate_code_in_modal
         )
         
-        if not workspace_id:
-            raise DynamicBlockError(
-                public_message="Workspace ID is required for Modal code validation",
-                context="workflow_compilation | modal_validation | workspace_validation"
-            )
+        # Use anonymous workspace if not provided
+        validation_workspace = workspace_id or "anonymous"
         
         # This will raise if validation fails
-        validate_code_in_modal(python_code, workspace_id)
+        validate_code_in_modal(python_code, validation_workspace)
         
         # Create a stub module for local reference
         dynamic_module = types.ModuleType(module_name)

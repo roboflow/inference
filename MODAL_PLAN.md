@@ -1,7 +1,43 @@
 # Modal Custom Python Blocks Implementation Plan
 
-## Overview
-Implementing Custom Python Blocks for Roboflow Workflows using Modal sandboxes for secure execution of untrusted user code on multi-tenant Serverless v2 infrastructure.
+## Current Status
+
+### ✅ Implementation Complete
+The Modal Custom Python Blocks implementation is now complete with:
+- Parameterized Modal Functions for workspace isolation  
+- Integration with existing inference serializers
+- Proper workspace_id threading through the system
+- Deployment and testing scripts ready
+
+### 🚀 Ready for Testing
+To deploy and test:
+
+1. **Set Modal Credentials**:
+```bash
+export MODAL_TOKEN_ID="your_token_id"
+export MODAL_TOKEN_SECRET="your_token_secret"
+```
+
+2. **Deploy Modal App**:
+```bash
+python modal/deploy_modal_app.py
+```
+
+3. **Run Tests**:
+```bash
+export WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE="modal"
+python modal/test_modal_blocks.py
+```
+
+4. **Use in Workflows**:
+Set environment variable `WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE=modal` in deployment
+
+### 📋 Remaining Tasks
+- [ ] Deploy to production Modal environment
+- [ ] Run end-to-end integration tests
+- [ ] Performance benchmarking
+- [ ] Security audit
+- [ ] User documentation
 
 ## Key Requirements
 - One Modal App per workspace (named `inference-workspace-{workspace_id}`)

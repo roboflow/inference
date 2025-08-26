@@ -27,6 +27,9 @@ from inference.core.workflows.prototypes.block import BlockResult
 if MODAL_TOKEN_ID and MODAL_TOKEN_SECRET:
     os.environ["MODAL_TOKEN_ID"] = MODAL_TOKEN_ID
     os.environ["MODAL_TOKEN_SECRET"] = MODAL_TOKEN_SECRET
+    MODAL_AVAILABLE = True
+else:
+    MODAL_AVAILABLE = False
 
 # Create the Modal App
 app = modal.App("inference-custom-blocks")
@@ -176,6 +179,13 @@ class ModalExecutor:
         Raises:
             DynamicBlockError: If execution fails
         """
+        # Check if Modal is available
+        if not MODAL_AVAILABLE:
+            raise DynamicBlockError(
+                public_message="Modal credentials not configured. Please set MODAL_TOKEN_ID and MODAL_TOKEN_SECRET environment variables.",
+                context="modal_executor | credentials_check"
+            )
+        
         # Use provided workspace_id or fall back to instance default
         workspace = workspace_id if workspace_id else self.workspace_id
         
@@ -280,6 +290,13 @@ def validate_code_in_modal(python_code: PythonCode, workspace_id: Optional[str] 
     Raises:
         DynamicBlockError: If code validation fails
     """
+    # Check if Modal is available
+    if not MODAL_AVAILABLE:
+        raise DynamicBlockError(
+            public_message="Modal credentials not configured. Please set MODAL_TOKEN_ID and MODAL_TOKEN_SECRET environment variables.",
+            context="modal_executor | credentials_check"
+        )
+    
     workspace = workspace_id or "anonymous"
     
     # Simple validation code that checks syntax
