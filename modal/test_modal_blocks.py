@@ -46,13 +46,29 @@ def load_modal_credentials():
             config = configparser.ConfigParser()
             config.read(modal_toml_path)
             
-            # Modal uses the [default] section in .modal.toml
-            if "default" in config:
-                token_id = config.get("default", "token_id", fallback=None)
-                token_secret = config.get("default", "token_secret", fallback=None)
+            # Find the active profile or use the first available profile
+            active_profile = None
+            available_profiles = []
+            
+            for section in config.sections():
+                available_profiles.append(section)
+                # Check if this profile is marked as active
+                if config.getboolean(section, "active", fallback=False):
+                    active_profile = section
+            
+            # Use active profile, or fall back to 'default', or use first available
+            profile_to_use = active_profile
+            if not profile_to_use and "default" in config:
+                profile_to_use = "default"
+            elif not profile_to_use and available_profiles:
+                profile_to_use = available_profiles[0]
+            
+            if profile_to_use:
+                token_id = config.get(profile_to_use, "token_id", fallback=None)
+                token_secret = config.get(profile_to_use, "token_secret", fallback=None)
                 
                 if token_id and token_secret:
-                    print(f"✓ Using Modal credentials from {modal_toml_path}")
+                    print(f"✓ Using Modal credentials from {modal_toml_path} (profile: {profile_to_use})")
                     # Set environment variables for the Modal client
                     os.environ["MODAL_TOKEN_ID"] = token_id
                     os.environ["MODAL_TOKEN_SECRET"] = token_secret
@@ -73,10 +89,11 @@ if not token_id or not token_secret:
     print("   export MODAL_TOKEN_ID='your_token_id'")
     print("   export MODAL_TOKEN_SECRET='your_token_secret'")
     print("\n2. Run 'modal setup' to create ~/.modal.toml")
-    print("\n3. Create ~/.modal.toml manually with:")
-    print("   [default]")
+    print("\n3. Create ~/.modal.toml manually with a profile like:")
+    print("   [default]  # or [your-profile-name]")
     print("   token_id = 'your_token_id'")
     print("   token_secret = 'your_token_secret'")
+    print("   active = true  # optional, marks this as the active profile")
     sys.exit(1)
 
 # Set test configuration
