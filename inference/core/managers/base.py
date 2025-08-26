@@ -1,5 +1,7 @@
 import time
-from typing import Dict, List, Optional, Tuple, Union
+from contextlib import contextmanager
+from threading import Lock
+from typing import Dict, Generator, List, Optional, Tuple, Union
 
 import numpy as np
 from fastapi.encoders import jsonable_encoder
@@ -14,11 +16,13 @@ from inference.core.env import (
     INTERNAL_WEIGHTS_URL_SUFFIX,
     METRICS_ENABLED,
     METRICS_INTERVAL,
+    MODEL_LOCK_ACQUIRE_TIMEOUT,
     MODELS_CACHE_AUTH_ENABLED,
     ROBOFLOW_SERVER_UUID,
 )
 from inference.core.exceptions import (
     InferenceModelNotFound,
+    ModelManagerLockAcquisitionError,
     RoboflowAPINotAuthorizedError,
 )
 from inference.core.logger import logger
@@ -39,6 +43,9 @@ class ModelManager:
         self.model_registry = model_registry
         self._models: Dict[str, Model] = models if models is not None else {}
         self.pingback = None
+        self._state_lock = Lock()
+        self._state_lock.acquire()
+        self._models_state_locks: Dict[str, Lock] = {}
 
     def init_pingback(self):
         """Initializes pingback mechanism."""
@@ -80,48 +87,57 @@ class ModelManager:
             f"ModelManager - Adding model with model_id={model_id}, model_id_alias={model_id_alias}"
         )
         resolved_identifier = model_id if model_id_alias is None else model_id_alias
-        if resolved_identifier in self._models:
-            logger.debug(
-                f"ModelManager - model with model_id={resolved_identifier} is already loaded."
-            )
-            return
+        model_lock = self._get_lock_for_a_model(model_id=resolved_identifier)
+        with acquire_with_timeout(lock=model_lock) as acquired:
+            if not acquired:
+                # if failed to acquire - then in use, no need to purge lock
+                raise ModelManagerLockAcquisitionError(
+                    f"Could not acquire lock for model with id={resolved_identifier}."
+                )
+            if resolved_identifier in self._models:
+                logger.debug(
+                    f"ModelManager - model with model_id={resolved_identifier} is already loaded."
+                )
+                return
+            try:
+                logger.debug("ModelManager - model initialisation...")
+                model_class = self.model_registry.get_model(
+                    resolved_identifier,
+                    api_key,
+                    countinference=countinference,
+                    service_secret=service_secret,
+                )
+                model = model_class(
+                    model_id=model_id,
+                    api_key=api_key,
+                )
 
-        logger.debug("ModelManager - model initialisation...")
-
-        try:
-            model_class = self.model_registry.get_model(
-                resolved_identifier,
-                api_key,
-                countinference=countinference,
-                service_secret=service_secret,
-            )
-            model = model_class(
-                model_id=model_id,
-                api_key=api_key,
-            )
-
-            # Pass countinference and service_secret to download_model_artifacts_from_roboflow_api if available
-            if (
-                hasattr(model, "download_model_artifacts_from_roboflow_api")
-                and INTERNAL_WEIGHTS_URL_SUFFIX == "serverless"
-            ):
-                # Only pass these parameters if INTERNAL_WEIGHTS_URL_SUFFIX is "serverless"
+                # Pass countinference and service_secret to download_model_artifacts_from_roboflow_api if available
                 if (
-                    hasattr(model, "cache_model_artefacts")
-                    and not model.has_model_metadata
+                    hasattr(model, "download_model_artifacts_from_roboflow_api")
+                    and INTERNAL_WEIGHTS_URL_SUFFIX == "serverless"
                 ):
-                    # Override the download_model_artifacts_from_roboflow_api method with parameters
-                    original_method = model.download_model_artifacts_from_roboflow_api
-                    model.download_model_artifacts_from_roboflow_api = (
-                        lambda: original_method(
-                            countinference=countinference, service_secret=service_secret
+                    # Only pass these parameters if INTERNAL_WEIGHTS_URL_SUFFIX is "serverless"
+                    if (
+                        hasattr(model, "cache_model_artefacts")
+                        and not model.has_model_metadata
+                    ):
+                        # Override the download_model_artifacts_from_roboflow_api method with parameters
+                        original_method = (
+                            model.download_model_artifacts_from_roboflow_api
                         )
-                    )
+                        model.download_model_artifacts_from_roboflow_api = (
+                            lambda: original_method(
+                                countinference=countinference,
+                                service_secret=service_secret,
+                            )
+                        )
 
-            logger.debug("ModelManager - model successfully loaded.")
-            self._models[resolved_identifier] = model
-        except Exception as e:
-            raise
+                logger.debug("ModelManager - model successfully loaded.")
+                self._models[resolved_identifier] = model
+            except Exception as error:
+                self._dispose_model_lock(model_id=resolved_identifier)
+                raise error
 
     def check_for_model(self, model_id: str) -> None:
         """Checks whether the model with the given ID is in the manager.
@@ -414,9 +430,16 @@ class ModelManager:
         """
         try:
             logger.debug(f"Removing model {model_id} from base model manager")
-            self.check_for_model(model_id)
-            self._models[model_id].clear_cache(delete_from_disk=delete_from_disk)
-            del self._models[model_id]
+            model_lock = self._get_lock_for_a_model(model_id=model_id)
+            with acquire_with_timeout(lock=model_lock) as acquired:
+                if not acquired:
+                    raise ModelManagerLockAcquisitionError(
+                        f"Could not acquire lock for model with id={model_id}."
+                    )
+                self.check_for_model(model_id)
+                self._models[model_id].clear_cache(delete_from_disk=delete_from_disk)
+                del self._models[model_id]
+            self._dispose_model_lock(model_id=model_id)
         except InferenceModelNotFound:
             logger.warning(
                 f"Attempted to remove model with id {model_id}, but it is not loaded. Skipping..."
@@ -485,3 +508,38 @@ class ModelManager:
             )
             for model_id, model in self._models.items()
         ]
+
+    def _get_lock_for_a_model(self, model_id: str) -> Lock:
+        with acquire_with_timeout(lock=self._state_lock) as acquired:
+            if not acquired:
+                raise ModelManagerLockAcquisitionError(
+                    "Could not acquire lock on Model Manager state to retrieve model lock."
+                )
+            if model_id not in self._models_state_locks:
+                self._models_state_locks[model_id] = Lock()
+            return self._models_state_locks[model_id]
+
+    def _dispose_model_lock(self, model_id: str) -> None:
+        with acquire_with_timeout(lock=self._state_lock) as acquired:
+            if not acquired:
+                raise ModelManagerLockAcquisitionError(
+                    "Could not acquire lock on Model Manager state to dispose model lock."
+                )
+            if model_id not in self._models_state_locks:
+                return None
+            del self._models_state_locks[model_id]
+
+
+@contextmanager
+def acquire_with_timeout(
+    lock: Lock, timeout: float = MODEL_LOCK_ACQUIRE_TIMEOUT
+) -> Generator[bool, None, None]:
+    acquired = lock.acquire(timeout=timeout)
+    try:
+        if not acquired:
+            yield False  # indicate failure to acquire
+        else:
+            yield True
+    finally:
+        if acquired:
+            lock.release()
