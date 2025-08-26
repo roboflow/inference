@@ -29,18 +29,18 @@ Implementing Custom Python Blocks for Roboflow Workflows using Modal sandboxes f
 ### 🚧 Known Issues & Next Steps
 
 1. **Modal Function Creation Strategy**: The current approach needs refinement for dynamic function creation in Modal.
-   - Consider using Modal Sandboxes API directly instead of Functions
-   - Or pre-create a generic executor function that loads and executes code dynamically
-   - Modal functions typically need to be defined at module/deployment time
+   - Modal functions typically need to be defined at module/deployment time.
+   - Pre-create a generic executor function that loads and executes code dynamically. This function should handle running the passed in user code and serializing the response (using the EXISTING serializers).
+   - We will use Parameterized Functions for this (see 07-parameterized.md in the project docs) with parameter being the workspace id.
 
-2. **Workspace ID Threading**: Ensure workspace_id is properly passed through the workflow execution context.
+2. **Workspace ID Threading**: Ensure workspace_id is properly passed through the workflow execution context. And fall back to "anonymous" if not present (this will allow non-logged-in users to use their own Modal Workspace even without a Roboflow account).
 
 3. **Image Management**: The shared Modal Image needs to be pre-built and deployed before use.
 
 4. **Testing**: Requires Modal credentials and deployed image to run tests.
 
 ### 📝 TODO
-- [ ] Refactor to use Modal Sandboxes API or alternative approach
+- [ ] Refactor to use Parameterized Functions
 - [ ] Push Modal Image to workspace  
 - [ ] Test end-to-end workflow
 - [ ] Add workspace_id propagation through request context
@@ -99,9 +99,8 @@ inference/
 The core implementation is complete but needs adjustment in how Modal Functions are created dynamically. The current approach tries to create functions on-the-fly, but Modal's architecture expects functions to be defined at deployment time.
 
 Consider these alternatives:
-1. **Use Modal Sandboxes directly** - More flexible for dynamic code execution
-2. **Pre-deploy generic executor** - Deploy a single function that accepts code as input
-3. **Use Modal's experimental features** - Check if they have new APIs for dynamic execution
+1. **Pre-deploy generic executor** - Deploy a single function that accepts code as input
+2. **Use Modal's experimental features** - Check if they have new APIs for dynamic execution
 
 The serialization layer is complete and tested. The integration with block_scaffolding.py properly routes to Modal when configured. The main blocker is the Modal Function creation strategy.
 
