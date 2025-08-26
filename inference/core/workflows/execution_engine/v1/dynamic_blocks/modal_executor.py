@@ -8,8 +8,7 @@ with proper serialization and security restrictions.
 import hashlib
 import json
 import os
-import tempfile
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import modal
 
@@ -29,45 +28,132 @@ if MODAL_TOKEN_ID and MODAL_TOKEN_SECRET:
     os.environ["MODAL_TOKEN_ID"] = MODAL_TOKEN_ID
     os.environ["MODAL_TOKEN_SECRET"] = MODAL_TOKEN_SECRET
 
+# Create the Modal App
+app = modal.App("inference-custom-blocks")
+
+def _get_inference_image():
+    """Get the Modal Image for inference."""
+    from inference.core.version import __version__
+    
+    # Use the pre-built shared image or create on-the-fly
+    image = (
+        modal.Image.debian_slim(python_version="3.11")
+        .apt_install(
+            "libgl1-mesa-glx",
+            "libglib2.0-0", 
+            "libgomp1",
+            "libsm6",
+            "libxext6",
+            "libxrender-dev",
+            "ffmpeg",
+            "wget",
+        )
+        .uv_pip_install(f"inference=={__version__}")
+    )
+    return image
+
+# Define the parameterized Modal class for execution
+@app.cls(
+    image=_get_inference_image(),
+    restrict_modal_access=True,
+    max_inputs=1,
+    timeout=20,
+    region="us-central1",
+)
+class CustomBlockExecutor:
+    """Parameterized Modal class for executing custom Python blocks."""
+    
+    workspace_id: str = modal.parameter()
+    code_hash: str = modal.parameter()
+    
+    @modal.method()
+    def execute_block(
+        self, 
+        code_str: str,
+        imports: list[str],
+        run_function_name: str,
+        inputs: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Execute the custom block with the given inputs.
+        
+        Args:
+            code_str: The Python code to execute
+            imports: List of import statements
+            run_function_name: Name of the function to call
+            inputs: Dictionary of inputs (already JSON-safe)
+            
+        Returns:
+            Dictionary with results or error information
+        """
+        import traceback
+        import sys
+        
+        # Build the execution namespace
+        namespace = {"__name__": "__main__"}
+        
+        # Execute imports
+        import_code = "\n".join(imports) if imports else ""
+        full_imports = f"""
+from typing import Any, List, Dict, Set, Optional
+import supervision as sv
+import numpy as np
+import math
+import time
+import json
+import os
+import requests
+import cv2
+import shapely
+from inference.core.workflows.execution_engine.entities.base import Batch, WorkflowImageData
+from inference.core.workflows.prototypes.block import BlockResult
+
+{import_code}
+"""
+        
+        try:
+            # Execute imports
+            exec(full_imports, namespace)
+            
+            # Execute the user code
+            exec(code_str, namespace)
+            
+            # Call the user function
+            if run_function_name not in namespace:
+                return {
+                    "error": f"Function '{run_function_name}' not found in code",
+                    "error_type": "NameError"
+                }
+            
+            # Execute the function - inputs are already deserialized
+            result = namespace[run_function_name](**inputs)
+            
+            # Return the result
+            return {"success": True, "result": result}
+            
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "traceback": traceback.format_exc()
+            }
+
 
 class ModalExecutor:
     """Manages execution of Custom Python Blocks in Modal sandboxes."""
     
-    def __init__(self, workspace_id: str):
+    def __init__(self, workspace_id: Optional[str] = None):
         """Initialize the Modal executor for a specific workspace.
         
         Args:
-            workspace_id: The workspace ID to namespace Modal Apps
+            workspace_id: The workspace ID to namespace execution, defaults to "anonymous"
         """
-        self.workspace_id = workspace_id
-        self.app_name = f"inference-workspace-{workspace_id}"
-        self._function_cache = {}
+        self.workspace_id = workspace_id or "anonymous"
+        self._executor_cache = {}
         
     def _get_code_hash(self, code: str) -> str:
         """Generate MD5 hash for code block identification."""
-        return hashlib.md5(code.encode()).hexdigest()
-    
-    def _get_inference_image(self):
-        """Get the Modal Image for inference."""
-        from inference.core.version import __version__
-        
-        # Use the pre-built shared image or create on-the-fly
-        image = (
-            modal.Image.debian_slim(python_version="3.11")
-            .apt_install(
-                "libgl1-mesa-glx",
-                "libglib2.0-0", 
-                "libgomp1",
-                "libsm6",
-                "libxext6",
-                "libxrender-dev",
-                "ffmpeg",
-                "wget",
-            )
-            .run_commands("pip install --upgrade pip uv")
-            .run_commands(f"uv pip install --system inference=={__version__}")
-        )
-        return image
+        return hashlib.md5(code.encode()).hexdigest()[:8]  # Use first 8 chars for brevity
     
     def execute_remote(
         self, 
@@ -91,101 +177,48 @@ class ModalExecutor:
             DynamicBlockError: If execution fails
         """
         # Use provided workspace_id or fall back to instance default
-        if workspace_id:
-            self.workspace_id = workspace_id
-            self.app_name = f"inference-workspace-{workspace_id}"
-        
-        if not self.workspace_id:
-            raise DynamicBlockError(
-                public_message="Workspace ID is required for Modal execution",
-                context="modal_executor | workspace_validation"
-            )
+        workspace = workspace_id if workspace_id else self.workspace_id
         
         try:
-            # Create the execution code
-            exec_code = self._build_execution_code(python_code)
+            # Serialize complex inputs using existing serializers
+            serialized_inputs = self._serialize_inputs(inputs)
             
-            # Write to temporary file
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
-                f.write(exec_code)
-                temp_file = f.name
-            
-            # Get or create app
+            # Get or create executor
             code_hash = self._get_code_hash(python_code.code)
-            function_name = f"block-{code_hash}"
+            cache_key = f"{workspace}-{code_hash}"
             
-            # Check cache
-            if function_name in self._function_cache:
-                func = self._function_cache[function_name]
-            else:
-                # Create Modal app and function
-                app = modal.App(self.app_name)
-                
-                # Create function with the code
-                @app.function(
-                    name=function_name,
-                    image=self._get_inference_image(),
-                    restrict_modal_access=True,
-                    max_inputs=1,
-                    timeout=20,
-                    region="us-central1",
-                )
-                def custom_block_executor(serialized_inputs_str: str) -> str:
-                    """Execute the custom block with serialized inputs."""
-                    # Import inside function
-                    import json
-                    import sys
-                    import traceback
-                    
-                    # Read the code file that was included in the image
-                    with open(temp_file, 'r') as code_file:
-                        code = code_file.read()
-                    
-                    # Create a namespace and execute the code
-                    namespace = {"__name__": "__main__"}
-                    exec(code, namespace)
-                    
-                    # Call the execute function
-                    if "execute_custom_block" in namespace:
-                        try:
-                            serialized_inputs = json.loads(serialized_inputs_str)
-                            result = namespace["execute_custom_block"](serialized_inputs)
-                            return json.dumps(result)
-                        except Exception as e:
-                            error_result = {
-                                "error": str(e),
-                                "error_type": type(e).__name__,
-                                "traceback": traceback.format_exc()
-                            }
-                            return json.dumps(error_result)
-                    else:
-                        return json.dumps({"error": "execute_custom_block function not found"})
-                
-                # Deploy the function
+            if cache_key not in self._executor_cache:
+                # Create a new executor instance
                 with app.run():
-                    func = custom_block_executor
-                    self._function_cache[function_name] = func
+                    executor = CustomBlockExecutor(
+                        workspace_id=workspace,
+                        code_hash=code_hash
+                    )
+                    self._executor_cache[cache_key] = executor
+            else:
+                executor = self._executor_cache[cache_key]
             
-            # Serialize inputs
-            from inference.core.workflows.execution_engine.v1.dynamic_blocks.serializers import (
-                serialize_inputs, deserialize_outputs
+            # Execute remotely - pass already serialized inputs
+            result = executor.execute_block.remote(
+                code_str=python_code.code,
+                imports=python_code.imports or [],
+                run_function_name=python_code.run_function_name,
+                inputs=serialized_inputs
             )
-            serialized_inputs = serialize_inputs(inputs)
-            serialized_str = json.dumps(serialized_inputs)
-            
-            # Execute remotely
-            result_str = func.remote(serialized_str)
-            result = json.loads(result_str)
             
             # Check for errors
-            if isinstance(result, dict) and "error" in result:
+            if not result.get("success", False):
+                error_msg = result.get("error", "Unknown error")
+                error_type = result.get("error_type", "RuntimeError")
+                traceback = result.get("traceback", "")
+                
                 raise DynamicBlockError(
-                    public_message=f"Custom block execution failed: {result['error']}",
-                    context="modal_executor | remote_execution"
+                    public_message=f"{error_type}: {error_msg}",
+                    context=f"modal_executor | remote_execution\n{traceback}"
                 )
             
-            # Deserialize outputs
-            return deserialize_outputs(result)
+            # Deserialize and return the result
+            return self._deserialize_outputs(result.get("result", {}))
             
         except Exception as e:
             if isinstance(e, DynamicBlockError):
@@ -194,74 +227,47 @@ class ModalExecutor:
                 public_message=f"Failed to execute custom block remotely: {str(e)}",
                 context="modal_executor | remote_execution"
             )
-        finally:
-            # Clean up temp file
-            if 'temp_file' in locals() and os.path.exists(temp_file):
-                os.unlink(temp_file)
-
-    def _build_execution_code(self, python_code: PythonCode) -> str:
-        """Build the complete execution code for the Modal function.
+    
+    def _serialize_inputs(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        """Serialize inputs for Modal transport using existing serializers.
         
         Args:
-            python_code: The Python code to execute
+            inputs: Raw inputs dictionary
             
         Returns:
-            Complete Python code as string
+            Serialized inputs safe for JSON transport
         """
-        # Build imports
-        imports = [
-            "from typing import Any, List, Dict, Set, Optional",
-            "import supervision as sv",
-            "import numpy as np",
-            "import math",
-            "import time",
-            "import json",
-            "import os",
-            "import requests",
-            "import cv2",
-            "import shapely",
-            "from inference.core.workflows.execution_engine.entities.base import Batch, WorkflowImageData",
-            "from inference.core.workflows.prototypes.block import BlockResult",
-            "from inference.core.workflows.execution_engine.v1.dynamic_blocks.serializers import (",
-            "    deserialize_inputs,",
-            "    serialize_outputs,",
-            ")",
-        ]
+        from inference.core.workflows.core_steps.common.serializers import (
+            serialize_wildcard_kind
+        )
         
-        if python_code.imports:
-            imports.extend(python_code.imports)
+        serialized = {}
+        for key, value in inputs.items():
+            serialized[key] = serialize_wildcard_kind(value)
+        return serialized
+    
+    def _deserialize_outputs(self, outputs: Any) -> BlockResult:
+        """Deserialize outputs from Modal transport.
         
-        imports_str = "\n".join(imports)
+        Since we're using existing serializers which already produce
+        JSON-safe output, we mostly just need to ensure the result
+        conforms to BlockResult format.
         
-        # Build the complete code
-        return f"""
-{imports_str}
-
-# User code
-{python_code.code}
-
-def execute_custom_block(serialized_inputs: Dict[str, Any]) -> Dict[str, Any]:
-    \"\"\"Execute the custom block with proper error handling.\"\"\"
-    try:
-        # Deserialize inputs
-        inputs = deserialize_inputs(serialized_inputs)
-        
-        # Execute the user function
-        result = {python_code.run_function_name}(**inputs)
-        
-        # Serialize outputs
-        return serialize_outputs(result)
-    except Exception as e:
-        import traceback
-        return {{
-            "error": str(e),
-            "error_type": type(e).__name__,
-            "traceback": traceback.format_exc()
-        }}
-"""
+        Args:
+            outputs: Outputs from Modal function
+            
+        Returns:
+            BlockResult
+        """
+        # BlockResult is a TypedDict, ensure outputs conform
+        if isinstance(outputs, dict):
+            return outputs
+        else:
+            # Wrap non-dict results in BlockResult format
+            return {"result": outputs}
 
 
-def validate_code_in_modal(python_code: PythonCode, workspace_id: str) -> bool:
+def validate_code_in_modal(python_code: PythonCode, workspace_id: Optional[str] = None) -> bool:
     """Validate Python code syntax in a Modal sandbox.
     
     Args:
@@ -274,47 +280,58 @@ def validate_code_in_modal(python_code: PythonCode, workspace_id: str) -> bool:
     Raises:
         DynamicBlockError: If code validation fails
     """
-    executor = ModalExecutor(workspace_id)
+    workspace = workspace_id or "anonymous"
     
-    # Create a validation version of the code
+    # Simple validation code that checks syntax
     validation_code = PythonCode(
-        imports=python_code.imports,
+        imports=[],
         code=f"""
-{python_code.code}
+import ast
 
-def validate_code():
-    # Try to compile the user function
-    import ast
+def validate_syntax():
     try:
-        # This will raise SyntaxError if code is invalid
-        compile('''{python_code.code}''', '<string>', 'exec')
+        # Try to compile the user code
+        code = '''{python_code.code}'''
+        compile(code, '<string>', 'exec')
+        # Try to parse as AST to check structure
+        ast.parse(code)
         return {{"valid": True}}
     except SyntaxError as e:
+        return {{"valid": False, "error": str(e), "line": e.lineno}}
+    except Exception as e:
         return {{"valid": False, "error": str(e)}}
 """,
-        run_function_name="validate_code",
+        run_function_name="validate_syntax",
         run_function_code="",
         init_function_name=None,
         init_function_code=None,
     )
+    
+    executor = ModalExecutor(workspace_id=workspace)
     
     try:
         result = executor.execute_remote(
             block_type_name="validation",
             python_code=validation_code,
             inputs={},
-            workspace_id=workspace_id
+            workspace_id=workspace
         )
         
         if result.get("valid") is False:
+            error_msg = result.get("error", "Unknown syntax error")
+            line_no = result.get("line", None)
+            if line_no:
+                error_msg = f"Line {line_no}: {error_msg}"
             raise DynamicBlockError(
-                public_message=f"Code validation failed: {result.get('error', 'Unknown error')}",
+                public_message=f"Code validation failed: {error_msg}",
                 context="modal_executor | code_validation"
             )
         
         return True
         
     except Exception as e:
+        if isinstance(e, DynamicBlockError):
+            raise
         raise DynamicBlockError(
             public_message=f"Code validation failed: {str(e)}",
             context="modal_executor | code_validation"

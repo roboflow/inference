@@ -20,33 +20,42 @@ Implementing Custom Python Blocks for Roboflow Workflows using Modal sandboxes f
 - [x] Added Modal environment variables to env.py
 - [x] Created Modal Image builder script (modal/build_modal_image.py)
 - [x] Implemented modal_executor.py with ModalExecutor class
-- [x] Created serializers.py for data serialization/deserialization
+- [x] ~~Created serializers.py for data serialization/deserialization~~ Removed - using existing serializers
 - [x] Updated block_scaffolding.py to support Modal execution
-- [x] Updated Serverless v2 Dockerfile to include Modal SDK
+- [x] Updated Serverless v2 Dockerfiles (both GPU and CPU) to include Modal SDK
 - [x] Created test script (modal/test_modal_blocks.py)
 - [x] Committed initial implementation
+- [x] Refactored to use Modal Parameterized Functions for workspace-based isolation
+- [x] Updated to use uv_pip_install for better optimization
+- [x] Integrated with existing inference serializers (no new serializers.py)
 
 ### 🚧 Known Issues & Next Steps
 
-1. **Modal Function Creation Strategy**: The current approach needs refinement for dynamic function creation in Modal.
-   - Modal functions typically need to be defined at module/deployment time.
-   - Pre-create a generic executor function that loads and executes code dynamically. This function should handle running the passed in user code and serializing the response (using the EXISTING serializers).
-   - We will use Parameterized Functions for this (see 07-parameterized.md in the project docs) with parameter being the workspace id.
+1. **Modal App Deployment Strategy**: 
+   - ✅ RESOLVED: Using Parameterized Functions with workspace_id parameter
+   - Single Modal App "inference-custom-blocks" with parameterized executors
+   - Each workspace gets its own executor instance via parameters
+   
+2. **Workspace ID Threading**: 
+   - Already implemented in block_scaffolding.py
+   - Falls back to "anonymous" for non-logged-in users
+   
+3. **Image Management**: 
+   - Modal Image can be built on-demand using uv_pip_install
+   - Pre-built images can be deployed for production
 
-2. **Workspace ID Threading**: Ensure workspace_id is properly passed through the workflow execution context. And fall back to "anonymous" if not present (this will allow non-logged-in users to use their own Modal Workspace even without a Roboflow account).
-
-3. **Image Management**: The shared Modal Image needs to be pre-built and deployed before use.
-
-4. **Testing**: Requires Modal credentials and deployed image to run tests.
+4. **Testing**: 
+   - Requires Modal credentials to test
+   - Need to set MODAL_TOKEN_ID and MODAL_TOKEN_SECRET environment variables
 
 ### 📝 TODO
-- [ ] Refactor to use Parameterized Functions
-- [ ] Push Modal Image to workspace  
-- [ ] Test end-to-end workflow
-- [ ] Add workspace_id propagation through request context
+- [ ] Deploy Modal App with parameterized executors
+- [ ] Test end-to-end workflow with Modal credentials
 - [ ] Performance testing
 - [ ] Security validation
-- [ ] Documentation
+- [ ] Documentation for deployment and configuration
+- [ ] Integration tests with various input types
+- [ ] Load testing with multiple workspaces
 
 ## Implementation Details
 
@@ -57,15 +66,17 @@ Implementing Custom Python Blocks for Roboflow Workflows using Modal sandboxes f
 - Share across all workspace Apps
 
 ### 2. App Architecture
-- Workspace-based App naming: `inference-workspace-{workspace_id}`
-- Function naming: `block-{md5_hash}`
-- Lazy Function creation on first use
+- Single Modal App: `inference-custom-blocks`
+- Parameterized executors with workspace_id and code_hash
+- Function caching per workspace+code combination
 - Restricted mode with max_inputs=1, timeout=20
+- Falls back to "anonymous" workspace for non-authenticated users
 
 ### 3. Serialization
-- Use existing inference serializers/deserializers
-- Handle WorkflowImageData, Batch, numpy arrays, CV2 images
-- JSON-safe transport (no pickle)
+- Use existing inference serializers from core_steps.common.serializers
+- serialize_wildcard_kind handles WorkflowImageData, Batch, numpy arrays, CV2 images, sv.Detections
+- No pickle for security (inputs passed as JSON-safe dicts)
+- Modal transport uses standard JSON encoding
 
 ### 4. Security
 - restrict_modal_access=True
@@ -83,25 +94,31 @@ Implementing Custom Python Blocks for Roboflow Workflows using Modal sandboxes f
 ```
 inference/
 ├── core/workflows/execution_engine/v1/dynamic_blocks/
-│   ├── block_scaffolding.py (modified)
-│   ├── modal_executor.py (new)
-│   └── serializers.py (new)
-├── core/env.py (modified)
+│   ├── block_scaffolding.py (modified - workspace_id support)
+│   └── modal_executor.py (new - parameterized functions)
+├── core/env.py (modified - Modal env vars)
 ├── requirements/requirements.modal.txt (new)
-├── docker/dockerfiles/Dockerfile.onnx.gpu (modified)
+├── docker/dockerfiles/
+│   ├── Dockerfile.onnx.gpu (modified - added Modal)
+│   └── Dockerfile.onnx.cpu (modified - added Modal)
 └── modal/
-    ├── build_modal_image.py (new)
+    ├── build_modal_image.py (new - uses uv_pip_install)
     └── test_modal_blocks.py (new)
 ```
 
 ## Notes for Next Developer
 
-The core implementation is complete but needs adjustment in how Modal Functions are created dynamically. The current approach tries to create functions on-the-fly, but Modal's architecture expects functions to be defined at deployment time.
+The implementation has been refactored to use Modal's Parameterized Functions feature, which allows us to create workspace-isolated executors without needing to dynamically deploy new Modal Apps. Key changes:
 
-Consider these alternatives:
-1. **Pre-deploy generic executor** - Deploy a single function that accepts code as input
-2. **Use Modal's experimental features** - Check if they have new APIs for dynamic execution
+1. **Parameterized Executors**: Using `modal.parameter()` for workspace_id and code_hash, allowing each workspace to have its own isolated execution environment.
 
-The serialization layer is complete and tested. The integration with block_scaffolding.py properly routes to Modal when configured. The main blocker is the Modal Function creation strategy.
+2. **Existing Serializers**: Removed the duplicate serializers.py and now using the existing `serialize_wildcard_kind` from `inference.core.workflows.core_steps.common.serializers`.
 
-Workspace ID needs to be threaded through from the HTTP request context to the block execution layer.
+3. **Optimized Image Building**: Using `uv_pip_install` for faster and more reliable package installation in Modal Images.
+
+4. **Fallback Support**: Non-authenticated users can use "anonymous" workspace for testing without a Roboflow account.
+
+Next steps:
+- Deploy the Modal App using `modal deploy`
+- Set Modal credentials in environment
+- Run integration tests with various input types

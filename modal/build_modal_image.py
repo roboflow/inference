@@ -48,8 +48,7 @@ def build_inference_image():
             "ffmpeg",
             "wget",
         )
-        .run_commands("pip install --upgrade pip uv")
-        .run_commands(f"uv pip install --system inference=={INFERENCE_VERSION}")
+        .uv_pip_install(f"inference=={INFERENCE_VERSION}")
         .run_function(pre_import_modules)
     )
     
