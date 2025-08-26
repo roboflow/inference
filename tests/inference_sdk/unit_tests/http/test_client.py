@@ -2075,6 +2075,7 @@ async def test_infer_from_api_v1_async_when_request_succeed_for_object_detection
             "visualization": "aGVsbG8=",
         }
 
+
 @mock.patch.object(client, "load_static_inference_input")
 def test_ocr_image_when_single_image_given_in_v1_mode(
     load_static_inference_input_mock: MagicMock,
@@ -2152,7 +2153,9 @@ def test_ocr_image_when_trocr_selected_in_specific_variant(
     )
 
     # when
-    result = http_client.ocr_image(inference_input="/some/image.jpg", model="trocr", version="trocr-small-printed")
+    result = http_client.ocr_image(
+        inference_input="/some/image.jpg", model="trocr", version="trocr-small-printed"
+    )
 
     # then
     assert result == {
@@ -2162,7 +2165,7 @@ def test_ocr_image_when_trocr_selected_in_specific_variant(
     assert requests_mock.request_history[0].json() == {
         "api_key": "my-api-key",
         "image": {"type": "base64", "value": "base64_image"},
-        "trocr_version_id": "trocr-small-printed"
+        "trocr_version_id": "trocr-small-printed",
     }, "Request must contain API key and image encoded in standard format"
 
 
@@ -2222,7 +2225,9 @@ async def test_ocr_image_async_when_trocr_selected(
             },
         )
         # when
-        result = await http_client.ocr_image_async(inference_input="/some/image.jpg", model="trocr")
+        result = await http_client.ocr_image_async(
+            inference_input="/some/image.jpg", model="trocr"
+        )
 
         # then
         assert result == {
@@ -2283,6 +2288,7 @@ async def test_ocr_image_async_when_trocr_selected_in_specific_variant(
             data=None,
             headers={"Content-Type": "application/json"},
         )
+
 
 @mock.patch.object(client, "load_static_inference_input")
 def test_ocr_image_when_single_image_given_in_v0_mode(
@@ -3656,14 +3662,13 @@ def test_infer_from_workflow_when_usage_of_profiler_enabled(
     # given
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url).configure(
-        inference_configuration=InferenceConfiguration(profiling_directory=empty_directory)
+        inference_configuration=InferenceConfiguration(
+            profiling_directory=empty_directory
+        )
     )
     requests_mock.post(
         f"{api_url}{endpoint_to_use}",
-        json={
-            "outputs": [{"some": 3}],
-            "profiler_trace": [{"my": "trace"}]
-        },
+        json={"outputs": [{"some": 3}], "profiler_trace": [{"my": "trace"}]},
     )
     load_nested_batches_of_inference_input_mock.side_effect = [
         ("base64_image_1", 0.5),
@@ -3707,7 +3712,9 @@ def test_infer_from_workflow_when_usage_of_profiler_enabled(
         },
     }, "Request payload must contain api key, inputs and no cache flag"
     json_files_in_profiling_directory = glob(os.path.join(empty_directory, "*.json"))
-    assert len(json_files_in_profiling_directory) == 1, "Expected to find one JSON file with profiler trace"
+    assert (
+        len(json_files_in_profiling_directory) == 1
+    ), "Expected to find one JSON file with profiler trace"
     with open(json_files_in_profiling_directory[0], "r") as f:
         data = json.load(f)
     assert data == [{"my": "trace"}], "Trace content must be fully saved"
@@ -3754,13 +3761,7 @@ def test_infer_from_workflow_when_nested_batch_of_inputs_provided(
     result = method(
         workspace_name="my_workspace",
         images={"image_1": [["1", "2"], ["3", "4", "5"], ["6"]]},
-        parameters={
-            "batch_oriented_param": [
-                ["a", "b"],
-                ["c", "d", "e"],
-                ["f"]
-            ]
-        },
+        parameters={"batch_oriented_param": [["a", "b"], ["c", "d", "e"], ["f"]]},
         **{parameter_name: "my_workflow"},
     )
 
@@ -3929,9 +3930,11 @@ def test_list_inference_pipelines(requests_mock: Mocker) -> None:
         f"{api_url}/inference_pipelines/list",
         json={
             "status": "success",
-             "context": {"request_id": "52f5df39-b7de-4a56-8c42-b979d365cfa0",
-                         "pipeline_id": None},
-             "pipelines": ["acd62146-edca-4253-8eeb-40c88906cd70"]
+            "context": {
+                "request_id": "52f5df39-b7de-4a56-8c42-b979d365cfa0",
+                "pipeline_id": None,
+            },
+            "pipelines": ["acd62146-edca-4253-8eeb-40c88906cd70"],
         },
     )
 
@@ -3941,12 +3944,15 @@ def test_list_inference_pipelines(requests_mock: Mocker) -> None:
     # then
     assert result == {
         "status": "success",
-         "context": {"request_id": "52f5df39-b7de-4a56-8c42-b979d365cfa0",
-                     "pipeline_id": None},
-         "pipelines": ["acd62146-edca-4253-8eeb-40c88906cd70"]
+        "context": {
+            "request_id": "52f5df39-b7de-4a56-8c42-b979d365cfa0",
+            "pipeline_id": None,
+        },
+        "pipelines": ["acd62146-edca-4253-8eeb-40c88906cd70"],
     }
-    assert requests_mock.request_history[0].json() == {"api_key": "my-api-key"}, \
-        "Expected payload to contain API key"
+    assert requests_mock.request_history[0].json() == {
+        "api_key": "my-api-key"
+    }, "Expected payload to contain API key"
 
 
 def test_list_inference_pipelines_on_auth_error(requests_mock: Mocker) -> None:
@@ -3981,11 +3987,14 @@ def test_get_inference_pipeline_status(requests_mock: Mocker) -> None:
     assert result == {
         "status": "success",
     }
-    assert requests_mock.request_history[0].json() == {"api_key": "my-api-key"}, \
-        "Expected payload to contain API key"
+    assert requests_mock.request_history[0].json() == {
+        "api_key": "my-api-key"
+    }, "Expected payload to contain API key"
 
 
-def test_get_inference_pipeline_status_when_pipeline_id_empty(requests_mock: Mocker) -> None:
+def test_get_inference_pipeline_status_when_pipeline_id_empty(
+    requests_mock: Mocker,
+) -> None:
     # given
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
@@ -3995,7 +4004,9 @@ def test_get_inference_pipeline_status_when_pipeline_id_empty(requests_mock: Moc
         _ = http_client.get_inference_pipeline_status(pipeline_id="")
 
 
-def test_get_inference_pipeline_status_when_pipeline_id_not_found(requests_mock: Mocker) -> None:
+def test_get_inference_pipeline_status_when_pipeline_id_not_found(
+    requests_mock: Mocker,
+) -> None:
     # given
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
@@ -4027,8 +4038,9 @@ def test_pause_inference_pipeline(requests_mock: Mocker) -> None:
     assert result == {
         "status": "success",
     }
-    assert requests_mock.request_history[0].json() == {"api_key": "my-api-key"}, \
-        "Expected payload to contain API key"
+    assert requests_mock.request_history[0].json() == {
+        "api_key": "my-api-key"
+    }, "Expected payload to contain API key"
 
 
 def test_pause_inference_pipeline_when_pipeline_id_empty() -> None:
@@ -4041,7 +4053,9 @@ def test_pause_inference_pipeline_when_pipeline_id_empty() -> None:
         _ = http_client.pause_inference_pipeline(pipeline_id="")
 
 
-def test_pause_inference_pipeline_when_pipeline_id_not_found(requests_mock: Mocker) -> None:
+def test_pause_inference_pipeline_when_pipeline_id_not_found(
+    requests_mock: Mocker,
+) -> None:
     # given
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
@@ -4073,8 +4087,9 @@ def test_resume_inference_pipeline(requests_mock: Mocker) -> None:
     assert result == {
         "status": "success",
     }
-    assert requests_mock.request_history[0].json() == {"api_key": "my-api-key"}, \
-        "Expected payload to contain API key"
+    assert requests_mock.request_history[0].json() == {
+        "api_key": "my-api-key"
+    }, "Expected payload to contain API key"
 
 
 def test_resume_inference_pipeline_when_pipeline_id_empty() -> None:
@@ -4087,7 +4102,9 @@ def test_resume_inference_pipeline_when_pipeline_id_empty() -> None:
         _ = http_client.resume_inference_pipeline(pipeline_id="")
 
 
-def test_resume_inference_pipeline_when_pipeline_id_not_found(requests_mock: Mocker) -> None:
+def test_resume_inference_pipeline_when_pipeline_id_not_found(
+    requests_mock: Mocker,
+) -> None:
     # given
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
@@ -4119,8 +4136,9 @@ def test_terminate_inference_pipeline(requests_mock: Mocker) -> None:
     assert result == {
         "status": "success",
     }
-    assert requests_mock.request_history[0].json() == {"api_key": "my-api-key"}, \
-        "Expected payload to contain API key"
+    assert requests_mock.request_history[0].json() == {
+        "api_key": "my-api-key"
+    }, "Expected payload to contain API key"
 
 
 def test_terminate_inference_pipeline_when_pipeline_id_empty() -> None:
@@ -4133,7 +4151,9 @@ def test_terminate_inference_pipeline_when_pipeline_id_empty() -> None:
         _ = http_client.terminate_inference_pipeline(pipeline_id="")
 
 
-def test_terminate_inference_pipeline_when_pipeline_id_not_found(requests_mock: Mocker) -> None:
+def test_terminate_inference_pipeline_when_pipeline_id_not_found(
+    requests_mock: Mocker,
+) -> None:
     # given
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
@@ -4168,8 +4188,10 @@ def test_consume_inference_pipeline_result(requests_mock: Mocker) -> None:
     assert result == {
         "status": "success",
     }
-    assert requests_mock.request_history[0].json() == {"api_key": "my-api-key", "excluded_fields": ["a"]}, \
-        "Expected payload to contain API key"
+    assert requests_mock.request_history[0].json() == {
+        "api_key": "my-api-key",
+        "excluded_fields": ["a"],
+    }, "Expected payload to contain API key"
 
 
 def test_consume_inference_pipeline_result_when_pipeline_id_empty() -> None:
@@ -4182,7 +4204,9 @@ def test_consume_inference_pipeline_result_when_pipeline_id_empty() -> None:
         _ = http_client.consume_inference_pipeline_result(pipeline_id="")
 
 
-def test_consume_inference_pipeline_result_when_pipeline_id_not_found(requests_mock: Mocker) -> None:
+def test_consume_inference_pipeline_result_when_pipeline_id_not_found(
+    requests_mock: Mocker,
+) -> None:
     # given
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
@@ -4196,17 +4220,23 @@ def test_consume_inference_pipeline_result_when_pipeline_id_not_found(requests_m
         _ = http_client.consume_inference_pipeline_result(pipeline_id="my-pipeline")
 
 
-def test_start_inference_pipeline_with_workflow_when_configuration_does_not_specify_workflow() -> None:
+def test_start_inference_pipeline_with_workflow_when_configuration_does_not_specify_workflow() -> (
+    None
+):
     # given
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
 
     # when
     with pytest.raises(InvalidParameterError):
-        http_client.start_inference_pipeline_with_workflow(video_reference="rtsp://some/stream")
+        http_client.start_inference_pipeline_with_workflow(
+            video_reference="rtsp://some/stream"
+        )
 
 
-def test_start_inference_pipeline_with_workflow_when_configuration_does_over_specify_workflow() -> None:
+def test_start_inference_pipeline_with_workflow_when_configuration_does_over_specify_workflow() -> (
+    None
+):
     # given
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
@@ -4221,7 +4251,9 @@ def test_start_inference_pipeline_with_workflow_when_configuration_does_over_spe
         )
 
 
-def test_start_inference_pipeline_with_workflow_when_configuration_is_valid(requests_mock: Mocker) -> None:
+def test_start_inference_pipeline_with_workflow_when_configuration_is_valid(
+    requests_mock: Mocker,
+) -> None:
     # given
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
@@ -4270,5 +4302,3 @@ def test_start_inference_pipeline_with_workflow_when_configuration_is_valid(requ
             "results_buffer_size": 64,
         },
     }
-
-

@@ -263,9 +263,10 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         Returns:
             Tuple[np.ndarray]: NumPy array representing the predictions, including boxes, confidence scores, and class IDs.
         """
-        predictions = run_session_via_iobinding(
-            self.onnx_session, self.input_name, img_in
-        )
+        with self._session_lock:
+            predictions = run_session_via_iobinding(
+                self.onnx_session, self.input_name, img_in
+            )
         bboxes = predictions[0]
         logits = predictions[1]
 

@@ -29,9 +29,10 @@ class YOLONASObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         Returns:
             Tuple[np.ndarray]: NumPy array representing the predictions, including boxes, confidence scores, and class confidence scores.
         """
-        predictions = run_session_via_iobinding(
-            self.onnx_session, self.input_name, img_in
-        )
+        with self._session_lock:
+            predictions = run_session_via_iobinding(
+                self.onnx_session, self.input_name, img_in
+            )
         boxes = predictions[0]
         class_confs = predictions[1]
         confs = np.expand_dims(np.max(class_confs, axis=2), axis=2)

@@ -440,7 +440,7 @@ class DecreasingDimensionalityBlock(WorkflowBlock):
         return DecreasingDimensionalityManifest
 
     def run(self, images: Batch[WorkflowImageData]) -> BlockResult:
-        pass
+        return {"output": len(images)}
 
 
 def load_blocks() -> List[Type[WorkflowBlock]]:
