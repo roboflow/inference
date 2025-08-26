@@ -76,8 +76,8 @@ if MODAL_INSTALLED and app:
     class CustomBlockExecutor:
         """Parameterized Modal class for executing custom Python blocks."""
         
+        # Only parameterize by workspace_id - code_hash removed per feedback
         workspace_id: str = modal.parameter()
-        code_hash: str = modal.parameter()
         
         @modal.method()
         def execute_block(
@@ -93,7 +93,7 @@ if MODAL_INSTALLED and app:
                 code_str: The Python code to execute
                 imports: List of import statements
                 run_function_name: Name of the function to call
-                inputs: Dictionary of inputs (already JSON-safe)
+                inputs: Dictionary of inputs (uses Modal's built-in pickling)
                 
             Returns:
                 Dictionary with results or error information
@@ -137,10 +137,10 @@ from inference.core.workflows.prototypes.block import BlockResult
                         "error_type": "NameError"
                     }
                 
-                # Execute the function - inputs are already deserialized
+                # Execute the function - inputs use Modal's native pickling
                 result = namespace[run_function_name](**inputs)
                 
-                # Return the result
+                # Return the result - Modal handles pickling
                 return {"success": True, "result": result}
                 
             except Exception as e:
@@ -166,10 +166,6 @@ class ModalExecutor:
         self.workspace_id = workspace_id or "anonymous"
         self._executor_cache = {}
         
-    def _get_code_hash(self, code: str) -> str:
-        """Generate MD5 hash for code block identification."""
-        return hashlib.md5(code.encode()).hexdigest()[:8]  # Use first 8 chars for brevity
-    
     def execute_remote(
         self, 
         block_type_name: str,
@@ -208,30 +204,25 @@ class ModalExecutor:
         workspace = workspace_id if workspace_id else self.workspace_id
         
         try:
-            # Serialize complex inputs using existing serializers
-            serialized_inputs = self._serialize_inputs(inputs)
-            
-            # Get or create executor
-            code_hash = self._get_code_hash(python_code.code)
-            cache_key = f"{workspace}-{code_hash}"
+            # Get or create executor for this workspace (no code_hash needed)
+            cache_key = workspace
             
             if cache_key not in self._executor_cache:
-                # Create a new executor instance
+                # Create a new executor instance for this workspace
                 with app.run():
                     executor = CustomBlockExecutor(
-                        workspace_id=workspace,
-                        code_hash=code_hash
+                        workspace_id=workspace
                     )
                     self._executor_cache[cache_key] = executor
             else:
                 executor = self._executor_cache[cache_key]
             
-            # Execute remotely - pass already serialized inputs
+            # Execute remotely - pass inputs directly, Modal handles pickling
             result = executor.execute_block.remote(
                 code_str=python_code.code,
                 imports=python_code.imports or [],
                 run_function_name=python_code.run_function_name,
-                inputs=serialized_inputs
+                inputs=inputs  # No serialization needed - Modal pickles automatically
             )
             
             # Check for errors
@@ -245,8 +236,9 @@ class ModalExecutor:
                     context=f"modal_executor | remote_execution\n{traceback}"
                 )
             
-            # Deserialize and return the result
-            return self._deserialize_outputs(result.get("result", {}))
+            # Get the result and deserialize outputs only
+            raw_result = result.get("result", {})
+            return self._deserialize_outputs(raw_result)
             
         except Exception as e:
             if isinstance(e, DynamicBlockError):
@@ -256,43 +248,30 @@ class ModalExecutor:
                 context="modal_executor | remote_execution"
             )
     
-    def _serialize_inputs(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
-        """Serialize inputs for Modal transport using existing serializers.
+    def _deserialize_outputs(self, outputs: Any) -> BlockResult:
+        """Deserialize outputs from Modal transport.
+        
+        We need to serialize outputs back to JSON-safe format for workflows.
         
         Args:
-            inputs: Raw inputs dictionary
+            outputs: Outputs from Modal function (already unpickled by Modal)
             
         Returns:
-            Serialized inputs safe for JSON transport
+            BlockResult with serialized outputs
         """
         from inference.core.workflows.core_steps.common.serializers import (
             serialize_wildcard_kind
         )
         
-        serialized = {}
-        for key, value in inputs.items():
-            serialized[key] = serialize_wildcard_kind(value)
-        return serialized
-    
-    def _deserialize_outputs(self, outputs: Any) -> BlockResult:
-        """Deserialize outputs from Modal transport.
-        
-        Since we're using existing serializers which already produce
-        JSON-safe output, we mostly just need to ensure the result
-        conforms to BlockResult format.
-        
-        Args:
-            outputs: Outputs from Modal function
-            
-        Returns:
-            BlockResult
-        """
-        # BlockResult is a TypedDict, ensure outputs conform
+        # If outputs is a dict, serialize each value
         if isinstance(outputs, dict):
-            return outputs
+            serialized = {}
+            for key, value in outputs.items():
+                serialized[key] = serialize_wildcard_kind(value)
+            return serialized
         else:
             # Wrap non-dict results in BlockResult format
-            return {"result": outputs}
+            return {"result": serialize_wildcard_kind(outputs)}
 
 
 def validate_code_in_modal(python_code: PythonCode, workspace_id: Optional[str] = None) -> bool:
@@ -351,6 +330,7 @@ def validate_syntax():
     executor = ModalExecutor(workspace_id=workspace)
     
     try:
+        # For validation, we don't need to pass any complex inputs
         result = executor.execute_remote(
             block_type_name="validation",
             python_code=validation_code,
