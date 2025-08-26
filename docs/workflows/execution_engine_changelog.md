@@ -2,42 +2,255 @@
 
 Below you can find the changelog for Execution Engine.
 
-## Execution Engine `v1.2.0` | inference `v0.23.0`
+## Execution Engine `v1.6.0` | inference `v0.53.0`
 
-* The [`video_metadata` kind](/workflows/kinds/video_metadata.md) has been deprecated, and we **strongly recommend discontinuing its use for building 
-blocks moving forward**. As an alternative, the [`image` kind](/workflows/kinds/image.md) has been extended to support the same metadata as 
-[`video_metadata` kind](/workflows/kinds/video_metadata.md), which can now be provided optionally. This update is 
-**non-breaking** for existing blocks, but **some older blocks** that produce images **may become incompatible** with 
-**future** video processing blocks.
+!!! Note "Change may require attention"
 
-??? warning "Potential blocks incompatibility"
+    This release introduces upgrades and new features with **no changes required** to existing workflows. 
+    Some blocks may need to be upgraded to take advantage of the latest Execution Engine capabilities.
 
-    As previously mentioned, adding `video_metadata` as an optional field to the internal representation of 
-    [`image` kind](/workflows/kinds/image.md) (`WorkflowImageData` class) 
-    may introduce some friction between existing blocks that output the [`image` kind](/workflows/kinds/image.md) and 
-    future video processing blocks that rely on `video_metadata` being part of `image` representation. 
+Prior versions of the Execution Engine had significant limitations when interacting with certain types of 
+blocks - specifically those operating in Single Instruction, Multiple Data (SIMD) mode. These blocks are designed to 
+process batches of inputs at once, apply the same operation to each element, and return results for the entire batch.
+
+For example, the `run(...)` method of such a block might look like:
+
+```python
+def run(self, image: Batch[WorkflowImageData], confidence: float):
+    pass
+```
+
+In the manifest, the `image` field is declared as accepting batches.
+
+The issue arose when the input image came from a block that did not operate on batches. In such cases, the 
+Execution Engine was unable to construct a batch from individual images, which often resulted in frustrating 
+compilation errors such as:
+
+```
+Detected invalid reference plugged into property `images` of step `$steps.model` - the step property 
+strictly requires batch-oriented inputs, yet the input selector holds non-batch oriented input - this indicates 
+the problem with construction of your Workflow - usually the problem occurs when non-batch oriented step inputs are 
+filled with outputs of non batch-oriented steps or non batch-oriented inputs.
+```
+
+In Execution Engine `v1.6.0`, this limitation has been removed, introducing the following behaviour:
+
+* When it is detected that a given input must be batch-oriented, a procedure called **Auto Batch Casting** is applied. 
+This automatically converts the input into a `Batch[T]`. Since all batch-mode inputs were already explicitly denoted in 
+manifests, most blocks (with exceptions noted below) benefit from this upgrade without requiring any internal changes.
+
+* The dimensionality (level of nesting) of an auto-batch cast parameter is determined at compilation time, based on the 
+context of the specific block in the workflow as well as its manifest. If other batch-oriented inputs are present 
+(referred to as *lineage supports*), the Execution Engine uses them as references when constructing auto-casted 
+batches. This ensures that the number of elements in each batch dimension matches the other data fed into the step 
+(simulating what would have been asserted if an actual batch input had been provided). If there are no 
+*lineage supports*, or if the block manifest requires it (e.g. input dimensionality offset is set), the missing 
+dimensions are generated similarly to the
+[`torch.unsqueeze(...)` operation](https://docs.pytorch.org/docs/stable/generated/torch.unsqueeze.html).
+
+* Step outputs are then evaluated against the presence of an Auto Batch Casting context. Based on the evaluation, 
+outputs are saved either as batches or as scalars, ensuring that the effect of casting remains local, with the only 
+exception being output dimensionality changes introduced by the block itself. As a side effect, it is now possible to:
+
+    * **create output batches from scalars** (when the step increases dimensionality), and
+
+    * **collapse batches into scalars** (when the block decreases dimensionality).
+
+* The two potential friction point arises - first **when a block that does not accept batches** (and thus does not denote 
+batch-accepting inputs) **decreases output dimensionality**. In previous versions, the Execution Engine handled this by 
+applying dimensionality wrapping: all batch-oriented inputs were wrapped with an additional `Batch[T]` dimension, 
+allowing the block’s `run(...)` method to perform reduce operations across the list dimension. With Auto Batch Casting, 
+however, such blocks no longer provide the Execution Engine with a clear signal about whether certain inputs are 
+scalars or batches, making casting nondeterministic. To address this, a new manifest method was introduced: 
+`get_parameters_enforcing_auto_batch_casting(...)`. This method must return the list of parameters for which batch 
+casting should be enforced when dimensionality is decreased. It is not expected to be used in any other context.
+
+!!! warning "Impact of new method on existing blocks"
+
+    The requirement of defining `get_parameters_enforcing_auto_batch_casting(...)` method to fully use 
+    Auto Batch Casting feature in the case described above is non-strict. If the block will not be changed,
+    the only effect will be that workflows wchich were **previously failing** with compilation error may 
+    work or fail with **runtime error**, dependent on the details of block `run(...)` method implementation.
+
+* The second friction point arises when there is a block declaring input fields supporting batches and scalars using 
+`get_parameters_accepting_batches_and_scalars(...)` - by default, Execution Engine will skip auto-casting for such 
+parameters, as the method was historically **always a way to declare that block itself has ability to broadcast scalars 
+into batches** - see 
+[implementation of `roboflow_core/detections_transformation@v1`](/inference/core/workflows/core_steps/transformations/detections_transformation/v1.py) 
+block. In a way, Auto Batch Casting is *redundant* for those blocks - so we propose leaving them as is and 
+upgrade to use `get_parameters_enforcing_auto_batch_casting(...)` instead of 
+`get_parameters_accepting_batches_and_scalars(...)` in new versions of such blocks.
+
+* In earlier versions, a hard constraint existed: dimensionality collapse could only occur at levels ≥ 2 (i.e. only 
+on nested batches). This limitation is now removed. Dimensionality collapse blocks may also operate on scalars, with 
+the output dimensionality “bouncing off” the zero ground.
+
+
+There is one **key change in how outputs are built.** In earlier versions of Execution Error, a block was not allowed 
+to produce a `Batch[X]` directly at the first dimension level — that space was reserved for mapping onto input batches.
+Starting with version `v1.6.0`, this restriction has been removed. 
+
+Previously, outputs were always returned as a list of elements:
+
+* aligned with the input batches, or
+
+* a single-element list if only scalars were given as inputs.
+
+This raised a question: what should happen if a block now produces a batch at the first dimension level?
+We cannot simply `zip(...)` it with input-based outputs, since the size of these newly generated batches might not 
+match the number of input elements — making the operation ambiguous.
+
+To resolve this, we adopted the following rule:
+
+* Treat the situation as if there were a **"dummy" input batch of size 1**.
+
+* Consider all batches produced from scalar inputs as being one level deeper than they appear.
+
+* This follows the principle of broadcasting, allowing such outputs to expand consistently across all elements.
+
+* Input batch may vanish as a result of execution, but when this happens and new first-level dimension emerges, it 
+is still going to be virtually nested to ensure outputs consistency.
+
+**Example:**
+
+```
+(NO INPUTS)    IMAGE FETCHER BLOCK --> image --> OD MODEL --> predictons --> CROPS --> output will be: ["crops": [<crop>, <crop>, ...]] 
+```
+
+It is important to note that **results generated from previously created workflows valid will be the same** and the 
+change will only affect new workflows created to utilise new functionalities.
+
+### Migration guide
+
+??? Hint "Adding `get_parameters_enforcing_auto_batch_casting(...)` method"
+
+    Blocks which decrease output dimensionality and do not define batch-oriented inputs needs to 
+    declare all inputs which implementation expects to have wrapped in `Batch[T]` with the new class 
+    method of block manifest called `get_parameters_enforcing_auto_batch_casting(...)`
+
+    ```{ .py linenums="1" hl_lines="34-36 53-54"}
+    from typing import List, Literal, Type, Union
+
+    import supervision as sv
     
-    The issue arises because, while we can provide **default** values for `video_metadata` in `image` without 
-    explicitly copying them from the input, any non-default metadata that was added upstream may be lost. 
-    This can lead to downstream blocks that depend on the `video_metadata` not functioning as expected.
+    from inference.core.workflows.execution_engine.entities.base import (
+        Batch,
+        OutputDefinition,
+        WorkflowImageData,
+    )
+    from inference.core.workflows.execution_engine.entities.types import (
+        IMAGE_KIND,
+        OBJECT_DETECTION_PREDICTION_KIND,
+        Selector,
+    )
+    from inference.core.workflows.prototypes.block import (
+        BlockResult,
+        WorkflowBlock,
+        WorkflowBlockManifest,
+    )
+    
+    
+    class BlockManifest(WorkflowBlockManifest):
+        type: Literal["my_plugin/tile_detections@v1"]
+        crops: Selector(kind=[IMAGE_KIND])
+        crops_predictions: Selector(
+            kind=[OBJECT_DETECTION_PREDICTION_KIND]
+        )
+        scalar_parameter: Union[float, Selector()]
+    
+        @classmethod
+        def get_output_dimensionality_offset(cls) -> int:
+            return -1
+    
+        @classmethod
+        def get_parameters_enforcing_auto_batch_casting(cls) -> List[str]:
+            return ["crops", "crops_predictions"]
+        
+        @classmethod
+        def describe_outputs(cls) -> List[OutputDefinition]:
+            return [
+                OutputDefinition(name="visualisations", kind=[IMAGE_KIND]),
+            ]
+    
+    
+    class TileDetectionsBlock(WorkflowBlock):
+    
+        @classmethod
+        def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+            return BlockManifest
+    
+        def run(
+            self,
+            crops: Batch[WorkflowImageData],
+            crops_predictions: Batch[sv.Detections],
+            scalar_parameter: float,
+        ) -> BlockResult:
+            print("This is parameter which will not be auto-batch cast!", scalar_parameter)
+            annotator = sv.BoxAnnotator()
+            visualisations = []
+            for image, prediction in zip(crops, crops_predictions):
+                annotated_image = annotator.annotate(
+                    image.numpy_image.copy(),
+                    prediction,
+                )
+                visualisations.append(annotated_image)
+            tile = sv.create_tiles(visualisations)
+            return {"visualisations": tile}
+    ```
 
-    We've updated all existing `roboflow_core` blocks to account for this, but blocks created before this change in
-    external repositories may cause issues in workflows where their output images are used by video processing blocks.
+    * in lines `34-36` one needs to add declaration of fields that will be subject to enforced auto-batch casting
 
+    * as a result of the above, input parameters of run method (lines `53-54`) will be wrapped into `Batch[T]` by 
+    Execution Engine.
 
-* While the deprecated [`video_metadata` kind](/workflows/kinds/video_metadata.md) is still available for use, it will be fully removed in 
-Execution Engine version `v2.0.0`.
+## Execution Engine `v1.5.0` | inference `v0.38.0`
 
-!!! warning "Breaking change planned - Execution Engine `v2.0.0`"
+!!! Note "Change does not require any action"
+  
+    This change does not require any change from Workflows users. This is just performance optimisation.
 
-    [`video_metadata` kind](/workflows/kinds/video_metadata.md) got deprecated and will be removed in `v2.0.0`
+* Exposed new parameter in the init method of `BaseExecutionEngine` class - `executor` which can accept instance of 
+Python `ThreadPoolExecutor` to be used by execution engine. Thanks to this change, processing should be faster, as 
+each `BaseExecutionEngine.run(...)` will not require dedicated instance of `ThreadPoolExecutor` as it was so far.
+Additionally, we are significantly limiting threads spawning which may also be a benefit in some installations.
 
+* Despite the change, Execution Engine maintains the limit of concurrently executed steps - by limiting the number of
+steps that run through the executor at a time (since  Execution Engine is no longer in control of `ThreadPoolExecutor` 
+creation, and it is possible for the pool to have more workers available).
 
-* As a result of the changes mentioned above, the internal representation of the [`image` kind](/workflows/kinds/image.md) has been updated to 
-include a new `video_metadata` property. This property can be optionally set in the constructor; if not provided, 
-a default value with reasonable defaults will be used. To simplify metadata manipulation within blocks, we have 
-introduced two new class methods: `WorkflowImageData.copy_and_replace(...)` and `WorkflowImageData.create_crop(...)`. 
-For more details, refer to the updated [`WoorkflowImageData` usage guide](/workflows/internal_data_types.md#workflowimagedata).
+??? Hint "How to inject `ThreadPoolExecutor` to Execution Engine?"
+    
+    ```python
+    from concurrent.futures import ThreadPoolExecutor
+    workflow_init_parameters = { ... }
+    with ThreadPoolExecutor(max_workers=...) as thread_pool_executor:
+        execution_engine = ExecutionEngine.init(
+            init_parameters=workflow_init_parameters,
+            max_concurrent_steps=4,
+            workflow_id="your-workflow-id",
+            executor=thread_pool_executor,
+        )
+        runtime_parameters = {
+          "image": cv2.imread("your-image-path")
+        }
+        results = execution_engine.run(runtime_parameters=runtime_parameters)
+    ```
+
+## Execution Engine `v1.4.0` | inference `v0.29.0`
+
+* Added new kind - [`secret`](/workflows/kinds/secret.md) to represent credentials. **No action needed** for existing 
+blocks, yet it is expected that over time blocks developers should use this kind, whenever block is to accept secret 
+value as parameter.
+
+* Fixed issue with results serialization introduced in `v1.3.0` - by mistake, Execution Engine was not serializing 
+non-batch oriented outputs.
+
+* Fixed Execution Engine bug with preparing inputs for steps. For non-SIMD steps before, while collecting inputs 
+in runtime, `WorkflowBlockManifest.accepts_empty_input()` method result was being ignored - causing the bug when
+one non-SIMD step was feeding empty values to downstream blocks. Additionally, in the light of changes made in `v1.3.0`,
+thanks to which non-SIMD blocks can easily feed inputs for downstream SIMD steps - it is needed to check if 
+upstream non-SIMD block yielded non-empty results (as SIMD block may not accept empty results). This check was added.
+**No action needed** for existing blocks, but this fix may fix previously broken Workflows.
 
 
 ## Execution Engine `v1.3.0` | inference `v0.27.0`
@@ -303,52 +516,41 @@ subsets of steps**, enabling building such tools as debuggers.
         serializer/deserializer defined as the last one will be in use.
 
 
-## Execution Engine `v1.4.0` | inference `v0.29.0`
+## Execution Engine `v1.2.0` | inference `v0.23.0`
 
-* Added new kind - [`secret`](/workflows/kinds/secret.md) to represent credentials. **No action needed** for existing 
-blocks, yet it is expected that over time blocks developers should use this kind, whenever block is to accept secret 
-value as parameter.
+* The [`video_metadata` kind](/workflows/kinds/video_metadata.md) has been deprecated, and we **strongly recommend discontinuing its use for building 
+blocks moving forward**. As an alternative, the [`image` kind](/workflows/kinds/image.md) has been extended to support the same metadata as 
+[`video_metadata` kind](/workflows/kinds/video_metadata.md), which can now be provided optionally. This update is 
+**non-breaking** for existing blocks, but **some older blocks** that produce images **may become incompatible** with 
+**future** video processing blocks.
 
-* Fixed issue with results serialization introduced in `v1.3.0` - by mistake, Execution Engine was not serializing 
-non-batch oriented outputs.
+??? warning "Potential blocks incompatibility"
 
-* Fixed Execution Engine bug with preparing inputs for steps. For non-SIMD steps before, while collecting inputs 
-in runtime, `WorkflowBlockManifest.accepts_empty_input()` method result was being ignored - causing the bug when
-one non-SIMD step was feeding empty values to downstream blocks. Additionally, in the light of changes made in `v1.3.0`,
-thanks to which non-SIMD blocks can easily feed inputs for downstream SIMD steps - it is needed to check if 
-upstream non-SIMD block yielded non-empty results (as SIMD block may not accept empty results). This check was added.
-**No action needed** for existing blocks, but this fix may fix previously broken Workflows.
-
-
-## Execution Engine `v1.5.0` | inference `v0.38.0`
-
-!!! Note "Change does not require any action"
-  
-    This change does not require any change from Workflows users. This is just performance optimisation.
-
-* Exposed new parameter in the init method of `BaseExecutionEngine` class - `executor` which can accept instance of 
-Python `ThreadPoolExecutor` to be used by execution engine. Thanks to this change, processing should be faster, as 
-each `BaseExecutionEngine.run(...)` will not require dedicated instance of `ThreadPoolExecutor` as it was so far.
-Additionally, we are significantly limiting threads spawning which may also be a benefit in some installations.
-
-* Despite the change, Execution Engine maintains the limit of concurrently executed steps - by limiting the number of
-steps that run through the executor at a time (since  Execution Engine is no longer in control of `ThreadPoolExecutor` 
-creation, and it is possible for the pool to have more workers available).
-
-??? Hint "How to inject `ThreadPoolExecutor` to Execution Engine?"
+    As previously mentioned, adding `video_metadata` as an optional field to the internal representation of 
+    [`image` kind](/workflows/kinds/image.md) (`WorkflowImageData` class) 
+    may introduce some friction between existing blocks that output the [`image` kind](/workflows/kinds/image.md) and 
+    future video processing blocks that rely on `video_metadata` being part of `image` representation. 
     
-    ```python
-    from concurrent.futures import ThreadPoolExecutor
-    workflow_init_parameters = { ... }
-    with ThreadPoolExecutor(max_workers=...) as thread_pool_executor:
-        execution_engine = ExecutionEngine.init(
-            init_parameters=workflow_init_parameters,
-            max_concurrent_steps=4,
-            workflow_id="your-workflow-id",
-            executor=thread_pool_executor,
-        )
-        runtime_parameters = {
-          "image": cv2.imread("your-image-path")
-        }
-        results = execution_engine.run(runtime_parameters=runtime_parameters)
-    ```
+    The issue arises because, while we can provide **default** values for `video_metadata` in `image` without 
+    explicitly copying them from the input, any non-default metadata that was added upstream may be lost. 
+    This can lead to downstream blocks that depend on the `video_metadata` not functioning as expected.
+
+    We've updated all existing `roboflow_core` blocks to account for this, but blocks created before this change in
+    external repositories may cause issues in workflows where their output images are used by video processing blocks.
+
+
+* While the deprecated [`video_metadata` kind](/workflows/kinds/video_metadata.md) is still available for use, it will be fully removed in 
+Execution Engine version `v2.0.0`.
+
+!!! warning "Breaking change planned - Execution Engine `v2.0.0`"
+
+    [`video_metadata` kind](/workflows/kinds/video_metadata.md) got deprecated and will be removed in `v2.0.0`
+
+
+* As a result of the changes mentioned above, the internal representation of the [`image` kind](/workflows/kinds/image.md) has been updated to 
+include a new `video_metadata` property. This property can be optionally set in the constructor; if not provided, 
+a default value with reasonable defaults will be used. To simplify metadata manipulation within blocks, we have 
+introduced two new class methods: `WorkflowImageData.copy_and_replace(...)` and `WorkflowImageData.create_crop(...)`. 
+For more details, refer to the updated [`WoorkflowImageData` usage guide](/workflows/internal_data_types.md#workflowimagedata).
+
+
