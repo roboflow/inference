@@ -21,10 +21,19 @@ from pathlib import Path
 # Add parent directory to path to import inference modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import modal
+# Check if modal is installed
+try:
+    import modal
+except ImportError:
+    print("ERROR: Modal is not installed")
+    print("Please install with: pip install modal")
+    sys.exit(1)
+
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.modal_executor import (
     app, 
-    CustomBlockExecutor
+    CustomBlockExecutor,
+    MODAL_INSTALLED,
+    MODAL_AVAILABLE
 )
 
 
@@ -35,9 +44,19 @@ def main():
     print("=" * 60)
     
     # Check environment
+    if not MODAL_INSTALLED:
+        print("ERROR: Modal is not installed")
+        print("Please install with: pip install modal")
+        sys.exit(1)
+    
     if not os.environ.get("MODAL_TOKEN_ID"):
         print("ERROR: MODAL_TOKEN_ID environment variable not set")
         print("Please set Modal credentials before deploying")
+        sys.exit(1)
+    
+    if not app:
+        print("ERROR: Modal app could not be created")
+        print("Please check your Modal installation and credentials")
         sys.exit(1)
     
     print("\nDeploying app: inference-custom-blocks")

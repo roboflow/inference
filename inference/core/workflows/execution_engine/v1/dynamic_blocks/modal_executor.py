@@ -10,7 +10,13 @@ import json
 import os
 from typing import Any, Dict, Optional
 
-import modal
+# Try to import modal, but handle gracefully if not installed
+try:
+    import modal
+    MODAL_INSTALLED = True
+except ImportError:
+    MODAL_INSTALLED = False
+    modal = None
 
 from inference.core.env import (
     MODAL_TOKEN_ID,
@@ -24,15 +30,18 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import
 from inference.core.workflows.prototypes.block import BlockResult
 
 # Configure Modal client if credentials are available
-if MODAL_TOKEN_ID and MODAL_TOKEN_SECRET:
+if MODAL_INSTALLED and MODAL_TOKEN_ID and MODAL_TOKEN_SECRET:
     os.environ["MODAL_TOKEN_ID"] = MODAL_TOKEN_ID
     os.environ["MODAL_TOKEN_SECRET"] = MODAL_TOKEN_SECRET
     MODAL_AVAILABLE = True
 else:
     MODAL_AVAILABLE = False
 
-# Create the Modal App
-app = modal.App("inference-custom-blocks")
+# Create the Modal App only if Modal is installed
+if MODAL_INSTALLED:
+    app = modal.App("inference-custom-blocks")
+else:
+    app = None
 
 def _get_inference_image():
     """Get the Modal Image for inference."""
@@ -56,47 +65,48 @@ def _get_inference_image():
     return image
 
 # Define the parameterized Modal class for execution
-@app.cls(
-    image=_get_inference_image(),
-    restrict_modal_access=True,
-    max_inputs=1,
-    timeout=20,
-    region="us-central1",
-)
-class CustomBlockExecutor:
-    """Parameterized Modal class for executing custom Python blocks."""
-    
-    workspace_id: str = modal.parameter()
-    code_hash: str = modal.parameter()
-    
-    @modal.method()
-    def execute_block(
-        self, 
-        code_str: str,
-        imports: list[str],
-        run_function_name: str,
-        inputs: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Execute the custom block with the given inputs.
+if MODAL_INSTALLED and app:
+    @app.cls(
+        image=_get_inference_image(),
+        restrict_modal_access=True,
+        max_inputs=1,
+        timeout=20,
+        region="us-central1",
+    )
+    class CustomBlockExecutor:
+        """Parameterized Modal class for executing custom Python blocks."""
         
-        Args:
-            code_str: The Python code to execute
-            imports: List of import statements
-            run_function_name: Name of the function to call
-            inputs: Dictionary of inputs (already JSON-safe)
+        workspace_id: str = modal.parameter()
+        code_hash: str = modal.parameter()
+        
+        @modal.method()
+        def execute_block(
+            self, 
+            code_str: str,
+            imports: list[str],
+            run_function_name: str,
+            inputs: Dict[str, Any]
+        ) -> Dict[str, Any]:
+            """Execute the custom block with the given inputs.
             
-        Returns:
-            Dictionary with results or error information
-        """
-        import traceback
-        import sys
-        
-        # Build the execution namespace
-        namespace = {"__name__": "__main__"}
-        
-        # Execute imports
-        import_code = "\n".join(imports) if imports else ""
-        full_imports = f"""
+            Args:
+                code_str: The Python code to execute
+                imports: List of import statements
+                run_function_name: Name of the function to call
+                inputs: Dictionary of inputs (already JSON-safe)
+                
+            Returns:
+                Dictionary with results or error information
+            """
+            import traceback
+            import sys
+            
+            # Build the execution namespace
+            namespace = {"__name__": "__main__"}
+            
+            # Execute imports
+            import_code = "\n".join(imports) if imports else ""
+            full_imports = f"""
 from typing import Any, List, Dict, Set, Optional
 import supervision as sv
 import numpy as np
@@ -112,34 +122,36 @@ from inference.core.workflows.prototypes.block import BlockResult
 
 {import_code}
 """
-        
-        try:
-            # Execute imports
-            exec(full_imports, namespace)
             
-            # Execute the user code
-            exec(code_str, namespace)
-            
-            # Call the user function
-            if run_function_name not in namespace:
+            try:
+                # Execute imports
+                exec(full_imports, namespace)
+                
+                # Execute the user code
+                exec(code_str, namespace)
+                
+                # Call the user function
+                if run_function_name not in namespace:
+                    return {
+                        "error": f"Function '{run_function_name}' not found in code",
+                        "error_type": "NameError"
+                    }
+                
+                # Execute the function - inputs are already deserialized
+                result = namespace[run_function_name](**inputs)
+                
+                # Return the result
+                return {"success": True, "result": result}
+                
+            except Exception as e:
                 return {
-                    "error": f"Function '{run_function_name}' not found in code",
-                    "error_type": "NameError"
+                    "success": False,
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "traceback": traceback.format_exc()
                 }
-            
-            # Execute the function - inputs are already deserialized
-            result = namespace[run_function_name](**inputs)
-            
-            # Return the result
-            return {"success": True, "result": result}
-            
-        except Exception as e:
-            return {
-                "success": False,
-                "error": str(e),
-                "error_type": type(e).__name__,
-                "traceback": traceback.format_exc()
-            }
+else:
+    CustomBlockExecutor = None
 
 
 class ModalExecutor:
@@ -180,6 +192,12 @@ class ModalExecutor:
             DynamicBlockError: If execution fails
         """
         # Check if Modal is available
+        if not MODAL_INSTALLED:
+            raise DynamicBlockError(
+                public_message="Modal is not installed. Please install with: pip install modal",
+                context="modal_executor | installation_check"
+            )
+        
         if not MODAL_AVAILABLE:
             raise DynamicBlockError(
                 public_message="Modal credentials not configured. Please set MODAL_TOKEN_ID and MODAL_TOKEN_SECRET environment variables.",
@@ -291,6 +309,12 @@ def validate_code_in_modal(python_code: PythonCode, workspace_id: Optional[str] 
         DynamicBlockError: If code validation fails
     """
     # Check if Modal is available
+    if not MODAL_INSTALLED:
+        raise DynamicBlockError(
+            public_message="Modal is not installed. Please install with: pip install modal",
+            context="modal_executor | installation_check"
+        )
+    
     if not MODAL_AVAILABLE:
         raise DynamicBlockError(
             public_message="Modal credentials not configured. Please set MODAL_TOKEN_ID and MODAL_TOKEN_SECRET environment variables.",
