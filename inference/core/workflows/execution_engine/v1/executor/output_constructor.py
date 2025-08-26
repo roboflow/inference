@@ -1,5 +1,6 @@
 import traceback
-from typing import Any, Callable, Dict, List, Optional, Union
+from collections import defaultdict
+from typing import Any, Callable, Dict, List, Optional, Set, Union
 
 import numpy as np
 import supervision as sv
@@ -11,7 +12,7 @@ from inference.core.workflows.core_steps.common.utils import (
 )
 from inference.core.workflows.errors import AssumptionError, ExecutionEngineRuntimeError
 from inference.core.workflows.execution_engine.constants import (
-    TOP_LEVEL_LINEAGE_KEY,
+    TOP_LEVEL_LINEAGES_KEY,
     WORKFLOW_INPUT_BATCH_LINEAGE_ID,
 )
 from inference.core.workflows.execution_engine.entities.base import (
@@ -73,6 +74,21 @@ def construct_workflow_output(
         non_batch_outputs[output.name] = data_piece
     if not batch_oriented_outputs:
         return [non_batch_outputs]
+    outputs_for_generated_lineage = defaultdict(set)
+    outputs_for_input_dictated_lineage = set()
+    for output in workflow_outputs:
+        if output.name not in batch_oriented_outputs:
+            outputs_for_input_dictated_lineage.add(output.name)
+            continue
+        top_level_lineage = node_as(
+            execution_graph=execution_graph,
+            node=construct_output_selector(name=output.name),
+            expected_type=OutputNode,
+        ).data_lineage[0]
+        if top_level_lineage == WORKFLOW_INPUT_BATCH_LINEAGE_ID:
+            outputs_for_input_dictated_lineage.add(output.name)
+        else:
+            outputs_for_generated_lineage[top_level_lineage].add(output.name)
     dimensionality_for_output_nodes = {
         output.name: node_as(
             execution_graph=execution_graph,
@@ -81,34 +97,71 @@ def construct_workflow_output(
         ).dimensionality
         for output in workflow_outputs
     }
+    results = create_outputs_for_input_induced_lineages(
+        output_name2indices=output_name2indices,
+        outputs_for_input_dictated_lineage=outputs_for_input_dictated_lineage,
+        workflow_outputs=workflow_outputs,
+        execution_data_manager=execution_data_manager,
+        serialize_results=serialize_results,
+        kinds_serializers=kinds_serializers,
+        kinds_of_output_nodes=kinds_of_output_nodes,
+        non_batch_outputs=non_batch_outputs,
+        dimensionality_for_output_nodes=dimensionality_for_output_nodes,
+        batch_oriented_outputs=batch_oriented_outputs,
+    )
+    if len(results) == 0 and len(outputs_for_generated_lineage) > 0:
+        results.append({})
+    for generated_lineage, outputs_names in outputs_for_generated_lineage.items():
+        results_for_outputs_of_generated_lineage = (
+            create_outputs_for_generated_lineage_outputs(
+                generated_lineage=generated_lineage,
+                output_name2indices=output_name2indices,
+                outputs_for_generated_lineage=outputs_names,
+                workflow_outputs=workflow_outputs,
+                execution_data_manager=execution_data_manager,
+                serialize_results=serialize_results,
+                kinds_serializers=kinds_serializers,
+                kinds_of_output_nodes=kinds_of_output_nodes,
+                dimensionality_for_output_nodes=dimensionality_for_output_nodes,
+            )
+        )
+        for output in results:
+            output.update(results_for_outputs_of_generated_lineage)
+    return results
+
+
+def create_outputs_for_input_induced_lineages(
+    output_name2indices: Dict[str, Optional[List[tuple]]],
+    outputs_for_input_dictated_lineage: Set[str],
+    workflow_outputs: List[JsonField],
+    execution_data_manager: ExecutionDataManager,
+    serialize_results: bool,
+    kinds_serializers: Dict[str, Callable[[Any], Any]],
+    kinds_of_output_nodes: Dict[
+        str, Union[List[Union[Kind, str]], Dict[str, List[Union[Kind, str]]]]
+    ],
+    non_batch_outputs: Dict[str, Any],
+    dimensionality_for_output_nodes: Dict[str, int],
+    batch_oriented_outputs: Set[str],
+) -> List[Dict[str, Any]]:
     outputs_arrays: Dict[str, Optional[list]] = {
         name: create_array(indices=np.array(indices))
         for name, indices in output_name2indices.items()
-        if name in batch_oriented_outputs
+        if name in outputs_for_input_dictated_lineage and name in batch_oriented_outputs
     }
-    name2selector = {output.name: output.selector for output in workflow_outputs}
+    name2selector = {
+        output.name: output.selector
+        for output in workflow_outputs
+        if output.name in outputs_for_input_dictated_lineage
+    }
     outputs_requested_in_parent_coordinates = {
         output.name
         for output in workflow_outputs
         if output.coordinates_system is CoordinatesSystem.PARENT
     }
-    top_level_data_lineage_marker = execution_graph.graph.get(TOP_LEVEL_LINEAGE_KEY)
-    if top_level_data_lineage_marker:
-        major_batch_size = len(
-            execution_data_manager.get_lineage_indices(
-                lineage=[top_level_data_lineage_marker]
-            )
-        )
-        if (
-            major_batch_size == 0
-            and top_level_data_lineage_marker != WORKFLOW_INPUT_BATCH_LINEAGE_ID
-        ):
-            # we had some dynamic dimensionality increase on top of auto-batch casting, but we
-            # failed to register indices due to conditional execution
-            major_batch_size = 1
-    else:
-        major_batch_size = 0
-    for name in batch_oriented_outputs:
+    for name in outputs_for_input_dictated_lineage:
+        if name not in batch_oriented_outputs:
+            continue
         array = outputs_arrays[name]
         indices = output_name2indices[name]
         data = execution_data_manager.get_batch_data(
@@ -145,6 +198,14 @@ def construct_workflow_output(
                     context="workflow_execution | output_construction",
                 )
     results = []
+    if not outputs_arrays:
+        major_batch_size = 1 if len(non_batch_outputs) > 0 else 0
+    else:
+        major_batch_size = len(
+            execution_data_manager.get_lineage_indices(
+                lineage=[WORKFLOW_INPUT_BATCH_LINEAGE_ID]
+            )
+        )
     for i in range(major_batch_size):
         single_result = {}
         for name, value in non_batch_outputs.items():
@@ -163,6 +224,91 @@ def construct_workflow_output(
                 element = array[i]
             single_result[name] = element
         results.append(single_result)
+    return results
+
+
+def create_outputs_for_generated_lineage_outputs(
+    generated_lineage: str,
+    output_name2indices: Dict[str, Optional[List[tuple]]],
+    outputs_for_generated_lineage: Set[str],
+    workflow_outputs: List[JsonField],
+    execution_data_manager: ExecutionDataManager,
+    serialize_results: bool,
+    kinds_serializers: Dict[str, Callable[[Any], Any]],
+    kinds_of_output_nodes: Dict[
+        str, Union[List[Union[Kind, str]], Dict[str, List[Union[Kind, str]]]]
+    ],
+    dimensionality_for_output_nodes: Dict[str, int],
+) -> Dict[str, List[Any]]:
+    outputs_arrays: Dict[str, Optional[list]] = {
+        name: create_array(indices=np.array(indices))
+        for name, indices in output_name2indices.items()
+        if name in outputs_for_generated_lineage
+    }
+    name2selector = {
+        output.name: output.selector
+        for output in workflow_outputs
+        if output.name in outputs_for_generated_lineage
+    }
+    outputs_requested_in_parent_coordinates = {
+        output.name
+        for output in workflow_outputs
+        if output.coordinates_system is CoordinatesSystem.PARENT
+    }
+    for name in outputs_for_generated_lineage:
+        array = outputs_arrays[name]
+        indices = output_name2indices[name]
+        data = execution_data_manager.get_batch_data(
+            selector=name2selector[name],
+            indices=indices,
+        )
+        for index, data_piece in zip(indices, data):
+            if (
+                name in outputs_requested_in_parent_coordinates
+                and data_contains_sv_detections(data=data_piece)
+            ):
+                data_piece = convert_sv_detections_coordinates(data=data_piece)
+            if serialize_results:
+                output_kind = kinds_of_output_nodes[name]
+                data_piece = serialize_data_piece(
+                    output_name=name,
+                    data_piece=data_piece,
+                    kind=output_kind,
+                    kinds_serializers=kinds_serializers,
+                )
+            try:
+                place_data_in_array(
+                    array=array,
+                    index=index,
+                    data=data_piece,
+                )
+            except (TypeError, IndexError):
+                raise ExecutionEngineRuntimeError(
+                    public_message=f"Could not produce output {name} die to mismatch in "
+                    f"declared output dimensions versus actual ones."
+                    f"This is most likely a bug. Contact Roboflow team through github issues "
+                    f"(https://github.com/roboflow/inference/issues) providing full context of"
+                    f"the problem - including workflow definition you use.",
+                    context="workflow_execution | output_construction",
+                )
+    major_batch_size = len(
+        execution_data_manager.get_lineage_indices(lineage=[generated_lineage])
+    )
+    results = {name: [] for name in outputs_arrays}
+    for i in range(major_batch_size):
+        for name, array in outputs_arrays.items():
+            if array is None or len(array) <= i:
+                level = dimensionality_for_output_nodes[name] - 1
+                if level > 0:
+                    element = create_empty_index_array(
+                        level=level,
+                        accumulator=[],
+                    )
+                else:
+                    element = None
+            else:
+                element = array[i]
+            results[name].append(element)
     return results
 
 

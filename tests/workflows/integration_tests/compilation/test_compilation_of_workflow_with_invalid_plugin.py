@@ -6,7 +6,7 @@ import pytest
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import BlockInterfaceError
-from inference.core.workflows.execution_engine.constants import TOP_LEVEL_LINEAGE_KEY
+from inference.core.workflows.execution_engine.constants import TOP_LEVEL_LINEAGES_KEY
 from inference.core.workflows.execution_engine.introspection import blocks_loader
 from inference.core.workflows.execution_engine.v1.compiler.core import compile_workflow
 
@@ -145,10 +145,9 @@ def test_compilation_of_workflow_where_block_is_not_simd_but_defines_output_offs
     )
 
     # then
-    assert (
-        compiled_workflow.execution_graph.graph[TOP_LEVEL_LINEAGE_KEY]
-        == "$steps.problematic_dimensions"
-    )
+    assert compiled_workflow.execution_graph.graph[TOP_LEVEL_LINEAGES_KEY] == {
+        "$steps.problematic_dimensions"
+    }
 
 
 WORKFLOW_WITH_INVALID_BLOCK_DECLARING_DIMENSIONALITY_REFERENCE_PROPERTY_AS_NON_BATCH = {

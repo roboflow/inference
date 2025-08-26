@@ -518,7 +518,7 @@ def test_workflow_with_multiple_scalar_producers_feeding_non_simd_consumer_raisi
     result = execution_engine.run(runtime_parameters={})
 
     # then
-    assert result == [{"shapes": "[192, 168, 3][220, 230, 3]"}]
+    assert result == [{"shapes": ["[192, 168, 3][220, 230, 3]"]}]
 
 
 WORKFLOW_WITH_NON_SIMD_CONSUMER_RAISING_OUTPUT_DIM_FED_BY_SCALAR_PRODUCER_AND_BATCH_INPUT = {
@@ -986,16 +986,37 @@ def test_workflow_with_batched_inputs_at_dim_1_fed_into_consumer_decreasing_the_
         "workflows_core.api_key": None,
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_SIMD_CONSUMER_DECREASING_OUTPUT_DIM_FED_BY_BATCH_INPUTS_AT_DIM_1_BOOSTING_DIM_AT_THE_END,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+    image_1 = [
+        np.zeros((192, 168, 3), dtype=np.uint8),
+        np.zeros((292, 168, 3), dtype=np.uint8),
+    ]
+    image_2 = [
+        np.zeros((392, 168, 3), dtype=np.uint8),
+        np.zeros((492, 168, 3), dtype=np.uint8),
+    ]
 
     # when
-    with pytest.raises(AssumptionError):
-        # TESTING CURRENT LIMITATION OF EE - WE CANNOT HAVE A BLOCK THAT YIELDS NEW 1ST LEVEL
-        # OF DIMENSIONALITY (WHICH IS DICTATED BY INPUTS)!
-        _ = ExecutionEngine.init(
-            workflow_definition=WORKFLOW_WITH_SIMD_CONSUMER_DECREASING_OUTPUT_DIM_FED_BY_BATCH_INPUTS_AT_DIM_1_BOOSTING_DIM_AT_THE_END,
-            init_parameters=workflow_init_parameters,
-            max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
-        )
+    results = execution_engine.run(
+        {
+            "image_1": image_1,
+            "image_2": image_2,
+        }
+    )
+
+    # then
+    assert results == [
+        {
+            "shapes": [
+                "[192, 168, 3][392, 168, 3]\n[292, 168, 3][492, 168, 3]",
+                "[192, 168, 3][392, 168, 3]\n[292, 168, 3][492, 168, 3]",
+            ]
+        }
+    ]
 
 
 WORKFLOW_WITH_SIMD_CONSUMER_DECREASING_OUTPUT_DIM_FED_BY_BATCH_INPUTS_AT_DIM_2 = {
@@ -1141,8 +1162,7 @@ def test_workflow_with_scalar_inputs_fed_into_consumer_decreasing_the_dimensiona
 
     # then
     assert results == [
-        {"shapes": "[192, 168, 3][192, 168, 3]"},
-        {"shapes": "[192, 168, 3][192, 168, 3]"},
+        {"shapes": ["[192, 168, 3][192, 168, 3]", "[192, 168, 3][192, 168, 3]"]},
     ]
 
 
@@ -1212,17 +1232,19 @@ def test_workflow_with_non_simd_consumers_accepting_list_of_scalar_selector(
     results = execution_engine.run(runtime_parameters={})
 
     # then
-    assert len(results) == 2, "Expected dim increase to happen"
-    assert [i.numpy_image.shape for i in results[0]["x"]] == [
+    assert (
+        len(results) == 1
+    ), "Expected dim increase to happen, but should be nested according to how we treat emergent dimensions"
+    assert len(results[0]["x"]) == 2
+    assert [i.numpy_image.shape for i in results[0]["x"][0]] == [
         (100, 100, 3),
         (200, 200, 3),
     ]
     assert [i.numpy_image.shape for i in results[0]["y"]] == [(300, 300, 3)]
-    assert [i.numpy_image.shape for i in results[1]["x"]] == [
+    assert [i.numpy_image.shape for i in results[0]["x"][1]] == [
         (100, 100, 3),
         (200, 200, 3),
     ]
-    assert [i.numpy_image.shape for i in results[1]["y"]] == [(300, 300, 3)]
 
 
 WORKFLOW_WITH_NON_SIMD_CUSTOMER_ACCEPTING_LIST_OF_BATCH_IMAGES = {
@@ -2117,17 +2139,19 @@ def test_workflow_with_simd_consumers_accepting_list_of_scalar_selector(
     results = execution_engine.run(runtime_parameters={})
 
     # then
-    assert len(results) == 2, "Expected dim increase to happen"
-    assert [i.numpy_image.shape for i in results[0]["x"]] == [
+    assert (
+        len(results) == 1
+    ), "Expected dim increase to happen, but in artificially nested dim"
+    assert len(results[0]["x"]) == 2
+    assert [i.numpy_image.shape for i in results[0]["x"][0]] == [
         (100, 100, 3),
         (200, 200, 3),
     ]
     assert [i.numpy_image.shape for i in results[0]["y"]] == [(300, 300, 3)]
-    assert [i.numpy_image.shape for i in results[1]["x"]] == [
+    assert [i.numpy_image.shape for i in results[0]["x"][1]] == [
         (100, 100, 3),
         (200, 200, 3),
     ]
-    assert [i.numpy_image.shape for i in results[1]["y"]] == [(300, 300, 3)]
 
 
 WORKFLOW_WITH_SIMD_CUSTOMER_ACCEPTING_LIST_OF_BATCH_IMAGES = {
@@ -3906,7 +3930,7 @@ def test_workflow_with_multiple_scalar_producers_feeding_non_simd_consumer_raisi
     result = execution_engine.run(runtime_parameters={})
 
     # then
-    assert result == [{"shapes": None}]
+    assert result == [{"shapes": [None]}]
 
 
 WORKFLOW_WITH_SIMD_CONSUMER_RAISING_OUTPUT_DIM_FED_BY_SCALAR_PRODUCERS = {
@@ -3970,7 +3994,7 @@ def test_workflow_with_multiple_scalar_producers_feeding_simd_consumer_raising_d
     result = execution_engine.run(runtime_parameters={})
 
     # then
-    assert result == [{"shapes": "[192, 168, 3][220, 230, 3]"}]
+    assert result == [{"shapes": ["[192, 168, 3][220, 230, 3]"]}]
 
 
 WORKFLOW_WITH_SIMD_CONSUMER_RAISING_OUTPUT_DIM_TWICE_FED_BY_SCALAR_PRODUCERS = {
@@ -4040,7 +4064,7 @@ def test_workflow_with_multiple_scalar_producers_feeding_simd_consumer_raising_d
 
     # then
     assert result == [
-        {"shapes": ["[192, 168, 3][220, 230, 3]", "[192, 168, 3][220, 230, 3]"]}
+        {"shapes": [["[192, 168, 3][220, 230, 3]", "[192, 168, 3][220, 230, 3]"]]}
     ]
 
 
@@ -4111,7 +4135,7 @@ def test_workflow_with_multiple_scalar_producers_feeding_simd_consumer_raising_d
     result = execution_engine.run(runtime_parameters={})
 
     # then
-    assert result == [{"shapes": None}]
+    assert result == [{"shapes": []}]
 
 
 WORKFLOW_WITH_SIMD_CONSUMER_RAISING_OUTPUT_DIM_FED_BY_SCALAR_PRODUCERS_AND_FLOW_CONTROL_AT_DIM_1 = {
@@ -4186,7 +4210,7 @@ def test_workflow_with_multiple_scalar_producers_feeding_simd_consumer_raising_d
     result = execution_engine.run(runtime_parameters={})
 
     # then
-    assert result == [{"shapes": None}]
+    assert result == [{"shapes": [None]}]
 
 
 WORKFLOW_WITH_SIMD_CONSUMER_RAISING_OUTPUT_DIM_FED_BY_SCALAR_PRODUCER_AND_BATCH_INPUT = {

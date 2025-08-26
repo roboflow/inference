@@ -22,7 +22,7 @@ from inference.core.workflows.errors import (
 from inference.core.workflows.execution_engine.constants import (
     NODE_COMPILATION_OUTPUT_PROPERTY,
     PARSED_NODE_INPUT_SELECTORS_PROPERTY,
-    TOP_LEVEL_LINEAGE_KEY,
+    TOP_LEVEL_LINEAGES_KEY,
     WORKFLOW_INPUT_BATCH_LINEAGE_ID,
 )
 from inference.core.workflows.execution_engine.entities.base import (
@@ -616,22 +616,7 @@ def denote_data_flow_in_workflow(
             ),
         )
     execution_graph.remove_node(super_input_node)
-    if len(top_level_data_lineage) > 1:
-        raise AssumptionError(
-            public_message=f"Workflow Compiler detected that the workflow contains multiple elements which create "
-            f"top-level data batches - for instance inputs and blocks that create batched outputs from "
-            f"scalar parameters. We know it sounds convoluted, but the bottom line is that this "
-            f"situation is known limitation of Workflows Compiler. "
-            f"Contact Roboflow team through github issues "
-            f"(https://github.com/roboflow/inference/issues) providing full "
-            f"context of the problem - including workflow definition you use.",
-            context="workflow_compilation | execution_graph_construction | verification_of_batches_sources",
-        )
-    if len(top_level_data_lineage) > 0:
-        top_level_data_lineage_marker = top_level_data_lineage.pop()
-    else:
-        top_level_data_lineage_marker = None
-    execution_graph.graph[TOP_LEVEL_LINEAGE_KEY] = top_level_data_lineage_marker
+    execution_graph.graph[TOP_LEVEL_LINEAGES_KEY] = top_level_data_lineage
     return execution_graph
 
 
