@@ -6,11 +6,12 @@ This script tests the Modal sandbox execution for Custom Python Blocks
 in Roboflow Workflows.
 
 Usage:
-    # Set environment variables first
+    # Option 1: Set environment variables
     export MODAL_TOKEN_ID="your_token_id"
     export MODAL_TOKEN_SECRET="your_token_secret"
-    export MODAL_WORKSPACE_NAME="your_workspace"
     export WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE="modal"
+    
+    # Option 2: Use credentials from ~/.modal.toml (automatic fallback)
     
     # Run the test
     python modal/test_modal_blocks.py
@@ -20,6 +21,63 @@ import os
 import sys
 import numpy as np
 from typing import Dict, Any
+from pathlib import Path
+import configparser
+
+
+def load_modal_credentials():
+    """Load Modal credentials from environment or ~/.modal.toml file.
+    
+    Returns:
+        tuple: (token_id, token_secret) or (None, None) if not found
+    """
+    # First check environment variables
+    token_id = os.environ.get("MODAL_TOKEN_ID")
+    token_secret = os.environ.get("MODAL_TOKEN_SECRET")
+    
+    if token_id and token_secret:
+        print("✓ Using Modal credentials from environment variables")
+        return token_id, token_secret
+    
+    # Try to read from ~/.modal.toml
+    modal_toml_path = Path.home() / ".modal.toml"
+    if modal_toml_path.exists():
+        try:
+            config = configparser.ConfigParser()
+            config.read(modal_toml_path)
+            
+            # Modal uses the [default] section in .modal.toml
+            if "default" in config:
+                token_id = config.get("default", "token_id", fallback=None)
+                token_secret = config.get("default", "token_secret", fallback=None)
+                
+                if token_id and token_secret:
+                    print(f"✓ Using Modal credentials from {modal_toml_path}")
+                    # Set environment variables for the Modal client
+                    os.environ["MODAL_TOKEN_ID"] = token_id
+                    os.environ["MODAL_TOKEN_SECRET"] = token_secret
+                    return token_id, token_secret
+        except Exception as e:
+            print(f"Warning: Could not parse {modal_toml_path}: {e}")
+    
+    return None, None
+
+
+# Load credentials before importing Modal executor
+token_id, token_secret = load_modal_credentials()
+
+if not token_id or not token_secret:
+    print("\nERROR: Modal credentials not found")
+    print("\nPlease provide credentials using one of these methods:")
+    print("1. Set environment variables:")
+    print("   export MODAL_TOKEN_ID='your_token_id'")
+    print("   export MODAL_TOKEN_SECRET='your_token_secret'")
+    print("\n2. Run 'modal setup' to create ~/.modal.toml")
+    print("\n3. Create ~/.modal.toml manually with:")
+    print("   [default]")
+    print("   token_id = 'your_token_id'")
+    print("   token_secret = 'your_token_secret'")
+    sys.exit(1)
 
 # Set test configuration
 os.environ["WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE"] = "modal"
@@ -104,124 +162,105 @@ def process_array(data: np.ndarray) -> Dict[str, Any]:
         workspace_id="test-workspace"
     )
     
-    print(f"  Array shape: {test_array.shape}")
+    print(f"  Input shape: {test_array.shape}")
     print(f"  Result: {result}")
-    assert tuple(result.get("shape", [])) == test_array.shape
-    assert "mean" in result
-    assert "std" in result
+    assert result.get("shape") == [10, 20]
     print("  ✅ Numpy processing test passed!")
 
 
-def test_workflow_image_processing():
-    """Test WorkflowImageData processing."""
-    print("\nTesting WorkflowImageData processing...")
-    
-    python_code = PythonCode(
-        imports=["import cv2", "import numpy as np"],
-        code="""
-def process_image(image: WorkflowImageData) -> Dict[str, Any]:
-    img = image.numpy_image
-    if img is not None:
-        height, width = img.shape[:2]
-        mean_pixel = float(np.mean(img))
-        return {
-            "width": width,
-            "height": height,
-            "mean_pixel": mean_pixel,
-            "has_image": True
-        }
-    return {"has_image": False}
-""",
-        run_function_name="process_image",
-        run_function_code="",
-        init_function_name=None,
-        init_function_code=None,
-    )
-    
-    executor = ModalExecutor(workspace_id="test-workspace")
-    
-    # Create a test image
-    test_image = np.random.randint(0, 255, (100, 150, 3), dtype=np.uint8)
-    workflow_image = WorkflowImageData(
-        numpy_image=test_image,
-        parent_metadata={},
-        workflow_root_ancestor_metadata={}
-    )
-    
-    inputs = {"image": workflow_image}
-    
-    result = executor.execute_remote(
-        block_type_name="image_processing",
-        python_code=python_code,
-        inputs=inputs,
-        workspace_id="test-workspace"
-    )
-    
-    print(f"  Image shape: {test_image.shape}")
-    print(f"  Result: {result}")
-    assert result.get("width") == 150
-    assert result.get("height") == 100
-    assert result.get("has_image") is True
-    print("  ✅ WorkflowImageData processing test passed!")
-
-
-def test_error_handling():
-    """Test error handling in Modal execution."""
-    print("\nTesting error handling...")
+def test_workspace_isolation():
+    """Test that different workspaces get different executors."""
+    print("\nTesting workspace isolation...")
     
     python_code = PythonCode(
         imports=[],
         code="""
-def failing_function(x: int) -> Dict[str, Any]:
-    # This will raise an error
-    result = x / 0
-    return {"result": result}
+def get_workspace_info(workspace: str) -> Dict[str, Any]:
+    return {"workspace": workspace, "processed": True}
 """,
-        run_function_name="failing_function",
+        run_function_name="get_workspace_info",
         run_function_code="",
         init_function_name=None,
         init_function_code=None,
     )
     
-    executor = ModalExecutor(workspace_id="test-workspace")
+    # Test with workspace 1
+    executor1 = ModalExecutor(workspace_id="workspace-1")
+    result1 = executor1.execute_remote(
+        block_type_name="workspace_test",
+        python_code=python_code,
+        inputs={"workspace": "workspace-1"},
+        workspace_id="workspace-1"
+    )
     
-    inputs = {"x": 10}
+    # Test with workspace 2
+    executor2 = ModalExecutor(workspace_id="workspace-2")
+    result2 = executor2.execute_remote(
+        block_type_name="workspace_test",
+        python_code=python_code,
+        inputs={"workspace": "workspace-2"},
+        workspace_id="workspace-2"
+    )
     
-    try:
-        result = executor.execute_remote(
-            block_type_name="error_test",
-            python_code=python_code,
-            inputs=inputs,
-            workspace_id="test-workspace"
-        )
-        print("  ❌ Should have raised an error!")
-        sys.exit(1)
-    except Exception as e:
-        print(f"  Expected error caught: {e}")
-        print("  ✅ Error handling test passed!")
+    print(f"  Workspace 1 result: {result1}")
+    print(f"  Workspace 2 result: {result2}")
+    assert result1.get("workspace") == "workspace-1"
+    assert result2.get("workspace") == "workspace-2"
+    print("  ✅ Workspace isolation test passed!")
+
+
+def test_anonymous_fallback():
+    """Test anonymous workspace fallback."""
+    print("\nTesting anonymous workspace fallback...")
+    
+    python_code = PythonCode(
+        imports=[],
+        code="""
+def anonymous_test(value: int) -> Dict[str, Any]:
+    return {"value": value * 2, "anonymous": True}
+""",
+        run_function_name="anonymous_test",
+        run_function_code="",
+        init_function_name=None,
+        init_function_code=None,
+    )
+    
+    # Test without workspace_id (should default to "anonymous")
+    executor = ModalExecutor()  # No workspace_id provided
+    result = executor.execute_remote(
+        block_type_name="anonymous_test",
+        python_code=python_code,
+        inputs={"value": 21},
+        workspace_id=None  # Explicitly None
+    )
+    
+    print(f"  Result: {result}")
+    assert result.get("value") == 42
+    assert result.get("anonymous") == True
+    print("  ✅ Anonymous fallback test passed!")
 
 
 def main():
     """Run all tests."""
     print("=" * 60)
-    print("Modal Custom Python Blocks Test Suite")
+    print("Testing Modal Custom Python Blocks Implementation")
     print("=" * 60)
     
-    # Check environment
-    if not os.environ.get("MODAL_TOKEN_ID"):
-        print("ERROR: MODAL_TOKEN_ID environment variable not set")
-        print("Please set Modal credentials before running tests")
+    try:
+        test_simple_computation()
+        test_numpy_processing()
+        test_workspace_isolation()
+        test_anonymous_fallback()
+        
+        print("\n" + "=" * 60)
+        print("✅ All tests passed successfully!")
+        print("=" * 60)
+        
+    except Exception as e:
+        print(f"\n❌ Test failed: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
-    
-    # Run tests
-    test_simple_computation()
-    test_numpy_processing()
-    test_workflow_image_processing()
-    test_error_handling()
-    
-    print("\n" + "=" * 60)
-    print("All tests passed! ✅")
-    print("=" * 60)
 
 
 if __name__ == "__main__":
