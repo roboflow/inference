@@ -18,9 +18,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 @pytest.fixture
 def mock_model_manager():
     mock = MagicMock()
-    mock.infer_from_request_sync.return_value = MagicMock(
-        embeddings=[[0.1, 0.2, 0.3]]
-    )
+    mock.infer_from_request_sync.return_value = MagicMock(embeddings=[[0.1, 0.2, 0.3]])
     return mock
 
 
@@ -109,7 +107,9 @@ def test_run_remotely_with_text(mock_client_cls, mock_model_manager):
 @patch(
     "inference.core.workflows.core_steps.models.foundation.perception_encoder.v1.InferenceHTTPClient"
 )
-def test_run_remotely_with_image(mock_client_cls, mock_model_manager, mock_workflow_image_data):
+def test_run_remotely_with_image(
+    mock_client_cls, mock_model_manager, mock_workflow_image_data
+):
     mock_client = MagicMock()
     mock_client.get_perception_encoder_image_embeddings.return_value = {
         "embeddings": [[0.1, 0.2, 0.3]]
@@ -126,4 +126,3 @@ def test_run_remotely_with_image(mock_client_cls, mock_model_manager, mock_workf
 
     assert result["embedding"] == [0.1, 0.2, 0.3]
     mock_client.get_perception_encoder_image_embeddings.assert_called_once()
-

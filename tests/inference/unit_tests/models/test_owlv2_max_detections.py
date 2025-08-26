@@ -12,7 +12,9 @@ def test_infer_from_embed_respects_max_detections(monkeypatch):
         dtype=torch.float32,
     )
     image_class_embeds = torch.zeros((4, 2))
-    model.get_image_embeds = MagicMock(return_value=(None, image_boxes, image_class_embeds, None, None))
+    model.get_image_embeds = MagicMock(
+        return_value=(None, image_boxes, image_class_embeds, None, None)
+    )
 
     def fake_get_class_preds_from_embeds(*args, **kwargs):
         boxes = image_boxes
@@ -20,8 +22,14 @@ def test_infer_from_embed_respects_max_detections(monkeypatch):
         scores = torch.tensor([0.9, 0.8, 0.7, 0.6])
         return boxes, classes, scores
 
-    monkeypatch.setattr(owlv2, "get_class_preds_from_embeds", fake_get_class_preds_from_embeds)
-    monkeypatch.setattr(owlv2.torchvision.ops, "nms", lambda boxes, scores, iou: torch.arange(boxes.shape[0]))
+    monkeypatch.setattr(
+        owlv2, "get_class_preds_from_embeds", fake_get_class_preds_from_embeds
+    )
+    monkeypatch.setattr(
+        owlv2.torchvision.ops,
+        "nms",
+        lambda boxes, scores, iou: torch.arange(boxes.shape[0]),
+    )
 
     query_embeddings = {"a": {"positive": torch.zeros((1, 2)), "negative": None}}
     predictions = model.infer_from_embed(
