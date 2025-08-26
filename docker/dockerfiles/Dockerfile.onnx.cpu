@@ -1,11 +1,8 @@
-ARG TARGETPLATFORM
+FROM python:3.9-bookworm as base
 
-FROM python:3.10 as base
+ARG DEBIAN_FRONTEND=noninteractive
 
-ARG TARGETPLATFORM
-
-RUN apt-get update -y && apt-get install -y \
-    ffmpeg \
+RUN apt update -y && apt install -y \
     libxext6 \
     libopencv-dev \
     uvicorn \
@@ -13,6 +10,8 @@ RUN apt-get update -y && apt-get install -y \
     git \
     libgdal-dev \
     libvips-dev \
+    cmake \
+    rustc \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements files
@@ -20,6 +19,7 @@ COPY requirements/_requirements.txt \
     requirements/requirements.sam.txt \
     requirements/requirements.clip.txt \
     requirements/requirements.cpu.txt \
+    requirements/requirements.vino.txt \
     requirements/requirements.http.txt \
     requirements/requirements.gaze.txt \
     requirements/requirements.doctr.txt \
@@ -29,7 +29,8 @@ COPY requirements/_requirements.txt \
     requirements/requirements.modal.txt \
     ./
 
-RUN pip3 install --upgrade pip && pip3 install \
+RUN pip3 install --upgrade pip && pip3 install "wheel>=0.38.1,<=0.45.1"
+RUN pip3 install \
     -r _requirements.txt \
     -r requirements.sam.txt \
     -r requirements.clip.txt \
