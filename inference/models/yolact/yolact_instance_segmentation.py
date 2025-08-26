@@ -143,7 +143,8 @@ class YOLACT(OnnxRoboflowInferenceModel):
     def predict(
         self, img_in: np.ndarray, **kwargs
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        return run_session_via_iobinding(self.onnx_session, self.input_name, img_in)
+        with self._session_lock:
+            return run_session_via_iobinding(self.onnx_session, self.input_name, img_in)
 
     def postprocess(
         self,

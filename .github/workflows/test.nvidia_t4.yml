@@ -131,12 +131,12 @@ jobs:
           PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
       - name: 🧪 Regression Tests - MoonDream
         id: moondream_tests
-        if: ${{ github.event.inputs.test_name == 'moondream2' }}
+        if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'moondream2' }}
         run: |
           source .venv/bin/activate
           PORT=9101 API_KEY=${{ secrets.API_KEY }} SKIP_MOONDREAM2_TEST=False python3 -m pytest tests/inference/integration_tests/test_moondream2.py
       - name: 🧹 Cleanup Test Docker - MoonDream
-        if: ${{ github.event.inputs.test_name == 'moondream2' }}
+        if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'moondream2' }}
         run: make stop_test_docker
       - name: 🚨 Show server logs on error
         run: |
