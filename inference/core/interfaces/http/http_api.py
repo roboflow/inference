@@ -4,7 +4,7 @@ import os
 from functools import partial, wraps
 from threading import Lock, Semaphore
 from time import sleep
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Annotated
 from uuid import uuid4
 
 import asgi_correlation_id
@@ -2895,11 +2895,12 @@ class HttpInterface(BaseInterface):
                 ],
                 response_model_exclude_none=True,
             )
-            @with_route_exceptions_async
+            @with_route_exceptions
             @usage_collector("request")
-            async def legacy_infer_from_request(
+            def legacy_infer_from_request(
                 background_tasks: BackgroundTasks,
                 request: Request,
+                request_body: Annotated[Union[bytes, dict], Body()],
                 dataset_id: str = Path(
                     description="ID of a Roboflow dataset corresponding to the model to use for inference OR workspace ID"
                 ),
@@ -2992,6 +2993,7 @@ class HttpInterface(BaseInterface):
                     "external",
                     description="The detailed source information of the inference request",
                 ),
+                file: Optional[UploadFile] = None
             ):
                 """
                 Legacy inference endpoint for object detection, instance segmentation, and classification.
@@ -3026,9 +3028,8 @@ class HttpInterface(BaseInterface):
                         raise ContentTypeMissing(
                             f"Request must include a Content-Type header"
                         )
-                    if "multipart/form-data" in request.headers["Content-Type"]:
-                        form_data = await request.form()
-                        base64_image_str = await form_data["file"].read()
+                    if file is not None:
+                        base64_image_str = file.file.read()
                         base64_image_str = base64.b64encode(base64_image_str)
                         request_image = InferenceRequestImage(
                             type="base64", value=base64_image_str.decode("ascii")
@@ -3036,11 +3037,9 @@ class HttpInterface(BaseInterface):
                     elif (
                         "application/x-www-form-urlencoded"
                         in request.headers["Content-Type"]
-                        or "application/json" in request.headers["Content-Type"]
                     ):
-                        data = await request.body()
                         request_image = InferenceRequestImage(
-                            type=image_type, value=data
+                            type=image_type, value=request_body
                         )
                     else:
                         raise ContentTypeInvalid(
@@ -3122,7 +3121,7 @@ class HttpInterface(BaseInterface):
                     usage_billable=countinference,
                     **args,
                 )
-                inference_response = await self.model_manager.infer_from_request(
+                inference_response = self.model_manager.infer_from_request_sync(
                     inference_request.model_id,
                     inference_request,
                     active_learning_eligible=True,
