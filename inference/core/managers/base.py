@@ -509,24 +509,31 @@ class ModelManager:
         ]
 
     def _get_lock_for_a_model(self, model_id: str) -> Lock:
-        with acquire_with_timeout(lock=self._state_lock) as acquired:
-            if not acquired:
-                raise ModelManagerLockAcquisitionError(
-                    "Could not acquire lock on Model Manager state to retrieve model lock."
-                )
-            if model_id not in self._models_state_locks:
-                self._models_state_locks[model_id] = Lock()
-            return self._models_state_locks[model_id]
+        # Manual lock management instead of contextlib/contextmanager overhead, for much faster hot path
+        acquired = self._state_lock.acquire(timeout=MODEL_LOCK_ACQUIRE_TIMEOUT)
+        if not acquired:
+            raise ModelManagerLockAcquisitionError(
+                "Could not acquire lock on Model Manager state to retrieve model lock."
+            )
+        try:
+            lock = self._models_state_locks.get(model_id)
+            if lock is None:
+                lock = Lock()
+                self._models_state_locks[model_id] = lock
+            return lock
+        finally:
+            self._state_lock.release()
 
     def _dispose_model_lock(self, model_id: str) -> None:
-        with acquire_with_timeout(lock=self._state_lock) as acquired:
-            if not acquired:
-                raise ModelManagerLockAcquisitionError(
-                    "Could not acquire lock on Model Manager state to dispose model lock."
-                )
-            if model_id not in self._models_state_locks:
-                return None
-            del self._models_state_locks[model_id]
+        acquired = self._state_lock.acquire(timeout=MODEL_LOCK_ACQUIRE_TIMEOUT)
+        if not acquired:
+            raise ModelManagerLockAcquisitionError(
+                "Could not acquire lock on Model Manager state to dispose model lock."
+            )
+        try:
+            self._models_state_locks.pop(model_id, None)
+        finally:
+            self._state_lock.release()
 
 
 @contextmanager
