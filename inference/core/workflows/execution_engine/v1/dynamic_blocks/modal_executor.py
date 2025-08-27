@@ -50,8 +50,10 @@ else:
 # Create the Modal App only if Modal is installed
 if MODAL_INSTALLED:
     app = modal.App("inference-custom-blocks")
+    cls = modal.Cls.from_name("inference-custom-blocks", "CustomBlockExecutor")
 else:
     app = None
+    cls = None
 
 def _get_inference_image():
     """Get the Modal Image for inference."""
@@ -79,11 +81,12 @@ if MODAL_INSTALLED and app:
     @app.cls(
         image=_get_inference_image(),
         restrict_modal_access=True,
-        max_inputs=1,
         timeout=20,
-        region="us-central1",
         enable_memory_snapshot=True,  # Enable memory snapshotting for faster cold starts
-        scaledown_window=60
+        scaledown_window=60,
+        cloud="gcp",
+        region="us-central1",
+
     )
     class CustomBlockExecutor:
         """Parameterized Modal class for executing custom Python blocks."""
@@ -223,8 +226,6 @@ class ModalExecutor:
                 # Create a new executor instance for this workspace using the deployed app
                 if MODAL_INSTALLED and modal:
                     # Look up the deployed class
-                    cls = modal.Cls.from_name("inference-custom-blocks", "CustomBlockExecutor")
-                    print("Executor created for workspace: " + workspace)
                     executor = cls(workspace_id=workspace)
                     self._executor_cache[cache_key] = executor
                 else:
@@ -233,7 +234,6 @@ class ModalExecutor:
                         context="modal_executor | class_lookup"
                     )
             else:
-                print("Executor found for workspace: " + workspace)
                 executor = self._executor_cache[cache_key]
             
             # Execute remotely - pass inputs directly, Modal handles pickling
