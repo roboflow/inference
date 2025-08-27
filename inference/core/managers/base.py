@@ -536,10 +536,7 @@ def acquire_with_timeout(
 ) -> Generator[bool, None, None]:
     acquired = lock.acquire(timeout=timeout)
     try:
-        if not acquired:
-            yield False  # indicate failure to acquire
-        else:
-            yield True
+        yield acquired
     finally:
         if acquired:
             lock.release()
