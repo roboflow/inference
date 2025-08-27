@@ -152,16 +152,16 @@ def test_simple_computation():
     print("Testing simple computation...")
     
     python_code = PythonCode(
+        type="PythonCode",
         imports=[],
-        code="""
+        run_function_code="""
 def compute(x: int, y: int) -> Dict[str, Any]:
     result = x + y
     squared = result ** 2
     return {"sum": result, "squared": squared}
 """,
         run_function_name="compute",
-        run_function_code="",
-        init_function_name=None,
+        init_function_name="init",
         init_function_code=None,
     )
     
@@ -187,8 +187,9 @@ def test_numpy_processing():
     print("\nTesting numpy processing...")
     
     python_code = PythonCode(
+        type="PythonCode",
         imports=["import numpy as np"],
-        code="""
+        run_function_code="""
 def process_array(data: np.ndarray) -> Dict[str, Any]:
     mean_val = float(np.mean(data))
     std_val = float(np.std(data))
@@ -200,12 +201,11 @@ def process_array(data: np.ndarray) -> Dict[str, Any]:
         "std": std_val,
         "max": max_val,
         "min": min_val,
-        "shape": data.shape
+        "shape": list(data.shape)  # Convert tuple to list for consistency
     }
 """,
         run_function_name="process_array",
-        run_function_code="",
-        init_function_name=None,
+        init_function_name="init",
         init_function_code=None,
     )
     
@@ -223,7 +223,14 @@ def process_array(data: np.ndarray) -> Dict[str, Any]:
     
     print(f"  Input shape: {test_array.shape}")
     print(f"  Result: {result}")
-    assert result.get("shape") == [10, 20]
+    
+    # Check shape - could be tuple (10, 20) or list [10, 20] depending on serialization
+    shape = result.get("shape")
+    if isinstance(shape, tuple):
+        assert shape == (10, 20)
+    else:
+        assert shape == [10, 20]
+    
     print("  ✅ Numpy processing test passed!")
 
 
@@ -232,14 +239,14 @@ def test_workspace_isolation():
     print("\nTesting workspace isolation...")
     
     python_code = PythonCode(
+        type="PythonCode",
         imports=[],
-        code="""
+        run_function_code="""
 def get_workspace_info(workspace: str) -> Dict[str, Any]:
     return {"workspace": workspace, "processed": True}
 """,
         run_function_name="get_workspace_info",
-        run_function_code="",
-        init_function_name=None,
+        init_function_name="init",
         init_function_code=None,
     )
     
@@ -273,14 +280,14 @@ def test_anonymous_fallback():
     print("\nTesting anonymous workspace fallback...")
     
     python_code = PythonCode(
+        type="PythonCode",
         imports=[],
-        code="""
+        run_function_code="""
 def anonymous_test(value: int) -> Dict[str, Any]:
     return {"value": value * 2, "anonymous": True}
 """,
         run_function_name="anonymous_test",
-        run_function_code="",
-        init_function_name=None,
+        init_function_name="init",
         init_function_code=None,
     )
     

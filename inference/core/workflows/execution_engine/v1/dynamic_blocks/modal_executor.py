@@ -208,18 +208,23 @@ class ModalExecutor:
             cache_key = workspace
             
             if cache_key not in self._executor_cache:
-                # Create a new executor instance for this workspace
-                with app.run():
-                    executor = CustomBlockExecutor(
-                        workspace_id=workspace
-                    )
+                # Create a new executor instance for this workspace using the deployed app
+                if MODAL_INSTALLED and modal:
+                    # Look up the deployed class
+                    cls = modal.Cls.from_name("inference-custom-blocks", "CustomBlockExecutor")
+                    executor = cls(workspace_id=workspace)
                     self._executor_cache[cache_key] = executor
+                else:
+                    raise DynamicBlockError(
+                        public_message="Modal is not properly configured",
+                        context="modal_executor | class_lookup"
+                    )
             else:
                 executor = self._executor_cache[cache_key]
             
             # Execute remotely - pass inputs directly, Modal handles pickling
             result = executor.execute_block.remote(
-                code_str=python_code.code,
+                code_str=python_code.run_function_code,
                 imports=python_code.imports or [],
                 run_function_name=python_code.run_function_name,
                 inputs=inputs  # No serialization needed - Modal pickles automatically
@@ -263,15 +268,24 @@ class ModalExecutor:
             serialize_wildcard_kind
         )
         
+        # Handle special numpy cases for better compatibility
+        def _prepare_numpy_types(value):
+            # Convert numpy shapes to lists for consistency
+            if isinstance(value, tuple) and all(isinstance(x, int) for x in value):
+                return list(value)
+            # Convert numpy arrays and other special types
+            return value
+        
         # If outputs is a dict, serialize each value
         if isinstance(outputs, dict):
             serialized = {}
             for key, value in outputs.items():
+                value = _prepare_numpy_types(value)
                 serialized[key] = serialize_wildcard_kind(value)
             return serialized
         else:
             # Wrap non-dict results in BlockResult format
-            return {"result": serialize_wildcard_kind(outputs)}
+            return {"result": serialize_wildcard_kind(_prepare_numpy_types(outputs))}
 
 
 def validate_code_in_modal(python_code: PythonCode, workspace_id: Optional[str] = None) -> bool:
