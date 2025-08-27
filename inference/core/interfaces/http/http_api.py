@@ -4,7 +4,7 @@ import os
 from functools import partial, wraps
 from threading import Lock, Semaphore
 from time import sleep
-from typing import Any, Dict, List, Optional, Union, Annotated
+from typing import Annotated, Any, Dict, List, Optional, Union
 from uuid import uuid4
 
 import asgi_correlation_id
@@ -2993,7 +2993,7 @@ class HttpInterface(BaseInterface):
                     "external",
                     description="The detailed source information of the inference request",
                 ),
-                file: Optional[UploadFile] = None
+                file: Optional[UploadFile] = None,
             ):
                 """
                 Legacy inference endpoint for object detection, instance segmentation, and classification.
