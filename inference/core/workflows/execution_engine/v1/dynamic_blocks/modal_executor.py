@@ -10,6 +10,18 @@ import json
 import os
 from typing import Any, Dict, Optional
 
+from inference.core.env import (
+    MODAL_TOKEN_ID,
+    MODAL_TOKEN_SECRET,
+    MODAL_WORKSPACE_NAME,
+)
+
+# Set Modal environment variables before importing
+if MODAL_TOKEN_ID and MODAL_TOKEN_SECRET:
+    os.environ["MODAL_TOKEN_ID"] = MODAL_TOKEN_ID
+    os.environ["MODAL_TOKEN_SECRET"] = MODAL_TOKEN_SECRET
+    print(f"Modal credentials set in environment: {MODAL_TOKEN_ID[:4]}...{MODAL_TOKEN_ID[-4:]}")
+
 # Try to import modal, but handle gracefully if not installed
 try:
     import modal
@@ -18,24 +30,22 @@ except ImportError:
     MODAL_INSTALLED = False
     modal = None
 
-from inference.core.env import (
-    MODAL_TOKEN_ID,
-    MODAL_TOKEN_SECRET,
-    MODAL_WORKSPACE_NAME,
-)
 from inference.core.workflows.errors import DynamicBlockError
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
     PythonCode,
 )
 from inference.core.workflows.prototypes.block import BlockResult
 
-# Configure Modal client if credentials are available
+# Check if Modal is available
 if MODAL_INSTALLED and MODAL_TOKEN_ID and MODAL_TOKEN_SECRET:
-    os.environ["MODAL_TOKEN_ID"] = MODAL_TOKEN_ID
-    os.environ["MODAL_TOKEN_SECRET"] = MODAL_TOKEN_SECRET
     MODAL_AVAILABLE = True
 else:
     MODAL_AVAILABLE = False
+    if MODAL_INSTALLED:
+        print("Modal installed but credentials not found")
+    else:
+        print("Modal not installed")
+
 
 # Create the Modal App only if Modal is installed
 if MODAL_INSTALLED:
