@@ -43,8 +43,8 @@ class ModelManager:
         self.model_registry = model_registry
         self._models: Dict[str, Model] = models if models is not None else {}
         self.pingback = None
-        self._state_lock = Lock()
         self._models_state_locks: Dict[str, Lock] = {}
+        self._models_state_locks_lock = Lock()
 
     def init_pingback(self):
         """Initializes pingback mechanism."""
@@ -86,6 +86,14 @@ class ModelManager:
             f"ModelManager - Adding model with model_id={model_id}, model_id_alias={model_id_alias}"
         )
         resolved_identifier = model_id if model_id_alias is None else model_id_alias
+
+        # Fast path: check if model already loaded outside the lock (thread-safe due to lock usage later)
+        if resolved_identifier in self._models:
+            logger.debug(
+                f"ModelManager - model with model_id={resolved_identifier} is already loaded."
+            )
+            return
+
         model_lock = self._get_lock_for_a_model(model_id=resolved_identifier)
         with acquire_with_timeout(lock=model_lock) as acquired:
             if not acquired:
@@ -93,6 +101,7 @@ class ModelManager:
                 raise ModelManagerLockAcquisitionError(
                     f"Could not acquire lock for model with id={resolved_identifier}."
                 )
+            # recheck inside lock for correctness
             if resolved_identifier in self._models:
                 logger.debug(
                     f"ModelManager - model with model_id={resolved_identifier} is already loaded."
@@ -509,24 +518,18 @@ class ModelManager:
         ]
 
     def _get_lock_for_a_model(self, model_id: str) -> Lock:
-        with acquire_with_timeout(lock=self._state_lock) as acquired:
-            if not acquired:
-                raise ModelManagerLockAcquisitionError(
-                    "Could not acquire lock on Model Manager state to retrieve model lock."
-                )
-            if model_id not in self._models_state_locks:
-                self._models_state_locks[model_id] = Lock()
-            return self._models_state_locks[model_id]
+        # Only lock the lock dict during the check/creation of per-model lock
+        with self._models_state_locks_lock:
+            lock = self._models_state_locks.get(model_id)
+            if lock is None:
+                lock = Lock()
+                self._models_state_locks[model_id] = lock
+            return lock
 
     def _dispose_model_lock(self, model_id: str) -> None:
-        with acquire_with_timeout(lock=self._state_lock) as acquired:
-            if not acquired:
-                raise ModelManagerLockAcquisitionError(
-                    "Could not acquire lock on Model Manager state to dispose model lock."
-                )
-            if model_id not in self._models_state_locks:
-                return None
-            del self._models_state_locks[model_id]
+        with self._models_state_locks_lock:
+            if model_id in self._models_state_locks:
+                del self._models_state_locks[model_id]
 
 
 @contextmanager
