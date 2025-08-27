@@ -9,6 +9,7 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
+import aiohttp
 import backoff
 import requests
 from requests import Response, Timeout
@@ -147,6 +148,20 @@ def get_roboflow_workspace(api_key: str) -> WorkspaceID:
     if workspace_id is None:
         raise WorkspaceLoadError(f"Empty workspace encountered, check your API key.")
     return workspace_id
+
+
+async def get_roboflow_workspace_async(api_key: str) -> WorkspaceID:
+    async with aiohttp.ClientSession() as session:
+        async with session.get(
+            f"{API_BASE_URL}/",
+            params={"api_key": api_key, "nocache": "true"},
+            timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
+        ) as response:
+            response_payload = await response.json()
+            workspace_id = response_payload.get("workspace")
+            if workspace_id is None:
+                raise WorkspaceLoadError(f"Empty workspace encountered, check your API key.")
+            return workspace_id
 
 
 @wrap_roboflow_api_errors()
@@ -772,7 +787,10 @@ def _get_from_url(
         if int(content_length) != len(response.content):
             error = "Content-Length header does not match response content length"
             if RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API:
-                raise RetryRequestError(message=error)
+                raise RetryRequestError(
+                    message=error,
+                    inner_error=RuntimeError("Content-length validation failed"),
+                )
             raise RoboflowAPIUnsuccessfulRequestError(error)
 
     if json_response:

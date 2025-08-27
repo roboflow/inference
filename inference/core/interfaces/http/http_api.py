@@ -187,6 +187,7 @@ from inference.core.exceptions import (
     WorkspaceLoadError,
 )
 from inference.core.interfaces.base import BaseInterface
+from inference.core.interfaces.http.dependencies import request_body_content
 from inference.core.interfaces.http.handlers.workflows import (
     filter_out_unwanted_workflow_outputs,
     handle_describe_workflows_blocks_request,
@@ -2900,7 +2901,7 @@ class HttpInterface(BaseInterface):
             def legacy_infer_from_request(
                 background_tasks: BackgroundTasks,
                 request: Request,
-                request_body: Annotated[Union[bytes, dict], Body()],
+                request_body: Annotated[Optional[bytes], Depends(request_body_content)],
                 dataset_id: str = Path(
                     description="ID of a Roboflow dataset corresponding to the model to use for inference OR workspace ID"
                 ),
@@ -3036,7 +3037,8 @@ class HttpInterface(BaseInterface):
                         )
                     elif (
                         "application/x-www-form-urlencoded"
-                        in request.headers["Content-Type"]
+                        in request.headers["Content-Type"] or
+                        "application/json" in request.headers["Content-Type"]
                     ):
                         request_image = InferenceRequestImage(
                             type=image_type, value=request_body
