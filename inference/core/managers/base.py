@@ -44,7 +44,6 @@ class ModelManager:
         self._models: Dict[str, Model] = models if models is not None else {}
         self.pingback = None
         self._state_lock = Lock()
-        self._state_lock.acquire()
         self._models_state_locks: Dict[str, Lock] = {}
 
     def init_pingback(self):
