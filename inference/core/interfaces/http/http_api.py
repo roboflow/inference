@@ -1963,7 +1963,7 @@ class HttpInterface(BaseInterface):
                         load_model(model_id)
 
                 # Update the readiness state in a thread-safe manner
-                async with state.lock:
+                with state.lock:
                     state.is_ready = True
 
             @app.on_event("startup")
