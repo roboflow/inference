@@ -152,8 +152,26 @@ from inference.core.workflows.prototypes.block import BlockResult
                         "error_type": "NameError"
                     }
                 
-                # Execute the function - inputs use Modal's native pickling
-                result = namespace[run_function_name](**inputs)
+                # Get the user's function
+                user_function = namespace[run_function_name]
+                
+                # Check if function expects a 'self' parameter
+                import inspect
+                sig = inspect.signature(user_function)
+                params = list(sig.parameters.keys())
+                
+                # If function expects 'self' as first param, create a simple object to pass
+                if params and params[0] == 'self':
+                    # Create a simple object to pass as self
+                    class BlockSelf:
+                        pass
+                    
+                    block_self = BlockSelf()
+                    # Execute with self parameter
+                    result = user_function(block_self, **inputs)
+                else:
+                    # Execute without self parameter
+                    result = user_function(**inputs)
                 
                 # Return the result - Modal handles pickling
                 return {"success": True, "result": result}
