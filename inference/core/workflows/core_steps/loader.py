@@ -257,6 +257,11 @@ from inference.core.workflows.core_steps.models.roboflow.object_detection.v1 imp
 from inference.core.workflows.core_steps.models.roboflow.object_detection.v2 import (
     RoboflowObjectDetectionModelBlockV2,
 )
+
+from inference.core.workflows.core_steps.models.roboflow.object_detection_exp.v1 import (
+    RoboflowObjectDetectionEXPModelBlockV1,
+)
+
 from inference.core.workflows.core_steps.models.third_party.barcode_detection.v1 import (
     BarcodeDetectorBlockV1,
 )
@@ -671,6 +676,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         OverlapBlockV1,
         ONVIFSinkBlockV1,
         QRCodeGeneratorBlockV1,
+        RoboflowObjectDetectionEXPModelBlockV1,
     ]
 
 

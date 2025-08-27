@@ -119,6 +119,25 @@ def convert_inference_detections_batch_to_sv_detections(
     return batch_of_detections
 
 
+def convert_inference_exp_detections_batch_to_sv_detections(
+    predictions: List[Dict[str, Union[List[Dict[str, Any]], Any]]],
+    inference_id: str,
+    images: Iterable[WorkflowImageData],
+    class_names: List[str],
+) -> List[sv.Detections]:
+
+    detections = [p.to_supervision() for p in predictions]
+    for d, image in zip(detections, images):
+        height, width = image.numpy_image.shape[:2]
+        d[IMAGE_DIMENSIONS_KEY] = np.array([[width, height]] * len(d))
+        d[INFERENCE_ID_KEY] = np.array([inference_id] * len(d))
+        d[PARENT_ID_KEY] = np.array([""] * len(d))
+        d[DETECTION_ID_KEY] = np.array([str(uuid.uuid4())] * len(d))
+        d["class_name"] = np.array([class_names[pci] for pci in d.class_id])
+
+    return detections
+
+
 def add_inference_keypoints_to_sv_detections(
     inference_prediction: List[dict],
     detections: sv.Detections,
