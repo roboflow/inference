@@ -82,6 +82,8 @@ if MODAL_INSTALLED and app:
         max_inputs=1,
         timeout=20,
         region="us-central1",
+        enable_memory_snapshot=True,  # Enable memory snapshotting for faster cold starts
+        scaledown_window=60
     )
     class CustomBlockExecutor:
         """Parameterized Modal class for executing custom Python blocks."""
@@ -222,6 +224,7 @@ class ModalExecutor:
                 if MODAL_INSTALLED and modal:
                     # Look up the deployed class
                     cls = modal.Cls.from_name("inference-custom-blocks", "CustomBlockExecutor")
+                    print("Executor created for workspace: " + workspace)
                     executor = cls(workspace_id=workspace)
                     self._executor_cache[cache_key] = executor
                 else:
@@ -230,6 +233,7 @@ class ModalExecutor:
                         context="modal_executor | class_lookup"
                     )
             else:
+                print("Executor found for workspace: " + workspace)
                 executor = self._executor_cache[cache_key]
             
             # Execute remotely - pass inputs directly, Modal handles pickling

@@ -389,6 +389,9 @@ def benchmark_cold_start():
     results = BenchmarkResults("Cold Start Performance")
     workspace_ids = [f"benchmark-workspace-{i}" for i in range(5)]
     
+    print("\nMemory snapshot enabled: This should improve cold start times.")
+    print("Benchmarking memory snapshot performance...")
+    
     for i in range(10):
         # Use a different workspace for each run to ensure cold starts
         workspace_id = workspace_ids[i % len(workspace_ids)]
@@ -660,6 +663,13 @@ def run_all_benchmarks():
     print("\nRunning throughput benchmark...")
     results["throughput"] = benchmark_throughput()
     
+    print("\nRunning cooldown impact benchmark...")
+    try:
+        from modal.benchmarks.cooldown_benchmark import benchmark_cooldown_impact
+        results["cooldown"] = benchmark_cooldown_impact()
+    except Exception as e:
+        print(f"Error running cooldown benchmark: {e}")
+    
     print("\n" + "=" * 60)
     print("ALL BENCHMARKS COMPLETE")
     print("=" * 60)
@@ -672,7 +682,7 @@ def main():
     parser = argparse.ArgumentParser(description="Benchmark Modal Custom Python Blocks")
     parser.add_argument(
         "--test", 
-        choices=["cold_start", "warm_start", "complexity", "concurrency", "throughput", "all"],
+        choices=["cold_start", "warm_start", "complexity", "concurrency", "throughput", "cooldown", "all"],
         default="all",
         help="Which benchmark test to run"
     )
@@ -701,6 +711,9 @@ def main():
         results = benchmark_concurrency()
     elif args.test == "throughput":
         results = benchmark_throughput()
+    elif args.test == "cooldown":
+        from modal.benchmarks.cooldown_benchmark import benchmark_cooldown_impact
+        results = benchmark_cooldown_impact()
     else:
         results = run_all_benchmarks()
     

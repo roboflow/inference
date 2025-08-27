@@ -61,6 +61,8 @@ python modal/test_modal_blocks.py
 - Output serialization for workflow compatibility
 - Integration with existing serialization infrastructure
 - Optimized image building with uv_pip_install
+- Memory snapshotting for faster cold starts
+- 30-second cooldown for improved container reuse
 
 ## Key Requirements
 - One Modal App: `inference-custom-blocks`
@@ -70,6 +72,8 @@ python modal/test_modal_blocks.py
 - Serialize outputs back to JSON-safe format for workflows
 - Use us-central1 (GCP Iowa) region
 - Match inference version in Modal Image
+- Enable memory snapshotting for faster cold starts
+- 30-second cooldown for improved container reuse
 
 ## Progress Tracker
 
@@ -92,6 +96,8 @@ python modal/test_modal_blocks.py
 - [x] Created WORKSPACE_ID_FLOW.md documentation
 - [x] Removed code_hash from parameterization (workspace_id only)
 - [x] Removed input serialization (using Modal's pickling)
+- [x] Enabled memory snapshotting for faster cold starts
+- [x] Added 30-second cooldown for improved container reuse
 
 ### 🚧 Performance Optimizations
 

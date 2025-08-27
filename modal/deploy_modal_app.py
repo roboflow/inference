@@ -171,16 +171,15 @@ def main():
         sys.exit(1)
     
     print("\nDeploying app: inference-custom-blocks")
-    print("This will create parameterized executors for workspace isolation")
     
     try:
         # Deploy the app
         app.deploy(
             name="inference-custom-blocks",
-            tag="v1"
+            tag="v1-with-optimizations"
         )
         
-        print("\n✅ Successfully deployed Modal App!")
+        print("\n✅ Successfully deployed Modal App with optimizations!")
         print("\nYou can now:")
         print("1. Test with: python modal/test_modal_blocks.py")
         print("2. Use in workflows with WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE=modal")
