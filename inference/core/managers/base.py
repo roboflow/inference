@@ -510,21 +510,13 @@ class ModelManager:
         ]
 
     def _get_lock_for_a_model(self, model_id: str) -> Lock:
-        with acquire_with_timeout(lock=self._state_lock) as acquired:
-            if not acquired:
-                raise ModelManagerLockAcquisitionError(
-                    "Could not acquire lock on Model Manager state to retrieve model lock."
-                )
+        with self._state_lock:
             if model_id not in self._models_state_locks:
                 self._models_state_locks[model_id] = Lock()
             return self._models_state_locks[model_id]
 
     def _dispose_model_lock(self, model_id: str) -> None:
-        with acquire_with_timeout(lock=self._state_lock) as acquired:
-            if not acquired:
-                raise ModelManagerLockAcquisitionError(
-                    "Could not acquire lock on Model Manager state to dispose model lock."
-                )
+        with self._state_lock:
             if model_id not in self._models_state_locks:
                 return None
             del self._models_state_locks[model_id]
