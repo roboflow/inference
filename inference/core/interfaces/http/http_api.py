@@ -1345,6 +1345,7 @@ class HttpInterface(BaseInterface):
                 # Limit the number of concurrent tasks to prevent resource exhaustion
 
                 def load_model(model_id):
+                    logger.debug(f"load_model({model_id}) - starting", flush=True)
                     try:
                         # TODO: how to add timeout here? Probably best to timeout model loading?
                         model_add(
@@ -1360,6 +1361,7 @@ class HttpInterface(BaseInterface):
                         logger.error(error_msg)
                         with state.lock:
                             state.initialization_errors.append((model_id, str(e)))
+                    logger.debug(f"load_model({model_id}) - finished", flush=True)
 
                 if PRELOAD_MODELS:
                     # Create tasks for each model to be loaded
@@ -1397,7 +1399,7 @@ class HttpInterface(BaseInterface):
                 startup_thread = Thread(
                     target=initialize_models, args=(model_init_state,), daemon=True
                 )
-                startup_thread.run()
+                startup_thread.start()
                 logger.info("Model initialization started in the background.")
 
             @app.get("/readiness", status_code=200)
