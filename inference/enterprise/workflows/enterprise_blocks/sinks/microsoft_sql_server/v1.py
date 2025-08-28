@@ -130,6 +130,8 @@ class BlockManifest(WorkflowBlockManifest):
                 "icon": "fal fa-database",
                 "blockPriority": 3,
                 "popular": True,
+                "enterprise_only": True,
+                "local_only": True,
             },
         }
     )

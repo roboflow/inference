@@ -564,6 +564,7 @@ class OwlV2(RoboflowInferenceModel):
         query_embeddings: Dict[str, PosNegDictType],
         confidence: float,
         iou_threshold: float,
+        max_detections: int = MAX_DETECTIONS,
     ) -> List[Dict]:
         image_embeds = self.get_image_embeds(image_hash)
         if image_embeds is None:
@@ -601,6 +602,11 @@ class OwlV2(RoboflowInferenceModel):
         all_predicted_classes = all_predicted_classes[survival_indices]
         all_predicted_scores = all_predicted_scores[survival_indices]
 
+        if len(all_predicted_boxes) > max_detections:
+            all_predicted_boxes = all_predicted_boxes[:max_detections]
+            all_predicted_classes = all_predicted_classes[:max_detections]
+            all_predicted_scores = all_predicted_scores[:max_detections]
+
         # move tensors to numpy before returning
         all_predicted_boxes = all_predicted_boxes.cpu().numpy()
         all_predicted_classes = all_predicted_classes.cpu().numpy()
@@ -626,13 +632,18 @@ class OwlV2(RoboflowInferenceModel):
         training_data: Dict,
         confidence: float = 0.99,
         iou_threshold: float = 0.3,
+        max_detections: int = MAX_DETECTIONS,
         **kwargs,
     ):
         class_embeddings_dict = self.make_class_embeddings_dict(
             training_data, iou_threshold
         )
         return self.infer_from_embedding_dict(
-            image, class_embeddings_dict, confidence, iou_threshold
+            image,
+            class_embeddings_dict,
+            confidence,
+            iou_threshold,
+            max_detections=max_detections,
         )
 
     def infer_from_embedding_dict(
@@ -641,6 +652,7 @@ class OwlV2(RoboflowInferenceModel):
         class_embeddings_dict: Dict[str, PosNegDictType],
         confidence: float,
         iou_threshold: float,
+        max_detections: int = MAX_DETECTIONS,
         **kwargs,
     ):
         if not isinstance(image, list):
@@ -660,7 +672,11 @@ class OwlV2(RoboflowInferenceModel):
             image_hash = self.embed_image(image_wrapper)
             image_wrapper.unload_numpy_image()
             result = self.infer_from_embed(
-                image_hash, class_embeddings_dict, confidence, iou_threshold
+                image_hash,
+                class_embeddings_dict,
+                confidence,
+                iou_threshold,
+                max_detections=max_detections,
             )
             results.append(result)
         return self.make_response(
@@ -944,7 +960,12 @@ class SerializedOwlV2(RoboflowInferenceModel):
         return self.weights_file_path
 
     def infer(
-        self, image, confidence: float = 0.99, iou_threshold: float = 0.3, **kwargs
+        self,
+        image,
+        confidence: float = 0.99,
+        iou_threshold: float = 0.3,
+        max_detections: int = MAX_DETECTIONS,
+        **kwargs,
     ):
         logger.info(f"Inferring OWLv2 model")
         result = self.owlv2.infer_from_embedding_dict(
@@ -952,6 +973,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
             self.train_data_dict,
             confidence=confidence,
             iou_threshold=iou_threshold,
+            max_detections=max_detections,
             **kwargs,
         )
         logger.info(f"OWLv2 model inference complete")

@@ -39,9 +39,10 @@ class YOLOv8InstanceSegmentation(InstanceSegmentationBaseOnnxRoboflowInferenceMo
         Returns:
             Tuple[np.ndarray, np.ndarray]: Tuple containing two NumPy arrays representing the predictions and protos. The predictions include boxes, confidence scores, class confidence scores, and masks.
         """
-        predictions, protos = run_session_via_iobinding(
-            self.onnx_session, self.input_name, img_in
-        )
+        with self._session_lock:
+            predictions, protos = run_session_via_iobinding(
+                self.onnx_session, self.input_name, img_in
+            )
         predictions = predictions.transpose(0, 2, 1)
         boxes = predictions[:, :, :4]
         class_confs = predictions[:, :, 4:-32]

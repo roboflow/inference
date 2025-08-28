@@ -41,7 +41,7 @@ class ExecutionCache:
                 expected_type=StepNode,
             )
             step_name = node_data.step_manifest.name
-            compatible_with_batches = node_data.is_batch_oriented()
+            compatible_with_batches = node_data.output_dimensionality > 0
             outputs = node_data.step_manifest.get_actual_outputs()
             cache.declare_step(
                 step_name=step_name,

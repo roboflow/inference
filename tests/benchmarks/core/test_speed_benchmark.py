@@ -14,7 +14,7 @@ def dataset_reference() -> tuple[list[np.ndarray], set[tuple[int, int]]]:
 
 # args of inference benchmark python-package-speed -m yolov8n-seg-640 -bi 10000 command
 args = {
-   "dataset_reference": "coco",
+    "dataset_reference": "coco",
     "warm_up_inferences": 10,
     "benchmark_inferences": 10000,
     "batch_size": 1,
@@ -23,6 +23,7 @@ args = {
     "output_location": None,
 }
 
+
 def test_benchmark_equivalent_rfdetr(benchmark, dataset_reference):
     images, image_sizes = dataset_reference
 
@@ -30,12 +31,14 @@ def test_benchmark_equivalent_rfdetr(benchmark, dataset_reference):
 
     benchmark(model.infer, images)
 
+
 def test_benchmark_equivalent_yolov8n_seg(benchmark, dataset_reference):
     images, image_sizes = dataset_reference
 
     model = get_model(model_id="yolov8n-seg-640", api_key=None)
 
     benchmark(model.infer, images)
+
 
 def test_benchmark_equivalent_yolov8n(benchmark, dataset_reference):
     images, image_sizes = dataset_reference
