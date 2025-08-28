@@ -11,7 +11,7 @@ from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Re
 from starlette.status import HTTP_201_CREATED, HTTP_400_BAD_REQUEST, HTTP_404_NOT_FOUND
 
 from inference.core.env import BUILDER_ORIGIN, MODEL_CACHE_DIR
-from inference.core.interfaces.http.http_api import with_route_exceptions_async
+from inference.core.interfaces.http.error_handlers import with_route_exceptions_async
 
 logger = logging.getLogger(__name__)
 

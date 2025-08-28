@@ -435,7 +435,8 @@ class ModelManager:
                     raise ModelManagerLockAcquisitionError(
                         f"Could not acquire lock for model with id={model_id}."
                     )
-                self.check_for_model(model_id)
+                if model_id not in self._models:
+                    return None
                 self._models[model_id].clear_cache(delete_from_disk=delete_from_disk)
                 del self._models[model_id]
             self._dispose_model_lock(model_id=model_id)
