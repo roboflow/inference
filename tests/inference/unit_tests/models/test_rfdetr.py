@@ -80,7 +80,17 @@ def test_sigmoid_stable_mixed_values():
     result = model.sigmoid_stable(x)
 
     # then
-    expected = np.array([0.0, 0.0000453978687024, 0.2689414213699951, 0.5, 0.7310585786300049, 0.9999546021312976, 1])
+    expected = np.array(
+        [
+            0.0,
+            0.0000453978687024,
+            0.2689414213699951,
+            0.5,
+            0.7310585786300049,
+            0.9999546021312976,
+            1,
+        ]
+    )
 
     assert np.allclose(result, expected, atol=1e-15)
 

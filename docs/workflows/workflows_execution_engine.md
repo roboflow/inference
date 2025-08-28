@@ -86,6 +86,19 @@ batch-oriented input, it will be treated as a SIMD step.
 Non-SIMD steps, by contrast, are expected to deliver a single result for the input data. In the case of non-SIMD 
 flow-control steps, they affect all downstream steps as a whole, rather than individually for each element in a batch.
 
+Historically, Execution Engine could not handle well all scenarios when non-SIMD steps' outputs were fed into SIMD steps
+inputs - causing compilation error due to lack of ability to automatically cast such outputs into batches when feeding
+into SIMD seps. Starting with Execution Engine `v1.6.0`, the handling of SIMD and non-SIMD blocks has been improved 
+through the introduction of **Auto Batch Casting**:
+
+* When a SIMD input is detected but receives scalar data, the Execution Engine automatically casts it into a batch.
+
+* The dimensionality of the batch is determined at compile time, using *lineage* information from other 
+batch-oriented inputs when available. Missing dimensions are generated in a manner similar to `torch.unsqueeze(...)`.
+
+* Outputs are evaluated against the casting context - leaving them as scalars when block keeps or decreases output 
+dimensionality or **creating new batches** when increase of dimensionality is expected.
+
 
 ### Preparing step inputs
 

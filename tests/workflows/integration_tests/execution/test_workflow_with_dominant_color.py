@@ -60,7 +60,7 @@ def test_dominant_color_workflow_when_minimal_valid_input_provided(
             "image": red_image,
         }
     )
-    print(result)
+
     # then
     assert isinstance(result, list), "Expected list to be delivered"
     assert len(result) == 1, "Expected 1 element in the output for one input image"

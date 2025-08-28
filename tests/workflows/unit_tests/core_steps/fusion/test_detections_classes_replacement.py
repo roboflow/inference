@@ -386,9 +386,15 @@ def test_classes_replacement_when_empty_classification_predictions_fallback_clas
         len(result["predictions"]) == 2
     ), "Expected sv.Detections.empty(), as empty classification was passed"
     detections = result["predictions"]
-    assert detections.confidence[1] == 0, "Fallback class confidence expected to be set to 0"
-    assert detections.class_id[1] == 123, "class id expected to be set to value passed with fallback_class_id parameter"
-    assert detections.data["class_name"][1] == "unknown", "class name expected to be set to value passed with fallback_class_name parameter"
+    assert (
+        detections.confidence[1] == 0
+    ), "Fallback class confidence expected to be set to 0"
+    assert (
+        detections.class_id[1] == 123
+    ), "class id expected to be set to value passed with fallback_class_id parameter"
+    assert (
+        detections.data["class_name"][1] == "unknown"
+    ), "class name expected to be set to value passed with fallback_class_name parameter"
 
 
 def test_extract_leading_class_from_prediction_when_prediction_is_multi_label() -> None:
