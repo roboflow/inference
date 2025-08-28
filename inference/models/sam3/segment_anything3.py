@@ -17,7 +17,7 @@ from inference.core.entities.responses.sam3 import (
     Sam3SegmentationPrediction,
     Sam3SegmentationResponse,
 )
-from inference.core.env import SAM3_IMAGE_SIZE
+from inference.core.env import SAM3_IMAGE_SIZE, SAM3_EMBEDDING_CACHE_SIZE
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2multipoly
@@ -52,7 +52,7 @@ class SegmentAnything3(RoboflowCoreModel):
         self.embedding_cache: Dict[str, Dict[str, Any]] = {}
         self.embedding_cache_keys: List[str] = []
         # Reasonable default since embeddings are heavy
-        self.embedding_cache_size: int = 32
+        self.embedding_cache_size: int = SAM3_EMBEDDING_CACHE_SIZE
         self.task_type = "unsupervised-segmentation"
 
     # # Override to prevent Roboflow API/download flows during initialization
