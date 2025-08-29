@@ -70,6 +70,7 @@ class ResultsChecker:
         async with self.redis.pubsub() as pubsub:
             await pubsub.subscribe("results")
             async for message in pubsub.listen():
+                print("Listening...", message, flush=True)
                 if message["type"] != "message":
                     continue
                 message = orjson.loads(message["data"])
@@ -87,6 +88,7 @@ class ResultsChecker:
                         "Task result not found in possible states. Unreachable"
                     )
                 self.tasks[task_id].set()
+                print(f"task {task_id} solved", flush=True)
                 await asyncio.sleep(0)
 
     async def wait_for_response(self, key: str):
