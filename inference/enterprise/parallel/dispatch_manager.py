@@ -140,6 +140,44 @@ class DispatchModelManager(ModelManager):
             return responses
         return responses[0]
 
+    def model_infer_sync(self, model_id: str, request: InferenceRequest, **kwargs):
+        if request.visualize_predictions:
+            raise NotImplementedError("Visualisation of prediction is not supported")
+        request.start = time()
+        t = perf_counter()
+        task_type = self.get_task_type(model_id, request.api_key)
+
+        list_mode = False
+        if isinstance(request.image, list):
+            list_mode = True
+            request_dict = request.dict()
+            images = request_dict.pop("image")
+            del request_dict["id"]
+            requests = [
+                request_from_type(task_type, dict(**request_dict, image=image))
+                for image in images
+            ]
+        else:
+            requests = [request]
+
+        start_task_awaitables = []
+        results_awaitables = []
+        for r in requests:
+            start_task_awaitables.append(self.checker.add_task(r.id, r))
+            results_awaitables.append(self.checker.wait_for_response(r.id))
+
+        asyncio.run(asyncio.gather(*start_task_awaitables))
+        response_jsons = asyncio.run(asyncio.gather(*results_awaitables))
+        responses = []
+        for response_json in response_jsons:
+            response = response_from_type(task_type, response_json)
+            response.time = perf_counter() - t
+            responses.append(response)
+
+        if list_mode:
+            return responses
+        return responses[0]
+
     def add_model(
         self,
         model_id: str,
