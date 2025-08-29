@@ -186,6 +186,7 @@ from inference.core.interfaces.stream_manager.api.entities import (
     ConsumePipelineResponse,
     InferencePipelineStatusResponse,
     InitializeWebRTCPipelineResponse,
+    LatestFrameResponse,
     ListPipelinesResponse,
 )
 from inference.core.interfaces.stream_manager.api.stream_manager_client import (
@@ -195,6 +196,8 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
     ConsumeResultsPayload,
     InitialisePipelinePayload,
     InitialiseWebRTCPipelinePayload,
+    OperationStatus,
+    STATUS_KEY,
 )
 from inference.core.managers.base import ModelManager
 from inference.core.managers.metrics import get_container_stats
@@ -1387,6 +1390,71 @@ class HttpInterface(BaseInterface):
                     pipeline_id=pipeline_id,
                     excluded_fields=request.excluded_fields,
                 )
+
+            @app.get(
+                "/inference_pipelines/{pipeline_id}/latest_frame",
+                response_model=LatestFrameResponse,
+                summary="[EXPERIMENTAL] Get latest frame from InferencePipeline",
+                description="[EXPERIMENTAL] Returns the most recent frame processed by the pipeline with FPS metrics",
+            )
+            @with_route_exceptions
+            async def get_latest_frame(pipeline_id: str) -> LatestFrameResponse:
+                result = await self.stream_manager_client.get_latest_frame(
+                    pipeline_id=pipeline_id
+                )
+                return LatestFrameResponse(
+                    success=result.get("success", False),
+                    frame_id=result.get("frame_id"),
+                    data=result.get("data"),
+                    camera_fps=result.get("camera_fps"),
+                    pipeline_fps=result.get("pipeline_fps"),
+                    message=result.get("message")
+                )
+
+            @app.get(
+                "/stats",
+                summary="Get aggregated FPS statistics",
+                description="Returns aggregated FPS statistics across all inference pipelines",
+            )
+            @with_route_exceptions
+            async def get_pipeline_stats():
+                """Get aggregated statistics across all pipelines."""
+                # Get list of all pipelines
+                pipelines_response = await self.stream_manager_client.list_pipelines()
+                
+                if not pipelines_response or pipelines_response[STATUS_KEY] != OperationStatus.SUCCESS:
+                    return {
+                        "camera_fps": None,
+                        "inference_fps": None,
+                        "stream_count": 0
+                    }
+                
+                pipelines = pipelines_response.get("pipelines", [])
+                camera_fps_values = []
+                inference_fps_values = []
+                
+                # Collect stats from each pipeline
+                for pipeline_info in pipelines:
+                    pipeline_id = pipeline_info.get("pipeline_id")
+                    if pipeline_id:
+                        stats = await self.stream_manager_client.get_pipeline_stats(pipeline_id)
+                        if stats:
+                            camera_fps = stats.get("camera_fps")
+                            inference_fps = stats.get("inference_fps")
+                            if camera_fps is not None and camera_fps > 0:
+                                camera_fps_values.append(camera_fps)
+                            if inference_fps is not None and inference_fps > 0:
+                                inference_fps_values.append(inference_fps)
+                
+                # Calculate averages
+                camera_avg = sum(camera_fps_values) / len(camera_fps_values) if camera_fps_values else None
+                inference_avg = sum(inference_fps_values) / len(inference_fps_values) if inference_fps_values else None
+                
+                return {
+                    "camera_fps": camera_avg,
+                    "inference_fps": inference_avg,
+                    "stream_count": len(pipelines)
+                }
 
         # Enable preloading models at startup
         if (
