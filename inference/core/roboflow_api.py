@@ -7,6 +7,7 @@ import re
 import urllib.parse
 from enum import Enum
 from hashlib import sha256
+from json import JSONDecodeError
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
@@ -161,7 +162,7 @@ def wrap_roboflow_api_errors_async(
                 raise RoboflowAPIConnectionError(
                     "Could not connect to Roboflow API."
                 ) from error
-            except aiohttp.ContentTypeError as error:
+            except (aiohttp.ContentTypeError, JSONDecodeError) as error:
                 raise MalformedRoboflowAPIResponseError(
                     "Could not decode JSON response from Roboflow API."
                 ) from error
@@ -208,10 +209,12 @@ def get_roboflow_workspace(api_key: str) -> WorkspaceID:
 )
 async def get_roboflow_workspace_async(api_key: str) -> WorkspaceID:
     try:
+        headers = build_roboflow_api_headers()
         async with aiohttp.ClientSession() as session:
             async with session.get(
                 f"{API_BASE_URL}/",
                 params={"api_key": api_key, "nocache": "true"},
+                headers=headers,
                 timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
             ) as response:
                 try:
