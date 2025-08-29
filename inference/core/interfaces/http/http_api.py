@@ -1038,7 +1038,6 @@ class HttpInterface(BaseInterface):
                 )
 
             try:
-
                 logs = get_recent_logs(limit=limit or 100, level=level, since=since)
                 return {"logs": logs, "total_count": len(logs)}
             except (ImportError, ModuleNotFoundError):
@@ -2972,6 +2971,7 @@ class HttpInterface(BaseInterface):
                 )
 
         if not ENABLE_DASHBOARD:
+
             @app.get("/dashboard.html")
             @app.head("/dashboard.html")
             async def dashboard_guard():
