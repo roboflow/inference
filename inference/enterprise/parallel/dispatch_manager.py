@@ -166,30 +166,14 @@ class DispatchModelManager(ModelManager):
         else:
             requests = [request]
 
-        start_task_futures = []
-        results_futures = []
+        start_task_awaitables = []
+        results_awaitables = []
         for r in requests:
-            start_task_futures.append(
-                asyncio.run_coroutine_threadsafe(
-                    self.checker.add_task(r.id, r), self._loop_for_sync_tasks
-                )
-            )
-            results_futures.append(
-                asyncio.run_coroutine_threadsafe(
-                    self.checker.wait_for_response(r.id), self._loop_for_sync_tasks
-                )
-            )
-        print("Fetching start_task_futures...", flush=True)
-        for start_task_future in start_task_futures:
-            print("Waiting...", flush=True)
-            _ = start_task_future.result()
-            print("Received", flush=True)
-        response_jsons = []
-        print("Fetching JSON results...", flush=True)
-        for response_jsons_future in results_futures:
-            print("Waiting...", flush=True)
-            response_jsons.append(response_jsons_future.result())
-            print("Received", flush=True)
+            start_task_awaitables.append(self.checker.add_task(r.id, r))
+            results_awaitables.append(self.checker.wait_for_response(r.id))
+
+        asyncio.run(asyncio.gather(*start_task_awaitables))
+        response_jsons = asyncio.run(asyncio.gather(*results_awaitables))
         responses = []
         for response_json in response_jsons:
             response = response_from_type(task_type, response_json)
