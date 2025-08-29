@@ -18,11 +18,11 @@ from fastapi import (
     Path,
     Query,
     Request,
-    UploadFile,
 )
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
+from starlette.datastructures import UploadFile
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from inference.core import logger
@@ -170,12 +170,13 @@ from inference.core.env import (
 from inference.core.exceptions import (
     ContentTypeInvalid,
     ContentTypeMissing,
+    InputImageLoadError,
     MissingServiceSecretError,
     RoboflowAPINotAuthorizedError,
 )
 from inference.core.interfaces.base import BaseInterface
 from inference.core.interfaces.http.dependencies import (
-    request_body_content_only_to_be_used_in_legacy_request_handler,
+    parse_body_content_for_legacy_request_handler,
 )
 from inference.core.interfaces.http.error_handlers import (
     with_route_exceptions,
@@ -2471,10 +2472,8 @@ class HttpInterface(BaseInterface):
                 background_tasks: BackgroundTasks,
                 request: Request,
                 request_body: Annotated[
-                    Optional[bytes],
-                    Depends(
-                        request_body_content_only_to_be_used_in_legacy_request_handler
-                    ),
+                    Optional[Union[bytes, UploadFile]],
+                    Depends(parse_body_content_for_legacy_request_handler),
                 ],
                 dataset_id: str = Path(
                     description="ID of a Roboflow dataset corresponding to the model to use for inference OR workspace ID"
@@ -2568,7 +2567,6 @@ class HttpInterface(BaseInterface):
                     "external",
                     description="The detailed source information of the inference request",
                 ),
-                file: Optional[UploadFile] = None,
             ):
                 """
                 Legacy inference endpoint for object detection, instance segmentation, and classification.
@@ -2587,7 +2585,6 @@ class HttpInterface(BaseInterface):
                     f"Reached legacy route /:dataset_id/:version_id with {dataset_id}/{version_id}"
                 )
                 model_id = f"{dataset_id}/{version_id}"
-
                 if confidence >= 1:
                     confidence /= 100
                 elif confidence < 0.01:
@@ -2595,7 +2592,6 @@ class HttpInterface(BaseInterface):
 
                 if overlap >= 1:
                     overlap /= 100
-
                 if image is not None:
                     request_image = InferenceRequestImage(type="url", value=image)
                 else:
@@ -2603,19 +2599,20 @@ class HttpInterface(BaseInterface):
                         raise ContentTypeMissing(
                             f"Request must include a Content-Type header"
                         )
-                    if file is not None:
-                        base64_image_str = file.file.read()
+                    if isinstance(request_body, UploadFile):
+                        base64_image_str = request_body.file.read()
                         base64_image_str = base64.b64encode(base64_image_str)
                         request_image = InferenceRequestImage(
                             type="base64", value=base64_image_str.decode("ascii")
                         )
-                    elif (
-                        "application/x-www-form-urlencoded"
-                        in request.headers["Content-Type"]
-                        or "application/json" in request.headers["Content-Type"]
-                    ):
+                    elif isinstance(request_body, bytes):
                         request_image = InferenceRequestImage(
                             type=image_type, value=request_body
+                        )
+                    elif request_body is None:
+                        raise InputImageLoadError(
+                            message="Image not found in request body.",
+                            public_message="Image not found in request body.",
                         )
                     else:
                         raise ContentTypeInvalid(
@@ -2776,6 +2773,15 @@ class HttpInterface(BaseInterface):
             @app.head("/dashboard.html")
             async def dashboard_guard():
                 return Response(status_code=404)
+
+        @app.exception_handler(InputImageLoadError)
+        async def unicorn_exception_handler(request: Request, exc: InputImageLoadError):
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "message": f"Could not load input image. Cause: {exc.get_public_error_details()}"
+                },
+            )
 
         app.mount(
             "/",
