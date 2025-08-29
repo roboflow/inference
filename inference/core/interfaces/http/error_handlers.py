@@ -187,7 +187,7 @@ def with_route_exceptions(route):
                     "to learn how to retrieve one."
                 },
             )
-        except (RoboflowAPINotNotFoundError, InferenceModelNotFound) as error:
+        except RoboflowAPINotNotFoundError as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=404,
@@ -250,6 +250,13 @@ def with_route_exceptions(route):
             resp = JSONResponse(
                 status_code=502,
                 content={"message": "Internal error. Request to Roboflow API failed."},
+            )
+        except InferenceModelNotFound as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=503,
+                content={"message": "Model is temporarily not ready - retry request."},
+                headers={"Retry-After": "1"},
             )
         except RoboflowAPIConnectionError as error:
             logger.exception("%s: %s", type(error).__name__, error)
@@ -455,7 +462,7 @@ def with_route_exceptions_async(route):
                     "to learn how to retrieve one."
                 },
             )
-        except (RoboflowAPINotNotFoundError, InferenceModelNotFound) as error:
+        except RoboflowAPINotNotFoundError as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=404,
@@ -518,6 +525,13 @@ def with_route_exceptions_async(route):
             resp = JSONResponse(
                 status_code=502,
                 content={"message": "Internal error. Request to Roboflow API failed."},
+            )
+        except InferenceModelNotFound as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=503,
+                content={"message": "Model is temporarily not ready - retry request."},
+                headers={"Retry-After": "1"},
             )
         except RoboflowAPIConnectionError as error:
             logger.exception("%s: %s", type(error).__name__, error)
