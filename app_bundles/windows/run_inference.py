@@ -12,7 +12,8 @@ import sys
 
 # Set up logging configuration for bundled app
 # Enable in-memory logging for the FastAPI server to use
-os.environ.setdefault("ENABLE_IN_MEMORY_LOGS", "true")
+os.environ.setdefault("ENABLE_IN_MEMORY_LOGS", "True")
+os.environ.setdefault("ENABLE_DASHBOARD", "True")
 
 # Set up minimal console logging (only warnings and errors)
 console_handler = logging.StreamHandler()

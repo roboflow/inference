@@ -149,6 +149,7 @@ from inference.core.env import (
     NOTEBOOK_ENABLED,
     NOTEBOOK_PASSWORD,
     NOTEBOOK_PORT,
+    ENABLE_DASHBOARD,
     PRELOAD_MODELS,
     PROFILE,
     ROBOFLOW_SERVICE_SECRET,
@@ -1001,7 +1002,7 @@ class HttpInterface(BaseInterface):
             summary="Get Recent Logs",
             description="Get recent application logs for debugging",
         )
-        async def get_logs(
+        def get_logs(
             limit: Optional[int] = Query(
                 100, description="Maximum number of log entries to return"
             ),
@@ -2969,6 +2970,12 @@ class HttpInterface(BaseInterface):
                         "message": "inference session started from local memory.",
                     }
                 )
+
+        if not ENABLE_DASHBOARD:
+            @app.get("/dashboard.html")
+            @app.head("/dashboard.html")
+            async def dashboard_guard():
+                return Response(status_code=404)
 
         app.mount(
             "/",
