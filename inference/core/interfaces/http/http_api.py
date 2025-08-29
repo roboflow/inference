@@ -2125,7 +2125,7 @@ class HttpInterface(BaseInterface):
                 )
                 @with_route_exceptions
                 @usage_collector("request")
-                async def sam3_embed_image(
+                def sam3_embed_image(
                     inference_request: Sam3EmbeddingRequest,
                     request: Request,
                     api_key: Optional[str] = Query(
@@ -2142,7 +2142,7 @@ class HttpInterface(BaseInterface):
                         countinference=countinference,
                         service_secret=service_secret,
                     )
-                    model_response = await self.model_manager.infer_from_request(
+                    model_response = self.model_manager.infer_from_request_sync(
                         sam3_model_id, inference_request
                     )
                     return model_response
@@ -2155,7 +2155,7 @@ class HttpInterface(BaseInterface):
                 )
                 @with_route_exceptions
                 @usage_collector("request")
-                async def sam3_segment_image(
+                def sam3_segment_image(
                     inference_request: Sam3SegmentationRequest,
                     request: Request,
                     api_key: Optional[str] = Query(
@@ -2172,7 +2172,7 @@ class HttpInterface(BaseInterface):
                         countinference=countinference,
                         service_secret=service_secret,
                     )
-                    model_response = await self.model_manager.infer_from_request(
+                    model_response = self.model_manager.infer_from_request_sync(
                         sam3_model_id, inference_request
                     )
                     if inference_request.format == "binary":
