@@ -10,7 +10,16 @@ from uuid import uuid4
 
 import asgi_correlation_id
 import uvicorn
-from fastapi import BackgroundTasks, Depends, FastAPI, Path, Query, Request, UploadFile
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    HTTPException,
+    Path,
+    Query,
+    Request,
+    UploadFile,
+)
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
@@ -129,6 +138,7 @@ from inference.core.env import (
     DISABLE_WORKFLOW_ENDPOINTS,
     DOCKER_SOCKET_PATH,
     ENABLE_BUILDER,
+    ENABLE_DASHBOARD,
     ENABLE_PROMETHEUS,
     ENABLE_STREAM_API,
     ENABLE_WORKFLOWS_PROFILING,
@@ -287,6 +297,13 @@ class HttpInterface(BaseInterface):
             },
             root_path=root_path,
         )
+        # Ensure in-memory logging is initialized as early as possible for all runtimes
+        try:
+            from inference.core.logging.memory_handler import setup_memory_logging
+
+            setup_memory_logging()
+        except Exception:
+            pass
 
         app.mount(
             "/static",
@@ -304,10 +321,7 @@ class HttpInterface(BaseInterface):
             logger.info("Shutting down %s", description)
             await usage_collector.async_push_usage_payloads()
 
-        if ENABLE_PROMETHEUS:
-            InferenceInstrumentator(
-                app, model_manager=model_manager, endpoint="/metrics"
-            )
+        InferenceInstrumentator(app, model_manager=model_manager, endpoint="/metrics")
         if LAMBDA:
             app.add_middleware(LambdaMiddleware)
         if GCP_SERVERLESS:
@@ -687,6 +701,54 @@ class HttpInterface(BaseInterface):
                 version=__version__,
                 uuid=GLOBAL_INFERENCE_SERVER_ID,
             )
+
+        @app.get(
+            "/logs",
+            summary="Get Recent Logs",
+            description="Get recent application logs for debugging",
+        )
+        def get_logs(
+            limit: Optional[int] = Query(
+                100, description="Maximum number of log entries to return"
+            ),
+            level: Optional[str] = Query(
+                None,
+                description="Filter by log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
+            ),
+            since: Optional[str] = Query(
+                None, description="Return logs since this ISO timestamp"
+            ),
+        ):
+            """Get recent application logs from memory.
+
+            Only available when ENABLE_IN_MEMORY_LOGS environment variable is set to 'true'.
+
+            Args:
+                limit: Maximum number of log entries (default 100)
+                level: Filter by log level
+                since: ISO timestamp to filter logs since
+
+            Returns:
+                List of log entries with timestamp, level, logger, and message
+            """
+            # Check if in-memory logging is enabled
+            from inference.core.logging.memory_handler import (
+                get_recent_logs,
+                is_memory_logging_enabled,
+            )
+
+            if not is_memory_logging_enabled():
+                raise HTTPException(
+                    status_code=404, detail="Logs endpoint not available"
+                )
+
+            try:
+                logs = get_recent_logs(limit=limit or 100, level=level, since=since)
+                return {"logs": logs, "total_count": len(logs)}
+            except (ImportError, ModuleNotFoundError):
+                raise HTTPException(
+                    status_code=500, detail="Logging system not properly initialized"
+                )
 
         # The current AWS Lambda authorizer only supports path parameters, therefore we can only use the legacy infer route. This case statement excludes routes which won't work for the current Lambda authorizer.
         if not (LAMBDA or GCP_SERVERLESS):
@@ -2631,6 +2693,13 @@ class HttpInterface(BaseInterface):
                         "message": "inference session started from local memory.",
                     }
                 )
+
+        if not ENABLE_DASHBOARD:
+
+            @app.get("/dashboard.html")
+            @app.head("/dashboard.html")
+            async def dashboard_guard():
+                return Response(status_code=404)
 
         app.mount(
             "/",
