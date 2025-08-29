@@ -40,9 +40,13 @@ class ResultsChecker:
         When there are cycles, add the task's id to a list to keep track of its results,
         launch the preprocess celeryt task, set the task's status to in progress in redis.
         """
+        print(f"acquiring semaphore", flush=True)
         await self.semaphore.acquire()
+        print(f"acqured", flush=True)
         self.tasks[task_id] = asyncio.Event()
+        print(f"added task", flush=True)
         preprocess.s(request.dict()).delay()
+        print(f"added to pre-processing")
 
     def get_result(self, task_id: str) -> Any:
         """
