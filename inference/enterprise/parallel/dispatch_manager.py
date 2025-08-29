@@ -172,8 +172,11 @@ class DispatchModelManager(ModelManager):
             start_task_awaitables.append(self.checker.add_task(r.id, r))
             results_awaitables.append(self.checker.wait_for_response(r.id))
 
-        asyncio.run(asyncio.gather(*start_task_awaitables))
-        response_jsons = asyncio.run(asyncio.gather(*results_awaitables))
+        async def _await(to_await: list) -> list:
+            return await asyncio.gather(*to_await)
+
+        asyncio.run(_await(start_task_awaitables))
+        response_jsons = asyncio.run(_await(results_awaitables))
         responses = []
         for response_json in response_jsons:
             response = response_from_type(task_type, response_json)
