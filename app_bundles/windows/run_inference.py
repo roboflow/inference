@@ -7,13 +7,25 @@ if __name__ == "__main__":
 
 
 import logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-)
-logger = logging.getLogger("inference.app")
 import os
 import sys
+
+# Set up logging configuration for bundled app
+# Enable in-memory logging for the FastAPI server to use
+os.environ.setdefault("ENABLE_IN_MEMORY_LOGS", "True")
+os.environ.setdefault("ENABLE_DASHBOARD", "True")
+
+# Set up minimal console logging (only warnings and errors)
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.WARNING)
+console_formatter = logging.Formatter("%(levelname)s: %(message)s")
+console_handler.setFormatter(console_formatter)
+
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+root_logger.addHandler(console_handler)
+
+logger = logging.getLogger("inference.app")
 import certifi
 from platformdirs import user_cache_dir, user_data_dir
 
@@ -172,6 +184,16 @@ if __name__ == "__main__":
         except Exception:
             # Fallback if the readiness event is unavailable
             await asyncio.sleep(0.5)
+
+        # After startup: remove console stream handlers (keeps non-stream handlers like memory handlers)
+        def _remove_console_handlers(logger_name: str):
+            lg = logging.getLogger(logger_name)
+            for handler in list(lg.handlers):
+                if isinstance(handler, logging.StreamHandler):
+                    lg.removeHandler(handler)
+
+        for name in ("", "uvicorn", "uvicorn.error", "uvicorn.access", "inference", "inference.app"):
+            _remove_console_handlers(name)
         banner = (
             "\n\n\n\n\n\n\n\n\n"
             "─────────────────────────────────────────────────────────── \n"
