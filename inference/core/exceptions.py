@@ -139,6 +139,10 @@ class RoboflowAPIRequestError(Exception):
     pass
 
 
+class ModelManagerLockAcquisitionError(RoboflowAPIRequestError):
+    pass
+
+
 class RoboflowAPIUnsuccessfulRequestError(RoboflowAPIRequestError):
     pass
 

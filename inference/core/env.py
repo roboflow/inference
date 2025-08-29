@@ -623,3 +623,4 @@ except:
 
 # Cache metadata lock timeout in seconds, default is 1.0
 CACHE_METADATA_LOCK_TIMEOUT = float(os.getenv("CACHE_METADATA_LOCK_TIMEOUT", 1.0))
+MODEL_LOCK_ACQUIRE_TIMEOUT = float(os.getenv("MODEL_LOCK_ACQUIRE_TIMEOUT", "3.0"))
