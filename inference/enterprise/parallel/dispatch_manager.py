@@ -167,12 +167,14 @@ class DispatchModelManager(ModelManager):
             start_task_awaitables.append(self.checker.add_task(r.id, r))
             results_awaitables.append(self.checker.wait_for_response(r.id))
 
-        self._loop_for_sync_tasks.run_until_complete(
-            asyncio.gather(*start_task_awaitables)
+        start_tasks_future = asyncio.run_coroutine_threadsafe(
+            asyncio.gather(*start_task_awaitables), self._loop_for_sync_tasks
         )
-        response_jsons = self._loop_for_sync_tasks.run_until_complete(
-            asyncio.gather(*results_awaitables)
+        _ = start_tasks_future.result()
+        response_jsons_future = asyncio.run_coroutine_threadsafe(
+            asyncio.gather(*results_awaitables), self._loop_for_sync_tasks
         )
+        response_jsons = response_jsons_future.result()
         responses = []
         for response_json in response_jsons:
             response = response_from_type(task_type, response_json)
