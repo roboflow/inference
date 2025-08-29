@@ -1,10 +1,9 @@
-import asyncio
-from asyncio import BoundedSemaphore
+from threading import Event, BoundedSemaphore
 from time import perf_counter, time
 from typing import Any, Dict, List, Optional
 
 import orjson
-from redis.asyncio import Redis
+from redis import Redis
 
 from inference.core.entities.requests.inference import (
     InferenceRequest,
@@ -27,23 +26,23 @@ class ResultsChecker:
     """
 
     def __init__(self, redis: Redis):
-        self.tasks: Dict[str, asyncio.Event] = {}
+        self.tasks: Dict[str, Event] = {}
         self.dones = dict()
         self.errors = dict()
         self.running = True
         self.redis = redis
         self.semaphore: BoundedSemaphore = BoundedSemaphore(NUM_PARALLEL_TASKS)
 
-    async def add_task(self, task_id: str, request: InferenceRequest):
+    def add_task(self, task_id: str, request: InferenceRequest):
         """
         Wait until there's available cylce to queue a task.
         When there are cycles, add the task's id to a list to keep track of its results,
         launch the preprocess celeryt task, set the task's status to in progress in redis.
         """
         print(f"acquiring semaphore", flush=True)
-        await self.semaphore.acquire()
-        print(f"acqured", flush=True)
-        self.tasks[task_id] = asyncio.Event()
+        self.semaphore.acquire()
+        print(f"acquired", flush=True)
+        self.tasks[task_id] = Event()
         print(f"added task", flush=True)
         preprocess.s(request.dict()).delay()
         print(f"added to pre-processing")
@@ -62,14 +61,14 @@ class ResultsChecker:
                 "Task result not found in either success or error dict. Unreachable"
             )
 
-    async def loop(self):
+    def loop(self):
         """
         Main loop. Check all in progress tasks for their status, and if their status is final,
         (either failure or success) then add their results to the appropriate results dictionary.
         """
-        async with self.redis.pubsub() as pubsub:
-            await pubsub.subscribe("results")
-            async for message in pubsub.listen():
+        with self.redis.pubsub() as pubsub:
+            pubsub.subscribe("results")
+            for message in pubsub.listen():
                 print("Listening...", message, flush=True)
                 if message["type"] != "message":
                     continue
@@ -89,13 +88,12 @@ class ResultsChecker:
                     )
                 self.tasks[task_id].set()
                 print(f"task {task_id} solved", flush=True)
-                await asyncio.sleep(0)
 
-    async def wait_for_response(self, key: str):
+    def wait_for_response(self, key: str):
         print(f"wait_for_response({key})", flush=True)
         event = self.tasks[key]
         print(f"event={event}")
-        await event.wait()
+        event.wait()
         print(f"Event awaited...", event, flush=True)
         del self.tasks[key]
         print("Task deleted - returning result...", flush=True)
@@ -111,48 +109,11 @@ class DispatchModelManager(ModelManager):
     ):
         super().__init__(model_registry, models)
         self.checker = checker
-        self._loop_for_sync_tasks = asyncio.new_event_loop()
 
     async def model_infer(self, model_id: str, request: InferenceRequest, **kwargs):
-        if request.visualize_predictions:
-            raise NotImplementedError("Visualisation of prediction is not supported")
-        request.start = time()
-        t = perf_counter()
-        task_type = self.get_task_type(model_id, request.api_key)
-
-        list_mode = False
-        if isinstance(request.image, list):
-            list_mode = True
-            request_dict = request.dict()
-            images = request_dict.pop("image")
-            del request_dict["id"]
-            requests = [
-                request_from_type(task_type, dict(**request_dict, image=image))
-                for image in images
-            ]
-        else:
-            requests = [request]
-
-        start_task_awaitables = []
-        results_awaitables = []
-        for r in requests:
-            start_task_awaitables.append(self.checker.add_task(r.id, r))
-            results_awaitables.append(self.checker.wait_for_response(r.id))
-
-        await asyncio.gather(*start_task_awaitables)
-        response_jsons = await asyncio.gather(*results_awaitables)
-        responses = []
-        for response_json in response_jsons:
-            response = response_from_type(task_type, response_json)
-            response.time = perf_counter() - t
-            responses.append(response)
-
-        if list_mode:
-            return responses
-        return responses[0]
+        raise NotImplementedError("Async dispatch manager not implemented!")
 
     def model_infer_sync(self, model_id: str, request: InferenceRequest, **kwargs):
-        asyncio.set_event_loop(self._loop_for_sync_tasks)
         if request.visualize_predictions:
             raise NotImplementedError("Visualisation of prediction is not supported")
         request.start = time()
@@ -172,17 +133,11 @@ class DispatchModelManager(ModelManager):
         else:
             requests = [request]
 
-        start_task_awaitables = []
-        results_awaitables = []
         for r in requests:
-            start_task_awaitables.append(self.checker.add_task(r.id, r))
-            results_awaitables.append(self.checker.wait_for_response(r.id))
-
-        async def _await(to_await: list) -> list:
-            return await asyncio.gather(*to_await)
-
-        asyncio.run(_await(start_task_awaitables))
-        response_jsons = asyncio.run(_await(results_awaitables))
+            self.checker.add_task(r.id, r)
+        response_jsons = []
+        for r in requests:
+            response_jsons.append(self.checker.wait_for_response(r.id))
         responses = []
         for response_json in response_jsons:
             response = response_from_type(task_type, response_json)
