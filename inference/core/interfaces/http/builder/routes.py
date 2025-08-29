@@ -11,7 +11,7 @@ from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Re
 from starlette.status import HTTP_201_CREATED, HTTP_400_BAD_REQUEST, HTTP_404_NOT_FOUND
 
 from inference.core.env import BUILDER_ORIGIN, MODEL_CACHE_DIR
-from inference.core.interfaces.http.http_api import with_route_exceptions
+from inference.core.interfaces.http.error_handlers import with_route_exceptions_async
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ def verify_csrf_token(x_csrf: str = Header(None)):
     summary="Workflow Builder List",
     description="Loads the list of Workflows available for editing",
 )
-@with_route_exceptions
+@with_route_exceptions_async
 async def builder_browse():
     """
     Loads the main builder UI (editor.html).
@@ -80,7 +80,7 @@ async def builder_redirect():
     summary="Workflow Builder",
     description="Loads a specific workflow for editing",
 )
-@with_route_exceptions
+@with_route_exceptions_async
 async def builder_edit(workflow_id: str):
     """
     Loads a specific workflow for editing.
@@ -103,7 +103,7 @@ async def builder_edit(workflow_id: str):
 
 
 @router.get("/api", dependencies=[Depends(verify_csrf_token)])
-@with_route_exceptions
+@with_route_exceptions_async
 async def get_all_workflows():
     """
     Returns JSON info about all .json files in {MODEL_CACHE_DIR}/workflow/local.
@@ -133,7 +133,7 @@ async def get_all_workflows():
 
 
 @router.get("/api/{workflow_id}", dependencies=[Depends(verify_csrf_token)])
-@with_route_exceptions
+@with_route_exceptions_async
 async def get_workflow(workflow_id: str):
     """
     Return JSON for workflow_id.json, or 404 if missing.
@@ -171,7 +171,7 @@ async def get_workflow(workflow_id: str):
 
 
 @router.post("/api/{workflow_id}", dependencies=[Depends(verify_csrf_token)])
-@with_route_exceptions
+@with_route_exceptions_async
 async def create_or_overwrite_workflow(
     workflow_id: str, request_body: dict = Body(...)
 ):
@@ -219,7 +219,7 @@ async def create_or_overwrite_workflow(
 
 
 @router.delete("/api/{workflow_id}", dependencies=[Depends(verify_csrf_token)])
-@with_route_exceptions
+@with_route_exceptions_async
 async def delete_workflow(workflow_id: str):
     """
     Delete a workflow's JSON file from disk.
@@ -250,7 +250,7 @@ async def delete_workflow(workflow_id: str):
 
 
 @router.get("/{workflow_id}", include_in_schema=False)
-@with_route_exceptions
+@with_route_exceptions_async
 async def builder_maybe_redirect(workflow_id: str):
     """
     If the workflow_id.json file exists, redirect to /build/edit/{workflow_id}.

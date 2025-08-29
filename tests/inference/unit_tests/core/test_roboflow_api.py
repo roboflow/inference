@@ -5,7 +5,9 @@ from unittest.mock import MagicMock
 
 import pytest
 import requests.exceptions
+from aioresponses import aioresponses
 from requests_mock import Mocker
+from yarl import URL
 
 from inference.core import roboflow_api
 from inference.core.cache import MemoryCache
@@ -38,6 +40,7 @@ from inference.core.roboflow_api import (
     get_roboflow_model_data,
     get_roboflow_model_type,
     get_roboflow_workspace,
+    get_roboflow_workspace_async,
     get_workflow_specification,
     raise_from_lambda,
     register_image_at_roboflow,
@@ -220,6 +223,29 @@ def test_get_roboflow_workspace_when_wrong_api_key_used(requests_mock: Mocker) -
     assert requests_mock.last_request.query == "api_key=my_api_key&nocache=true"
 
 
+@pytest.mark.asyncio
+async def test_get_roboflow_workspace_async_when_wrong_api_key_used() -> None:
+    # given
+    with aioresponses() as request_mock:
+        request_mock.get(
+            f"{API_BASE_URL}/?api_key=my_api_key&nocache=true",
+            payload={
+                "error": {
+                    "message": "This API key does not exist (or has been revoked).",
+                    "status": 401,
+                    "type": "OAuthException",
+                    "hint": "You may retrieve your API key via the Roboflow Dashboard.",
+                    "key": "my_api_key",
+                }
+            },
+            status=401,
+        )
+
+        # when
+        with pytest.raises(RoboflowAPINotAuthorizedError):
+            _ = await get_roboflow_workspace_async(api_key="my_api_key")
+
+
 @mock.patch.object(roboflow_api.requests, "get")
 def test_get_roboflow_workspace_when_connection_error_occurs(
     get_mock: MagicMock,
@@ -230,6 +256,54 @@ def test_get_roboflow_workspace_when_connection_error_occurs(
     # when
     with pytest.raises(RoboflowAPIConnectionError):
         _ = get_roboflow_workspace(api_key="my_api_key")
+
+
+@pytest.mark.asyncio
+async def test_get_roboflow_workspace_async_when_connection_error_occurs() -> None:
+    # given
+    with aioresponses():
+        # when
+        with pytest.raises(RoboflowAPIConnectionError):
+            _ = await get_roboflow_workspace_async(api_key="my_api_key")
+
+
+@mock.patch.object(roboflow_api, "RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API", True)
+@pytest.mark.asyncio
+async def test_get_roboflow_workspace_async_when_connection_error_occurs_and_retries_enforced() -> (
+    None
+):
+    # given
+    with aioresponses():
+        # when
+        with pytest.raises(RoboflowAPIConnectionError):
+            _ = await get_roboflow_workspace_async(api_key="my_api_key")
+
+
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS", {503})
+@pytest.mark.asyncio
+async def test_get_roboflow_workspace_async_when_transient_errors_occur_and_finally_request_succeed() -> (
+    None
+):
+    # given
+    with aioresponses() as request_mock:
+        request_mock.get(
+            f"{API_BASE_URL}/?api_key=my_api_key&nocache=true",
+            status=503,
+        )
+        request_mock.get(
+            f"{API_BASE_URL}/?api_key=my_api_key&nocache=true",
+            status=503,
+        )
+        request_mock.get(
+            f"{API_BASE_URL}/?api_key=my_api_key&nocache=true",
+            payload={"workspace": "my-workspace"},
+        )
+
+        # when
+        result = await get_roboflow_workspace_async(api_key="my_api_key")
+
+        # then
+        assert result == "my-workspace"
 
 
 def test_get_roboflow_workspace_when_response_parsing_error_occurs(
@@ -249,6 +323,22 @@ def test_get_roboflow_workspace_when_response_parsing_error_occurs(
     assert requests_mock.last_request.query == "api_key=my_api_key&nocache=true"
 
 
+@pytest.mark.asyncio
+async def test_get_roboflow_workspace_async_when_response_parsing_error_occurs() -> (
+    None
+):
+    # given
+    with aioresponses() as request_mock:
+        request_mock.get(
+            f"{API_BASE_URL}/?api_key=my_api_key&nocache=true",
+            body=b"For sure not a JSON payload",
+        )
+
+        # when
+        with pytest.raises(MalformedRoboflowAPIResponseError):
+            _ = await get_roboflow_workspace_async(api_key="my_api_key")
+
+
 def test_get_roboflow_workspace_when_workspace_id_is_empty(
     requests_mock: Mocker,
 ) -> None:
@@ -264,6 +354,20 @@ def test_get_roboflow_workspace_when_workspace_id_is_empty(
 
     # then
     assert requests_mock.last_request.query == "api_key=my_api_key&nocache=true"
+
+
+@pytest.mark.asyncio
+async def test_get_roboflow_workspace_async_when_workspace_id_is_empty() -> None:
+    # given
+    with aioresponses() as request_mock:
+        request_mock.get(
+            f"{API_BASE_URL}/?api_key=my_api_key&nocache=true",
+            payload={"some": "payload"},
+        )
+
+        # when
+        with pytest.raises(WorkspaceLoadError):
+            _ = await get_roboflow_workspace_async(api_key="my_api_key")
 
 
 @mock.patch.object(
@@ -282,6 +386,29 @@ def test_get_roboflow_workspace_when_response_is_valid(requests_mock: Mocker) ->
     # then
     assert requests_mock.last_request.query == "api_key=my_api_key&nocache=true"
     assert result == "my_workspace"
+
+
+@mock.patch.object(
+    roboflow_api, "ROBOFLOW_API_EXTRA_HEADERS", json.dumps({"extra": "header"})
+)
+@pytest.mark.asyncio
+async def test_get_roboflow_workspace_async_when_response_is_valid() -> None:
+    # given
+    with aioresponses() as request_mock:
+        request_mock.get(
+            f"{API_BASE_URL}/?api_key=my_api_key&nocache=true",
+            payload={"workspace": "my_workspace"},
+        )
+
+        # when
+        result = await get_roboflow_workspace_async(api_key="my_api_key")
+
+        # then
+        assert result == "my_workspace"
+        registered_requests = request_mock.requests[
+            ("GET", URL(f"{API_BASE_URL}/?api_key=my_api_key&nocache=true"))
+        ]
+        assert registered_requests[0].kwargs["headers"] == {"extra": "header"}
 
 
 def test_get_roboflow_dataset_type_when_wrong_key_used(
