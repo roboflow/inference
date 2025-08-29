@@ -92,9 +92,13 @@ class ResultsChecker:
                 await asyncio.sleep(0)
 
     async def wait_for_response(self, key: str):
+        print(f"wait_for_response({key})", flush=True)
         event = self.tasks[key]
+        print(f"event={event}")
         await event.wait()
+        print(f"Event awaited...", event, flush=True)
         del self.tasks[key]
+        print("Task deleted - returning result...", flush=True)
         return self.get_result(key)
 
 
