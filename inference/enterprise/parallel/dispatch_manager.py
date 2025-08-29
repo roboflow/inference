@@ -101,6 +101,7 @@ class DispatchModelManager(ModelManager):
     ):
         super().__init__(model_registry, models)
         self.checker = checker
+        self._loop_for_sync_tasks = asyncio.new_event_loop()
 
     async def model_infer(self, model_id: str, request: InferenceRequest, **kwargs):
         if request.visualize_predictions:
@@ -166,8 +167,12 @@ class DispatchModelManager(ModelManager):
             start_task_awaitables.append(self.checker.add_task(r.id, r))
             results_awaitables.append(self.checker.wait_for_response(r.id))
 
-        asyncio.run(asyncio.gather(*start_task_awaitables))
-        response_jsons = asyncio.run(asyncio.gather(*results_awaitables))
+        self._loop_for_sync_tasks.run_until_complete(
+            asyncio.gather(*start_task_awaitables)
+        )
+        response_jsons = self._loop_for_sync_tasks.run_until_complete(
+            asyncio.gather(*results_awaitables)
+        )
         responses = []
         for response_json in response_jsons:
             response = response_from_type(task_type, response_json)
