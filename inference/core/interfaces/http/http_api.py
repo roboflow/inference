@@ -10,7 +10,6 @@ from uuid import uuid4
 
 import asgi_correlation_id
 import uvicorn
-
 from fastapi import (
     BackgroundTasks,
     Depends,
@@ -19,9 +18,8 @@ from fastapi import (
     Path,
     Query,
     Request,
-    UploadFile
+    UploadFile,
 )
-
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
