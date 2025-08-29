@@ -155,7 +155,9 @@ from inference.core.exceptions import (
     RoboflowAPINotAuthorizedError,
 )
 from inference.core.interfaces.base import BaseInterface
-from inference.core.interfaces.http.dependencies import request_body_content
+from inference.core.interfaces.http.dependencies import (
+    request_body_content_only_to_be_used_in_legacy_request_handler,
+)
 from inference.core.interfaces.http.error_handlers import (
     with_route_exceptions,
     with_route_exceptions_async,
@@ -2330,7 +2332,12 @@ class HttpInterface(BaseInterface):
             def legacy_infer_from_request(
                 background_tasks: BackgroundTasks,
                 request: Request,
-                request_body: Annotated[Optional[bytes], Depends(request_body_content)],
+                request_body: Annotated[
+                    Optional[bytes],
+                    Depends(
+                        request_body_content_only_to_be_used_in_legacy_request_handler
+                    ),
+                ],
                 dataset_id: str = Path(
                     description="ID of a Roboflow dataset corresponding to the model to use for inference OR workspace ID"
                 ),

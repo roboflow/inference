@@ -319,14 +319,14 @@ class ModelManager:
             raise
 
     async def model_infer(self, model_id: str, request: InferenceRequest, **kwargs):
-        self.check_for_model(model_id)
-        return self._models[model_id].infer_from_request(request)
+        model = self._get_model_reference(model_id=model_id)
+        return model.infer_from_request(request)
 
     def model_infer_sync(
         self, model_id: str, request: InferenceRequest, **kwargs
     ) -> Union[List[InferenceResponse], InferenceResponse]:
-        self.check_for_model(model_id)
-        return self._models[model_id].infer_from_request(request)
+        model = self._get_model_reference(model_id=model_id)
+        return model.infer_from_request(request)
 
     def make_response(
         self, model_id: str, predictions: List[List[float]], *args, **kwargs
@@ -340,8 +340,8 @@ class ModelManager:
         Returns:
             InferenceResponse: The created response object.
         """
-        self.check_for_model(model_id)
-        return self._models[model_id].make_response(predictions, *args, **kwargs)
+        model = self._get_model_reference(model_id=model_id)
+        return model.make_response(predictions, *args, **kwargs)
 
     def postprocess(
         self,
@@ -360,8 +360,8 @@ class ModelManager:
         Returns:
             List[List[float]]: The post-processed predictions.
         """
-        self.check_for_model(model_id)
-        return self._models[model_id].postprocess(
+        model = self._get_model_reference(model_id=model_id)
+        return model.postprocess(
             predictions, preprocess_return_metadata, *args, **kwargs
         )
 
@@ -374,12 +374,12 @@ class ModelManager:
         Returns:
             np.ndarray: The predictions from the model.
         """
-        self.check_for_model(model_id)
-        self._models[model_id].metrics["num_inferences"] += 1
+        model = self._get_model_reference(model_id=model_id)
+        model.metrics["num_inferences"] += 1
         tic = time.perf_counter()
-        res = self._models[model_id].predict(*args, **kwargs)
+        res = model.predict(*args, **kwargs)
         toc = time.perf_counter()
-        self._models[model_id].metrics["avg_inference_time"] += toc - tic
+        model.metrics["avg_inference_time"] += toc - tic
         return res
 
     def preprocess(
@@ -394,8 +394,8 @@ class ModelManager:
         Returns:
             Tuple[np.ndarray, List[Tuple[int, int]]]: The preprocessed data.
         """
-        self.check_for_model(model_id)
-        return self._models[model_id].preprocess(**request.dict())
+        model = self._get_model_reference(model_id=model_id)
+        return model.preprocess(**request.dict())
 
     def get_class_names(self, model_id):
         """Retrieves the class names for a given model.
@@ -406,8 +406,8 @@ class ModelManager:
         Returns:
             List[str]: The class names of the model.
         """
-        self.check_for_model(model_id)
-        return self._models[model_id].class_names
+        model = self._get_model_reference(model_id=model_id)
+        return model.class_names
 
     def get_task_type(self, model_id: str, api_key: str = None) -> str:
         """Retrieves the task type for a given model.
@@ -418,8 +418,8 @@ class ModelManager:
         Returns:
             str: The task type of the model.
         """
-        self.check_for_model(model_id)
-        return self._models[model_id].task_type
+        model = self._get_model_reference(model_id=model_id)
+        return model.task_type
 
     def remove(self, model_id: str, delete_from_disk: bool = True) -> None:
         """Removes a model from the manager.
@@ -439,7 +439,7 @@ class ModelManager:
                     return None
                 self._models[model_id].clear_cache(delete_from_disk=delete_from_disk)
                 del self._models[model_id]
-            self._dispose_model_lock(model_id=model_id)
+                self._dispose_model_lock(model_id=model_id)
         except InferenceModelNotFound:
             logger.warning(
                 f"Attempted to remove model with id {model_id}, but it is not loaded. Skipping..."
@@ -447,8 +447,17 @@ class ModelManager:
 
     def clear(self) -> None:
         """Removes all models from the manager."""
-        for model_id in list(self.keys()):
+        model_ids = list(self.keys())
+        for model_id in model_ids:
             self.remove(model_id)
+
+    def _get_model_reference(self, model_id: str) -> Model:
+        try:
+            return self._models[model_id]
+        except KeyError as error:
+            raise InferenceModelNotFound(
+                f"Model with id {model_id} not loaded."
+            ) from error
 
     def __contains__(self, model_id: str) -> bool:
         """Checks if the model is contained in the manager.
@@ -470,8 +479,7 @@ class ModelManager:
         Returns:
             Model: The model corresponding to the key.
         """
-        self.check_for_model(model_id=key)
-        return self._models[key]
+        return self._get_model_reference(model_id=key)
 
     def __len__(self) -> int:
         """Retrieve the number of models in the manager.
