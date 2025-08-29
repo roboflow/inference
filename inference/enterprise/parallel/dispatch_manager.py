@@ -174,11 +174,17 @@ class DispatchModelManager(ModelManager):
                     self.checker.wait_for_response(r.id), self._loop_for_sync_tasks
                 )
             )
+        print("Fetching start_task_futures...", flush=True)
         for start_task_future in start_task_futures:
+            print("Waiting...", flush=True)
             _ = start_task_future.result()
+            print("Received", flush=True)
         response_jsons = []
+        print("Fetching JSON results...", flush=True)
         for response_jsons_future in results_futures:
+            print("Waiting...", flush=True)
             response_jsons.append(response_jsons_future.result())
+            print("Received", flush=True)
         responses = []
         for response_json in response_jsons:
             response = response_from_type(task_type, response_json)
