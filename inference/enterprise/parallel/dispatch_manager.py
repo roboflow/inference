@@ -142,6 +142,7 @@ class DispatchModelManager(ModelManager):
         return responses[0]
 
     def model_infer_sync(self, model_id: str, request: InferenceRequest, **kwargs):
+        asyncio.set_event_loop(self._loop_for_sync_tasks)
         if request.visualize_predictions:
             raise NotImplementedError("Visualisation of prediction is not supported")
         request.start = time()
