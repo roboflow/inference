@@ -348,6 +348,9 @@ NOTEBOOK_PASSWORD = os.getenv("NOTEBOOK_PASSWORD", "roboflow")
 # Jupyter notebook port, default is 9002
 NOTEBOOK_PORT = int(os.getenv("NOTEBOOK_PORT", 9002))
 
+# Enable in-memory logs, default is False
+ENABLE_IN_MEMORY_LOGS = str2bool(os.getenv("ENABLE_IN_MEMORY_LOGS", False))
+
 # Enable dashboard page
 ENABLE_DASHBOARD = str2bool(os.getenv("ENABLE_DASHBOARD", False))
 
@@ -439,7 +442,7 @@ INFER_BUCKET = os.getenv(
     ),
 )
 
-ACTIVE_LEARNING_ENABLED = str2bool(os.getenv("ACTIVE_LEARNING_ENABLED", False))
+ACTIVE_LEARNING_ENABLED = str2bool(os.getenv("ACTIVE_LEARNING_ENABLED", True))
 ACTIVE_LEARNING_TAGS = safe_split_value(os.getenv("ACTIVE_LEARNING_TAGS", None))
 
 # Number inflight async tasks for async model manager

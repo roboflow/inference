@@ -7,11 +7,12 @@ ENABLE_IN_MEMORY_LOGS environment variable is set to 'true'.
 """
 
 import logging
-import os
 from collections import deque
 from datetime import datetime
 from threading import Lock
 from typing import Any, Dict, List
+
+from inference.core.env import ENABLE_IN_MEMORY_LOGS
 
 # Global log storage
 _log_entries = deque(maxlen=1000)  # Keep last 1000 log entries
@@ -71,7 +72,7 @@ def get_recent_logs(
 
 
 def is_memory_logging_enabled() -> bool:
-    return os.environ.get("ENABLE_IN_MEMORY_LOGS", "").lower() == "true"
+    return ENABLE_IN_MEMORY_LOGS
 
 
 def setup_memory_logging() -> None:
