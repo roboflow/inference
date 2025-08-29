@@ -174,10 +174,17 @@ class VideoTransformTrack(VideoStreamTrack):
 
         if np_frame is None:
             if not self._last_frame:
-                np_frame = overlay_text_on_np_frame(
-                    frame.to_ndarray(format="bgr24"),
-                    ["Inference pipeline is starting..."],
-                )
+                # Block until the first processed frame is available instead of overlaying text
+                while True:
+                    try:
+                        np_frame = await self.from_inference_queue.async_get(
+                            timeout=self.processing_timeout
+                        )
+                        break
+                    except asyncio.TimeoutError:
+                        if not self._track_active:
+                            raise MediaStreamError
+                        continue
                 new_frame = VideoFrame.from_ndarray(np_frame, format="bgr24")
             else:
                 new_frame = self._last_frame
