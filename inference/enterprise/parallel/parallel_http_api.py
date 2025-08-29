@@ -22,7 +22,9 @@ class ParallelHttpInterface(HttpInterface):
             checker = ResultsChecker(Redis(host=REDIS_HOST, port=REDIS_PORT))
             self.model_manager = DispatchModelManager(model_registry, checker)
             self.model_manager.init_pingback()
-            checker_loop_thread = Thread(target=self.model_manager.checker.loop, args=(), daemon=True)
+            checker_loop_thread = Thread(
+                target=self.model_manager.checker.loop, args=(), daemon=True
+            )
             checker_loop_thread.start()
             # keep checker loop reference so it doesn't get gc'd
             self.checker_loop = checker_loop_thread

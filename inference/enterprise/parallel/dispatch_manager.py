@@ -1,4 +1,4 @@
-from threading import Event, BoundedSemaphore
+from threading import BoundedSemaphore, Event
 from time import perf_counter, time
 from typing import Any, Dict, List, Optional
 
@@ -39,13 +39,9 @@ class ResultsChecker:
         When there are cycles, add the task's id to a list to keep track of its results,
         launch the preprocess celeryt task, set the task's status to in progress in redis.
         """
-        print(f"acquiring semaphore", flush=True)
         self.semaphore.acquire()
-        print(f"acquired", flush=True)
         self.tasks[task_id] = Event()
-        print(f"added task", flush=True)
         preprocess.s(request.dict()).delay()
-        print(f"added to pre-processing")
 
     def get_result(self, task_id: str) -> Any:
         """
@@ -69,7 +65,6 @@ class ResultsChecker:
         with self.redis.pubsub() as pubsub:
             pubsub.subscribe("results")
             for message in pubsub.listen():
-                print("Listening...", message, flush=True)
                 if message["type"] != "message":
                     continue
                 message = orjson.loads(message["data"])
@@ -87,16 +82,11 @@ class ResultsChecker:
                         "Task result not found in possible states. Unreachable"
                     )
                 self.tasks[task_id].set()
-                print(f"task {task_id} solved", flush=True)
 
     def wait_for_response(self, key: str):
-        print(f"wait_for_response({key})", flush=True)
         event = self.tasks[key]
-        print(f"event={event}")
         event.wait()
-        print(f"Event awaited...", event, flush=True)
         del self.tasks[key]
-        print("Task deleted - returning result...", flush=True)
         return self.get_result(key)
 
 
