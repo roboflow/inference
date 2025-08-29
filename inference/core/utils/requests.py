@@ -1,5 +1,6 @@
 import re
 
+import aiohttp
 from requests import Response
 
 API_KEY_PATTERN = re.compile(r"api_key=(.[^&]*)")
@@ -12,6 +13,17 @@ def api_key_safe_raise_for_status(response: Response) -> None:
     if request_is_successful:
         return None
     response.url = API_KEY_PATTERN.sub(deduct_api_key, response.url)
+    response.raise_for_status()
+
+
+def api_key_safe_raise_for_status_aiohttp(response: aiohttp.ClientResponse) -> None:
+    request_is_successful = response.status < 400
+    if request_is_successful:
+        return None
+    response.request_info.real_url._query = API_KEY_PATTERN.sub(
+        deduct_api_key,
+        response.request_info.real_url._query,
+    )
     response.raise_for_status()
 
 
