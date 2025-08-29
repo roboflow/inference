@@ -348,7 +348,7 @@ NOTEBOOK_PASSWORD = os.getenv("NOTEBOOK_PASSWORD", "roboflow")
 # Jupyter notebook port, default is 9002
 NOTEBOOK_PORT = int(os.getenv("NOTEBOOK_PORT", 9002))
 
-# Enable dashboard page (supports legacy misspelled var ENABLE_DAHBOARD)
+# Enable dashboard page
 ENABLE_DASHBOARD = str2bool(
     os.getenv("ENABLE_DASHBOARD", False)
 )
