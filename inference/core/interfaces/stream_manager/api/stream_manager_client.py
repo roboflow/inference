@@ -200,6 +200,63 @@ class StreamManagerClient:
             ],
         )
 
+    async def get_latest_frame(self, pipeline_id: str) -> dict:
+        """Get the latest frame from a pipeline."""
+        import base64
+        import cv2
+        import numpy as np
+        
+        command = {
+            TYPE_KEY: CommandType.GET_LATEST_FRAME,
+            PIPELINE_ID_KEY: pipeline_id,
+        }
+        response = await self._handle_command(command=command)
+        
+        # Process the response
+        if response[RESPONSE_KEY][STATUS_KEY] != OperationStatus.SUCCESS:
+            return {
+                "success": False,
+                "message": response[RESPONSE_KEY].get("message", "Failed to get latest frame")
+            }
+        
+        frame_data = response[RESPONSE_KEY].get("frame_data")
+        if frame_data is None:
+            return {
+                "success": False,
+                "message": response[RESPONSE_KEY].get("message", "No frame available")
+            }
+        
+        # Encode frame as base64 JPEG
+        frame = frame_data.get("frame")
+        if frame is not None and isinstance(frame, (list, np.ndarray)):
+            frame_array = np.array(frame, dtype=np.uint8)
+            _, buffer = cv2.imencode('.jpg', frame_array, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
+            frame_base64 = base64.b64encode(buffer).decode('utf-8')
+            data_uri = f"data:image/jpeg;base64,{frame_base64}"
+        else:
+            data_uri = None
+        
+        return {
+            "success": True,
+            "frame_id": frame_data.get("frame_id"),
+            "data": data_uri,
+            "camera_fps": frame_data.get("camera_fps"),
+            "pipeline_fps": frame_data.get("pipeline_fps")
+        }
+
+    async def get_pipeline_stats(self, pipeline_id: str) -> dict:
+        """Get FPS statistics for a specific pipeline."""
+        command = {
+            TYPE_KEY: CommandType.GET_STATS,
+            PIPELINE_ID_KEY: pipeline_id,
+        }
+        response = await self._handle_command(command=command)
+        
+        if response[RESPONSE_KEY][STATUS_KEY] != OperationStatus.SUCCESS:
+            return None
+        
+        return response[RESPONSE_KEY].get("stats", {})
+
     async def _handle_command(self, command: dict) -> dict:
         response = await send_command(
             host=self._host,

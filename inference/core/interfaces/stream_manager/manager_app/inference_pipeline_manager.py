@@ -94,6 +94,13 @@ class InferencePipelineManager(Process):
         self._consumption_timeout: Optional[float] = (
             None  # Track zero consume timeout for the pipeline
         )
+        # Frame caching for latest_frame endpoint
+        self._latest_frame_lock = threading.Lock()
+        self._latest_frame_data: Optional[dict] = None
+        self._frame_counter = 0
+        self._camera_fps_tracker: list = []
+        self._pipeline_fps_tracker: list = []
+        self._fps_calculation_window = 30  # Calculate FPS over last 30 frames
 
     def run(self) -> None:
         signal.signal(signal.SIGINT, ignore_signal)
@@ -148,6 +155,10 @@ class InferencePipelineManager(Process):
                 return self._get_pipeline_status(request_id=request_id)
             if command_type is CommandType.CONSUME_RESULT:
                 return self._consume_results(request_id=request_id, payload=payload)
+            if command_type is CommandType.GET_LATEST_FRAME:
+                return self._get_latest_frame(request_id=request_id)
+            if command_type is CommandType.GET_STATS:
+                return self._get_stats(request_id=request_id)
             raise NotImplementedError(
                 f"Command type `{command_type}` cannot be handled"
             )
@@ -182,6 +193,14 @@ class InferencePipelineManager(Process):
                 queue_size=parsed_payload.sink_configuration.results_buffer_size,
             )
             self._buffer_sink = buffer_sink
+            
+            # Create a wrapper for on_prediction to cache latest frame
+            def on_prediction_with_caching(predictions: dict, video_frame: VideoFrame) -> None:
+                # Call the original buffer sink
+                self._buffer_sink.on_prediction(predictions, video_frame)
+                # Cache the latest frame
+                self._cache_latest_frame(predictions, video_frame)
+            
             self._inference_pipeline = InferencePipeline.init_with_workflow(
                 video_reference=parsed_payload.video_configuration.video_reference,
                 workflow_specification=parsed_payload.processing_configuration.workflow_specification,
@@ -190,7 +209,7 @@ class InferencePipelineManager(Process):
                 api_key=parsed_payload.api_key,
                 image_input_name=parsed_payload.processing_configuration.image_input_name,
                 workflows_parameters=parsed_payload.processing_configuration.workflows_parameters,
-                on_prediction=self._buffer_sink.on_prediction,
+                on_prediction=on_prediction_with_caching,
                 max_fps=parsed_payload.video_configuration.max_fps,
                 watchdog=self._watchdog,
                 source_buffer_filling_strategy=parsed_payload.video_configuration.source_buffer_filling_strategy,
@@ -411,8 +430,14 @@ class InferencePipelineManager(Process):
                 queue_size=parsed_payload.sink_configuration.results_buffer_size,
             )
             self._buffer_sink = buffer_sink
+            
+            # Create a wrapper that caches frames and calls webrtc_sink
+            def webrtc_sink_with_caching(predictions: dict, video_frame: VideoFrame) -> None:
+                webrtc_sink(predictions, video_frame)
+                self._cache_latest_frame(predictions, video_frame)
+            
             chained_sink = partial(
-                multi_sink, sinks=[buffer_sink.on_prediction, webrtc_sink]
+                multi_sink, sinks=[buffer_sink.on_prediction, webrtc_sink_with_caching]
             )
 
             self._inference_pipeline = InferencePipeline.init_with_workflow(
@@ -634,6 +659,105 @@ class InferencePipelineManager(Process):
                 public_error_message="Unexpected error with InferencePipeline results consumption.",
                 error_type=ErrorType.OPERATION_ERROR,
             )
+
+    def _get_latest_frame(self, request_id: str) -> None:
+        try:
+            with self._latest_frame_lock:
+                if self._latest_frame_data is None:
+                    response_payload = {
+                        STATUS_KEY: OperationStatus.SUCCESS,
+                        "frame_data": None,
+                        "message": "No frame available"
+                    }
+                else:
+                    # Calculate current FPS values
+                    current_time = time.monotonic()
+                    camera_fps = self._calculate_fps(self._camera_fps_tracker, current_time)
+                    pipeline_fps = self._calculate_fps(self._pipeline_fps_tracker, current_time)
+                    
+                    response_payload = {
+                        STATUS_KEY: OperationStatus.SUCCESS,
+                        "frame_data": {
+                            "frame": self._latest_frame_data["frame"],
+                            "frame_id": self._latest_frame_data["frame_id"],
+                            "timestamp": self._latest_frame_data["timestamp"],
+                            "camera_fps": camera_fps,
+                            "pipeline_fps": pipeline_fps
+                        },
+                        "message": None
+                    }
+            self._responses_queue.put((request_id, response_payload))
+        except Exception as error:
+            self._handle_error(
+                request_id=request_id,
+                error=error,
+                public_error_message="Unexpected error retrieving latest frame.",
+                error_type=ErrorType.OPERATION_ERROR,
+            )
+
+    def _get_stats(self, request_id: str) -> None:
+        """Get FPS statistics for this pipeline."""
+        try:
+            current_time = time.monotonic()
+            camera_fps = self._calculate_fps(self._camera_fps_tracker, current_time)
+            pipeline_fps = self._calculate_fps(self._pipeline_fps_tracker, current_time)
+            
+            response_payload = {
+                STATUS_KEY: OperationStatus.SUCCESS,
+                "stats": {
+                    "camera_fps": camera_fps,
+                    "inference_fps": pipeline_fps,
+                    "pipeline_id": self._pipeline_id
+                }
+            }
+            self._responses_queue.put((request_id, response_payload))
+        except Exception as error:
+            self._handle_error(
+                request_id=request_id,
+                error=error,
+                public_error_message="Unexpected error retrieving pipeline stats.",
+                error_type=ErrorType.OPERATION_ERROR,
+            )
+
+    def _cache_latest_frame(self, predictions: dict, video_frame: VideoFrame) -> None:
+        """Cache the latest frame data for retrieval."""
+        try:
+            current_time = time.monotonic()
+            
+            with self._latest_frame_lock:
+                # Update FPS tracking
+                self._camera_fps_tracker.append(current_time)
+                self._pipeline_fps_tracker.append(current_time)
+                
+                # Keep only recent timestamps (last 2 seconds)
+                cutoff_time = current_time - 2.0
+                self._camera_fps_tracker = [t for t in self._camera_fps_tracker if t > cutoff_time]
+                self._pipeline_fps_tracker = [t for t in self._pipeline_fps_tracker if t > cutoff_time]
+                
+                # Store frame data (numpy array)
+                self._latest_frame_data = {
+                    "frame": video_frame.image.copy() if video_frame.image is not None else None,
+                    "frame_id": video_frame.frame_id,
+                    "timestamp": current_time,
+                    "predictions": predictions
+                }
+                self._frame_counter += 1
+        except Exception as e:
+            logger.error(f"Error caching latest frame: {e}")
+
+    def _calculate_fps(self, timestamps: list, current_time: float) -> Optional[float]:
+        """Calculate FPS from a list of timestamps."""
+        if len(timestamps) < 2:
+            return None
+        # Remove old timestamps (older than 1 second)
+        cutoff_time = current_time - 1.0
+        recent_timestamps = [t for t in timestamps if t > cutoff_time]
+        if len(recent_timestamps) < 2:
+            return None
+        time_span = recent_timestamps[-1] - recent_timestamps[0]
+        if time_span > 0:
+            return (len(recent_timestamps) - 1) / time_span
+        return None
 
     def _handle_error(
         self,
