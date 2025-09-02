@@ -1,6 +1,6 @@
 import traceback
 import types
-from typing import List, Type, Optional
+from typing import List, Optional, Type
 
 from inference.core.env import (
     ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
@@ -61,25 +61,25 @@ def assembly_custom_python_block(
         if WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE == "modal":
             # Remote execution via Modal - allowed even if local execution is disabled
             from inference.core.workflows.execution_engine.v1.dynamic_blocks.modal_executor import (
-                ModalExecutor
+                ModalExecutor,
             )
-            
+
             # Get workspace_id from context if available
             workspace_id = kwargs.pop("workspace_id", None)
             if not workspace_id:
                 # Try to extract from self or context
                 workspace_id = getattr(self, "workspace_id", None)
-            
+
             # Fall back to "anonymous" for non-authenticated users
             if not workspace_id:
                 workspace_id = "anonymous"
-            
+
             executor = ModalExecutor(workspace_id)
             return executor.execute_remote(
                 block_type_name=block_type_name,
                 python_code=python_code,
                 inputs=kwargs,
-                workspace_id=workspace_id
+                workspace_id=workspace_id,
             )
         else:
             # Local execution - check if allowed
@@ -144,32 +144,39 @@ def _get_python_code_imports(python_code: PythonCode) -> str:
 
 
 def create_dynamic_module(
-    block_type_name: str, python_code: PythonCode, module_name: str, workspace_id: Optional[str] = None
+    block_type_name: str,
+    python_code: PythonCode,
+    module_name: str,
+    workspace_id: Optional[str] = None,
 ) -> types.ModuleType:
     imports = _get_python_code_imports(python_code)
     code = python_code.run_function_code
     if python_code.init_function_code:
         code += "\n\n" + python_code.init_function_code
     code = imports + code
-    
+
     # If using Modal and local execution is disabled, validate code remotely
-    if (WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE == "modal" and 
-        not ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS):
+    if (
+        WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE == "modal"
+        and not ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS
+    ):
         # Validate code in Modal sandbox for security
         from inference.core.workflows.execution_engine.v1.dynamic_blocks.modal_executor import (
-            validate_code_in_modal
+            validate_code_in_modal,
         )
-        
+
         # Use anonymous workspace if not provided
         validation_workspace = workspace_id or "anonymous"
-        
+
         # This will raise if validation fails
         validate_code_in_modal(python_code, validation_workspace)
-        
+
         # Create a stub module for local reference
         dynamic_module = types.ModuleType(module_name)
         # Add placeholder function
-        setattr(dynamic_module, python_code.run_function_name, lambda *args, **kwargs: None)
+        setattr(
+            dynamic_module, python_code.run_function_name, lambda *args, **kwargs: None
+        )
         if python_code.init_function_code:
             setattr(dynamic_module, python_code.init_function_name, lambda: {})
         return dynamic_module
