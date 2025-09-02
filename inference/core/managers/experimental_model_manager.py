@@ -46,8 +46,7 @@ class ExperimentalModelManager:
         return cls._instance
 
     def is_loaded(self, model_id: str) -> bool:
-        with self._models_lock:
-            return model_id in self._models
+        return model_id in self._models
 
     def list_models(self) -> List[str]:
         with self._models_lock:
