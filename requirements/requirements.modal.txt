@@ -1,1 +1,1 @@
-rfmodal>=1.2.4
+rfmodal>=1.2.6
