@@ -52,7 +52,7 @@ else:
 # Create the Modal App only if Modal is installed
 if MODAL_INSTALLED:
     app = modal.App("inference-custom-blocks")
-    cls = modal.Cls.from_name("inference-custom-blocks", "CustomBlockExecutor")
+    cls = modal.Cls.from_name("inference-custom-blocks", "CustomBlockExecutor", use_firewall=True)
 else:
     app = None
     cls = None
