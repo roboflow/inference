@@ -106,3 +106,40 @@ class InvalidParameterError(HTTPClientError):
     """Error for invalid parameter."""
 
     pass
+
+
+class RetryError(Exception):
+
+    def __init__(
+        self,
+        description: str,
+        status_code: Optional[int] = None,
+        inner_error: Optional[Exception] = None,
+    ):
+        super().__init__(description)
+        self._description = description
+        self._status_code = status_code
+        self._inner_error = inner_error
+
+    @property
+    def description(self) -> str:
+        return self._description
+
+    @property
+    def status_code(self) -> Optional[int]:
+        return self._status_code
+
+    @property
+    def inner_error(self) -> Optional[Exception]:
+        return self._inner_error
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}("
+            f"description='{self.description}', "
+            f"status_code='{self._status_code}',"
+            f"inner_error={self._inner_error})"
+        )
+
+    def __str__(self) -> str:
+        return self.__repr__()
