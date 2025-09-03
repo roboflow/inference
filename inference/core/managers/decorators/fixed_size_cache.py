@@ -1,5 +1,6 @@
 import gc
 from collections import deque
+from threading import Lock
 from typing import List, Optional
 
 from inference.core import logger
@@ -7,11 +8,15 @@ from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import (
     DISK_CACHE_CLEANUP,
+    HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT,
     MEMORY_FREE_THRESHOLD,
     MODELS_CACHE_AUTH_ENABLED,
 )
-from inference.core.exceptions import RoboflowAPINotAuthorizedError
-from inference.core.managers.base import Model, ModelManager
+from inference.core.exceptions import (
+    ModelManagerLockAcquisitionError,
+    RoboflowAPINotAuthorizedError,
+)
+from inference.core.managers.base import Model, ModelManager, acquire_with_timeout
 from inference.core.managers.decorators.base import ModelManagerDecorator
 from inference.core.managers.entities import ModelDescription
 from inference.core.registries.roboflow import (
@@ -31,6 +36,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
         super().__init__(model_manager)
         self.max_size = max_size
         self._key_queue = deque(self.model_manager.keys())
+        self._queue_lock = Lock()
 
     def add_model(
         self,
@@ -67,34 +73,40 @@ class WithFixedSizeCache(ModelManagerDecorator):
             logger.debug(
                 f"Detected {queue_id} in WithFixedSizeCache models queue -> marking as most recently used."
             )
-            self._key_queue.remove(queue_id)
-            self._key_queue.append(queue_id)
+            self._refresh_model_position_in_a_queue(model_id=queue_id)
             return None
 
         logger.debug(f"Current capacity of ModelManager: {len(self)}/{self.max_size}")
-        while self._key_queue and (
-            len(self) >= self.max_size
-            or (MEMORY_FREE_THRESHOLD and self.memory_pressure_detected())
-        ):
-            # To prevent flapping around the threshold, remove 3 models to make some space.
-            for _ in range(3):
-                if not self._key_queue:
-                    logger.error(
-                        "Tried to remove model from cache even though key queue is already empty!"
-                        "(max_size: %s, len(self): %s, MEMORY_FREE_THRESHOLD: %s)",
-                        self.max_size,
-                        len(self),
-                        MEMORY_FREE_THRESHOLD,
-                    )
-                    break
-                to_remove_model_id = self._key_queue.popleft()
-                super().remove(
-                    to_remove_model_id, delete_from_disk=DISK_CACHE_CLEANUP
-                )  # LRU model overflow cleanup may or maynot need the weights removed from disk
-                logger.debug(f"Model {to_remove_model_id} successfully unloaded.")
-            gc.collect()
-        logger.debug(f"Marking new model {queue_id} as most recently used.")
-        self._key_queue.append(queue_id)
+        with acquire_with_timeout(
+            lock=self._queue_lock, timeout=HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT
+        ) as acquired:
+            if not acquired:
+                raise ModelManagerLockAcquisitionError(
+                    "Could not acquire lock on Model Manager state to add model from active models queue."
+                )
+            while self._key_queue and (
+                len(self) >= self.max_size
+                or (MEMORY_FREE_THRESHOLD and self.memory_pressure_detected())
+            ):
+                # To prevent flapping around the threshold, remove 3 models to make some space.
+                for _ in range(3):
+                    if not self._key_queue:
+                        logger.error(
+                            "Tried to remove model from cache even though key queue is already empty!"
+                            "(max_size: %s, len(self): %s, MEMORY_FREE_THRESHOLD: %s)",
+                            self.max_size,
+                            len(self),
+                            MEMORY_FREE_THRESHOLD,
+                        )
+                        break
+                    to_remove_model_id = self._key_queue.popleft()
+                    super().remove(
+                        to_remove_model_id, delete_from_disk=DISK_CACHE_CLEANUP
+                    )  # LRU model overflow cleanup may or maynot need the weights removed from disk
+                    logger.debug(f"Model {to_remove_model_id} successfully unloaded.")
+                gc.collect()
+            logger.debug(f"Marking new model {queue_id} as most recently used.")
+            self._key_queue.append(queue_id)
         try:
             return super().add_model(
                 model_id,
@@ -108,7 +120,14 @@ class WithFixedSizeCache(ModelManagerDecorator):
             logger.debug(
                 f"Could not initialise model {queue_id}. Removing from WithFixedSizeCache models queue."
             )
-            self._key_queue.remove(queue_id)
+            with acquire_with_timeout(
+                lock=self._queue_lock, timeout=HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT
+            ) as acquired:
+                if not acquired:
+                    raise ModelManagerLockAcquisitionError(
+                        "Could not acquire lock on Model Manager state to remove model from active models queue."
+                    )
+                self._safe_remove_model_from_queue(queue_id)
             raise error
 
     def clear(self) -> None:
@@ -117,12 +136,14 @@ class WithFixedSizeCache(ModelManagerDecorator):
             self.remove(model_id)
 
     def remove(self, model_id: str, delete_from_disk: bool = True) -> Model:
-        try:
-            self._key_queue.remove(model_id)
-        except ValueError:
-            logger.warning(
-                f"Could not successfully purge model {model_id} from  WithFixedSizeCache models queue"
-            )
+        with acquire_with_timeout(
+            lock=self._queue_lock, timeout=HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT
+        ) as acquired:
+            if not acquired:
+                raise ModelManagerLockAcquisitionError(
+                    "Could not acquire lock on Model Manager state to remove model from active models queue."
+                )
+            self._safe_remove_model_from_queue(model_id=model_id)
         return super().remove(model_id, delete_from_disk=delete_from_disk)
 
     async def infer_from_request(
@@ -137,8 +158,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
         Returns:
             InferenceResponse: The response from the inference.
         """
-        self._key_queue.remove(model_id)
-        self._key_queue.append(model_id)
+        self._refresh_model_position_in_a_queue(model_id=model_id)
         return await super().infer_from_request(model_id, request, **kwargs)
 
     def infer_from_request_sync(
@@ -153,8 +173,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
         Returns:
             InferenceResponse: The response from the inference.
         """
-        self._key_queue.remove(model_id)
-        self._key_queue.append(model_id)
+        self._refresh_model_position_in_a_queue(model_id=model_id)
         return super().infer_from_request_sync(model_id, request, **kwargs)
 
     def infer_only(self, model_id: str, request, img_in, img_dims, batch_size=None):
@@ -170,8 +189,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
         Returns:
             Response from the inference-only operation.
         """
-        self._key_queue.remove(model_id)
-        self._key_queue.append(model_id)
+        self._refresh_model_position_in_a_queue(model_id=model_id)
         return super().infer_only(model_id, request, img_in, img_dims, batch_size)
 
     def preprocess(self, model_id: str, request):
@@ -181,8 +199,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
             model_id (str): The identifier of the model.
             request (InferenceRequest): The request to preprocess.
         """
-        self._key_queue.remove(model_id)
-        self._key_queue.append(model_id)
+        self._refresh_model_position_in_a_queue(model_id=model_id)
         return super().preprocess(model_id, request)
 
     def describe_models(self) -> List[ModelDescription]:
@@ -192,6 +209,27 @@ class WithFixedSizeCache(ModelManagerDecorator):
         self, model_id: str, model_id_alias: Optional[str] = None
     ) -> str:
         return model_id if model_id_alias is None else model_id_alias
+
+    def _refresh_model_position_in_a_queue(self, model_id: str) -> None:
+        with acquire_with_timeout(
+            lock=self._queue_lock, timeout=HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT
+        ) as acquired:
+            if not acquired:
+                raise ModelManagerLockAcquisitionError(
+                    "Could not acquire lock on Model Manager state to refresh model position in active models queue."
+                )
+            self._safe_remove_model_from_queue(model_id=model_id)
+            self._key_queue.append(model_id)
+
+    def _safe_remove_model_from_queue(self, model_id: str) -> None:
+        try:
+            while model_id in self._key_queue:
+                self._key_queue.remove(model_id)
+        except ValueError:
+            logger.warning(
+                f"Could not successfully purge model {model_id} from  WithFixedSizeCache models queue - "
+                f"model id not found."
+            )
 
     def memory_pressure_detected(self) -> bool:
         return_boolean = False
