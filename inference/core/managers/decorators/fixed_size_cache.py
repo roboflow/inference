@@ -8,6 +8,7 @@ from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import (
     DISK_CACHE_CLEANUP,
+    HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT,
     MEMORY_FREE_THRESHOLD,
     MODELS_CACHE_AUTH_ENABLED,
 )
@@ -76,7 +77,9 @@ class WithFixedSizeCache(ModelManagerDecorator):
             return None
 
         logger.debug(f"Current capacity of ModelManager: {len(self)}/{self.max_size}")
-        with acquire_with_timeout(lock=self._queue_lock) as acquired:
+        with acquire_with_timeout(
+            lock=self._queue_lock, timeout=HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT
+        ) as acquired:
             if not acquired:
                 raise ModelManagerLockAcquisitionError(
                     "Could not acquire lock on Model Manager state to add model from active models queue."
@@ -117,7 +120,9 @@ class WithFixedSizeCache(ModelManagerDecorator):
             logger.debug(
                 f"Could not initialise model {queue_id}. Removing from WithFixedSizeCache models queue."
             )
-            with acquire_with_timeout(lock=self._queue_lock) as acquired:
+            with acquire_with_timeout(
+                lock=self._queue_lock, timeout=HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT
+            ) as acquired:
                 if not acquired:
                     raise ModelManagerLockAcquisitionError(
                         "Could not acquire lock on Model Manager state to remove model from active models queue."
@@ -131,7 +136,9 @@ class WithFixedSizeCache(ModelManagerDecorator):
             self.remove(model_id)
 
     def remove(self, model_id: str, delete_from_disk: bool = True) -> Model:
-        with acquire_with_timeout(lock=self._queue_lock) as acquired:
+        with acquire_with_timeout(
+            lock=self._queue_lock, timeout=HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT
+        ) as acquired:
             if not acquired:
                 raise ModelManagerLockAcquisitionError(
                     "Could not acquire lock on Model Manager state to remove model from active models queue."
@@ -204,7 +211,9 @@ class WithFixedSizeCache(ModelManagerDecorator):
         return model_id if model_id_alias is None else model_id_alias
 
     def _refresh_model_position_in_a_queue(self, model_id: str) -> None:
-        with acquire_with_timeout(lock=self._queue_lock) as acquired:
+        with acquire_with_timeout(
+            lock=self._queue_lock, timeout=HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT
+        ) as acquired:
             if not acquired:
                 raise ModelManagerLockAcquisitionError(
                     "Could not acquire lock on Model Manager state to refresh model position in active models queue."
