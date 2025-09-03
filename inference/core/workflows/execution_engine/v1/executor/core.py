@@ -4,7 +4,10 @@ from functools import partial
 from typing import Any, Callable, Dict, List, Optional, Set
 
 from inference.core import logger
-from inference.core.exceptions import ModelManagerLockAcquisitionError, InferenceModelNotFound
+from inference.core.exceptions import (
+    InferenceModelNotFound,
+    ModelManagerLockAcquisitionError,
+)
 from inference.core.workflows.errors import (
     ExecutionEngineRuntimeError,
     StepExecutionError,
