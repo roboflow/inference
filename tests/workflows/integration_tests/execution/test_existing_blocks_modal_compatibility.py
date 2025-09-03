@@ -2,17 +2,23 @@
 Test existing dynamic Python blocks with Modal execution.
 
 This test file ensures that dynamic blocks work correctly when executed via Modal.
+
+To run these tests:
+1. Set Modal credentials in environment:
+   export MODAL_TOKEN_ID="your_token_id"
+   export MODAL_TOKEN_SECRET="your_token_secret"
+2. Run: pytest tests/workflows/integration_tests/execution/test_existing_blocks_modal_compatibility.py
 """
 
 import os
+import subprocess
+import sys
 import time
-from unittest import mock
 
 import numpy as np
 import pytest
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
-from inference.core.workflows.execution_engine.core import ExecutionEngine
 
 
 # Skip all tests if Modal credentials are not present
@@ -20,6 +26,80 @@ MODAL_TOKEN_ID = os.getenv("MODAL_TOKEN_ID")
 MODAL_TOKEN_SECRET = os.getenv("MODAL_TOKEN_SECRET")
 SKIP_MODAL_TESTS = not (MODAL_TOKEN_ID and MODAL_TOKEN_SECRET)
 SKIP_REASON = "Modal credentials not present (MODAL_TOKEN_ID and MODAL_TOKEN_SECRET)"
+
+
+def run_workflow_in_subprocess(workflow: dict, runtime_params: dict, execution_mode: str) -> any:
+    """Run a workflow in a subprocess with specific execution mode."""
+    import json
+    import tempfile
+    
+    # Create a temporary Python script that runs the workflow
+    script = f"""
+import os
+import sys
+import json
+
+# Set execution mode BEFORE imports
+os.environ["WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE"] = "{execution_mode}"
+
+# Now import
+from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.workflows.execution_engine.core import ExecutionEngine
+
+workflow = {json.dumps(workflow)}
+runtime_params = {json.dumps(runtime_params)}
+
+engine = ExecutionEngine.init(
+    workflow_definition=workflow,
+    init_parameters={{}},
+    max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+)
+
+result = engine.run(runtime_parameters=runtime_params)
+
+# Output as JSON for parsing
+import json
+print("RESULT_START")
+print(json.dumps(result))
+print("RESULT_END")
+"""
+    
+    # Write script to temp file
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+        f.write(script)
+        temp_file = f.name
+    
+    try:
+        # Run the script in a subprocess with clean environment
+        env = os.environ.copy()
+        if execution_mode == "modal":
+            # Ensure Modal credentials are passed
+            if not MODAL_TOKEN_ID or not MODAL_TOKEN_SECRET:
+                raise ValueError("Modal credentials not found in environment")
+            env["MODAL_TOKEN_ID"] = MODAL_TOKEN_ID
+            env["MODAL_TOKEN_SECRET"] = MODAL_TOKEN_SECRET
+        
+        result = subprocess.run(
+            [sys.executable, temp_file],
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=60
+        )
+        
+        if result.returncode != 0:
+            raise RuntimeError(f"Subprocess failed: {result.stderr}")
+        
+        # Extract JSON result from output
+        output = result.stdout
+        if "RESULT_START" in output and "RESULT_END" in output:
+            json_str = output.split("RESULT_START")[1].split("RESULT_END")[0].strip()
+            return json.loads(json_str)
+        else:
+            raise RuntimeError(f"Could not parse result from output: {output}")
+            
+    finally:
+        os.unlink(temp_file)
 
 
 @pytest.mark.skipif(SKIP_MODAL_TESTS, reason=SKIP_REASON)
@@ -103,29 +183,14 @@ def run(self, numbers: list) -> BlockResult:
         }
         
         test_numbers = [2, 3, 4, 5]
+        runtime_params = {"numbers": test_numbers}
         
         # Test with local execution
-        with mock.patch.dict(os.environ, {"WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": "local"}):
-            local_engine = ExecutionEngine.init(
-                workflow_definition=workflow,
-                init_parameters={},
-                max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
-            )
-            local_result = local_engine.run(
-                runtime_parameters={"numbers": test_numbers}
-            )
-
+        local_result = run_workflow_in_subprocess(workflow, runtime_params, "local")
+        
         # Test with Modal execution
-        with mock.patch.dict(os.environ, {"WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": "modal"}):
-            modal_engine = ExecutionEngine.init(
-                workflow_definition=workflow,
-                init_parameters={},
-                max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
-            )
-            modal_result = modal_engine.run(
-                runtime_parameters={"numbers": test_numbers}
-            )
-
+        modal_result = run_workflow_in_subprocess(workflow, runtime_params, "modal")
+        
         # Compare results
         assert local_result[0]["sum"] == modal_result[0]["sum"] == 14
         assert local_result[0]["product"] == modal_result[0]["product"] == 120
@@ -219,28 +284,14 @@ def run(self, text: str, operation: str) -> BlockResult:
         
         # Test different operations
         for operation in ["reverse", "uppercase", "lowercase", "title"]:
+            runtime_params = {"text": test_text, "operation": operation}
+            
             # Test with local execution
-            with mock.patch.dict(os.environ, {"WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": "local"}):
-                local_engine = ExecutionEngine.init(
-                    workflow_definition=workflow,
-                    init_parameters={},
-                    max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
-                )
-                local_result = local_engine.run(
-                    runtime_parameters={"text": test_text, "operation": operation}
-                )
-
+            local_result = run_workflow_in_subprocess(workflow, runtime_params, "local")
+            
             # Test with Modal execution
-            with mock.patch.dict(os.environ, {"WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": "modal"}):
-                modal_engine = ExecutionEngine.init(
-                    workflow_definition=workflow,
-                    init_parameters={},
-                    max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
-                )
-                modal_result = modal_engine.run(
-                    runtime_parameters={"text": test_text, "operation": operation}
-                )
-
+            modal_result = run_workflow_in_subprocess(workflow, runtime_params, "modal")
+            
             # Compare results
             assert local_result[0]["result"] == modal_result[0]["result"]
             assert local_result[0]["length"] == modal_result[0]["length"]
@@ -316,34 +367,17 @@ def run(self, iterations: int) -> BlockResult:
     }
     
     iterations = 100000
+    runtime_params = {"iterations": iterations}
     
     # Measure local execution time
-    with mock.patch.dict(os.environ, {"WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": "local"}):
-        local_engine = ExecutionEngine.init(
-            workflow_definition=workflow,
-            init_parameters={},
-            max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
-        )
-        
-        local_start = time.time()
-        local_result = local_engine.run(
-            runtime_parameters={"iterations": iterations}
-        )
-        local_total = time.time() - local_start
+    local_start = time.time()
+    local_result = run_workflow_in_subprocess(workflow, runtime_params, "local")
+    local_total = time.time() - local_start
     
     # Measure Modal execution time
-    with mock.patch.dict(os.environ, {"WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": "modal"}):
-        modal_engine = ExecutionEngine.init(
-            workflow_definition=workflow,
-            init_parameters={},
-            max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
-        )
-        
-        modal_start = time.time()
-        modal_result = modal_engine.run(
-            runtime_parameters={"iterations": iterations}
-        )
-        modal_total = time.time() - modal_start
+    modal_start = time.time()
+    modal_result = run_workflow_in_subprocess(workflow, runtime_params, "modal")
+    modal_total = time.time() - modal_start
     
     # Verify results match
     assert local_result[0]["result"] == modal_result[0]["result"]
@@ -357,3 +391,105 @@ def run(self, iterations: int) -> BlockResult:
     # Modal will have overhead due to network and containerization
     # But computation results should be identical
     assert local_result[0]["result"] == modal_result[0]["result"]
+
+
+@pytest.mark.skipif(SKIP_MODAL_TESTS, reason=SKIP_REASON)
+def test_actual_modal_execution() -> None:
+    """Verify that Modal is actually being executed remotely."""
+    
+    verification_block = """
+def run(self, x: int) -> BlockResult:
+    import os
+    import socket
+    
+    # These will be different in Modal vs local
+    hostname = socket.gethostname()
+    task_id = os.environ.get('MODAL_TASK_ID', 'LOCAL')
+    
+    return {
+        "result": x * 2,
+        "hostname": hostname,
+        "task_id": task_id
+    }
+"""
+    
+    workflow = {
+        "version": "1.0",
+        "inputs": [
+            {"type": "WorkflowParameter", "name": "x"},
+        ],
+        "dynamic_blocks_definitions": [
+            {
+                "type": "DynamicBlockDefinition",
+                "manifest": {
+                    "type": "ManifestDescription",
+                    "block_type": "VerifyModal",
+                    "inputs": {
+                        "x": {
+                            "type": "DynamicInputDefinition",
+                            "selector_types": ["input_parameter"],
+                        },
+                    },
+                    "outputs": {
+                        "result": {"type": "DynamicOutputDefinition", "kind": []},
+                        "hostname": {"type": "DynamicOutputDefinition", "kind": []},
+                        "task_id": {"type": "DynamicOutputDefinition", "kind": []},
+                    },
+                },
+                "code": {
+                    "type": "PythonCode",
+                    "run_function_code": verification_block,
+                },
+            },
+        ],
+        "steps": [
+            {
+                "type": "VerifyModal",
+                "name": "verify",
+                "x": "$inputs.x",
+            },
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "result",
+                "selector": "$steps.verify.result",
+            },
+            {
+                "type": "JsonField",
+                "name": "hostname",
+                "selector": "$steps.verify.hostname",
+            },
+            {
+                "type": "JsonField",
+                "name": "task_id",
+                "selector": "$steps.verify.task_id",
+            },
+        ],
+    }
+    
+    runtime_params = {"x": 5}
+    
+    # Run locally
+    local_result = run_workflow_in_subprocess(workflow, runtime_params, "local")
+    
+    # Run in Modal
+    modal_result = run_workflow_in_subprocess(workflow, runtime_params, "modal")
+    
+    # Results should match
+    assert local_result[0]["result"] == modal_result[0]["result"] == 10
+    
+    # But execution contexts should be different
+    assert local_result[0]["task_id"] == "LOCAL"
+    assert modal_result[0]["task_id"] != "LOCAL"
+    assert modal_result[0]["task_id"].startswith("ta-")  # Modal task IDs start with ta-
+    
+    # Hostnames should be different
+    import socket
+    local_hostname = socket.gethostname()
+    assert modal_result[0]["hostname"] != local_hostname
+    
+    print(f"\n✅ Modal execution confirmed:")
+    print(f"  Local hostname: {local_hostname}")
+    print(f"  Modal hostname: {modal_result[0]['hostname']}")
+    print(f"  Modal task ID: {modal_result[0]['task_id']}")
