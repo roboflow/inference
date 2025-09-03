@@ -67,8 +67,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
             logger.debug(
                 f"Detected {queue_id} in WithFixedSizeCache models queue -> marking as most recently used."
             )
-            self._key_queue.remove(queue_id)
-            self._key_queue.append(queue_id)
+            self._refresh_model_position_in_a_queue(model_id=queue_id)
             return None
 
         logger.debug(f"Current capacity of ModelManager: {len(self)}/{self.max_size}")
@@ -87,7 +86,10 @@ class WithFixedSizeCache(ModelManagerDecorator):
                         MEMORY_FREE_THRESHOLD,
                     )
                     break
-                to_remove_model_id = self._key_queue.popleft()
+                try:
+                    to_remove_model_id = self._key_queue.popleft()
+                except IndexError:
+                    break
                 super().remove(
                     to_remove_model_id, delete_from_disk=DISK_CACHE_CLEANUP
                 )  # LRU model overflow cleanup may or maynot need the weights removed from disk
@@ -108,7 +110,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
             logger.debug(
                 f"Could not initialise model {queue_id}. Removing from WithFixedSizeCache models queue."
             )
-            self._key_queue.remove(queue_id)
+            self._safe_remove_model_from_queue(queue_id)
             raise error
 
     def clear(self) -> None:
@@ -117,12 +119,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
             self.remove(model_id)
 
     def remove(self, model_id: str, delete_from_disk: bool = True) -> Model:
-        try:
-            self._key_queue.remove(model_id)
-        except ValueError:
-            logger.warning(
-                f"Could not successfully purge model {model_id} from  WithFixedSizeCache models queue"
-            )
+        self._safe_remove_model_from_queue(model_id=model_id)
         return super().remove(model_id, delete_from_disk=delete_from_disk)
 
     async def infer_from_request(
@@ -137,8 +134,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
         Returns:
             InferenceResponse: The response from the inference.
         """
-        self._key_queue.remove(model_id)
-        self._key_queue.append(model_id)
+        self._refresh_model_position_in_a_queue(model_id=model_id)
         return await super().infer_from_request(model_id, request, **kwargs)
 
     def infer_from_request_sync(
@@ -153,8 +149,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
         Returns:
             InferenceResponse: The response from the inference.
         """
-        self._key_queue.remove(model_id)
-        self._key_queue.append(model_id)
+        self._refresh_model_position_in_a_queue(model_id=model_id)
         return super().infer_from_request_sync(model_id, request, **kwargs)
 
     def infer_only(self, model_id: str, request, img_in, img_dims, batch_size=None):
@@ -170,8 +165,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
         Returns:
             Response from the inference-only operation.
         """
-        self._key_queue.remove(model_id)
-        self._key_queue.append(model_id)
+        self._refresh_model_position_in_a_queue(model_id=model_id)
         return super().infer_only(model_id, request, img_in, img_dims, batch_size)
 
     def preprocess(self, model_id: str, request):
@@ -181,8 +175,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
             model_id (str): The identifier of the model.
             request (InferenceRequest): The request to preprocess.
         """
-        self._key_queue.remove(model_id)
-        self._key_queue.append(model_id)
+        self._refresh_model_position_in_a_queue(model_id=model_id)
         return super().preprocess(model_id, request)
 
     def describe_models(self) -> List[ModelDescription]:
@@ -192,6 +185,20 @@ class WithFixedSizeCache(ModelManagerDecorator):
         self, model_id: str, model_id_alias: Optional[str] = None
     ) -> str:
         return model_id if model_id_alias is None else model_id_alias
+
+    def _refresh_model_position_in_a_queue(self, model_id: str) -> None:
+        self._safe_remove_model_from_queue(model_id=model_id)
+        self._key_queue.append(model_id)
+
+    def _safe_remove_model_from_queue(self, model_id: str) -> None:
+        try:
+            while model_id in self._key_queue:
+                self._key_queue.remove(model_id)
+        except ValueError:
+            logger.warning(
+                f"Could not successfully purge model {model_id} from  WithFixedSizeCache models queue - "
+                f"model id not found."
+            )
 
     def memory_pressure_detected(self) -> bool:
         return_boolean = False
