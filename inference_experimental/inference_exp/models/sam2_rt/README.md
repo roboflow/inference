@@ -17,10 +17,10 @@ while True:
     if not is_ok:
         break
     if f_num == 0:
-        ids, masks = model(frame, [(477, 337, 560, 529)])
+        ids, masks, state_dict = model.prompt(frame, [(477, 337, 560, 529)])
         f_num += 1
     else:
-        ids, masks = model(frame)
+        ids, masks, state_dict = model.track(frame, state_dict)
 
     detections = sv.Detections(
         xyxy=sv.mask_to_xyxy(masks=masks),
