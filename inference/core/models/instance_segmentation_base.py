@@ -108,6 +108,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
             max_detections=max_detections,
             return_image_dims=return_image_dims,
             tradeoff_factor=tradeoff_factor,
+            **kwargs,
         )
 
     def postprocess(
