@@ -74,7 +74,7 @@ class SAM2ForInstanceSegmentationPyTorch:
         if len(masks.shape) == 2:
             masks = np.expand_dims(masks, axis=0)
         object_ids = np.array(object_ids)
-        return object_ids, masks, self._predictor.state_dict()
+        return masks, object_ids, self._predictor.state_dict()
 
     def track(
         self,
@@ -88,4 +88,4 @@ class SAM2ForInstanceSegmentationPyTorch:
         if len(masks.shape) == 2:
             masks = np.expand_dims(masks, axis=0)
         object_ids = np.array(object_ids)
-        return object_ids, masks, self._predictor.state_dict()
+        return masks, object_ids, self._predictor.state_dict()

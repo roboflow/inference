@@ -1,5 +1,7 @@
 This model is taking advantage of [Segment Anything 2 Real Time fork](https://github.com/Gy920/segment-anything-2-real-time)
 
+# Tracking
+
 ```python
 import cv2 as cv
 import supervision as sv
@@ -32,4 +34,36 @@ while True:
 
     cv.imshow("", annotated_frame)
     cv.waitKey(1)
+```
+
+# Instance segmentation
+
+```python
+import cv2 as cv
+import supervision as sv
+
+from inference_exp import AutoModel
+
+
+model = AutoModel.from_pretrained("sam2-rt-hiera-tiny")
+
+mask_annotator = sv.MaskAnnotator()
+box_annotator = sv.BoxAnnotator(color=sv.Color.BLACK)
+
+# Download from https://media.roboflow.com/inference/sam2/hand.png
+img = cv.imread("G/hand.png")
+masks, *_ = model.prompt(img, [(117, 303, 670, 650)])
+classes = np.array([0 for _ in masks])
+
+detections = sv.Detections(
+    xyxy=sv.mask_to_xyxy(masks=masks),
+    mask=masks,
+    class_id=classes,
+)
+
+annotated_frame = mask_annotator.annotate(scene=img, detections=detections)
+annotated_frame = box_annotator.annotate(scene=annotated_frame, detections=detections)
+
+cv.imshow("", annotated_frame)
+cv.waitKey(0)
 ```
