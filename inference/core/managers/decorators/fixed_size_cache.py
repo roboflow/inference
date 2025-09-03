@@ -12,8 +12,8 @@ from inference.core.env import (
     MODELS_CACHE_AUTH_ENABLED,
 )
 from inference.core.exceptions import (
-    RoboflowAPINotAuthorizedError,
     ModelManagerLockAcquisitionError,
+    RoboflowAPINotAuthorizedError,
 )
 from inference.core.managers.base import Model, ModelManager, acquire_with_timeout
 from inference.core.managers.decorators.base import ModelManagerDecorator
