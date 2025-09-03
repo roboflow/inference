@@ -47,34 +47,45 @@ class SAM2ForInstanceSegmentationPyTorch:
         self._predictor = predictor
         self._device = device
 
-    def __call__(
+    def prompt(
         self,
         image: np.ndarray,
-        prompts: Optional[List[List[Tuple[int, int, int, int]]]] = None,
-    ) -> Tuple:
-        with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
-            if prompts:
-                self._predictor.load_first_frame(image)
+        prompts: List[List[Tuple[int, int, int, int]]],
+        state_dict: Optional[dict] = None,
+    ) -> tuple:
+        self._predictor.load_first_frame(image)
+        if state_dict is not None:
+            self._predictor.load_state_dict(state_dict)
+        for i, pts in enumerate(prompts):
+            if len(pts) < 4:
+                continue
+            x1, y1, x2, y2 = pts[:4]
+            x_lt = int(round(min(x1, x2)))
+            y_lt = int(round(min(y1, y2)))
+            x_rb = int(round(max(x1, x2)))
+            y_rb = int(round(max(y1, y2)))
+            xyxy = np.array([[x_lt, y_lt, x_rb, y_rb]])
 
-                for i, pts in enumerate(prompts):
-                    if len(pts) < 4:
-                        continue
-                    x1, y1, x2, y2 = pts[:4]
-                    x_lt = int(round(min(x1, x2)))
-                    y_lt = int(round(min(y1, y2)))
-                    x_rt = int(round(max(x1, x2)))
-                    y_rt = int(round(max(y1, y2)))
-                    xyxy = np.array([[x_lt, y_lt, x_rt, y_rt]])
+            _, object_ids, mask_logits = self._predictor.add_new_prompt(
+                frame_idx=0, obj_id=i, bbox=xyxy
+            )
+        masks = (mask_logits > 0.0).cpu().numpy()
+        masks = np.squeeze(masks).astype(bool)
+        if len(masks.shape) == 2:
+            masks = np.expand_dims(masks, axis=0)
+        object_ids = np.array(object_ids)
+        return object_ids, masks, self._predictor.state_dict()
 
-                    _, object_ids, mask_logits = self._predictor.add_new_prompt(
-                        frame_idx=0, obj_id=i, bbox=xyxy
-                    )
-            else:
-                object_ids, mask_logits = self._predictor.track(image)
-
-            masks = (mask_logits > 0.0).cpu().numpy()
-            masks = np.squeeze(masks).astype(bool)
-            if len(masks.shape) == 2:
-                masks = np.expand_dims(masks, axis=0)
-            object_ids = np.array(object_ids)
-            return object_ids, masks
+    def track(
+        self,
+        image: np.ndarray,
+        state_dict: dict,
+    ) -> tuple:
+        self._predictor.load_state_dict(state_dict)
+        object_ids, mask_logits = self._predictor.track(image)
+        masks = (mask_logits > 0.0).cpu().numpy()
+        masks = np.squeeze(masks).astype(bool)
+        if len(masks.shape) == 2:
+            masks = np.expand_dims(masks, axis=0)
+        object_ids = np.array(object_ids)
+        return object_ids, masks, self._predictor.state_dict()
