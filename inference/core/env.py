@@ -348,6 +348,12 @@ NOTEBOOK_PASSWORD = os.getenv("NOTEBOOK_PASSWORD", "roboflow")
 # Jupyter notebook port, default is 9002
 NOTEBOOK_PORT = int(os.getenv("NOTEBOOK_PORT", 9002))
 
+# Enable in-memory logs, default is False
+ENABLE_IN_MEMORY_LOGS = str2bool(os.getenv("ENABLE_IN_MEMORY_LOGS", False))
+
+# Enable dashboard page
+ENABLE_DASHBOARD = str2bool(os.getenv("ENABLE_DASHBOARD", False))
+
 # Number of workers, default is 1
 NUM_WORKERS = int(os.getenv("NUM_WORKERS", 1))
 
@@ -617,3 +623,4 @@ except:
 
 # Cache metadata lock timeout in seconds, default is 1.0
 CACHE_METADATA_LOCK_TIMEOUT = float(os.getenv("CACHE_METADATA_LOCK_TIMEOUT", 1.0))
+MODEL_LOCK_ACQUIRE_TIMEOUT = float(os.getenv("MODEL_LOCK_ACQUIRE_TIMEOUT", "60.0"))
