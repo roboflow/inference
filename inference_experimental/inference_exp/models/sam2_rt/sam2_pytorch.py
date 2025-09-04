@@ -4,7 +4,7 @@ from typing import List, Optional, Tuple, Union
 import numpy as np
 import torch
 from inference_exp.configuration import DEFAULT_DEVICE
-from inference_exp.errors import MissingDependencyError
+from inference_exp.errors import MissingDependencyError, ModelRuntimeError
 from inference_exp.models.common.model_packages import get_model_package_contents
 
 try:
@@ -87,6 +87,8 @@ class SAM2ForStream:
             image = image.detach().cpu().numpy()
         if state_dict is not None:
             self._predictor.load_state_dict(state_dict)
+        if not self._predictor.condition_state:
+            raise ModelRuntimeError("Attempt to track with no prior call to prompt; prompt must be called first")
         object_ids, mask_logits = self._predictor.track(image)
         masks = (mask_logits > 0.0).cpu().numpy()
         masks = np.squeeze(masks).astype(bool)
