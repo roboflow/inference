@@ -162,7 +162,7 @@ def main():
     
     if not MODAL_INSTALLED:
         print("ERROR: Modal is not installed")
-        print("Please install with: pip install modal")
+        print("Please install with: pip install rfmodal")
         sys.exit(1)
     
     if not app:
