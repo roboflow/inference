@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -50,7 +50,7 @@ class SAM2ForInstanceSegmentationPyTorch:
     def prompt(
         self,
         image: Union[np.ndarray, torch.Tensor],
-        prompts: List[List[Tuple[int, int, int, int]]],
+        prompts: List[Tuple[int, int, int, int]],
         state_dict: Optional[dict] = None,
     ) -> tuple:
         if isinstance(image, torch.Tensor):
