@@ -1,4 +1,5 @@
 import type { Config } from 'tailwindcss'
+import colors from 'tailwindcss/colors'
 
 const config: Config = {
   content: [
@@ -8,6 +9,14 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      colors: {
+        primary: colors.violet,
+        accent: {
+          purple: '#A351FB',
+          'purple-light': '#8B5CF6',
+          'purple-dark': '#7C3AED',
+        }
+      },
       backgroundImage: {
         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
         'gradient-conic':

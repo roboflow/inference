@@ -1516,6 +1516,7 @@ def list_ingest_details(
     batch_id: str,
     api_key: str,
     output_file: Optional[str] = None,
+    page_size: Optional[int] = None,
 ) -> None:
     workspace = get_workspace(api_key=api_key)
     if output_file:
@@ -1527,6 +1528,7 @@ def list_ingest_details(
         workspace=workspace,
         batch_id=batch_id,
         api_key=api_key,
+        page_size=page_size,
     ):
         on_new_metadata(shard_details)
 

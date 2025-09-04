@@ -124,6 +124,14 @@ influencing the processing for all elements in the batch and this type of data w
     the reference images remain unchanged as you process each input. Thus, the reference images are considered 
     *scalar* data, while the list of input images is *batch-oriented*.
 
+    **Great news!**
+    
+    Since Execution Engine `v1.6.0`, the practical aspects of dealing with *scalars* and *batches* are offloaded to 
+    the Execution Engine (refer to [changelog](./execution_engine_changelog.md) for more details). As a block 
+    developer, it is still important to understand the difference, but when building blocks you are not forced to 
+    think about the nuances that much.
+
+
 To illustrate the distinction, Workflow definitions hold inputs of the two categories:
 
 - **Scalar inputs** - like `WorkflowParameter`
@@ -355,6 +363,16 @@ is different from two - it will turn `classifier_predictions` in first dictionar
 execution excludes steps at higher `dimensionality levels` from producing outputs as a side effect of execution - 
 output field selecting that values will be presented as nested list of empty lists, with depth matching  
 `dimensionality level - 1` of referred output.
+
+Since Execution Engine `v1.6.0`, blocks within a workflow may collapse batches into scalars, as well as create new 
+batches from scalar inputs. The first scenario is pretty easy to understand - each dictionary in the output list will 
+simply be populated with the same scalar value. The case of *emergent* batch is slightly more complicated. 
+In such case we can find batch at dimensionality level 1, which has shape or elements order not compliant 
+with input batches. To prevent semantic ambiguity, we treat such batch as if it's dimensionality is one level higher
+(as if **there is additional batch-oriented input of size one attached to the input of the block creating batch 
+dynamically**). Such virtually nested outputs are broadcast, such that each dictionary in the output list will be given 
+new key with the same nested output. This nesting property is preserved even if there is no input-derived outputs 
+for given workflow - in such case, output is a list of size 1 which contains dictionary with nested output.
 
 Some outputs would require serialisation when Workflows Execution Engine runs behind HTTP API. We use the following
 serialisation strategies:

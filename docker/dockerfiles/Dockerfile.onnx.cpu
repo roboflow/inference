@@ -1,4 +1,4 @@
-FROM python:3.9 as base
+FROM python:3.9-bookworm as base
 
 ARG DEBIAN_FRONTEND=noninteractive
 
@@ -19,7 +19,6 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.cpu.txt \
     requirements/requirements.vino.txt \
     requirements/requirements.http.txt \
-    requirements/requirements.waf.txt \
     requirements/requirements.gaze.txt \
     requirements/requirements.doctr.txt \
     requirements/requirements.groundingdino.txt \
@@ -35,7 +34,6 @@ RUN pip3 install \
     -r requirements.clip.txt \
     -r requirements.cpu.txt \
     -r requirements.http.txt \
-    -r requirements.waf.txt \
     -r requirements.gaze.txt \
     -r requirements.doctr.txt \
     -r requirements.groundingdino.txt \

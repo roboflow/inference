@@ -10,6 +10,14 @@ import classNames from "classnames";
 export default function Home() {
   // Will use when we add links to in progress example page
   // const [page, setPage] = React.useState("landing");
+  const [dashboardAvailable, setDashboardAvailable] = React.useState(false);
+
+  React.useEffect(() => {
+    fetch("/dashboard.html", { method: "HEAD", cache: "no-store" })
+      .then((res) => setDashboardAvailable(res.ok))
+      .catch(() => setDashboardAvailable(false));
+    return () => {};
+  }, []);
   return (
     <main className="flex min-h-screen flex-col items-stretch gap-0">
       <div
@@ -95,6 +103,20 @@ export default function Home() {
               label="Train your own custom models"
               icon="💫"
             />
+          </div>
+          {/* Dedicated row for Dashboard link with fixed height to avoid layout shift */}
+          <div className="w-full flex items-center justify-center px-6 mt-2">
+            <div className="h-12 flex items-center justify-center">
+              {dashboardAvailable && (
+                <HeaderLink
+                  href="/dashboard.html"
+                  className=""
+                  label="View Server Dashboard"
+                  icon="📊"
+                  target="_top"
+                />
+              )}
+            </div>
           </div>
           <div className="text-base md:text-lg font-medium max-w-xl">
           

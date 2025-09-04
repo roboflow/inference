@@ -53,6 +53,10 @@ API_BASE_URL = os.getenv(
 # This is only expected to be used in Roboflow internal hosting environments.
 INTERNAL_WEIGHTS_URL_SUFFIX = os.getenv("INTERNAL_WEIGHTS_URL_SUFFIX", "")
 
+MD5_VERIFICATION_ENABLED = str2bool(os.getenv("MD5_VERIFICATION_ENABLED", False))
+
+ATOMIC_CACHE_WRITES_ENABLED = str2bool(os.getenv("ATOMIC_CACHE_WRITES_ENABLED", False))
+
 # Base URL for metrics collector
 METRICS_COLLECTOR_BASE_URL = os.getenv(
     "METRICS_COLLECTOR_BASE_URL",
@@ -344,6 +348,12 @@ NOTEBOOK_PASSWORD = os.getenv("NOTEBOOK_PASSWORD", "roboflow")
 # Jupyter notebook port, default is 9002
 NOTEBOOK_PORT = int(os.getenv("NOTEBOOK_PORT", 9002))
 
+# Enable in-memory logs, default is False
+ENABLE_IN_MEMORY_LOGS = str2bool(os.getenv("ENABLE_IN_MEMORY_LOGS", False))
+
+# Enable dashboard page
+ENABLE_DASHBOARD = str2bool(os.getenv("ENABLE_DASHBOARD", False))
+
 # Number of workers, default is 1
 NUM_WORKERS = int(os.getenv("NUM_WORKERS", 1))
 
@@ -613,3 +623,7 @@ except:
 
 # Cache metadata lock timeout in seconds, default is 1.0
 CACHE_METADATA_LOCK_TIMEOUT = float(os.getenv("CACHE_METADATA_LOCK_TIMEOUT", 1.0))
+MODEL_LOCK_ACQUIRE_TIMEOUT = float(os.getenv("MODEL_LOCK_ACQUIRE_TIMEOUT", "60.0"))
+HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT = float(
+    os.getenv("HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT", "5.0")
+)

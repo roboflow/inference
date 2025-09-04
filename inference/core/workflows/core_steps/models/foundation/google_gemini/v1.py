@@ -5,7 +5,7 @@ from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 import requests
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import ConfigDict, Field, field_validator, model_validator
 from requests import Response
 
 from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
@@ -37,6 +37,13 @@ from inference.core.workflows.prototypes.block import (
 GOOGLE_API_KEY_PATTERN = re.compile(r"key=(.[^&]*)")
 GOOGLE_API_KEY_VALUE_GROUP = 1
 MIN_KEY_LENGTH_TO_REVEAL_PREFIX = 8
+
+GEMINI_MODEL_ALIASES = {
+    "gemini-2.5-pro-preview-06-05": "gemini-2.5-pro",
+    "gemini-2.5-pro-preview-05-06": "gemini-2.5-pro",
+    "gemini-2.5-pro-preview-03-25": "gemini-2.5-pro",
+    "gemini-2.0-flash-exp": "gemini-2.0-flash",
+}
 
 SUPPORTED_TASK_TYPES_LIST = [
     "unconstrained",
@@ -174,17 +181,18 @@ class BlockManifest(WorkflowBlockManifest):
     model_version: Union[
         Selector(kind=[STRING_KIND]),
         Literal[
-            "gemini-2.0-flash-exp",
-            "gemini-1.5-flash",
-            "gemini-1.5-pro",
+            "gemini-2.5-pro",
+            "gemini-2.5-flash",
+            "gemini-2.5-flash-lite",
             "gemini-2.0-flash",
-            "gemini-2.5-pro-preview-05-06",
             "gemini-2.0-flash-lite",
+            "gemini-1.5-pro",
+            "gemini-1.5-flash",
         ],
     ] = Field(
         default="gemini-2.0-flash",
         description="Model to be used",
-        examples=["gemini-2.0-flash-exp", "$inputs.gemini_model"],
+        examples=["gemini-2.5-pro", "$inputs.gemini_model"],
     )
     max_tokens: int = Field(
         default=450,
@@ -203,6 +211,13 @@ class BlockManifest(WorkflowBlockManifest):
         "If not given - block defaults to value configured globally in Workflows Execution Engine. "
         "Please restrict if you hit Google Gemini API limits.",
     )
+
+    @field_validator("model_version", mode="before")
+    @classmethod
+    def validate_model_version(cls, value):
+        if isinstance(value, str) and value in GEMINI_MODEL_ALIASES:
+            return GEMINI_MODEL_ALIASES[value]
+        return value
 
     @model_validator(mode="after")
     def validate(self) -> "BlockManifest":

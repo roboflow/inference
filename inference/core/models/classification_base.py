@@ -185,9 +185,10 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
         )
 
     def predict(self, img_in: np.ndarray, **kwargs) -> Tuple[np.ndarray]:
-        predictions = run_session_via_iobinding(
-            self.onnx_session, self.input_name, img_in
-        )
+        with self._session_lock:
+            predictions = run_session_via_iobinding(
+                self.onnx_session, self.input_name, img_in
+            )
         return (predictions,)
 
     def preprocess(

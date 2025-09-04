@@ -555,6 +555,10 @@ def list_ingest_details(
             help="Flag enabling errors stack traces to be displayed (helpful for debugging)",
         ),
     ] = False,
+    page_size: Annotated[
+        Optional[int],
+        typer.Option("--page-size", help="Size of pagination page"),
+    ] = None,
 ) -> None:
     if api_key is None:
         api_key = ROBOFLOW_API_KEY
@@ -564,6 +568,7 @@ def list_ingest_details(
             batch_id=batch_id,
             api_key=api_key,
             output_file=output_file,
+            page_size=page_size,
         )
     except KeyboardInterrupt:
         print("Command interrupted.")
