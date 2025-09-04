@@ -6,6 +6,7 @@ import numpy as np
 from dataclasses_json import DataClassJsonMixin
 from PIL import Image
 
+from inference_sdk.config import WORKFLOW_RUN_RETRIES_ENABLED
 from inference_sdk.http.errors import ModelTaskTypeNotSupportedError
 from inference_sdk.http.utils.iterables import remove_empty_values
 
@@ -152,6 +153,7 @@ class InferenceConfiguration:
     source: Optional[str] = None
     source_info: Optional[str] = None
     profiling_directory: str = "./inference_profiling"
+    workflow_run_retries_enabled: bool = WORKFLOW_RUN_RETRIES_ENABLED
 
     @classmethod
     def init_default(cls) -> "InferenceConfiguration":

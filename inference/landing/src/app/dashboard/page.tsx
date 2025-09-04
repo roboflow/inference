@@ -6,11 +6,13 @@ import React, { useCallback } from "react";
 import { useServerData } from './hooks/useServerData';
 import { useModelsData } from './hooks/useModelsData';
 import { useMetricsData } from './hooks/useMetricsData';
+import { useLogsData } from './hooks/useLogsData';
 import { useAutoRefresh } from './hooks/useAutoRefresh';
 
 import { ServerStatusCard } from './components/ServerStatusCard';
 import { ModelsCard } from './components/ModelsCard';
 import { RequestStatsCard } from './components/RequestStatsCard';
+import { LogViewerCard } from './components/LogViewerCard';
 import { QuickActions } from './components/QuickActions';
 import { ErrorBanner } from './components/ErrorBanner';
 
@@ -32,13 +34,17 @@ export default function Dashboard() {
   const serverData = useServerData();
   const modelsData = useModelsData(); 
   const metricsData = useMetricsData();
+  const logsData = useLogsData();
 
   // Auto-refresh all data sources
   const refreshAll = useCallback(() => {
     serverData.refetch();
     modelsData.refetch();
     metricsData.refetch();
-  }, [serverData.refetch, modelsData.refetch, metricsData.refetch]);
+    if (logsData.logsAvailable) {
+      logsData.refetch();
+    }
+  }, [serverData.refetch, modelsData.refetch, metricsData.refetch, logsData.refetch, logsData.logsAvailable]);
   
   // Set up auto-refresh every 5 seconds
   useAutoRefresh(refreshAll, { interval: 5000 });
@@ -47,7 +53,8 @@ export default function Dashboard() {
   const allErrors = [
     ...(serverData.error ? [serverData.error] : []),
     ...(modelsData.error ? [modelsData.error] : []),
-    ...(metricsData.error ? [metricsData.error] : [])
+    ...(metricsData.error ? [metricsData.error] : []),
+    ...(logsData.error ? [logsData.error] : [])
   ];
   
   const isLoading = serverData.loading || modelsData.loading || metricsData.loading;
@@ -92,6 +99,17 @@ export default function Dashboard() {
             error={metricsData.error}
           />
         </div>
+
+        {/* Show log viewer only when logs are available */}
+        {logsData.logsAvailable && (
+          <div className="mt-8">
+            <LogViewerCard
+              logs={logsData.logs}
+              loading={logsData.loading}
+              error={logsData.error}
+            />
+          </div>
+        )}
       </div>
     </main>
   );
