@@ -156,12 +156,13 @@ class YOLONasForObjectDetectionOnnx(
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
         with self._session_thread_lock:
-            return run_session_with_batch_size_limit(
+            boxes, class_confs = run_session_with_batch_size_limit(
                 session=self._session,
-                inputs={"input.1": pre_processed_images},
+                inputs={"input": pre_processed_images},
                 min_batch_size=self._input_batch_size,
                 max_batch_size=self._input_batch_size,
-            )[0]
+            )
+            return torch.cat([boxes, class_confs], dim=-1)
 
     def post_process(
         self,
@@ -170,6 +171,7 @@ class YOLONasForObjectDetectionOnnx(
         conf_thresh: float = 0.25,
         iou_thresh: float = 0.45,
         max_detections: int = 100,
+        class_agnostic: bool = False,
         **kwargs,
     ) -> List[Detections]:
         nms_results = run_yolonas_nms_for_object_detection(
@@ -177,6 +179,7 @@ class YOLONasForObjectDetectionOnnx(
             conf_thresh=conf_thresh,
             iou_thresh=iou_thresh,
             max_detections=max_detections,
+            class_agnostic=class_agnostic,
         )
         rescaled_results = rescale_detections(
             detections=nms_results,

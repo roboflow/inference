@@ -498,7 +498,6 @@ class RoboflowInferenceModel(Model):
             preprocessed_image = (
                 preprocessed_image.permute(2, 0, 1).unsqueeze(0).contiguous().float()
             )
-
         if self.resize_method == "Stretch to":
             if isinstance(preprocessed_image, np.ndarray):
                 preprocessed_image = preprocessed_image.astype(np.float32)

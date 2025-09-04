@@ -1,11 +1,11 @@
-from typing import List, Optional, Union
 import os
+from typing import List, Optional, Union
 
 import numpy as np
 import torch
-from peft import PeftModel
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
+from peft import PeftModel
 from transformers import AutoModelForImageTextToText, AutoProcessor
 
 
