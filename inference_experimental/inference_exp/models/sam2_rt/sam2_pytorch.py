@@ -49,10 +49,12 @@ class SAM2ForInstanceSegmentationPyTorch:
 
     def prompt(
         self,
-        image: np.ndarray,
+        image: Union[np.ndarray, torch.Tensor],
         prompts: List[List[Tuple[int, int, int, int]]],
         state_dict: Optional[dict] = None,
     ) -> tuple:
+        if isinstance(image, torch.Tensor):
+            image = image.detach().cpu().numpy()
         self._predictor.load_first_frame(image)
         if state_dict is not None:
             self._predictor.load_state_dict(state_dict)
@@ -78,9 +80,11 @@ class SAM2ForInstanceSegmentationPyTorch:
 
     def track(
         self,
-        image: np.ndarray,
+        image: Union[np.ndarray, torch.Tensor],
         state_dict: dict,
     ) -> tuple:
+        if isinstance(image, torch.Tensor):
+            image = image.detach().cpu().numpy()
         self._predictor.load_state_dict(state_dict)
         object_ids, mask_logits = self._predictor.track(image)
         masks = (mask_logits > 0.0).cpu().numpy()
