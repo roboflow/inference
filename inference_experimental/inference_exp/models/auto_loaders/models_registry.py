@@ -159,7 +159,7 @@ REGISTERED_MODELS: Dict[Tuple[ModelArchitecture, TaskType, BackendType], LazyCla
     ),
     ("segment-anything-2-rt", INSTANCE_SEGMENTATION_TASK, BackendType.TORCH): LazyClass(
         module_name="inference_exp.models.sam2_rt.sam2_pytorch",
-        class_name="SAM2ForInstanceSegmentationPyTorch",
+        class_name="SAM2ForStream",
     ),
 }
 

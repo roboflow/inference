@@ -16,14 +16,14 @@ except ImportError as import_error:
     ) from import_error
 
 
-class SAM2ForInstanceSegmentationPyTorch:
+class SAM2ForStream:
     @classmethod
     def from_pretrained(
         cls,
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
         **kwargs,
-    ) -> "SAM2ForInstanceSegmentationPyTorch":
+    ) -> "SAM2ForStream":
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
             elements=[
@@ -81,11 +81,12 @@ class SAM2ForInstanceSegmentationPyTorch:
     def track(
         self,
         image: Union[np.ndarray, torch.Tensor],
-        state_dict: dict,
+        state_dict: Optional[dict] = None,
     ) -> tuple:
         if isinstance(image, torch.Tensor):
             image = image.detach().cpu().numpy()
-        self._predictor.load_state_dict(state_dict)
+        if state_dict is not None:
+            self._predictor.load_state_dict(state_dict)
         object_ids, mask_logits = self._predictor.track(image)
         masks = (mask_logits > 0.0).cpu().numpy()
         masks = np.squeeze(masks).astype(bool)
