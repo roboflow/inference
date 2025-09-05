@@ -1,7 +1,7 @@
-import os
-from typing import List, Optional, Union
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
+import timm
 import torch
 from inference_exp import (
     ClassificationModel,
@@ -23,31 +23,23 @@ from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
 from torch import nn
-from transformers import ViTModel
 
 
-class VITClassifier(nn.Module):
+class ResNetClassifier(nn.Module):
 
-    def __init__(
-        self,
-        backbone: nn.Module,
-        classifier: nn.Module,
-        softmax_fused: bool,
-    ):
+    def __init__(self, backbone: nn.Module, softmax_fused: bool):
         super().__init__()
         self._backbone = backbone
-        self._classifier = classifier
-        self.softmax_fused = softmax_fused
+        self._softmax_fused = softmax_fused
 
-    def forward(self, pixel_values: torch.Tensor) -> torch.Tensor:
-        outputs = self._backbone(pixel_values=pixel_values)
-        logits = self._classifier(outputs.last_hidden_state[:, 0])
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        results = self._backbone(x)
         if not self._softmax_fused:
-            logits = torch.nn.functional.softmax(logits, dim=-1)
-        return logits
+            results = torch.nn.functional.softmax(results, dim=-1)
+        return results
 
 
-class VITForClassificationHF(ClassificationModel[torch.Tensor, torch.Tensor]):
+class ResNetClassificationTorch(ClassificationModel[torch.Tensor, torch.Tensor]):
 
     @classmethod
     def from_pretrained(
@@ -55,15 +47,13 @@ class VITForClassificationHF(ClassificationModel[torch.Tensor, torch.Tensor]):
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
         **kwargs,
-    ) -> "VITForClassificationHF":
+    ) -> "ResNetClassificationTorch":
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
             elements=[
                 "class_names.txt",
-                "classifier_layer_weights.pth",
                 "inference_config.json",
-                "vit/config.json",
-                "vit/model.safetensors",
+                "weights.pth",
             ],
         )
         class_names = parse_class_names_file(
@@ -76,7 +66,6 @@ class VITForClassificationHF(ClassificationModel[torch.Tensor, torch.Tensor]):
                 ResizeMode.LETTERBOX,
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
-                ResizeMode.FIT_LONGER_EDGE,
             },
         )
         if inference_config.model_initialization is None:
@@ -85,37 +74,39 @@ class VITForClassificationHF(ClassificationModel[torch.Tensor, torch.Tensor]):
                 help_url="https://todo",
             )
         num_classes = inference_config.model_initialization.get("num_classes")
+        model_name = inference_config.model_initialization.get("model_name")
         if not isinstance(num_classes, int):
             raise CorruptedModelPackageError(
                 message="Expected model initialization parameter `num_classes` not provided or in invalid format.",
                 help_url="https://todo",
             )
-        if inference_config.post_processing.type != "softmax":
+        if not isinstance(model_name, str):
             raise CorruptedModelPackageError(
-                message="Expected Softmax to be the post-processing",
+                message="Expected model initialization parameter `model_name` not provided or in invalid format.",
                 help_url="https://todo",
             )
-        backbone = ViTModel.from_pretrained(os.path.join(model_name_or_path, "vit")).to(
-            device
-        )
-        classifier = nn.Linear(backbone.config.hidden_size, num_classes).to(device)
-        classifier_state_dict = torch.load(
-            model_package_content["classifier_layer_weights.pth"],
+        if inference_config.post_processing.type != "softmax":
+            raise CorruptedModelPackageError(
+                message="Expected softmax to be the post-processing",
+                help_url="https://todo",
+            )
+        backbone = timm.create_model(
+            model_name,
+            pretrained=False,
+            num_classes=num_classes,
+        ).to(device)
+        state_dict = torch.load(
+            model_package_content["weights.pth"],
             weights_only=True,
             map_location=device,
         )
-        classifier.load_state_dict(classifier_state_dict)
-        model = (
-            VITClassifier(
-                backbone=backbone,
-                classifier=classifier,
-                softmax_fused=inference_config.post_processing.fused,
-            )
-            .to(device)
-            .eval()
-        )
+        backbone.load_state_dict(state_dict)
+        model = ResNetClassifier(
+            backbone=backbone,
+            softmax_fused=inference_config.post_processing.fused,
+        ).to(device)
         return cls(
-            model=model,
+            model=model.eval(),
             inference_config=inference_config,
             class_names=class_names,
             device=device,
@@ -123,7 +114,7 @@ class VITForClassificationHF(ClassificationModel[torch.Tensor, torch.Tensor]):
 
     def __init__(
         self,
-        model: VITClassifier,
+        model: ResNetClassifier,
         inference_config: InferenceConfig,
         class_names: List[str],
         device: torch.device,
@@ -141,6 +132,7 @@ class VITForClassificationHF(ClassificationModel[torch.Tensor, torch.Tensor]):
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
+        image_size: Optional[Tuple[int, int]] = None,
         **kwargs,
     ) -> torch.Tensor:
         return pre_process_network_input(
@@ -149,6 +141,7 @@ class VITForClassificationHF(ClassificationModel[torch.Tensor, torch.Tensor]):
             network_input=self._inference_config.network_input,
             target_device=self._device,
             input_color_format=input_color_format,
+            image_size_wh=image_size,
         )[0]
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
@@ -170,28 +163,21 @@ class VITForClassificationHF(ClassificationModel[torch.Tensor, torch.Tensor]):
         )
 
 
-class VITMultiLabelClassifier(nn.Module):
+class ResNetMultiLabelClassifier(nn.Module):
 
-    def __init__(
-        self,
-        backbone: nn.Module,
-        classifier: nn.Module,
-        sigmoid_fused: bool,
-    ):
+    def __init__(self, backbone: nn.Module, sigmoid_fused: bool):
         super().__init__()
         self._backbone = backbone
-        self._classifier = classifier
         self._sigmoid_fused = sigmoid_fused
 
-    def forward(self, pixel_values: torch.Tensor) -> torch.Tensor:
-        outputs = self._backbone(pixel_values=pixel_values)
-        logits = self._classifier(outputs.last_hidden_state[:, 0])
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        results = self._backbone(x)
         if not self._sigmoid_fused:
-            logits = torch.nn.functional.sigmoid(logits)
-        return logits
+            results = torch.nn.functional.sigmoid(results)
+        return results
 
 
-class VITForMultiLabelClassificationHF(
+class ResNetForMultiLabelClassificationTorch(
     MultiLabelClassificationModel[torch.Tensor, torch.Tensor]
 ):
 
@@ -199,18 +185,15 @@ class VITForMultiLabelClassificationHF(
     def from_pretrained(
         cls,
         model_name_or_path: str,
-        default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
         **kwargs,
-    ) -> "VITForMultiLabelClassificationHF":
+    ) -> "ResNetForMultiLabelClassificationTorch":
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
             elements=[
                 "class_names.txt",
-                "classifier_layer_weights.pth",
                 "inference_config.json",
-                "vit/config.json",
-                "vit/model.safetensors",
+                "weights.pth",
             ],
         )
         class_names = parse_class_names_file(
@@ -223,7 +206,6 @@ class VITForMultiLabelClassificationHF(
                 ResizeMode.LETTERBOX,
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
-                ResizeMode.FIT_LONGER_EDGE,
             },
         )
         if inference_config.model_initialization is None:
@@ -232,9 +214,15 @@ class VITForMultiLabelClassificationHF(
                 help_url="https://todo",
             )
         num_classes = inference_config.model_initialization.get("num_classes")
+        model_name = inference_config.model_initialization.get("model_name")
         if not isinstance(num_classes, int):
             raise CorruptedModelPackageError(
                 message="Expected model initialization parameter `num_classes` not provided or in invalid format.",
+                help_url="https://todo",
+            )
+        if not isinstance(model_name, str):
+            raise CorruptedModelPackageError(
+                message="Expected model initialization parameter `model_name` not provided or in invalid format.",
                 help_url="https://todo",
             )
         if inference_config.post_processing.type != "sigmoid":
@@ -242,27 +230,23 @@ class VITForMultiLabelClassificationHF(
                 message="Expected sigmoid to be the post-processing",
                 help_url="https://todo",
             )
-        backbone = ViTModel.from_pretrained(os.path.join(model_name_or_path, "vit")).to(
-            device
-        )
-        classifier = nn.Linear(backbone.config.hidden_size, num_classes).to(device)
-        classifier_state_dict = torch.load(
-            model_package_content["classifier_layer_weights.pth"],
+        backbone = timm.create_model(
+            model_name,
+            pretrained=False,
+            num_classes=num_classes,
+        ).to(device)
+        state_dict = torch.load(
+            model_package_content["weights.pth"],
             weights_only=True,
             map_location=device,
         )
-        classifier.load_state_dict(classifier_state_dict)
-        model = (
-            VITMultiLabelClassifier(
-                backbone=backbone,
-                classifier=classifier,
-                sigmoid_fused=inference_config.post_processing.fused,
-            )
-            .to(device)
-            .eval()
-        )
+        backbone.load_state_dict(state_dict)
+        model = ResNetMultiLabelClassifier(
+            backbone=backbone,
+            sigmoid_fused=inference_config.post_processing.fused,
+        ).to(device)
         return cls(
-            model=model,
+            model=model.eval(),
             inference_config=inference_config,
             class_names=class_names,
             device=device,
@@ -270,7 +254,7 @@ class VITForMultiLabelClassificationHF(
 
     def __init__(
         self,
-        model: VITMultiLabelClassifier,
+        model: ResNetMultiLabelClassifier,
         inference_config: InferenceConfig,
         class_names: List[str],
         device: torch.device,
@@ -288,6 +272,7 @@ class VITForMultiLabelClassificationHF(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
+        image_size: Optional[Tuple[int, int]] = None,
         **kwargs,
     ) -> torch.Tensor:
         return pre_process_network_input(
@@ -296,6 +281,7 @@ class VITForMultiLabelClassificationHF(
             network_input=self._inference_config.network_input,
             target_device=self._device,
             input_color_format=input_color_format,
+            image_size_wh=image_size,
         )[0]
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:

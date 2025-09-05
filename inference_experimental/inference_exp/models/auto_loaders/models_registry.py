@@ -195,6 +195,14 @@ REGISTERED_MODELS: Dict[
         module_name="inference_exp.models.resnet.resnet_classification_onnx",
         class_name="ResNetForMultiLabelClassificationOnnx",
     ),
+    ("resnet", CLASSIFICATION_TASK, BackendType.TORCH): LazyClass(
+        module_name="inference_exp.models.resnet.resnet_classification_torch",
+        class_name="ResNetClassificationTorch",
+    ),
+    ("resnet", MULTI_LABEL_CLASSIFICATION_TASK, BackendType.TORCH): LazyClass(
+        module_name="inference_exp.models.resnet.resnet_classification_torch",
+        class_name="ResNetForMultiLabelClassificationTorch",
+    ),
 }
 
 
