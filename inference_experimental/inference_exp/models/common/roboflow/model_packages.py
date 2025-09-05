@@ -2,12 +2,12 @@ import json
 from collections import namedtuple
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Literal, Optional, Set, Tuple, Union
+from typing import Annotated, List, Literal, Optional, Set, Tuple, Union
 
 from inference_exp.entities import ImageDimensions
 from inference_exp.errors import CorruptedModelPackageError
 from inference_exp.utils.file_system import read_json, stream_file_lines
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, BeforeValidator, Field, ValidationError
 
 
 def parse_class_names_file(class_names_path: str) -> List[str]:
@@ -369,8 +369,15 @@ class SoftMaxPostProcessing(BaseModel):
     fused: bool
 
 
+ImagePreProcessingValidator = BeforeValidator(
+    lambda value: value if value is not None else ImagePreProcessing()
+)
+
+
 class InferenceConfig(BaseModel):
-    image_pre_processing: ImagePreProcessing
+    image_pre_processing: Annotated[ImagePreProcessing, ImagePreProcessingValidator] = (
+        Field(default_factory=lambda: ImagePreProcessing())
+    )
     network_input: NetworkInputDefinition
     forward_pass: ForwardPassConfiguration = Field(
         default_factory=lambda: ForwardPassConfiguration()
@@ -378,6 +385,7 @@ class InferenceConfig(BaseModel):
     post_processing: Optional[
         Union[NMSPostProcessing, SoftMaxPostProcessing, SigmoidPostProcessing]
     ] = Field(default=None, discriminator="type")
+    model_initialization: Optional[dict] = Field(default=None)
 
 
 def parse_inference_config(

@@ -11,6 +11,8 @@ INSTANCE_SEGMENTATION_TASK = "instance-segmentation"
 KEYPOINT_DETECTION_TASK = "keypoint-detection"
 VLM_TASK = "vlm"
 EMBEDDING_TASK = "embedding"
+CLASSIFICATION_TASK = "classification"
+MULTI_LABEL_CLASSIFICATION_TASK = "multi-label-classification"
 
 
 @dataclass(frozen=True)
@@ -168,6 +170,22 @@ REGISTERED_MODELS: Dict[
     ("moondream2", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_exp.models.moondream2.moondream2_hf",
         class_name="MoonDream2HF",
+    ),
+    ("vit", CLASSIFICATION_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_exp.models.vit.vit_classification_onnx",
+        class_name="VITForClassificationOnnx",
+    ),
+    ("vit", MULTI_LABEL_CLASSIFICATION_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_exp.models.vit.vit_classification_onnx",
+        class_name="VITForMultiLabelClassificationOnnx",
+    ),
+    ("vit", CLASSIFICATION_TASK, BackendType.HF): LazyClass(
+        module_name="inference_exp.models.vit.vit_classification_huggingface",
+        class_name="VITForClassificationHF",
+    ),
+    ("vit", MULTI_LABEL_CLASSIFICATION_TASK, BackendType.HF): LazyClass(
+        module_name="inference_exp.models.vit.vit_classification_huggingface",
+        class_name="VITForMultiLabelClassificationHF",
     ),
 }
 

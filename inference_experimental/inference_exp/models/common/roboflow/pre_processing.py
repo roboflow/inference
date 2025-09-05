@@ -66,7 +66,11 @@ def pre_process_network_input(
             message="Detected empty input to the model", help_url="https://todo"
         )
     if network_input.resize_mode is ResizeMode.FIT_LONGER_EDGE:
-        raise ModelRuntimeError(message="", help_url="https://todo")
+        raise ModelRuntimeError(
+            message="Model input resize type (fit-longer-edge) cannot be applied equally for "
+            "all input batch elements arbitrarily - this type of model does not support input batches.",
+            help_url="https://todo",
+        )
     if isinstance(images[0], np.ndarray):
         return pre_process_numpy_images_list(
             images=images,
