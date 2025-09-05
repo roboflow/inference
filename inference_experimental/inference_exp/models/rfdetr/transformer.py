@@ -731,7 +731,6 @@ def _get_clones(module, N):
 
 
 def build_transformer(args):
-
     try:
         two_stage = args.two_stage
     except:

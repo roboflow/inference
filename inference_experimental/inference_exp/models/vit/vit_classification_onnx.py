@@ -37,7 +37,7 @@ try:
     import onnxruntime
 except ImportError as import_error:
     raise MissingDependencyError(
-        message=f"Could not import ResNet model with ONNX backend - this error means that some additional dependencies "
+        message=f"Could not import VIT model with ONNX backend - this error means that some additional dependencies "
         f"are not installed in the environment. If you run the `inference-exp` library directly in your Python "
         f"program, make sure the following extras of the package are installed: \n"
         f"\t* `onnx-cpu` - when you wish to use library with CPU support only\n"
@@ -50,7 +50,7 @@ except ImportError as import_error:
     ) from import_error
 
 
-class ResNetClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):
+class VITForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):
 
     @classmethod
     def from_pretrained(
@@ -60,7 +60,7 @@ class ResNetClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):
         default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
         **kwargs,
-    ) -> "ResNetClassificationOnnx":
+    ) -> "VITForClassificationOnnx":
         if onnx_execution_providers is None:
             onnx_execution_providers = get_selected_onnx_execution_providers()
         if not onnx_execution_providers:
@@ -141,7 +141,6 @@ class ResNetClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
-        image_size: Optional[Tuple[int, int]] = None,
         **kwargs,
     ) -> torch.Tensor:
         return pre_process_network_input(
@@ -150,7 +149,6 @@ class ResNetClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):
             network_input=self._inference_config.network_input,
             target_device=self._device,
             input_color_format=input_color_format,
-            image_size_wh=image_size,
         )[0]
 
     def forward(
@@ -179,7 +177,7 @@ class ResNetClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):
         )
 
 
-class ResNetForMultiLabelClassificationOnnx(
+class VITForMultiLabelClassificationOnnx(
     MultiLabelClassificationModel[torch.Tensor, torch.Tensor]
 ):
 
@@ -191,7 +189,7 @@ class ResNetForMultiLabelClassificationOnnx(
         default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
         **kwargs,
-    ) -> "ResNetForMultiLabelClassificationOnnx":
+    ) -> "VITForMultiLabelClassificationOnnx":
         if onnx_execution_providers is None:
             onnx_execution_providers = get_selected_onnx_execution_providers()
         if not onnx_execution_providers:
@@ -272,7 +270,6 @@ class ResNetForMultiLabelClassificationOnnx(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
-        image_size: Optional[Tuple[int, int]] = None,
         **kwargs,
     ) -> torch.Tensor:
         return pre_process_network_input(
@@ -281,7 +278,6 @@ class ResNetForMultiLabelClassificationOnnx(
             network_input=self._inference_config.network_input,
             target_device=self._device,
             input_color_format=input_color_format,
-            image_size_wh=image_size,
         )[0]
 
     def forward(

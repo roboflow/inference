@@ -1,16 +1,16 @@
-from typing import List, Union
 import os
+from typing import List, Union
 
 import numpy as np
 import torch
-from peft import PeftModel
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
+from peft import PeftModel
 from transformers import (
-    AutoProcessor,
-    Qwen2_5_VLForConditionalGeneration,
-    Qwen2_5_VLConfig,
     AutoModelForCausalLM,
+    AutoProcessor,
+    Qwen2_5_VLConfig,
+    Qwen2_5_VLForConditionalGeneration,
 )
 
 AutoModelForCausalLM.register(

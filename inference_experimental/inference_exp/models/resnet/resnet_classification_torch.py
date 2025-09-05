@@ -1,7 +1,7 @@
-from threading import Lock
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
+import timm
 import torch
 from inference_exp import (
     ClassificationModel,
@@ -11,17 +11,8 @@ from inference_exp import (
 )
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
-from inference_exp.errors import (
-    CorruptedModelPackageError,
-    EnvironmentConfigurationError,
-    MissingDependencyError,
-)
-from inference_exp.models.base.types import PreprocessedInputs
+from inference_exp.errors import CorruptedModelPackageError
 from inference_exp.models.common.model_packages import get_model_package_contents
-from inference_exp.models.common.onnx import (
-    run_session_with_batch_size_limit,
-    set_execution_provider_defaults,
-)
 from inference_exp.models.common.roboflow.model_packages import (
     InferenceConfig,
     ResizeMode,
@@ -31,58 +22,38 @@ from inference_exp.models.common.roboflow.model_packages import (
 from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
-from inference_exp.utils.onnx_introspection import get_selected_onnx_execution_providers
-
-try:
-    import onnxruntime
-except ImportError as import_error:
-    raise MissingDependencyError(
-        message=f"Could not import ResNet model with ONNX backend - this error means that some additional dependencies "
-        f"are not installed in the environment. If you run the `inference-exp` library directly in your Python "
-        f"program, make sure the following extras of the package are installed: \n"
-        f"\t* `onnx-cpu` - when you wish to use library with CPU support only\n"
-        f"\t* `onnx-cu12` - for running on GPU with Cuda 12 installed\n"
-        f"\t* `onnx-cu118` - for running on GPU with Cuda 11.8 installed\n"
-        f"\t* `onnx-jp6-cu126` - for running on Jetson with Jetpack 6\n"
-        f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
-        f"You can also contact Roboflow to get support.",
-        help_url="https://todo",
-    ) from import_error
+from torch import nn
 
 
-class ResNetClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):
+class ResNetClassifier(nn.Module):
+
+    def __init__(self, backbone: nn.Module, softmax_fused: bool):
+        super().__init__()
+        self._backbone = backbone
+        self._softmax_fused = softmax_fused
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        results = self._backbone(x)
+        if not self._softmax_fused:
+            results = torch.nn.functional.softmax(results, dim=-1)
+        return results
+
+
+class ResNetClassificationTorch(ClassificationModel[torch.Tensor, torch.Tensor]):
 
     @classmethod
     def from_pretrained(
         cls,
         model_name_or_path: str,
-        onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
-        default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
         **kwargs,
-    ) -> "ResNetClassificationOnnx":
-        if onnx_execution_providers is None:
-            onnx_execution_providers = get_selected_onnx_execution_providers()
-        if not onnx_execution_providers:
-            raise EnvironmentConfigurationError(
-                message=f"Could not initialize model - selected backend is ONNX which requires execution provider to "
-                f"be specified - explicitly in `from_pretrained(...)` method or via env variable "
-                f"`ONNXRUNTIME_EXECUTION_PROVIDERS`. If you run model locally - adjust your setup, otherwise "
-                f"contact the platform support.",
-                help_url="https://todo",
-            )
-        onnx_execution_providers = set_execution_provider_defaults(
-            providers=onnx_execution_providers,
-            model_package_path=model_name_or_path,
-            device=device,
-            default_onnx_trt_options=default_onnx_trt_options,
-        )
+    ) -> "ResNetClassificationTorch":
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
             elements=[
                 "class_names.txt",
                 "inference_config.json",
-                "weights.onnx",
+                "weights.pth",
             ],
         )
         class_names = parse_class_names_file(
@@ -97,41 +68,61 @@ class ResNetClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
             },
         )
-        if inference_config.post_processing.type != "softmax":
+        if inference_config.model_initialization is None:
             raise CorruptedModelPackageError(
-                message="Expected Softmax to be the post-processing",
+                message="Expected model initialization parameters not provided in inference config.",
                 help_url="https://todo",
             )
-        session = onnxruntime.InferenceSession(
-            path_or_bytes=model_package_content["weights.onnx"],
-            providers=onnx_execution_providers,
+        num_classes = inference_config.model_initialization.get("num_classes")
+        model_name = inference_config.model_initialization.get("model_name")
+        if not isinstance(num_classes, int):
+            raise CorruptedModelPackageError(
+                message="Expected model initialization parameter `num_classes` not provided or in invalid format.",
+                help_url="https://todo",
+            )
+        if not isinstance(model_name, str):
+            raise CorruptedModelPackageError(
+                message="Expected model initialization parameter `model_name` not provided or in invalid format.",
+                help_url="https://todo",
+            )
+        if inference_config.post_processing.type != "softmax":
+            raise CorruptedModelPackageError(
+                message="Expected softmax to be the post-processing",
+                help_url="https://todo",
+            )
+        backbone = timm.create_model(
+            model_name,
+            pretrained=False,
+            num_classes=num_classes,
+        ).to(device)
+        state_dict = torch.load(
+            model_package_content["weights.pth"],
+            weights_only=True,
+            map_location=device,
         )
-        input_shape = session.get_inputs()[0].shape
-        input_batch_size = input_shape[0]
-        if isinstance(input_batch_size, str):
-            input_batch_size = None
+        backbone.load_state_dict(state_dict)
+        model = ResNetClassifier(
+            backbone=backbone,
+            softmax_fused=inference_config.post_processing.fused,
+        ).to(device)
         return cls(
-            session=session,
+            model=model.eval(),
             inference_config=inference_config,
             class_names=class_names,
             device=device,
-            input_batch_size=input_batch_size,
         )
 
     def __init__(
         self,
-        session: onnxruntime.InferenceSession,
+        model: ResNetClassifier,
         inference_config: InferenceConfig,
         class_names: List[str],
         device: torch.device,
-        input_batch_size: Optional[int],
     ):
-        self._session = session
+        self._model = model
         self._inference_config = inference_config
         self._class_names = class_names
         self._device = device
-        self._input_batch_size = input_batch_size
-        self._session_thread_lock = Lock()
 
     @property
     def class_names(self) -> List[str]:
@@ -153,16 +144,9 @@ class ResNetClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):
             image_size_wh=image_size,
         )[0]
 
-    def forward(
-        self, pre_processed_images: PreprocessedInputs, **kwargs
-    ) -> torch.Tensor:
-        with self._session_thread_lock:
-            return run_session_with_batch_size_limit(
-                session=self._session,
-                inputs={"images": pre_processed_images},
-                min_batch_size=self._input_batch_size,
-                max_batch_size=self._input_batch_size,
-            )[0]
+    def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
+        with torch.inference_mode():
+            return self._model(pre_processed_images)
 
     def post_process(
         self,
@@ -179,7 +163,21 @@ class ResNetClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):
         )
 
 
-class ResNetForMultiLabelClassificationOnnx(
+class ResNetMultiLabelClassifier(nn.Module):
+
+    def __init__(self, backbone: nn.Module, sigmoid_fused: bool):
+        super().__init__()
+        self._backbone = backbone
+        self._sigmoid_fused = sigmoid_fused
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        results = self._backbone(x)
+        if not self._sigmoid_fused:
+            results = torch.nn.functional.sigmoid(results)
+        return results
+
+
+class ResNetForMultiLabelClassificationTorch(
     MultiLabelClassificationModel[torch.Tensor, torch.Tensor]
 ):
 
@@ -187,33 +185,15 @@ class ResNetForMultiLabelClassificationOnnx(
     def from_pretrained(
         cls,
         model_name_or_path: str,
-        onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
-        default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
         **kwargs,
-    ) -> "ResNetForMultiLabelClassificationOnnx":
-        if onnx_execution_providers is None:
-            onnx_execution_providers = get_selected_onnx_execution_providers()
-        if not onnx_execution_providers:
-            raise EnvironmentConfigurationError(
-                message=f"Could not initialize model - selected backend is ONNX which requires execution provider to "
-                f"be specified - explicitly in `from_pretrained(...)` method or via env variable "
-                f"`ONNXRUNTIME_EXECUTION_PROVIDERS`. If you run model locally - adjust your setup, otherwise "
-                f"contact the platform support.",
-                help_url="https://todo",
-            )
-        onnx_execution_providers = set_execution_provider_defaults(
-            providers=onnx_execution_providers,
-            model_package_path=model_name_or_path,
-            device=device,
-            default_onnx_trt_options=default_onnx_trt_options,
-        )
+    ) -> "ResNetForMultiLabelClassificationTorch":
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
             elements=[
                 "class_names.txt",
                 "inference_config.json",
-                "weights.onnx",
+                "weights.pth",
             ],
         )
         class_names = parse_class_names_file(
@@ -228,41 +208,61 @@ class ResNetForMultiLabelClassificationOnnx(
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
             },
         )
+        if inference_config.model_initialization is None:
+            raise CorruptedModelPackageError(
+                message="Expected model initialization parameters not provided in inference config.",
+                help_url="https://todo",
+            )
+        num_classes = inference_config.model_initialization.get("num_classes")
+        model_name = inference_config.model_initialization.get("model_name")
+        if not isinstance(num_classes, int):
+            raise CorruptedModelPackageError(
+                message="Expected model initialization parameter `num_classes` not provided or in invalid format.",
+                help_url="https://todo",
+            )
+        if not isinstance(model_name, str):
+            raise CorruptedModelPackageError(
+                message="Expected model initialization parameter `model_name` not provided or in invalid format.",
+                help_url="https://todo",
+            )
         if inference_config.post_processing.type != "sigmoid":
             raise CorruptedModelPackageError(
                 message="Expected sigmoid to be the post-processing",
                 help_url="https://todo",
             )
-        session = onnxruntime.InferenceSession(
-            path_or_bytes=model_package_content["weights.onnx"],
-            providers=onnx_execution_providers,
+        backbone = timm.create_model(
+            model_name,
+            pretrained=False,
+            num_classes=num_classes,
+        ).to(device)
+        state_dict = torch.load(
+            model_package_content["weights.pth"],
+            weights_only=True,
+            map_location=device,
         )
-        input_shape = session.get_inputs()[0].shape
-        input_batch_size = input_shape[0]
-        if isinstance(input_batch_size, str):
-            input_batch_size = None
+        backbone.load_state_dict(state_dict)
+        model = ResNetMultiLabelClassifier(
+            backbone=backbone,
+            sigmoid_fused=inference_config.post_processing.fused,
+        ).to(device)
         return cls(
-            session=session,
+            model=model.eval(),
             inference_config=inference_config,
             class_names=class_names,
             device=device,
-            input_batch_size=input_batch_size,
         )
 
     def __init__(
         self,
-        session: onnxruntime.InferenceSession,
+        model: ResNetMultiLabelClassifier,
         inference_config: InferenceConfig,
         class_names: List[str],
         device: torch.device,
-        input_batch_size: Optional[int],
     ):
-        self._session = session
+        self._model = model
         self._inference_config = inference_config
         self._class_names = class_names
         self._device = device
-        self._input_batch_size = input_batch_size
-        self._session_thread_lock = Lock()
 
     @property
     def class_names(self) -> List[str]:
@@ -284,16 +284,9 @@ class ResNetForMultiLabelClassificationOnnx(
             image_size_wh=image_size,
         )[0]
 
-    def forward(
-        self, pre_processed_images: PreprocessedInputs, **kwargs
-    ) -> torch.Tensor:
-        with self._session_thread_lock:
-            return run_session_with_batch_size_limit(
-                session=self._session,
-                inputs={"images": pre_processed_images},
-                min_batch_size=self._input_batch_size,
-                max_batch_size=self._input_batch_size,
-            )[0]
+    def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
+        with torch.inference_mode():
+            return self._model(pre_processed_images)
 
     def post_process(
         self,
@@ -301,10 +294,6 @@ class ResNetForMultiLabelClassificationOnnx(
         confidence: float = 0.5,
         **kwargs,
     ) -> List[MultiLabelClassificationPrediction]:
-        if self._inference_config.post_processing.fused:
-            model_results = model_results
-        else:
-            model_results = torch.nn.functional.sigmoid(model_results)
         results = []
         for batch_element_confidence in model_results:
             predicted_classes = torch.argwhere(

@@ -2,11 +2,12 @@ import json
 from collections import namedtuple
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Optional
+from typing import Annotated, List, Literal, Optional, Set, Tuple, Union
 
 from inference_exp.entities import ImageDimensions
 from inference_exp.errors import CorruptedModelPackageError
 from inference_exp.utils.file_system import read_json, stream_file_lines
+from pydantic import BaseModel, BeforeValidator, Field, ValidationError
 
 
 def parse_class_names_file(class_names_path: str) -> List[str]:
@@ -42,6 +43,7 @@ PADDING_VALUES_MAPPING = {
     "grey edges": 127,
     "white edges": 255,
 }
+StaticCropOffset = namedtuple("StaticCropOffset", ["offset_x", "offset_y"])
 PreProcessingMetadata = namedtuple(
     "PreProcessingMetadata",
     [
@@ -53,6 +55,7 @@ PreProcessingMetadata = namedtuple(
         "inference_size",
         "scale_width",
         "scale_height",
+        "static_crop_offset",
     ],
 )
 
@@ -259,3 +262,164 @@ def parse_class_map_from_environment_file(environment_file_path: str) -> List[st
             f"verify its consistency in docs.",
             help_url="https://todo",
         ) from error
+
+
+class AutoOrient(BaseModel):
+    enabled: bool
+
+
+class StaticCrop(BaseModel):
+    enabled: bool
+    x_min: int
+    x_max: int
+    y_min: int
+    y_max: int
+
+
+class ContrastType(str, Enum):
+    ADAPTIVE_EQUALIZATION = "Adaptive Equalization"
+    CONTRAST_STRETCHING = "Contrast Stretching"
+    HISTOGRAM_EQUALIZATION = "Histogram Equalization"
+
+
+class Contrast(BaseModel):
+    enabled: bool
+    type: ContrastType
+
+
+class Grayscale(BaseModel):
+    enabled: bool
+
+
+class ImagePreProcessing(BaseModel):
+    auto_orient: Optional[AutoOrient] = Field(alias="auto-orient", default=None)
+    static_crop: Optional[StaticCrop] = Field(alias="static-crop", default=None)
+    contrast: Optional[Contrast] = Field(default=None)
+    grayscale: Optional[Grayscale] = Field(default=None)
+
+
+class TrainingInputSize(BaseModel):
+    height: int
+    width: int
+
+
+class DivisiblePadding(BaseModel):
+    type: Literal["pad-to-be-divisible"]
+    value: int
+
+
+class AnySizePadding(BaseModel):
+    type: Literal["any-size"]
+
+
+class ColorMode(str, Enum):
+    BGR = "bgr"
+    RGB = "rgb"
+
+
+class ResizeMode(str, Enum):
+    STRETCH_TO = "stretch"
+    LETTERBOX = "letterbox"
+    CENTER_CROP = "center-crop"
+    FIT_LONGER_EDGE = "fit-longer-edge"
+    LETTERBOX_REFLECT_EDGES = "letterbox-reflect-edges"
+
+
+Number = Union[int, float]
+
+
+class NetworkInputDefinition(BaseModel):
+    training_input_size: TrainingInputSize
+    dynamic_spatial_size_supported: bool
+    dynamic_spatial_size_mode: Optional[Union[DivisiblePadding, AnySizePadding]] = (
+        Field(discriminator="type", default=None)
+    )
+    color_mode: ColorMode
+    resize_mode: ResizeMode
+    padding_value: Optional[int]
+    input_channels: int
+    scaling_factor: Optional[Number] = Field(default=None)
+    normalization: Optional[Tuple[List[Number], List[Number]]] = Field(default=None)
+
+
+class ForwardPassConfiguration(BaseModel):
+    max_dynamic_batch_size: Optional[int] = Field(default=None)
+
+
+class FusedNMSParameters(BaseModel):
+    max_detections: int
+    confidence_threshold: float
+    iou_threshold: float
+    class_agnostic: int
+
+
+class NMSPostProcessing(BaseModel):
+    type: Literal["nms"]
+    fused: bool
+    nms_parameters: Optional[FusedNMSParameters] = Field(default=None)
+
+
+class SigmoidPostProcessing(BaseModel):
+    type: Literal["sigmoid"]
+    fused: bool
+
+
+class SoftMaxPostProcessing(BaseModel):
+    type: Literal["softmax"]
+    fused: bool
+
+
+ImagePreProcessingValidator = BeforeValidator(
+    lambda value: value if value is not None else ImagePreProcessing()
+)
+
+
+class InferenceConfig(BaseModel):
+    image_pre_processing: Annotated[ImagePreProcessing, ImagePreProcessingValidator] = (
+        Field(default_factory=lambda: ImagePreProcessing())
+    )
+    network_input: NetworkInputDefinition
+    forward_pass: ForwardPassConfiguration = Field(
+        default_factory=lambda: ForwardPassConfiguration()
+    )
+    post_processing: Optional[
+        Union[NMSPostProcessing, SoftMaxPostProcessing, SigmoidPostProcessing]
+    ] = Field(default=None, discriminator="type")
+    model_initialization: Optional[dict] = Field(default=None)
+
+
+def parse_inference_config(
+    config_path: str,
+    allowed_resize_modes: Set[ResizeMode],
+) -> InferenceConfig:
+    try:
+        decoded_config = read_json(path=config_path)
+        if not isinstance(decoded_config, dict):
+            raise ValueError(
+                f"Expected config format is dict, found {type(decoded_config)} instead"
+            )
+    except (IOError, OSError, ValueError) as error:
+        raise CorruptedModelPackageError(
+            message=f"Inference config file of the model package is malformed: "
+            f"{error}. In case that the package is "
+            f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
+            f"verify its consistency in docs.",
+            help_url="https://todo",
+        ) from error
+    try:
+        parsed_config = InferenceConfig.model_validate(decoded_config)
+    except ValidationError as error:
+        raise CorruptedModelPackageError(
+            message=f"Could not parse the inference config from the model package.",
+            help_url="https://todo",
+        ) from error
+    if parsed_config.network_input.resize_mode not in allowed_resize_modes:
+        allowed_resize_modes_str = ", ".join([e.value for e in allowed_resize_modes])
+        raise CorruptedModelPackageError(
+            message=f"Inference configuration shipped with model package defines input resize "
+            f"{parsed_config.network_input.resize_mode} which is not supported by the model implementation. "
+            f"Config defines: {parsed_config.network_input.resize_mode.value}, but the allowed values are: "
+            f"{allowed_resize_modes_str}.",
+            help_url="https://todo",
+        )
+    return parsed_config

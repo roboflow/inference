@@ -1,10 +1,9 @@
-from typing import List, Literal, Optional, Tuple, Union
 import os
+from typing import List, Literal, Optional, Tuple, Union
 
 import cv2
 import numpy as np
 import torch
-from peft import PeftModel
 from inference_exp import Detections, InstanceDetections
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ImageDimensions
@@ -12,6 +11,7 @@ from inference_exp.errors import ModelRuntimeError
 from inference_exp.models.common.roboflow.pre_processing import (
     extract_input_images_dimensions,
 )
+from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoProcessor
 
 GRANULARITY_2TASK = {

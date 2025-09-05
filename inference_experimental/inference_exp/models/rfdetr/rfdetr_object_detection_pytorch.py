@@ -10,11 +10,11 @@ from inference_exp.errors import CorruptedModelPackageError, ModelRuntimeError
 from inference_exp.logger import LOGGER
 from inference_exp.models.common.model_packages import get_model_package_contents
 from inference_exp.models.common.roboflow.model_packages import (
-    PreProcessingConfig,
+    InferenceConfig,
     PreProcessingMetadata,
+    ResizeMode,
     parse_class_names_file,
-    parse_model_characteristics,
-    parse_pre_processing_config,
+    parse_inference_config,
 )
 from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
@@ -29,6 +29,7 @@ from inference_exp.models.rfdetr.rfdetr_base_pytorch import (
     RFDETRSmallConfig,
     build_model,
 )
+from inference_exp.utils.file_system import read_json
 
 try:
     torch.set_float32_matmul_precision("high")
@@ -59,7 +60,7 @@ class RFDetrForObjectDetectionTorch(
             model_package_dir=model_name_or_path,
             elements=[
                 "class_names.txt",
-                "environment.json",
+                "inference_config.json",
                 "model_type.json",
                 "weights.pth",
             ],
@@ -67,28 +68,34 @@ class RFDetrForObjectDetectionTorch(
         class_names = parse_class_names_file(
             class_names_path=model_package_content["class_names.txt"]
         )
-        pre_processing_config = parse_pre_processing_config(
-            config_path=model_package_content["environment.json"],
+        inference_config = parse_inference_config(
+            config_path=model_package_content["inference_config.json"],
+            allowed_resize_modes={
+                ResizeMode.STRETCH_TO,
+                ResizeMode.LETTERBOX,
+                ResizeMode.CENTER_CROP,
+                ResizeMode.LETTERBOX_REFLECT_EDGES,
+            },
         )
         weights_dict = torch.load(
             model_package_content["weights.pth"],
             map_location=device,
             weights_only=False,
         )["model"]
-        model_characteristics = parse_model_characteristics(
+        model_type = parse_model_type(
             config_path=model_package_content["model_type.json"]
         )
-        if model_characteristics.model_type not in CONFIG_FOR_MODEL_TYPE:
+        if model_type not in CONFIG_FOR_MODEL_TYPE:
             raise CorruptedModelPackageError(
-                message=f"Model package describes model_type as '{model_characteristics.model_type}' which is not supported. "
+                message=f"Model package describes model_type as '{model_type}' which is not supported. "
                 f"Supported model types: {list(CONFIG_FOR_MODEL_TYPE.keys())}.",
                 help_url="https://todo",
             )
-        model_config = CONFIG_FOR_MODEL_TYPE[model_characteristics.model_type](
-            device=device
-        )
-
+        model_config = CONFIG_FOR_MODEL_TYPE[model_type](device=device)
         model = build_model(config=model_config)
+        checkpoint_num_classes = weights_dict["class_embed.bias"].shape[0]
+        if checkpoint_num_classes != model_config.num_classes + 1:
+            model.reinitialize_detection_head(num_classes=checkpoint_num_classes)
         model.load_state_dict(weights_dict)
         model = model.eval().to(device)
         post_processor = PostProcess()
@@ -96,7 +103,7 @@ class RFDetrForObjectDetectionTorch(
             model=model,
             class_names=class_names,
             device=device,
-            pre_processing_config=pre_processing_config,
+            inference_config=inference_config,
             post_processor=post_processor,
             resolution=model_config.resolution,
         )
@@ -104,14 +111,14 @@ class RFDetrForObjectDetectionTorch(
     def __init__(
         self,
         model: LWDETR,
-        pre_processing_config: PreProcessingConfig,
+        inference_config: InferenceConfig,
         class_names: List[str],
         device: torch.device,
         post_processor: PostProcess,
         resolution: int,
     ):
         self._model = model
-        self._pre_processing_config = pre_processing_config
+        self._inference_config = inference_config
         self._class_names = class_names
         self._post_processor = post_processor
         self._device = device
@@ -167,11 +174,10 @@ class RFDetrForObjectDetectionTorch(
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         return pre_process_network_input(
             images=images,
-            pre_processing_config=self._pre_processing_config,
-            expected_network_color_format="rgb",
+            image_pre_processing=self._inference_config.image_pre_processing,
+            network_input=self._inference_config.network_input,
             target_device=self._device,
             input_color_format=input_color_format,
-            normalization=([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
         )
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> dict:
@@ -249,3 +255,28 @@ class RFDetrForObjectDetectionTorch(
             )
             detections_list.append(detections)
         return detections_list
+
+
+def parse_model_type(config_path: str) -> str:
+    try:
+        parsed_config = read_json(path=config_path)
+        if not isinstance(parsed_config, dict):
+            raise ValueError(
+                f"decoded value is {type(parsed_config)}, but dictionary expected"
+            )
+        if "model_type" not in parsed_config or not isinstance(
+            parsed_config["model_type"], str
+        ):
+            raise ValueError(
+                "could not find required entries in config - either "
+                "'model_type' field is missing or not a string"
+            )
+        return parsed_config["model_type"]
+    except (IOError, OSError, ValueError) as error:
+        raise CorruptedModelPackageError(
+            message=f"Model type config file is malformed: "
+            f"{error}. In case that the package is "
+            f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
+            f"verify its consistency in docs.",
+            help_url="https://todo",
+        ) from error

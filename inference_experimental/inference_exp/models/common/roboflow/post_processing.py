@@ -57,6 +57,21 @@ def run_nms_for_object_detection(
     return results
 
 
+def post_process_nms_fused_model_output(
+    output: torch.Tensor,
+    conf_thresh: float = 0.25,
+) -> List[torch.Tensor]:
+    bs = output.shape[0]
+    nms_results = []
+    for batch_element_id in range(bs):
+        batch_element_result = output[batch_element_id]
+        batch_element_result = batch_element_result[
+            batch_element_result[:, 4] >= conf_thresh
+        ]
+        nms_results.append(batch_element_result)
+    return nms_results
+
+
 def run_nms_for_instance_segmentation(
     output: torch.Tensor,
     conf_thresh: float = 0.25,
@@ -198,6 +213,21 @@ def rescale_image_detections(
         device=image_detections.device,
     )
     image_detections[:, :4].div_(scale)
+    if (
+        image_metadata.static_crop_offset.offset_x != 0
+        or image_metadata.static_crop_offset.offset_y != 0
+    ):
+        static_crop_offsets = torch.as_tensor(
+            [
+                image_metadata.static_crop_offset.offset_x,
+                image_metadata.static_crop_offset.offset_y,
+                image_metadata.static_crop_offset.offset_x,
+                image_metadata.static_crop_offset.offset_y,
+            ],
+            dtype=image_detections.dtype,
+            device=image_detections.device,
+        )
+        image_detections[:, :4].add_(static_crop_offsets)
     return image_detections
 
 
