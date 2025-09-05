@@ -411,7 +411,7 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                         onnxruntime.GraphOptimizationLevel.ORT_DISABLE_ALL
                     )
                 expanded_execution_providers = []
-                for ep in ONNXRUNTIME_EXECUTION_PROVIDERS:
+                for ep in providers:
                     if (
                         ep == "TensorrtExecutionProvider"
                         or ep[0] == "TensorrtExecutionProvider"
@@ -472,6 +472,7 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
 
                         onnx.save(converted_model, converted_cache_path)
                         model_path = converted_cache_path
+                        print("Was wrong model opset, but fixed!")
                 self.onnx_session = onnxruntime.InferenceSession(
                     model_path,
                     providers=expanded_execution_providers,
