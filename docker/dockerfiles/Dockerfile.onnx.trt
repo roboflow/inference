@@ -1,4 +1,6 @@
 FROM nvcr.io/nvidia/tensorrt:25.03-py3
+#Python 3.12.3
+
 WORKDIR /app
 
 RUN apt-get update -y && apt-get install -y \
