@@ -37,7 +37,7 @@ class VITClassifier(nn.Module):
         super().__init__()
         self._backbone = backbone
         self._classifier = classifier
-        self.softmax_fused = softmax_fused
+        self._softmax_fused = softmax_fused
 
     def forward(self, pixel_values: torch.Tensor) -> torch.Tensor:
         outputs = self._backbone(pixel_values=pixel_values)
