@@ -255,12 +255,24 @@ class DynamicZonesBlockV1(WorkflowBlock):
         result = []
         for detections in predictions:
             if detections is None:
-                result.append({OUTPUT_KEY: None, OUTPUT_KEY_DETECTIONS: None, OUTPUT_KEY_SIMPLIFICATION_CONVERGED: False})
+                result.append(
+                    {
+                        OUTPUT_KEY: None,
+                        OUTPUT_KEY_DETECTIONS: None,
+                        OUTPUT_KEY_SIMPLIFICATION_CONVERGED: False,
+                    }
+                )
                 continue
             simplified_polygons = []
             updated_detections = []
             if detections.mask is None:
-                result.append({OUTPUT_KEY: [], OUTPUT_KEY_DETECTIONS: None, OUTPUT_KEY_SIMPLIFICATION_CONVERGED: False})
+                result.append(
+                    {
+                        OUTPUT_KEY: [],
+                        OUTPUT_KEY_DETECTIONS: None,
+                        OUTPUT_KEY_SIMPLIFICATION_CONVERGED: False,
+                    }
+                )
                 continue
             all_converged = True
             for i, mask in enumerate(detections.mask):
