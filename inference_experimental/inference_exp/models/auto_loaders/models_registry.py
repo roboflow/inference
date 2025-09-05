@@ -203,6 +203,10 @@ REGISTERED_MODELS: Dict[
         module_name="inference_exp.models.resnet.resnet_classification_torch",
         class_name="ResNetForMultiLabelClassificationTorch",
     ),
+    ("segment-anything-2-rt", INSTANCE_SEGMENTATION_TASK, BackendType.TORCH): LazyClass(
+        module_name="inference_exp.models.sam2_rt.sam2_pytorch",
+        class_name="SAM2ForStream",
+    ),
 }
 
 
