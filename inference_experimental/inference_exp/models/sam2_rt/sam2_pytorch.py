@@ -10,6 +10,7 @@ from inference_exp.models.common.model_packages import get_model_package_content
 try:
     import hydra
     from sam2.build_sam import build_sam2_camera_predictor
+    from sam2.sam2_camera_predictor import SAM2CameraPredictor
 except ImportError as import_error:
     raise MissingDependencyError(
         message=f"Could not import SAM2 model, please consult README for installation instructions.",
@@ -36,29 +37,41 @@ class SAM2ForStream:
             config_dir=Path(model_package_content["sam2-rt.yaml"]).parent.as_posix(),
             version_base=None,
         )
-        predictor = build_sam2_camera_predictor(
+        predictor: SAM2CameraPredictor = build_sam2_camera_predictor(
             config_file=Path(model_package_content["sam2-rt.yaml"]).name,
             ckpt_path=model_package_content["weights.pt"],
             device=device,
         )
         return cls(predictor=predictor, device=device)
 
-    def __init__(self, predictor, device: torch.device):
+    def __init__(self, predictor: SAM2CameraPredictor, device: torch.device):
         self._predictor = predictor
         self._device = device
 
     def prompt(
         self,
         image: Union[np.ndarray, torch.Tensor],
-        prompts: List[Tuple[int, int, int, int]],
+        bboxes: Union[Tuple[int, int, int, int], List[Tuple[int, int, int, int]]],
         state_dict: Optional[dict] = None,
+        clear_old_points: bool = True,
+        normalize_coords: bool = True,
+        frame_idx: int = 0,
     ) -> tuple:
         if isinstance(image, torch.Tensor):
             image = image.detach().cpu().numpy()
-        self._predictor.load_first_frame(image)
+        if clear_old_points or not self._predictor.condition_state:
+            self._predictor.load_first_frame(image)
         if state_dict is not None:
             self._predictor.load_state_dict(state_dict)
-        for i, pts in enumerate(prompts):
+        obj_id = 0
+        if (
+            self._predictor.condition_state
+            and self._predictor.condition_state["obj_ids"]
+        ):
+            obj_id = max(self._predictor.condition_state["obj_ids"]) + 1
+        if not isinstance(bboxes, list):
+            bboxes = [bboxes]
+        for pts in bboxes:
             if len(pts) < 4:
                 continue
             x1, y1, x2, y2 = pts[:4]
@@ -69,8 +82,13 @@ class SAM2ForStream:
             xyxy = np.array([[x_lt, y_lt, x_rb, y_rb]])
 
             _, object_ids, mask_logits = self._predictor.add_new_prompt(
-                frame_idx=0, obj_id=i, bbox=xyxy
+                frame_idx=frame_idx,
+                obj_id=obj_id,
+                bbox=xyxy,
+                clear_old_points=clear_old_points,
+                normalize_coords=normalize_coords,
             )
+            obj_id += 1
         masks = (mask_logits > 0.0).cpu().numpy()
         masks = np.squeeze(masks).astype(bool)
         if len(masks.shape) == 2:
@@ -88,7 +106,9 @@ class SAM2ForStream:
         if state_dict is not None:
             self._predictor.load_state_dict(state_dict)
         if not self._predictor.condition_state:
-            raise ModelRuntimeError("Attempt to track with no prior call to prompt; prompt must be called first")
+            raise ModelRuntimeError(
+                "Attempt to track with no prior call to prompt; prompt must be called first"
+            )
         object_ids, mask_logits = self._predictor.track(image)
         masks = (mask_logits > 0.0).cpu().numpy()
         masks = np.squeeze(masks).astype(bool)

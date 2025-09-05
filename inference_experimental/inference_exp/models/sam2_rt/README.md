@@ -19,7 +19,7 @@ while True:
     if not is_ok:
         break
     if f_num == 0:
-        ids, masks, *_ = model.prompt(frame, [(477, 337, 560, 529)])
+        ids, masks, *_ = model.prompt(frame, bboxes=[(477, 337, 560, 529), (633, 570, 843, 804)])
         f_num += 1
     else:
         ids, masks, *_ = model.track(frame)
