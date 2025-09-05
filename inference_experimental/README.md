@@ -159,6 +159,31 @@ like TensorRT engines) or additional **models**.
 | `flash-attn`     | *EXPERIMENTAL:* Installs `flash-attn` for faster LLMs/VLMs - usually requires extensive compilation |
 | `test`           | Test dependencies                                                                                  |
 
+#### Special Installation: SAM2 Real-Time
+
+`sam2 real time` requires a Git-based dependency that cannot be distributed via PyPI. To use SAM2 real-time capabilities, you need to manually install it after installing `inference-exp`:
+
+```bash
+# First, install inference-exp with your desired extras (e.g., torch-cu124)
+pip install "inference-exp[torch-cu124]"
+
+# Then, install SAM2 real-time from GitHub
+pip install git+https://github.com/Gy920/segment-anything-2-real-time.git
+```
+
+For development environments:
+```bash
+# First sync the project
+uv sync --dev
+
+# Then manually install SAM 2 from the GitHub repository
+# Note: The package installs as "SAM 2" (with a space)
+uv pip install git+https://github.com/Gy920/segment-anything-2-real-time.git
+```
+
+> [!NOTE]
+> Due to PyPI restrictions on Git dependencies, the SAM2 real-time package must be installed separately from the GitHub repository. The package will be installed with the name "SAM 2" (with a space).
+
 > [!IMPORTANT]  
 > Not all extras are possible to be installed together in a single environment. We try to make the extras as composable 
 > as possible, but **this will not always be possible**, and sometimes you need to choose which extras are to be 

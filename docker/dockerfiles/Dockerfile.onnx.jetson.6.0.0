@@ -1,4 +1,6 @@
 FROM nvcr.io/nvidia/l4t-jetpack:r36.3.0
+#probably Python 3.10 or 3.12 based on ubuntu 22.04
+
 
 ARG DEBIAN_FRONTEND=noninteractive
 ENV LANG=en_US.UTF-8

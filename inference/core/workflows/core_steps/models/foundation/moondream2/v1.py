@@ -166,7 +166,8 @@ class Moondream2BlockV1(WorkflowBlock):
                 api_key=self._api_key,
                 model_id=model_version,
                 image=image,
-                text=[single_prompt],
+                text=[],
+                prompt=single_prompt,
             )
             # Run inference.
             prediction = self._model_manager.infer_from_request_sync(
