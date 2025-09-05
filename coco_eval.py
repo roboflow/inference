@@ -6,7 +6,6 @@ from typing import List, Dict
 import io
 import numpy as np
 from PIL import Image
-from tqdm import tqdm
 from inference import get_model
 
 from pycocotools.coco import COCO
@@ -16,15 +15,13 @@ VAL_IMAGES_DIR = "val2017"
 ANN_FILE = "annotations/instances_val2017.json"
 RESULTS_JSON = "coco_val2017_results.json"
 
-os.environ["ONNXRUNTIME_EXECUTION_PROVIDERS"] =  "['TensorrtExecutionProvider']" #"['CUDAExecutionProvider']"
-
-def load_coco_name_to_id(ann_file: str) -> Dict[str, int]:
+def load_coco_name_to_id(ann_file):
     """Build a mapping from COCO category name -> category_id using the GT file."""
     coco = COCO(ann_file)
     cats = coco.loadCats(coco.getCatIds())
     return {c["name"]: c["id"] for c in cats}
 
-def center_to_xywh(x_center: float, y_center: float, w: float, h: float):
+def center_to_xywh(x_center, y_center, w, h):
     x_min = x_center - w / 2.0
     y_min = y_center - h / 2.0
     return [float(x_min), float(y_min), float(w), float(h)]
@@ -40,9 +37,9 @@ def main():
     img_id_by_file = {img["file_name"]: img["id"] for img in coco_gt.loadImgs(coco_gt.getImgIds())}
 
     image_paths = sorted(glob.glob(str(Path(VAL_IMAGES_DIR) / "*.jpg")))
-    results: List[dict] = []
+    results = []
 
-    for img_path in tqdm(image_paths, desc="Evaluating"):
+    for img_path in image_paths:
         file_name = Path(img_path).name
         image_id = img_id_by_file.get(file_name)
         image_pil = Image.open(img_path).convert("RGB")
@@ -65,12 +62,6 @@ def main():
 
     with open(RESULTS_JSON, "w") as f:
         json.dump(results, f)
-
-    print(f"Wrote detections to {RESULTS_JSON} ({len(results)} boxes).")
-
-    if len(results) == 0:
-        print("No detections produced — check class-name mapping or confidence threshold.")
-        return
 
     coco_dt = coco_gt.loadRes(RESULTS_JSON)
     coco_eval = COCOeval(coco_gt, coco_dt, iouType="bbox")
