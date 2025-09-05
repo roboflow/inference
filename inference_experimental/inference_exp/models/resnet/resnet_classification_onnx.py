@@ -302,12 +302,14 @@ class ResNetForMultiLabelClassificationOnnx(
         **kwargs,
     ) -> List[MultiLabelClassificationPrediction]:
         if self._inference_config.post_processing.fused:
-            confidence = model_results
+            model_results = model_results
         else:
-            confidence = torch.nn.functional.sigmoid(model_results)
+            model_results = torch.nn.functional.sigmoid(model_results)
         results = []
-        for batch_element_confidence in confidence:
-            predicted_classes = torch.argwhere(batch_element_confidence >= confidence).squeeze(dim=-1)
+        for batch_element_confidence in model_results:
+            predicted_classes = torch.argwhere(
+                batch_element_confidence >= confidence
+            ).squeeze(dim=-1)
             results.append(
                 MultiLabelClassificationPrediction(
                     class_ids=predicted_classes,
