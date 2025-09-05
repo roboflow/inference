@@ -235,6 +235,10 @@ def scale_polygon(polygon: np.ndarray, scale: float) -> np.ndarray:
     return result.round().astype(np.int32)
 
 
+def convert_from_np_types(zone: np.ndarray) -> List[Tuple[int, int]]:
+    return [(int(x), int(y)) for each in zone for x, y in each]
+
+
 class DynamicZonesBlockV1(WorkflowBlock):
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -251,12 +255,12 @@ class DynamicZonesBlockV1(WorkflowBlock):
         result = []
         for detections in predictions:
             if detections is None:
-                result.append({OUTPUT_KEY: None})
+                result.append({OUTPUT_KEY: None, OUTPUT_KEY_DETECTIONS: None, OUTPUT_KEY_SIMPLIFICATION_CONVERGED: False})
                 continue
             simplified_polygons = []
             updated_detections = []
             if detections.mask is None:
-                result.append({OUTPUT_KEY: []})
+                result.append({OUTPUT_KEY: [], OUTPUT_KEY_DETECTIONS: None, OUTPUT_KEY_SIMPLIFICATION_CONVERGED: False})
                 continue
             all_converged = True
             for i, mask in enumerate(detections.mask):
@@ -320,4 +324,13 @@ class DynamicZonesBlockV1(WorkflowBlock):
                     OUTPUT_KEY_SIMPLIFICATION_CONVERGED: False,
                 }
             )
-        return result
+        return [
+            {
+                OUTPUT_KEY: convert_from_np_types(item[OUTPUT_KEY]),
+                OUTPUT_KEY_DETECTIONS: item[OUTPUT_KEY_DETECTIONS],
+                OUTPUT_KEY_SIMPLIFICATION_CONVERGED: item[
+                    OUTPUT_KEY_SIMPLIFICATION_CONVERGED
+                ],
+            }
+            for item in result
+        ]

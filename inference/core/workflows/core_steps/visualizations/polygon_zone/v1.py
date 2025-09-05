@@ -110,12 +110,20 @@ class PolygonZoneVisualizationBlockV1(VisualizationBlock):
                 shape=image.numpy_image.shape,
                 dtype=image.numpy_image.dtype,
             )
+
+
+        if zone and len(zone) > 0:
             mask = cv.fillPoly(
                 img=mask,
-                pts=[np.array(zone)],
+                pts=[np.array(zone, dtype=np.int32)],
                 color=str_to_color(color).as_bgr(),
             )
             self._cache[key] = mask
+        else:
+            return {OUTPUT_IMAGE_KEY: image}
+
+
+
         mask = self._cache[key]
 
         np_image = image.numpy_image
