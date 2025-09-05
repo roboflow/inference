@@ -9,4 +9,5 @@ class Moondream2InferenceRequest(DynamicClassBaseInferenceRequest):
     Attributes:
         text (List[str]): A list of strings.
     """
+
     prompt: str
