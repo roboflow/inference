@@ -6,13 +6,32 @@ include the manifest and Python code for blocks defined in place, which are dyna
 Execution Engine. These in-place blocks function similarly to those statically defined in
 [plugins](/workflows/blocks_bundling.md) yet provide much more flexibility.
 
+## Execution Modes
+
+Dynamic Python blocks support two execution modes:
+
+### Local Execution
+When running inference locally on your own hardware, dynamic blocks execute directly in your environment. This provides the fastest performance for development and testing.
 
 !!! Warning
 
-    Dynamic blocks only work in your local deployment of `inference` and are not supported 
-    on the Roboflow hosted platform.
+    Local execution of dynamic blocks only works in your local deployment of `inference` and requires careful consideration of security implications when running untrusted code.
 
     If you wish to disable the functionality, `export ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=False`
+
+### Cloud Execution (Roboflow Serverless v2)
+When using Roboflow's cloud infrastructure with Serverless v2 API, dynamic blocks execute in secure, isolated containers. This ensures safe execution of custom code without compromising your infrastructure.
+
+!!! Important "Data Serialization Requirements"
+
+    When using cloud execution, all input and output data must be serializable through Inference's serialization system. This means:
+    
+    - Use simple Python types (str, int, float, bool, list, dict)
+    - Numpy arrays and standard computer vision data structures are supported
+    - Complex custom objects may need to be converted to simpler representations
+    - Avoid returning functions, lambda expressions, or other non-serializable Python objects
+
+The cloud execution environment provides the same standard libraries and imports as local execution, ensuring your code works consistently across both modes.
 
 ## Theory
 
