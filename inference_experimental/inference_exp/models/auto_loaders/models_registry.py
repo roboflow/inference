@@ -157,6 +157,10 @@ REGISTERED_MODELS: Dict[Tuple[ModelArchitecture, TaskType, BackendType], LazyCla
         module_name="inference_exp.models.moondream2.moondream2_hf",
         class_name="MoonDream2HF",
     ),
+    ("segment-anything-2-rt", INSTANCE_SEGMENTATION_TASK, BackendType.TORCH): LazyClass(
+        module_name="inference_exp.models.sam2_rt.sam2_pytorch",
+        class_name="SAM2ForStream",
+    ),
 }
 
 

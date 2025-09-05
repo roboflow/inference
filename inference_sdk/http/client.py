@@ -29,6 +29,7 @@ from inference_sdk.http.errors import (
     ModelNotInitializedError,
     ModelNotSelectedError,
     ModelTaskTypeNotSupportedError,
+    RetryError,
     WrongClientModeError,
 )
 from inference_sdk.http.utils.aliases import (
@@ -39,6 +40,7 @@ from inference_sdk.http.utils.executors import (
     RequestMethod,
     execute_requests_packages,
     execute_requests_packages_async,
+    send_post_request,
 )
 from inference_sdk.http.utils.iterables import unwrap_single_element_list
 from inference_sdk.http.utils.loaders import (
@@ -92,6 +94,17 @@ def wrap_errors(function: callable) -> callable:
     def decorate(*args, **kwargs) -> Any:
         try:
             return function(*args, **kwargs)
+        except RetryError as error:
+            if error.status_code is not None:
+                raise HTTPCallErrorError(
+                    description=f"Original request failed and retry did not succeed. Status code shows the "
+                    f"response of the last request executed.",
+                    status_code=error.status_code,
+                    api_message=None,
+                ) from error
+            raise HTTPClientError(
+                f"Original request failed and retry did not succeed. Details: {error}"
+            ) from error
         except HTTPError as error:
             if "application/json" in error.response.headers.get("Content-Type", ""):
                 error_data = error.response.json()
@@ -1603,12 +1616,12 @@ class InferenceHTTPClient:
                 url = f"{self.__api_url}/infer/workflows/{workspace_name}/{workflow_id}"
             else:
                 url = f"{self.__api_url}/{workspace_name}/workflows/{workflow_id}"
-        response = requests.post(
-            url,
-            json=payload,
+        response = send_post_request(
+            url=url,
+            payload=payload,
             headers=DEFAULT_HEADERS,
+            enable_retries=self.__inference_configuration.workflow_run_retries_enabled,
         )
-        api_key_safe_raise_for_status(response=response)
         response_data = response.json()
         workflow_outputs = response_data["outputs"]
         profiler_trace = response_data.get("profiler_trace", [])

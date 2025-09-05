@@ -1224,8 +1224,11 @@ class HttpInterface(BaseInterface):
                 "used to validate workflow definitions and suggest syntax in the JSON editor.",
             )
             @with_route_exceptions
-            def get_workflow_schema() -> WorkflowsBlocksSchemaDescription:
-                return get_workflow_schema_description()
+            def get_workflow_schema(
+                request: Request,
+            ) -> WorkflowsBlocksSchemaDescription:
+                result = get_workflow_schema_description()
+                return gzip_response_if_requested(request, response=result)
 
             @app.post(
                 "/workflows/blocks/dynamic_outputs",
