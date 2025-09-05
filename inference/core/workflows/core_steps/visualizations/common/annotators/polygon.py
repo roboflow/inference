@@ -5,7 +5,7 @@ import numpy as np
 from supervision import Color, Detections
 from supervision.annotators.base import BaseAnnotator, ImageType
 from supervision.annotators.utils import ColorLookup, resolve_color
-from supervision.detection.utils import mask_to_polygons
+from supervision.detection.utils.converters import mask_to_polygons
 from supervision.draw.color import ColorPalette
 from supervision.draw.utils import draw_polygon
 from supervision.utils.conversion import ensure_cv2_image_for_annotation

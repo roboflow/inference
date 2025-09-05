@@ -10,6 +10,7 @@ import pytest
 from aiohttp import ClientConnectionError, ClientResponseError, RequestInfo
 from aioresponses import aioresponses
 from requests import HTTPError, Request, Response
+import requests
 from requests_mock.mocker import Mocker
 from yarl import URL
 
@@ -39,6 +40,7 @@ from inference_sdk.http.errors import (
     ModelTaskTypeNotSupportedError,
     WrongClientModeError,
 )
+from inference_sdk.http.utils import executors
 
 
 def test_ensure_model_is_selected_when_model_is_selected() -> None:
@@ -3458,6 +3460,232 @@ def test_infer_from_workflow_when_v0_mode_used(
         "use_cache": True,
         "enable_profiling": False,
     }, "Request payload must contain api key and inputs"
+
+
+@pytest.mark.parametrize(
+    "legacy_endpoints", [(True, ), (False, )],
+)
+@mock.patch.object(executors, "requests")
+def test_infer_from_workflow_when_connection_error_to_be_retried_successfully(
+    requests_mock: MagicMock,
+    legacy_endpoints: bool,
+) -> None:
+    # given
+    api_url = "http://infer.roboflow.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    valid_response = Response()
+    valid_response.status_code = 200
+    valid_response._content = json.dumps({"outputs": [{"some": 3, "other": [1, {"a": "b"}]}]}).encode("utf-8")
+    requests_mock.exceptions.ConnectionError = requests.exceptions.ConnectionError
+    requests_mock.post.side_effect = [ConnectionError, valid_response]
+    method = (
+        http_client.infer_from_workflow
+        if legacy_endpoints
+        else http_client.run_workflow
+    )
+
+    # when
+    result = method(
+        workspace_name="my_workspace",
+        workflow_name="my_workflow",
+    )
+
+    # then
+    assert result == [
+        {"some": 3, "other": [1, {"a": "b"}]}
+    ], "Response from API must be properly decoded"
+
+
+@pytest.mark.parametrize(
+    "legacy_endpoints", [(True, ), (False, )],
+)
+@mock.patch.object(executors, "requests")
+def test_infer_from_workflow_when_connection_error_cannot_be_retried_successfully(
+    requests_mock: MagicMock,
+    legacy_endpoints: bool,
+) -> None:
+    # given
+    api_url = "http://infer.roboflow.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    requests_mock.exceptions.ConnectionError = requests.exceptions.ConnectionError
+    requests_mock.post.side_effect = ConnectionError
+    method = (
+        http_client.infer_from_workflow
+        if legacy_endpoints
+        else http_client.run_workflow
+    )
+
+    # when
+    with pytest.raises(HTTPClientError):
+        _ = method(
+            workspace_name="my_workspace",
+            workflow_name="my_workflow",
+        )
+
+
+@pytest.mark.parametrize(
+    "legacy_endpoints", [(True, ), (False, )],
+)
+@mock.patch.object(executors, "requests")
+def test_infer_from_workflow_when_connection_error_happens_and_retries_disabled(
+    requests_mock: MagicMock,
+    legacy_endpoints: bool,
+) -> None:
+    # given
+    api_url = "http://infer.roboflow.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    config = InferenceConfiguration(workflow_run_retries_enabled=False)
+    http_client.configure(config)
+    requests_mock.exceptions.ConnectionError = requests.exceptions.ConnectionError
+    valid_response = Response()
+    valid_response.url = api_url
+    valid_response.status_code = 200
+    valid_response._content = json.dumps({"outputs": [{"some": 3, "other": [1, {"a": "b"}]}]}).encode("utf-8")
+    requests_mock.exceptions.ConnectionError = requests.exceptions.ConnectionError
+    requests_mock.post.side_effect = [ConnectionError, valid_response]
+    method = (
+        http_client.infer_from_workflow
+        if legacy_endpoints
+        else http_client.run_workflow
+    )
+
+    # when
+    with pytest.raises(HTTPClientError):
+        _ = method(
+            workspace_name="my_workspace",
+            workflow_name="my_workflow",
+        )
+
+
+@pytest.mark.parametrize(
+    "legacy_endpoints", [(True, ), (False, )],
+)
+@mock.patch.object(executors, "requests")
+def test_infer_from_workflow_when_transient_error_to_be_retried_successfully(
+    requests_mock: MagicMock,
+    legacy_endpoints: bool,
+) -> None:
+    # given
+    api_url = "http://infer.roboflow.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    invalid_response = Response()
+    invalid_response.status_code = 503
+    valid_response = Response()
+    valid_response.status_code = 200
+    valid_response._content = json.dumps({"outputs": [{"some": 3, "other": [1, {"a": "b"}]}]}).encode("utf-8")
+    requests_mock.exceptions.ConnectionError = requests.exceptions.ConnectionError
+    requests_mock.post.side_effect = [invalid_response, invalid_response, valid_response]
+    method = (
+        http_client.infer_from_workflow
+        if legacy_endpoints
+        else http_client.run_workflow
+    )
+
+    # when
+    result = method(
+        workspace_name="my_workspace",
+        workflow_name="my_workflow",
+    )
+
+    # then
+    assert result == [
+        {"some": 3, "other": [1, {"a": "b"}]}
+    ], "Response from API must be properly decoded"
+
+
+@pytest.mark.parametrize(
+    "legacy_endpoints", [(True, ), (False, )],
+)
+@mock.patch.object(executors, "requests")
+def test_infer_from_workflow_when_transient_error_happens_with_retries_disabled(
+    requests_mock: MagicMock,
+    legacy_endpoints: bool,
+) -> None:
+    # given
+    api_url = "http://infer.roboflow.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    config = InferenceConfiguration(workflow_run_retries_enabled=False)
+    http_client.configure(config)
+    invalid_response = Response()
+    invalid_response.url = api_url
+    invalid_response.status_code = 503
+    valid_response = Response()
+    valid_response.url = api_url
+    valid_response.status_code = 200
+    valid_response._content = json.dumps({"outputs": [{"some": 3, "other": [1, {"a": "b"}]}]}).encode("utf-8")
+    requests_mock.exceptions.ConnectionError = requests.exceptions.ConnectionError
+    requests_mock.post.side_effect = [invalid_response, invalid_response, valid_response]
+    method = (
+        http_client.infer_from_workflow
+        if legacy_endpoints
+        else http_client.run_workflow
+    )
+
+    # when
+    with pytest.raises(HTTPCallErrorError):
+        _ = method(
+            workspace_name="my_workspace",
+            workflow_name="my_workflow",
+        )
+
+
+@pytest.mark.parametrize(
+    "legacy_endpoints", [(True, ), (False, )],
+)
+@mock.patch.object(executors, "requests")
+def test_infer_from_workflow_when_transient_error_cannot_be_retried_successfully(
+    requests_mock: MagicMock,
+    legacy_endpoints: bool,
+) -> None:
+    # given
+    api_url = "http://infer.roboflow.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    invalid_response = Response()
+    invalid_response.status_code = 503
+    requests_mock.post.side_effect = [invalid_response] * 3
+    requests_mock.exceptions.ConnectionError = requests.exceptions.ConnectionError
+    method = (
+        http_client.infer_from_workflow
+        if legacy_endpoints
+        else http_client.run_workflow
+    )
+
+    # when
+    with pytest.raises(HTTPCallErrorError):
+        _ = method(
+            workspace_name="my_workspace",
+            workflow_name="my_workflow",
+        )
+
+
+@pytest.mark.parametrize(
+    "legacy_endpoints", [(True, ), (False, )],
+)
+@mock.patch.object(executors, "requests")
+def test_infer_from_workflow_when_non_transient_error_occurred(
+    requests_mock: MagicMock,
+    legacy_endpoints: bool,
+) -> None:
+    # given
+    api_url = "http://infer.roboflow.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    invalid_response = Response()
+    invalid_response.url = api_url
+    invalid_response.status_code = 500
+    requests_mock.post.return_value = invalid_response
+    requests_mock.exceptions.ConnectionError = requests.exceptions.ConnectionError
+    method = (
+        http_client.infer_from_workflow
+        if legacy_endpoints
+        else http_client.run_workflow
+    )
+
+    # when
+    with pytest.raises(HTTPCallErrorError):
+        _ = method(
+            workspace_name="my_workspace",
+            workflow_name="my_workflow",
+        )
 
 
 @pytest.mark.parametrize(

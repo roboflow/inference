@@ -4,6 +4,10 @@ from functools import partial
 from typing import Any, Callable, Dict, List, Optional, Set
 
 from inference.core import logger
+from inference.core.exceptions import (
+    InferenceModelNotFound,
+    ModelManagerLockAcquisitionError,
+)
 from inference.core.workflows.errors import (
     ExecutionEngineRuntimeError,
     StepExecutionError,
@@ -136,6 +140,8 @@ def safe_execute_step(
         logger.info(
             f"finished execution of: {step_selector} - {datetime.now().isoformat()}"
         )
+    except (ModelManagerLockAcquisitionError, InferenceModelNotFound) as error:
+        raise error
     except WorkflowError as error:
         raise error
     except Exception as error:
