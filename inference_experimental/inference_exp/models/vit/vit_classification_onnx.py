@@ -294,13 +294,20 @@ class VITForMultiLabelClassificationOnnx(
     def post_process(
         self,
         model_results: torch.Tensor,
+        confidence: float = 0.5,
         **kwargs,
-    ) -> MultiLabelClassificationPrediction:
+    ) -> List[MultiLabelClassificationPrediction]:
         if self._inference_config.post_processing.fused:
             confidence = model_results
         else:
             confidence = torch.nn.functional.sigmoid(model_results)
-        return MultiLabelClassificationPrediction(
-            class_ids=confidence.argmax(dim=-1),
-            confidence=confidence,
-        )
+        results = []
+        for batch_element_confidence in confidence:
+            predicted_classes = torch.argwhere(batch_element_confidence >= confidence).squeeze(dim=-1)
+            results.append(
+                MultiLabelClassificationPrediction(
+                    class_ids=predicted_classes,
+                    confidence=batch_element_confidence,
+                )
+            )
+        return results
