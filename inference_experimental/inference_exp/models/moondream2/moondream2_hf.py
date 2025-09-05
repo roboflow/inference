@@ -11,6 +11,8 @@ from inference_exp.models.common.model_packages import get_model_package_content
 from inference_exp.models.common.roboflow.pre_processing import images_to_pillow
 from inference_exp.utils.imports import import_class_from_file
 
+from inference_exp.models.moondream2 import transformers_model
+
 
 @dataclass
 class EncodedImage:
@@ -34,14 +36,8 @@ class MoonDream2HF:
         device: torch.device = DEFAULT_DEVICE,
         **kwargs,
     ) -> "MoonDream2HF":
-        model_package_content = get_model_package_contents(
-            model_package_dir=model_name_or_path,
-            elements=["hf_moondream.py"],
-        )
-        model_class = import_class_from_file(
-            file_path=model_package_content["hf_moondream.py"],
-            class_name="HfMoondream",
-        )
+
+        model_class = transformers_model.get_model_class()
         model = model_class.from_pretrained(model_name_or_path).to(device)
         return cls(model=model, device=device)
 
