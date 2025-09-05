@@ -54,6 +54,7 @@ RUN python3.9 -m pip install --upgrade pip  && python3.9 -m pip install \
     -r requirements.yolo_world.txt \
     jupyterlab \
     "setuptools<=75.5.0" \
+    "onnx_graphsurgeon==0.5.8" \
     --upgrade \
     && rm -rf ~/.cache/pip
 
@@ -95,6 +96,7 @@ ENV VERSION_CHECK_MODE=continuous \
     ENABLE_PROMETHEUS=True \
     ENABLE_STREAM_API=True \
     STREAM_API_PRELOADED_PROCESSES=2 \
+    MAXIMUM_OPSET_FOR_TRT=16 \
     PYTHONPATH=/app:$PYTHONPATH
 
 ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT

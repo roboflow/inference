@@ -1,11 +1,15 @@
 import os
 import time
+from pathlib import Path
 from time import perf_counter
 from typing import Any, List, Tuple, Union
 
 import cv2
 import numpy as np
+import onnx
+import onnx_graphsurgeon as gs
 import onnxruntime
+from onnx import version_converter
 from PIL import Image
 
 from inference.core.entities.requests.inference import InferenceRequestImage
@@ -34,6 +38,7 @@ from inference.core.utils.onnx import (
     run_session_via_iobinding,
 )
 from inference.core.utils.preprocess import letterbox_image
+from inference.models.rfdetr.replace_layer_norms import replace_all_layernorms
 
 if USE_PYTORCH_FOR_PREPROCESSING:
     import torch
@@ -406,17 +411,21 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                         onnxruntime.GraphOptimizationLevel.ORT_DISABLE_ALL
                     )
                 expanded_execution_providers = []
-                for ep in self.onnxruntime_execution_providers:
-                    if ep == "TensorrtExecutionProvider":
+                for ep in ONNXRUNTIME_EXECUTION_PROVIDERS:
+                    if (
+                        ep == "TensorrtExecutionProvider"
+                        or ep[0] == "TensorrtExecutionProvider"
+                    ):
                         ep = (
                             "TensorrtExecutionProvider",
                             {
                                 "trt_max_workspace_size": str(1 << 30),
+                                "trt_fp16_enable": True,
                                 "trt_engine_cache_enable": True,
                                 "trt_engine_cache_path": os.path.join(
                                     TENSORRT_CACHE_PATH, self.endpoint
                                 ),
-                                "trt_fp16_enable": True,
+                                "trt_layer_norm_fp32_fallback": True,
                                 "trt_dump_subgraphs": False,
                                 "trt_force_sequential_engine_build": False,
                                 "trt_dla_enable": False,
@@ -427,11 +436,48 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                 if "OpenVINOExecutionProvider" in expanded_execution_providers:
                     expanded_execution_providers.remove("OpenVINOExecutionProvider")
 
+                model_path = self.cache_file(self.weights_file)
+                if os.getenv("MAXIMUM_OPSET_FOR_TRT"):
+
+                    max_opset = int(os.getenv("MAXIMUM_OPSET_FOR_TRT"))
+                    converted_cache_path = model_path.replace(
+                        ".onnx", f"_opset{max_opset}.onnx"
+                    )
+                    model_to_convert = onnx.load(model_path)
+                    graph = gs.import_onnx(model_to_convert)
+                    count = replace_all_layernorms(graph)
+                    out = str(
+                        Path(model_path).with_name(Path(model_path).stem + "_noLN.onnx")
+                    )
+
+                    m = gs.export_onnx(graph)
+                    src_ir = int(model_to_convert.ir_version or 10)
+                    m.ir_version = min(src_ir, 10)
+                    onnx.save(m, out)
+
+                    model_path = out
+                    model = onnx.load(out)
+
+                    current_opset = model.opset_import[0].version
+                    if current_opset > max_opset:
+                        logger.info(
+                            f"Converting ONNX model from opset {current_opset} to {max_opset} for TensorRT compatibility"
+                        )
+
+                        converted_model = version_converter.convert_version(
+                            model, max_opset
+                        )
+                        current_opset = converted_model.opset_import[0].version
+                        assert current_opset <= max_opset
+
+                        onnx.save(converted_model, converted_cache_path)
+                        model_path = converted_cache_path
                 self.onnx_session = onnxruntime.InferenceSession(
-                    self.cache_file(self.weights_file),
+                    model_path,
                     providers=expanded_execution_providers,
                     sess_options=session_options,
                 )
+
             except Exception as e:
                 self.clear_cache()
                 raise ModelArtefactError(

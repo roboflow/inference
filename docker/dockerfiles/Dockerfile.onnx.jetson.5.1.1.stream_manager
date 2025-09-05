@@ -45,6 +45,7 @@ RUN python3.9 -m pip install --upgrade pip  && python3.9 -m pip install \
     -r requirements.clip.txt \
     -r requirements.http.txt \
     "setuptools<=75.5.0" \
+    "onnx_graphsurgeon==0.5.8" \
     --upgrade \
     && rm -rf ~/.cache/pip
 
@@ -78,6 +79,7 @@ ENV ORT_TENSORRT_FP16_ENABLE=1 \
     WORKFLOWS_STEP_EXECUTION_MODE=local \
     WORKFLOWS_MAX_CONCURRENT_STEPS=1 \
     SUPERVISON_DEPRECATION_WARNING=0 \
+    MAXIMUM_OPSET_FOR_TRT=16 \
     PYTHONPATH=/app:$PYTHONPATH
 
 ENTRYPOINT ["python3.9", "-m", "inference.enterprise.stream_management.manager.app"]
