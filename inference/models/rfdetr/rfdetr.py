@@ -473,6 +473,7 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                         onnx.save(converted_model, converted_cache_path)
                         model_path = converted_cache_path
                         print("Was wrong model opset, but fixed!")
+                print(expanded_execution_providers)
                 self.onnx_session = onnxruntime.InferenceSession(
                     model_path,
                     providers=expanded_execution_providers,
