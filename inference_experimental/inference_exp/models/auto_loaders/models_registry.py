@@ -8,6 +8,7 @@ from inference_exp.weights_providers.entities import BackendType
 
 OBJECT_DETECTION_TASK = "object-detection"
 INSTANCE_SEGMENTATION_TASK = "instance-segmentation"
+SEMANTIC_SEGMENTATION_TASK = "semantic-segmentation"
 KEYPOINT_DETECTION_TASK = "keypoint-detection"
 VLM_TASK = "vlm"
 EMBEDDING_TASK = "embedding"
@@ -206,6 +207,14 @@ REGISTERED_MODELS: Dict[
     ("segment-anything-2-rt", INSTANCE_SEGMENTATION_TASK, BackendType.TORCH): LazyClass(
         module_name="inference_exp.models.sam2_rt.sam2_pytorch",
         class_name="SAM2ForStream",
+    ),
+    ("deep-lab-v3-plus", SEMANTIC_SEGMENTATION_TASK, BackendType.TORCH): LazyClass(
+        module_name="inference_exp.models.deep_lab_v3_plus.deep_lab_v3_plus_segmentation_torch",
+        class_name="DeepLabV3PlusForSemanticSegmentationTorch",
+    ),
+    ("deep-lab-v3-plus", SEMANTIC_SEGMENTATION_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_exp.models.deep_lab_v3_plus.deep_lab_v3_plus_segmentation_onnx",
+        class_name="DeepLabV3PlusForSemanticSegmentationOnnx",
     ),
 }
 

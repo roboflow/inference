@@ -166,7 +166,12 @@ def apply_pre_processing_to_torch_image(
     image_pre_processing: ImagePreProcessing,
     network_input_channels: int,
 ) -> Tuple[torch.Tensor, StaticCropOffset]:
-    static_crop_offset = StaticCropOffset(offset_x=0, offset_y=0)
+    static_crop_offset = StaticCropOffset(
+        offset_x=0,
+        offset_y=0,
+        original_height=image.shape[2],
+        original_width=image.shape[3],
+    )
     if image_pre_processing.static_crop and image_pre_processing.static_crop.enabled:
         image, static_crop_offset = apply_static_crop_to_torch_image(
             image=image,
@@ -198,7 +203,9 @@ def apply_static_crop_to_torch_image(
     x_max = int(config.x_max / 100 * width)
     y_max = int(config.y_max / 100 * height)
     cropped_tensor = image[:, :, y_min:y_max, x_min:x_max]
-    offset = StaticCropOffset(offset_x=x_min, offset_y=y_min)
+    offset = StaticCropOffset(
+        offset_x=x_min, offset_y=y_min, original_width=width, original_height=height
+    )
     return cropped_tensor, offset
 
 
@@ -825,7 +832,12 @@ def apply_pre_processing_to_numpy_image(
 ) -> Tuple[np.ndarray, StaticCropOffset]:
     if input_color_mode is None:
         input_color_mode = ColorMode.BGR
-    static_crop_offset = StaticCropOffset(offset_x=0, offset_y=0)
+    static_crop_offset = StaticCropOffset(
+        offset_x=0,
+        offset_y=0,
+        original_height=image.shape[0],
+        original_width=image.shape[1],
+    )
     if image_pre_processing.static_crop and image_pre_processing.static_crop.enabled:
         image, static_crop_offset = apply_static_crop_to_numpy_image(
             image=image,
@@ -864,7 +876,9 @@ def apply_static_crop_to_numpy_image(
     x_max = int(config.x_max / 100 * width)
     y_max = int(config.y_max / 100 * height)
     result_image = image[y_min:y_max, x_min:x_max]
-    return result_image, StaticCropOffset(offset_x=x_min, offset_y=y_min)
+    return result_image, StaticCropOffset(
+        offset_x=x_min, offset_y=y_min, original_height=height, original_width=width
+    )
 
 
 def apply_adaptive_equalization_to_numpy_image(image: np.ndarray) -> np.ndarray:

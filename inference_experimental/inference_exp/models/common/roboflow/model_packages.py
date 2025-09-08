@@ -43,7 +43,9 @@ PADDING_VALUES_MAPPING = {
     "grey edges": 127,
     "white edges": 255,
 }
-StaticCropOffset = namedtuple("StaticCropOffset", ["offset_x", "offset_y"])
+StaticCropOffset = namedtuple(
+    "StaticCropOffset", ["offset_x", "offset_y", "original_height", "original_width"]
+)
 PreProcessingMetadata = namedtuple(
     "PreProcessingMetadata",
     [
