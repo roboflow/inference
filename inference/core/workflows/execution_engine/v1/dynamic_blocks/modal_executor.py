@@ -13,14 +13,12 @@ from typing import Any, Dict, Optional
 import numpy as np
 
 from inference.core.env import MODAL_TOKEN_ID, MODAL_TOKEN_SECRET, MODAL_WORKSPACE_NAME
+from inference.core.logger import logger
 
 # Set Modal environment variables before importing
 if MODAL_TOKEN_ID and MODAL_TOKEN_SECRET:
     os.environ["MODAL_TOKEN_ID"] = MODAL_TOKEN_ID
     os.environ["MODAL_TOKEN_SECRET"] = MODAL_TOKEN_SECRET
-    print(
-        f"Modal credentials set in environment: {MODAL_TOKEN_ID[:4]}...{MODAL_TOKEN_ID[-4:]}"
-    )
 
 # Try to import modal, but handle gracefully if not installed
 try:
@@ -43,9 +41,9 @@ if MODAL_INSTALLED and MODAL_TOKEN_ID and MODAL_TOKEN_SECRET:
 else:
     MODAL_AVAILABLE = False
     if MODAL_INSTALLED:
-        print("Modal installed but credentials not found")
+        logger.warning("Modal installed but credentials not found")
     else:
-        print("Modal not installed")
+        logger.info("Modal not installed")
 
 
 # Create the Modal App only if Modal is installed
