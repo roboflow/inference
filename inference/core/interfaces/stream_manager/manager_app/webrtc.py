@@ -123,6 +123,11 @@ class VideoTransformTrack(VideoStreamTrack):
         self._last_frame: Optional[VideoFrame] = None
 
         self._av_logging_set: bool = False
+        
+        # Synthetic PTS generation to prevent quality drops
+        self._output_frame_count: int = 0
+        self._first_input_pts: Optional[int] = None
+        self._pts_offset: int = 0
 
     def set_track(self, track: RemoteStreamTrack):
         if not self.track:
@@ -185,8 +190,23 @@ class VideoTransformTrack(VideoStreamTrack):
         else:
             new_frame = VideoFrame.from_ndarray(np_frame, format="bgr24")
 
-        new_frame.pts = frame.pts
+        if self._first_input_pts is None:
+            self._first_input_pts = frame.pts
+            self._pts_offset = frame.pts
+
+        if self.incoming_stream_fps:
+            target_fps = self.incoming_stream_fps
+        else:
+            target_fps = 15.0
+
+        # 90000 Hz (90 kHz) clock rate defined by rfc3551 https://datatracker.ietf.org/doc/html/rfc3551
+        pts_increment = int(90000 / target_fps)
+
+        synthetic_pts = self._pts_offset + (self._output_frame_count * pts_increment)
+        new_frame.pts = synthetic_pts
         new_frame.time_base = frame.time_base
+
+        self._output_frame_count += 1
 
         return new_frame
 
