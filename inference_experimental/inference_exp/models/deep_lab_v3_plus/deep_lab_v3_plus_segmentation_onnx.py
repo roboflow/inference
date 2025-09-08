@@ -1,7 +1,8 @@
+from threading import Lock
 from typing import List, Optional, Tuple, Union
 
 import torch
-from inference_exp import SemanticSegmentationModel
+from inference_exp import ColorFormat, SemanticSegmentationModel
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.errors import EnvironmentConfigurationError, MissingDependencyError
 from inference_exp.models.base.semantic_segmentation import SemanticSegmentationResult
@@ -11,8 +12,19 @@ from inference_exp.models.base.types import (
     RawPrediction,
 )
 from inference_exp.models.common.model_packages import get_model_package_contents
-from inference_exp.models.common.roboflow.model_packages import PreProcessingMetadata
+from inference_exp.models.common.onnx import run_session_with_batch_size_limit
+from inference_exp.models.common.roboflow.model_packages import (
+    InferenceConfig,
+    PreProcessingMetadata,
+    ResizeMode,
+    parse_class_names_file,
+    parse_inference_config,
+)
+from inference_exp.models.common.roboflow.pre_processing import (
+    pre_process_network_input,
+)
 from inference_exp.utils.onnx_introspection import get_selected_onnx_execution_providers
+from torchvision.transforms import functional
 
 try:
     import onnxruntime
@@ -62,27 +74,163 @@ class DeepLabV3PlusForSemanticSegmentationOnnx(
                 "weights.onnx",
             ],
         )
+        class_names = parse_class_names_file(
+            class_names_path=model_package_content["class_names.txt"]
+        )
+        inference_config = parse_inference_config(
+            config_path=model_package_content["inference_config.json"],
+            allowed_resize_modes={
+                ResizeMode.STRETCH_TO,
+                ResizeMode.LETTERBOX,
+                ResizeMode.CENTER_CROP,
+                ResizeMode.LETTERBOX_REFLECT_EDGES,
+            },
+        )
+        session = onnxruntime.InferenceSession(
+            path_or_bytes=model_package_content["weights.onnx"],
+            providers=onnx_execution_providers,
+        )
+        input_batch_size = session.get_inputs()[0].shape[0]
+        if isinstance(input_batch_size, str):
+            input_batch_size = None
+        input_name = session.get_inputs()[0].name
+        return cls(
+            session=session,
+            input_name=input_name,
+            class_names=class_names,
+            inference_config=inference_config,
+            device=device,
+            input_batch_size=input_batch_size,
+        )
+
+    def __init__(
+        self,
+        session: onnxruntime.InferenceSession,
+        input_name: str,
+        inference_config: InferenceConfig,
+        class_names: List[str],
+        device: torch.device,
+        input_batch_size: Optional[int],
+    ):
+        self._session = session
+        self._input_name = input_name
+        self._inference_config = inference_config
+        self._class_names = class_names
+        self._device = device
+        self._input_batch_size = input_batch_size
+        self._session_thread_lock = Lock()
 
     @property
     def class_names(self) -> List[str]:
-        return []
+        return self._class_names
 
     def pre_process(
         self,
         images: Union[torch.Tensor, List[torch.Tensor]],
+        input_color_format: Optional[ColorFormat] = None,
         **kwargs,
     ) -> Tuple[PreprocessedInputs, PreprocessingMetadata]:
-        pass
+        return pre_process_network_input(
+            images=images,
+            image_pre_processing=self._inference_config.image_pre_processing,
+            network_input=self._inference_config.network_input,
+            target_device=self._device,
+            input_color_format=input_color_format,
+        )
 
     def forward(
         self, pre_processed_images: PreprocessedInputs, **kwargs
     ) -> RawPrediction:
-        pass
+        with self._session_thread_lock:
+            return run_session_with_batch_size_limit(
+                session=self._session,
+                inputs={self._input_name: pre_processed_images},
+                min_batch_size=self._input_batch_size,
+                max_batch_size=self._input_batch_size,
+            )[0]
 
     def post_process(
         self,
         model_results: RawPrediction,
         pre_processing_meta: PreprocessedInputs,
+        confidence_threshold: float = 0.5,
         **kwargs,
     ) -> List[SemanticSegmentationResult]:
-        pass
+        results = []
+        for image_results, image_metadata in zip(model_results, pre_processing_meta):
+            inference_size = image_metadata.inference_size
+            mask_h_scale = model_results.shape[2] / inference_size.height
+            mask_w_scale = model_results.shape[3] / inference_size.width
+            mask_pad_top, mask_pad_bottom, mask_pad_left, mask_pad_right = (
+                round(mask_h_scale * image_metadata.pad_top),
+                round(mask_h_scale * image_metadata.pad_bottom),
+                round(mask_w_scale * image_metadata.pad_left),
+                round(mask_w_scale * image_metadata.pad_right),
+            )
+            _, mh, mw = image_results.shape
+            image_results = image_results[
+                :,
+                mask_pad_top : mh - mask_pad_bottom,
+                mask_pad_left : mw - mask_pad_right,
+            ]
+            if (
+                image_results.shape[1] != image_metadata.original_size.height
+                or image_results.shape[2] != image_metadata.original_size.width
+            ):
+                image_results = functional.resize(
+                    image_results,
+                    [
+                        image_metadata.original_size.height,
+                        image_metadata.original_size.width,
+                    ],
+                    interpolation=functional.InterpolationMode.BILINEAR,
+                )
+            image_results = torch.nn.functional.softmax(image_results, dim=0)
+            image_confidence, image_class_ids = torch.max(image_results, dim=0)
+            below_threshold = image_confidence < confidence_threshold
+            image_confidence[below_threshold] = 0.0
+            image_class_ids[below_threshold] = -1
+            if (
+                image_metadata.static_crop_offset.offset_x > 0
+                or image_metadata.static_crop_offset.offset_y > 0
+            ):
+                original_size_confidence_canvas = torch.zeros(
+                    (
+                        image_metadata.static_crop_offset.original_height,
+                        image_metadata.static_crop_offset.original_width,
+                    ),
+                    device=self._device,
+                    dtype=image_confidence.dtype,
+                )
+                original_size_confidence_canvas[
+                    image_metadata.static_crop_offset.offset_y : image_metadata.static_crop_offset.offset_y
+                    + image_confidence.shape[0],
+                    image_metadata.static_crop_offset.offset_x : image_metadata.static_crop_offset.offset_x
+                    + image_confidence.shape[1],
+                ] = image_confidence
+                original_size_confidence_class_id_canvas = (
+                    torch.ones(
+                        (
+                            image_metadata.static_crop_offset.original_height,
+                            image_metadata.static_crop_offset.original_width,
+                        ),
+                        device=self._device,
+                        dtype=image_class_ids.dtype,
+                    )
+                    * -1
+                )
+                original_size_confidence_class_id_canvas[
+                    image_metadata.static_crop_offset.offset_y : image_metadata.static_crop_offset.offset_y
+                    + image_class_ids.shape[0],
+                    image_metadata.static_crop_offset.offset_x : image_metadata.static_crop_offset.offset_x
+                    + image_class_ids.shape[1],
+                ] = image_class_ids
+                image_class_ids = original_size_confidence_class_id_canvas
+                image_confidence = original_size_confidence_canvas
+            results.append(
+                SemanticSegmentationResult(
+                    segmentation_map=image_class_ids,
+                    confidence=image_confidence,
+                )
+            )
+        return results
