@@ -510,17 +510,27 @@ def validate_code_in_modal(
         )
 
     workspace = workspace_id or "anonymous"
+    
+    # Construct the full code to validate (same as in create_dynamic_module)
+    full_code = python_code.run_function_code
+    if python_code.init_function_code:
+        full_code += "\n\n" + python_code.init_function_code
+    
+    # Escape the code for safe embedding in the validation function
+    # Use repr() to properly escape quotes and special characters
+    escaped_code = repr(full_code)
 
     # Simple validation code that checks syntax
     validation_code = PythonCode(
+        type="PythonCode",
         imports=[],
-        code=f"""
+        run_function_code=f"""
 import ast
 
 def validate_syntax():
     try:
         # Try to compile the user code
-        code = '''{python_code.code}'''
+        code = {escaped_code}
         compile(code, '<string>', 'exec')
         # Try to parse as AST to check structure
         ast.parse(code)
@@ -531,9 +541,8 @@ def validate_syntax():
         return {{"valid": False, "error": str(e)}}
 """,
         run_function_name="validate_syntax",
-        run_function_code="",
-        init_function_name=None,
         init_function_code=None,
+        init_function_name="init",
     )
 
     executor = ModalExecutor(workspace_id=workspace)
