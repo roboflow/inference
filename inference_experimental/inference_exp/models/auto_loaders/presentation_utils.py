@@ -64,7 +64,7 @@ def render_table_with_model_packages(
     model_packages: List[ModelPackageMetadata],
     model_packages_size: Optional[List[Tuple[int, bool]]],
 ) -> Table:
-    table = Table(title="Model overview", show_lines=True)
+    table = Table(title="Model packages", show_lines=True)
     table.add_column("ID", justify="center", no_wrap=True, style="bold")
     table.add_column("backend", justify="center")
     table.add_column("batch size", justify="center")
