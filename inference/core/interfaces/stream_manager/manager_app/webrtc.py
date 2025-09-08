@@ -12,6 +12,7 @@ from aiortc import (
     RTCDataChannel,
     RTCIceServer,
     RTCPeerConnection,
+    RTCRtpSender,
     RTCSessionDescription,
     VideoStreamTrack,
 )
@@ -100,6 +101,7 @@ class VideoTransformTrack(VideoStreamTrack):
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
+        self._loop = asyncio_loop
         self.processing_timeout: float = processing_timeout
 
         self.track: Optional[RemoteStreamTrack] = None
@@ -111,7 +113,6 @@ class VideoTransformTrack(VideoStreamTrack):
         self.to_inference_queue: "SyncAsyncQueue[VideoFrame]" = to_inference_queue
         self.from_inference_queue: "SyncAsyncQueue[np.ndarray]" = from_inference_queue
 
-        self._asyncio_loop = asyncio_loop
         self._pool = concurrent.futures.ThreadPoolExecutor()
 
         self._fps_probe_frames = fps_probe_frames
@@ -248,12 +249,14 @@ class RTCPeerConnectionWithFPS(RTCPeerConnection):
     def __init__(
         self,
         video_transform_track: VideoTransformTrack,
+        asyncio_loop: asyncio.AbstractEventLoop,
         stream_output: Optional[str] = None,
         data_output: Optional[str] = None,
         *args,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
+        self._loop = asyncio_loop
         self.video_transform_track: VideoTransformTrack = video_transform_track
         self._consumers_signalled: bool = False
         self.stream_output: Optional[str] = stream_output
@@ -314,12 +317,14 @@ async def init_rtc_peer_connection(
         peer_connection = RTCPeerConnectionWithFPS(
             video_transform_track=video_transform_track,
             configuration=RTCConfiguration(iceServers=[turn_server]),
+            asyncio_loop=asyncio_loop,
             stream_output=stream_output,
             data_output=data_output,
         )
     else:
         peer_connection = RTCPeerConnectionWithFPS(
             video_transform_track=video_transform_track,
+            asyncio_loop=asyncio_loop,
             stream_output=stream_output,
             data_output=data_output,
         )
