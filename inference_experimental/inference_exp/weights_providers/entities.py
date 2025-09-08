@@ -7,7 +7,7 @@ from packaging.version import Version
 
 class BackendType(str, Enum):
     TORCH = "torch"
-    TORCH_SCRIPT = "torch_script"
+    TORCH_SCRIPT = "torch-script"
     ONNX = "onnx"
     TRT = "trt"
     HF = "hugging-face"

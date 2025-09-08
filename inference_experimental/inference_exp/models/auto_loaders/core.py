@@ -12,6 +12,7 @@ from inference_exp.errors import (
     CorruptedModelPackageError,
     DirectLocalStorageAccessError,
     ModelLoadingError,
+    NoModelPackagesAvailableError,
     UnauthorizedModelAccessError,
 )
 from inference_exp.logger import LOGGER, verbose_info
@@ -28,6 +29,13 @@ from inference_exp.models.auto_loaders.entities import (
     TaskType,
 )
 from inference_exp.models.auto_loaders.models_registry import resolve_model_class
+from inference_exp.models.auto_loaders.presentation_utils import (
+    calculate_artefacts_size,
+    calculate_size_of_all_model_packages_artefacts,
+    render_model_package_details_table,
+    render_table_with_model_overview,
+    render_table_with_model_packages,
+)
 from inference_exp.models.auto_loaders.storage_manager import (
     AccessIdentifiers,
     LiberalModelStorageManager,
@@ -52,6 +60,8 @@ from inference_exp.weights_providers.entities import (
     ModelPackageMetadata,
     Quantization,
 )
+from rich.console import Console
+from rich.text import Text
 
 AnyModel = Union[
     ClassificationModel,
@@ -68,9 +78,87 @@ AnyModel = Union[
 class AutoModel:
 
     @classmethod
+    def describe_model(
+        cls,
+        model_id: str,
+        weights_provider: str = "roboflow",
+        api_key: Optional[str] = None,
+        pull_artefacts_size: bool = True,
+    ) -> None:
+        model_metadata = get_model_from_provider(
+            provider=weights_provider,
+            model_id=model_id,
+            api_key=api_key,
+        )
+        model_packages_size = None
+        if pull_artefacts_size:
+            model_packages_size = calculate_size_of_all_model_packages_artefacts(
+                model_packages=model_metadata.model_packages
+            )
+        console = Console()
+        model_overview_table = render_table_with_model_overview(
+            model_id=model_metadata.model_id,
+            requested_model_id=model_id,
+            model_architecture=model_metadata.model_architecture,
+            task_type=model_metadata.task_type,
+            weights_provider=weights_provider,
+            registered_packages=len(model_metadata.model_packages),
+        )
+        console.print(model_overview_table)
+        packages_overview_table = render_table_with_model_packages(
+            model_packages=model_metadata.model_packages,
+            model_packages_size=model_packages_size,
+        )
+        console.print(packages_overview_table)
+        text = Text.assemble(
+            ("\nWant to check more details about specific package?", "bold"),
+            "\nUse AutoModel.describe_model_package('model_id', 'package_id').",
+        )
+        console.print(text)
+
+    @classmethod
+    def describe_model_package(
+        cls,
+        model_id: str,
+        package_id: str,
+        weights_provider: str = "roboflow",
+        api_key: Optional[str] = None,
+        pull_artefacts_size: bool = True,
+    ) -> None:
+        model_metadata = get_model_from_provider(
+            provider=weights_provider,
+            model_id=model_id,
+            api_key=api_key,
+        )
+
+        selected_package = None
+        for package in model_metadata.model_packages:
+            if package.package_id == package_id:
+                selected_package = package
+        if selected_package is None:
+            raise NoModelPackagesAvailableError(
+                message=f"Selected model package {package_id} does not exist for model {model_id}. Make sure provided "
+                f"value is valid.",
+                help_url="https://todo",
+            )
+        artefacts_size = None
+        if pull_artefacts_size:
+            artefacts_size = calculate_artefacts_size(
+                package_artefacts=selected_package.package_artefacts
+            )
+        table = render_model_package_details_table(
+            model_id=model_metadata.model_id,
+            requested_model_id=model_id,
+            artefacts_size=artefacts_size,
+            model_package=selected_package,
+        )
+        console = Console()
+        console.print(table)
+
+    @classmethod
     def from_pretrained(
         cls,
-        model_name_or_path: str,
+        model_id_or_path: str,
         weights_provider: str = "roboflow",
         api_key: Optional[str] = None,
         model_package_id: Optional[str] = None,
@@ -102,7 +190,7 @@ class AutoModel:
         if model_storage_manager is None:
             model_storage_manager = LiberalModelStorageManager()
         if model_storage_manager.is_model_access_forbidden(
-            model_id=model_name_or_path, api_key=api_key
+            model_id=model_id_or_path, api_key=api_key
         ):
             raise UnauthorizedModelAccessError(
                 message=f"Unauthorized not access model with ID: {model_package_id}. Are you sure you use valid "
@@ -140,7 +228,7 @@ class AutoModel:
             "engine_host_code_allowed": trt_engine_host_code_allowed,
         }
         model_init_kwargs.update(kwargs)
-        if not os.path.isdir(model_name_or_path):
+        if not os.path.isdir(model_id_or_path):
             # QUESTION: is it enough to assume presence of local dir as the intent to load
             # model from disc drive? What if we have clash of model id / model alias with
             # contents of someone's local drive - shall we then try to load from both sources?
@@ -150,7 +238,7 @@ class AutoModel:
             auto_negotiation_hash = hash_dict_content(
                 content={
                     "provider": weights_provider,
-                    "model_id": model_name_or_path,
+                    "model_id": model_id_or_path,
                     "api_key": api_key,
                     "requested_model_package_id": model_package_id,
                     "requested_backends": backends,
@@ -168,7 +256,7 @@ class AutoModel:
                 auto_resolution_cache=auto_resolution_cache,
                 auto_negotiation_hash=auto_negotiation_hash,
                 model_storage_manager=model_storage_manager,
-                model_name_or_path=model_name_or_path,
+                model_name_or_path=model_id_or_path,
                 model_init_kwargs=model_init_kwargs,
                 api_key=api_key,
                 verbose=verbose,
@@ -178,12 +266,12 @@ class AutoModel:
             try:
                 model_metadata = get_model_from_provider(
                     provider=weights_provider,
-                    model_id=model_name_or_path,
+                    model_id=model_id_or_path,
                     api_key=api_key,
                 )
             except UnauthorizedModelAccessError as error:
                 model_storage_manager.on_model_access_forbidden(
-                    model_id=model_name_or_path, api_key=api_key
+                    model_id=model_id_or_path, api_key=api_key
                 )
                 raise error
             matching_model_packages = negotiate_model_packages(
@@ -202,7 +290,7 @@ class AutoModel:
                 verbose=verbose,
             )
             return attempt_loading_matching_model_packages(
-                model_id=model_name_or_path,
+                model_id=model_id_or_path,
                 model_architecture=model_metadata.model_architecture,
                 task_type=model_metadata.task_type,
                 matching_model_packages=matching_model_packages,
@@ -230,7 +318,7 @@ class AutoModel:
                 help_url="https://todo",
             )
         return attempt_loading_model_from_local_storage(
-            model_dir=model_name_or_path,
+            model_dir=model_id_or_path,
             allow_local_code_packages=allow_local_code_packages,
             model_init_kwargs=model_init_kwargs,
         )
