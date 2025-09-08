@@ -6,7 +6,11 @@ import torch
 from inference_exp import Detections, ObjectDetectionModel
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
-from inference_exp.errors import MissingDependencyError, ModelRuntimeError
+from inference_exp.errors import (
+    CorruptedModelPackageError,
+    MissingDependencyError,
+    ModelRuntimeError,
+)
 from inference_exp.models.common.cuda import use_cuda_context, use_primary_cuda_context
 from inference_exp.models.common.model_packages import get_model_package_contents
 from inference_exp.models.common.roboflow.model_packages import (
@@ -24,7 +28,11 @@ from inference_exp.models.common.roboflow.post_processing import (
 from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
-from inference_exp.models.common.trt import infer_from_trt_engine, load_model
+from inference_exp.models.common.trt import (
+    get_engine_inputs_and_outputs,
+    infer_from_trt_engine,
+    load_model,
+)
 
 try:
     import tensorrt as trt
@@ -101,8 +109,26 @@ class RFDetrForObjectDetectionTRT(
                 engine_host_code_allowed=engine_host_code_allowed,
             )
             execution_context = engine.create_execution_context()
+        inputs, outputs = get_engine_inputs_and_outputs(engine=engine)
+        if len(inputs) != 1:
+            raise CorruptedModelPackageError(
+                message=f"Implementation assume single model input, found: {len(inputs)}.",
+                help_url="https://todo",
+            )
+        if len(outputs) != 2:
+            raise CorruptedModelPackageError(
+                message=f"Implementation assume 2 model outputs, found: {len(outputs)}.",
+                help_url="https://todo",
+            )
+        if "dets" not in outputs or "labels" not in outputs:
+            raise CorruptedModelPackageError(
+                message=f"Expected model outputs to be named `output0` and `output1`, but found: {outputs}.",
+                help_url="https://todo",
+            )
         return cls(
             engine=engine,
+            input_name=inputs[0],
+            output_names=["dets", "labels"],
             class_names=class_names,
             inference_config=inference_config,
             trt_config=trt_config,
@@ -114,6 +140,8 @@ class RFDetrForObjectDetectionTRT(
     def __init__(
         self,
         engine: trt.ICudaEngine,
+        input_name: str,
+        output_names: List[str],
         class_names: List[str],
         inference_config: InferenceConfig,
         trt_config: TRTConfig,
@@ -122,6 +150,8 @@ class RFDetrForObjectDetectionTRT(
         execution_context: trt.IExecutionContext,
     ):
         self._engine = engine
+        self._input_name = input_name
+        self._output_names = output_names
         self._inference_config = inference_config
         self._class_names = class_names
         self._device = device
@@ -159,8 +189,8 @@ class RFDetrForObjectDetectionTRT(
                     engine=self._engine,
                     context=self._execution_context,
                     device=self._device,
-                    input_name="input",
-                    outputs=["dets", "labels"],
+                    input_name=self._input_name,
+                    outputs=self._output_names,
                 )
                 return detections, labels
 

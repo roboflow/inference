@@ -31,7 +31,11 @@ from inference_exp.models.common.roboflow.post_processing import (
 from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
-from inference_exp.models.common.trt import infer_from_trt_engine, load_model
+from inference_exp.models.common.trt import (
+    get_engine_inputs_and_outputs,
+    infer_from_trt_engine,
+    load_model,
+)
 
 try:
     import tensorrt as trt
@@ -114,8 +118,21 @@ class YOLOv8ForKeyPointsDetectionTRT(
                 engine_host_code_allowed=engine_host_code_allowed,
             )
             execution_context = engine.create_execution_context()
+        inputs, outputs = get_engine_inputs_and_outputs(engine=engine)
+        if len(inputs) != 1:
+            raise CorruptedModelPackageError(
+                message=f"Implementation assume single model input, found: {len(inputs)}.",
+                help_url="https://todo",
+            )
+        if len(outputs) != 1:
+            raise CorruptedModelPackageError(
+                message=f"Implementation assume single model output, found: {len(outputs)}.",
+                help_url="https://todo",
+            )
         return cls(
             engine=engine,
+            input_name=inputs[0],
+            output_name=outputs[0],
             class_names=class_names,
             inference_config=inference_config,
             parsed_key_points_metadata=parsed_key_points_metadata,
@@ -127,6 +144,8 @@ class YOLOv8ForKeyPointsDetectionTRT(
     def __init__(
         self,
         engine: trt.ICudaEngine,
+        input_name: str,
+        output_name: str,
         class_names: List[str],
         inference_config: InferenceConfig,
         parsed_key_points_metadata: List[List[str]],
@@ -136,6 +155,8 @@ class YOLOv8ForKeyPointsDetectionTRT(
         execution_context: trt.IExecutionContext,
     ):
         self._engine = engine
+        self._input_name = input_name
+        self._output_names = [output_name]
         self._cuda_context = cuda_context
         self._execution_context = execution_context
         self._class_names = class_names
@@ -183,8 +204,8 @@ class YOLOv8ForKeyPointsDetectionTRT(
                     engine=self._engine,
                     context=self._execution_context,
                     device=self._device,
-                    input_name="images",
-                    outputs=["output0"],
+                    input_name=self._input_name,
+                    outputs=self._output_names,
                 )[0]
 
     def post_process(
