@@ -56,6 +56,8 @@ RUN python3.9 -m pip install --upgrade pip  && python3.9 -m pip install \
     jupyterlab \
     "setuptools<=75.5.0" \
     "onnx_graphsurgeon==0.5.8" \
+    "protobuf==3.20.3" \
+    "googleapis-common-protos<2" \
     --upgrade \
     && rm -rf ~/.cache/pip
 
@@ -77,7 +79,7 @@ RUN wget https://nvidia.box.com/shared/static/67zek28z497hs9aev7xg2c1wngdeyv4h.w
 RUN python3.9 -m pip install "numpy<=1.26.4" onnxruntime_gpu-1.16.0-cp39-cp39-linux_aarch64.whl "opencv-python-headless>4,<=4.10.0.84" \
     && rm -rf ~/.cache/pip \
     && rm onnxruntime_gpu-1.16.0-cp39-cp39-linux_aarch64.whl
-
+   
 ENV VERSION_CHECK_MODE=continuous \
     PROJECT=roboflow-platform \
     ORT_TENSORRT_FP16_ENABLE=1 \
@@ -101,3 +103,5 @@ ENV VERSION_CHECK_MODE=continuous \
     PYTHONPATH=/app:$PYTHONPATH
 
 ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT
+
+#run as docker run --rm -it --network host --runtime nvidia -e NVIDIA_VISIBLE_DEVICES=all -e NVIDIA_DRIVER_CAPABILITIES=compute,utilit -p 9002:9002 -v ./inference:/app/inference roboflow/roboflow-inference-server-jetson-511deb:dev
