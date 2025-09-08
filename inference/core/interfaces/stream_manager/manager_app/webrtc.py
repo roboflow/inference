@@ -136,6 +136,7 @@ class VideoTransformTrack(VideoStreamTrack):
             av_logging.set_libav_level(av_logging.ERROR)
             self._av_logging_set = True
         frame: VideoFrame = await self.track.recv()
+        logger.error("Track queue size: %s", self.track._queue.qsize())
         self._processed += 1
         if not self.incoming_stream_fps:
             if not self._fps_probe_t1:
@@ -156,11 +157,7 @@ class VideoTransformTrack(VideoStreamTrack):
                 )
                 logger.info("Incoming stream fps: %s", self.incoming_stream_fps)
 
-        if not await self.to_inference_queue.async_full():
-            await self.to_inference_queue.async_put(frame)
-        else:
-            await self.to_inference_queue.async_get_nowait()
-            await self.to_inference_queue.async_put_nowait(frame)
+        await self.to_inference_queue.async_put(frame)
 
         np_frame: Optional[np.ndarray] = None
         try:
