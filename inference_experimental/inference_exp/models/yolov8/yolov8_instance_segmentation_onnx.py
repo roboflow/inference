@@ -13,18 +13,15 @@ from inference_exp.errors import (
 )
 from inference_exp.models.common.model_packages import get_model_package_contents
 from inference_exp.models.common.onnx import (
-    run_session_via_iobinding,
     run_session_with_batch_size_limit,
     set_execution_provider_defaults,
 )
 from inference_exp.models.common.roboflow.model_packages import (
     InferenceConfig,
-    PreProcessingConfig,
     PreProcessingMetadata,
     ResizeMode,
     parse_class_names_file,
     parse_inference_config,
-    parse_pre_processing_config,
 )
 from inference_exp.models.common.roboflow.post_processing import (
     align_instance_segmentation_results,
@@ -118,8 +115,10 @@ class YOLOv8ForInstanceSegmentationOnnx(
         input_batch_size = session.get_inputs()[0].shape[0]
         if isinstance(input_batch_size, str):
             input_batch_size = None
+        input_name = session.get_inputs()[0].name
         return cls(
             session=session,
+            input_name=input_name,
             class_names=class_names,
             inference_config=inference_config,
             device=device,
@@ -129,12 +128,14 @@ class YOLOv8ForInstanceSegmentationOnnx(
     def __init__(
         self,
         session: onnxruntime.InferenceSession,
+        input_name: str,
         inference_config: InferenceConfig,
         class_names: List[str],
         device: torch.device,
         input_batch_size: Optional[int],
     ):
         self._session = session
+        self._input_name = input_name
         self._inference_config = inference_config
         self._class_names = class_names
         self._device = device
@@ -165,7 +166,7 @@ class YOLOv8ForInstanceSegmentationOnnx(
         with self._session_thread_lock:
             instances, protos = run_session_with_batch_size_limit(
                 session=self._session,
-                inputs={"images": pre_processed_images},
+                inputs={self._input_name: pre_processed_images},
                 min_batch_size=self._input_batch_size,
                 max_batch_size=self._input_batch_size,
             )

@@ -160,13 +160,9 @@ class VITForClassificationHF(ClassificationModel[torch.Tensor, torch.Tensor]):
         model_results: torch.Tensor,
         **kwargs,
     ) -> ClassificationPrediction:
-        if self._inference_config.post_processing.fused:
-            confidence = model_results
-        else:
-            confidence = torch.nn.functional.softmax(model_results, dim=-1)
         return ClassificationPrediction(
-            class_id=confidence.argmax(dim=-1),
-            confidence=confidence,
+            class_id=model_results.argmax(dim=-1),
+            confidence=model_results,
         )
 
 

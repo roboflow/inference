@@ -60,87 +60,6 @@ PreProcessingMetadata = namedtuple(
 )
 
 
-def parse_pre_processing_config(config_path: str) -> PreProcessingConfig:
-    try:
-        content = read_json(path=config_path)
-        if not content:
-            raise ValueError("file is empty.")
-        if not isinstance(content, dict):
-            raise ValueError("file is malformed (not a JSON dictionary)")
-        if "PREPROCESSING" not in content:
-            raise ValueError("file is malformed (lack of `PREPROCESSING` key)")
-        preprocessing_dict = json.loads(content["PREPROCESSING"])
-        resize_config = preprocessing_dict["resize"]
-        if not resize_config["enabled"]:
-            return PreProcessingConfig(mode=PreProcessingMode.NONE)
-        if "width" not in resize_config or "height" not in resize_config:
-            raise ValueError(
-                "file is malformed (lack of `width` or `height` key in dictionary specifying preprocessing)"
-            )
-        target_size = ImageDimensions(
-            width=int(resize_config["width"]), height=int(resize_config["height"])
-        )
-        if "format" not in resize_config:
-            raise ValueError(
-                "file is malformed (lack of `format` key in dictionary specifying preprocessing)"
-            )
-        if resize_config["format"] == "Stretch to":
-            return PreProcessingConfig(
-                mode=PreProcessingMode.STRETCH, target_size=target_size
-            )
-        for padding_color_infix, padding_value in PADDING_VALUES_MAPPING.items():
-            if padding_color_infix in resize_config["format"]:
-                return PreProcessingConfig(
-                    mode=PreProcessingMode.LETTERBOX,
-                    target_size=target_size,
-                    padding_value=padding_value,
-                )
-        raise ValueError("could not determine resize method or padding color")
-    except (IOError, OSError, ValueError) as error:
-        raise CorruptedModelPackageError(
-            message=f"Environment file is malformed: "
-            f"{error}. In case that the package is "
-            f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
-            f"verify its consistency in docs.",
-            help_url="https://todo",
-        ) from error
-
-
-@dataclass
-class ModelCharacteristics:
-    task_type: str
-    model_type: str
-
-
-def parse_model_characteristics(config_path: str) -> ModelCharacteristics:
-    try:
-        parsed_config = read_json(path=config_path)
-        if not isinstance(parsed_config, dict):
-            raise ValueError(
-                f"decoded value is {type(parsed_config)}, but dictionary expected"
-            )
-        if (
-            "project_task_type" not in parsed_config
-            or "model_type" not in parsed_config
-        ):
-            raise ValueError(
-                "could not find required entries in config - either "
-                "'project_task_type' or 'model_type' field is missing"
-            )
-        return ModelCharacteristics(
-            task_type=parsed_config["project_task_type"],
-            model_type=parsed_config["model_type"],
-        )
-    except (IOError, OSError, ValueError) as error:
-        raise CorruptedModelPackageError(
-            message=f"Model type config file is malformed: "
-            f"{error}. In case that the package is "
-            f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
-            f"verify its consistency in docs.",
-            help_url="https://todo",
-        ) from error
-
-
 def parse_key_points_metadata(key_points_metadata_path: str) -> List[List[str]]:
     try:
         parsed_config = read_json(path=key_points_metadata_path)
@@ -233,30 +152,6 @@ def parse_trt_config(config_path: str) -> TRTConfig:
     except (IOError, OSError, ValueError) as error:
         raise CorruptedModelPackageError(
             message=f"TRT config file of the model package is malformed: "
-            f"{error}. In case that the package is "
-            f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
-            f"verify its consistency in docs.",
-            help_url="https://todo",
-        ) from error
-
-
-def parse_class_map_from_environment_file(environment_file_path: str) -> List[str]:
-    try:
-        parsed_config = read_json(path=environment_file_path)
-        if "CLASS_MAP" not in parsed_config:
-            raise ValueError("config does not provide `CLASS_MAP` config")
-        class_map_dict = parsed_config["CLASS_MAP"]
-        class_map: List[Optional[str]] = [None] * len(class_map_dict)
-        for class_id, class_name in class_map_dict.items():
-            class_map[int(class_id)] = class_name
-        if any(c is None for c in class_map):
-            raise ValueError(
-                "class mapping does not provide class name for every class id"
-            )
-        return class_map
-    except (IOError, OSError, ValueError, IndexError) as error:
-        raise CorruptedModelPackageError(
-            message=f"Environment file is malformed: "
             f"{error}. In case that the package is "
             f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
             f"verify its consistency in docs.",

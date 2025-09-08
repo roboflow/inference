@@ -75,7 +75,7 @@ def render_table_with_model_packages(
         model_packages_size = [None] * len(model_packages)
     for model_package, package_size in zip(model_packages, model_packages_size):
         if package_size is None:
-            size_str = "N"
+            size_str = "N/A"
         else:
             size, status = package_size
             size_str = bytes_to_human_format(size=size)
@@ -84,7 +84,7 @@ def render_table_with_model_packages(
         batch_size = (
             str(model_package.static_batch_size)
             if model_package.static_batch_size
-            else "N/A"
+            else "N"
         )
         if model_package.quantization is Quantization.UNKNOWN:
             quantization_str = "N/A"
@@ -118,9 +118,7 @@ def render_model_package_details_table(
         if not status:
             size_str = f"{size_str} ⚠️"
     batch_size = (
-        str(model_package.static_batch_size)
-        if model_package.static_batch_size
-        else "N/A"
+        str(model_package.static_batch_size) if model_package.static_batch_size else "N"
     )
     if model_package.quantization is Quantization.UNKNOWN:
         quantization_str = "N/A"

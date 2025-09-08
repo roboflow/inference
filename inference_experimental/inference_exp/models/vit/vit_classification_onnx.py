@@ -110,8 +110,10 @@ class VITForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):
         input_batch_size = input_shape[0]
         if isinstance(input_batch_size, str):
             input_batch_size = None
+        input_name = session.get_inputs()[0].name
         return cls(
             session=session,
+            input_name=input_name,
             inference_config=inference_config,
             class_names=class_names,
             device=device,
@@ -121,12 +123,14 @@ class VITForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):
     def __init__(
         self,
         session: onnxruntime.InferenceSession,
+        input_name: str,
         inference_config: InferenceConfig,
         class_names: List[str],
         device: torch.device,
         input_batch_size: Optional[int],
     ):
         self._session = session
+        self._input_name = input_name
         self._inference_config = inference_config
         self._class_names = class_names
         self._device = device
@@ -157,7 +161,7 @@ class VITForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):
         with self._session_thread_lock:
             return run_session_with_batch_size_limit(
                 session=self._session,
-                inputs={"images": pre_processed_images},
+                inputs={self._input_name: pre_processed_images},
                 min_batch_size=self._input_batch_size,
                 max_batch_size=self._input_batch_size,
             )[0]
@@ -239,8 +243,10 @@ class VITForMultiLabelClassificationOnnx(
         input_batch_size = input_shape[0]
         if isinstance(input_batch_size, str):
             input_batch_size = None
+        input_name = session.get_inputs()[0].name
         return cls(
             session=session,
+            input_name=input_name,
             inference_config=inference_config,
             class_names=class_names,
             device=device,
@@ -250,12 +256,14 @@ class VITForMultiLabelClassificationOnnx(
     def __init__(
         self,
         session: onnxruntime.InferenceSession,
+        input_name: str,
         inference_config: InferenceConfig,
         class_names: List[str],
         device: torch.device,
         input_batch_size: Optional[int],
     ):
         self._session = session
+        self._input_name = input_name
         self._inference_config = inference_config
         self._class_names = class_names
         self._device = device
@@ -286,7 +294,7 @@ class VITForMultiLabelClassificationOnnx(
         with self._session_thread_lock:
             return run_session_with_batch_size_limit(
                 session=self._session,
-                inputs={"images": pre_processed_images},
+                inputs={self._input_name: pre_processed_images},
                 min_batch_size=self._input_batch_size,
                 max_batch_size=self._input_batch_size,
             )[0]

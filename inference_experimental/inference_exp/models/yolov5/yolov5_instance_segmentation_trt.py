@@ -10,11 +10,12 @@ from inference_exp.errors import MissingDependencyError, ModelRuntimeError
 from inference_exp.models.common.cuda import use_cuda_context, use_primary_cuda_context
 from inference_exp.models.common.model_packages import get_model_package_contents
 from inference_exp.models.common.roboflow.model_packages import (
-    PreProcessingConfig,
+    InferenceConfig,
     PreProcessingMetadata,
+    ResizeMode,
     TRTConfig,
     parse_class_names_file,
-    parse_pre_processing_config,
+    parse_inference_config,
     parse_trt_config,
 )
 from inference_exp.models.common.roboflow.post_processing import (
@@ -73,16 +74,21 @@ class YOLOv5ForInstanceSegmentationTRT(
             model_package_dir=model_name_or_path,
             elements=[
                 "class_names.txt",
-                "environment.json",
-                "trt_config.json",
+                "inference_config.json" "trt_config.json",
                 "engine.plan",
             ],
         )
         class_names = parse_class_names_file(
             class_names_path=model_package_content["class_names.txt"]
         )
-        pre_processing_config = parse_pre_processing_config(
-            config_path=model_package_content["environment.json"],
+        inference_config = parse_inference_config(
+            config_path=model_package_content["inference_config.json"],
+            allowed_resize_modes={
+                ResizeMode.STRETCH_TO,
+                ResizeMode.LETTERBOX,
+                ResizeMode.CENTER_CROP,
+                ResizeMode.LETTERBOX_REFLECT_EDGES,
+            },
         )
         trt_config = parse_trt_config(
             config_path=model_package_content["trt_config.json"]
@@ -98,7 +104,7 @@ class YOLOv5ForInstanceSegmentationTRT(
         return cls(
             engine=engine,
             class_names=class_names,
-            pre_processing_config=pre_processing_config,
+            inference_config=inference_config,
             trt_config=trt_config,
             device=device,
             cuda_context=cuda_context,
@@ -109,7 +115,7 @@ class YOLOv5ForInstanceSegmentationTRT(
         self,
         engine: trt.ICudaEngine,
         class_names: List[str],
-        pre_processing_config: PreProcessingConfig,
+        inference_config: InferenceConfig,
         trt_config: TRTConfig,
         device: torch.device,
         cuda_context: cuda.Context,
@@ -117,7 +123,7 @@ class YOLOv5ForInstanceSegmentationTRT(
     ):
         self._engine = engine
         self._class_names = class_names
-        self._pre_processing_config = pre_processing_config
+        self._inference_config = inference_config
         self._trt_config = trt_config
         self._device = device
         self._cuda_context = cuda_context
@@ -136,8 +142,8 @@ class YOLOv5ForInstanceSegmentationTRT(
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         return pre_process_network_input(
             images=images,
-            pre_processing_config=self._pre_processing_config,
-            expected_network_color_format="rgb",
+            image_pre_processing=self._inference_config.image_pre_processing,
+            network_input=self._inference_config.network_input,
             target_device=self._device,
             input_color_format=input_color_format,
         )
