@@ -12,7 +12,7 @@ from typing import Any, Dict, Optional
 
 import numpy as np
 
-from inference.core.env import MODAL_TOKEN_ID, MODAL_TOKEN_SECRET, MODAL_WORKSPACE_NAME
+from inference.core.env import MODAL_TOKEN_ID, MODAL_TOKEN_SECRET
 from inference.core.logger import logger
 
 # Set Modal environment variables before importing
