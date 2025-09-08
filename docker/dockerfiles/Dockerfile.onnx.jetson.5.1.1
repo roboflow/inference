@@ -76,7 +76,7 @@ RUN python3.9 -m pip install dist/inference_cli*.whl
 # BE CAREFUL, WE ENFORCE numpy 1.x for the sake of compatibility with onnxruntime
 RUN python3.9 -m pip uninstall --yes onnxruntime numpy
 RUN wget https://nvidia.box.com/shared/static/67zek28z497hs9aev7xg2c1wngdeyv4h.whl -O onnxruntime_gpu-1.16.0-cp39-cp39-linux_aarch64.whl
-RUN python3.9 -m pip install "numpy<=1.26.4" onnxruntime_gpu-1.16.0-cp39-cp39-linux_aarch64.whl "opencv-python-headless>4,<=4.10.0.84" \
+RUN python3.9 -m pip install "numpy<=1.26.4" onnxruntime_gpu-1.16.0-cp39-cp39-linux_aarch64.whl "opencv-python-headless>4,<=4.10.0.84" "pycocotools==2.0.8" \
     && rm -rf ~/.cache/pip \
     && rm onnxruntime_gpu-1.16.0-cp39-cp39-linux_aarch64.whl
    
