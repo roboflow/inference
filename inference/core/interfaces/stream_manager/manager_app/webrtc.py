@@ -123,7 +123,7 @@ class VideoTransformTrack(VideoStreamTrack):
         self._last_frame: Optional[VideoFrame] = None
 
         self._av_logging_set: bool = False
-        
+
         # Synthetic PTS generation to prevent quality drops
         self._output_frame_count: int = 0
         self._first_input_pts: Optional[int] = None
