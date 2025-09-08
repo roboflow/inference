@@ -2,6 +2,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, Optional, Tuple, Union
 
+from inference_exp.runtime_introspection.core import RuntimeXRayResult
 from inference_exp.utils.download import get_content_length
 from inference_exp.weights_providers.entities import (
     FileDownloadSpecs,
@@ -89,14 +90,13 @@ def render_table_with_model_packages(
             quantization_str = "N/A"
         else:
             quantization_str = model_package.quantization.value
-        trusted_source_str = "y" if model_package.trusted_source else "n"
         table.add_row(
             model_package.package_id,
             model_package.backend.value,
             batch_size,
             quantization_str,
             size_str,
-            trusted_source_str,
+            str(model_package.trusted_source),
         )
     return table
 
@@ -126,7 +126,6 @@ def render_model_package_details_table(
         quantization_str = "N/A"
     else:
         quantization_str = model_package.quantization.value
-    trusted_source_str = "y" if model_package.trusted_source else "n"
     table = Table(title="Model package overview", show_header=False, box=None)
     table.add_column(justify="left", no_wrap=True, style="bold green4")
     table.add_column(justify="left")
@@ -137,7 +136,7 @@ def render_model_package_details_table(
     table.add_row("Quantization:", quantization_str)
     table.add_row("Package files:", str(len(model_package.package_artefacts)))
     table.add_row("Package size:", size_str)
-    table.add_row("Trusted source:", trusted_source_str)
+    table.add_row("Trusted source:", str(model_package.trusted_source))
     if model_package.trt_package_details is not None:
         if model_package.dynamic_batch_size_supported:
             dynamic_batch_size_str = f"min: {model_package.trt_package_details.min_dynamic_batch_size}, opt: {model_package.trt_package_details.opt_dynamic_batch_size}, max: {model_package.trt_package_details.max_dynamic_batch_size}"
@@ -252,6 +251,66 @@ def render_compilation_device_details(
     table.add_row("Compilation device CUDA version:", cuda_version_str)
     table.add_row("Compilation device L4T:", l4t_version_str)
     table.add_row("Compilation device TRT Version:", trt_version_str)
+    return table
+
+
+def render_runtime_x_ray(runtime_x_ray: RuntimeXRayResult) -> Table:
+    table = Table(title="Compute environment details", show_header=False, box=None)
+    table.add_column(justify="left", no_wrap=True, style="bold green4")
+    table.add_column(justify="left")
+    detected_gpus = (
+        ", ".join(runtime_x_ray.gpu_devices) if runtime_x_ray.gpu_devices else "N/A"
+    )
+    table.add_row("Detected GPUs:", detected_gpus)
+    detected_gpus_cc = (
+        ", ".join([str(cc) for cc in runtime_x_ray.gpu_devices_cc])
+        if runtime_x_ray.gpu_devices_cc
+        else "N/A"
+    )
+    table.add_row("Detected GPUs CUDA CC:", detected_gpus_cc)
+    nvidia_driver = (
+        str(runtime_x_ray.driver_version) if runtime_x_ray.driver_version else "N/A"
+    )
+    table.add_row("NVIDIA driver:", nvidia_driver)
+    cuda_version = (
+        str(runtime_x_ray.cuda_version) if runtime_x_ray.cuda_version else "N/A"
+    )
+    table.add_row("CUDA version:", cuda_version)
+    trt_version = str(runtime_x_ray.trt_version) if runtime_x_ray.trt_version else "N/A"
+    table.add_row("TRT version:", trt_version)
+    table.add_row(
+        "TRT Python package available:", str(runtime_x_ray.trt_python_package_available)
+    )
+    if runtime_x_ray.jetson_type is not None:
+        table.add_row("Jetson device type:", runtime_x_ray.jetson_type)
+    if runtime_x_ray.l4t_version is not None:
+        table.add_row("L4T version:", str(runtime_x_ray.l4t_version))
+    os_version = runtime_x_ray.os_version if runtime_x_ray.os_version else "N/A"
+    table.add_row("OS version:", os_version)
+    torch_version = (
+        str(runtime_x_ray.torch_version) if runtime_x_ray.torch_version else "N/A"
+    )
+    table.add_row("torch version:", torch_version)
+    torchvision_version = (
+        str(runtime_x_ray.torchvision_version)
+        if runtime_x_ray.torchvision_version
+        else "N/A"
+    )
+    table.add_row("torchvision version:", torchvision_version)
+    onnxruntime_version = (
+        str(runtime_x_ray.onnxruntime_version)
+        if runtime_x_ray.onnxruntime_version
+        else "N/A"
+    )
+    table.add_row("ONNX runtime version:", onnxruntime_version)
+    available_onnx_execution_providers = (
+        ", ".join(runtime_x_ray.available_onnx_execution_providers)
+        if runtime_x_ray.available_onnx_execution_providers
+        else "N/A"
+    )
+    table.add_row(
+        "Detected ONNX execution providers:", available_onnx_execution_providers
+    )
     return table
 
 

@@ -33,6 +33,7 @@ from inference_exp.models.auto_loaders.presentation_utils import (
     calculate_artefacts_size,
     calculate_size_of_all_model_packages_artefacts,
     render_model_package_details_table,
+    render_runtime_x_ray,
     render_table_with_model_overview,
     render_table_with_model_packages,
 )
@@ -51,6 +52,7 @@ from inference_exp.models.base.embeddings import TextImageEmbeddingModel
 from inference_exp.models.base.instance_segmentation import InstanceSegmentationModel
 from inference_exp.models.base.keypoints_detection import KeyPointsDetectionModel
 from inference_exp.models.base.object_detection import ObjectDetectionModel
+from inference_exp.runtime_introspection.core import x_ray_runtime_environment
 from inference_exp.utils.download import FileHandle, download_files_to_directory
 from inference_exp.utils.file_system import dump_json, read_json
 from inference_exp.utils.hashing import hash_dict_content
@@ -152,6 +154,13 @@ class AutoModel:
             artefacts_size=artefacts_size,
             model_package=selected_package,
         )
+        console = Console()
+        console.print(table)
+
+    @classmethod
+    def describe_compute_environment(cls) -> None:
+        runtime_x_ray = x_ray_runtime_environment()
+        table = render_runtime_x_ray(runtime_x_ray=runtime_x_ray)
         console = Console()
         console.print(table)
 
