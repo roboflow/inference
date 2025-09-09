@@ -238,7 +238,7 @@ def scale_polygon(polygon: np.ndarray, scale: float) -> np.ndarray:
 def convert_from_np_types(zones: List[np.ndarray]) -> List[Tuple[int, int]]:
     result = []
     for zone in zones:
-        result.append(zone.tolist()) 
+        result.append(zone.tolist())
     return result
 
 
