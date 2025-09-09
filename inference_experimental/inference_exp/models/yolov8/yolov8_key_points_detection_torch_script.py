@@ -27,7 +27,7 @@ from inference_exp.models.common.roboflow.pre_processing import (
 from inference_exp.models.common.torch import generate_batch_chunks
 
 
-class YOLOv8ForKeyPointsTorchScript(
+class YOLOv8ForKeyPointsDetectionTorchScript(
     KeyPointsDetectionModel[torch.Tensor, PreProcessingMetadata, torch.Tensor]
 ):
 
@@ -37,7 +37,7 @@ class YOLOv8ForKeyPointsTorchScript(
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
         **kwargs,
-    ) -> "YOLOv8ForKeyPointsTorchScript":
+    ) -> "YOLOv8ForKeyPointsDetectionTorchScript":
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
             elements=[

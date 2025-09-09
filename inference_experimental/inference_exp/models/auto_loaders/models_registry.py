@@ -85,7 +85,7 @@ REGISTERED_MODELS: Dict[
     ("yolov8", KEYPOINT_DETECTION_TASK, BackendType.TORCH_SCRIPT): RegistryEntry(
         model_class=LazyClass(
             module_name="inference_exp.models.yolov8.yolov8_key_points_detection_torch_script",
-            class_name="YOLOv8ForKeyPointsTorchScript",
+            class_name="YOLOv8ForKeyPointsDetectionTorchScript",
         ),
         supported_model_features={"nms_fused"},
     ),
@@ -118,6 +118,13 @@ REGISTERED_MODELS: Dict[
         ),
         supported_model_features={"nms_fused"},
     ),
+    ("yolov9", OBJECT_DETECTION_TASK, BackendType.TORCH_SCRIPT): RegistryEntry(
+        model_class=LazyClass(
+            module_name="inference_exp.models.yolov9.yolov9_torch_script",
+            class_name="YOLOv9ForObjectDetectionTorchScript",
+        ),
+        supported_model_features={"nms_fused"},
+    ),
     ("yolov9", OBJECT_DETECTION_TASK, BackendType.TRT): LazyClass(
         module_name="inference_exp.models.yolov9.yolov9_trt",
         class_name="YOLOv9ForObjectDetectionTRT",
@@ -137,6 +144,13 @@ REGISTERED_MODELS: Dict[
         ),
         supported_model_features={"nms_fused"},
     ),
+    ("yolov11", OBJECT_DETECTION_TASK, BackendType.TORCH_SCRIPT): RegistryEntry(
+        model_class=LazyClass(
+            module_name="inference_exp.models.yolov11.yolov11_torch_script",
+            class_name="YOLOv11ForObjectDetectionTorchScript",
+        ),
+        supported_model_features={"nms_fused"},
+    ),
     ("yolov11", OBJECT_DETECTION_TASK, BackendType.TRT): LazyClass(
         module_name="inference_exp.models.yolov11.yolov11_trt",
         class_name="YOLOv11ForObjectDetectionTRT",
@@ -145,6 +159,13 @@ REGISTERED_MODELS: Dict[
         model_class=LazyClass(
             module_name="inference_exp.models.yolov11.yolov11_onnx",
             class_name="YOLOv11ForForKeyPointsDetectionOnnx",
+        ),
+        supported_model_features={"nms_fused"},
+    ),
+    ("yolov11", KEYPOINT_DETECTION_TASK, BackendType.TORCH_SCRIPT): RegistryEntry(
+        model_class=LazyClass(
+            module_name="inference_exp.models.yolov11.yolov11_torch_script",
+            class_name="YOLOv11ForForKeyPointsDetectionTorchScript",
         ),
         supported_model_features={"nms_fused"},
     ),
@@ -159,6 +180,13 @@ REGISTERED_MODELS: Dict[
         ),
         supported_model_features={"nms_fused"},
     ),
+    ("yolov11", INSTANCE_SEGMENTATION_TASK, BackendType.TORCH_SCRIPT): RegistryEntry(
+        model_class=LazyClass(
+            module_name="inference_exp.models.yolov11.yolov11_torch_script",
+            class_name="YOLOv11ForInstanceSegmentationTorchScript",
+        ),
+        supported_model_features={"nms_fused"},
+    ),
     ("yolov11", INSTANCE_SEGMENTATION_TASK, BackendType.TRT): LazyClass(
         module_name="inference_exp.models.yolov11.yolov11_trt",
         class_name="YOLOv11ForInstanceSegmentationTRT",
@@ -167,6 +195,13 @@ REGISTERED_MODELS: Dict[
         model_class=LazyClass(
             module_name="inference_exp.models.yolov12.yolov12_onnx",
             class_name="YOLOv12ForObjectDetectionOnnx",
+        ),
+        supported_model_features={"nms_fused"},
+    ),
+    ("yolov12", OBJECT_DETECTION_TASK, BackendType.TORCH_SCRIPT): RegistryEntry(
+        model_class=LazyClass(
+            module_name="inference_exp.models.yolov12.yolov12_torch_script",
+            class_name="YOLOv12ForObjectDetectionTorchScript",
         ),
         supported_model_features={"nms_fused"},
     ),
