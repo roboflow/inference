@@ -193,7 +193,7 @@ class AutoModel:
         auto_resolution_cache: Optional[AutoResolutionCache] = None,
         allow_direct_local_storage_loading: bool = True,
         model_storage_manager: Optional[ModelStorageManager] = None,
-        nms_preference: Optional[Union[bool, dict]] = None,
+        nms_fusion_preferences: Optional[Union[bool, dict]] = None,
         **kwargs,
     ) -> AnyModel:
         if model_storage_manager is None:
@@ -257,7 +257,7 @@ class AutoModel:
                     "onnx_execution_providers": onnx_execution_providers,
                     "allow_untrusted_packages": allow_untrusted_packages,
                     "trt_engine_host_code_allowed": trt_engine_host_code_allowed,
-                    "nms_preference": nms_preference,
+                    "nms_fusion_preferences": nms_fusion_preferences,
                 }
             )
             model_from_cache = attempt_loading_model_with_auto_load_cache(
@@ -295,7 +295,7 @@ class AutoModel:
                 onnx_execution_providers=onnx_execution_providers,
                 allow_untrusted_packages=allow_untrusted_packages,
                 trt_engine_host_code_allowed=trt_engine_host_code_allowed,
-                nms_preference=nms_preference,
+                nms_fusion_preferences=nms_fusion_preferences,
                 verbose=verbose,
             )
             return attempt_loading_matching_model_packages(

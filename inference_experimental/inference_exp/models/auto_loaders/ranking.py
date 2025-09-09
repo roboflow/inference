@@ -45,7 +45,7 @@ BATCH_SIZE_PRIORITY = {
 def rank_model_packages(
     model_packages: List[ModelPackageMetadata],
     selected_device: Optional[torch.device] = None,
-    nms_preference: Optional[Union[bool, dict]] = None,
+    nms_fusion_preferences: Optional[Union[bool, dict]] = None,
 ) -> List[ModelPackageMetadata]:
     # I feel like this will be the biggest liability of new inference :))
     # Some dimensions are just hard to rank arbitrarily and reasonably
@@ -93,7 +93,7 @@ def rank_model_packages(
                 package_trt_rank,
                 retrieve_onnx_incompatible_providers_score(model_package),
                 retrieve_trt_dynamic_batch_size_score(model_package),
-                retrieve_fused_nms_rank(model_package, nms_preference=nms_preference),
+                retrieve_fused_nms_rank(model_package, nms_fusion_preferences=nms_fusion_preferences),
                 retrieve_trt_lean_runtime_excluded_score(model_package),
                 retrieve_jetson_device_name_match_score(model_package),
                 retrieve_os_version_match_score(model_package),
@@ -269,24 +269,24 @@ def retrieve_jetson_device_name_match_score(model_package: ModelPackageMetadata)
 
 def retrieve_fused_nms_rank(
     model_package: ModelPackageMetadata,
-    nms_preference: Optional[Union[bool, dict]],
+    nms_fusion_preferences: Optional[Union[bool, dict]],
 ) -> Union[float, int]:
-    if nms_preference is None or nms_preference is False:
+    if nms_fusion_preferences is None or nms_fusion_preferences is False:
         return 0
     if not model_package.model_features:
         return 0
     nms_fused = model_package.model_features.get(NMS_FUSED_FEATURE)
     if not isinstance(nms_fused, dict):
         return 0
-    if nms_preference is True:
+    if nms_fusion_preferences is True:
         # default values should be passed by filter, so here we treat every package equally good
         return 1
     actual_max_detections = nms_fused[NMS_MAX_DETECTIONS_KEY]
     actual_confidence_threshold = nms_fused[NMS_CONFIDENCE_THRESHOLD_KEY]
     actual_iou_threshold = nms_fused[NMS_IOU_THRESHOLD_KEY]
     final_score = 0
-    if NMS_MAX_DETECTIONS_KEY in nms_preference:
-        requested_max_detections = nms_preference[NMS_MAX_DETECTIONS_KEY]
+    if NMS_MAX_DETECTIONS_KEY in nms_fusion_preferences:
+        requested_max_detections = nms_fusion_preferences[NMS_MAX_DETECTIONS_KEY]
         if isinstance(requested_max_detections, (list, tuple)):
             min_detections, max_detections = requested_max_detections
         else:
@@ -299,8 +299,8 @@ def retrieve_fused_nms_rank(
             max_value=max_detections,
             examined_value=actual_max_detections,
         )
-    if NMS_CONFIDENCE_THRESHOLD_KEY in nms_preference:
-        requested_confidence = nms_preference[NMS_CONFIDENCE_THRESHOLD_KEY]
+    if NMS_CONFIDENCE_THRESHOLD_KEY in nms_fusion_preferences:
+        requested_confidence = nms_fusion_preferences[NMS_CONFIDENCE_THRESHOLD_KEY]
         if isinstance(requested_confidence, (list, tuple)):
             min_confidence, max_confidence = requested_confidence
         else:
@@ -313,8 +313,8 @@ def retrieve_fused_nms_rank(
             max_value=max_confidence,
             examined_value=actual_confidence_threshold,
         )
-    if NMS_IOU_THRESHOLD_KEY in nms_preference:
-        requested_iou_threshold = nms_preference[NMS_IOU_THRESHOLD_KEY]
+    if NMS_IOU_THRESHOLD_KEY in nms_fusion_preferences:
+        requested_iou_threshold = nms_fusion_preferences[NMS_IOU_THRESHOLD_KEY]
         if isinstance(requested_iou_threshold, (list, tuple)):
             min_iou_threshold, max_iou_threshold = requested_iou_threshold
         else:

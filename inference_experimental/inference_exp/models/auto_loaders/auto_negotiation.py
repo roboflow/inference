@@ -66,7 +66,7 @@ def negotiate_model_packages(
     onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
     allow_untrusted_packages: bool = False,
     trt_engine_host_code_allowed: bool = True,
-    nms_preference: Optional[Union[bool, dict]] = None,
+    nms_fusion_preferences: Optional[Union[bool, dict]] = None,
     verbose: bool = False,
 ) -> List[ModelPackageMetadata]:
     verbose_info(
@@ -146,7 +146,7 @@ def negotiate_model_packages(
     model_packages, discarded_by_model_features = (
         filter_model_packages_based_on_model_features(
             model_packages=model_packages,
-            nms_preference=nms_preference,
+            nms_fusion_preferences=nms_fusion_preferences,
             model_architecture=model_architecture,
             task_type=task_type,
         )
@@ -165,7 +165,7 @@ def negotiate_model_packages(
     model_packages = rank_model_packages(
         model_packages=model_packages,
         selected_device=device,
-        nms_preference=nms_preference,
+        nms_fusion_preferences=nms_fusion_preferences,
     )
     verbose_info("Eligible packages ranked:", verbose_requested=verbose)
     print_model_packages(model_packages=model_packages, verbose=verbose)
@@ -495,7 +495,7 @@ def filter_model_packages_matching_runtime_environment(
 
 def filter_model_packages_based_on_model_features(
     model_packages: List[ModelPackageMetadata],
-    nms_preference: Optional[Union[bool, dict]],
+    nms_fusion_preferences: Optional[Union[bool, dict]],
     model_architecture: ModelArchitecture,
     task_type: Optional[TaskType],
 ) -> Tuple[List[ModelPackageMetadata], List[DiscardedPackage]]:
@@ -504,19 +504,19 @@ def filter_model_packages_based_on_model_features(
         if not model_package.model_features:
             results.append(model_package)
             continue
-        eliminated_by_nms_preference, reason = (
-            should_model_package_be_filtered_out_based_on_nms_preferences(
+        eliminated_by_nms_fusion_preferences, reason = (
+            should_model_package_be_filtered_out_based_on_nms_fusion_preferencess(
                 model_package=model_package,
-                nms_preference=nms_preference,
+                nms_fusion_preferences=nms_fusion_preferences,
                 model_architecture=model_architecture,
                 task_type=task_type,
             )
         )
-        if eliminated_by_nms_preference:
+        if eliminated_by_nms_fusion_preferences:
             if reason is None:
                 raise AssumptionError(
                     message="Detected bug in `inference` - "
-                    "`should_model_package_be_filtered_out_based_on_nms_preferences()` returned malformed "
+                    "`should_model_package_be_filtered_out_based_on_nms_fusion_preferencess()` returned malformed "
                     "result. Please raise the issue: https://github.com/roboflow/inference/issues",
                     help_url="https://todo",
                 )
@@ -528,22 +528,22 @@ def filter_model_packages_based_on_model_features(
     return results, discarded_packages
 
 
-def should_model_package_be_filtered_out_based_on_nms_preferences(
+def should_model_package_be_filtered_out_based_on_nms_fusion_preferencess(
     model_package: ModelPackageMetadata,
-    nms_preference: Optional[Union[bool, dict]],
+    nms_fusion_preferences: Optional[Union[bool, dict]],
     model_architecture: ModelArchitecture,
     task_type: Optional[TaskType],
 ) -> Tuple[bool, Optional[str]]:
     nms_fused_config = model_package.model_features.get(NMS_FUSED_FEATURE)
     if nms_fused_config is None:
         return False, None
-    if nms_preference is None or nms_preference is False:
+    if nms_fusion_preferences is None or nms_fusion_preferences is False:
         return (
             True,
-            "Package specifies NMS fusion, but auto-loading used with `nms_preference`=None rejecting such packages.",
+            "Package specifies NMS fusion, but auto-loading used with `nms_fusion_preferences`=None rejecting such packages.",
         )
-    if nms_preference is True:
-        nms_preference = get_default_nms_settings(
+    if nms_fusion_preferences is True:
+        nms_fusion_preferences = get_default_nms_settings(
             model_architecture=model_architecture,
             task_type=task_type,
         )
@@ -557,8 +557,8 @@ def should_model_package_be_filtered_out_based_on_nms_preferences(
             True,
             f"Package specifies malformed `{NMS_FUSED_FEATURE}` property in model features - missing key: {error}",
         )
-    if NMS_MAX_DETECTIONS_KEY in nms_preference:
-        requested_max_detections = nms_preference[NMS_MAX_DETECTIONS_KEY]
+    if NMS_MAX_DETECTIONS_KEY in nms_fusion_preferences:
+        requested_max_detections = nms_fusion_preferences[NMS_MAX_DETECTIONS_KEY]
         if isinstance(requested_max_detections, (list, tuple)):
             min_detections, max_detections = requested_max_detections
         else:
@@ -575,8 +575,8 @@ def should_model_package_be_filtered_out_based_on_nms_preferences(
                 f"Package specifies NMS fusion with `{NMS_MAX_DETECTIONS_KEY}` not matching the preference passed to "
                 f"auto-loading.",
             )
-    if NMS_CONFIDENCE_THRESHOLD_KEY in nms_preference:
-        requested_confidence = nms_preference[NMS_CONFIDENCE_THRESHOLD_KEY]
+    if NMS_CONFIDENCE_THRESHOLD_KEY in nms_fusion_preferences:
+        requested_confidence = nms_fusion_preferences[NMS_CONFIDENCE_THRESHOLD_KEY]
         if isinstance(requested_confidence, (list, tuple)):
             min_confidence, max_confidence = requested_confidence
         else:
@@ -594,8 +594,8 @@ def should_model_package_be_filtered_out_based_on_nms_preferences(
                 f"auto-loading.",
             )
 
-    if NMS_IOU_THRESHOLD_KEY in nms_preference:
-        requested_iou_threshold = nms_preference[NMS_IOU_THRESHOLD_KEY]
+    if NMS_IOU_THRESHOLD_KEY in nms_fusion_preferences:
+        requested_iou_threshold = nms_fusion_preferences[NMS_IOU_THRESHOLD_KEY]
         if isinstance(requested_iou_threshold, (list, tuple)):
             min_iou_threshold, max_iou_threshold = requested_iou_threshold
         else:
@@ -612,8 +612,8 @@ def should_model_package_be_filtered_out_based_on_nms_preferences(
                 f"Package specifies NMS fusion with `{NMS_IOU_THRESHOLD_KEY}` not matching the preference passed to "
                 f"auto-loading.",
             )
-    if NMS_CLASS_AGNOSTIC_KEY in nms_preference:
-        if actual_class_agnostic != nms_preference[NMS_CLASS_AGNOSTIC_KEY]:
+    if NMS_CLASS_AGNOSTIC_KEY in nms_fusion_preferences:
+        if actual_class_agnostic != nms_fusion_preferences[NMS_CLASS_AGNOSTIC_KEY]:
             return (
                 True,
                 f"Package specifies NMS fusion with `{NMS_CLASS_AGNOSTIC_KEY}` not matching the preference passed to "
