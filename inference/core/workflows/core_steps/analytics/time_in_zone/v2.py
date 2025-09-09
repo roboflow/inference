@@ -1,9 +1,9 @@
+import itertools
 from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
-import itertools
-import supervision as sv
 from pydantic import ConfigDict, Field
+import supervision as sv
 from typing_extensions import Literal, Type
 
 from inference.core.workflows.execution_engine.constants import (
