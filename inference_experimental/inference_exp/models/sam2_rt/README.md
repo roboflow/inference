@@ -9,7 +9,9 @@ import supervision as sv
 from inference_exp import AutoModel
 
 
-model = AutoModel.from_pretrained("sam2-rt-hiera-tiny")
+# Available checkpoints: Gy920/sam2-1-hiera-tiny, Gy920/sam2-1-hiera-small, Gy920/sam2-1-hiera-base-plus, Gy920/sam2-1-hiera-large
+model = AutoModel.from_pretrained("Gy920/sam2-1-hiera-tiny")
+
 mask_annotator = sv.MaskAnnotator(opacity=0.7, color_lookup=sv.ColorLookup.TRACK)
 # Download from https://drive.google.com/uc?id=1EsxiyaYGj3FeXSXoK51pre5OjVGWTCSE
 vid = cv.VideoCapture("G/boston-celtics-new-york-knicks-game-4-q1-05.06-05.01.mp4")
