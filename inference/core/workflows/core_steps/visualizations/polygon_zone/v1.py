@@ -116,7 +116,7 @@ class PolygonZoneVisualizationBlockV1(VisualizationBlock):
         if zone and len(zone) > 0:
             mask = cv.fillPoly(
                 img=mask,
-                pts=[np.array(zone, dtype=np.int32)],
+                pts=[np.array(z, dtype=np.int32) for z in zone],
                 color=str_to_color(color).as_bgr(),
             )
             self._cache[key] = mask
