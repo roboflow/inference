@@ -114,9 +114,14 @@ class PolygonZoneVisualizationBlockV1(VisualizationBlock):
             )
 
         if zone and len(zone) > 0:
+            pts = []
+            if zone[0] and isinstance(zone[0][0], (int, float,np.int32)):
+                pts = [np.array(zone, dtype=np.int32)]
+            else:
+                pts = [np.array(z, dtype=np.int32) for z in zone]
             mask = cv.fillPoly(
                 img=mask,
-                pts=[np.array(z, dtype=np.int32) for z in zone],
+                pts=pts,
                 color=str_to_color(color).as_bgr(),
             )
             self._cache[key] = mask
