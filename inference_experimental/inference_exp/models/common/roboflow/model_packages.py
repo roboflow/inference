@@ -240,6 +240,7 @@ class NetworkInputDefinition(BaseModel):
 
 
 class ForwardPassConfiguration(BaseModel):
+    static_batch_size: Optional[int] = Field(default=None)
     max_dynamic_batch_size: Optional[int] = Field(default=None)
 
 
