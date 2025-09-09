@@ -121,7 +121,12 @@ class TimeInZoneBlockV2(WorkflowBlock):
     def normalize_zone(
         self, zone: Union[List[Tuple[int, int]], List[List[Tuple[int, int]]]]
     ) -> List[List[Tuple[int, int]]]:
-        if len(zone) > 0 and zone[0] and isinstance(zone[0], (tuple,list)) and not isinstance(zone[0][0], (tuple,list,np.ndarray)):
+        if (
+            len(zone) > 0
+            and zone[0]
+            and isinstance(zone[0], (tuple, list))
+            and not isinstance(zone[0][0], (tuple, list, np.ndarray))
+        ):
             return [zone]
         return zone
 
