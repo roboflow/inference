@@ -103,7 +103,7 @@ REGISTERED_MODELS: Dict[
     ("yolov8", INSTANCE_SEGMENTATION_TASK, BackendType.TORCH_SCRIPT): RegistryEntry(
         model_class=LazyClass(
             module_name="inference_exp.models.yolov8.yolov8_instance_segmentation_torch_script",
-            class_name="YOLOv8ForKeyPointsTorchScript",
+            class_name="YOLOv8ForInstanceSegmentationTorchScript",
         ),
         supported_model_features={"nms_fused"},
     ),
