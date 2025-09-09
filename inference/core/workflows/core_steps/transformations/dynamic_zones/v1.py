@@ -127,24 +127,45 @@ def calculate_simplified_polygon(
     perimeter = cv.arcLength(curve=convex_contour, closed=True)
     upper_epsilon = perimeter
     lower_epsilon = 0.0000001
-    epsilon = lower_epsilon + upper_epsilon / 2
-    # https://docs.opencv.org/4.9.0/d3/dc0/group__imgproc__shape.html#ga0012a5fdaea70b8a9970165d98722b4c
-    simplified_polygon = cv.approxPolyDP(
-        curve=convex_contour, epsilon=epsilon, closed=True
-    )
+
+    # --- Fast polygon simplification using binary search variant ---
+
+    # Find bounds for binary search:
+    # Start with lower_epsilon giving the most vertices, and upper_epsilon giving the fewest.
+    def vertex_count(epsilon):
+        poly = cv.approxPolyDP(curve=convex_contour, epsilon=epsilon, closed=True)
+        return len(poly), poly
+
+    # If already exact at midpoint, return immediately (save cv calls)
+    epsilon = lower_epsilon + (upper_epsilon - lower_epsilon) / 2
+    best_poly = None
+    best_diff = float("inf")
+
     for _ in range(max_steps):
-        if len(simplified_polygon) == required_number_of_vertices:
+        count, poly = vertex_count(epsilon)
+        diff = abs(count - required_number_of_vertices)
+        if diff < best_diff:
+            best_diff = diff
+            best_poly = poly
+        if count == required_number_of_vertices:
+            best_poly = poly
             break
-        if len(simplified_polygon) > required_number_of_vertices:
+        if count > required_number_of_vertices:
             lower_epsilon = epsilon
         else:
             upper_epsilon = epsilon
-        epsilon = lower_epsilon + (upper_epsilon - lower_epsilon) / 2
-        simplified_polygon = cv.approxPolyDP(
-            curve=convex_contour, epsilon=epsilon, closed=True
+        new_epsilon = lower_epsilon + (upper_epsilon - lower_epsilon) / 2
+        # avoid infinite loop if epsilon converges
+        if abs(new_epsilon - epsilon) < 1e-9:
+            break
+        epsilon = new_epsilon
+
+    simplified_polygon = best_poly if best_poly is not None else poly
+
+    if simplified_polygon.ndim > 2:
+        simplified_polygon = simplified_polygon.reshape(
+            -1, simplified_polygon.shape[-1]
         )
-    while len(simplified_polygon.shape) > 2:
-        simplified_polygon = np.concatenate(simplified_polygon)
     return simplified_polygon, largest_contour
 
 
@@ -236,10 +257,7 @@ def scale_polygon(polygon: np.ndarray, scale: float) -> np.ndarray:
 
 
 def convert_from_np_types(zones: List[np.ndarray]) -> List[Tuple[int, int]]:
-    result = []
-    for zone in zones:
-        result.append(zone.tolist())
-    return result
+    return [tuple(zone) for zone in zones]
 
 
 class DynamicZonesBlockV1(WorkflowBlock):
@@ -278,10 +296,13 @@ class DynamicZonesBlockV1(WorkflowBlock):
                 )
                 continue
             all_converged = True
-            for i, mask in enumerate(detections.mask):
-                # copy
+            # Pre-bind for speed
+            polygon_to_mask = sv.polygon_to_mask
+            mask_shape_rev = [m.shape[::-1] for m in detections.mask]
+            dets_len = len(detections.mask)
+            # Use enumerate with zip to avoid repeated attribute and indexing
+            for i, (mask, out_shape) in enumerate(zip(detections.mask, mask_shape_rev)):
                 updated_detection = detections[i]
-
                 contours = sv.mask_to_polygons(mask)
                 simplified_polygon, largest_contour = calculate_simplified_polygon(
                     contours=contours,
@@ -296,12 +317,9 @@ class DynamicZonesBlockV1(WorkflowBlock):
                 vertices_count, _ = simplified_polygon.shape
                 if vertices_count < required_number_of_vertices:
                     all_converged = False
-                    for _ in range(required_number_of_vertices - vertices_count):
-                        simplified_polygon = np.append(
-                            simplified_polygon,
-                            [simplified_polygon[-1]],
-                            axis=0,
-                        )
+                    rows_to_add = required_number_of_vertices - vertices_count
+                    pad = np.tile(simplified_polygon[-1], (rows_to_add, 1))
+                    simplified_polygon = np.vstack([simplified_polygon, pad])
                 elif vertices_count > required_number_of_vertices:
                     all_converged = False
                     simplified_polygon = simplified_polygon[
@@ -317,9 +335,9 @@ class DynamicZonesBlockV1(WorkflowBlock):
                 simplified_polygons.append(simplified_polygon)
                 updated_detection.mask = np.array(
                     [
-                        sv.polygon_to_mask(
+                        polygon_to_mask(
                             polygon=simplified_polygon,
-                            resolution_wh=mask.shape[::-1],
+                            resolution_wh=out_shape,
                         )
                     ]
                 )
