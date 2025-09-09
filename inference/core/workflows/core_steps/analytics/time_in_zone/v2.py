@@ -68,11 +68,15 @@ class TimeInZoneManifest(WorkflowBlockManifest):
         description="Model predictions to calculate the time spent in zone for.",
         examples=["$steps.object_detection_model.predictions"],
     )
-    zone: Union[list, Selector(kind=[LIST_OF_VALUES_KIND]), Selector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
+    zone: Union[
+        list, Selector(kind=[LIST_OF_VALUES_KIND]), Selector(kind=[LIST_OF_VALUES_KIND])
+    ] = Field(  # type: ignore
         description="Coordinates of the target zone.",
         examples=[[(100, 100), (100, 200), (300, 200), (300, 100)], "$inputs.zones"],
     )
-    triggering_anchor: Union[str, Selector(kind=[STRING_KIND]), Literal[tuple(sv.Position.list())]] = Field(  # type: ignore
+    triggering_anchor: Union[
+        str, Selector(kind=[STRING_KIND]), Literal[tuple(sv.Position.list())]
+    ] = Field(  # type: ignore
         description=f"The point on the detection that must be inside the zone.",
         default="CENTER",
         examples=["CENTER"],
@@ -114,11 +118,13 @@ class TimeInZoneBlockV2(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return TimeInZoneManifest
 
-    def normalize_zone(self, zone: List[Tuple[int, int]] | List[List[Tuple[int, int]]]) -> List[List[Tuple[int, int]]]:
+    def normalize_zone(
+        self, zone: List[Tuple[int, int]] | List[List[Tuple[int, int]]]
+    ) -> List[List[Tuple[int, int]]]:
         if len(zone) > 0 and zone[0] and isinstance(zone[0][0], (int, float, np.int32)):
             return [zone]
         return zone
-    
+
     def flatten_list(self, iterable):
         return list(itertools.chain.from_iterable(iterable))
 
@@ -156,10 +162,13 @@ class TimeInZoneBlockV2(WorkflowBlock):
                 raise ValueError(
                     f"{self.__class__.__name__} requires each coordinate of zone to be a number"
                 )
-            self._batch_of_polygon_zones[metadata.video_identifier] = [sv.PolygonZone(
-                polygon=np.array(zone),
-                triggering_anchors=(sv.Position(triggering_anchor),),
-            ) for zone in zones]
+            self._batch_of_polygon_zones[metadata.video_identifier] = [
+                sv.PolygonZone(
+                    polygon=np.array(zone),
+                    triggering_anchors=(sv.Position(triggering_anchor),),
+                )
+                for zone in zones
+            ]
         polygon_zones = self._batch_of_polygon_zones[metadata.video_identifier]
         tracked_ids_in_zone = self._batch_of_tracked_ids_in_zone.setdefault(
             metadata.video_identifier, {}
