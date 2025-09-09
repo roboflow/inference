@@ -235,8 +235,11 @@ def scale_polygon(polygon: np.ndarray, scale: float) -> np.ndarray:
     return result.round().astype(np.int32)
 
 
-def convert_from_np_types(zone: np.ndarray) -> List[Tuple[int, int]]:
-    return [(int(x), int(y)) for each in zone for x, y in each]
+def convert_from_np_types(zones: List[np.ndarray]) -> List[Tuple[int, int]]:
+    result = []
+    for zone in zones:
+        result.append(zone.tolist()) 
+    return result
 
 
 class DynamicZonesBlockV1(WorkflowBlock):
