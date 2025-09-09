@@ -1,4 +1,3 @@
-import itertools
 from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
@@ -126,7 +125,7 @@ class TimeInZoneBlockV2(WorkflowBlock):
         return zone
 
     def flatten_list(self, iterable):
-        return list(itertools.chain.from_iterable(iterable))
+        return [item for sublist in iterable for item in sublist]
 
     def run(
         self,
@@ -148,16 +147,17 @@ class TimeInZoneBlockV2(WorkflowBlock):
                 raise ValueError(
                     f"{self.__class__.__name__} requires zone to be a list containing more than 2 points"
                 )
+            flattened_zones = self.flatten_list(zones)
             if any(
                 (not isinstance(e, list) and not isinstance(e, tuple)) or len(e) != 2
-                for e in self.flatten_list(zones)
+                for e in flattened_zones
             ):
                 raise ValueError(
                     f"{self.__class__.__name__} requires each point of zone to be a list containing exactly 2 coordinates"
                 )
             if any(
                 not isinstance(e[0], (int, float)) or not isinstance(e[1], (int, float))
-                for e in self.flatten_list(zones)
+                for e in flattened_zones
             ):
                 raise ValueError(
                     f"{self.__class__.__name__} requires each coordinate of zone to be a number"
@@ -174,6 +174,7 @@ class TimeInZoneBlockV2(WorkflowBlock):
             metadata.video_identifier, {}
         )
         result_detections = []
+
         if metadata.comes_from_video_file and metadata.fps != 0:
             ts_end = metadata.frame_number / metadata.fps
         else:
@@ -189,6 +190,7 @@ class TimeInZoneBlockV2(WorkflowBlock):
             is_in_any_zone,
             detections.tracker_id,
         ):
+
             if (
                 not is_in_zone
                 and tracker_id in tracked_ids_in_zone
@@ -212,4 +214,5 @@ class TimeInZoneBlockV2(WorkflowBlock):
             elif tracker_id in tracked_ids_in_zone:
                 del tracked_ids_in_zone[tracker_id]
             result_detections.append(detection)
+
         return {OUTPUT_KEY: sv.Detections.merge(result_detections)}
