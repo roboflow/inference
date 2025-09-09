@@ -178,33 +178,36 @@ class TimeInZoneBlockV2(WorkflowBlock):
             ts_end = metadata.frame_number / metadata.fps
         else:
             ts_end = metadata.frame_timestamp.timestamp()
-        for polygon_zone in polygon_zones:
-            for i, is_in_zone, tracker_id in zip(
-                range(len(detections)),
-                polygon_zone.trigger(detections),
-                detections.tracker_id,
+        
+        # get trigger for all zones. It is a matrix of shape (len(zones), len(detections))
+        polygon_triggers = [polygon_zone.trigger(detections) for polygon_zone in polygon_zones]
+        is_in_any_zone = np.any(polygon_triggers, axis=0)
+        for i, is_in_zone, tracker_id in zip(
+            range(len(detections)),
+            is_in_any_zone,
+            detections.tracker_id,
+        ):
+            if (
+                not is_in_zone
+                and tracker_id in tracked_ids_in_zone
+                and reset_out_of_zone_detections
             ):
-                if (
-                    not is_in_zone
-                    and tracker_id in tracked_ids_in_zone
-                    and reset_out_of_zone_detections
-                ):
-                    del tracked_ids_in_zone[tracker_id]
-                if not is_in_zone and remove_out_of_zone_detections:
-                    continue
+                del tracked_ids_in_zone[tracker_id]
+            if not is_in_zone and remove_out_of_zone_detections:
+                continue
 
-                # copy
-                detection = detections[i]
+            # copy
+            detection = detections[i]
 
+            detection[TIME_IN_ZONE_KEY_IN_SV_DETECTIONS] = np.array(
+                [0], dtype=np.float64
+            )
+            if is_in_zone:
+                ts_start = tracked_ids_in_zone.setdefault(tracker_id, ts_end) - 0.00001
                 detection[TIME_IN_ZONE_KEY_IN_SV_DETECTIONS] = np.array(
-                    [0], dtype=np.float64
+                    [ts_end - ts_start], dtype=np.float64
                 )
-                if is_in_zone:
-                    ts_start = tracked_ids_in_zone.setdefault(tracker_id, ts_end)
-                    detection[TIME_IN_ZONE_KEY_IN_SV_DETECTIONS] = np.array(
-                        [ts_end - ts_start], dtype=np.float64
-                    )
-                elif tracker_id in tracked_ids_in_zone:
-                    del tracked_ids_in_zone[tracker_id]
-                result_detections.append(detection)
+            elif tracker_id in tracked_ids_in_zone:
+                del tracked_ids_in_zone[tracker_id]
+            result_detections.append(detection)
         return {OUTPUT_KEY: sv.Detections.merge(result_detections)}
