@@ -132,19 +132,28 @@ def calculate_simplified_polygon(
     simplified_polygon = cv.approxPolyDP(
         curve=convex_contour, epsilon=epsilon, closed=True
     )
-    for _ in range(max_steps):
-        if len(simplified_polygon) == required_number_of_vertices:
-            break
-        if len(simplified_polygon) > required_number_of_vertices:
-            lower_epsilon = epsilon
-        else:
-            upper_epsilon = epsilon
-        epsilon = lower_epsilon + (upper_epsilon - lower_epsilon) / 2
-        simplified_polygon = cv.approxPolyDP(
-            curve=convex_contour, epsilon=epsilon, closed=True
-        )
-    while len(simplified_polygon.shape) > 2:
-        simplified_polygon = np.concatenate(simplified_polygon)
+
+    # Fast-path: already solved
+    if len(simplified_polygon) == required_number_of_vertices:
+        pass
+    else:
+        for _ in range(max_steps):
+            if len(simplified_polygon) == required_number_of_vertices:
+                break
+            if len(simplified_polygon) > required_number_of_vertices:
+                lower_epsilon = epsilon
+            else:
+                upper_epsilon = epsilon
+            epsilon = lower_epsilon + (upper_epsilon - lower_epsilon) / 2
+            simplified_polygon = cv.approxPolyDP(
+                curve=convex_contour, epsilon=epsilon, closed=True
+            )
+
+    # Flatten efficiently if needed (sometimes approxPolyDP returns nested array)
+    if len(simplified_polygon.shape) > 2:
+        # This is always (N, 1, 2) -> (N, 2)
+        simplified_polygon = simplified_polygon.reshape(-1, 2)
+
     return simplified_polygon, largest_contour
 
 
@@ -236,10 +245,8 @@ def scale_polygon(polygon: np.ndarray, scale: float) -> np.ndarray:
 
 
 def convert_from_np_types(zones: List[np.ndarray]) -> List[Tuple[int, int]]:
-    result = []
-    for zone in zones:
-        result.append(zone.tolist())
-    return result
+    # List comprehension for better locality of reference and throughput
+    return [zone.tolist() for zone in zones]
 
 
 class DynamicZonesBlockV1(WorkflowBlock):
@@ -279,9 +286,7 @@ class DynamicZonesBlockV1(WorkflowBlock):
                 continue
             all_converged = True
             for i, mask in enumerate(detections.mask):
-                # copy
                 updated_detection = detections[i]
-
                 contours = sv.mask_to_polygons(mask)
                 simplified_polygon, largest_contour = calculate_simplified_polygon(
                     contours=contours,
@@ -296,12 +301,14 @@ class DynamicZonesBlockV1(WorkflowBlock):
                 vertices_count, _ = simplified_polygon.shape
                 if vertices_count < required_number_of_vertices:
                     all_converged = False
-                    for _ in range(required_number_of_vertices - vertices_count):
-                        simplified_polygon = np.append(
+                    append_count = required_number_of_vertices - vertices_count
+                    # Use np.tile for faster repeated elements
+                    simplified_polygon = np.concatenate(
+                        [
                             simplified_polygon,
-                            [simplified_polygon[-1]],
-                            axis=0,
-                        )
+                            np.tile(simplified_polygon[-1:], (append_count, 1)),
+                        ]
+                    )
                 elif vertices_count > required_number_of_vertices:
                     all_converged = False
                     simplified_polygon = simplified_polygon[
