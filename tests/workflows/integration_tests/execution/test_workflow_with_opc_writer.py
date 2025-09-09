@@ -6,7 +6,10 @@ from typing import Optional, Union
 import pytest
 from asyncua import Server
 from asyncua.client import Client as AsyncClient
-from asyncua.server.users import User, UserRole
+try:
+    from asyncua.server.users import User, UserRole
+except ImportError:
+    from asyncua.crypto.permission_rules import User, UserRole
 from asyncua.sync import Client, sync_async_client_method
 from asyncua.ua.uaerrors import BadNoMatch, BadTypeMismatch, BadUserAccessDenied
 
