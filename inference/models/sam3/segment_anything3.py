@@ -23,10 +23,15 @@ from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2multipoly
 
 
+import sam3
+
+print("sam3.__version__", sam3.__version__)
+
+
 class SegmentAnything3(RoboflowCoreModel):
     """SAM3 wrapper with a similar interface to SAM2 in this codebase."""
 
-    def __init__(self, *args, model_id: str = "sam3", **kwargs):
+    def __init__(self, *args, model_id: str = "sam3/default", **kwargs):
         super().__init__(*args, model_id=model_id, **kwargs)
         # Lazy import SAM3 to avoid hard dependency when disabled
         # import sys
@@ -34,20 +39,24 @@ class SegmentAnything3(RoboflowCoreModel):
         #     sys.path.append(SAM3_REPO_PATH)
         from sam3 import build_sam3_image_model
 
-        # if SAM3_CHECKPOINT_PATH is None:
-        #     raise ValueError(
-        #         "SAM3_CHECKPOINT_PATH must be set in environment to load SAM3 weights"
-        #     )
+        model_version = model_id.split("/")[1]
 
-        checkpoint = self.cache_file("sam3_prod_v12_interactive_5box_image_only.pt")
+        has_presence_token = False
+        if model_version == "default":
+            checkpoint = self.cache_file("sam3_prod_v12_interactive_5box_image_only.pt")
+        else:
+            has_presence_token = True
+            checkpoint = self.cache_file("weights.pt")
+
         bpe_path = self.cache_file("bpe_simple_vocab_16e6.txt.gz")
 
         self.model = build_sam3_image_model(
             bpe_path=bpe_path,
             checkpoint_path=checkpoint,
+            has_presence_token=has_presence_token,
             device="cuda" if torch.cuda.is_available() else "cpu",
-            eval_mode=True,
         )
+
         self.image_size = SAM3_IMAGE_SIZE
         self.embedding_cache: Dict[str, Dict[str, Any]] = {}
         self.embedding_cache_keys: List[str] = []
@@ -61,7 +70,17 @@ class SegmentAnything3(RoboflowCoreModel):
 
     def get_infer_bucket_file_list(self) -> List[str]:
         # SAM3 weights managed by env; no core bucket artifacts
-        return ["sam3_prod_v12_interactive_5box_image_only.pt", "bpe_simple_vocab_16e6.txt.gz"]
+
+        model_version = self.endpoint.split("/")[1]
+
+        return [
+            (
+                f"sam3_prod_v12_interactive_5box_image_only.pt"
+                if model_version == "default"
+                else "weights.pt"
+            ),
+            "bpe_simple_vocab_16e6.txt.gz",
+        ]
 
     def preproc_image(self, image: InferenceRequestImage) -> np.ndarray:
         np_image = load_image_rgb(image)
@@ -97,16 +116,24 @@ class SegmentAnything3(RoboflowCoreModel):
             orig_h, orig_w = np_image.shape[:2]
             img_np = np_image
             if img_np.dtype == np.uint8:
-                img_t = torch.from_numpy(img_np).permute(2, 0, 1).to(dtype=torch.float32) / 255.0
+                img_t = (
+                    torch.from_numpy(img_np).permute(2, 0, 1).to(dtype=torch.float32)
+                    / 255.0
+                )
             elif np.issubdtype(img_np.dtype, np.floating):
-                img_t = torch.from_numpy(img_np).permute(2, 0, 1).to(dtype=torch.float32)
+                img_t = (
+                    torch.from_numpy(img_np).permute(2, 0, 1).to(dtype=torch.float32)
+                )
             else:
                 raise RuntimeError(f"Unknown image dtype: {img_np.dtype}")
 
             # Resize to the model's expected square resolution
             img_t = img_t.unsqueeze(0)  # (1, C, H, W)
             img_t = torch.nn.functional.interpolate(
-                img_t, size=(image_size, image_size), mode="bilinear", align_corners=False
+                img_t,
+                size=(image_size, image_size),
+                mode="bilinear",
+                align_corners=False,
             )
             images = img_t.half()
 
@@ -126,7 +153,9 @@ class SegmentAnything3(RoboflowCoreModel):
             inference_state = {}
             inference_state["image_size"] = image_size
             inference_state["num_frames"] = len(images)
-            inference_state["device"] = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            inference_state["device"] = torch.device(
+                "cuda" if torch.cuda.is_available() else "cpu"
+            )
             inference_state["orig_height"] = orig_h
             inference_state["orig_width"] = orig_w
             inference_state["constants"] = {}
@@ -138,6 +167,7 @@ class SegmentAnything3(RoboflowCoreModel):
             import tempfile
             import os
             from PIL import Image
+
             print("Falling back to temp file pathway")
             pil = Image.fromarray(np_image)
             with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
@@ -145,7 +175,9 @@ class SegmentAnything3(RoboflowCoreModel):
                 tmp_path = tmp.name
 
             try:
-                inference_state = self.model.init_state(tmp_path, offload_to_cpu=not torch.cuda.is_available())
+                inference_state = self.model.init_state(
+                    tmp_path, offload_to_cpu=not torch.cuda.is_available()
+                )
             finally:
                 try:
                     os.unlink(tmp_path)
@@ -206,7 +238,9 @@ class SegmentAnything3(RoboflowCoreModel):
         output_prob_thresh: float = 0.5,
         **kwargs,
     ) -> Tuple[np.ndarray, np.ndarray]:
-        inference_state, image_id = self._init_and_cache_state(image=image, image_id=image_id)
+        inference_state, image_id = self._init_and_cache_state(
+            image=image, image_id=image_id
+        )
 
         # Clear previous prompts
         self.model.reset_state(inference_state)
@@ -246,5 +280,3 @@ class SegmentAnything3(RoboflowCoreModel):
         return Sam3SegmentationResponse(
             time=perf_counter() - start_ts, predictions=predictions
         )
-
-

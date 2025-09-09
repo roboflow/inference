@@ -98,7 +98,10 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={"always_visible": True},
     )
     # SAM3 does not have multiple server-side versions like SAM2 here; keep a placeholder for UI parity
-    version: Union[Selector(kind=[STRING_KIND]), Literal["default"]] = Field(
+    version: Union[
+        Selector(kind=[STRING_KIND]),
+        Literal["default", "checkpoint_model_only_presence_0_5"],
+    ] = Field(
         default="default",
         # description="Model variant placeholder (SAM3 local image model).",
         description="model version",
@@ -203,7 +206,10 @@ class SegmentAnything3BlockV1(WorkflowBlock):
             box_labels: List[int] = []
 
             if boxes_for_image is not None:
-                img_h, img_w = single_image.numpy_image.shape[0], single_image.numpy_image.shape[1]
+                img_h, img_w = (
+                    single_image.numpy_image.shape[0],
+                    single_image.numpy_image.shape[1],
+                )
                 for xyxy, _, confidence, class_id, _, bbox_data in boxes_for_image:
                     x1, y1, x2, y2 = xyxy
                     width = max(0.0, x2 - x1)
@@ -223,6 +229,7 @@ class SegmentAnything3BlockV1(WorkflowBlock):
                 image=single_image.to_inference_format(numpy_preferred=True),
                 model_id="sam3",
                 api_key=self._api_key,
+                sam3_version_id=version,
                 text=text,
                 boxes=norm_boxes if norm_boxes else None,
                 box_labels=box_labels if box_labels else None,
@@ -246,7 +253,7 @@ class SegmentAnything3BlockV1(WorkflowBlock):
                 prompt_class_names=prompt_class_names,
                 prompt_detection_ids=prompt_detection_ids,
                 threshold=threshold,
-                text_prompt=text
+                text_prompt=text,
             )
             predictions.append(prediction)
 
@@ -290,7 +297,8 @@ def convert_sam3_segmentation_response_to_inference_instances_seg_response(
     if len(prompt_class_ids) == 0:
         prompt_class_ids = [0 for _ in range(len(sam3_segmentation_predictions))]
         prompt_class_names = [
-            text_prompt if text_prompt else "foreground" for _ in range(len(sam3_segmentation_predictions))
+            text_prompt if text_prompt else "foreground"
+            for _ in range(len(sam3_segmentation_predictions))
         ]
         prompt_detection_ids = [None for _ in range(len(sam3_segmentation_predictions))]
     for prediction, class_id, class_name, detection_id in zip(
@@ -333,5 +341,3 @@ def convert_sam3_segmentation_response_to_inference_instances_seg_response(
         predictions=predictions,
         image=InferenceResponseImage(width=image_width, height=image_height),
     )
-
-
