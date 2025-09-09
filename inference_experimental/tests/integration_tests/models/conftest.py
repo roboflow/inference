@@ -98,6 +98,8 @@ def _download_if_not_exists(file_path: str, url: str, lock_timeout: int = 120) -
 
 @pytest.fixture(scope="module")
 def florence2_base_ft_path() -> str:
+    return "/tmp/florence-2-lora-test/"
+    return "/tmp/florece2-converted/"
     package_dir = os.path.join(MODELS_DIR, "florence2")
     unzipped_package_path = os.path.join(package_dir, "base-ft")
     os.makedirs(package_dir, exist_ok=True)

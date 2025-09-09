@@ -10,6 +10,19 @@ def florence2_model(florence2_base_ft_path: str) -> Florence2HF:
     return Florence2HF.from_pretrained(florence2_base_ft_path)
 
 
+def test_florence2_prediction(
+    florence2_model: Florence2HF, dog_image_numpy: np.ndarray
+):
+    # GIVEN
+    captions = florence2_model.caption_image(dog_image_numpy)
+
+    # THEN
+    assert isinstance(captions, list)
+    assert len(captions) == 1
+    assert isinstance(captions[0], str)
+    assert captions[0] == "A man carrying a blue dog on his back."
+
+
 @pytest.mark.slow
 def test_classify_image_region(
     florence2_model: Florence2HF, dog_image_numpy: np.ndarray

@@ -1,10 +1,12 @@
 from typing import List, Literal, Optional, Tuple, Union
 import os
+import json
 
 import cv2
 import numpy as np
 import torch
-from peft import PeftModel
+from peft import LoraConfig, get_peft_model
+from peft.utils.save_and_load import set_peft_model_state_dict
 from inference_exp import Detections, InstanceDetections
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ImageDimensions
@@ -12,7 +14,7 @@ from inference_exp.errors import ModelRuntimeError
 from inference_exp.models.common.roboflow.pre_processing import (
     extract_input_images_dimensions,
 )
-from transformers import AutoModelForCausalLM, AutoProcessor
+from transformers import Florence2ForConditionalGeneration, Florence2Processor
 
 GRANULARITY_2TASK = {
     "normal": "<CAPTION>",
@@ -39,42 +41,123 @@ class Florence2HF:
         torch_dtype = torch.float16 if device.type == "cuda" else torch.float32
 
         adapter_config_path = os.path.join(model_name_or_path, "adapter_config.json")
-        if os.path.exists(adapter_config_path):
-            base_model_path = os.path.join(model_name_or_path, "base")
-            model = AutoModelForCausalLM.from_pretrained(
-                base_model_path,
-                torch_dtype=torch_dtype,
-                trust_remote_code=True,
-                local_files_only=True,
-            )
-            model = PeftModel.from_pretrained(model, model_name_or_path)
-            model.merge_and_unload()
-            model.to(device)
+        is_adapter_package = os.path.exists(adapter_config_path)
 
-            processor = AutoProcessor.from_pretrained(
-                base_model_path, trust_remote_code=True, local_files_only=True
+        base_model_path = (
+            os.path.join(model_name_or_path, "base")
+            if is_adapter_package
+            else model_name_or_path
+        )
+        if not os.path.isdir(base_model_path):
+            raise ModelRuntimeError(
+                message=f"Provided model path does not exist or is not a directory: {base_model_path}",
+                help_url="https://todo",
             )
-        else:
-            model = AutoModelForCausalLM.from_pretrained(
-                model_name_or_path,
-                torch_dtype=torch_dtype,
-                trust_remote_code=True,
-                local_files_only=True,
-            ).to(device)
-            processor = AutoProcessor.from_pretrained(
-                model_name_or_path,
-                trust_remote_code=True,
-                local_files_only=True,
+        if not os.path.isfile(os.path.join(base_model_path, "config.json")):
+            raise ModelRuntimeError(
+                message=(
+                    "Provided model directory does not look like a valid HF Florence-2 checkpoint (missing config.json). "
+                    "If you used the official converter, point to its output directory."
+                ),
+                help_url="https://todo",
             )
+
+        # Native HF Florence2 path only (require transformers >= 4.56)
+        model = Florence2ForConditionalGeneration.from_pretrained(  # type: ignore[arg-type]
+            pretrained_model_name_or_path=base_model_path,
+            torch_dtype=torch_dtype,
+            local_files_only=True,
+        )
+        if is_adapter_package:
+            # Custom LoRA attach to also cover vision modules
+            adapter_cfg_path = os.path.join(model_name_or_path, "adapter_config.json")
+            with open(adapter_cfg_path, "r") as f:
+                adapter_cfg = json.load(f)
+
+            requested_target_modules = adapter_cfg.get("target_modules") or []
+            # Common Florence-2 module names across text and vision
+            target_modules = {
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "fc1",
+                "fc2",
+                # vision attention names
+                "qkv",
+                "proj",
+            }
+            # Keep any explicit targets from adapter config
+            for tm in requested_target_modules:
+                target_modules.add(tm)
+            # Build LoRA config (avoid target_module_types for broad PEFT compatibility)
+            adapter_task_type = adapter_cfg.get("task_type") or "SEQ_2_SEQ_LM"
+            lora_config = LoraConfig(
+                r=adapter_cfg.get("r", 8),
+                lora_alpha=adapter_cfg.get("lora_alpha", 8),
+                lora_dropout=adapter_cfg.get("lora_dropout", 0.0),
+                bias="none",
+                target_modules=sorted(target_modules),
+                use_dora=bool(adapter_cfg.get("use_dora", False)),
+                use_rslora=bool(adapter_cfg.get("use_rslora", False)),
+                task_type=adapter_task_type,
+            )
+
+            model = get_peft_model(model, lora_config)
+
+            # Load adapter weights
+            adapter_weights_path = os.path.join(
+                model_name_or_path, "adapter_model.safetensors"
+            )
+            from safetensors.torch import load_file as load_safetensors
+
+            adapter_state = load_safetensors(adapter_weights_path)
+            adapter_state = cls._normalize_adapter_state_dict(adapter_state)
+            set_peft_model_state_dict(model, adapter_state, adapter_name="default")
+
+            model = model.merge_and_unload()
+        model = model.to(device)
+
+        processor = Florence2Processor.from_pretrained(  # type: ignore[arg-type]
+            pretrained_model_name_or_path=base_model_path,
+            local_files_only=True,
+        )
 
         return cls(
             model=model, processor=processor, device=device, torch_dtype=torch_dtype
         )
 
+    @staticmethod
+    def _normalize_adapter_state_dict(adapter_state: dict) -> dict:
+        normalized = {}
+        for key, value in adapter_state.items():
+            new_key = key
+            # Ensure Florence-2 PEFT prefix matches injected structure
+            if (
+                "base_model.model.vision_tower." in new_key
+                and "base_model.model.model.vision_tower." not in new_key
+            ):
+                new_key = new_key.replace(
+                    "base_model.model.vision_tower.",
+                    "base_model.model.model.vision_tower.",
+                )
+            # Normalize original repo FFN path to HF-native
+            if ".ffn.fn.net.fc1" in new_key:
+                new_key = new_key.replace(".ffn.fn.net.fc1", ".ffn.fc1")
+            if ".ffn.fn.net.fc2" in new_key:
+                new_key = new_key.replace(".ffn.fn.net.fc2", ".ffn.fc2")
+            # Normalize language path if needed
+            if ".language_model.model." in new_key:
+                new_key = new_key.replace(
+                    ".language_model.model.", ".model.language_model."
+                )
+            normalized[new_key] = value
+        return normalized
+
     def __init__(
         self,
-        model: AutoModelForCausalLM,
-        processor: AutoProcessor,
+        model: Florence2ForConditionalGeneration,
+        processor: Florence2Processor,
         device: torch.device,
         torch_dtype: torch.dtype,
     ):
