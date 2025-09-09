@@ -121,7 +121,7 @@ class TimeInZoneBlockV2(WorkflowBlock):
     def normalize_zone(
         self, zone: Union[List[Tuple[int, int]], List[List[Tuple[int, int]]]]
     ) -> List[List[Tuple[int, int]]]:
-        if len(zone) > 0 and zone[0] and isinstance(zone[0][0], (int, float, np.int32)):
+        if len(zone) > 0 and zone[0] and isinstance(zone[0], (tuple,list)) and not isinstance(zone[0][0], (tuple,list,np.ndarray)):
             return [zone]
         return zone
 
@@ -205,7 +205,7 @@ class TimeInZoneBlockV2(WorkflowBlock):
                 [0], dtype=np.float64
             )
             if is_in_zone:
-                ts_start = tracked_ids_in_zone.setdefault(tracker_id, ts_end) - 0.00001
+                ts_start = tracked_ids_in_zone.setdefault(tracker_id, ts_end)
                 detection[TIME_IN_ZONE_KEY_IN_SV_DETECTIONS] = np.array(
                     [ts_end - ts_start], dtype=np.float64
                 )
