@@ -3,7 +3,10 @@ from typing import List, Literal, Tuple
 import torch
 import torchvision
 from inference_exp.entities import ImageDimensions
-from inference_exp.models.common.roboflow.model_packages import PreProcessingMetadata
+from inference_exp.models.common.roboflow.model_packages import (
+    PreProcessingMetadata,
+    StaticCropOffset,
+)
 from torchvision.transforms import functional
 
 
@@ -304,6 +307,7 @@ def align_instance_segmentation_results(
     scale_height: float,
     original_size: ImageDimensions,
     inference_size: ImageDimensions,
+    static_crop_offset: StaticCropOffset,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     if image_bboxes.shape[0] == 0:
         empty_masks = torch.empty(
@@ -345,4 +349,31 @@ def align_instance_segmentation_results(
         .gt_(0.0)
         .to(dtype=torch.bool)
     )
+    if static_crop_offset.offset_x > 0 or static_crop_offset.offset_y > 0:
+        mask_canvas = torch.zeros(
+            (
+                masks.shape[0],
+                static_crop_offset.original_height,
+                static_crop_offset.original_width,
+            ),
+            dtype=torch.bool,
+            device=masks.device,
+        )
+        mask_canvas[
+            :,
+            static_crop_offset.offset_y : static_crop_offset.offset_y + masks.shape[1],
+            static_crop_offset.offset_x : static_crop_offset.offset_x + masks.shape[2],
+        ] = masks
+        static_crop_offsets = torch.as_tensor(
+            [
+                static_crop_offset.offset_x,
+                static_crop_offset.offset_y,
+                static_crop_offset.offset_x,
+                static_crop_offset.offset_y,
+            ],
+            dtype=image_bboxes.dtype,
+            device=image_bboxes.device,
+        )
+        image_bboxes[:, :4].add_(static_crop_offsets)
+        masks = mask_canvas
     return image_bboxes, masks

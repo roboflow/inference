@@ -250,6 +250,7 @@ class YOLOv8ForInstanceSegmentationTRT(
                 scale_width=image_meta.scale_width,
                 original_size=image_meta.original_size,
                 inference_size=image_meta.inference_size,
+                static_crop_offset=image_meta.static_crop_offset,
             )
             final_results.append(
                 InstanceDetections(

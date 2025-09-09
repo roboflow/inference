@@ -93,7 +93,9 @@ def rank_model_packages(
                 package_trt_rank,
                 retrieve_onnx_incompatible_providers_score(model_package),
                 retrieve_trt_dynamic_batch_size_score(model_package),
-                retrieve_fused_nms_rank(model_package, nms_fusion_preferences=nms_fusion_preferences),
+                retrieve_fused_nms_rank(
+                    model_package, nms_fusion_preferences=nms_fusion_preferences
+                ),
                 retrieve_trt_lean_runtime_excluded_score(model_package),
                 retrieve_jetson_device_name_match_score(model_package),
                 retrieve_os_version_match_score(model_package),
