@@ -132,7 +132,7 @@ class TimeInZoneBlockV2(WorkflowBlock):
         self,
         image: WorkflowImageData,
         detections: sv.Detections,
-        zone:  List[List[Tuple[int, int]]],
+        zone: List[List[Tuple[int, int]]],
         triggering_anchor: str,
         remove_out_of_zone_detections: bool,
         reset_out_of_zone_detections: bool,
