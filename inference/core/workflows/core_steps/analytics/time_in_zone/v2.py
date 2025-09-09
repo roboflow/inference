@@ -178,9 +178,11 @@ class TimeInZoneBlockV2(WorkflowBlock):
             ts_end = metadata.frame_number / metadata.fps
         else:
             ts_end = metadata.frame_timestamp.timestamp()
-        
+
         # get trigger for all zones. It is a matrix of shape (len(zones), len(detections))
-        polygon_triggers = [polygon_zone.trigger(detections) for polygon_zone in polygon_zones]
+        polygon_triggers = [
+            polygon_zone.trigger(detections) for polygon_zone in polygon_zones
+        ]
         is_in_any_zone = np.any(polygon_triggers, axis=0)
         for i, is_in_zone, tracker_id in zip(
             range(len(detections)),
