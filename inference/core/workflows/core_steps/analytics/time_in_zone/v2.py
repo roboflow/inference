@@ -119,7 +119,7 @@ class TimeInZoneBlockV2(WorkflowBlock):
         return TimeInZoneManifest
 
     def normalize_zone(
-        self, zone: List[Tuple[int, int]] | List[List[Tuple[int, int]]]
+        self, zone: Union[List[Tuple[int, int]], List[List[Tuple[int, int]]]]
     ) -> List[List[Tuple[int, int]]]:
         if len(zone) > 0 and zone[0] and isinstance(zone[0][0], (int, float, np.int32)):
             return [zone]
@@ -132,7 +132,7 @@ class TimeInZoneBlockV2(WorkflowBlock):
         self,
         image: WorkflowImageData,
         detections: sv.Detections,
-        zone: Union[List[Tuple[int, int]], List[List[Tuple[int, int]]]],
+        zone:  List[List[Tuple[int, int]]],
         triggering_anchor: str,
         remove_out_of_zone_detections: bool,
         reset_out_of_zone_detections: bool,
