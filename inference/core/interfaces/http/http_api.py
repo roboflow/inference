@@ -2514,6 +2514,8 @@ class HttpInterface(BaseInterface):
                 model_id = f"{dataset_id}/{version_id}"
                 if confidence >= 1:
                     confidence /= 100
+                elif confidence < 0:
+                    confidence = 0
 
                 if overlap >= 1:
                     overlap /= 100
