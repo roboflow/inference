@@ -9,7 +9,6 @@ from peft import LoraConfig, get_peft_model
 from peft.utils.save_and_load import set_peft_model_state_dict
 from inference_exp import Detections, InstanceDetections
 from inference_exp.configuration import DEFAULT_DEVICE
-from inference_exp.entities import ColorFormat
 from inference_exp.entities import ImageDimensions, ColorFormat
 from inference_exp.errors import ModelRuntimeError
 from inference_exp.models.common.roboflow.pre_processing import (
@@ -39,7 +38,7 @@ class Florence2HF:
         device: torch.device = DEFAULT_DEVICE,
         **kwargs,
     ) -> "Florence2HF":
-        torch_dtype = torch.float16 if device.type == "cuda" else torch.float32
+        torch_dtype = torch.float16 if device.type == "cuda" else torch.bfloat16
 
         adapter_config_path = os.path.join(model_name_or_path, "adapter_config.json")
         is_adapter_package = os.path.exists(adapter_config_path)
@@ -114,9 +113,17 @@ class Florence2HF:
 
             adapter_state = load_safetensors(adapter_weights_path)
             adapter_state = cls._normalize_adapter_state_dict(adapter_state)
-            set_peft_model_state_dict(model, adapter_state, adapter_name="default")
+            # Cast adapter tensors to base model dtype (fp16/bf16) for safe merge
+            target_dtype = next(model.parameters()).dtype
+            cast_adapter_state = {
+                k: (v.to(dtype=target_dtype) if hasattr(v, "dtype") else v)
+                for k, v in adapter_state.items()
+            }
+            set_peft_model_state_dict(model, cast_adapter_state, adapter_name="default")
 
             model = model.merge_and_unload()
+        # Ensure global dtype consistency (handles CPU bfloat16 vs fp32 mismatches)
+        model = model.to(dtype=torch_dtype)
         model = model.to(device)
 
         processor = Florence2Processor.from_pretrained(  # type: ignore[arg-type]
@@ -472,8 +479,8 @@ class Florence2HF:
         **kwargs,
     ) -> Tuple[dict, List[ImageDimensions]]:
 
-        # maybe dont need to convert to tensor here, since processor also accepts numpy arrays
-        # but need to handle input_color_format here and this is consistent with how we do it in other models
+        # # maybe dont need to convert to tensor here, since processor also accepts numpy arrays
+        # # but need to handle input_color_format here and this is consistent with how we do it in other models
         def _to_tensor(image: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
             is_numpy = isinstance(image, np.ndarray)
             if is_numpy:
