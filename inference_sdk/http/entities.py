@@ -152,6 +152,7 @@ class InferenceConfiguration:
     max_batch_size: int = 1
     source: Optional[str] = None
     source_info: Optional[str] = None
+    workflow_execution_id: Optional[str] = None
     profiling_directory: str = "./inference_profiling"
     workflow_run_retries_enabled: bool = WORKFLOW_RUN_RETRIES_ENABLED
 
@@ -210,6 +211,7 @@ class InferenceConfiguration:
             ("active_learning_target_dataset", "active_learning_target_dataset"),
             ("source", "source"),
             ("source_info", "source_info"),
+            ("workflow_execution_id", "workflow_execution_id"),
         ]
         return get_non_empty_attributes(
             source_object=self,
@@ -258,6 +260,7 @@ class InferenceConfiguration:
             ("disable_active_learning", "disable_active_learning"),
             ("source", "source"),
             ("source_info", "source_info"),
+            ("workflow_execution_id", "workflow_execution_id"),
             ("active_learning_target_dataset", "active_learning_target_dataset"),
         ]
         return get_non_empty_attributes(
@@ -291,6 +294,7 @@ class InferenceConfiguration:
             ("active_learning_target_dataset", "active_learning_target_dataset"),
             ("source", "source"),
             ("source_info", "source_info"),
+            ("workflow_execution_id", "workflow_execution_id"),
         ]
         return get_non_empty_attributes(
             source_object=self,

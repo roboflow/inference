@@ -663,6 +663,11 @@ class UsageCollector:
 
         roboflow_service_name = func_kwargs.get("source_info")
         roboflow_internal_secret = func_kwargs.get("service_secret")
+        workflow_execution_id = func_kwargs.get("workflow_execution_id")
+
+        # Add workflow_execution_id to resource_details for aggregation
+        if workflow_execution_id:
+            resource_details["workflow_execution_id"] = workflow_execution_id
 
         return {
             "source": source,

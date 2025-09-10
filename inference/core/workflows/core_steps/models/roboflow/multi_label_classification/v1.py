@@ -124,14 +124,21 @@ class RoboflowMultiLabelClassificationModelBlockV1(WorkflowBlock):
         model_manager: ModelManager,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
+        workflow_execution_id: Optional[str] = None,
     ):
         self._model_manager = model_manager
         self._api_key = api_key
         self._step_execution_mode = step_execution_mode
+        self._workflow_execution_id = workflow_execution_id
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key", "step_execution_mode"]
+        return [
+            "model_manager",
+            "api_key",
+            "step_execution_mode",
+            "workflow_execution_id",
+        ]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -228,6 +235,7 @@ class RoboflowMultiLabelClassificationModelBlockV1(WorkflowBlock):
             max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
             max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
             source="workflow-execution",
+            workflow_execution_id=self._workflow_execution_id,
         )
         client.configure(inference_configuration=client_config)
         non_empty_inference_images = [i.base64_image for i in images]
