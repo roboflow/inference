@@ -69,7 +69,7 @@ class YOLOv8ForKeyPointsDetectionTorchScript(
                 message="Expected static batch size to be registered in the inference configuration.",
                 help_url="https://todo",
             )
-        parsed_key_points_metadata = parse_key_points_metadata(
+        parsed_key_points_metadata, skeletons = parse_key_points_metadata(
             key_points_metadata_path=model_package_content["keypoints_metadata.json"]
         )
         model = torch.jit.load(
@@ -81,6 +81,7 @@ class YOLOv8ForKeyPointsDetectionTorchScript(
             inference_config=inference_config,
             device=device,
             parsed_key_points_metadata=parsed_key_points_metadata,
+            skeletons=skeletons,
         )
 
     def __init__(
@@ -90,10 +91,12 @@ class YOLOv8ForKeyPointsDetectionTorchScript(
         class_names: List[str],
         device: torch.device,
         parsed_key_points_metadata: List[List[str]],
+        skeletons: List[List[Tuple[int, int]]],
     ):
         self._model = model
         self._inference_config = inference_config
         self._class_names = class_names
+        self._skeletons = skeletons
         self._device = device
         self._parsed_key_points_metadata = parsed_key_points_metadata
         self._key_points_classes_for_instances = torch.tensor(
@@ -110,6 +113,10 @@ class YOLOv8ForKeyPointsDetectionTorchScript(
     @property
     def key_points_classes(self) -> List[List[str]]:
         return self._parsed_key_points_metadata
+
+    @property
+    def skeletons(self) -> List[List[Tuple[int, int]]]:
+        return self._skeletons
 
     def pre_process(
         self,

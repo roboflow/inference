@@ -107,7 +107,7 @@ class YOLOv8ForKeyPointsDetectionTRT(
         trt_config = parse_trt_config(
             config_path=model_package_content["trt_config.json"]
         )
-        parsed_key_points_metadata = parse_key_points_metadata(
+        parsed_key_points_metadata, skeletons = parse_key_points_metadata(
             key_points_metadata_path=model_package_content["keypoints_metadata.json"]
         )
         cuda.init()
@@ -134,6 +134,7 @@ class YOLOv8ForKeyPointsDetectionTRT(
             input_name=inputs[0],
             output_name=outputs[0],
             class_names=class_names,
+            skeletons=skeletons,
             inference_config=inference_config,
             parsed_key_points_metadata=parsed_key_points_metadata,
             trt_config=trt_config,
@@ -147,6 +148,7 @@ class YOLOv8ForKeyPointsDetectionTRT(
         input_name: str,
         output_name: str,
         class_names: List[str],
+        skeletons: List[List[Tuple[int, int]]],
         inference_config: InferenceConfig,
         parsed_key_points_metadata: List[List[str]],
         trt_config: TRTConfig,
@@ -160,6 +162,7 @@ class YOLOv8ForKeyPointsDetectionTRT(
         self._cuda_context = cuda_context
         self._execution_context = execution_context
         self._class_names = class_names
+        self._skeletons = skeletons
         self._inference_config = inference_config
         self._parsed_key_points_metadata = parsed_key_points_metadata
         self._trt_config = trt_config
@@ -180,6 +183,10 @@ class YOLOv8ForKeyPointsDetectionTRT(
     @property
     def key_points_classes(self) -> List[List[str]]:
         return self._parsed_key_points_metadata
+
+    @property
+    def skeletons(self) -> List[List[Tuple[int, int]]]:
+        return self._skeletons
 
     def pre_process(
         self,

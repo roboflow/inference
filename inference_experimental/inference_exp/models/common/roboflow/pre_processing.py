@@ -169,6 +169,8 @@ def apply_pre_processing_to_torch_image(
     static_crop_offset = StaticCropOffset(
         offset_x=0,
         offset_y=0,
+        crop_width=image.shape[3],
+        crop_height=image.shape[2],
         original_height=image.shape[2],
         original_width=image.shape[3],
     )
@@ -204,7 +206,12 @@ def apply_static_crop_to_torch_image(
     y_max = int(config.y_max / 100 * height)
     cropped_tensor = image[:, :, y_min:y_max, x_min:x_max]
     offset = StaticCropOffset(
-        offset_x=x_min, offset_y=y_min, original_width=width, original_height=height
+        offset_x=x_min,
+        offset_y=y_min,
+        crop_width=cropped_tensor.shape[3],
+        crop_height=cropped_tensor.shape[2],
+        original_width=width,
+        original_height=height,
     )
     return cropped_tensor, offset
 
@@ -835,6 +842,8 @@ def apply_pre_processing_to_numpy_image(
     static_crop_offset = StaticCropOffset(
         offset_x=0,
         offset_y=0,
+        crop_width=image.shape[1],
+        crop_height=image.shape[0],
         original_height=image.shape[0],
         original_width=image.shape[1],
     )
@@ -877,7 +886,12 @@ def apply_static_crop_to_numpy_image(
     y_max = int(config.y_max / 100 * height)
     result_image = image[y_min:y_max, x_min:x_max]
     return result_image, StaticCropOffset(
-        offset_x=x_min, offset_y=y_min, original_height=height, original_width=width
+        offset_x=x_min,
+        offset_y=y_min,
+        crop_width=result_image.shape[1],
+        crop_height=result_image.shape[0],
+        original_height=height,
+        original_width=width,
     )
 
 

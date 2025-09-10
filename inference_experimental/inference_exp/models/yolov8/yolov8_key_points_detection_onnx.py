@@ -106,7 +106,7 @@ class YOLOv8ForKeyPointsDetectionOnnx(
                 message="Expected NMS to be the post-processing",
                 help_url="https://todo",
             )
-        parsed_key_points_metadata = parse_key_points_metadata(
+        parsed_key_points_metadata, skeletons = parse_key_points_metadata(
             key_points_metadata_path=model_package_content["keypoints_metadata.json"]
         )
         session = onnxruntime.InferenceSession(
@@ -125,6 +125,7 @@ class YOLOv8ForKeyPointsDetectionOnnx(
             device=device,
             input_batch_size=input_batch_size,
             parsed_key_points_metadata=parsed_key_points_metadata,
+            skeletons=skeletons,
         )
 
     def __init__(
@@ -136,11 +137,13 @@ class YOLOv8ForKeyPointsDetectionOnnx(
         device: torch.device,
         input_batch_size: Optional[int],
         parsed_key_points_metadata: List[List[str]],
+        skeletons: List[List[Tuple[int, int]]],
     ):
         self._session = session
         self._input_name = input_name
         self._inference_config = inference_config
         self._class_names = class_names
+        self._skeletons = skeletons
         self._device = device
         self._input_batch_size = input_batch_size
         self._session_thread_lock = Lock()
@@ -159,6 +162,10 @@ class YOLOv8ForKeyPointsDetectionOnnx(
     @property
     def key_points_classes(self) -> List[List[str]]:
         return self._parsed_key_points_metadata
+
+    @property
+    def skeletons(self) -> List[List[Tuple[int, int]]]:
+        return self._skeletons
 
     def pre_process(
         self,

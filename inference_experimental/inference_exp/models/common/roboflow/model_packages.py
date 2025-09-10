@@ -1,4 +1,3 @@
-import json
 from collections import namedtuple
 from dataclasses import dataclass
 from enum import Enum
@@ -44,7 +43,15 @@ PADDING_VALUES_MAPPING = {
     "white edges": 255,
 }
 StaticCropOffset = namedtuple(
-    "StaticCropOffset", ["offset_x", "offset_y", "original_height", "original_width"]
+    "StaticCropOffset",
+    [
+        "offset_x",
+        "offset_y",
+        "crop_width",
+        "crop_height",
+        "original_height",
+        "original_width",
+    ],
 )
 PreProcessingMetadata = namedtuple(
     "PreProcessingMetadata",
@@ -62,34 +69,50 @@ PreProcessingMetadata = namedtuple(
 )
 
 
-def parse_key_points_metadata(key_points_metadata_path: str) -> List[List[str]]:
+def parse_key_points_metadata(
+    key_points_metadata_path: str,
+) -> Tuple[List[List[str]], List[List[Tuple[int, int]]]]:
     try:
         parsed_config = read_json(path=key_points_metadata_path)
         if not isinstance(parsed_config, list):
             raise ValueError(
                 "config should contain list of key points descriptions for each instance"
             )
-        result: List[Optional[List[str]]] = [None] * len(parsed_config)
+        class_names: List[Optional[List[str]]] = [None] * len(parsed_config)
+        skeletons: List[Optional[List[Tuple[int, int]]]] = [None] * len(parsed_config)
         for instance_key_point_description in parsed_config:
             if "object_class_id" not in instance_key_point_description:
                 raise ValueError(
                     "instance key point description lack 'object_class_id' key"
                 )
             object_class_id: int = instance_key_point_description["object_class_id"]
-            if not 0 <= object_class_id < len(result):
+            if not 0 <= object_class_id < len(class_names):
                 raise ValueError("`object_class_id` field point invalid class")
             if "keypoints" not in instance_key_point_description:
                 raise ValueError(
                     f"`keypoints` field not available in config for class with id {object_class_id}"
                 )
-            result[object_class_id] = _retrieve_key_points_names(
+            class_names[object_class_id] = _retrieve_key_points_names(
                 key_points=instance_key_point_description["keypoints"],
             )
-        if any(e is None for e in result):
+            key_points_count = len(class_names[object_class_id])
+            if "edges" not in instance_key_point_description:
+                raise ValueError(
+                    f"`edges` field not available in config for class with id {object_class_id}"
+                )
+            skeletons[object_class_id] = _retrieve_skeleton(
+                edges=instance_key_point_description["edges"],
+                key_points_count=key_points_count,
+            )
+        if any(e is None for e in class_names):
             raise ValueError(
                 "config does not provide metadata describing each instance key points"
             )
-        return result
+        if any(e is None for e in skeletons):
+            raise ValueError(
+                "config does not provide metadata describing each instance skeleton"
+            )
+        return class_names, skeletons
     except (IOError, OSError, ValueError) as error:
         raise CorruptedModelPackageError(
             message=f"Key points config file is malformed: "
@@ -106,6 +129,26 @@ def _retrieve_key_points_names(key_points: dict) -> List[str]:
         key=lambda e: e[0],
     )
     return [e[1] for e in key_points_dump]
+
+
+def _retrieve_skeleton(
+    edges: List[dict], key_points_count: int
+) -> List[Tuple[int, int]]:
+    result = []
+    for edge in edges:
+        if not isinstance(edge, dict) or "from" not in edge or "to" not in edge:
+            raise ValueError(
+                "skeleton edge malformed - invalid format or lack of required keys"
+            )
+        start = edge["from"]
+        end = edge["to"]
+        if not 0 <= start < key_points_count or not 0 <= end < key_points_count:
+            raise ValueError(
+                "skeleton edge malformed - identifier of skeleton edge end is out of allowed range determined by "
+                "the number of key points in the skeleton"
+            )
+        result.append((edge["from"], edge["to"]))
+    return result
 
 
 @dataclass
@@ -272,6 +315,11 @@ ImagePreProcessingValidator = BeforeValidator(
 )
 
 
+class ClassNameRemoval(BaseModel):
+    type: Literal["class_name_removal"]
+    class_name: str
+
+
 class InferenceConfig(BaseModel):
     image_pre_processing: Annotated[ImagePreProcessing, ImagePreProcessingValidator] = (
         Field(default_factory=lambda: ImagePreProcessing())
@@ -284,6 +332,9 @@ class InferenceConfig(BaseModel):
         Union[NMSPostProcessing, SoftMaxPostProcessing, SigmoidPostProcessing]
     ] = Field(default=None, discriminator="type")
     model_initialization: Optional[dict] = Field(default=None)
+    class_names_operations: Optional[
+        List[Annotated[Union[ClassNameRemoval], Field(discriminator="type")]]
+    ] = Field(default=None)
 
 
 def parse_inference_config(
