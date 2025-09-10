@@ -58,7 +58,9 @@ def test_segment_region(florence2_model: Florence2HF, dog_image_numpy: np.ndarra
     assert len(result) == 1
     assert result[0].xyxy.shape == (1, 4)
     assert torch.allclose(
-        result[0].xyxy, torch.tensor([[100, 100, 302, 303]], dtype=torch.int32), atol=2
+        result[0].xyxy.cpu(),
+        torch.tensor([[100, 100, 302, 303]], dtype=torch.int32),
+        atol=2,
     )
     assert result[0].mask.shape == (1, 1280, 720)
 
@@ -72,7 +74,9 @@ def test_segment_phrase(florence2_model: Florence2HF, dog_image_numpy: np.ndarra
     assert len(result) == 1
     assert result[0].xyxy.shape == (1, 4)
     assert torch.allclose(
-        result[0].xyxy, torch.tensor([[73, 251, 628, 928]], dtype=torch.int32), atol=5
+        result[0].xyxy.cpu(),
+        torch.tensor([[73, 251, 628, 928]], dtype=torch.int32),
+        atol=5,
     )
     assert result[0].mask.shape == (1, 1280, 720)
 
