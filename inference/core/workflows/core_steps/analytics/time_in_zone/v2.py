@@ -38,7 +38,7 @@ which persists between frames)
 
 
 def normalize_zone(
-    zone: Union[List[Tuple[int, int]], List[List[Tuple[int, int] | np.ndarray]]],
+    zone: Union[List[Tuple[int, int]], List[List[Union[Tuple[int, int], np.ndarray]]]],
 ) -> List[List[Tuple[int, int]]]:
     if (
         len(zone) > 0
