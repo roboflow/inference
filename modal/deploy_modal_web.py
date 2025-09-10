@@ -76,17 +76,36 @@ try:
     print(f"  Name: {deployed_app.name}")
     print(f"  App ID: {deployed_app.app_id}")
     
+    # Try to get the actual URL from the deployed app
     print("\n📡 Web Endpoint URL:")
-    print("  The URL will be in the format:")
-    print("  https://roboflow--inference-custom-blocks-web--customblockexecutor-execute-block.modal.run")
-    print("  (Note: Modal may truncate long URLs)")
-    
-    print("\n📝 Example test command:")
-    print(f"""
-curl -X POST "https://roboflow--inference-custom-blocks-web-customblockexecuto-4874a9.modal.run?workspace_id=test" \\
+    try:
+        # Get the CustomBlockExecutor class
+        cls = modal.Cls.from_name("inference-custom-blocks-web", "CustomBlockExecutor")
+        # Create an instance to get the method
+        instance = cls(workspace_id="test")
+        # Get the execute_block method's web URL
+        if hasattr(instance, 'execute_block') and hasattr(instance.execute_block, 'get_web_url'):
+            actual_url = instance.execute_block.get_web_url()
+            if actual_url:
+                # Remove query params to get base URL
+                base_url = actual_url.split('?')[0]
+                print(f"  {base_url}")
+                
+                print("\n📝 Example test command:")
+                print(f"""
+curl -X POST "{base_url}?workspace_id=test" \\
   -H "Content-Type: application/json" \\
   -d '{{"code_str": "def run(): return {{\\"test\\": \\"ok\\"}}", "run_function_name": "run", "inputs_json": "{{}}"}}'
 """)
+            else:
+                raise Exception("Could not get web URL from method")
+        else:
+            raise Exception("Method does not have get_web_url")
+    except Exception as e:
+        print(f"  Could not retrieve actual URL dynamically: {e}")
+        print("  The URL should be visible in the Modal dashboard at https://modal.com/apps")
+        print("  Expected format: https://roboflow--inference-custom-blocks-web-{truncated}.modal.run")
+        print("\n  Set the MODAL_WEB_ENDPOINT_URL environment variable with the actual URL.")
     
     print("\n✅ Ready for production use!")
     

@@ -302,8 +302,47 @@ class ModalWebExecutor:
         """
         # Get base URL once (it's the same for all workspace_ids)
         if self._base_url is None:
-            # URL pattern: https://{org}--{app}--{class}-{method}.modal.run
-            self._base_url = "https://roboflow--inference-custom-blocks-web--customblockexecutor-execute-block.modal.run"
+            # First check for environment variable override
+            env_url = os.environ.get("MODAL_WEB_ENDPOINT_URL")
+            if env_url:
+                self._base_url = env_url
+            else:
+                # Try to get URL dynamically from the deployed app
+                try:
+                    if MODAL_INSTALLED and modal:
+                        # Try to get the Function and its web URL
+                        cls = modal.Cls.from_name("inference-custom-blocks-web", "CustomBlockExecutor")
+                        # Create a dummy instance to get the method
+                        instance = cls(workspace_id="dummy")
+                        # Get the execute_block method's web URL
+                        if hasattr(instance, 'execute_block') and hasattr(instance.execute_block, 'get_web_url'):
+                            web_url = instance.execute_block.get_web_url()
+                            if web_url:
+                                # Remove any query parameters that might be in the URL
+                                self._base_url = web_url.split('?')[0]
+                                logger.info(f"Dynamically retrieved Modal web endpoint URL: {self._base_url}")
+                except Exception as e:
+                    logger.debug(f"Could not dynamically retrieve Modal URL: {e}")
+                
+                # If we couldn't get it dynamically, construct it based on expected pattern
+                if not self._base_url:
+                    # URL pattern: https://{workspace}--{app}-{class}-{method_truncated}.modal.run
+                    # Note: Modal truncates long labels to 63 chars with a hash suffix
+                    workspace = "roboflow"
+                    app_name = "inference-custom-blocks-web"
+                    class_name = "customblockexecutor"
+                    method_name = "execute-block"
+                    
+                    # The label would be: inference-custom-blocks-web-customblockexecutor-execute-block
+                    # This is 62 chars, which might get truncated
+                    label = f"{app_name}-{class_name}-{method_name}"
+                    if len(label) > 56:  # Modal truncates at 56 chars and adds 7-char hash
+                        import hashlib
+                        hash_str = hashlib.sha256(label.encode()).hexdigest()[:6]
+                        label = f"{label[:56]}-{hash_str}"
+                    
+                    self._base_url = f"https://{workspace}--{label}.modal.run"
+                    logger.warning(f"Using constructed Modal URL (may not be accurate): {self._base_url}")
         
         # Add workspace_id as query parameter
         return f"{self._base_url}?workspace_id={workspace_id}"

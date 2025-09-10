@@ -32,10 +32,32 @@ from inference.core.workflows.execution_engine.entities.base import WorkflowImag
 # Skip all tests if Modal credentials or endpoint URL are not present
 MODAL_TOKEN_ID = os.getenv("MODAL_TOKEN_ID")
 MODAL_TOKEN_SECRET = os.getenv("MODAL_TOKEN_SECRET")
-MODAL_WEB_ENDPOINT_URL = os.getenv(
-    "MODAL_WEB_ENDPOINT_URL",
-    "https://roboflow--inference-custom-blocks-web-customblockexecuto-4874a9.modal.run"
-)
+
+# Get Modal web endpoint URL - try environment variable first, then dynamic retrieval
+MODAL_WEB_ENDPOINT_URL = os.getenv("MODAL_WEB_ENDPOINT_URL")
+
+if not MODAL_WEB_ENDPOINT_URL and MODAL_TOKEN_ID and MODAL_TOKEN_SECRET:
+    # Try to get URL dynamically from deployed Modal app
+    try:
+        import modal
+        os.environ["MODAL_TOKEN_ID"] = MODAL_TOKEN_ID
+        os.environ["MODAL_TOKEN_SECRET"] = MODAL_TOKEN_SECRET
+        
+        cls = modal.Cls.from_name("inference-custom-blocks-web", "CustomBlockExecutor")
+        instance = cls(workspace_id="test")
+        if hasattr(instance, 'execute_block') and hasattr(instance.execute_block, 'get_web_url'):
+            url = instance.execute_block.get_web_url()
+            if url:
+                MODAL_WEB_ENDPOINT_URL = url.split('?')[0]
+                print(f"Dynamically retrieved Modal URL: {MODAL_WEB_ENDPOINT_URL}")
+    except Exception as e:
+        print(f"Could not dynamically retrieve Modal URL: {e}")
+        # Use fallback URL as last resort
+        MODAL_WEB_ENDPOINT_URL = "https://roboflow--inference-custom-blocks-web-customblockexecuto-4874a9.modal.run"
+
+if not MODAL_WEB_ENDPOINT_URL:
+    # Final fallback
+    MODAL_WEB_ENDPOINT_URL = "https://roboflow--inference-custom-blocks-web-customblockexecuto-4874a9.modal.run"
 
 SKIP_MODAL_WEB_TESTS = not (MODAL_TOKEN_ID and MODAL_TOKEN_SECRET)
 SKIP_REASON = "Modal credentials not present (MODAL_TOKEN_ID and MODAL_TOKEN_SECRET)"
