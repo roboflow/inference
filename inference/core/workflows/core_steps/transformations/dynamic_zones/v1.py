@@ -235,13 +235,6 @@ def scale_polygon(polygon: np.ndarray, scale: float) -> np.ndarray:
     return result.round().astype(np.int32)
 
 
-def convert_from_np_types(zones: List[np.ndarray]) -> List[Tuple[int, int]]:
-    result = []
-    for zone in zones:
-        result.append(zone.tolist())
-    return result
-
-
 class DynamicZonesBlockV1(WorkflowBlock):
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -314,7 +307,7 @@ class DynamicZonesBlockV1(WorkflowBlock):
                     polygon=simplified_polygon,
                     scale=scale_ratio,
                 )
-                simplified_polygons.append(simplified_polygon)
+                simplified_polygons.append(simplified_polygon.tolist())
                 updated_detection.mask = np.array(
                     [
                         sv.polygon_to_mask(
@@ -339,13 +332,4 @@ class DynamicZonesBlockV1(WorkflowBlock):
                     OUTPUT_KEY_SIMPLIFICATION_CONVERGED: False,
                 }
             )
-        return [
-            {
-                OUTPUT_KEY: convert_from_np_types(item[OUTPUT_KEY]),
-                OUTPUT_KEY_DETECTIONS: item[OUTPUT_KEY_DETECTIONS],
-                OUTPUT_KEY_SIMPLIFICATION_CONVERGED: item[
-                    OUTPUT_KEY_SIMPLIFICATION_CONVERGED
-                ],
-            }
-            for item in result
-        ]
+        return result
