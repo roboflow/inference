@@ -149,7 +149,7 @@ class TimeInZoneBlockV2(WorkflowBlock):
         metadata = image.video_metadata
         zones = self.normalize_zone(zone)
         if metadata.video_identifier not in self._batch_of_polygon_zones:
-            if len(zones) > 0 and not isinstance(zones[0], list) or len(zones[0]) < 3:
+            if len(zones) > 0 and (not isinstance(zones[0], list) or len(zones[0]) < 3):
                 raise ValueError(
                     f"{self.__class__.__name__} requires zone to be a list containing more than 2 points"
                 )
@@ -188,7 +188,7 @@ class TimeInZoneBlockV2(WorkflowBlock):
         polygon_triggers = [
             polygon_zone.trigger(detections) for polygon_zone in polygon_zones
         ]
-        is_in_any_zone = np.any(polygon_triggers, axis=0)
+        is_in_any_zone = np.any(polygon_triggers, axis=0) if len(polygon_triggers) > 0 else np.array([False] * len(detections))
         for i, is_in_zone, tracker_id in zip(
             range(len(detections)),
             is_in_any_zone,

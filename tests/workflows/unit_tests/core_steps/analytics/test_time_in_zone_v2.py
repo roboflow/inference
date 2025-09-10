@@ -675,3 +675,42 @@ def test_time_in_zone_multiple_zones() -> None:
     assert (
         frame2_result["timed_detections"]["time_in_zone"] == np.array([1, 1, 0, 0])
     ).all()
+
+
+def test_time_in_zone_empty_zones_results_in_zero_time() -> None:
+    # given
+    zones: list[list[tuple[int, int]]] = []
+    detections = sv.Detections(
+        xyxy=np.array(
+            [
+                [12, 19, 13, 20],
+                [31, 39, 32, 40],
+                [100, 100, 101, 101],
+            ]
+        ),
+        tracker_id=np.array([1, 2, 3]),
+    )
+    metadata = VideoMetadata(
+        video_identifier="vid_empty_zones",
+        frame_number=10,
+        fps=1,
+        frame_timestamp=datetime.datetime.fromtimestamp(1726570875).astimezone(
+            tz=datetime.timezone.utc
+        ),
+        comes_from_video_file=True,
+    )
+    time_in_zone_block = TimeInZoneBlockV2()
+    image = np.zeros((720, 1280, 3))
+
+    # when
+    result = time_in_zone_block.run(
+        image=_wrap_with_workflow_image(image=image, metadata=metadata),
+        detections=detections,
+        zone=zones,
+        triggering_anchor="TOP_LEFT",
+        remove_out_of_zone_detections=False,
+        reset_out_of_zone_detections=False,
+    )
+
+    # then
+    assert (result["timed_detections"]["time_in_zone"] == np.array([0, 0, 0])).all()
