@@ -29,7 +29,6 @@ SMOLVLM_BASE_FT_URL = (
 MOONDREAM2_BASE_FT_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/moondream2/moondream2-2b.zip"
 )
-OCR_TEST_IMAGE_PATH = os.path.join(ASSETS_DIR, "ocr_test_image.png")
 
 
 @pytest.fixture(scope="module")
@@ -68,14 +67,6 @@ def perception_encoder_path() -> str:
     _download_if_not_exists(file_path=model_path, url=PE_MODEL_URL)
     _download_if_not_exists(file_path=config_path, url=PE_CONFIG_URL)
     return package_path
-
-
-@pytest.fixture(scope="function")
-def ocr_test_image_numpy() -> np.ndarray:
-    """Returns the OCR test image as a numpy array."""
-    image = cv2.imread(OCR_TEST_IMAGE_PATH)
-    assert image is not None, "Could not load OCR test image"
-    return image
 
 
 def _download_if_not_exists(file_path: str, url: str, lock_timeout: int = 120) -> None:
