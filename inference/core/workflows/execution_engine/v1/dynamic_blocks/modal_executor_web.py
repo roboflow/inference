@@ -130,9 +130,10 @@ if MODAL_INSTALLED and app:
             # Build the execution namespace
             namespace = {"__name__": "__main__"}
 
-            # Execute imports
-            import_code = "\n".join(imports) if imports else ""
-            full_imports = f"""
+            try:
+                # Execute imports
+                import_code = "\n".join(imports) if imports else ""
+                full_imports = f"""
 from typing import Any, List, Dict, Set, Optional
 import supervision as sv
 import numpy as np
@@ -147,12 +148,13 @@ from inference.core.workflows.execution_engine.entities.base import Batch, Workf
 from inference.core.workflows.prototypes.block import BlockResult
 
 {import_code}
-"""
-                from datetime import datetime
 
-                from inference.core.workflows.core_steps.common.deserializers import (
-                    deserialize_image_kind,
-                )
+from datetime import datetime
+
+from inference.core.workflows.core_steps.common.deserializers import (
+    deserialize_image_kind,
+)
+"""
 
                 # Custom decoder for special types
                 def decode_inputs(obj):
@@ -260,6 +262,17 @@ from inference.core.workflows.prototypes.block import BlockResult
                 # Convert to JSON string to ensure everything is pickle-safe
                 json_result = json.dumps(serialized_result, cls=InferenceJSONEncoder)
 
+                # Return the serialized result
+                return {"result": json_result}
+
+            except Exception as e:
+                # On error, return error details
+                return {
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "traceback": traceback.format_exc(),
+                }
+
 
 
 else:
@@ -276,7 +289,6 @@ class ModalWebExecutor:
             workspace_id: The workspace ID to namespace execution, defaults to "anonymous"
         """
         self.workspace_id = workspace_id or "anonymous"
-        self.auth_token = AUTH_TOKEN or os.environ.get("MODAL_AUTH_TOKEN", "default-dev-token")
         self._base_url = None
 
     def _get_endpoint_url(self, workspace_id: str) -> str:
@@ -376,7 +388,6 @@ class ModalWebExecutor:
 
             # Prepare request payload
             request_payload = {
-                "auth_token": self.auth_token,
                 "code_str": python_code.run_function_code,
                 "imports": python_code.imports or [],
                 "run_function_name": python_code.run_function_name,
@@ -454,7 +465,7 @@ class ModalWebExecutor:
 
             Args:
                 obj: Object to decode
-                defer_images: If True, don't deserialize images yet (for first pass)
+                defer_images: If True, do not deserialize images yet (for first pass)
             """
             if isinstance(obj, dict):
                 # Check for special type markers
@@ -559,7 +570,7 @@ def validate_syntax():
     try:
         # Try to compile the user code
         code = {escaped_code}
-        compile(code, '<string>', 'exec')
+        compile(code, "<string>", "exec")
         # Try to parse as AST to check structure
         ast.parse(code)
         return {{"valid": True}}

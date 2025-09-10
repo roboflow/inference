@@ -12,8 +12,7 @@ Usage:
 Environment variables required:
     MODAL_TOKEN_ID - Modal authentication token ID
     MODAL_TOKEN_SECRET - Modal authentication token secret
-    MODAL_AUTH_TOKEN - Custom auth token for securing the web endpoint (optional)
-
+    
 If you can't install inference locally, use deploy_modal_web_standalone.py instead.
 """
 
@@ -33,11 +32,6 @@ if not os.environ.get("MODAL_TOKEN_SECRET"):
     print("Error: MODAL_TOKEN_SECRET environment variable not set")
     print("Please set: export MODAL_TOKEN_SECRET='your-token-secret'")
     sys.exit(1)
-
-# Set a custom auth token for the web endpoint if not provided
-if not os.environ.get("MODAL_AUTH_TOKEN"):
-    print("Warning: MODAL_AUTH_TOKEN not set, using default development token")
-    os.environ["MODAL_AUTH_TOKEN"] = "default-dev-token"
 
 try:
     import modal
@@ -71,7 +65,6 @@ print("=" * 60)
 print("Deploying Modal Web Endpoint for Custom Python Blocks")
 print("=" * 60)
 print(f"App name: {app.name}")
-print(f"Auth token: {os.environ.get('MODAL_AUTH_TOKEN')}")
 print("\nDeploying...")
 
 try:
@@ -88,16 +81,11 @@ try:
     print("  https://roboflow--inference-custom-blocks-web--customblockexecutor-execute-block.modal.run")
     print("  (Note: Modal may truncate long URLs)")
     
-    print("\n🔑 Authentication:")
-    print(f"  Auth token: {os.environ.get('MODAL_AUTH_TOKEN')}")
-    print("  Include in request body as: {\"auth_token\": \"<token>\", ...}")
-    
     print("\n📝 Example test command:")
-    auth_token = os.environ.get('MODAL_AUTH_TOKEN')
     print(f"""
 curl -X POST "https://roboflow--inference-custom-blocks-web-customblockexecuto-4874a9.modal.run?workspace_id=test" \\
   -H "Content-Type: application/json" \\
-  -d '{{"auth_token": "{auth_token}", "code_str": "def run(): return {{\\"test\\": \\"ok\\"}}", "run_function_name": "run", "inputs_json": "{{}}"}}'
+  -d '{{"code_str": "def run(): return {{\\"test\\": \\"ok\\"}}", "run_function_name": "run", "inputs_json": "{{}}"}}'
 """)
     
     print("\n✅ Ready for production use!")
