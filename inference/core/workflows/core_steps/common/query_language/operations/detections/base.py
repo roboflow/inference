@@ -143,7 +143,7 @@ def select_leftmost_detection(detections: sv.Detections) -> sv.Detections:
 
     centers_x = detections.get_anchors_coordinates(anchor=Position.CENTER)[:, 0]
     index = np.argmin(centers_x)
-    return detections[index]
+    return detections[int(index)]
 
 
 def select_rightmost_detection(detections: sv.Detections) -> sv.Detections:
