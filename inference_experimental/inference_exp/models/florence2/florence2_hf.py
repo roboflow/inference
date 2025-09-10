@@ -9,7 +9,8 @@ from peft import LoraConfig, get_peft_model
 from peft.utils.save_and_load import set_peft_model_state_dict
 from inference_exp import Detections, InstanceDetections
 from inference_exp.configuration import DEFAULT_DEVICE
-from inference_exp.entities import ImageDimensions
+from inference_exp.entities import ColorFormat
+from inference_exp.entities import ImageDimensions, ColorFormat
 from inference_exp.errors import ModelRuntimeError
 from inference_exp.models.common.roboflow.pre_processing import (
     extract_input_images_dimensions,
@@ -178,6 +179,7 @@ class Florence2HF:
         max_new_tokens: int = 4096,
         num_beams: int = 3,
         do_sample: bool = False,
+        input_color_format: Optional[ColorFormat] = None,
     ) -> List[str]:
         loc_phrases = region_to_loc_phrase(images=images, xyxy=xyxy)
         prompt = [f"<REGION_TO_CATEGORY>{phrase}" for phrase in loc_phrases]
@@ -189,6 +191,7 @@ class Florence2HF:
             num_beams=num_beams,
             do_sample=do_sample,
             task=task,
+            input_color_format=input_color_format,
         )
         return [deduce_localisation(r[task]) for r in result]
 
@@ -204,6 +207,7 @@ class Florence2HF:
         max_new_tokens: int = 4096,
         num_beams: int = 3,
         do_sample: bool = False,
+        input_color_format: Optional[ColorFormat] = None,
     ) -> List[str]:
         loc_phrases = region_to_loc_phrase(images=images, xyxy=xyxy)
         prompt = [f"<REGION_TO_DESCRIPTION>{phrase}" for phrase in loc_phrases]
@@ -215,6 +219,7 @@ class Florence2HF:
             num_beams=num_beams,
             do_sample=do_sample,
             task=task,
+            input_color_format=input_color_format,
         )
         return [deduce_localisation(r[task]) for r in result]
 
@@ -230,6 +235,7 @@ class Florence2HF:
         max_new_tokens: int = 4096,
         num_beams: int = 3,
         do_sample: bool = False,
+        input_color_format: Optional[ColorFormat] = None,
     ) -> List[str]:
         loc_phrases = region_to_loc_phrase(images=images, xyxy=xyxy)
         prompt = [f"<REGION_TO_OCR>{phrase}" for phrase in loc_phrases]
@@ -241,6 +247,7 @@ class Florence2HF:
             num_beams=num_beams,
             do_sample=do_sample,
             task=task,
+            input_color_format=input_color_format,
         )
         return [deduce_localisation(r[task]) for r in result]
 
@@ -256,6 +263,7 @@ class Florence2HF:
         max_new_tokens: int = 4096,
         num_beams: int = 3,
         do_sample: bool = False,
+        input_color_format: Optional[ColorFormat] = None,
     ) -> List[InstanceDetections]:
         loc_phrases = region_to_loc_phrase(images=images, xyxy=xyxy)
         prompt = [f"<REGION_TO_SEGMENTATION>{phrase}" for phrase in loc_phrases]
@@ -267,6 +275,7 @@ class Florence2HF:
             num_beams=num_beams,
             do_sample=do_sample,
             task=task,
+            input_color_format=input_color_format,
         )
         image_dimensions = extract_input_images_dimensions(images=images)
         return [
@@ -283,6 +292,7 @@ class Florence2HF:
         max_new_tokens: int = 4096,
         num_beams: int = 3,
         do_sample: bool = False,
+        input_color_format: Optional[ColorFormat] = None,
     ) -> List[InstanceDetections]:
         prompt = f"<REFERRING_EXPRESSION_SEGMENTATION>{phrase}"
         task = "<REFERRING_EXPRESSION_SEGMENTATION>"
@@ -293,6 +303,7 @@ class Florence2HF:
             num_beams=num_beams,
             do_sample=do_sample,
             task=task,
+            input_color_format=input_color_format,
         )
         image_dimensions = extract_input_images_dimensions(images=images)
         return [
@@ -309,6 +320,7 @@ class Florence2HF:
         max_new_tokens: int = 4096,
         num_beams: int = 3,
         do_sample: bool = False,
+        input_color_format: Optional[ColorFormat] = None,
     ) -> List[Detections]:
         prompt = f"<CAPTION_TO_PHRASE_GROUNDING>{phrase}"
         task = "<CAPTION_TO_PHRASE_GROUNDING>"
@@ -319,6 +331,7 @@ class Florence2HF:
             num_beams=num_beams,
             do_sample=do_sample,
             task=task,
+            input_color_format=input_color_format,
         )
         return [
             parse_object_detection_prediction(prediction=r[task], device=self._device)
@@ -333,6 +346,7 @@ class Florence2HF:
         max_new_tokens: int = 4096,
         num_beams: int = 3,
         do_sample: bool = False,
+        input_color_format: Optional[ColorFormat] = None,
     ) -> List[Detections]:
         if classes:
             classes_str = "<and>".join(classes)
@@ -349,6 +363,7 @@ class Florence2HF:
             num_beams=num_beams,
             do_sample=do_sample,
             task=task,
+            input_color_format=input_color_format,
         )
         return [
             parse_object_detection_prediction(
@@ -364,6 +379,7 @@ class Florence2HF:
         max_new_tokens: int = 4096,
         num_beams: int = 3,
         do_sample: bool = False,
+        input_color_format: Optional[ColorFormat] = None,
     ) -> List[str]:
         task = GRANULARITY_2TASK[granularity]
         result = self.prompt(
@@ -373,6 +389,7 @@ class Florence2HF:
             num_beams=num_beams,
             do_sample=do_sample,
             task=task,
+            input_color_format=input_color_format,
         )
         return [r[task] for r in result]
 
@@ -382,6 +399,7 @@ class Florence2HF:
         max_new_tokens: int = 4096,
         num_beams: int = 3,
         do_sample: bool = False,
+        input_color_format: Optional[ColorFormat] = None,
     ) -> List[Detections]:
         task = "<OCR_WITH_REGION>"
         result = self.prompt(
@@ -391,6 +409,7 @@ class Florence2HF:
             num_beams=num_beams,
             do_sample=do_sample,
             task=task,
+            input_color_format=input_color_format,
         )
         return [
             parse_dense_ocr_prediction(prediction=r[task], device=self._device)
@@ -403,6 +422,7 @@ class Florence2HF:
         max_new_tokens: int = 4096,
         num_beams: int = 3,
         do_sample: bool = False,
+        input_color_format: Optional[ColorFormat] = None,
     ) -> List[str]:
         task = "<OCR>"
         result = self.prompt(
@@ -412,6 +432,7 @@ class Florence2HF:
             num_beams=num_beams,
             do_sample=do_sample,
             task=task,
+            input_color_format=input_color_format,
         )
         return [r[task] for r in result]
 
@@ -424,6 +445,7 @@ class Florence2HF:
         do_sample: bool = False,
         skip_special_tokens: bool = False,
         task: Optional[str] = None,
+        input_color_format: Optional[ColorFormat] = None,
         **kwargs,
     ) -> List[str]:
         inputs, image_dimensions = self.pre_process_generation(
@@ -446,9 +468,30 @@ class Florence2HF:
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         prompt: Union[str, List[str]],
+        input_color_format: Optional[ColorFormat] = None,
         **kwargs,
     ) -> Tuple[dict, List[ImageDimensions]]:
-        image_dimensions = extract_input_images_dimensions(images=images)
+
+        # maybe dont need to convert to tensor here, since processor also accepts numpy arrays
+        # but need to handle input_color_format here and this is consistent with how we do it in other models
+        def _to_tensor(image: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
+            is_numpy = isinstance(image, np.ndarray)
+            if is_numpy:
+                tensor_image = torch.from_numpy(image.copy()).permute(2, 0, 1)
+            else:
+                tensor_image = image
+            if input_color_format == "bgr" or (is_numpy and input_color_format is None):
+                tensor_image = tensor_image[[2, 1, 0], :, :]
+            return tensor_image
+
+        if isinstance(images, torch.Tensor) and images.ndim > 3:
+            image_list = [_to_tensor(img) for img in images]
+        elif not isinstance(images, list):
+            image_list = [_to_tensor(images)]
+        else:
+            image_list = [_to_tensor(img) for img in images]
+
+        image_dimensions = extract_input_images_dimensions(images=image_list)
         if isinstance(prompt, list):
             if len(prompt) != len(image_dimensions):
                 raise ModelRuntimeError(
@@ -457,9 +500,10 @@ class Florence2HF:
                 )
         else:
             prompt = [prompt] * len(image_dimensions)
-        inputs = self._processor(text=prompt, images=images, return_tensors="pt").to(
-            self._device, self._torch_dtype
-        )
+
+        inputs = self._processor(
+            text=prompt, images=image_list, return_tensors="pt"
+        ).to(self._device, self._torch_dtype)
         return inputs, image_dimensions
 
     def generate(
