@@ -606,6 +606,7 @@ class RoboflowCoreModel(RoboflowInferenceModel):
         self,
         model_id: str,
         api_key=None,
+        **kwargs,
     ):
         """Initializes the RoboflowCoreModel instance.
 
@@ -613,7 +614,7 @@ class RoboflowCoreModel(RoboflowInferenceModel):
             model_id (str): The identifier for the specific model.
             api_key ([type], optional): The API key for authentication. Defaults to None.
         """
-        super().__init__(model_id, api_key=api_key)
+        super().__init__(model_id, api_key=api_key, **kwargs)
         self.download_weights()
 
     def download_weights(self) -> None:
