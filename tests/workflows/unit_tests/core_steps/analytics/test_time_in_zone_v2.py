@@ -14,8 +14,6 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 
 
-
-
 def test_time_in_zone_keep_out_of_zone_detections() -> None:
     # given
     zone = [[10, 10], [10, 20], [20, 20], [20, 10]]
@@ -714,3 +712,63 @@ def test_time_in_zone_empty_zones_results_in_zero_time() -> None:
 
     # then
     assert (result["timed_detections"]["time_in_zone"] == np.array([0, 0, 0])).all()
+
+
+def test_time_in_zone_updates_zones_cache_between_runs() -> None:
+    # given
+    zones_initial = [
+        [(10, 10), (10, 20), (20, 20)],
+    ]
+    zones_empty: list[list[tuple[int, int]]] = []
+    frame1_detections = sv.Detections(
+        xyxy=np.array([[11, 11, 12, 12]]),
+        tracker_id=np.array([1]),
+    )
+    frame2_detections = sv.Detections(
+        xyxy=np.array([[11, 11, 12, 12]]),
+        tracker_id=np.array([1]),
+    )
+    frame1_metadata = VideoMetadata(
+        video_identifier="vid_cache_update",
+        frame_number=10,
+        fps=1,
+        frame_timestamp=datetime.datetime.fromtimestamp(1726570875).astimezone(
+            tz=datetime.timezone.utc
+        ),
+        comes_from_video_file=True,
+    )
+    frame2_metadata = VideoMetadata(
+        video_identifier="vid_cache_update",
+        frame_number=11,
+        fps=1,
+        frame_timestamp=datetime.datetime.fromtimestamp(1726570876).astimezone(
+            tz=datetime.timezone.utc
+        ),
+        comes_from_video_file=True,
+    )
+    time_in_zone_block = TimeInZoneBlockV2()
+    image = np.zeros((720, 1280, 3))
+
+    # when: first run with a zone that contains the detection
+    frame1_result = time_in_zone_block.run(
+        image=_wrap_with_workflow_image(image=image, metadata=frame1_metadata),
+        detections=frame1_detections,
+        zone=zones_initial,
+        triggering_anchor="TOP_LEFT",
+        remove_out_of_zone_detections=False,
+        reset_out_of_zone_detections=True,
+    )
+    # when: second run with empty zones should not reuse previously cached polygons
+    frame2_result = time_in_zone_block.run(
+        image=_wrap_with_workflow_image(image=image, metadata=frame2_metadata),
+        detections=frame2_detections,
+        zone=zones_empty,
+        triggering_anchor="TOP_LEFT",
+        remove_out_of_zone_detections=True,
+        reset_out_of_zone_detections=True,
+    )
+
+    # then
+    assert len(frame1_result["timed_detections"]) == 1
+    assert (frame1_result["timed_detections"]["time_in_zone"] == np.array([0])).all()
+    assert len(frame2_result["timed_detections"]) == 0

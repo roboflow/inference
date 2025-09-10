@@ -37,6 +37,23 @@ which persists between frames)
 """
 
 
+def normalize_zone(
+    zone: Union[List[Tuple[int, int]], List[List[Tuple[int, int]|np.ndarray]],
+) -> List[List[Tuple[int, int]]]:
+    if (
+        len(zone) > 0
+        and zone[0]
+        and isinstance(zone[0], (tuple, list))
+        and not isinstance(zone[0][0], (tuple, list, np.ndarray))
+    ):
+        return [zone]
+    return zone
+
+
+def flatten_list(iterable):
+    return list(itertools.chain.from_iterable(iterable))
+
+
 class TimeInZoneManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
@@ -68,9 +85,7 @@ class TimeInZoneManifest(WorkflowBlockManifest):
         description="Model predictions to calculate the time spent in zone for.",
         examples=["$steps.object_detection_model.predictions"],
     )
-    zone: Union[
-        list, Selector(kind=[LIST_OF_VALUES_KIND]), Selector(kind=[LIST_OF_VALUES_KIND])
-    ] = Field(  # type: ignore
+    zone: Union[list, Selector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
         description="Coordinates of the target zone.",
         examples=[[(100, 100), (100, 200), (300, 200), (300, 100)], "$inputs.zones"],
     )
@@ -112,26 +127,11 @@ class TimeInZoneManifest(WorkflowBlockManifest):
 class TimeInZoneBlockV2(WorkflowBlock):
     def __init__(self):
         self._batch_of_tracked_ids_in_zone: Dict[str, Dict[Union[int, str], float]] = {}
-        self._batch_of_polygon_zones: Dict[str, sv.PolygonZone] = {}
+        self._batch_of_polygon_zones: Dict[str, List[sv.PolygonZone]] = {}
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return TimeInZoneManifest
-
-    def normalize_zone(
-        self, zone: Union[List[Tuple[int, int]], List[List[Tuple[int, int]]]]
-    ) -> List[List[Tuple[int, int]]]:
-        if (
-            len(zone) > 0
-            and zone[0]
-            and isinstance(zone[0], (tuple, list))
-            and not isinstance(zone[0][0], (tuple, list, np.ndarray))
-        ):
-            return [zone]
-        return zone
-
-    def flatten_list(self, iterable):
-        return list(itertools.chain.from_iterable(iterable))
 
     def run(
         self,
@@ -147,7 +147,7 @@ class TimeInZoneBlockV2(WorkflowBlock):
                 f"tracker_id not initialized, {self.__class__.__name__} requires detections to be tracked"
             )
         metadata = image.video_metadata
-        zones = self.normalize_zone(zone)
+        zones = normalize_zone(zone)
         zone_key = f"{metadata.video_identifier}_{str(zones)}"
         if zone_key not in self._batch_of_polygon_zones:
             if len(zones) > 0 and (not isinstance(zones[0], list) or len(zones[0]) < 3):
@@ -156,14 +156,14 @@ class TimeInZoneBlockV2(WorkflowBlock):
                 )
             if any(
                 (not isinstance(e, list) and not isinstance(e, tuple)) or len(e) != 2
-                for e in self.flatten_list(zones)
+                for e in flatten_list(zones)
             ):
                 raise ValueError(
                     f"{self.__class__.__name__} requires each point of zone to be a list containing exactly 2 coordinates"
                 )
             if any(
                 not isinstance(e[0], (int, float)) or not isinstance(e[1], (int, float))
-                for e in self.flatten_list(zones)
+                for e in flatten_list(zones)
             ):
                 raise ValueError(
                     f"{self.__class__.__name__} requires each coordinate of zone to be a number"
@@ -189,8 +189,12 @@ class TimeInZoneBlockV2(WorkflowBlock):
         polygon_triggers = [
             polygon_zone.trigger(detections) for polygon_zone in polygon_zones
         ]
-        is_in_any_zone = np.any(polygon_triggers, axis=0) if len(polygon_triggers) > 0 else np.array([False] * len(detections))
-        
+        is_in_any_zone = (
+            np.any(polygon_triggers, axis=0)
+            if len(polygon_triggers) > 0
+            else np.array([False] * len(detections))
+        )
+
         for i, is_in_zone, tracker_id in zip(
             range(len(detections)),
             is_in_any_zone,
