@@ -261,12 +261,21 @@ from inference.core.workflows.prototypes.block import BlockResult
                 return {"success": True, "result": json_result}
 
             except Exception as e:
-                return {
+                result = {
                     "success": False,
                     "error": str(e),
                     "error_type": type(e).__name__,
                     "traceback": traceback.format_exc(),
                 }
+
+                # Get the line number and function name from evaluated code
+                tb = traceback.extract_tb(e.__traceback__)
+                if tb:
+                    frame = tb[-1]
+                    result["line_number"] = frame.lineno
+                    result["function_name"] = frame.name
+
+                return result
 
 else:
     CustomBlockExecutor = None
@@ -389,9 +398,16 @@ class ModalExecutor:
                 error_msg = result.get("error", "Unknown error")
                 error_type = result.get("error_type", "RuntimeError")
                 traceback = result.get("traceback", "")
+                line_number = result.get("line_number", None)
+                function_name = result.get("function_name", None)
+
+                if line_number and function_name:
+                    message = f"Error in line {line_number}, in {function_name}: {error_type}: {error_msg}"
+                else:
+                    message = f"{error_type}: {error_msg}"
 
                 raise DynamicBlockError(
-                    public_message=f"{error_type}: {error_msg}",
+                    public_message=message,
                     context=f"modal_executor | remote_execution\n{traceback}",
                 )
 
