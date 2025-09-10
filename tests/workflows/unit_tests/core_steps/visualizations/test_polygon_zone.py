@@ -58,7 +58,7 @@ def test_polygon_zone_validation_when_invalid_image_is_given() -> None:
         _ = PolygonZoneVisualizationManifest.model_validate(data)
 
 
-def test_polygon_zone_visualization_block() -> None:
+def test_polygon_zone_visualization_single_zone_block() -> None:
     # given
     block = PolygonZoneVisualizationBlockV1()
 
@@ -69,6 +69,32 @@ def test_polygon_zone_visualization_block() -> None:
             numpy_image=start_image,
         ),
         zone=[(10, 10), (100, 100), (100, 10), (50, 0)],
+        copy_image=True,
+        color="#FF0000",
+        opacity=0.5,
+    )
+
+    assert isinstance(output, dict)
+    assert "image" in output
+    assert hasattr(output["image"], "numpy_image")
+
+    # dimensions of output match input
+    assert output.get("image").numpy_image.shape == (1000, 1000, 3)
+    # check if the image is modified
+    assert not np.array_equal(output.get("image").numpy_image, start_image)
+
+
+def test_polygon_zone_visualization_multiple_zones_block() -> None:
+    # given
+    block = PolygonZoneVisualizationBlockV1()
+
+    start_image = np.random.randint(0, 255, (1000, 1000, 3), dtype=np.uint8)
+    output = block.run(
+        image=WorkflowImageData(
+            parent_metadata=ImageParentMetadata(parent_id="some"),
+            numpy_image=start_image,
+        ),
+        zone=[[(10, 10), (100, 100), (100, 10), (50, 0)], [(10, 10), (100, 100), (100, 10), (50, 0)]],
         copy_image=True,
         color="#FF0000",
         opacity=0.5,
