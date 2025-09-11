@@ -182,7 +182,7 @@ class TransformerModel(RoboflowInferenceModel):
             "tokenizer_config.json",
         ]
 
-    def download_model_artifacts_from_roboflow_api(self) -> None:
+    def download_model_artifacts_from_roboflow_api(self, **kwargs) -> None:
         if self.load_weights_as_transformers:
             api_data = get_roboflow_model_data(
                 api_key=self.api_key,
