@@ -261,12 +261,20 @@ from inference.core.workflows.prototypes.block import BlockResult
                 return {"success": True, "result": json_result}
 
             except Exception as e:
-                return {
+                result = {
                     "success": False,
                     "error": str(e),
                     "error_type": type(e).__name__,
-                    "traceback": traceback.format_exc(),
                 }
+
+                # Get the line number and function name from evaluated code
+                tb = traceback.extract_tb(e.__traceback__)
+                if tb:
+                    frame = tb[-1]
+                    result["line_number"] = frame.lineno
+                    result["function_name"] = frame.name
+
+                return result
 
 else:
     CustomBlockExecutor = None
@@ -321,91 +329,87 @@ class ModalExecutor:
         # Use provided workspace_id or fall back to instance default
         workspace = workspace_id if workspace_id else self.workspace_id
 
-        try:
-            # Get or create executor for this workspace (no code_hash needed)
-            cache_key = workspace
+        # Get or create executor for this workspace (no code_hash needed)
+        cache_key = workspace
 
-            if cache_key not in self._executor_cache:
-                # Create a new executor instance for this workspace using the deployed app
-                if MODAL_INSTALLED and modal:
-                    # Look up the deployed class
-                    executor = cls(workspace_id=workspace)
-                    self._executor_cache[cache_key] = executor
-                else:
-                    raise DynamicBlockError(
-                        public_message="Modal is not properly configured",
-                        context="modal_executor | class_lookup",
-                    )
+        if cache_key not in self._executor_cache:
+            # Create a new executor instance for this workspace using the deployed app
+            if MODAL_INSTALLED and modal:
+                # Look up the deployed class
+                executor = cls(workspace_id=workspace)
+                self._executor_cache[cache_key] = executor
             else:
-                executor = self._executor_cache[cache_key]
-
-            # Serialize inputs to JSON to avoid blob storage issues with restrict_modal_access
-            from datetime import datetime
-
-            import numpy as np
-
-            from inference.core.workflows.core_steps.common.serializers import (
-                serialize_wildcard_kind,
-            )
-
-            # Custom JSON encoder for inputs
-            class InputJSONEncoder(json.JSONEncoder):
-                def default(self, obj):
-                    if isinstance(obj, datetime):
-                        return {"_type": "datetime", "value": obj.isoformat()}
-                    elif isinstance(obj, np.ndarray):
-                        return {
-                            "_type": "ndarray",
-                            "value": obj.tolist(),
-                            "dtype": str(obj.dtype),
-                            "shape": obj.shape,
-                        }
-                    elif hasattr(obj, "__dict__"):
-                        return {
-                            "_type": "object",
-                            "class": obj.__class__.__name__,
-                            "value": str(obj),
-                        }
-                    return super().default(obj)
-
-            # Serialize inputs
-            serialized_inputs = {}
-            for key, value in inputs.items():
-                serialized_inputs[key] = serialize_wildcard_kind(value)
-
-            # Convert to JSON string
-            inputs_json = json.dumps(serialized_inputs, cls=InputJSONEncoder)
-
-            # Execute remotely with JSON string inputs
-            result = executor.execute_block.remote(
-                code_str=python_code.run_function_code,
-                imports=python_code.imports or [],
-                run_function_name=python_code.run_function_name,
-                inputs_json=inputs_json,  # Pass as JSON string to avoid blob storage
-            )
-
-            # Check for errors
-            if not result.get("success", False):
-                error_msg = result.get("error", "Unknown error")
-                error_type = result.get("error_type", "RuntimeError")
-                traceback = result.get("traceback", "")
-
                 raise DynamicBlockError(
-                    public_message=f"{error_type}: {error_msg}",
-                    context=f"modal_executor | remote_execution\n{traceback}",
+                    public_message="Modal is not properly configured",
+                    context="modal_executor | class_lookup",
                 )
+        else:
+            executor = self._executor_cache[cache_key]
 
-            # Get the result and deserialize from JSON
-            json_result = result.get("result", "{}")
-            return self._deserialize_json_result(json_result)
+        # Serialize inputs to JSON to avoid blob storage issues with restrict_modal_access
+        from datetime import datetime
 
-        except Exception as e:
-            if isinstance(e, DynamicBlockError):
-                raise
-            raise DynamicBlockError(
-                public_message=f"Failed to execute custom block remotely: {str(e)}",
-                context="modal_executor | remote_execution",
-            )
+        import numpy as np
+
+        from inference.core.workflows.core_steps.common.serializers import (
+            serialize_wildcard_kind,
+        )
+
+        # Custom JSON encoder for inputs
+        class InputJSONEncoder(json.JSONEncoder):
+            def default(self, obj):
+                if isinstance(obj, datetime):
+                    return {"_type": "datetime", "value": obj.isoformat()}
+                elif isinstance(obj, np.ndarray):
+                    return {
+                        "_type": "ndarray",
+                        "value": obj.tolist(),
+                        "dtype": str(obj.dtype),
+                        "shape": obj.shape,
+                    }
+                elif hasattr(obj, "__dict__"):
+                    return {
+                        "_type": "object",
+                        "class": obj.__class__.__name__,
+                        "value": str(obj),
+                    }
+                return super().default(obj)
+
+        # Serialize inputs
+        serialized_inputs = {}
+        for key, value in inputs.items():
+            serialized_inputs[key] = serialize_wildcard_kind(value)
+
+        # Convert to JSON string
+        inputs_json = json.dumps(serialized_inputs, cls=InputJSONEncoder)
+
+        # Execute remotely with JSON string inputs
+        result = executor.execute_block.remote(
+            code_str=python_code.run_function_code,
+            imports=python_code.imports or [],
+            run_function_name=python_code.run_function_name,
+            inputs_json=inputs_json,  # Pass as JSON string to avoid blob storage
+        )
+
+        # Check for errors
+        if not result.get("success", False):
+            error_msg = result.get("error", "Unknown error")
+            error_type = result.get("error_type", "RuntimeError")
+            line_number = result.get("line_number", None)
+            function_name = result.get("function_name", None)
+
+            if line_number and function_name:
+                message = f"Error in line {line_number}, in {function_name}: {error_type}: {error_msg}"
+            else:
+                message = f"{error_type}: {error_msg}"
+
+            # Raise Exception on runtime error. Will be caught by the core executor
+            # and wrapped in StepExecutionError with block metadata
+            raise Exception(message)
+
+        # Get the result and deserialize from JSON
+        json_result = result.get("result", "{}")
+        return self._deserialize_json_result(json_result)
 
     def _deserialize_json_result(self, json_result: str) -> BlockResult:
         """Deserialize JSON result from Modal transport.
