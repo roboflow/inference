@@ -275,12 +275,20 @@ from inference.core.workflows.core_steps.common.deserializers import (
 
             except Exception as e:
                 # On error, return error details
-                return {
+                result = {
                     "success": False,
                     "error": str(e),
                     "error_type": type(e).__name__,
-                    "traceback": traceback.format_exc(),
                 }
+                
+                # Get the line number and function name from evaluated code
+                tb = traceback.extract_tb(e.__traceback__)
+                if tb:
+                    frame = tb[-1]
+                    result["line_number"] = frame.lineno
+                    result["function_name"] = frame.name
+                
+                return result
 
 else:
     Executor = None
@@ -451,12 +459,17 @@ class ModalExecutor:
             if not result.get("success", False):
                 error_msg = result.get("error", "Unknown error")
                 error_type = result.get("error_type", "RuntimeError")
-                traceback = result.get("traceback", "")
+                line_number = result.get("line_number", None)
+                function_name = result.get("function_name", None)
 
-                raise DynamicBlockError(
-                    public_message=f"{error_type}: {error_msg}",
-                    context=f"modal_executor | remote_execution\n{traceback}",
-                )
+                if line_number and function_name:
+                    message = f"Error in line {line_number}, in {function_name}: {error_type}: {error_msg}"
+                else:
+                    message = f"{error_type}: {error_msg}"
+
+                # Raise Exception on runtime error. Will be caught by the core executor
+                # and wrapped in StepExecutionError with block metadata
+                raise Exception(message)
 
             # Get the result and deserialize from JSON
             json_result = result.get("result", "{}")
