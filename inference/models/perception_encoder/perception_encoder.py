@@ -79,7 +79,7 @@ class PerceptionEncoder(RoboflowCoreModel):
         """Gets the list of files required for inference."""
         return ["model.pt"]  # No files needed as model is downloaded from HuggingFace
 
-    def initialize_model(self) -> None:
+    def initialize_model(self, **kwargs) -> None:
         """Initialize the model. Not needed for PE-CLIP as it's loaded in __init__."""
         pass
 
