@@ -6,21 +6,18 @@ import torch
 from inference_exp import Detections, ObjectDetectionModel
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
-from inference_exp.errors import (
-    CorruptedModelPackageError,
-    MissingDependencyError,
-    ModelRuntimeError,
-)
-from inference_exp.models.common.cuda import use_cuda_context, use_primary_cuda_context
+from inference_exp.errors import EnvironmentConfigurationError, MissingDependencyError
 from inference_exp.models.common.model_packages import get_model_package_contents
+from inference_exp.models.common.onnx import (
+    run_session_with_batch_size_limit,
+    set_execution_provider_defaults,
+)
 from inference_exp.models.common.roboflow.model_packages import (
     InferenceConfig,
     PreProcessingMetadata,
     ResizeMode,
-    TRTConfig,
     parse_class_names_file,
     parse_inference_config,
-    parse_trt_config,
 )
 from inference_exp.models.common.roboflow.post_processing import (
     rescale_image_detections,
@@ -28,36 +25,27 @@ from inference_exp.models.common.roboflow.post_processing import (
 from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
-from inference_exp.models.common.trt import (
-    get_engine_inputs_and_outputs,
-    infer_from_trt_engine,
-    load_model,
-)
 from inference_exp.models.rfdetr.class_remapping import prepare_class_remapping
+from inference_exp.utils.onnx_introspection import get_selected_onnx_execution_providers
 
 try:
-    import tensorrt as trt
+    import onnxruntime
 except ImportError as import_error:
     raise MissingDependencyError(
-        message=f"Could not import RFDetr model with TRT backend - this error means that some additional dependencies "
+        message=f"Could not import YOLOv8 model with ONNX backend - this error means that some additional dependencies "
         f"are not installed in the environment. If you run the `inference-exp` library directly in your Python "
-        f"program, make sure the following extras of the package are installed: `trt10` - installation can only "
-        f"succeed for Linux and Windows machines with Cuda 12 installed. Jetson devices, should have TRT 10.x "
-        f"installed for all builds with Jetpack 6. "
+        f"program, make sure the following extras of the package are installed: \n"
+        f"\t* `onnx-cpu` - when you wish to use library with CPU support only\n"
+        f"\t* `onnx-cu12` - for running on GPU with Cuda 12 installed\n"
+        f"\t* `onnx-cu118` - for running on GPU with Cuda 11.8 installed\n"
+        f"\t* `onnx-jp6-cu126` - for running on Jetson with Jetpack 6\n"
         f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
         f"You can also contact Roboflow to get support.",
         help_url="https://todo",
     ) from import_error
 
-try:
-    import pycuda.driver as cuda
-except ImportError as import_error:
-    raise MissingDependencyError(
-        message="TODO", help_url="https://todo"
-    ) from import_error
 
-
-class RFDetrForObjectDetectionTRT(
+class RFDetrForObjectDetectionONNX(
     (
         ObjectDetectionModel[
             torch.Tensor, PreProcessingMetadata, Tuple[torch.Tensor, torch.Tensor]
@@ -69,22 +57,33 @@ class RFDetrForObjectDetectionTRT(
     def from_pretrained(
         cls,
         model_name_or_path: str,
+        onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
+        default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
-        engine_host_code_allowed: bool = False,
         **kwargs,
-    ) -> "RFDetrForObjectDetectionTRT":
-        if device.type != "cuda":
-            raise ModelRuntimeError(
-                message="TRT engine only runs on CUDA device - {device} device detected.",
+    ) -> "RFDetrForObjectDetectionONNX":
+        if onnx_execution_providers is None:
+            onnx_execution_providers = get_selected_onnx_execution_providers()
+        if not onnx_execution_providers:
+            raise EnvironmentConfigurationError(
+                message=f"Could not initialize model - selected backend is ONNX which requires execution provider to "
+                f"be specified - explicitly in `from_pretrained(...)` method or via env variable "
+                f"`ONNXRUNTIME_EXECUTION_PROVIDERS`. If you run model locally - adjust your setup, otherwise "
+                f"contact the platform support.",
                 help_url="https://todo",
             )
+        onnx_execution_providers = set_execution_provider_defaults(
+            providers=onnx_execution_providers,
+            model_package_path=model_name_or_path,
+            device=device,
+            default_onnx_trt_options=default_onnx_trt_options,
+        )
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
             elements=[
                 "class_names.txt",
                 "inference_config.json",
-                "trt_config.json",
-                "engine.plan",
+                "weights.onnx",
             ],
         )
         class_names = parse_class_names_file(
@@ -105,70 +104,47 @@ class RFDetrForObjectDetectionTRT(
                 class_names=class_names,
                 class_names_operations=inference_config.class_names_operations,
             )
-        trt_config = parse_trt_config(
-            config_path=model_package_content["trt_config.json"]
+        session = onnxruntime.InferenceSession(
+            path_or_bytes=model_package_content["weights.onnx"],
+            providers=onnx_execution_providers,
         )
-        cuda.init()
-        cuda_device = cuda.Device(device.index or 0)
-        with use_primary_cuda_context(cuda_device=cuda_device) as cuda_context:
-            engine = load_model(
-                model_path=model_package_content["engine.plan"],
-                engine_host_code_allowed=engine_host_code_allowed,
-            )
-            execution_context = engine.create_execution_context()
-        inputs, outputs = get_engine_inputs_and_outputs(engine=engine)
-        if len(inputs) != 1:
-            raise CorruptedModelPackageError(
-                message=f"Implementation assume single model input, found: {len(inputs)}.",
-                help_url="https://todo",
-            )
-        if len(outputs) != 2:
-            raise CorruptedModelPackageError(
-                message=f"Implementation assume 2 model outputs, found: {len(outputs)}.",
-                help_url="https://todo",
-            )
-        if "dets" not in outputs or "labels" not in outputs:
-            raise CorruptedModelPackageError(
-                message=f"Expected model outputs to be named `output0` and `output1`, but found: {outputs}.",
-                help_url="https://todo",
-            )
+        input_batch_size = session.get_inputs()[0].shape[0]
+        if isinstance(input_batch_size, str):
+            input_batch_size = None
+        input_name = session.get_inputs()[0].name
         return cls(
-            engine=engine,
-            input_name=inputs[0],
-            output_names=["dets", "labels"],
+            session=session,
+            input_name=input_name,
             class_names=class_names,
             class_id_remapping=class_id_remapping,
             inference_config=inference_config,
-            trt_config=trt_config,
             device=device,
-            cuda_context=cuda_context,
-            execution_context=execution_context,
+            input_batch_size=input_batch_size,
         )
 
     def __init__(
         self,
-        engine: trt.ICudaEngine,
+        session: onnxruntime.InferenceSession,
         input_name: str,
-        output_names: List[str],
         class_names: List[str],
         class_id_remapping: Optional[Dict[int, int]],
         inference_config: InferenceConfig,
-        trt_config: TRTConfig,
         device: torch.device,
-        cuda_context: cuda.Context,
-        execution_context: trt.IExecutionContext,
+        input_batch_size: Optional[int],
     ):
-        self._engine = engine
+        self._session = session
         self._input_name = input_name
-        self._output_names = output_names
         self._inference_config = inference_config
         self._class_names = class_names
         self._class_id_remapping = class_id_remapping
         self._device = device
-        self._cuda_context = cuda_context
-        self._execution_context = execution_context
-        self._trt_config = trt_config
-        self._lock = threading.Lock()
+        self._min_batch_size = input_batch_size
+        self._max_batch_size = (
+            input_batch_size
+            if input_batch_size is not None
+            else inference_config.forward_pass.max_dynamic_batch_size
+        )
+        self._session_thread_lock = threading.Lock()
 
     @property
     def class_names(self) -> List[str]:
@@ -191,18 +167,14 @@ class RFDetrForObjectDetectionTRT(
     def forward(
         self, pre_processed_images: torch.Tensor, **kwargs
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        with self._lock:
-            with use_cuda_context(context=self._cuda_context):
-                detections, labels = infer_from_trt_engine(
-                    pre_processed_images=pre_processed_images,
-                    trt_config=self._trt_config,
-                    engine=self._engine,
-                    context=self._execution_context,
-                    device=self._device,
-                    input_name=self._input_name,
-                    outputs=self._output_names,
-                )
-                return detections, labels
+        with self._session_thread_lock:
+            bboxes, logits = run_session_with_batch_size_limit(
+                session=self._session,
+                inputs={self._input_name: pre_processed_images},
+                min_batch_size=self._min_batch_size,
+                max_batch_size=self._max_batch_size,
+            )
+            return bboxes, logits
 
     def post_process(
         self,
