@@ -3,6 +3,7 @@ import hashlib
 from io import BytesIO
 from time import perf_counter
 from typing import Any, Dict, List, Optional, Tuple, TypedDict, Union
+import threading
 
 import numpy as np
 import sam2.utils.misc
@@ -91,6 +92,9 @@ class SegmentAnything2(RoboflowCoreModel):
 
         self.predictor = SAM2ImagePredictor(self.sam)
 
+        # Re-entrant lock to serialize calls to embed_image and segment_image
+        self._sam2_lock = threading.RLock()
+
         self.embedding_cache = {}
         self.image_size_cache = {}
         self.embedding_cache_keys = []
@@ -137,38 +141,39 @@ class SegmentAnything2(RoboflowCoreModel):
             >>> embed_image(img_array, image_id="sample123")
             (array([...]), (224, 224))
         """
-        if image_id and image_id in self.embedding_cache:
-            return (
-                self.embedding_cache[image_id],
-                self.image_size_cache[image_id],
-                image_id,
-            )
+        with self._sam2_lock:
+            if image_id and image_id in self.embedding_cache:
+                return (
+                    self.embedding_cache[image_id],
+                    self.image_size_cache[image_id],
+                    image_id,
+                )
 
-        img_in = self.preproc_image(image)
-        if image_id is None:
-            image_id = hashlib.md5(img_in.tobytes()).hexdigest()[:12]
+            img_in = self.preproc_image(image)
+            if image_id is None:
+                image_id = hashlib.md5(img_in.tobytes()).hexdigest()[:12]
 
-        if image_id in self.embedding_cache:
-            return (
-                self.embedding_cache[image_id],
-                self.image_size_cache[image_id],
-                image_id,
-            )
+            if image_id in self.embedding_cache:
+                return (
+                    self.embedding_cache[image_id],
+                    self.image_size_cache[image_id],
+                    image_id,
+                )
 
-        with torch.inference_mode():
-            self.predictor.set_image(img_in)
-            embedding_dict = self.predictor._features
+            with torch.inference_mode():
+                self.predictor.set_image(img_in)
+                embedding_dict = self.predictor._features
 
-        self.embedding_cache[image_id] = embedding_dict
-        self.image_size_cache[image_id] = img_in.shape[:2]
-        if image_id in self.embedding_cache_keys:
-            self.embedding_cache_keys.remove(image_id)
-        self.embedding_cache_keys.append(image_id)
-        if len(self.embedding_cache_keys) > self.embedding_cache_size:
-            cache_key = self.embedding_cache_keys.pop(0)
-            del self.embedding_cache[cache_key]
-            del self.image_size_cache[cache_key]
-        return (embedding_dict, img_in.shape[:2], image_id)
+            self.embedding_cache[image_id] = embedding_dict
+            self.image_size_cache[image_id] = img_in.shape[:2]
+            if image_id in self.embedding_cache_keys:
+                self.embedding_cache_keys.remove(image_id)
+            self.embedding_cache_keys.append(image_id)
+            if len(self.embedding_cache_keys) > self.embedding_cache_size:
+                cache_key = self.embedding_cache_keys.pop(0)
+                del self.embedding_cache[cache_key]
+                del self.image_size_cache[cache_key]
+            return (embedding_dict, img_in.shape[:2], image_id)
 
     def infer_from_request(self, request: Sam2InferenceRequest):
         """Performs inference based on the request type.
@@ -263,64 +268,71 @@ class SegmentAnything2(RoboflowCoreModel):
             - The cache has a maximum size defined by SAM_MAX_EMBEDDING_CACHE_SIZE. When the cache exceeds this size,
               the oldest entries are removed.
         """
-        load_logits_from_cache = (
-            load_logits_from_cache and not DISABLE_SAM2_LOGITS_CACHE
-        )
-        save_logits_to_cache = save_logits_to_cache and not DISABLE_SAM2_LOGITS_CACHE
-        with torch.inference_mode():
-            if image is None and not image_id:
-                raise ValueError("Must provide either image or  cached image_id")
-            elif image_id and image is None and image_id not in self.embedding_cache:
-                raise ValueError(
-                    f"Image ID {image_id} not in embedding cache, must provide the image or embeddings"
-                )
-            embedding, original_image_size, image_id = self.embed_image(
-                image=image, image_id=image_id
+        with self._sam2_lock:
+            load_logits_from_cache = (
+                load_logits_from_cache and not DISABLE_SAM2_LOGITS_CACHE
             )
+            save_logits_to_cache = (
+                save_logits_to_cache and not DISABLE_SAM2_LOGITS_CACHE
+            )
+            with torch.inference_mode():
+                if image is None and not image_id:
+                    raise ValueError("Must provide either image or  cached image_id")
+                elif (
+                    image_id and image is None and image_id not in self.embedding_cache
+                ):
+                    raise ValueError(
+                        f"Image ID {image_id} not in embedding cache, must provide the image or embeddings"
+                    )
+                embedding, original_image_size, image_id = self.embed_image(
+                    image=image, image_id=image_id
+                )
 
-            self.predictor._is_image_set = True
-            self.predictor._features = embedding
-            self.predictor._orig_hw = [original_image_size]
-            self.predictor._is_batch = False
-            args = dict()
-            prompt_set: Sam2PromptSet
-            if prompts:
-                if type(prompts) is dict:
-                    prompt_set = Sam2PromptSet(**prompts)
-                    args = prompt_set.to_sam2_inputs()
+                self.predictor._is_image_set = True
+                self.predictor._features = embedding
+                self.predictor._orig_hw = [original_image_size]
+                self.predictor._is_batch = False
+                args = dict()
+                prompt_set: Sam2PromptSet
+                if prompts:
+                    if type(prompts) is dict:
+                        prompt_set = Sam2PromptSet(**prompts)
+                        args = prompt_set.to_sam2_inputs()
+                    else:
+                        prompt_set = prompts
+                        args = prompts.to_sam2_inputs()
                 else:
-                    prompt_set = prompts
-                    args = prompts.to_sam2_inputs()
-            else:
-                prompt_set = Sam2PromptSet()
+                    prompt_set = Sam2PromptSet()
 
-            if mask_input is None and load_logits_from_cache:
-                mask_input = maybe_load_low_res_logits_from_cache(
-                    image_id, prompt_set, self.low_res_logits_cache
+                if mask_input is None and load_logits_from_cache:
+                    mask_input = maybe_load_low_res_logits_from_cache(
+                        image_id, prompt_set, self.low_res_logits_cache
+                    )
+
+                args = pad_points(args)
+                if not any(args.values()):
+                    args = {"point_coords": [[0, 0]], "point_labels": [-1], "box": None}
+                masks, scores, low_resolution_logits = self.predictor.predict(
+                    mask_input=mask_input,
+                    multimask_output=multimask_output,
+                    return_logits=True,
+                    normalize_coords=True,
+                    **args,
+                )
+                masks, scores, low_resolution_logits = (
+                    choose_most_confident_sam_prediction(
+                        masks=masks,
+                        scores=scores,
+                        low_resolution_logits=low_resolution_logits,
+                    )
                 )
 
-            args = pad_points(args)
-            if not any(args.values()):
-                args = {"point_coords": [[0, 0]], "point_labels": [-1], "box": None}
-            masks, scores, low_resolution_logits = self.predictor.predict(
-                mask_input=mask_input,
-                multimask_output=multimask_output,
-                return_logits=True,
-                normalize_coords=True,
-                **args,
-            )
-            masks, scores, low_resolution_logits = choose_most_confident_sam_prediction(
-                masks=masks,
-                scores=scores,
-                low_resolution_logits=low_resolution_logits,
-            )
+                if save_logits_to_cache:
+                    self.add_low_res_logits_to_cache(
+                        low_resolution_logits, image_id, prompt_set
+                    )
 
-            if save_logits_to_cache:
-                self.add_low_res_logits_to_cache(
-                    low_resolution_logits, image_id, prompt_set
-                )
-
-            return masks, scores, low_resolution_logits
+                return masks, scores, low_resolution_logits
 
     def add_low_res_logits_to_cache(
         self, logits: np.ndarray, image_id: str, prompt_set: Sam2PromptSet
