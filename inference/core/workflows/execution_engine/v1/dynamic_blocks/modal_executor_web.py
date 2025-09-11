@@ -118,6 +118,7 @@ if MODAL_INSTALLED and app:
             import sys
             import traceback
             import os
+            from datetime import datetime  # Import datetime at the top level
 
             import numpy as np
 
@@ -159,6 +160,8 @@ from inference.core.workflows.core_steps.common.deserializers import (
                 # Custom decoder for special types
                 def decode_inputs(obj):
                     """Decode special types in inputs."""
+                    # datetime is already imported at the top level
+                    
                     if isinstance(obj, dict):
                         # Check for special type markers
                         if "_type" in obj:
@@ -172,6 +175,9 @@ from inference.core.workflows.core_steps.common.deserializers import (
 
                         # Check if this is a serialized WorkflowImageData
                         if obj.get("type") == "base64" and "value" in obj:
+                            from inference.core.workflows.core_steps.common.deserializers import (
+                                deserialize_image_kind,
+                            )
                             # Decode nested datetimes first
                             if "video_metadata" in obj and obj["video_metadata"]:
                                 obj["video_metadata"] = decode_inputs(
@@ -262,12 +268,13 @@ from inference.core.workflows.core_steps.common.deserializers import (
                 # Convert to JSON string to ensure everything is pickle-safe
                 json_result = json.dumps(serialized_result, cls=InferenceJSONEncoder)
 
-                # Return the serialized result
-                return {"result": json_result}
+                # Return the serialized result with success flag
+                return {"success": True, "result": json_result}
 
             except Exception as e:
                 # On error, return error details
                 return {
+                    "success": False,
                     "error": str(e),
                     "error_type": type(e).__name__,
                     "traceback": traceback.format_exc(),
