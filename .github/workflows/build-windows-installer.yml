@@ -11,7 +11,7 @@ on:
 
 jobs:
   build_windows:
-    runs-on: windows-latest
+    runs-on: Windows-2022
     permissions:
       contents: write
     steps:
