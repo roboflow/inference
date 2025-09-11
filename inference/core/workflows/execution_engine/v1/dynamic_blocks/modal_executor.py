@@ -280,14 +280,14 @@ from inference.core.workflows.core_steps.common.deserializers import (
                     "error": str(e),
                     "error_type": type(e).__name__,
                 }
-                
+
                 # Get the line number and function name from evaluated code
                 tb = traceback.extract_tb(e.__traceback__)
                 if tb:
                     frame = tb[-1]
                     result["line_number"] = frame.lineno
                     result["function_name"] = frame.name
-                
+
                 return result
 
 else:
