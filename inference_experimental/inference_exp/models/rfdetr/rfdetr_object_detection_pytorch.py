@@ -22,7 +22,7 @@ from inference_exp.models.common.roboflow.model_packages import (
     ResizeMode,
     TrainingInputSize,
     parse_class_names_file,
-    parse_inference_config,
+    parse_inference_config, DivisiblePadding,
 )
 from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
@@ -172,6 +172,13 @@ class RFDetrForObjectDetectionTorch(
             )
         model_config = CONFIG_FOR_MODEL_TYPE[model_type](device=device)
         if resolution is not None:
+            if resolution < 0 or resolution % 56 != 0:
+                raise ModelLoadingError(
+                    message=f"Attempted to load RFDetr model (using torch backend) with `resolution` parameter which "
+                            f"is invalid - the model required positive value divisible by 56. Make sure you used "
+                            f"proper value, corresponding to the one used to train the model.",
+                    help_url="https://todo",
+                )
             model_config.resolution = resolution
         inference_config = InferenceConfig(
             network_input=NetworkInputDefinition(
@@ -179,7 +186,11 @@ class RFDetrForObjectDetectionTorch(
                     height=model_config.resolution,
                     width=model_config.resolution,
                 ),
-                dynamic_spatial_size_supported=False,
+                dynamic_spatial_size_supported=True,
+                dynamic_spatial_size_mode=DivisiblePadding(
+                    type="pad-to-be-divisible",
+                    value=56,
+                ),
                 color_mode=ColorMode.BGR,
                 resize_mode=ResizeMode.STRETCH_TO,
                 input_channels=3,
@@ -280,6 +291,7 @@ class RFDetrForObjectDetectionTorch(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
+        image_size: Optional[Tuple[int, int]] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         return pre_process_network_input(
@@ -288,6 +300,7 @@ class RFDetrForObjectDetectionTorch(
             network_input=self._inference_config.network_input,
             target_device=self._device,
             input_color_format=input_color_format,
+            image_size_wh=image_size,
         )
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> dict:
