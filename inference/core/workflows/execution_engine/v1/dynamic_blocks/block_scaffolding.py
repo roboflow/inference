@@ -158,7 +158,6 @@ def create_dynamic_module(
     # If using Modal and local execution is disabled, validate code remotely
     if (
         WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE == "modal"
-        and not ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS
     ):
         # Validate code in Modal sandbox for security
         from inference.core.workflows.execution_engine.v1.dynamic_blocks.modal_executor_web import (
