@@ -895,7 +895,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
     def download_model_artefacts_from_s3(self):
         raise NotImplementedError("Owlv2 not currently supported on hosted inference")
 
-    def download_model_artifacts_from_roboflow_api(self):
+    def download_model_artifacts_from_roboflow_api(self, **kwargs):
         logger.info(f"Downloading OWLv2 model artifacts")
         if self.version_id is not None:
             api_data = get_roboflow_model_data(
