@@ -58,7 +58,9 @@ class PolygonZoneVisualizationManifest(VisualizationManifest):
             },
         }
     )
-    zone: Union[list, Selector(kind=[LIST_OF_VALUES_KIND]), Selector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
+    zone: Union[
+        list, Selector(kind=[LIST_OF_VALUES_KIND]), Selector(kind=[LIST_OF_VALUES_KIND])
+    ] = Field(  # type: ignore
         description="Polygon zones (one for each batch) in a format [[(x1, y1), (x2, y2), (x3, y3), ...], ...];"
         " each zone must consist of more than 2 points",
         examples=["$inputs.zones"],
@@ -66,7 +68,7 @@ class PolygonZoneVisualizationManifest(VisualizationManifest):
     color: Union[str, Selector(kind=[STRING_KIND])] = Field(  # type: ignore
         description="Color of the zone.",
         default="#5bb573",
-        examples=["WHITE", "#FFFFFF", "rgb(255, 255, 255)" "$inputs.background_color"],
+        examples=["WHITE", "#FFFFFF", "rgb(255, 255, 255)", "$inputs.background_color"],
     )
     opacity: Union[FloatZeroToOne, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
         description="Transparency of the Mask overlay.",
@@ -110,12 +112,22 @@ class PolygonZoneVisualizationBlockV1(VisualizationBlock):
                 shape=image.numpy_image.shape,
                 dtype=image.numpy_image.dtype,
             )
+
+        if zone and len(zone) > 0:
+            pts = []
+            if zone and zone[0] and isinstance(zone[0][0], (int, float, np.int32)):
+                pts = [np.array(zone, dtype=np.int32)]
+            else:
+                pts = [np.array(z, dtype=np.int32) for z in zone]
             mask = cv.fillPoly(
                 img=mask,
-                pts=[np.array(zone)],
+                pts=pts,
                 color=str_to_color(color).as_bgr(),
             )
             self._cache[key] = mask
+        else:
+            return {OUTPUT_IMAGE_KEY: image}
+
         mask = self._cache[key]
 
         np_image = image.numpy_image

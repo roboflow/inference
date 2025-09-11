@@ -109,6 +109,8 @@ class ModelManager:
                 model = model_class(
                     model_id=model_id,
                     api_key=api_key,
+                    countinference=countinference,
+                    service_secret=service_secret,
                 )
 
                 # Pass countinference and service_secret to download_model_artifacts_from_roboflow_api if available
