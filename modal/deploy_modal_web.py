@@ -68,7 +68,7 @@ try:
     print("\n📡 Web Endpoint URL:")
     try:
         # Get the CustomBlockExecutor class
-        cls = modal.Cls.from_name("inference-custom-blocks-web", "CustomBlockExecutor")
+        cls = modal.Cls.from_name("webexec", "Executor")
         # Create an instance to get the method
         instance = cls(workspace_id="test")
         # Get the execute_block method's web URL

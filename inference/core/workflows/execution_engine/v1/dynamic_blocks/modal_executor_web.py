@@ -49,7 +49,7 @@ else:
 
 # Create the Modal App only if Modal is installed - using different name to avoid conflicts
 if MODAL_INSTALLED:
-    app = modal.App("inference-custom-blocks-web")  # Different name from original
+    app = modal.App("webexec")
 else:
     app = None
 
@@ -95,7 +95,7 @@ if MODAL_INSTALLED and app:
         cloud="gcp",
         region="us-central1",
     )
-    class CustomBlockExecutor:
+    class Executor:
         """Parameterized Modal class for executing custom Python blocks via web endpoint."""
 
         # Parameterize by workspace_id
@@ -283,7 +283,7 @@ from inference.core.workflows.core_steps.common.deserializers import (
                 }
 
 else:
-    CustomBlockExecutor = None
+    Executor = None
 
 
 class ModalWebExecutor:
@@ -314,36 +314,13 @@ class ModalWebExecutor:
             if env_url:
                 self._base_url = env_url
             else:
-                # Try to get URL dynamically from the deployed app
-                try:
-                    if MODAL_INSTALLED and modal:
-                        # Try to get the Function and its web URL
-                        cls = modal.Cls.from_name(
-                            "inference-custom-blocks-web", "CustomBlockExecutor"
-                        )
-                        # Create a dummy instance to get the method
-                        instance = cls(workspace_id="dummy")
-                        # Get the execute_block method's web URL
-                        if hasattr(instance, "execute_block") and hasattr(
-                            instance.execute_block, "get_web_url"
-                        ):
-                            web_url = instance.execute_block.get_web_url()
-                            if web_url:
-                                # Remove any query parameters that might be in the URL
-                                self._base_url = web_url.split("?")[0]
-                                logger.info(
-                                    f"Dynamically retrieved Modal web endpoint URL: {self._base_url}"
-                                )
-                except Exception as e:
-                    logger.debug(f"Could not dynamically retrieve Modal URL: {e}")
-
                 # If we couldn't get it dynamically, construct it based on expected pattern
                 if not self._base_url:
                     # URL pattern: https://{workspace}--{app}-{class}-{method_truncated}.modal.run
                     # Note: Modal truncates long labels to 63 chars with a hash suffix
                     workspace = "roboflow"
-                    app_name = "inference-custom-blocks-web"
-                    class_name = "customblockexecutor"
+                    app_name = "webexec"
+                    class_name = "executor"
                     method_name = "execute-block"
 
                     # The label would be: inference-custom-blocks-web-customblockexecutor-execute-block
@@ -358,9 +335,6 @@ class ModalWebExecutor:
                         label = f"{label[:56]}-{hash_str}"
 
                     self._base_url = f"https://{workspace}--{label}.modal.run"
-                    logger.warning(
-                        f"Using constructed Modal URL (may not be accurate): {self._base_url}"
-                    )
 
         # Add workspace_id as query parameter
         return f"{self._base_url}?workspace_id={workspace_id}"
