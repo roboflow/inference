@@ -60,7 +60,7 @@ def assembly_custom_python_block(
         # Check if we're using Modal remote execution
         if WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE == "modal":
             # Remote execution via Modal - allowed even if local execution is disabled
-            from inference.core.workflows.execution_engine.v1.dynamic_blocks.modal_executor_web import (
+            from inference.core.workflows.execution_engine.v1.dynamic_blocks.modal_executor import (
                 ModalExecutor,
             )
 
@@ -160,7 +160,7 @@ def create_dynamic_module(
         WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE == "modal"
     ):
         # Validate code in Modal sandbox for security
-        from inference.core.workflows.execution_engine.v1.dynamic_blocks.modal_executor_web import (
+        from inference.core.workflows.execution_engine.v1.dynamic_blocks.modal_executor import (
             validate_code_in_modal,
         )
 

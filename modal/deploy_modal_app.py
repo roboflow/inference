@@ -18,9 +18,7 @@ Usage:
     # You can set this up by running `modal setup`.
     
     # Then deploy
-    python modal/deploy_modal_web.py
-    
-If you can't install 'inference' locally, use deploy_modal_web_standalone.py instead.
+    python modal/deploy_modal_app.py
 """
 
 import sys
@@ -35,7 +33,7 @@ import modal
 
 # Try to import the app from inference
 try:
-    from inference.core.workflows.execution_engine.v1.dynamic_blocks.modal_executor_web import (
+    from inference.core.workflows.execution_engine.v1.dynamic_blocks.modal_executor import (
         app,
         MODAL_INSTALLED,
     )

@@ -286,7 +286,7 @@ else:
     Executor = None
 
 
-class ModalWebExecutor:
+class ModalExecutor:
     """Manages execution of Custom Python Blocks in Modal sandboxes via web endpoints."""
 
     def __init__(self, workspace_id: Optional[str] = None):
@@ -364,13 +364,13 @@ class ModalWebExecutor:
         if not MODAL_INSTALLED:
             raise DynamicBlockError(
                 public_message="Modal is not installed. Please install with: pip install modal",
-                context="modal_executor_web | installation_check",
+                context="modal_executor | installation_check",
             )
 
         if not MODAL_AVAILABLE:
             raise DynamicBlockError(
                 public_message="Modal credentials not configured. Please set MODAL_TOKEN_ID and MODAL_TOKEN_SECRET environment variables.",
-                context="modal_executor_web | credentials_check",
+                context="modal_executor | credentials_check",
             )
 
         # Use provided workspace_id or fall back to instance default
@@ -441,7 +441,7 @@ class ModalWebExecutor:
             if response.status_code != 200:
                 raise DynamicBlockError(
                     public_message=f"Modal endpoint returned status {response.status_code}: {response.text}",
-                    context="modal_executor_web | http_request",
+                    context="modal_executor | http_request",
                 )
 
             # Parse response
@@ -455,7 +455,7 @@ class ModalWebExecutor:
 
                 raise DynamicBlockError(
                     public_message=f"{error_type}: {error_msg}",
-                    context=f"modal_executor_web | remote_execution\n{traceback}",
+                    context=f"modal_executor | remote_execution\n{traceback}",
                 )
 
             # Get the result and deserialize from JSON
@@ -465,14 +465,14 @@ class ModalWebExecutor:
         except requests.exceptions.RequestException as e:
             raise DynamicBlockError(
                 public_message=f"Failed to connect to Modal endpoint: {str(e)}",
-                context="modal_executor_web | http_connection",
+                context="modal_executor | http_connection",
             )
         except Exception as e:
             if isinstance(e, DynamicBlockError):
                 raise
             raise DynamicBlockError(
                 public_message=f"Failed to execute custom block remotely: {str(e)}",
-                context="modal_executor_web | remote_execution",
+                context="modal_executor | remote_execution",
             )
 
     def _deserialize_json_result(self, json_result: str) -> BlockResult:
@@ -549,10 +549,6 @@ class ModalWebExecutor:
             return {"result": decoded}
 
 
-# For backwards compatibility and parallel testing, provide aliases
-ModalExecutor = ModalWebExecutor
-
-
 def validate_code_in_modal(
     python_code: PythonCode, workspace_id: Optional[str] = None
 ) -> bool:
@@ -572,13 +568,13 @@ def validate_code_in_modal(
     if not MODAL_INSTALLED:
         raise DynamicBlockError(
             public_message="Modal is not installed. Please install with: pip install modal",
-            context="modal_executor_web | installation_check",
+            context="modal_executor | installation_check",
         )
 
     if not MODAL_AVAILABLE:
         raise DynamicBlockError(
             public_message="Modal credentials not configured. Please set MODAL_TOKEN_ID and MODAL_TOKEN_SECRET environment variables.",
-            context="modal_executor_web | credentials_check",
+            context="modal_executor | credentials_check",
         )
 
     workspace = workspace_id or "anonymous"
@@ -617,7 +613,7 @@ def validate_syntax():
         init_function_name="init",
     )
 
-    executor = ModalWebExecutor(workspace_id=workspace)
+    executor = ModalExecutor(workspace_id=workspace)
 
     try:
         # For validation, we don't need complex inputs, just pass empty JSON
@@ -635,7 +631,7 @@ def validate_syntax():
                 error_msg = f"Line {line_no}: {error_msg}"
             raise DynamicBlockError(
                 public_message=f"Code validation failed: {error_msg}",
-                context="modal_executor_web | code_validation",
+                context="modal_executor | code_validation",
             )
 
         return True
@@ -645,5 +641,5 @@ def validate_syntax():
             raise
         raise DynamicBlockError(
             public_message=f"Code validation failed: {str(e)}",
-            context="modal_executor_web | code_validation",
+            context="modal_executor | code_validation",
         )
