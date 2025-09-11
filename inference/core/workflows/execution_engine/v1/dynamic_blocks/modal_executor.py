@@ -514,12 +514,12 @@ def validate_code_in_modal(
         )
 
     workspace = workspace_id or "anonymous"
-    
+
     # Construct the full code to validate (same as in create_dynamic_module)
     full_code = python_code.run_function_code
     if python_code.init_function_code:
         full_code += "\n\n" + python_code.init_function_code
-    
+
     # Escape the code for safe embedding in the validation function
     # Use repr() to properly escape quotes and special characters
     escaped_code = repr(full_code)

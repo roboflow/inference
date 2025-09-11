@@ -9,9 +9,9 @@ import hashlib
 import json
 import os
 from typing import Any, Dict, Optional
-import requests
 
 import numpy as np
+import requests
 
 from inference.core.env import MODAL_TOKEN_ID, MODAL_TOKEN_SECRET
 from inference.core.logger import logger
@@ -58,6 +58,7 @@ def _get_inference_image():
     """Get the Modal Image for inference."""
     try:
         from inference.core.version import __version__
+
         inference_version = f"inference=={__version__}"
     except ImportError:
         # If we can't import inference (e.g., during deployment), use latest
@@ -68,7 +69,7 @@ def _get_inference_image():
         modal.Image.debian_slim(python_version="3.11")
         .apt_install(
             "libgl1-mesa-glx",
-            "libglib2.0-0", 
+            "libglib2.0-0",
             "libgomp1",
             "libsm6",
             "libxext6",
@@ -92,7 +93,7 @@ if MODAL_INSTALLED and app:
         enable_memory_snapshot=True,  # Enable memory snapshotting for faster cold starts
         scaledown_window=60,
         cloud="gcp",
-        region="us-central1"
+        region="us-central1",
     )
     class CustomBlockExecutor:
         """Parameterized Modal class for executing custom Python blocks via web endpoint."""
@@ -100,7 +101,7 @@ if MODAL_INSTALLED and app:
         # Parameterize by workspace_id
         workspace_id: str = modal.parameter()
 
-        @modal.fastapi_endpoint(method="POST")
+        @modal.fastapi_endpoint(method="POST", requires_proxy_auth=True)
         def execute_block(self, request: Dict[str, Any]) -> Dict[str, Any]:
             """Execute the custom block with the given inputs via web endpoint.
 
@@ -115,9 +116,9 @@ if MODAL_INSTALLED and app:
                 Dictionary with results or error information
             """
             import json
+            import os
             import sys
             import traceback
-            import os
             from datetime import datetime  # Import datetime at the top level
 
             import numpy as np
@@ -161,7 +162,7 @@ from inference.core.workflows.core_steps.common.deserializers import (
                 def decode_inputs(obj):
                     """Decode special types in inputs."""
                     # datetime is already imported at the top level
-                    
+
                     if isinstance(obj, dict):
                         # Check for special type markers
                         if "_type" in obj:
@@ -178,6 +179,7 @@ from inference.core.workflows.core_steps.common.deserializers import (
                             from inference.core.workflows.core_steps.common.deserializers import (
                                 deserialize_image_kind,
                             )
+
                             # Decode nested datetimes first
                             if "video_metadata" in obj and obj["video_metadata"]:
                                 obj["video_metadata"] = decode_inputs(
@@ -280,8 +282,6 @@ from inference.core.workflows.core_steps.common.deserializers import (
                     "traceback": traceback.format_exc(),
                 }
 
-
-
 else:
     CustomBlockExecutor = None
 
@@ -300,10 +300,10 @@ class ModalWebExecutor:
 
     def _get_endpoint_url(self, workspace_id: str) -> str:
         """Get the web endpoint URL for a workspace.
-        
+
         Args:
             workspace_id: The workspace ID
-            
+
         Returns:
             The endpoint URL with query parameter for workspace_id
         """
@@ -318,19 +318,25 @@ class ModalWebExecutor:
                 try:
                     if MODAL_INSTALLED and modal:
                         # Try to get the Function and its web URL
-                        cls = modal.Cls.from_name("inference-custom-blocks-web", "CustomBlockExecutor")
+                        cls = modal.Cls.from_name(
+                            "inference-custom-blocks-web", "CustomBlockExecutor"
+                        )
                         # Create a dummy instance to get the method
                         instance = cls(workspace_id="dummy")
                         # Get the execute_block method's web URL
-                        if hasattr(instance, 'execute_block') and hasattr(instance.execute_block, 'get_web_url'):
+                        if hasattr(instance, "execute_block") and hasattr(
+                            instance.execute_block, "get_web_url"
+                        ):
                             web_url = instance.execute_block.get_web_url()
                             if web_url:
                                 # Remove any query parameters that might be in the URL
-                                self._base_url = web_url.split('?')[0]
-                                logger.info(f"Dynamically retrieved Modal web endpoint URL: {self._base_url}")
+                                self._base_url = web_url.split("?")[0]
+                                logger.info(
+                                    f"Dynamically retrieved Modal web endpoint URL: {self._base_url}"
+                                )
                 except Exception as e:
                     logger.debug(f"Could not dynamically retrieve Modal URL: {e}")
-                
+
                 # If we couldn't get it dynamically, construct it based on expected pattern
                 if not self._base_url:
                     # URL pattern: https://{workspace}--{app}-{class}-{method_truncated}.modal.run
@@ -339,18 +345,23 @@ class ModalWebExecutor:
                     app_name = "inference-custom-blocks-web"
                     class_name = "customblockexecutor"
                     method_name = "execute-block"
-                    
+
                     # The label would be: inference-custom-blocks-web-customblockexecutor-execute-block
                     # This is 62 chars, which might get truncated
                     label = f"{app_name}-{class_name}-{method_name}"
-                    if len(label) > 56:  # Modal truncates at 56 chars and adds 7-char hash
+                    if (
+                        len(label) > 56
+                    ):  # Modal truncates at 56 chars and adds 7-char hash
                         import hashlib
+
                         hash_str = hashlib.sha256(label.encode()).hexdigest()[:6]
                         label = f"{label[:56]}-{hash_str}"
-                    
+
                     self._base_url = f"https://{workspace}--{label}.modal.run"
-                    logger.warning(f"Using constructed Modal URL (may not be accurate): {self._base_url}")
-        
+                    logger.warning(
+                        f"Using constructed Modal URL (may not be accurate): {self._base_url}"
+                    )
+
         # Add workspace_id as query parameter
         return f"{self._base_url}?workspace_id={workspace_id}"
 
@@ -447,7 +458,9 @@ class ModalWebExecutor:
                 timeout=30,  # 30 second timeout
                 headers={
                     "Content-Type": "application/json",
-                }
+                    "Modal-Key": MODAL_TOKEN_ID,
+                    "Modal-Secret": MODAL_TOKEN_SECRET,
+                },
             )
 
             # Check HTTP status
@@ -595,12 +608,12 @@ def validate_code_in_modal(
         )
 
     workspace = workspace_id or "anonymous"
-    
+
     # Construct the full code to validate (same as in create_dynamic_module)
     full_code = python_code.run_function_code
     if python_code.init_function_code:
         full_code += "\n\n" + python_code.init_function_code
-    
+
     # Escape the code for safe embedding in the validation function
     # Use repr() to properly escape quotes and special characters
     escaped_code = repr(full_code)

@@ -1,43 +1,37 @@
 #!/usr/bin/env python3
 """
-Deploy script for the Modal web endpoint - requires inference package installed locally.
+Deploy script for the Modal web endpoint.
+
+This script deploys the Modal web endpoint for running custom Python blocks.
+It requires the 'inference' package to be installed locally.
 
 Usage:
     # Install inference first
     pip install inference
+
+    # Set credentials (choose one method)
+    # Option 1: Set environment variables
+    export MODAL_TOKEN_ID="your_token_id"
+    export MODAL_TOKEN_SECRET="your_token_secret"
+    
+    # Option 2: Use credentials from ~/.modal.toml (automatic fallback)
+    # You can set this up by running `modal setup`.
     
     # Then deploy
-    python deploy_modal_web.py
+    python modal/deploy_modal_web.py
     
-Environment variables required:
-    MODAL_TOKEN_ID - Modal authentication token ID
-    MODAL_TOKEN_SECRET - Modal authentication token secret
-    
-If you can't install inference locally, use deploy_modal_web_standalone.py instead.
+If you can't install 'inference' locally, use deploy_modal_web_standalone.py instead.
 """
 
-import os
 import sys
+from utils import initialize_modal, prepare_deployment, validate_deployment_prerequisites
 
-# Add the inference package to the path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+prepare_deployment()
 
-# Check Modal credentials
-if not os.environ.get("MODAL_TOKEN_ID"):
-    print("Error: MODAL_TOKEN_ID environment variable not set")
-    print("Please set: export MODAL_TOKEN_ID='your-token-id'")
-    sys.exit(1)
-    
-if not os.environ.get("MODAL_TOKEN_SECRET"):
-    print("Error: MODAL_TOKEN_SECRET environment variable not set")
-    print("Please set: export MODAL_TOKEN_SECRET='your-token-secret'")
-    sys.exit(1)
+# Initialize Modal and get credentials
+token_id, token_secret = initialize_modal()
 
-try:
-    import modal
-except ImportError:
-    print("Error: Modal is not installed. Run: pip install modal")
-    sys.exit(1)
+import modal
 
 # Try to import the app from inference
 try:
@@ -52,13 +46,7 @@ except ImportError as e:
     print("2. Use the standalone script: python deploy_modal_web_standalone.py")
     sys.exit(1)
 
-if not MODAL_INSTALLED:
-    print("Error: Modal is not installed properly")
-    sys.exit(1)
-
-if not app:
-    print("Error: Modal app not initialized properly")
-    sys.exit(1)
+validate_deployment_prerequisites(app, MODAL_INSTALLED)
 
 # Deploy the app
 print("=" * 60)
