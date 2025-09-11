@@ -5,6 +5,7 @@ import pickle
 import time
 import weakref
 from collections import defaultdict
+from threading import RLock
 from typing import Any, Dict, List, Literal, NewType, Optional, Tuple, Union
 
 import numpy as np
@@ -50,7 +51,6 @@ from inference.core.utils.image_utils import (
     extract_image_payload_and_type,
     load_image_rgb,
 )
-from threading import RLock
 
 CPU_IMAGE_EMBED_CACHE_SIZE = OWLV2_CPU_IMAGE_CACHE_SIZE
 PRELOADED_HF_MODELS = {}
