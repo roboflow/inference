@@ -276,7 +276,7 @@ class NetworkInputDefinition(BaseModel):
     )
     color_mode: ColorMode
     resize_mode: ResizeMode
-    padding_value: Optional[int]
+    padding_value: Optional[int] = Field(default=None)
     input_channels: int
     scaling_factor: Optional[Number] = Field(default=None)
     normalization: Optional[Tuple[List[Number], List[Number]]] = Field(default=None)

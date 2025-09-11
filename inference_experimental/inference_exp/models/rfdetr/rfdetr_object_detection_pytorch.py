@@ -1,3 +1,4 @@
+import os.path
 from copy import deepcopy
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -6,23 +7,28 @@ import torch
 from inference_exp import Detections, ObjectDetectionModel
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
-from inference_exp.errors import CorruptedModelPackageError, ModelRuntimeError
+from inference_exp.errors import (
+    CorruptedModelPackageError,
+    ModelLoadingError,
+    ModelRuntimeError,
+)
 from inference_exp.logger import LOGGER
 from inference_exp.models.common.model_packages import get_model_package_contents
 from inference_exp.models.common.roboflow.model_packages import (
+    ColorMode,
     InferenceConfig,
+    NetworkInputDefinition,
     PreProcessingMetadata,
     ResizeMode,
+    TrainingInputSize,
     parse_class_names_file,
     parse_inference_config,
-)
-from inference_exp.models.common.roboflow.post_processing import (
-    rescale_image_detections,
 )
 from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
 from inference_exp.models.rfdetr.class_remapping import prepare_class_remapping
+from inference_exp.models.rfdetr.default_labels import resolve_labels
 from inference_exp.models.rfdetr.post_processor import PostProcess
 from inference_exp.models.rfdetr.rfdetr_base_pytorch import (
     LWDETR,
@@ -63,8 +69,18 @@ class RFDetrForObjectDetectionTorch(
         cls,
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
+        model_type: Optional[str] = None,
+        labels: Optional[str] = None,
+        resolution: Optional[int] = None,
         **kwargs,
     ) -> "RFDetrForObjectDetectionTorch":
+        if os.path.isfile(model_name_or_path):
+            return cls.from_checkpoint_file(
+                checkpoint_path=model_name_or_path,
+                model_type=model_type,
+                labels=labels,
+                resolution=resolution,
+            )
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
             elements=[
@@ -118,6 +134,82 @@ class RFDetrForObjectDetectionTorch(
             model=model,
             class_names=class_names,
             class_id_remapping=class_id_remapping,
+            device=device,
+            inference_config=inference_config,
+            post_processor=post_processor,
+            resolution=model_config.resolution,
+        )
+
+    @classmethod
+    def from_checkpoint_file(
+        cls,
+        checkpoint_path: str,
+        model_type: Optional[str] = None,
+        labels: Optional[Union[str, List[str]]] = None,
+        resolution: Optional[int] = None,
+        device: torch.device = DEFAULT_DEVICE,
+    ):
+        if model_type is None:
+            raise ModelLoadingError(
+                message="While loading RFDetr model (using torch backend) could not determine `model_type`. "
+                "If you used `RFDetrForObjectDetectionTorch` directly imported in your code, please pass "
+                f"one of the value: {CONFIG_FOR_MODEL_TYPE.keys()} as the parameter. If you see this "
+                f"error, while using `AutoModel.from_pretrained(...)` or thrown from managed Roboflow service, "
+                f"this is a bug - raise the issue: https://github.com/roboflow/inference/issue providing "
+                f"full context.",
+                help_url="https://todo",
+            )
+        weights_dict = torch.load(
+            checkpoint_path,
+            map_location=device,
+            weights_only=False,
+        )["model"]
+        if model_type not in CONFIG_FOR_MODEL_TYPE:
+            raise ModelLoadingError(
+                message=f"Model package describes model_type as '{model_type}' which is not supported. "
+                f"Supported model types: {list(CONFIG_FOR_MODEL_TYPE.keys())}.",
+                help_url="https://todo",
+            )
+        model_config = CONFIG_FOR_MODEL_TYPE[model_type](device=device)
+        if resolution is not None:
+            model_config.resolution = resolution
+        inference_config = InferenceConfig(
+            network_input=NetworkInputDefinition(
+                training_input_size=TrainingInputSize(
+                    height=model_config.resolution,
+                    width=model_config.resolution,
+                ),
+                dynamic_spatial_size_supported=False,
+                color_mode=ColorMode.BGR,
+                resize_mode=ResizeMode.STRETCH_TO,
+                input_channels=3,
+                scaling_factor=255,
+                normalization=([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+            )
+        )
+        model = build_model(config=model_config)
+        checkpoint_num_classes = weights_dict["class_embed.bias"].shape[0]
+        if checkpoint_num_classes != model_config.num_classes + 1:
+            model.reinitialize_detection_head(num_classes=checkpoint_num_classes)
+        if labels is None:
+            class_names = [f"class_{i}" for i in range(checkpoint_num_classes)]
+        elif isinstance(labels, str):
+            class_names = resolve_labels(labels=labels)
+        else:
+            class_names = labels
+        if checkpoint_num_classes != len(class_names):
+            raise ModelLoadingError(
+                message=f"Checkpoint pointed to load RFDetr defines {checkpoint_num_classes} output classes, but "
+                f"loaded labels define {len(class_names)} classes - fix the value of `labels` parameter.",
+                help_url="https://todo",
+            )
+        model.load_state_dict(weights_dict)
+        model = model.eval().to(device)
+        post_processor = PostProcess()
+        return cls(
+            model=model,
+            class_names=class_names,
+            class_id_remapping=None,
             device=device,
             inference_config=inference_config,
             post_processor=post_processor,

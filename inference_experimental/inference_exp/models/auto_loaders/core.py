@@ -16,7 +16,10 @@ from inference_exp.errors import (
     UnauthorizedModelAccessError,
 )
 from inference_exp.logger import LOGGER, verbose_info
-from inference_exp.models.auto_loaders.auto_negotiation import negotiate_model_packages
+from inference_exp.models.auto_loaders.auto_negotiation import (
+    negotiate_model_packages,
+    parse_backend_type,
+)
 from inference_exp.models.auto_loaders.auto_resolution_cache import (
     AutoResolutionCache,
     AutoResolutionCacheEntry,
@@ -28,7 +31,10 @@ from inference_exp.models.auto_loaders.entities import (
     ModelArchitecture,
     TaskType,
 )
-from inference_exp.models.auto_loaders.models_registry import resolve_model_class
+from inference_exp.models.auto_loaders.models_registry import (
+    OBJECT_DETECTION_TASK,
+    resolve_model_class,
+)
 from inference_exp.models.auto_loaders.presentation_utils import (
     calculate_artefacts_size,
     calculate_size_of_all_model_packages_artefacts,
@@ -75,6 +81,15 @@ AnyModel = Union[
     KeyPointsDetectionModel,
     ObjectDetectionModel,
 ]
+
+
+MODEL_TYPES_TO_LOAD_FROM_CHECKPOINT = {
+    "rfdetr-base",
+    "rfdetr-small",
+    "rfdetr-medium",
+    "rfdetr-nano",
+    "rfdetr-large",
+}
 
 
 class AutoModel:
@@ -132,7 +147,6 @@ class AutoModel:
             model_id=model_id,
             api_key=api_key,
         )
-
         selected_package = None
         for package in model_metadata.model_packages:
             if package.package_id == package_id:
@@ -171,7 +185,7 @@ class AutoModel:
         weights_provider: str = "roboflow",
         api_key: Optional[str] = None,
         model_package_id: Optional[str] = None,
-        backends: Optional[
+        backend: Optional[
             Union[str, BackendType, List[Union[str, BackendType]]]
         ] = None,
         batch_size: Optional[Union[int, Tuple[int, int]]] = None,
@@ -194,6 +208,8 @@ class AutoModel:
         allow_direct_local_storage_loading: bool = True,
         model_storage_manager: Optional[ModelStorageManager] = None,
         nms_fusion_preferences: Optional[Union[bool, dict]] = None,
+        model_type: Optional[str] = None,
+        task_type: Optional[str] = None,
         **kwargs,
     ) -> AnyModel:
         if model_storage_manager is None:
@@ -237,7 +253,7 @@ class AutoModel:
             "engine_host_code_allowed": trt_engine_host_code_allowed,
         }
         model_init_kwargs.update(kwargs)
-        if not os.path.isdir(model_id_or_path):
+        if not os.path.exists(model_id_or_path):
             # QUESTION: is it enough to assume presence of local dir as the intent to load
             # model from disc drive? What if we have clash of model id / model alias with
             # contents of someone's local drive - shall we then try to load from both sources?
@@ -250,7 +266,7 @@ class AutoModel:
                     "model_id": model_id_or_path,
                     "api_key": api_key,
                     "requested_model_package_id": model_package_id,
-                    "requested_backends": backends,
+                    "requested_backends": backend,
                     "requested_batch_size": batch_size,
                     "requested_quantization": quantization,
                     "device": str(device),
@@ -288,7 +304,7 @@ class AutoModel:
                 task_type=model_metadata.task_type,
                 model_packages=model_metadata.model_packages,
                 requested_model_package_id=model_package_id,
-                requested_backends=backends,
+                requested_backends=backend,
                 requested_batch_size=batch_size,
                 requested_quantization=quantization,
                 device=device,
@@ -327,9 +343,12 @@ class AutoModel:
                 help_url="https://todo",
             )
         return attempt_loading_model_from_local_storage(
-            model_dir=model_id_or_path,
+            model_dir_or_weights_path=model_id_or_path,
             allow_local_code_packages=allow_local_code_packages,
             model_init_kwargs=model_init_kwargs,
+            model_type=model_type,
+            task_type=task_type,
+            backend_type=backend,
         )
 
 
@@ -710,15 +729,28 @@ def generate_model_package_cache_path(model_id: str, package_id: str) -> str:
 
 
 def attempt_loading_model_from_local_storage(
-    model_dir: str,
+    model_dir_or_weights_path: str,
     allow_local_code_packages: bool,
     model_init_kwargs: dict,
+    model_type: Optional[str] = None,
+    task_type: Optional[str] = None,
+    backend_type: Optional[
+        Union[str, BackendType, List[Union[str, BackendType]]]
+    ] = None,
 ) -> AnyModel:
-    config_path = os.path.join(model_dir, MODEL_CONFIG_FILE_NAME)
+    if os.path.isfile(model_dir_or_weights_path):
+        return attempt_loading_model_from_checkpoint(
+            checkpoint_path=model_dir_or_weights_path,
+            model_init_kwargs=model_init_kwargs,
+            model_type=model_type,
+            task_type=task_type,
+            backend_type=backend_type,
+        )
+    config_path = os.path.join(model_dir_or_weights_path, MODEL_CONFIG_FILE_NAME)
     model_config = parse_model_config(config_path=config_path)
     if model_config.is_library_model():
         return load_library_model_from_local_dir(
-            model_dir=model_dir,
+            model_dir=model_dir_or_weights_path,
             model_config=model_config,
             model_init_kwargs=model_init_kwargs,
         )
@@ -731,10 +763,87 @@ def attempt_loading_model_from_local_storage(
             help_url="https://todo",
         )
     return load_model_from_local_package_with_arbitrary_code(
-        model_dir=model_dir,
+        model_dir=model_dir_or_weights_path,
         model_config=model_config,
         model_init_kwargs=model_init_kwargs,
     )
+
+
+def attempt_loading_model_from_checkpoint(
+    checkpoint_path: str,
+    model_init_kwargs: dict,
+    model_type: Optional[str] = None,
+    task_type: Optional[str] = None,
+    backend_type: Optional[
+        Union[str, BackendType, List[Union[str, BackendType]]]
+    ] = None,
+) -> AnyModel:
+    model_architecture, task_type, backend_type = resolve_models_registry_entry(
+        model_type=model_type,
+        task_type=task_type,
+        backend_type=backend_type,
+    )
+    model_init_kwargs["model_type"] = model_type
+    model_class = resolve_model_class(
+        model_architecture=model_architecture,
+        task_type=task_type,
+        backend=backend_type,
+    )
+    return model_class.from_pretrained(checkpoint_path, **model_init_kwargs)
+
+
+def resolve_models_registry_entry(
+    model_type: Optional[str],
+    task_type: Optional[str] = None,
+    backend_type: Optional[
+        Union[str, BackendType, List[Union[str, BackendType]]]
+    ] = None,
+) -> Tuple[str, str, BackendType]:
+    #  TODO: in the future this check will grow in size
+    if not model_type:
+        raise ModelLoadingError(
+            message="When loading model directly from checkpoint path, `model_type` parameter must be specified. "
+            "Use one of the supported value, for example `rfdetr-nano` in case you refer checkpoint of "
+            "RFDetr Nano model.",
+            help_url="https://todo",
+        )
+    if model_type not in MODEL_TYPES_TO_LOAD_FROM_CHECKPOINT:
+        raise ModelLoadingError(
+            message="When loading model directly from checkpoint path, `model_type` parameter must define "
+            "one of the type of model that support loading directly from the checkpoints. "
+            f"Models supported in current version: {MODEL_TYPES_TO_LOAD_FROM_CHECKPOINT}",
+            help_url="https://todo",
+        )
+    # a bit of hard coding here, over time we must maintain
+    model_architecture = "rfdetr"
+    if task_type is None:
+        task_type = OBJECT_DETECTION_TASK
+    if task_type != OBJECT_DETECTION_TASK:
+        raise ModelLoadingError(
+            message=f"When loading model directly from checkpoint path, set `model_type` as {model_type} and "
+            f"`task_type` as {task_type}, whereas selected model do only support `{OBJECT_DETECTION_TASK}` "
+            f"task while loading from checkpoint file.",
+            help_url="https://todo",
+        )
+    if backend_type is None:
+        backend_type = BackendType.TORCH
+    if isinstance(backend_type, list) and len(backend_type) != 1:
+        if len(backend_type) != 1:
+            raise ModelLoadingError(
+                message=f"When loading model directly from checkpoint path, set `backend` parameter to be {backend_type}, "
+                f"whereas it is only supported to pass a single value.",
+                help_url="https://todo",
+            )
+        backend_type = backend_type[0]
+    if isinstance(backend_type, str):
+        backend_type = parse_backend_type(value=backend_type)
+    if backend_type is not BackendType.TORCH:
+        raise ModelLoadingError(
+            message=f"When loading model directly from checkpoint path, selected the following backend {backend_type}, "
+            f"but the backend supported for model {model_type} is {BackendType.TORCH}",
+            help_url="https://todo",
+        )
+    return model_architecture, task_type, backend_type
 
 
 def parse_model_config(config_path: str) -> InferenceModelConfig:

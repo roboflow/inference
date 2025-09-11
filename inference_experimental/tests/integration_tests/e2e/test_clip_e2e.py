@@ -39,7 +39,7 @@ def _get_clip_torch_wrapper(
     return AutoModel.from_pretrained(
         model_id_or_path=f"clip/{clip_model_name}",
         device=torch.device("cpu"),
-        backends=[BackendType.TORCH],
+        backend=[BackendType.TORCH],
         **kwargs,
     )
 
@@ -53,7 +53,7 @@ def _get_clip_onnx_wrapper(
     return AutoModel.from_pretrained(
         model_id_or_path=f"clip/{clip_model_name}",
         device=torch.device("cpu"),
-        backends=[BackendType.ONNX],
+        backend=[BackendType.ONNX],
         **kwargs,
     )
 
