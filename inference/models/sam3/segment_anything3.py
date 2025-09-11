@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
+import threading
 
 from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.entities.requests.sam3 import (
@@ -49,6 +50,8 @@ class SegmentAnything3(RoboflowCoreModel):
             checkpoint = self.cache_file("weights.pt")
 
         bpe_path = self.cache_file("bpe_simple_vocab_16e6.txt.gz")
+
+        self.sam3_lock = threading.RLock()
 
         self.model = build_sam3_image_model(
             bpe_path=bpe_path,
@@ -206,24 +209,25 @@ class SegmentAnything3(RoboflowCoreModel):
         return Sam3EmbeddingResponse(time=perf_counter() - t1, image_id=image_id)
 
     def infer_from_request(self, request: Sam3InferenceRequest):
-        t1 = perf_counter()
-        if isinstance(request, Sam3EmbeddingRequest):
-            return self.embed_image(**request.dict())
-        elif isinstance(request, Sam3SegmentationRequest):
-            masks, scores = self.segment_image(**request.dict())
-            if request.format == "json":
-                return self._results_to_response(
-                    masks=masks, scores=scores, start_ts=t1
-                )
-            elif request.format == "binary":
-                binary_vector = BytesIO()
-                np.savez_compressed(binary_vector, masks=masks)
-                binary_vector.seek(0)
-                return binary_vector.getvalue()
+        with self.sam3_lock:
+            t1 = perf_counter()
+            if isinstance(request, Sam3EmbeddingRequest):
+                return self.embed_image(**request.dict())
+            elif isinstance(request, Sam3SegmentationRequest):
+                masks, scores = self.segment_image(**request.dict())
+                if request.format == "json":
+                    return self._results_to_response(
+                        masks=masks, scores=scores, start_ts=t1
+                    )
+                elif request.format == "binary":
+                    binary_vector = BytesIO()
+                    np.savez_compressed(binary_vector, masks=masks)
+                    binary_vector.seek(0)
+                    return binary_vector.getvalue()
+                else:
+                    raise ValueError(f"Invalid format {request.format}")
             else:
-                raise ValueError(f"Invalid format {request.format}")
-        else:
-            raise ValueError(f"Invalid request type {type(request)}")
+                raise ValueError(f"Invalid request type {type(request)}")
 
     def segment_image(
         self,
