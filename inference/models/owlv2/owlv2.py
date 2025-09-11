@@ -5,6 +5,7 @@ import pickle
 import time
 import weakref
 from collections import defaultdict
+from threading import RLock
 from typing import Any, Dict, List, Literal, NewType, Optional, Tuple, Union
 
 import numpy as np
@@ -374,6 +375,9 @@ class OwlV2(RoboflowInferenceModel):
     def __init__(self, model_id=f"owlv2/{OWLV2_VERSION_ID}", *args, **kwargs):
         super().__init__(model_id, *args, **kwargs)
         # TODO: owlv2 makes use of version_id - version_id is being dropped so this class needs to be refactored
+
+        self.owlv2_lock = RLock()
+
         if self.version_id is None:
             owlv2_model_id_chunks = model_id.split("/")
             if len(owlv2_model_id_chunks) != 2:
@@ -635,16 +639,17 @@ class OwlV2(RoboflowInferenceModel):
         max_detections: int = MAX_DETECTIONS,
         **kwargs,
     ):
-        class_embeddings_dict = self.make_class_embeddings_dict(
-            training_data, iou_threshold
-        )
-        return self.infer_from_embedding_dict(
-            image,
-            class_embeddings_dict,
-            confidence,
-            iou_threshold,
-            max_detections=max_detections,
-        )
+        with self.owlv2_lock:
+            class_embeddings_dict = self.make_class_embeddings_dict(
+                training_data, iou_threshold
+            )
+            return self.infer_from_embedding_dict(
+                image,
+                class_embeddings_dict,
+                confidence,
+                iou_threshold,
+                max_detections=max_detections,
+            )
 
     def infer_from_embedding_dict(
         self,
@@ -655,33 +660,34 @@ class OwlV2(RoboflowInferenceModel):
         max_detections: int = MAX_DETECTIONS,
         **kwargs,
     ):
-        if not isinstance(image, list):
-            images = [image]
-        else:
-            images = image
+        with self.owlv2_lock:
+            if not isinstance(image, list):
+                images = [image]
+            else:
+                images = image
 
-        images = [LazyImageRetrievalWrapper(image) for image in images]
+            images = [LazyImageRetrievalWrapper(image) for image in images]
 
-        results = []
-        image_sizes = []
-        for image_wrapper in images:
-            # happy path here is that both image size and image embeddings are cached
-            # in which case we avoid loading the image at all
-            image_size = self.compute_image_size(image_wrapper)
-            image_sizes.append(image_size)
-            image_hash = self.embed_image(image_wrapper)
-            image_wrapper.unload_numpy_image()
-            result = self.infer_from_embed(
-                image_hash,
-                class_embeddings_dict,
-                confidence,
-                iou_threshold,
-                max_detections=max_detections,
+            results = []
+            image_sizes = []
+            for image_wrapper in images:
+                # happy path here is that both image size and image embeddings are cached
+                # in which case we avoid loading the image at all
+                image_size = self.compute_image_size(image_wrapper)
+                image_sizes.append(image_size)
+                image_hash = self.embed_image(image_wrapper)
+                image_wrapper.unload_numpy_image()
+                result = self.infer_from_embed(
+                    image_hash,
+                    class_embeddings_dict,
+                    confidence,
+                    iou_threshold,
+                    max_detections=max_detections,
+                )
+                results.append(result)
+            return self.make_response(
+                results, image_sizes, sorted(list(class_embeddings_dict.keys()))
             )
-            results.append(result)
-        return self.make_response(
-            results, image_sizes, sorted(list(class_embeddings_dict.keys()))
-        )
 
     def make_class_embeddings_dict(
         self,
