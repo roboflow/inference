@@ -70,7 +70,7 @@ class RFDetrForObjectDetectionTorch(
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
         model_type: Optional[str] = None,
-        labels: Optional[str] = None,
+        labels: Optional[Union[str, List[str]]] = None,
         resolution: Optional[int] = None,
         **kwargs,
     ) -> "RFDetrForObjectDetectionTorch":
