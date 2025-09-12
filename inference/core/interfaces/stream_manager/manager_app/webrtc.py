@@ -12,6 +12,7 @@ from aiortc import (
     RTCDataChannel,
     RTCIceServer,
     RTCPeerConnection,
+    RTCRtpSender,
     RTCSessionDescription,
     VideoStreamTrack,
 )
@@ -100,6 +101,7 @@ class VideoTransformTrack(VideoStreamTrack):
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
+        self._loop = asyncio_loop
         self.processing_timeout: float = processing_timeout
 
         self.track: Optional[RemoteStreamTrack] = None
@@ -111,7 +113,6 @@ class VideoTransformTrack(VideoStreamTrack):
         self.to_inference_queue: "SyncAsyncQueue[VideoFrame]" = to_inference_queue
         self.from_inference_queue: "SyncAsyncQueue[np.ndarray]" = from_inference_queue
 
-        self._asyncio_loop = asyncio_loop
         self._pool = concurrent.futures.ThreadPoolExecutor()
 
         self._fps_probe_frames = fps_probe_frames
@@ -122,6 +123,11 @@ class VideoTransformTrack(VideoStreamTrack):
         self._last_frame: Optional[VideoFrame] = None
 
         self._av_logging_set: bool = False
+
+        # Synthetic PTS generation to prevent quality drops
+        self._output_frame_count: int = 0
+        self._first_input_pts: Optional[int] = None
+        self._pts_offset: int = 0
 
     def set_track(self, track: RemoteStreamTrack):
         if not self.track:
@@ -156,20 +162,16 @@ class VideoTransformTrack(VideoStreamTrack):
                 )
                 logger.info("Incoming stream fps: %s", self.incoming_stream_fps)
 
-        if not await self.to_inference_queue.async_full():
-            await self.to_inference_queue.async_put(frame)
-        else:
+        try:
+            await self.to_inference_queue.async_put_nowait(frame)
+        except asyncio.QueueFull:
             await self.to_inference_queue.async_get_nowait()
             await self.to_inference_queue.async_put_nowait(frame)
 
         np_frame: Optional[np.ndarray] = None
         try:
-            np_frame = await self.from_inference_queue.async_get(
-                timeout=self.processing_timeout
-            )
-            new_frame = VideoFrame.from_ndarray(np_frame, format="bgr24")
-            self._last_frame = new_frame
-        except asyncio.TimeoutError:
+            np_frame = await self.from_inference_queue.async_get_nowait()
+        except asyncio.QueueEmpty:
             pass
 
         if np_frame is None:
@@ -183,9 +185,25 @@ class VideoTransformTrack(VideoStreamTrack):
                 new_frame = self._last_frame
         else:
             new_frame = VideoFrame.from_ndarray(np_frame, format="bgr24")
+            self._last_frame = new_frame
 
-        new_frame.pts = frame.pts
+        if self._first_input_pts is None:
+            self._first_input_pts = frame.pts
+            self._pts_offset = frame.pts
+
+        if self.incoming_stream_fps:
+            target_fps = self.incoming_stream_fps
+        else:
+            target_fps = 30.0
+
+        # 90000 Hz (90 kHz) clock rate defined by rfc3551 https://datatracker.ietf.org/doc/html/rfc3551
+        pts_increment = int(90000 / target_fps)
+
+        synthetic_pts = self._pts_offset + (self._output_frame_count * pts_increment)
+        new_frame.pts = synthetic_pts
         new_frame.time_base = frame.time_base
+
+        self._output_frame_count += 1
 
         return new_frame
 
@@ -248,12 +266,14 @@ class RTCPeerConnectionWithFPS(RTCPeerConnection):
     def __init__(
         self,
         video_transform_track: VideoTransformTrack,
+        asyncio_loop: asyncio.AbstractEventLoop,
         stream_output: Optional[str] = None,
         data_output: Optional[str] = None,
         *args,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
+        self._loop = asyncio_loop
         self.video_transform_track: VideoTransformTrack = video_transform_track
         self._consumers_signalled: bool = False
         self.stream_output: Optional[str] = stream_output
@@ -314,12 +334,14 @@ async def init_rtc_peer_connection(
         peer_connection = RTCPeerConnectionWithFPS(
             video_transform_track=video_transform_track,
             configuration=RTCConfiguration(iceServers=[turn_server]),
+            asyncio_loop=asyncio_loop,
             stream_output=stream_output,
             data_output=data_output,
         )
     else:
         peer_connection = RTCPeerConnectionWithFPS(
             video_transform_track=video_transform_track,
+            asyncio_loop=asyncio_loop,
             stream_output=stream_output,
             data_output=data_output,
         )
