@@ -7,6 +7,7 @@ as a dependency for the main inference package.
 """
 
 from typing import Any, Dict
+import base64
 
 import modal
 
@@ -80,6 +81,14 @@ class Executor:
 
         import numpy as np
 
+        # Import deserializers at the top level so they're available for decode_inputs
+        from inference.core.workflows.core_steps.common.deserializers import (
+            deserialize_image_kind,
+            deserialize_detections_kind,
+            deserialize_video_metadata_kind,
+            deserialize_classification_prediction_kind,
+        )
+
         # Extract parameters from request
         code_str = request.get("code_str", "")
         imports = request.get("imports", [])
@@ -109,10 +118,6 @@ from inference.core.workflows.prototypes.block import BlockResult
 {import_code}
 
 from datetime import datetime
-
-from inference.core.workflows.core_steps.common.deserializers import (
-    deserialize_image_kind,
-)
 """
 
             # Custom decoder for special types
@@ -125,18 +130,28 @@ from inference.core.workflows.core_steps.common.deserializers import (
                     if "_type" in obj:
                         if obj["_type"] == "datetime":
                             return datetime.fromisoformat(obj["value"])
+                        elif obj["_type"] == "bytes":
+                            return base64.b64decode(obj["value"])
                         elif obj["_type"] == "ndarray":
                             arr = np.array(obj["value"], dtype=obj["dtype"])
                             return arr.reshape(obj["shape"])
                         elif obj["_type"] == "object":
                             return obj["value"]
+                        elif obj["_type"] == "sv_detections":
+                            # First decode any nested special types in the dict
+                            decoded_obj = {k: decode_inputs(v) for k, v in obj.items() if k != "_type"}
+                            return deserialize_detections_kind("input", decoded_obj)
+                        elif obj["_type"] == "video_metadata":
+                            # First decode any nested special types
+                            decoded_obj = {k: decode_inputs(v) for k, v in obj.items() if k != "_type"}
+                            return deserialize_video_metadata_kind("input", decoded_obj)
+                        elif obj["_type"] == "workflow_image":
+                            # First decode any nested special types
+                            decoded_obj = {k: decode_inputs(v) for k, v in obj.items() if k != "_type"}
+                            return deserialize_image_kind("input", decoded_obj)
 
-                    # Check if this is a serialized WorkflowImageData
-                    if obj.get("type") == "base64" and "value" in obj:
-                        from inference.core.workflows.core_steps.common.deserializers import (
-                            deserialize_image_kind,
-                        )
-
+                    # For backward compatibility, check if this is a WorkflowImageData without _type marker
+                    if obj.get("type") == "base64" and "value" in obj and "_type" not in obj:
                         # Decode nested datetimes first
                         if "video_metadata" in obj and obj["video_metadata"]:
                             obj["video_metadata"] = decode_inputs(
@@ -199,7 +214,15 @@ from inference.core.workflows.core_steps.common.deserializers import (
             class InferenceJSONEncoder(json.JSONEncoder):
                 def default(self, obj):
                     if isinstance(obj, datetime):
-                        return {"_type": "datetime", "value": obj.isoformat()}
+                        return {
+                            "_type": "datetime",
+                            "value": obj.isoformat(),
+                        }
+                    elif isinstance(obj, bytes):
+                        return {
+                            "_type": "bytes",
+                            "value": base64.b64encode(obj).decode("utf-8"),
+                        }
                     elif isinstance(obj, np.ndarray):
                         return {
                             "_type": "ndarray",
@@ -215,7 +238,6 @@ from inference.core.workflows.core_steps.common.deserializers import (
                             "value": str(obj),
                         }
                     return super().default(obj)
-
             # Serialize the result
             if isinstance(result, dict):
                 serialized_result = {}
