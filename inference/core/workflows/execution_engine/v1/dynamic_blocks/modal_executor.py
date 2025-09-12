@@ -5,10 +5,11 @@ This module handles the execution of untrusted user code in Modal sandboxes
 using web endpoints for better security and no size limitations.
 """
 
+import base64
 import json
 import os
 from typing import Any, Dict, Optional
-import base64
+
 import numpy as np
 import requests
 
@@ -28,15 +29,17 @@ else:
     logger.info("Modal credentials not configured")
 
 from datetime import datetime
+
 from inference.core.workflows.core_steps.common.deserializers import (
-    deserialize_image_kind,
     deserialize_detections_kind,
+    deserialize_image_kind,
     deserialize_video_metadata_kind,
 )
 
 
 def serialize_for_modal_remote_execution(inputs: Dict[str, Any]) -> str:
     from datetime import datetime
+
     import numpy as np
 
     class InputJSONEncoder(json.JSONEncoder):
@@ -67,14 +70,15 @@ def serialize_for_modal_remote_execution(inputs: Dict[str, Any]) -> str:
     def patch_for_modal_serialization(value):
         """Serialize value and add _type markers for Modal deserialization."""
         import supervision as sv
-        from inference.core.workflows.execution_engine.entities.base import (
-            WorkflowImageData,
-            VideoMetadata,
-        )
+
         from inference.core.workflows.core_steps.common.serializers import (
-            serialize_video_metadata_kind,
-            serialise_sv_detections,
             serialise_image,
+            serialise_sv_detections,
+            serialize_video_metadata_kind,
+        )
+        from inference.core.workflows.execution_engine.entities.base import (
+            VideoMetadata,
+            WorkflowImageData,
         )
 
         # Apply standard serialization and add type markers based on original type
