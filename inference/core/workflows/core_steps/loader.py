@@ -485,6 +485,7 @@ REGISTERED_INITIALIZERS = {
     "allow_access_to_file_system": ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
     "allowed_write_directory": WORKFLOW_BLOCKS_WRITE_DIRECTORY,
     "allow_access_to_environmental_variables": ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES,
+    "workflow_execution_id": None,
 }
 
 KINDS_SERIALIZERS = {
