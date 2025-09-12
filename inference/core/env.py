@@ -266,6 +266,8 @@ LAMBDA = str2bool(os.getenv("LAMBDA", False))
 # Whether is's GCP serverless service
 GCP_SERVERLESS = str2bool(os.getenv("GCP_SERVERLESS", "False"))
 
+GET_MODEL_REGISTRY_ENABLED = str2bool(os.getenv("GET_MODEL_REGISTRY_ENABLED", "True"))
+
 # Flag to enable API logging, default is False
 API_LOGGING_ENABLED = str2bool(os.getenv("API_LOGGING_ENABLED", "False"))
 
