@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import supervision as sv
 
-from inference.core.workflows.core_steps.analytics.time_in_zone.v2 import (
+from inference.core.workflows.core_steps.analytics.time_in_zone.v3 import (
     TimeInZoneBlockV3, calculate_nesting_depth,
 )
 from inference.core.workflows.execution_engine.entities.base import (
