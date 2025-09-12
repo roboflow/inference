@@ -51,7 +51,7 @@ class TimeInZoneManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Time in Zone",
-            "version": "v2",
+            "version": "v3",
             "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
@@ -63,7 +63,7 @@ class TimeInZoneManifest(WorkflowBlockManifest):
             },
         }
     )
-    type: Literal["roboflow_core/time_in_zone@v2"]
+    type: Literal["roboflow_core/time_in_zone@v3"]
     image: Union[WorkflowImageSelector] = Field(
         title="Image",
         description="The input image for this step.",
