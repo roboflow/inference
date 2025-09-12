@@ -162,9 +162,9 @@ class VideoTransformTrack(VideoStreamTrack):
                 )
                 logger.info("Incoming stream fps: %s", self.incoming_stream_fps)
 
-        if not await self.to_inference_queue.async_full():
-            await self.to_inference_queue.async_put(frame)
-        else:
+        try:
+            await self.to_inference_queue.async_put_nowait(frame)
+        except asyncio.QueueFull:
             await self.to_inference_queue.async_get_nowait()
             await self.to_inference_queue.async_put_nowait(frame)
 
@@ -173,8 +173,6 @@ class VideoTransformTrack(VideoStreamTrack):
             np_frame = await self.from_inference_queue.async_get(
                 timeout=self.processing_timeout
             )
-            new_frame = VideoFrame.from_ndarray(np_frame, format="bgr24")
-            self._last_frame = new_frame
         except asyncio.TimeoutError:
             pass
 
@@ -189,6 +187,7 @@ class VideoTransformTrack(VideoStreamTrack):
                 new_frame = self._last_frame
         else:
             new_frame = VideoFrame.from_ndarray(np_frame, format="bgr24")
+            self._last_frame = new_frame
 
         if self._first_input_pts is None:
             self._first_input_pts = frame.pts
