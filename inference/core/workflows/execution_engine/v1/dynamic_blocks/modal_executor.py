@@ -13,7 +13,7 @@ from typing import Any, Dict, Optional
 import numpy as np
 import requests
 
-from inference.core.env import MODAL_TOKEN_ID, MODAL_TOKEN_SECRET
+from inference.core.env import MODAL_TOKEN_ID, MODAL_TOKEN_SECRET, MODAL_WORKSPACE_NAME
 from inference.core.logger import logger
 from inference.core.workflows.errors import DynamicBlockError
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
@@ -61,7 +61,7 @@ class ModalExecutor:
                 if not self._base_url:
                     # URL pattern: https://{workspace}--{app}-{class}-{method_truncated}.modal.run
                     # Note: Modal truncates long labels to 63 chars with a hash suffix
-                    workspace = "roboflow"
+                    workspace = MODAL_WORKSPACE_NAME
                     app_name = "webexec"
                     class_name = "executor"
                     method_name = "execute-block"
