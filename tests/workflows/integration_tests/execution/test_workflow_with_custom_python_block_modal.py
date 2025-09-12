@@ -88,11 +88,13 @@ def run(self, matrix_a: List[List[float]], matrix_b: List[List[float]]) -> Block
 """
 
 
-def run_workflow_in_subprocess(workflow: dict, runtime_params: dict, execution_mode: str) -> Any:
+def run_workflow_in_subprocess(
+    workflow: dict, runtime_params: dict, execution_mode: str
+) -> Any:
     """Run a workflow in a subprocess with specific execution mode."""
     import json
     import tempfile
-    
+
     # Create a temporary Python script that runs the workflow
     script = f"""
 import os
@@ -148,12 +150,12 @@ print("RESULT_START")
 print(json.dumps(result))
 print("RESULT_END")
 """
-    
+
     # Write script to temp file
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
         f.write(script)
         temp_file = f.name
-    
+
     try:
         # Run the script in a subprocess with clean environment
         env = os.environ.copy()
@@ -163,50 +165,73 @@ print("RESULT_END")
                 raise ValueError("Modal credentials not found in environment")
             env["MODAL_TOKEN_ID"] = MODAL_TOKEN_ID
             env["MODAL_TOKEN_SECRET"] = MODAL_TOKEN_SECRET
-        
+
+        # Ensure the subprocess can import the local 'inference' package on CI runners
+        try:
+            import pathlib
+
+            repo_root = str(pathlib.Path(__file__).resolve().parents[4])
+            existing_pythonpath = env.get("PYTHONPATH", "")
+            if repo_root not in existing_pythonpath.split(
+                ":" if os.name != "nt" else ";"
+            ):
+                sep = ":" if os.name != "nt" else ";"
+                env["PYTHONPATH"] = (
+                    (repo_root + sep + existing_pythonpath)
+                    if existing_pythonpath
+                    else repo_root
+                )
+        except Exception:
+            pass
+
         result = subprocess.run(
             [sys.executable, temp_file],
             capture_output=True,
             text=True,
             env=env,
-            timeout=60
+            timeout=60,
         )
-        
+
         if result.returncode != 0:
             raise RuntimeError(f"Subprocess failed: {result.stderr}")
-        
+
         # Extract JSON result from output
         output = result.stdout
         if "RESULT_START" in output and "RESULT_END" in output:
             json_str = output.split("RESULT_START")[1].split("RESULT_END")[0].strip()
             parsed_result = json.loads(json_str)
-            
+
             # Convert base64 images back to numpy arrays
             for i, res in enumerate(parsed_result):
                 for key, value in list(res.items()):
-                    if isinstance(value, dict) and value.get('type') == 'image':
+                    if isinstance(value, dict) and value.get("type") == "image":
                         # Decode base64 back to numpy array
-                        img_bytes = base64.b64decode(value['data'])
+                        img_bytes = base64.b64decode(value["data"])
                         nparr = np.frombuffer(img_bytes, np.uint8)
                         parsed_result[i][key] = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-            
+
             return parsed_result
         else:
             raise RuntimeError(f"Could not parse result from output: {output}")
-            
+
     finally:
         os.unlink(temp_file)
 
 
-def create_workflow_with_custom_block(block_code: str, block_type: str, inputs: Dict, outputs: Dict) -> dict:
+def create_workflow_with_custom_block(
+    block_code: str, block_type: str, inputs: Dict, outputs: Dict
+) -> dict:
     """Helper to create a workflow with a custom Python block."""
     workflow_inputs = []
     for name, definition in inputs.items():
-        if "selector_types" in definition and "input_image" in definition["selector_types"]:
+        if (
+            "selector_types" in definition
+            and "input_image" in definition["selector_types"]
+        ):
             workflow_inputs.append({"type": "InferenceImage", "name": name})
         else:
             workflow_inputs.append({"type": "WorkflowParameter", "name": name})
-    
+
     return {
         "version": "1.0",
         "inputs": workflow_inputs,
@@ -264,15 +289,15 @@ class TestModalCustomPythonBlocks:
             },
             outputs={"sum": {"type": "DynamicOutputDefinition", "kind": []}},
         )
-        
+
         runtime_params = {"a": 10.5, "b": 20.3}
-        
+
         # Run in local mode
         local_result = run_workflow_in_subprocess(workflow, runtime_params, "local")
-        
+
         # Run in Modal mode
         modal_result = run_workflow_in_subprocess(workflow, runtime_params, "modal")
-        
+
         # Compare results
         assert local_result[0]["sum"] == modal_result[0]["sum"]
         assert abs(local_result[0]["sum"] - 30.8) < 0.001
@@ -288,43 +313,54 @@ class TestModalCustomPythonBlocks:
                     "selector_types": ["input_image"],
                 },
             },
-            outputs={"inverted": {"type": "DynamicOutputDefinition", "kind": ["image"]}},
+            outputs={
+                "inverted": {"type": "DynamicOutputDefinition", "kind": ["image"]}
+            },
         )
-        
+
         # Create test image - solid color for easy verification
         test_image = np.ones((10, 10, 3), dtype=np.uint8) * 128
-        
+
         # Encode image to base64 for subprocess transfer
-        _, buffer = cv2.imencode('.png', test_image)
-        image_base64 = base64.b64encode(buffer).decode('utf-8')
-        
+        _, buffer = cv2.imencode(".png", test_image)
+        image_base64 = base64.b64encode(buffer).decode("utf-8")
+
         runtime_params = {"image_data": image_base64}
-        
+
         # Run in local mode
         local_result = run_workflow_in_subprocess(workflow, runtime_params, "local")
-        
+
         # Run in Modal mode
         modal_result = run_workflow_in_subprocess(workflow, runtime_params, "modal")
-        
+
         # Verify both returned inverted images
         local_inverted = local_result[0]["inverted"]
         modal_inverted = modal_result[0]["inverted"]
-        
+
         # Expected inverted value: 255 - 128 = 127
         expected = np.ones((10, 10, 3), dtype=np.uint8) * 127
-        
+
         # Compare results
-        np.testing.assert_array_equal(local_inverted, expected, 
-                                     "Local execution should invert the image correctly")
-        np.testing.assert_array_equal(modal_inverted, expected,
-                                     "Modal execution should invert the image correctly")
-        np.testing.assert_array_equal(local_inverted, modal_inverted,
-                                     "Local and Modal should produce identical results")
+        np.testing.assert_array_equal(
+            local_inverted,
+            expected,
+            "Local execution should invert the image correctly",
+        )
+        np.testing.assert_array_equal(
+            modal_inverted,
+            expected,
+            "Modal execution should invert the image correctly",
+        )
+        np.testing.assert_array_equal(
+            local_inverted,
+            modal_inverted,
+            "Local and Modal should produce identical results",
+        )
 
     def test_complex_math_operations_local_vs_modal(self) -> None:
         """Test that complex mathematical operations work consistently."""
         test_numbers = [1.5, 2.7, 3.9, 4.2, 5.8, 6.1, 7.3, 8.5, 9.2, 10.0]
-        
+
         workflow = create_workflow_with_custom_block(
             block_code=COMPLEX_MATH_BLOCK,
             block_type="ComplexMath",
@@ -341,15 +377,15 @@ class TestModalCustomPythonBlocks:
                 "max": {"type": "DynamicOutputDefinition", "kind": []},
             },
         )
-        
+
         runtime_params = {"numbers": test_numbers}
-        
+
         # Run in local mode
         local_result = run_workflow_in_subprocess(workflow, runtime_params, "local")
-        
+
         # Run in Modal mode
         modal_result = run_workflow_in_subprocess(workflow, runtime_params, "modal")
-        
+
         # Compare results
         assert abs(local_result[0]["mean"] - modal_result[0]["mean"]) < 0.001
         assert abs(local_result[0]["std"] - modal_result[0]["std"]) < 0.001
@@ -360,7 +396,7 @@ class TestModalCustomPythonBlocks:
         """Test that numpy matrix operations work consistently."""
         matrix_a = [[1, 2], [3, 4]]
         matrix_b = [[5, 6], [7, 8]]
-        
+
         workflow = create_workflow_with_custom_block(
             block_code=NUMPY_OPERATIONS_BLOCK,
             block_type="NumpyOperations",
@@ -378,26 +414,24 @@ class TestModalCustomPythonBlocks:
                 "result": {"type": "DynamicOutputDefinition", "kind": []},
             },
         )
-        
+
         runtime_params = {"matrix_a": matrix_a, "matrix_b": matrix_b}
-        
+
         # Run in local mode
         local_result = run_workflow_in_subprocess(workflow, runtime_params, "local")
-        
+
         # Run in Modal mode
         modal_result = run_workflow_in_subprocess(workflow, runtime_params, "modal")
-        
+
         # Compare results
         np.testing.assert_array_almost_equal(
-            np.array(local_result[0]["result"]), 
-            np.array(modal_result[0]["result"])
+            np.array(local_result[0]["result"]), np.array(modal_result[0]["result"])
         )
-        
+
         # Verify the actual result is correct (matrix multiplication)
         expected = np.dot(np.array(matrix_a), np.array(matrix_b))
         np.testing.assert_array_almost_equal(
-            np.array(modal_result[0]["result"]), 
-            expected
+            np.array(modal_result[0]["result"]), expected
         )
 
     def test_error_handling_in_modal(self) -> None:
@@ -408,13 +442,13 @@ def run(self, value: float) -> BlockResult:
         raise ValueError("Value must be non-negative")
     return {"result": value ** 0.5}
 """
-        
+
         workflow = create_workflow_with_custom_block(
             block_code=error_block,
             block_type="ErrorTest",
             inputs={
                 "value": {
-                    "type": "DynamicInputDefinition", 
+                    "type": "DynamicInputDefinition",
                     "selector_types": ["input_parameter"],
                 },
             },
@@ -422,12 +456,14 @@ def run(self, value: float) -> BlockResult:
                 "result": {"type": "DynamicOutputDefinition", "kind": []},
             },
         )
-        
+
         # Test successful execution
         runtime_params_success = {"value": 16}
-        modal_result = run_workflow_in_subprocess(workflow, runtime_params_success, "modal")
+        modal_result = run_workflow_in_subprocess(
+            workflow, runtime_params_success, "modal"
+        )
         assert abs(modal_result[0]["result"] - 4.0) < 0.001
-        
+
         # Test error case - this will raise in subprocess
         runtime_params_error = {"value": -5}
         with pytest.raises(RuntimeError) as exc_info:
@@ -445,7 +481,7 @@ def run(self, value: float) -> BlockResult:
     task_id = os.environ.get('MODAL_TASK_ID', 'LOCAL')
     return {"result": value * 2, "execution_context": task_id}
 """
-    
+
     workflow = create_workflow_with_custom_block(
         block_code=verification_block,
         block_type="VerificationTest",
@@ -460,17 +496,19 @@ def run(self, value: float) -> BlockResult:
             "execution_context": {"type": "DynamicOutputDefinition", "kind": []},
         },
     )
-    
+
     runtime_params = {"value": 5}
-    
+
     # Run in local mode
     local_result = run_workflow_in_subprocess(workflow, runtime_params, "local")
     assert local_result[0]["execution_context"] == "LOCAL"
-    
+
     # Run in Modal mode
     modal_result = run_workflow_in_subprocess(workflow, runtime_params, "modal")
     assert modal_result[0]["execution_context"] != "LOCAL"
-    assert modal_result[0]["execution_context"].startswith("ta-")  # Modal task IDs start with ta-
-    
+    assert modal_result[0]["execution_context"].startswith(
+        "ta-"
+    )  # Modal task IDs start with ta-
+
     # Results should be the same
     assert local_result[0]["result"] == modal_result[0]["result"] == 10
