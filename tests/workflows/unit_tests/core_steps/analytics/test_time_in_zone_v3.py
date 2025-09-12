@@ -5,7 +5,7 @@ import pytest
 import supervision as sv
 
 from inference.core.workflows.core_steps.analytics.time_in_zone.v2 import (
-    TimeInZoneBlockV2, calculate_nesting_depth,
+    TimeInZoneBlockV3, calculate_nesting_depth,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
@@ -60,7 +60,7 @@ def test_time_in_zone_keep_out_of_zone_detections() -> None:
         ),
         comes_from_video_file=True,
     )
-    time_in_zone_block = TimeInZoneBlockV2()
+    time_in_zone_block = TimeInZoneBlockV3()
     image = np.zeros((720, 1280, 3))
 
     # when
@@ -165,7 +165,7 @@ def test_time_in_zone_remove_out_of_zone_detections() -> None:
         ),
         comes_from_video_file=True,
     )
-    time_in_zone_block = TimeInZoneBlockV2()
+    time_in_zone_block = TimeInZoneBlockV3()
     image = np.zeros((720, 1280, 3))
 
     # when
@@ -275,7 +275,7 @@ def test_time_in_zone_remove_and_reset_out_of_zone_detections() -> None:
         ),
         comes_from_video_file=True,
     )
-    time_in_zone_block = TimeInZoneBlockV2()
+    time_in_zone_block = TimeInZoneBlockV3()
     image = np.zeros((720, 1280, 3))
 
     # when
@@ -392,7 +392,7 @@ def test_time_in_zone_keep_and_reset_out_of_zone_detections() -> None:
         ),
         comes_from_video_file=True,
     )
-    time_in_zone_block = TimeInZoneBlockV2()
+    time_in_zone_block = TimeInZoneBlockV3()
     image = np.zeros((720, 1280, 3))
 
     # when
@@ -476,13 +476,13 @@ def test_time_in_zone_no_trackers() -> None:
             tz=datetime.timezone.utc
         ),
     )
-    time_in_zone_block = TimeInZoneBlockV2()
+    time_in_zone_block = TimeInZoneBlockV3()
     image = np.zeros((720, 1280, 3))
 
     # when
     with pytest.raises(
         ValueError,
-        match="tracker_id not initialized, TimeInZoneBlockV2 requires detections to be tracked",
+        match="tracker_id not initialized, TimeInZoneBlockV3 requires detections to be tracked",
     ):
         _ = time_in_zone_block.run(
             image=_wrap_with_workflow_image(image=image, metadata=metadata),
@@ -508,13 +508,13 @@ def test_time_in_zone_list_of_points_too_short() -> None:
             tz=datetime.timezone.utc
         ),
     )
-    time_in_zone_block = TimeInZoneBlockV2()
+    time_in_zone_block = TimeInZoneBlockV3()
     image = np.zeros((720, 1280, 3))
 
     # when
     with pytest.raises(
         ValueError,
-        match="TimeInZoneBlockV2 requires zone to be a list containing more than 2 points",
+        match="TimeInZoneBlockV3 requires zone to be a list containing more than 2 points",
     ):
         _ = time_in_zone_block.run(
             image=_wrap_with_workflow_image(image=image, metadata=metadata),
@@ -540,13 +540,13 @@ def test_time_in_zone_elements_not_points() -> None:
             tz=datetime.timezone.utc
         ),
     )
-    time_in_zone_block = TimeInZoneBlockV2()
+    time_in_zone_block = TimeInZoneBlockV3()
     image = np.zeros((720, 1280, 3))
 
     # when
     with pytest.raises(
         ValueError,
-        match="TimeInZoneBlockV2 requires zone to be a list containing more than 2 points",
+        match="TimeInZoneBlockV3 requires zone to be a list containing more than 2 points",
     ):
         _ = time_in_zone_block.run(
             image=_wrap_with_workflow_image(image=image, metadata=metadata),
@@ -572,13 +572,13 @@ def test_time_in_zone_coordianates_not_numeric() -> None:
             tz=datetime.timezone.utc
         ),
     )
-    time_in_zone_block = TimeInZoneBlockV2()
+    time_in_zone_block = TimeInZoneBlockV3()
     image = np.zeros((720, 1280, 3))
 
     # when
     with pytest.raises(
         ValueError,
-        match="TimeInZoneBlockV2 requires each coordinate of zone to be a number",
+        match="TimeInZoneBlockV3 requires each coordinate of zone to be a number",
     ):
         _ = time_in_zone_block.run(
             image=_wrap_with_workflow_image(image=image, metadata=metadata),
@@ -645,7 +645,7 @@ def test_time_in_zone_multiple_zones() -> None:
         ),
         comes_from_video_file=True,
     )
-    time_in_zone_block = TimeInZoneBlockV2()
+    time_in_zone_block = TimeInZoneBlockV3()
     image = np.zeros((720, 1280, 3))
 
     # when
@@ -697,7 +697,7 @@ def test_time_in_zone_empty_zones_results_in_zero_time() -> None:
         ),
         comes_from_video_file=True,
     )
-    time_in_zone_block = TimeInZoneBlockV2()
+    time_in_zone_block = TimeInZoneBlockV3()
     image = np.zeros((720, 1280, 3))
 
     # when
@@ -746,7 +746,7 @@ def test_time_in_zone_updates_zones_cache_between_runs() -> None:
         ),
         comes_from_video_file=True,
     )
-    time_in_zone_block = TimeInZoneBlockV2()
+    time_in_zone_block = TimeInZoneBlockV3()
     image = np.zeros((720, 1280, 3))
 
     # when: first run with a zone that contains the detection
