@@ -172,9 +172,7 @@ class VideoTransformTrack(VideoStreamTrack):
         try:
             np_frame = await self.from_inference_queue.async_get(
                 timeout=(
-                    self.processing_timeout
-                    if not self.incoming_stream_fps
-                    else 1 / self.incoming_stream_fps
+                    0.1
                 )
             )
         except asyncio.TimeoutError:
