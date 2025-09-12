@@ -3,11 +3,11 @@
 Deploy script for the Modal web endpoint.
 
 This script deploys the Modal web endpoint for running custom Python blocks.
-It requires the 'inference' package to be installed locally.
+It requires the 'modal' package to be installed.
 
 Usage:
-    # Install inference first
-    pip install inference
+    # Install modal first
+    pip install modal
 
     # Set credentials (choose one method)
     # Option 1: Set environment variables
@@ -31,17 +31,13 @@ token_id, token_secret = initialize_modal()
 
 import modal
 
-# Try to import the app from inference
+# Import the app from the modal directory
 try:
-    from inference.core.workflows.execution_engine.v1.dynamic_blocks.modal_executor import (
-        app,
-        MODAL_INSTALLED,
-    )
+    from modal_app import app
+    MODAL_INSTALLED = True
 except ImportError as e:
-    print(f"Error: Could not import inference package: {e}")
-    print("\nYou have two options:")
-    print("1. Install inference: pip install inference")
-    print("2. Use the standalone script: python deploy_modal_web_standalone.py")
+    print(f"Error: Could not import modal_app: {e}")
+    print("\nPlease make sure you're running this script from the correct directory.")
     sys.exit(1)
 
 validate_deployment_prerequisites(app, MODAL_INSTALLED)
@@ -65,7 +61,7 @@ try:
     # Try to get the actual URL from the deployed app
     print("\n📡 Web Endpoint URL:")
     try:
-        # Get the CustomBlockExecutor class
+        # Get the Executor class
         cls = modal.Cls.from_name("webexec", "Executor")
         # Create an instance to get the method
         instance = cls(workspace_id="test")
@@ -81,6 +77,8 @@ try:
                 print(f"""
 curl -X POST "{base_url}?workspace_id=test" \\
   -H "Content-Type: application/json" \\
+  -H "Modal-Key: {token_id}" \\
+  -H "Modal-Secret: {token_secret}" \\
   -d '{{"code_str": "def run(): return {{\\"test\\": \\"ok\\"}}", "run_function_name": "run", "inputs_json": "{{}}"}}'
 """)
             else:
@@ -90,7 +88,7 @@ curl -X POST "{base_url}?workspace_id=test" \\
     except Exception as e:
         print(f"  Could not retrieve actual URL dynamically: {e}")
         print("  The URL should be visible in the Modal dashboard at https://modal.com/apps")
-        print("  Expected format: https://roboflow--inference-custom-blocks-web-{truncated}.modal.run")
+        print("  Expected format: https://roboflow--webexec-executor-{truncated}.modal.run")
         print("\n  Set the MODAL_WEB_ENDPOINT_URL environment variable with the actual URL.")
     
     print("\n✅ Ready for production use!")
