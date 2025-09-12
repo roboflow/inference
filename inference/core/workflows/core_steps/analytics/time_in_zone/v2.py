@@ -28,6 +28,15 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
+PolygonAsNestedList = List[List[int]]
+PolygonAsArray = np.ndarray
+PolygonAsListOfArrays = List[np.ndarray]
+PolygonAsListOfTuples = List[Tuple[int, int]]
+Polygon = Union[
+    PolygonAsNestedList, PolygonAsArray, PolygonAsListOfArrays, PolygonAsListOfTuples
+]
+
+
 OUTPUT_KEY: str = "timed_detections"
 SHORT_DESCRIPTION = "Track object time in zone."
 LONG_DESCRIPTION = """
@@ -35,23 +44,6 @@ The `TimeInZoneBlock` is an analytics block designed to measure time spent by ob
 The block requires detections to be tracked (i.e. each object must have unique tracker_id assigned,
 which persists between frames)
 """
-
-
-def normalize_zone(
-    zone: Union[List[Tuple[int, int]], List[List[Union[Tuple[int, int], np.ndarray]]]],
-) -> List[List[Tuple[int, int]]]:
-    if (
-        len(zone) > 0
-        and zone[0]
-        and isinstance(zone[0], (tuple, list))
-        and not isinstance(zone[0][0], (tuple, list, np.ndarray))
-    ):
-        return [zone]
-    return zone
-
-
-def flatten_list(iterable):
-    return list(itertools.chain.from_iterable(iterable))
 
 
 class TimeInZoneManifest(WorkflowBlockManifest):
@@ -147,7 +139,7 @@ class TimeInZoneBlockV2(WorkflowBlock):
                 f"tracker_id not initialized, {self.__class__.__name__} requires detections to be tracked"
             )
         metadata = image.video_metadata
-        zones = normalize_zone(zone)
+        zones = ensure_zone_is_list_of_polygons(zone)
         zone_key = f"{metadata.video_identifier}_{str(zones)}"
         if zone_key not in self._batch_of_polygon_zones:
             if len(zones) > 0 and (not isinstance(zones[0], list) or len(zones[0]) < 3):
@@ -156,14 +148,14 @@ class TimeInZoneBlockV2(WorkflowBlock):
                 )
             if any(
                 (not isinstance(e, list) and not isinstance(e, tuple)) or len(e) != 2
-                for e in flatten_list(zones)
+                for e in itertools.chain.from_iterable(zones)
             ):
                 raise ValueError(
                     f"{self.__class__.__name__} requires each point of zone to be a list containing exactly 2 coordinates"
                 )
             if any(
                 not isinstance(e[0], (int, float)) or not isinstance(e[1], (int, float))
-                for e in flatten_list(zones)
+                for e in itertools.chain.from_iterable(zones)
             ):
                 raise ValueError(
                     f"{self.__class__.__name__} requires each coordinate of zone to be a number"
@@ -224,3 +216,62 @@ class TimeInZoneBlockV2(WorkflowBlock):
                 del tracked_ids_in_zone[tracker_id]
             result_detections.append(detection)
         return {OUTPUT_KEY: sv.Detections.merge(result_detections)}
+
+
+def ensure_zone_is_list_of_polygons(
+    zone: Union[Polygon, List[Polygon]]
+) -> List[Polygon]:
+    nesting_depth = calculate_nesting_depth(zone=zone, max_depth=3)
+    if nesting_depth > 3:
+        raise ValueError(
+            "roboflow_core/time_in_zone@v2 block requires `zone` input to be list of points, but "
+            "input with excessive nesting depth found. If you created the `zone` input manually, verify it's "
+            "correctness. If the input is constructed by another Workflow block - raise an issue: "
+            "https://github.com/roboflow/inference/issues"
+        )
+    if nesting_depth == 2:
+        return [zone]
+    return zone
+
+
+def calculate_nesting_depth(
+    zone: Union[Polygon, List[Polygon]], max_depth: int, current_depth: int = 0
+) -> int:
+    remaining_depth = max_depth - current_depth
+    if isinstance(zone, np.ndarray):
+        array_depth = len(zone.shape)
+        if array_depth > remaining_depth:
+            raise ValueError(
+                "While processing polygon zone detected an instance of the zone which is invalid, as "
+                "the input is nested beyond limits - the block supports single and multiple "
+                "lists of zone points. If you created the `zone` input manually, verify it's correctness. If "
+                "the input is constructed by another Workflow block - raise an issue: "
+                "https://github.com/roboflow/inference/issues"
+            )
+        return current_depth + array_depth
+    if isinstance(zone, (list, tuple)):
+        if remaining_depth < 1:
+            raise ValueError(
+                "While processing polygon zone detected an instance of the zone which is invalid, as "
+                "the input is nested beyond limits - the block supports single and multiple "
+                "lists of zone points. If you created the `zone` input manually, verify it's correctness. If "
+                "the input is constructed by another Workflow block - raise an issue: "
+                "https://github.com/roboflow/inference/issues"
+            )
+        depths = {
+            calculate_nesting_depth(
+                zone=e, max_depth=max_depth, current_depth=current_depth + 1
+            )
+            for e in zone
+        }
+        if not depths:
+            return current_depth + 1
+        if len(depths) != 1:
+            raise ValueError(
+                "While processing polygon zone detected an instance of the zone which is invalid, as "
+                "the input is nested in irregular way. If you created the `zone` input manually, verify it's correctness. "
+                "If the input is constructed by another Workflow block - raise an issue: "
+                "https://github.com/roboflow/inference/issues"
+            )
+        return min(depths)
+    return current_depth

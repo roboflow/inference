@@ -5,7 +5,7 @@ import pytest
 import supervision as sv
 
 from inference.core.workflows.core_steps.analytics.time_in_zone.v2 import (
-    TimeInZoneBlockV2,
+    TimeInZoneBlockV2, calculate_nesting_depth,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
@@ -772,3 +772,107 @@ def test_time_in_zone_updates_zones_cache_between_runs() -> None:
     assert len(frame1_result["timed_detections"]) == 1
     assert (frame1_result["timed_detections"]["time_in_zone"] == np.array([0])).all()
     assert len(frame2_result["timed_detections"]) == 0
+
+
+def test_calculate_nesting_depth_when_scalar_value_provided() -> None:
+    # when
+    result = calculate_nesting_depth(zone=1, max_depth=3)
+
+    # then
+    assert result == 0
+
+
+def test_calculate_nesting_depth_when_list_of_scalar_value_provided() -> None:
+    # when
+    result = calculate_nesting_depth(zone=[1, 2, 3], max_depth=3)
+
+    # then
+    assert result == 1
+
+
+def test_calculate_nesting_depth_when_1d_np_array_provided() -> None:
+    # when
+    result = calculate_nesting_depth(zone=np.array([1, 2, 3]), max_depth=3)
+
+    # then
+    assert result == 1
+
+
+def test_calculate_nesting_depth_when_2d_np_array_provided() -> None:
+    # when
+    result = calculate_nesting_depth(zone=np.array([[1, 2, 3], [1, 2, 3]]), max_depth=3)
+
+    # then
+    assert result == 2
+
+
+def test_calculate_nesting_depth_when_3d_np_array_provided() -> None:
+    # when
+    result = calculate_nesting_depth(zone=np.array([[[1, 2, 3], [1, 2, 3]], [[1, 2, 3], [1, 2, 3]]]), max_depth=3)
+
+    # then
+    assert result == 3
+
+
+def test_calculate_nesting_depth_when_3d_np_array_provided_and_max_depth_exceeded() -> None:
+    # when
+    with pytest.raises(ValueError):
+        _ = calculate_nesting_depth(zone=np.array([[[1, 2, 3], [1, 2, 3]], [[1, 2, 3], [1, 2, 3]]]), max_depth=2)
+
+
+def test_calculate_nesting_depth_when_list_of_lists_of_scalar_values_provided() -> None:
+    # when
+    result = calculate_nesting_depth(zone=[[1, 2], [3, 4]], max_depth=3)
+
+    # then
+    assert result == 2
+
+
+def test_calculate_nesting_depth_when_list_of_lists_of_lists_of_scalar_values_provided() -> None:
+    # when
+    result = calculate_nesting_depth(zone=[[[1, 2], [3, 4]], [[1, 2], [3, 4]]], max_depth=3)
+
+    # then
+    assert result == 3
+
+
+def test_calculate_nesting_depth_when_list_of_lists_of_lists_of_scalar_values_provided_along_with_more_nested_inputs() -> None:
+    # when
+    with pytest.raises(ValueError):
+        _ = calculate_nesting_depth(zone=[[[1, 2], [3, 4]], [[1, 2], [3, [1, [1, [1]]]]]], max_depth=3)
+
+
+def test_calculate_nesting_depth_when_list_of_lists_of_scalar_values_provided_with_more_nested_inputs_but_not_exceeding_max_depth() -> None:
+    # when
+    with pytest.raises(ValueError):
+        _ = calculate_nesting_depth(zone=[[1, 2], [3, [1, 2, 3]]], max_depth=3)
+
+
+def test_calculate_nesting_depth_when_tuple_of_scalar_value_provided() -> None:
+    # when
+    result = calculate_nesting_depth(zone=(1, 2, 3), max_depth=3)
+
+    # then
+    assert result == 1
+
+
+def test_calculate_nesting_depth_when_tuple_of_tuples_of_scalar_value_provided() -> None:
+    # when
+    result = calculate_nesting_depth(zone=((1, 2), (2, 3)), max_depth=3)
+
+    # then
+    assert result == 2
+
+
+def test_calculate_nesting_depth_when_tuple_of_tuples_of_tuples_of_scalar_value_provided() -> None:
+    # when
+    result = calculate_nesting_depth(zone=(((1, 2), (2, 3)), ((1, 2), (2, 3))), max_depth=3)
+
+    # then
+    assert result == 3
+
+
+def test_calculate_nesting_depth_when_tuple_of_irregular_shape_provided() -> None:
+    # when
+    with pytest.raises(ValueError):
+        _ = calculate_nesting_depth(zone=(((1, 2), (2, 3)), 2), max_depth=3)
