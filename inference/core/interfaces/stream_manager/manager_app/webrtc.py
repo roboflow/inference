@@ -170,12 +170,8 @@ class VideoTransformTrack(VideoStreamTrack):
 
         np_frame: Optional[np.ndarray] = None
         try:
-            np_frame = await self.from_inference_queue.async_get(
-                timeout=(
-                    0.1
-                )
-            )
-        except asyncio.TimeoutError:
+            np_frame = await self.from_inference_queue.async_get_nowait()
+        except asyncio.QueueEmpty:
             pass
 
         if np_frame is None:
@@ -198,7 +194,7 @@ class VideoTransformTrack(VideoStreamTrack):
         if self.incoming_stream_fps:
             target_fps = self.incoming_stream_fps
         else:
-            target_fps = 15.0
+            target_fps = 30.0
 
         # 90000 Hz (90 kHz) clock rate defined by rfc3551 https://datatracker.ietf.org/doc/html/rfc3551
         pts_increment = int(90000 / target_fps)
