@@ -47,6 +47,7 @@ which persists between frames)
 """
 ZONE_CACHE_SIZE = 100
 
+
 class TimeInZoneManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
@@ -120,7 +121,9 @@ class TimeInZoneManifest(WorkflowBlockManifest):
 class TimeInZoneBlockV3(WorkflowBlock):
     def __init__(self):
         self._batch_of_tracked_ids_in_zone: Dict[str, Dict[Union[int, str], float]] = {}
-        self._batch_of_polygon_zones: OrderedDict[str, List[sv.PolygonZone]] = OrderedDict()
+        self._batch_of_polygon_zones: OrderedDict[str, List[sv.PolygonZone]] = (
+            OrderedDict()
+        )
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -223,7 +226,7 @@ class TimeInZoneBlockV3(WorkflowBlock):
 
 
 def ensure_zone_is_list_of_polygons(
-    zone: Union[Polygon, List[Polygon]]
+    zone: Union[Polygon, List[Polygon]],
 ) -> List[Polygon]:
     nesting_depth = calculate_nesting_depth(zone=zone, max_depth=3)
     if nesting_depth > 3:
