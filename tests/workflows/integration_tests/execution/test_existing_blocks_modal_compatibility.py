@@ -28,11 +28,13 @@ SKIP_MODAL_TESTS = not (MODAL_TOKEN_ID and MODAL_TOKEN_SECRET)
 SKIP_REASON = "Modal credentials not present (MODAL_TOKEN_ID and MODAL_TOKEN_SECRET)"
 
 
-def run_workflow_in_subprocess(workflow: dict, runtime_params: dict, execution_mode: str) -> any:
+def run_workflow_in_subprocess(
+    workflow: dict, runtime_params: dict, execution_mode: str
+) -> any:
     """Run a workflow in a subprocess with specific execution mode."""
     import json
     import tempfile
-    
+
     # Create a temporary Python script that runs the workflow
     script = f"""
 import os
@@ -63,12 +65,12 @@ print("RESULT_START")
 print(json.dumps(result))
 print("RESULT_END")
 """
-    
+
     # Write script to temp file
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
         f.write(script)
         temp_file = f.name
-    
+
     try:
         # Run the script in a subprocess with clean environment
         env = os.environ.copy()
@@ -78,18 +80,36 @@ print("RESULT_END")
                 raise ValueError("Modal credentials not found in environment")
             env["MODAL_TOKEN_ID"] = MODAL_TOKEN_ID
             env["MODAL_TOKEN_SECRET"] = MODAL_TOKEN_SECRET
-        
+
+        # Ensure the subprocess can import the local 'inference' package on CI runners
+        try:
+            import pathlib
+
+            repo_root = str(pathlib.Path(__file__).resolve().parents[4])
+            existing_pythonpath = env.get("PYTHONPATH", "")
+            if repo_root not in existing_pythonpath.split(
+                ":" if os.name != "nt" else ";"
+            ):
+                sep = ":" if os.name != "nt" else ";"
+                env["PYTHONPATH"] = (
+                    (repo_root + sep + existing_pythonpath)
+                    if existing_pythonpath
+                    else repo_root
+                )
+        except Exception:
+            pass
+
         result = subprocess.run(
             [sys.executable, temp_file],
             capture_output=True,
             text=True,
             env=env,
-            timeout=60
+            timeout=60,
         )
-        
+
         if result.returncode != 0:
             raise RuntimeError(f"Subprocess failed: {result.stderr}")
-        
+
         # Extract JSON result from output
         output = result.stdout
         if "RESULT_START" in output and "RESULT_END" in output:
@@ -97,7 +117,7 @@ print("RESULT_END")
             return json.loads(json_str)
         else:
             raise RuntimeError(f"Could not parse result from output: {output}")
-            
+
     finally:
         os.unlink(temp_file)
 
@@ -108,7 +128,7 @@ class TestExistingBlocksWithModal:
 
     def test_simple_computation_modal_vs_local(self) -> None:
         """Test a simple computational block with both Modal and local execution."""
-        
+
         # Simple block that processes a list of numbers
         compute_block = """
 def run(self, numbers: list) -> BlockResult:
@@ -126,7 +146,7 @@ def run(self, numbers: list) -> BlockResult:
         "count": len(numbers)
     }
 """
-        
+
         workflow = {
             "version": "1.0",
             "inputs": [
@@ -181,16 +201,16 @@ def run(self, numbers: list) -> BlockResult:
                 },
             ],
         }
-        
+
         test_numbers = [2, 3, 4, 5]
         runtime_params = {"numbers": test_numbers}
-        
+
         # Test with local execution
         local_result = run_workflow_in_subprocess(workflow, runtime_params, "local")
-        
+
         # Test with Modal execution
         modal_result = run_workflow_in_subprocess(workflow, runtime_params, "modal")
-        
+
         # Compare results
         assert local_result[0]["sum"] == modal_result[0]["sum"] == 14
         assert local_result[0]["product"] == modal_result[0]["product"] == 120
@@ -198,7 +218,7 @@ def run(self, numbers: list) -> BlockResult:
 
     def test_string_manipulation_modal_vs_local(self) -> None:
         """Test string manipulation operations in Modal vs local."""
-        
+
         string_block = """
 def run(self, text: str, operation: str) -> BlockResult:
     if operation == "reverse":
@@ -218,7 +238,7 @@ def run(self, text: str, operation: str) -> BlockResult:
         "words": len(result.split())
     }
 """
-        
+
         workflow = {
             "version": "1.0",
             "inputs": [
@@ -279,19 +299,19 @@ def run(self, text: str, operation: str) -> BlockResult:
                 },
             ],
         }
-        
+
         test_text = "Hello World from Modal"
-        
+
         # Test different operations
         for operation in ["reverse", "uppercase", "lowercase", "title"]:
             runtime_params = {"text": test_text, "operation": operation}
-            
+
             # Test with local execution
             local_result = run_workflow_in_subprocess(workflow, runtime_params, "local")
-            
+
             # Test with Modal execution
             modal_result = run_workflow_in_subprocess(workflow, runtime_params, "modal")
-            
+
             # Compare results
             assert local_result[0]["result"] == modal_result[0]["result"]
             assert local_result[0]["length"] == modal_result[0]["length"]
@@ -301,7 +321,7 @@ def run(self, text: str, operation: str) -> BlockResult:
 @pytest.mark.skipif(SKIP_MODAL_TESTS, reason=SKIP_REASON)
 def test_performance_comparison_local_vs_modal() -> None:
     """Compare performance characteristics between local and Modal execution."""
-    
+
     # Simple computational block for benchmarking
     compute_block = """
 def run(self, iterations: int) -> BlockResult:
@@ -316,7 +336,7 @@ def run(self, iterations: int) -> BlockResult:
     elapsed = time.time() - start
     return {"result": result, "elapsed": elapsed}
 """
-    
+
     workflow = {
         "version": "1.0",
         "inputs": [
@@ -365,29 +385,33 @@ def run(self, iterations: int) -> BlockResult:
             },
         ],
     }
-    
+
     iterations = 100000
     runtime_params = {"iterations": iterations}
-    
+
     # Measure local execution time
     local_start = time.time()
     local_result = run_workflow_in_subprocess(workflow, runtime_params, "local")
     local_total = time.time() - local_start
-    
+
     # Measure Modal execution time
     modal_start = time.time()
     modal_result = run_workflow_in_subprocess(workflow, runtime_params, "modal")
     modal_total = time.time() - modal_start
-    
+
     # Verify results match
     assert local_result[0]["result"] == modal_result[0]["result"]
-    
+
     # Log performance metrics (for informational purposes)
     print(f"\nPerformance Comparison:")
-    print(f"Local execution: {local_total:.3f}s total, {local_result[0]['elapsed']:.3f}s compute")
-    print(f"Modal execution: {modal_total:.3f}s total, {modal_result[0]['elapsed']:.3f}s compute")
+    print(
+        f"Local execution: {local_total:.3f}s total, {local_result[0]['elapsed']:.3f}s compute"
+    )
+    print(
+        f"Modal execution: {modal_total:.3f}s total, {modal_result[0]['elapsed']:.3f}s compute"
+    )
     print(f"Modal overhead: {modal_total - modal_result[0]['elapsed']:.3f}s")
-    
+
     # Modal will have overhead due to network and containerization
     # But computation results should be identical
     assert local_result[0]["result"] == modal_result[0]["result"]
@@ -396,7 +420,7 @@ def run(self, iterations: int) -> BlockResult:
 @pytest.mark.skipif(SKIP_MODAL_TESTS, reason=SKIP_REASON)
 def test_actual_modal_execution() -> None:
     """Verify that Modal is actually being executed remotely."""
-    
+
     verification_block = """
 def run(self, x: int) -> BlockResult:
     import os
@@ -412,7 +436,7 @@ def run(self, x: int) -> BlockResult:
         "task_id": task_id
     }
 """
-    
+
     workflow = {
         "version": "1.0",
         "inputs": [
@@ -467,28 +491,29 @@ def run(self, x: int) -> BlockResult:
             },
         ],
     }
-    
+
     runtime_params = {"x": 5}
-    
+
     # Run locally
     local_result = run_workflow_in_subprocess(workflow, runtime_params, "local")
-    
+
     # Run in Modal
     modal_result = run_workflow_in_subprocess(workflow, runtime_params, "modal")
-    
+
     # Results should match
     assert local_result[0]["result"] == modal_result[0]["result"] == 10
-    
+
     # But execution contexts should be different
     assert local_result[0]["task_id"] == "LOCAL"
     assert modal_result[0]["task_id"] != "LOCAL"
     assert modal_result[0]["task_id"].startswith("ta-")  # Modal task IDs start with ta-
-    
+
     # Hostnames should be different
     import socket
+
     local_hostname = socket.gethostname()
     assert modal_result[0]["hostname"] != local_hostname
-    
+
     print(f"\n✅ Modal execution confirmed:")
     print(f"  Local hostname: {local_hostname}")
     print(f"  Modal hostname: {modal_result[0]['hostname']}")
