@@ -102,21 +102,14 @@ def test_internal_consistency_of_preprocessed_inputs(
         list_tensor_output,
         batched_tensor_output,
     ) = get_preprocessed_outputs(florence2_model, dog_image_numpy, dog_image_torch)
-    # The dog_image_numpy is BGR, dog_image_torch is RGB.
-    # The processor should handle the conversion, but let's compare RGB numpy to RGB tensor
-    prompt = "<OD>"
-    rgb_dog_image_numpy = dog_image_numpy[:, :, ::-1]
-    numpy_rgb_output, _ = florence2_model.pre_process_generation(
-        images=rgb_dog_image_numpy, prompt=prompt
-    )
 
     # THEN
-    # Compare single numpy (RGB) and single tensor (RGB)
+    # Compare single numpy (BGR) and single tensor (RGB)
     assert torch.allclose(
-        numpy_rgb_output["pixel_values"], tensor_output["pixel_values"], atol=1e-2
+        numpy_output["pixel_values"], tensor_output["pixel_values"], atol=1e-2
     )
     assert torch.allclose(
-        numpy_rgb_output["input_ids"], tensor_output["input_ids"], atol=1e-2
+        numpy_output["input_ids"], tensor_output["input_ids"], atol=1e-2
     )
 
     # Compare list of tensors and batched tensor

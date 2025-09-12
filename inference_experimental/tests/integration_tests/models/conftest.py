@@ -17,12 +17,8 @@ CLIP_RN50_ONNX_VISUAL = "https://storage.googleapis.com/roboflow-tests-assets/cl
 CLIP_RN50_ONNX_TEXTUAL = "https://storage.googleapis.com/roboflow-tests-assets/clip_packages/RN50/onnx/textual.onnx"
 PE_MODEL_URL = "https://storage.googleapis.com/roboflow-tests-assets/perception-encoder/pe-core-b16-224/model.pt"
 PE_CONFIG_URL = "https://storage.googleapis.com/roboflow-tests-assets/perception-encoder/pe-core-b16-224/config.json"
-FLORENCE2_BASE_FT_URL = (
-    "https://storage.googleapis.com/roboflow-tests-assets/florence2/base-ft.zip"
-)
-FLORENCE2_LARGE_FT_URL = (
-    "https://storage.googleapis.com/roboflow-tests-assets/florence2/large-ft.zip"
-)
+FLORENCE2_BASE_FT_URL = "https://storage.googleapis.com/roboflow-tests-assets/florence2/florence-2-base-converted-for-transformers-056.zip"
+FLORENCE2_LARGE_FT_URL = "https://storage.googleapis.com/roboflow-tests-assets/florence2/florence-2-large-converted-for-transformers-056.zip"
 QWEN25VL_3B_FT_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/qwen/qwen25vl-3b.zip"
 )
@@ -33,7 +29,6 @@ SMOLVLM_BASE_FT_URL = (
 MOONDREAM2_BASE_FT_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/moondream2/moondream2-2b.zip"
 )
-OCR_TEST_IMAGE_PATH = os.path.join(ASSETS_DIR, "ocr_test_image.png")
 
 
 @pytest.fixture(scope="module")
@@ -74,14 +69,6 @@ def perception_encoder_path() -> str:
     return package_path
 
 
-@pytest.fixture(scope="function")
-def ocr_test_image_numpy() -> np.ndarray:
-    """Returns the OCR test image as a numpy array."""
-    image = cv2.imread(OCR_TEST_IMAGE_PATH)
-    assert image is not None, "Could not load OCR test image"
-    return image
-
-
 def _download_if_not_exists(file_path: str, url: str, lock_timeout: int = 120) -> None:
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
     lock_path = f"{file_path}.lock"
@@ -99,7 +86,7 @@ def _download_if_not_exists(file_path: str, url: str, lock_timeout: int = 120) -
 @pytest.fixture(scope="module")
 def florence2_base_ft_path() -> str:
     package_dir = os.path.join(MODELS_DIR, "florence2")
-    unzipped_package_path = os.path.join(package_dir, "base-ft")
+    unzipped_package_path = os.path.join(package_dir, "florence-2-base")
     os.makedirs(package_dir, exist_ok=True)
     zip_path = os.path.join(package_dir, "base-ft.zip")
     _download_if_not_exists(file_path=zip_path, url=FLORENCE2_BASE_FT_URL)
@@ -114,7 +101,7 @@ def florence2_base_ft_path() -> str:
 @pytest.fixture(scope="module")
 def florence2_large_ft_path() -> str:
     package_dir = os.path.join(MODELS_DIR, "florence2")
-    unzipped_package_path = os.path.join(package_dir, "large-ft")
+    unzipped_package_path = os.path.join(package_dir, "florence-2-base")
     os.makedirs(package_dir, exist_ok=True)
     zip_path = os.path.join(package_dir, "large-ft.zip")
     _download_if_not_exists(file_path=zip_path, url=FLORENCE2_LARGE_FT_URL)

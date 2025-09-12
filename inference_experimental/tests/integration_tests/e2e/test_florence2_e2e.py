@@ -16,7 +16,7 @@ def test_florence2_base_model(dog_image_numpy: np.ndarray):
     assert isinstance(captions, list)
     assert len(captions) == 1
     assert isinstance(captions[0], str)
-    assert captions[0] == "A man carrying a blue dog on his back."
+    assert captions[0] == "A man carrying a dog on his back."
 
 
 @pytest.mark.e2e_model_inference
