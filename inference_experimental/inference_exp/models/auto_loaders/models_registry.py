@@ -209,7 +209,7 @@ REGISTERED_MODELS: Dict[
         module_name="inference_exp.models.yolov12.yolov12_trt",
         class_name="YOLOv12ForObjectDetectionTRT",
     ),
-    ("paligemma", VLM_TASK, BackendType.HF): LazyClass(
+    ("paligemma-2", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_exp.models.paligemma.paligemma_hf",
         class_name="PaliGemmaHF",
     ),
