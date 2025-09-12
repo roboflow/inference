@@ -330,11 +330,10 @@ class InferencePipelineManager(Process):
                 errors = []
 
                 if (
-                    peer_connection.data_output is not None
-                    and peer_connection.data_channel
+                    peer_connection.data_channel
                     and peer_connection.data_channel.readyState == "open"
                 ):
-                    if peer_connection.data_output in prediction:
+                    if peer_connection.data_output is not None and peer_connection.data_output in prediction:
                         workflow_output = prediction[peer_connection.data_output]
                         serialized_data = None
                         if isinstance(workflow_output, WorkflowImageData):
@@ -362,6 +361,9 @@ class InferencePipelineManager(Process):
                             serialized_data = str(workflow_output)
                         if serialized_data is not None:
                             peer_connection.data_channel.send(serialized_data)
+                    elif peer_connection.data_output is None:
+                        serialized_data = json.dumps({})
+                        peer_connection.data_channel.send(serialized_data)
                     else:
                         errors.append(
                             f"Selected data output '{peer_connection.data_output}' not found in workflow outputs"
