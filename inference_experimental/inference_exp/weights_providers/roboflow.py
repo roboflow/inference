@@ -28,6 +28,7 @@ from inference_exp.weights_providers.entities import (
     ONNXPackageDetails,
     Quantization,
     ServerEnvironmentRequirements,
+    TorchScriptPackageDetails,
     TRTPackageDetails,
 )
 from packaging.version import InvalidVersion, Version
@@ -51,6 +52,7 @@ class RoboflowModelPackageV1(BaseModel):
     type: Literal["external-model-package-v1"]
     package_id: str = Field(alias="packageId")
     package_manifest: dict = Field(alias="packageManifest")
+    model_features: Optional[dict] = Field(alias="modelFeatures", default=None)
     package_files: List[RoboflowModelPackageFile] = Field(alias="packageFiles")
     trusted_source: bool = Field(alias="trustedSource", default=False)
 
@@ -237,16 +239,10 @@ class OnnxModelPackageV1(BaseModel):
 
 def parse_onnx_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageMetadata:
     parsed_manifest = OnnxModelPackageV1.model_validate(metadata.package_manifest)
-    if (
-        not parsed_manifest.dynamic_batch_size
-        and parsed_manifest.static_batch_size is None
-    ):
-        raise ModelMetadataConsistencyError(
-            message="While downloading model weights, Roboflow API provided inconsistent metadata "
-            "describing model package - ONNX package declared not to support dynamic batch size and "
-            "supported static batch size not provided. Contact Roboflow to solve the problem.",
-            help_url="https://todo",
-        )
+    validate_batch_settings(
+        dynamic_batch_size=parsed_manifest.dynamic_batch_size,
+        static_batch_size=parsed_manifest.static_batch_size,
+    )
     package_artefacts = parse_package_artefacts(
         package_artefacts=metadata.package_files
     )
@@ -262,6 +258,7 @@ def parse_onnx_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageMe
             incompatible_providers=parsed_manifest.incompatible_providers,
         ),
         trusted_source=metadata.trusted_source,
+        model_features=metadata.model_features,
     )
 
 
@@ -305,16 +302,10 @@ class TrtModelPackageV1(BaseModel):
 
 def parse_trt_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageMetadata:
     parsed_manifest = TrtModelPackageV1.model_validate(metadata.package_manifest)
-    if (
-        not parsed_manifest.dynamic_batch_size
-        and parsed_manifest.static_batch_size is None
-    ):
-        raise ModelMetadataConsistencyError(
-            message="While downloading model weights, Roboflow API provided inconsistent metadata "
-            "describing model package - TRT package declared not to support dynamic batch size and "
-            "supported static batch size not provided. Contact Roboflow to solve the problem.",
-            help_url="https://todo",
-        )
+    validate_batch_settings(
+        dynamic_batch_size=parsed_manifest.dynamic_batch_size,
+        static_batch_size=parsed_manifest.static_batch_size,
+    )
     if parsed_manifest.dynamic_batch_size is True and any(
         e is None
         for e in [
@@ -390,6 +381,7 @@ def parse_trt_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageMet
         package_artefacts=package_artefacts,
         environment_requirements=environment_requirements,
         trusted_source=metadata.trusted_source,
+        model_features=metadata.model_features,
     )
 
 
@@ -403,15 +395,10 @@ class TorchModelPackageV1(BaseModel):
 
 def parse_torch_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageMetadata:
     parsed_manifest = TorchModelPackageV1.model_validate(metadata.package_manifest)
-    if (
-        not parsed_manifest.dynamic_batch_size
-        and parsed_manifest.static_batch_size is None
-    ):
-        raise ModelMetadataConsistencyError(
-            "While downloading model weights, Roboflow API provided inconsistent metadata "
-            "describing model package - ONNX package declared not to support dynamic batch size and "
-            "supported static batch size not provided. Contact Roboflow to solve the problem."
-        )
+    validate_batch_settings(
+        dynamic_batch_size=parsed_manifest.dynamic_batch_size,
+        static_batch_size=parsed_manifest.static_batch_size,
+    )
     package_artefacts = parse_package_artefacts(
         package_artefacts=metadata.package_files
     )
@@ -423,6 +410,7 @@ def parse_torch_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageM
         static_batch_size=parsed_manifest.static_batch_size,
         package_artefacts=package_artefacts,
         trusted_source=metadata.trusted_source,
+        model_features=metadata.model_features,
     )
 
 
@@ -443,6 +431,7 @@ def parse_hf_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageMeta
         quantization=parsed_manifest.quantization,
         package_artefacts=package_artefacts,
         trusted_source=metadata.trusted_source,
+        model_features=metadata.model_features,
     )
 
 
@@ -458,7 +447,74 @@ def parse_ultralytics_model_package(
         package_artefacts=package_artefacts,
         quantization=Quantization.UNKNOWN,
         trusted_source=metadata.trusted_source,
+        model_features=metadata.model_features,
     )
+
+
+class TorchScriptModelPackageV1(BaseModel):
+    type: Literal["torch-script-model-package-v1"]
+    backend_type: Literal["torch-script"] = Field(alias="backendType")
+    dynamic_batch_size: bool = Field(alias="dynamicBatchSize", default=False)
+    static_batch_size: Optional[int] = Field(alias="staticBatchSize", default=None)
+    quantization: Quantization
+    supported_device_types: List[str] = Field(alias="supportedDeviceTypes")
+    torch_version: str = Field(alias="torchVersion")
+    torch_vision_version: Optional[str] = Field(
+        alias="torchVisionVersion", default=None
+    )
+
+
+def parse_torch_script_model_package(
+    metadata: RoboflowModelPackageV1,
+) -> ModelPackageMetadata:
+    parsed_manifest = TorchScriptModelPackageV1.model_validate(
+        metadata.package_manifest
+    )
+    validate_batch_settings(
+        dynamic_batch_size=parsed_manifest.dynamic_batch_size,
+        static_batch_size=parsed_manifest.static_batch_size,
+    )
+    package_artefacts = parse_package_artefacts(
+        package_artefacts=metadata.package_files
+    )
+    torch_vision_version = None
+    if parsed_manifest.torch_vision_version is not None:
+        torch_vision_version = as_version(parsed_manifest.torch_vision_version)
+    torch_script_package_details = TorchScriptPackageDetails(
+        supported_device_types=set(parsed_manifest.supported_device_types),
+        torch_version=as_version(parsed_manifest.torch_version),
+        torch_vision_version=torch_vision_version,
+    )
+    return ModelPackageMetadata(
+        package_id=metadata.package_id,
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=parsed_manifest.dynamic_batch_size,
+        static_batch_size=parsed_manifest.static_batch_size,
+        package_artefacts=package_artefacts,
+        quantization=parsed_manifest.quantization,
+        trusted_source=metadata.trusted_source,
+        model_features=metadata.model_features,
+        torch_script_package_details=torch_script_package_details,
+    )
+
+
+def validate_batch_settings(
+    dynamic_batch_size: bool, static_batch_size: Optional[int]
+) -> None:
+    if not dynamic_batch_size and (static_batch_size is None or static_batch_size <= 0):
+        raise ModelMetadataConsistencyError(
+            message="While downloading model weights, Roboflow API provided inconsistent metadata "
+            "describing model package - model package declared not to support dynamic batch size and "
+            "supported static batch size not provided. Contact Roboflow to solve the problem.",
+            help_url="https://todo",
+        )
+    if dynamic_batch_size and static_batch_size is not None:
+        raise ModelMetadataConsistencyError(
+            message="While downloading model weights, Roboflow API provided inconsistent metadata "
+            "describing model package - model package declared not to support dynamic batch size and "
+            "supported static batch size not provided. Contact Roboflow to solve the problem.",
+            help_url="https://todo",
+        )
 
 
 def parse_package_artefacts(
@@ -480,6 +536,7 @@ MODEL_PACKAGE_PARSERS: Dict[
     "torch-model-package-v1": parse_torch_model_package,
     "hf-model-package-v1": parse_hf_model_package,
     "ultralytics-model-package-v1": parse_ultralytics_model_package,
+    "torch-script-model-package-v1": parse_torch_script_model_package,
 }
 
 

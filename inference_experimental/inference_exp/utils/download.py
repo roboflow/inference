@@ -351,6 +351,39 @@ def check_range_download_option(
     return int(content_length)
 
 
+@backoff.on_exception(
+    backoff.constant,
+    exception=RetryError,
+    max_tries=API_CALLS_MAX_TRIES,
+    interval=1,
+)
+def get_content_length(
+    url: str,
+    timeout: Optional[int] = None,
+    response_codes_to_retry: Optional[Set[int]] = None,
+) -> Optional[int]:
+    if response_codes_to_retry is None:
+        response_codes_to_retry = IDEMPOTENT_API_REQUEST_CODES_TO_RETRY
+    if timeout is None:
+        timeout = API_CALLS_TIMEOUT
+    try:
+        response = requests.head(url, timeout=timeout)
+    except (OSError, Timeout, requests.exceptions.ConnectionError):
+        raise RetryError(
+            message=f"Connectivity error for URL: {url}", help_url="https://todo"
+        )
+    if response.status_code in response_codes_to_retry:
+        raise RetryError(
+            message=f"Remote server returned response code {response.status_code} for URL {url}",
+            help_url="https://todo",
+        )
+    response.raise_for_status()
+    content_length = response.headers.get("content-length")
+    if content_length is None:
+        return None
+    return int(content_length)
+
+
 def threaded_download_file(
     url: str,
     target_path: str,

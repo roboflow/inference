@@ -3,7 +3,10 @@ from typing import List, Literal, Tuple
 import torch
 import torchvision
 from inference_exp.entities import ImageDimensions
-from inference_exp.models.common.roboflow.model_packages import PreProcessingMetadata
+from inference_exp.models.common.roboflow.model_packages import (
+    PreProcessingMetadata,
+    StaticCropOffset,
+)
 from torchvision.transforms import functional
 
 
@@ -55,6 +58,21 @@ def run_nms_for_object_detection(
 
         results.append(detections)
     return results
+
+
+def post_process_nms_fused_model_output(
+    output: torch.Tensor,
+    conf_thresh: float = 0.25,
+) -> List[torch.Tensor]:
+    bs = output.shape[0]
+    nms_results = []
+    for batch_element_id in range(bs):
+        batch_element_result = output[batch_element_id]
+        batch_element_result = batch_element_result[
+            batch_element_result[:, 4] >= conf_thresh
+        ]
+        nms_results.append(batch_element_result)
+    return nms_results
 
 
 def run_nms_for_instance_segmentation(
@@ -198,6 +216,21 @@ def rescale_image_detections(
         device=image_detections.device,
     )
     image_detections[:, :4].div_(scale)
+    if (
+        image_metadata.static_crop_offset.offset_x != 0
+        or image_metadata.static_crop_offset.offset_y != 0
+    ):
+        static_crop_offsets = torch.as_tensor(
+            [
+                image_metadata.static_crop_offset.offset_x,
+                image_metadata.static_crop_offset.offset_y,
+                image_metadata.static_crop_offset.offset_x,
+                image_metadata.static_crop_offset.offset_y,
+            ],
+            dtype=image_detections.dtype,
+            device=image_detections.device,
+        )
+        image_detections[:, :4].add_(static_crop_offsets)
     return image_detections
 
 
@@ -237,6 +270,24 @@ def rescale_key_points_detections(
             device=image_detections.device,
         ).repeat(key_points_slots_in_prediction)
         image_detections[:, 5 + num_classes :].div_(key_points_scale)
+        if (
+            metadata.static_crop_offset.offset_x != 0
+            or metadata.static_crop_offset.offset_y != 0
+        ):
+            static_crop_offset_length = (
+                image_detections.shape[1] - 5 - num_classes
+            ) // 3
+            static_crop_offsets = torch.as_tensor(
+                [
+                    metadata.static_crop_offset.offset_x,
+                    metadata.static_crop_offset.offset_y,
+                    0,
+                ]
+                * static_crop_offset_length,
+                dtype=image_detections.dtype,
+                device=image_detections.device,
+            )
+            image_detections[:, 5 + num_classes :].add_(static_crop_offsets)
     return detections
 
 
@@ -274,6 +325,7 @@ def align_instance_segmentation_results(
     scale_height: float,
     original_size: ImageDimensions,
     inference_size: ImageDimensions,
+    static_crop_offset: StaticCropOffset,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     if image_bboxes.shape[0] == 0:
         empty_masks = torch.empty(
@@ -315,4 +367,31 @@ def align_instance_segmentation_results(
         .gt_(0.0)
         .to(dtype=torch.bool)
     )
+    if static_crop_offset.offset_x > 0 or static_crop_offset.offset_y > 0:
+        mask_canvas = torch.zeros(
+            (
+                masks.shape[0],
+                static_crop_offset.original_height,
+                static_crop_offset.original_width,
+            ),
+            dtype=torch.bool,
+            device=masks.device,
+        )
+        mask_canvas[
+            :,
+            static_crop_offset.offset_y : static_crop_offset.offset_y + masks.shape[1],
+            static_crop_offset.offset_x : static_crop_offset.offset_x + masks.shape[2],
+        ] = masks
+        static_crop_offsets = torch.as_tensor(
+            [
+                static_crop_offset.offset_x,
+                static_crop_offset.offset_y,
+                static_crop_offset.offset_x,
+                static_crop_offset.offset_y,
+            ],
+            dtype=image_bboxes.dtype,
+            device=image_bboxes.device,
+        )
+        image_bboxes[:, :4].add_(static_crop_offsets)
+        masks = mask_canvas
     return image_bboxes, masks
