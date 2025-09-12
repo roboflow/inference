@@ -5,7 +5,6 @@ This module handles the execution of untrusted user code in Modal sandboxes
 using web endpoints for better security and no size limitations.
 """
 
-import hashlib
 import json
 import os
 from typing import Any, Dict, Optional
@@ -27,6 +26,144 @@ if MODAL_TOKEN_ID and MODAL_TOKEN_SECRET:
 else:
     MODAL_AVAILABLE = False
     logger.info("Modal credentials not configured")
+
+from datetime import datetime
+from inference.core.workflows.core_steps.common.deserializers import (
+    deserialize_image_kind,
+    deserialize_detections_kind,
+    deserialize_video_metadata_kind,
+)
+
+
+def serialize_for_modal_remote_execution(inputs: Dict[str, Any]) -> str:
+    from datetime import datetime
+    import numpy as np
+
+    class InputJSONEncoder(json.JSONEncoder):
+        def default(self, obj):
+            if isinstance(obj, datetime):
+                return {"_type": "datetime", "value": obj.isoformat()}
+            elif isinstance(obj, bytes):
+                return {
+                    "_type": "bytes",
+                    "value": base64.b64encode(obj).decode("utf-8"),
+                }
+            elif isinstance(obj, np.ndarray):
+                return {
+                    "_type": "ndarray",
+                    "value": obj.tolist(),
+                    "dtype": str(obj.dtype),
+                    "shape": obj.shape,
+                }
+            elif hasattr(obj, "__dict__"):
+                return {
+                    "_type": "object",
+                    "class": obj.__class__.__name__,
+                    "value": str(obj),
+                }
+            return super().default(obj)
+
+    # Patch inputs with type markers for Modal serialization
+    def patch_for_modal_serialization(value):
+        """Serialize value and add _type markers for Modal deserialization."""
+        import supervision as sv
+        from inference.core.workflows.execution_engine.entities.base import (
+            WorkflowImageData,
+            VideoMetadata,
+        )
+        from inference.core.workflows.core_steps.common.serializers import (
+            serialize_video_metadata_kind,
+            serialise_sv_detections,
+            serialise_image,
+        )
+
+        # Apply standard serialization and add type markers based on original type
+        if isinstance(value, sv.Detections):
+            serialized = serialise_sv_detections(detections=value)
+            serialized["_type"] = "sv_detections"
+        elif isinstance(value, WorkflowImageData):
+            serialized = serialise_image(image=value)
+            serialized["_type"] = "workflow_image"
+        elif isinstance(value, VideoMetadata):
+            serialized = serialize_video_metadata_kind(value)
+            serialized["_type"] = "video_metadata"
+        elif isinstance(value, dict):
+            # Recursively process dict values
+            serialized = {
+                k: patch_for_modal_serialization(v) if k != "_type" else v
+                for k, v in value.items()
+            }
+        elif isinstance(value, list):
+            # Recursively process list items
+            serialized = [patch_for_modal_serialization(item) for item in value]
+        else:
+            serialized = value
+
+        return serialized
+
+    serialized_inputs = {}
+    for key, value in inputs.items():
+        serialized_inputs[key] = patch_for_modal_serialization(value)
+
+    # Convert to JSON string
+    return json.dumps(serialized_inputs, cls=InputJSONEncoder)
+
+
+def deserialize_for_modal_remote_execution(json_str: str) -> BlockResult:
+    def decode_inputs(obj):
+        """Decode from modal remote execution."""
+        # datetime is already imported at the top level
+
+        if isinstance(obj, dict):
+            # Check for special type markers
+            if "_type" in obj:
+                if obj["_type"] == "datetime":
+                    return datetime.fromisoformat(obj["value"])
+                elif obj["_type"] == "bytes":
+                    return base64.b64decode(obj["value"])
+                elif obj["_type"] == "ndarray":
+                    arr = np.array(obj["value"], dtype=obj["dtype"])
+                    return arr.reshape(obj["shape"])
+                elif obj["_type"] == "object":
+                    return obj["value"]
+                elif obj["_type"] == "sv_detections":
+                    # First decode any nested special types in the dict
+                    decoded_obj = {
+                        k: decode_inputs(v) for k, v in obj.items() if k != "_type"
+                    }
+                    return deserialize_detections_kind("input", decoded_obj)
+                elif obj["_type"] == "video_metadata":
+                    # First decode any nested special types
+                    decoded_obj = {
+                        k: decode_inputs(v) for k, v in obj.items() if k != "_type"
+                    }
+                    return deserialize_video_metadata_kind("input", decoded_obj)
+                elif obj["_type"] == "workflow_image":
+                    # First decode any nested special types
+                    decoded_obj = {
+                        k: decode_inputs(v) for k, v in obj.items() if k != "_type"
+                    }
+                    return deserialize_image_kind("input", decoded_obj)
+
+            # TODO: Not sure we actually need this anymore?
+            # For backward compatibility, check if this is a WorkflowImageData without _type marker
+            if obj.get("type") == "base64" and "value" in obj and "_type" not in obj:
+                # Decode nested datetimes first
+                if "video_metadata" in obj and obj["video_metadata"]:
+                    obj["video_metadata"] = decode_inputs(obj["video_metadata"])
+                return deserialize_image_kind("input", obj)
+
+            # Recursively process dict values
+            return {k: decode_inputs(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [decode_inputs(item) for item in obj]
+        else:
+            return obj
+
+    # Parse and decode inputs
+    parsed_inputs = json.loads(json_str)
+    inputs = decode_inputs(parsed_inputs)
+    return inputs
 
 
 class ModalExecutor:
@@ -117,72 +254,8 @@ class ModalExecutor:
             # Get endpoint URL for this workspace
             endpoint_url = self._get_endpoint_url(workspace)
 
-            # Serialize inputs to JSON
-            from datetime import datetime
-            import numpy as np
-
             # Custom JSON encoder for inputs
-            class InputJSONEncoder(json.JSONEncoder):
-                def default(self, obj):
-                    if isinstance(obj, datetime):
-                        return {"_type": "datetime", "value": obj.isoformat()}
-                    elif isinstance(obj, bytes):
-                        return {"_type": "bytes", "value": base64.b64encode(obj).decode("utf-8")}
-                    elif isinstance(obj, np.ndarray):
-                        return {
-                            "_type": "ndarray",
-                            "value": obj.tolist(),
-                            "dtype": str(obj.dtype),
-                            "shape": obj.shape,
-                        }
-                    elif hasattr(obj, "__dict__"):
-                        return {
-                            "_type": "object",
-                            "class": obj.__class__.__name__,
-                            "value": str(obj),
-                        }
-                    return super().default(obj)
-
-            # Patch inputs with type markers for Modal serialization
-            def patch_for_modal_serialization(value):
-                """Serialize value and add _type markers for Modal deserialization."""
-                import supervision as sv
-                from inference.core.workflows.execution_engine.entities.base import (
-                    WorkflowImageData, VideoMetadata
-                )
-                from inference.core.workflows.core_steps.common.serializers import (
-                    serialize_video_metadata_kind,
-                    serialise_sv_detections,
-                    serialise_image,
-                )
-
-                # Apply standard serialization and add type markers based on original type
-                if isinstance(value, sv.Detections):
-                    serialized = serialise_sv_detections(detections=value)
-                    serialized["_type"] = "sv_detections"
-                elif isinstance(value, WorkflowImageData):
-                    serialized = serialise_image(image=value)
-                    serialized["_type"] = "workflow_image"
-                elif isinstance(value, VideoMetadata):
-                    serialized = serialize_video_metadata_kind(value)
-                    serialized["_type"] = "video_metadata"
-                elif isinstance(value, dict):
-                    # Recursively process dict values
-                    serialized = {k: patch_for_modal_serialization(v) if k != "_type" else v for k, v in value.items()}
-                elif isinstance(value, list):
-                    # Recursively process list items
-                    serialized = [patch_for_modal_serialization(item) for item in value]
-                else:
-                    serialized = value
-
-                return serialized
-
-            serialized_inputs = {}
-            for key, value in inputs.items():
-                serialized_inputs[key] = patch_for_modal_serialization(value)
-
-            # Convert to JSON string
-            inputs_json = json.dumps(serialized_inputs, cls=InputJSONEncoder)
+            inputs_json = serialize_for_modal_remote_execution(inputs)
 
             # Prepare request payload
             request_payload = {
@@ -232,7 +305,7 @@ class ModalExecutor:
 
             # Get the result and deserialize from JSON
             json_result = result.get("result", "{}")
-            return self._deserialize_json_result(json_result)
+            return deserialize_for_modal_remote_execution(json_result)
 
         except requests.exceptions.RequestException as e:
             raise DynamicBlockError(
@@ -246,95 +319,6 @@ class ModalExecutor:
                 public_message=f"Failed to execute custom block remotely: {str(e)}",
                 context="modal_executor | remote_execution",
             )
-
-    def _deserialize_json_result(self, json_result: str) -> BlockResult:
-        """Deserialize JSON result from Modal transport.
-
-        Args:
-            json_result: JSON string from Modal function
-
-        Returns:
-            BlockResult with deserialized outputs
-        """
-        from datetime import datetime
-
-        import numpy as np
-
-        from inference.core.workflows.core_steps.common.deserializers import (
-            deserialize_image_kind,
-        )
-
-        # Custom JSON decoder to handle special types
-        def decode_special_types(obj, defer_images=False):
-            """Recursively decode special types in JSON objects.
-
-            Args:
-                obj: Object to decode
-                defer_images: If True, do not deserialize images yet (for first pass)
-            """
-            if isinstance(obj, dict):
-                # Check for special type markers
-                if "_type" in obj:
-                    if obj["_type"] == "datetime":
-                        return datetime.fromisoformat(obj["value"])
-                    elif obj["_type"] == "bytes":
-                        return base64.b64decode(obj["value"])
-                    elif obj["_type"] == "ndarray":
-                        arr = np.array(obj["value"], dtype=obj["dtype"])
-                        return arr.reshape(obj["shape"])
-                    elif obj["_type"] == "object":
-                        # For unknown objects, return as a string representation
-                        return obj["value"]
-                    elif obj["_type"] == "workflow_image" and not defer_images:
-                        # First decode any nested special types
-                        decoded_obj = {k: decode_special_types(v, defer_images=False) for k, v in obj.items() if k != "_type"}
-                        return deserialize_image_kind("result", decoded_obj)
-                    # Note: sv_detections and video_metadata are typically not returned from user functions,
-                    # but we include them for completeness
-                    elif obj["_type"] == "sv_detections":
-                        from inference.core.workflows.core_steps.common.deserializers import deserialize_detections_kind
-                        decoded_obj = {k: decode_special_types(v, defer_images) for k, v in obj.items() if k != "_type"}
-                        return deserialize_detections_kind("result", decoded_obj)
-                    elif obj["_type"] == "video_metadata":
-                        from inference.core.workflows.core_steps.common.deserializers import deserialize_video_metadata_kind
-                        decoded_obj = {k: decode_special_types(v, defer_images) for k, v in obj.items() if k != "_type"}
-                        return deserialize_video_metadata_kind("result", decoded_obj)
-
-                # For backward compatibility, check if this is an image without _type marker
-                if not defer_images and obj.get("type") == "base64" and "value" in obj and "_type" not in obj:
-                    # This is a serialized WorkflowImageData
-                    # First make sure any nested datetimes are decoded
-                    if "video_metadata" in obj and obj["video_metadata"]:
-                        obj["video_metadata"] = decode_special_types(
-                            obj["video_metadata"], defer_images=False
-                        )
-                    return deserialize_image_kind("result", obj)
-
-                # Recursively process dict values
-                return {
-                    k: decode_special_types(v, defer_images) for k, v in obj.items()
-                }
-            elif isinstance(obj, list):
-                # Recursively process list items
-                return [decode_special_types(item, defer_images) for item in obj]
-            else:
-                return obj
-
-        # Parse JSON
-        parsed = json.loads(json_result)
-
-        # First pass: decode everything except images (to handle datetimes in metadata)
-        decoded = decode_special_types(parsed, defer_images=True)
-
-        # Second pass: now deserialize images with all datetimes already decoded
-        decoded = decode_special_types(decoded, defer_images=False)
-
-        # Ensure result is a dict for BlockResult format
-        if isinstance(decoded, dict):
-            return decoded
-        else:
-            # Wrap non-dict results in BlockResult format
-            return {"result": decoded}
 
 
 def validate_code_in_modal(
