@@ -1,5 +1,6 @@
 import os
 from typing import List, Literal, Optional, Tuple, Union
+import json
 
 import cv2
 import numpy as np
@@ -17,7 +18,8 @@ from inference_exp.models.common.roboflow.pre_processing import (
     extract_input_images_dimensions,
     pre_process_network_input,
 )
-from peft import PeftModel
+from peft import PeftModel, LoraConfig, get_peft_model
+from peft.utils.save_and_load import set_peft_model_state_dict
 from transformers import Florence2ForConditionalGeneration, Florence2Processor
 
 GRANULARITY_2TASK = {
@@ -42,7 +44,7 @@ class Florence2HF:
         device: torch.device = DEFAULT_DEVICE,
         **kwargs,
     ) -> "Florence2HF":
-        torch_dtype = torch.float16 if device.type == "cuda" else torch.float32
+        torch_dtype = torch.float16 if device.type == "cuda" else torch.bfloat16
         inference_config_path = os.path.join(
             model_name_or_path, "inference_config.json"
         )
@@ -57,42 +59,102 @@ class Florence2HF:
                     ResizeMode.LETTERBOX_REFLECT_EDGES,
                 },
             )
-        adapter_config_path = os.path.join(model_name_or_path, "adapter_config.json")
-        if os.path.exists(adapter_config_path):
-            base_model_path = os.path.join(model_name_or_path, "base")
-            model = Florence2ForConditionalGeneration.from_pretrained(
-                base_model_path,
-                torch_dtype=torch_dtype,
-                trust_remote_code=True,
-                local_files_only=True,
-            )
-            model = PeftModel.from_pretrained(model, model_name_or_path)
-            model.merge_and_unload()
-            model.to(device)
 
-            processor = Florence2Processor.from_pretrained(
-                base_model_path, trust_remote_code=True, local_files_only=True
+        adapter_config_path = os.path.join(model_name_or_path, "adapter_config.json")
+        is_adapter_package = os.path.exists(adapter_config_path)
+
+        base_model_path = (
+            os.path.join(model_name_or_path, "base")
+            if is_adapter_package
+            else model_name_or_path
+        )
+        if not os.path.isdir(base_model_path):
+            raise ModelRuntimeError(
+                message=f"Provided model path does not exist or is not a directory: {base_model_path}",
+                help_url="https://todo",
             )
-        else:
-            model = Florence2ForConditionalGeneration.from_pretrained(
-                model_name_or_path,
-                torch_dtype=torch_dtype,
-                trust_remote_code=True,
-                local_files_only=True,
-            ).to(device)
-            processor = Florence2Processor.from_pretrained(
-                model_name_or_path,
-                trust_remote_code=True,
-                local_files_only=True,
+        if not os.path.isfile(os.path.join(base_model_path, "config.json")):
+            raise ModelRuntimeError(
+                message=(
+                    "Provided model directory does not look like a valid HF Florence-2 checkpoint (missing config.json). "
+                    "If you used the official converter, point to its output directory."
+                ),
+                help_url="https://todo",
             )
+
+        # Native HF Florence2 path only (require transformers >= 4.56)
+        model = Florence2ForConditionalGeneration.from_pretrained(  # type: ignore[arg-type]
+            pretrained_model_name_or_path=base_model_path,
+            torch_dtype=torch_dtype,
+            local_files_only=True,
+        )
+        if is_adapter_package:
+            # Custom LoRA attach to also cover vision modules
+            adapter_cfg_path = os.path.join(model_name_or_path, "adapter_config.json")
+            with open(adapter_cfg_path, "r") as f:
+                adapter_cfg = json.load(f)
+
+            requested_target_modules = adapter_cfg.get("target_modules") or []
+            # Common Florence-2 module names across text and vision
+            target_modules = {
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "fc1",
+                "fc2",
+                # vision attention names
+                "qkv",
+                "proj",
+            }
+            # Keep any explicit targets from adapter config
+            for tm in requested_target_modules:
+                target_modules.add(tm)
+            # Build LoRA config (avoid target_module_types for broad PEFT compatibility)
+            adapter_task_type = adapter_cfg.get("task_type") or "SEQ_2_SEQ_LM"
+            lora_config = LoraConfig(
+                r=adapter_cfg.get("r", 8),
+                lora_alpha=adapter_cfg.get("lora_alpha", 8),
+                lora_dropout=adapter_cfg.get("lora_dropout", 0.0),
+                bias="none",
+                target_modules=sorted(target_modules),
+                use_dora=bool(adapter_cfg.get("use_dora", False)),
+                use_rslora=bool(adapter_cfg.get("use_rslora", False)),
+                task_type=adapter_task_type,
+            )
+
+            model = get_peft_model(model, lora_config)
+
+            # Load adapter weights
+            adapter_weights_path = os.path.join(
+                model_name_or_path, "adapter_model.safetensors"
+            )
+            from safetensors.torch import load_file as load_safetensors
+
+            adapter_state = load_safetensors(adapter_weights_path)
+            adapter_state = normalize_adapter_state_dict(adapter_state)
+            # Cast adapter tensors to base model dtype (fp16/bf16) for safe merge
+            target_dtype = next(model.parameters()).dtype
+            cast_adapter_state = {
+                k: (v.to(dtype=target_dtype) if hasattr(v, "dtype") else v)
+                for k, v in adapter_state.items()
+            }
+            set_peft_model_state_dict(model, cast_adapter_state, adapter_name="default")
+
+            model = model.merge_and_unload()
+        # Ensure global dtype consistency (handles CPU bfloat16 vs fp32 mismatches)
+        model = model.to(dtype=torch_dtype)
+        model = model.to(device)
+
+        processor = Florence2Processor.from_pretrained(  # type: ignore[arg-type]
+            pretrained_model_name_or_path=base_model_path,
+            local_files_only=True,
+        )
 
         return cls(
-            model=model,
-            processor=processor,
-            inference_config=inference_config,
-            device=device,
-            torch_dtype=torch_dtype,
+            model=model, processor=processor, inference_config=inference_config, device=device, torch_dtype=torch_dtype
         )
+
 
     def __init__(
         self,
@@ -120,6 +182,7 @@ class Florence2HF:
         max_new_tokens: int = 4096,
         num_beams: int = 3,
         do_sample: bool = False,
+        input_color_format: Optional[ColorFormat] = None,
     ) -> List[str]:
         loc_phrases = region_to_loc_phrase(images=images, xyxy=xyxy)
         prompt = [f"<REGION_TO_CATEGORY>{phrase}" for phrase in loc_phrases]
@@ -131,6 +194,7 @@ class Florence2HF:
             num_beams=num_beams,
             do_sample=do_sample,
             task=task,
+            input_color_format=input_color_format,
         )
         return [deduce_localisation(r[task]) for r in result]
 
@@ -146,6 +210,7 @@ class Florence2HF:
         max_new_tokens: int = 4096,
         num_beams: int = 3,
         do_sample: bool = False,
+        input_color_format: Optional[ColorFormat] = None,
     ) -> List[str]:
         loc_phrases = region_to_loc_phrase(images=images, xyxy=xyxy)
         prompt = [f"<REGION_TO_DESCRIPTION>{phrase}" for phrase in loc_phrases]
@@ -157,6 +222,7 @@ class Florence2HF:
             num_beams=num_beams,
             do_sample=do_sample,
             task=task,
+            input_color_format=input_color_format,
         )
         return [deduce_localisation(r[task]) for r in result]
 
@@ -172,6 +238,7 @@ class Florence2HF:
         max_new_tokens: int = 4096,
         num_beams: int = 3,
         do_sample: bool = False,
+        input_color_format: Optional[ColorFormat] = None,
     ) -> List[str]:
         loc_phrases = region_to_loc_phrase(images=images, xyxy=xyxy)
         prompt = [f"<REGION_TO_OCR>{phrase}" for phrase in loc_phrases]
@@ -183,6 +250,7 @@ class Florence2HF:
             num_beams=num_beams,
             do_sample=do_sample,
             task=task,
+            input_color_format=input_color_format,
         )
         return [deduce_localisation(r[task]) for r in result]
 
@@ -198,6 +266,7 @@ class Florence2HF:
         max_new_tokens: int = 4096,
         num_beams: int = 3,
         do_sample: bool = False,
+        input_color_format: Optional[ColorFormat] = None,
     ) -> List[InstanceDetections]:
         loc_phrases = region_to_loc_phrase(images=images, xyxy=xyxy)
         prompt = [f"<REGION_TO_SEGMENTATION>{phrase}" for phrase in loc_phrases]
@@ -209,6 +278,7 @@ class Florence2HF:
             num_beams=num_beams,
             do_sample=do_sample,
             task=task,
+            input_color_format=input_color_format,
         )
         image_dimensions = extract_input_images_dimensions(images=images)
         return [
@@ -225,6 +295,7 @@ class Florence2HF:
         max_new_tokens: int = 4096,
         num_beams: int = 3,
         do_sample: bool = False,
+        input_color_format: Optional[ColorFormat] = None,
     ) -> List[InstanceDetections]:
         prompt = f"<REFERRING_EXPRESSION_SEGMENTATION>{phrase}"
         task = "<REFERRING_EXPRESSION_SEGMENTATION>"
@@ -235,6 +306,7 @@ class Florence2HF:
             num_beams=num_beams,
             do_sample=do_sample,
             task=task,
+            input_color_format=input_color_format,
         )
         image_dimensions = extract_input_images_dimensions(images=images)
         return [
@@ -251,6 +323,7 @@ class Florence2HF:
         max_new_tokens: int = 4096,
         num_beams: int = 3,
         do_sample: bool = False,
+        input_color_format: Optional[ColorFormat] = None,
     ) -> List[Detections]:
         prompt = f"<CAPTION_TO_PHRASE_GROUNDING>{phrase}"
         task = "<CAPTION_TO_PHRASE_GROUNDING>"
@@ -261,6 +334,7 @@ class Florence2HF:
             num_beams=num_beams,
             do_sample=do_sample,
             task=task,
+            input_color_format=input_color_format,
         )
         return [
             parse_object_detection_prediction(prediction=r[task], device=self._device)
@@ -275,6 +349,7 @@ class Florence2HF:
         max_new_tokens: int = 4096,
         num_beams: int = 3,
         do_sample: bool = False,
+        input_color_format: Optional[ColorFormat] = None,
     ) -> List[Detections]:
         if classes:
             classes_str = "<and>".join(classes)
@@ -291,6 +366,7 @@ class Florence2HF:
             num_beams=num_beams,
             do_sample=do_sample,
             task=task,
+            input_color_format=input_color_format,
         )
         return [
             parse_object_detection_prediction(
@@ -306,6 +382,7 @@ class Florence2HF:
         max_new_tokens: int = 4096,
         num_beams: int = 3,
         do_sample: bool = False,
+        input_color_format: Optional[ColorFormat] = None,
     ) -> List[str]:
         task = GRANULARITY_2TASK[granularity]
         result = self.prompt(
@@ -315,6 +392,7 @@ class Florence2HF:
             num_beams=num_beams,
             do_sample=do_sample,
             task=task,
+            input_color_format=input_color_format,
         )
         return [r[task] for r in result]
 
@@ -324,6 +402,7 @@ class Florence2HF:
         max_new_tokens: int = 4096,
         num_beams: int = 3,
         do_sample: bool = False,
+        input_color_format: Optional[ColorFormat] = None,
     ) -> List[Detections]:
         task = "<OCR_WITH_REGION>"
         result = self.prompt(
@@ -333,6 +412,7 @@ class Florence2HF:
             num_beams=num_beams,
             do_sample=do_sample,
             task=task,
+            input_color_format=input_color_format,
         )
         return [
             parse_dense_ocr_prediction(prediction=r[task], device=self._device)
@@ -345,6 +425,7 @@ class Florence2HF:
         max_new_tokens: int = 4096,
         num_beams: int = 3,
         do_sample: bool = False,
+        input_color_format: Optional[ColorFormat] = None,
     ) -> List[str]:
         task = "<OCR>"
         result = self.prompt(
@@ -354,6 +435,7 @@ class Florence2HF:
             num_beams=num_beams,
             do_sample=do_sample,
             task=task,
+            input_color_format=input_color_format,
         )
         return [r[task] for r in result]
 
@@ -366,6 +448,7 @@ class Florence2HF:
         do_sample: bool = False,
         skip_special_tokens: bool = False,
         task: Optional[str] = None,
+        input_color_format: Optional[ColorFormat] = None,
         **kwargs,
     ) -> List[str]:
         inputs, image_dimensions = self.pre_process_generation(
@@ -391,16 +474,37 @@ class Florence2HF:
         input_color_format: Optional[ColorFormat] = None,
         **kwargs,
     ) -> Tuple[dict, List[ImageDimensions]]:
+        # # maybe don't need to convert to tensor here, since processor also accepts numpy arrays
+        # # but need to handle input_color_format here and this is consistent with how we do it in other models
+        def _to_tensor(image: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
+            is_numpy = isinstance(image, np.ndarray)
+            if is_numpy:
+                tensor_image = torch.from_numpy(image.copy()).permute(2, 0, 1)
+            else:
+                tensor_image = image
+            if input_color_format == "bgr" or (is_numpy and input_color_format is None):
+                tensor_image = tensor_image[[2, 1, 0], :, :]
+            return tensor_image
+
         if self._inference_config is None:
-            image_dimensions = extract_input_images_dimensions(images=images)
+            if isinstance(images, torch.Tensor) and images.ndim > 3:
+                image_list = [_to_tensor(img) for img in images]
+            elif not isinstance(images, list):
+                image_list = [_to_tensor(images)]
+            else:
+                image_list = [_to_tensor(img) for img in images]
+            image_dimensions = extract_input_images_dimensions(images=image_list)
         else:
-            images, image_dimensions = pre_process_network_input(
+            images, pre_processing_metadata = pre_process_network_input(
                 images=images,
                 image_pre_processing=self._inference_config.image_pre_processing,
                 network_input=self._inference_config.network_input,
                 target_device=self._device,
                 input_color_format=input_color_format,
             )
+            image_list = [e[0] for e in torch.split(images, 1, dim=0)]
+            image_dimensions = [e.original_size for e in pre_processing_metadata]
+
         if isinstance(prompt, list):
             if len(prompt) != len(image_dimensions):
                 raise ModelRuntimeError(
@@ -409,9 +513,10 @@ class Florence2HF:
                 )
         else:
             prompt = [prompt] * len(image_dimensions)
-        inputs = self._processor(text=prompt, images=images, return_tensors="pt").to(
-            self._device, self._torch_dtype
-        )
+
+        inputs = self._processor(
+            text=prompt, images=image_list, return_tensors="pt"
+        ).to(self._device, self._torch_dtype)
         return inputs, image_dimensions
 
     def generate(
@@ -624,3 +729,30 @@ def parse_instance_segmentation_prediction(
         confidence=torch.tensor(confidence),
         mask=torch.from_numpy(np.stack(masks, axis=0)).to(device),
     )
+
+
+def normalize_adapter_state_dict(adapter_state: dict) -> dict:
+    normalized = {}
+    for key, value in adapter_state.items():
+        new_key = key
+        # Ensure Florence-2 PEFT prefix matches injected structure
+        if (
+            "base_model.model.vision_tower." in new_key
+            and "base_model.model.model.vision_tower." not in new_key
+        ):
+            new_key = new_key.replace(
+                "base_model.model.vision_tower.",
+                "base_model.model.model.vision_tower.",
+            )
+        # Normalize original repo FFN path to HF-native
+        if ".ffn.fn.net.fc1" in new_key:
+            new_key = new_key.replace(".ffn.fn.net.fc1", ".ffn.fc1")
+        if ".ffn.fn.net.fc2" in new_key:
+            new_key = new_key.replace(".ffn.fn.net.fc2", ".ffn.fc2")
+        # Normalize language path if needed
+        if ".language_model.model." in new_key:
+            new_key = new_key.replace(
+                ".language_model.model.", ".model.language_model."
+            )
+        normalized[new_key] = value
+    return normalized

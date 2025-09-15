@@ -57,7 +57,9 @@ def test_segment_region(florence2_model: Florence2HF, dog_image_numpy: np.ndarra
     assert len(result) == 1
     assert result[0].xyxy.shape == (1, 4)
     assert torch.allclose(
-        result[0].xyxy, torch.tensor([[100, 100, 302, 303]], dtype=torch.int32), atol=2
+        result[0].xyxy.cpu(),
+        torch.tensor([[100, 100, 302, 303]], dtype=torch.int32),
+        atol=2,
     )
     assert result[0].mask.shape == (1, 1280, 720)
 
@@ -71,7 +73,9 @@ def test_segment_phrase(florence2_model: Florence2HF, dog_image_numpy: np.ndarra
     assert len(result) == 1
     assert result[0].xyxy.shape == (1, 4)
     assert torch.allclose(
-        result[0].xyxy, torch.tensor([[71, 249, 649, 926]], dtype=torch.int32), atol=5
+        result[0].xyxy.cpu(),
+        torch.tensor([[73, 251, 628, 928]], dtype=torch.int32),
+        atol=5,
     )
     assert result[0].mask.shape == (1, 1280, 720)
 
@@ -98,7 +102,7 @@ def test_caption_image(florence2_model: Florence2HF, dog_image_numpy: np.ndarray
     # when
     result = florence2_model.caption_image(images=dog_image_numpy)
     # then
-    assert result == ["A man carrying a blue dog on his back."]
+    assert result == ["A man carrying a dog on his back."]
 
 
 @pytest.mark.slow
@@ -122,3 +126,16 @@ def test_ocr_image(florence2_model: Florence2HF, ocr_test_image_numpy: np.ndarra
     result = florence2_model.ocr_image(images=ocr_test_image_numpy)
     # then
     assert result == ["This is a test image for OCR."]
+
+
+@pytest.mark.slow
+def test_caption_image_input_formats(
+    florence2_model: Florence2HF,
+    dog_image_numpy: np.ndarray,
+    dog_image_torch: torch.Tensor,
+):
+    # when
+    result_numpy = florence2_model.caption_image(images=dog_image_numpy)
+    result_tensor = florence2_model.caption_image(images=dog_image_torch)
+    # then
+    assert result_numpy[0] == result_tensor[0]

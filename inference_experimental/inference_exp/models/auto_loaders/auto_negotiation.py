@@ -193,6 +193,7 @@ def determine_default_allowed_quantization(
             return [
                 Quantization.UNKNOWN,
                 Quantization.FP32,
+                Quantization.FP16,
                 Quantization.BF16,
             ]
         return [
@@ -210,6 +211,7 @@ def determine_default_allowed_quantization(
     return [
         Quantization.UNKNOWN,
         Quantization.FP32,
+        Quantization.FP16,
         Quantization.BF16,
     ]
 
@@ -1206,7 +1208,7 @@ def range_within_other(
 
 
 def parse_batch_size(
-    requested_batch_size: Union[int, Tuple[int, int]]
+    requested_batch_size: Union[int, Tuple[int, int]],
 ) -> Tuple[int, int]:
     if isinstance(requested_batch_size, tuple):
         if len(requested_batch_size) != 2:
@@ -1274,7 +1276,7 @@ def parse_backend_type(value: str) -> BackendType:
 
 
 def parse_requested_quantization(
-    value: Union[str, Quantization, List[Union[str, Quantization]]]
+    value: Union[str, Quantization, List[Union[str, Quantization]]],
 ) -> Set[Quantization]:
     if not isinstance(value, list):
         value = [value]

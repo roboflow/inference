@@ -2945,6 +2945,7 @@ def test_determine_default_allowed_quantization_for_cpu_device() -> None:
     assert set(results) == {
         Quantization.UNKNOWN,
         Quantization.FP32,
+        Quantization.FP16,
         Quantization.BF16,
     }
 
@@ -3071,6 +3072,7 @@ def test_determine_default_allowed_quantization_for_no_cuda_device_detected_in_r
     assert set(results) == {
         Quantization.UNKNOWN,
         Quantization.FP32,
+        Quantization.FP16,
         Quantization.BF16,
     }
 
