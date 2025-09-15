@@ -16,13 +16,14 @@ from inference_exp.logger import LOGGER
 from inference_exp.models.common.model_packages import get_model_package_contents
 from inference_exp.models.common.roboflow.model_packages import (
     ColorMode,
+    DivisiblePadding,
     InferenceConfig,
     NetworkInputDefinition,
     PreProcessingMetadata,
     ResizeMode,
     TrainingInputSize,
     parse_class_names_file,
-    parse_inference_config, DivisiblePadding,
+    parse_inference_config,
 )
 from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
@@ -175,8 +176,8 @@ class RFDetrForObjectDetectionTorch(
             if resolution < 0 or resolution % 56 != 0:
                 raise ModelLoadingError(
                     message=f"Attempted to load RFDetr model (using torch backend) with `resolution` parameter which "
-                            f"is invalid - the model required positive value divisible by 56. Make sure you used "
-                            f"proper value, corresponding to the one used to train the model.",
+                    f"is invalid - the model required positive value divisible by 56. Make sure you used "
+                    f"proper value, corresponding to the one used to train the model.",
                     help_url="https://todo",
                 )
             model_config.resolution = resolution

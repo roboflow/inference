@@ -16,6 +16,8 @@ class SmolVLMHF:
         cls,
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
+        trust_remote_code: bool = False,
+        local_files_only: bool = True,
         **kwargs,
     ) -> "SmolVLMHF":
         torch_dtype = torch.float16 if device.type == "cuda" else torch.float32
@@ -27,8 +29,8 @@ class SmolVLMHF:
             model = AutoModelForImageTextToText.from_pretrained(
                 base_model_path,
                 torch_dtype=torch_dtype,
-                trust_remote_code=True,
-                local_files_only=True,
+                trust_remote_code=trust_remote_code,
+                local_files_only=local_files_only,
             )
             model = PeftModel.from_pretrained(model, model_name_or_path)
             model.merge_and_unload()
@@ -37,23 +39,22 @@ class SmolVLMHF:
             processor = AutoProcessor.from_pretrained(
                 base_model_path,
                 padding_side="left",
-                trust_remote_code=True,
-                local_files_only=True,
+                trust_remote_code=trust_remote_code,
+                local_files_only=local_files_only,
             )
         else:
-            print("smolvlm_hf.from_pretrained", "no adapter_config.json")
             model = AutoModelForImageTextToText.from_pretrained(
                 model_name_or_path,
                 torch_dtype=torch_dtype,
                 device_map=device,
-                trust_remote_code=True,
-                local_files_only=True,
+                trust_remote_code=trust_remote_code,
+                local_files_only=local_files_only,
             ).eval()
             processor = AutoProcessor.from_pretrained(
                 model_name_or_path,
                 padding_side="left",
-                trust_remote_code=True,
-                local_files_only=True,
+                trust_remote_code=trust_remote_code,
+                local_files_only=local_files_only,
             )
         return cls(
             model=model, processor=processor, device=device, torch_dtype=torch_dtype

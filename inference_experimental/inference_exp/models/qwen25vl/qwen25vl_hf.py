@@ -6,16 +6,7 @@ import torch
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
 from peft import PeftModel
-from transformers import (
-    AutoModelForCausalLM,
-    AutoProcessor,
-    Qwen2_5_VLConfig,
-    Qwen2_5_VLForConditionalGeneration,
-)
-
-AutoModelForCausalLM.register(
-    config_class=Qwen2_5_VLConfig, model_class=Qwen2_5_VLForConditionalGeneration
-)
+from transformers import Qwen2_5_VLForConditionalGeneration, Qwen2_5_VLProcessor
 
 
 class Qwen25VLHF:
@@ -24,36 +15,40 @@ class Qwen25VLHF:
         cls,
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
+        trust_remote_code: bool = False,
+        local_files_only: bool = True,
         **kwargs,
     ) -> "Qwen25VLHF":
         torch_dtype = torch.bfloat16 if device.type == "cuda" else torch.float32
-
         adapter_config_path = os.path.join(model_name_or_path, "adapter_config.json")
         if os.path.exists(adapter_config_path):
             base_model_path = os.path.join(model_name_or_path, "base")
             model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
                 base_model_path,
                 torch_dtype=torch_dtype,
-                trust_remote_code=True,
-                local_files_only=True,
+                trust_remote_code=trust_remote_code,
+                local_files_only=local_files_only,
             )
             model = PeftModel.from_pretrained(model, model_name_or_path)
             model.merge_and_unload()
             model.to(device)
-
-            processor = AutoProcessor.from_pretrained(
-                base_model_path, trust_remote_code=True, local_files_only=True
+            processor = Qwen2_5_VLProcessor.from_pretrained(
+                model_name_or_path,
+                trust_remote_code=trust_remote_code,
+                local_files_only=local_files_only,
             )
         else:
             model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
                 model_name_or_path,
                 torch_dtype=torch_dtype,
                 device_map=device,
-                trust_remote_code=True,
-                local_files_only=True,
+                trust_remote_code=trust_remote_code,
+                local_files_only=local_files_only,
             ).eval()
-            processor = AutoProcessor.from_pretrained(
-                model_name_or_path, trust_remote_code=True, local_files_only=True
+            processor = Qwen2_5_VLProcessor.from_pretrained(
+                model_name_or_path,
+                trust_remote_code=trust_remote_code,
+                local_files_only=local_files_only,
             )
         return cls(
             model=model, processor=processor, device=device, torch_dtype=torch_dtype
@@ -62,7 +57,7 @@ class Qwen25VLHF:
     def __init__(
         self,
         model: Qwen2_5_VLForConditionalGeneration,
-        processor: AutoProcessor,
+        processor: Qwen2_5_VLProcessor,
         device: torch.device,
         torch_dtype: torch.dtype,
     ):
@@ -212,3 +207,20 @@ class Qwen25VLHF:
             result.append(text.strip())
 
         return result
+
+
+def adjust_lora_model_state_dict(state_dict: dict) -> dict:
+    return {
+        refactor_adapter_weights_key(key=key): value
+        for key, value in state_dict.items()
+    }
+
+
+def refactor_adapter_weights_key(key: str) -> str:
+    if ".language_model." in key:
+        return key
+    return (
+        key.replace("model.layers", "model.language_model.layers")
+        .replace(".weight", ".default.weight")
+        .replace(".lora_magnitude_vector", ".lora_magnitude_vector.default.weight")
+    )

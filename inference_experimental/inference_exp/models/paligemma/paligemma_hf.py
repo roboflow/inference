@@ -16,6 +16,8 @@ class PaliGemmaHF:
         cls,
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
+        trust_remote_code: bool = False,
+        local_files_only: bool = True,
         **kwargs,
     ) -> "PaliGemmaHF":
         torch_dtype = torch.float16 if device.type == "cuda" else torch.float32
@@ -26,26 +28,30 @@ class PaliGemmaHF:
             model = PaliGemmaForConditionalGeneration.from_pretrained(
                 base_model_path,
                 torch_dtype=torch_dtype,
-                trust_remote_code=True,
-                local_files_only=True,
+                trust_remote_code=trust_remote_code,
+                local_files_only=local_files_only,
             )
             model = PeftModel.from_pretrained(model, model_name_or_path)
             model.merge_and_unload()
             model.to(device)
 
             processor = AutoProcessor.from_pretrained(
-                base_model_path, trust_remote_code=True, local_files_only=True
+                base_model_path,
+                trust_remote_code=trust_remote_code,
+                local_files_only=local_files_only,
             )
         else:
             model = PaliGemmaForConditionalGeneration.from_pretrained(
                 model_name_or_path,
                 torch_dtype=torch_dtype,
                 device_map=device,
-                trust_remote_code=True,
-                local_files_only=True,
+                trust_remote_code=trust_remote_code,
+                local_files_only=local_files_only,
             ).eval()
             processor = AutoProcessor.from_pretrained(
-                model_name_or_path, trust_remote_code=True, local_files_only=True
+                model_name_or_path,
+                trust_remote_code=trust_remote_code,
+                local_files_only=local_files_only,
             )
         return cls(
             model=model, processor=processor, device=device, torch_dtype=torch_dtype
