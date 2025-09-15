@@ -1,12 +1,24 @@
 import os
-from typing import List, Union
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
+from inference_exp.models.common.roboflow.model_packages import (
+    InferenceConfig,
+    ResizeMode,
+    parse_inference_config,
+)
+from inference_exp.models.common.roboflow.pre_processing import (
+    pre_process_network_input,
+)
 from peft import PeftModel
-from transformers import Qwen2_5_VLForConditionalGeneration, Qwen2_5_VLProcessor
+from transformers import (
+    PretrainedConfig,
+    Qwen2_5_VLForConditionalGeneration,
+    Qwen2_5_VLProcessor,
+)
 
 
 class Qwen25VLHF:
@@ -20,6 +32,20 @@ class Qwen25VLHF:
         **kwargs,
     ) -> "Qwen25VLHF":
         adapter_config_path = os.path.join(model_name_or_path, "adapter_config.json")
+        inference_config_path = os.path.join(
+            model_name_or_path, "inference_config.json"
+        )
+        inference_config = None
+        if os.path.exists(inference_config_path):
+            inference_config = parse_inference_config(
+                config_path=inference_config_path,
+                allowed_resize_modes={
+                    ResizeMode.STRETCH_TO,
+                    ResizeMode.LETTERBOX,
+                    ResizeMode.CENTER_CROP,
+                    ResizeMode.LETTERBOX_REFLECT_EDGES,
+                },
+            )
         if os.path.exists(adapter_config_path):
             base_model_path = os.path.join(model_name_or_path, "base")
             model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
@@ -44,23 +70,29 @@ class Qwen25VLHF:
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
             ).eval()
+            Qwen2_5_VLProcessor.image_processor_class = "Qwen2VLImageProcessor"
             processor = Qwen2_5_VLProcessor.from_pretrained(
                 model_name_or_path,
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
             )
         return cls(
-            model=model, processor=processor, device=device
+            model=model,
+            processor=processor,
+            inference_config=inference_config,
+            device=device,
         )
 
     def __init__(
         self,
         model: Qwen2_5_VLForConditionalGeneration,
         processor: Qwen2_5_VLProcessor,
+        inference_config: Optional[InferenceConfig],
         device: torch.device,
     ):
         self._model = model
         self._processor = processor
+        self._inference_config = inference_config
         self._device = device
         self.default_system_prompt = (
             "You are a Qwen2.5-VL model that can answer questions about any image."
@@ -94,6 +126,7 @@ class Qwen25VLHF:
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         prompt: str = None,
         input_color_format: ColorFormat = None,
+        image_size: Optional[Tuple[int, int]] = None,
         **kwargs,
     ) -> dict:
         def _to_tensor(image: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
@@ -106,12 +139,23 @@ class Qwen25VLHF:
                 tensor_image = tensor_image[[2, 1, 0], :, :]
             return tensor_image
 
-        if isinstance(images, torch.Tensor) and images.ndim > 3:
-            image_list = [_to_tensor(img) for img in images]
-        elif not isinstance(images, list):
-            image_list = [_to_tensor(images)]
+        if self._inference_config is None:
+            if isinstance(images, torch.Tensor) and images.ndim > 3:
+                image_list = [_to_tensor(img) for img in images]
+            elif not isinstance(images, list):
+                image_list = [_to_tensor(images)]
+            else:
+                image_list = [_to_tensor(img) for img in images]
         else:
-            image_list = [_to_tensor(img) for img in images]
+            images = pre_process_network_input(
+                images=images,
+                image_pre_processing=self._inference_config.image_pre_processing,
+                network_input=self._inference_config.network_input,
+                target_device=self._device,
+                input_color_format=input_color_format,
+                image_size_wh=image_size,
+            )[0]
+            image_list = [e[0] for e in torch.split(images, 1, dim=0)]
         # Handle prompt and system prompt parsing logic from original implementation
         if prompt is None:
             prompt = ""
