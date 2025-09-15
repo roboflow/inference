@@ -1,7 +1,7 @@
 import asyncio
 import concurrent.futures
 import contextlib
-from threading import Lock
+from threading import Lock, Thread
 from typing import Optional, Union
 
 
@@ -28,12 +28,35 @@ class Queue:
     def __init__(
         self, loop: Optional[asyncio.AbstractEventLoop] = None, maxsize: int = 0
     ):
+        current_loop: Optional[asyncio.AbstractEventLoop] = None
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            pass
+
         self._loop = loop
-        if not self._loop:
-            self._loop = asyncio.get_running_loop()
-        self._queue = asyncio.run_coroutine_threadsafe(
-            create_async_queue(maxsize=maxsize), self._loop
-        ).result()
+
+        if (
+            loop is None and current_loop is None
+        ):  # Running in sync code with no running loop
+            self._loop = asyncio.new_event_loop()
+            self._thread: Thread = Thread(target=self._loop.run_forever, daemon=True)
+            self._thread.start()
+            self._queue = asyncio.run_coroutine_threadsafe(
+                create_async_queue(maxsize=maxsize), self._loop
+            ).result()
+        elif (
+            loop is not None
+            and loop is current_loop
+            or loop is None
+            and current_loop is not None
+        ):
+            self._loop = current_loop
+            self._queue = asyncio.Queue(maxsize=maxsize)
+        else:
+            self._queue = asyncio.run_coroutine_threadsafe(
+                create_async_queue(maxsize=maxsize), self._loop
+            ).result()
 
     def sync_put_nowait(self, item):
         self._queue.put_nowait(item)
