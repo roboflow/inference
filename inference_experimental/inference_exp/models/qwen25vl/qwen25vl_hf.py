@@ -15,7 +15,6 @@ from inference_exp.models.common.roboflow.pre_processing import (
 )
 from peft import PeftModel
 from transformers import (
-    PretrainedConfig,
     Qwen2_5_VLForConditionalGeneration,
     Qwen2_5_VLProcessor,
 )
