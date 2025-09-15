@@ -42,6 +42,8 @@ class Florence2HF:
         cls,
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
+        trust_remote_code: bool = False,
+        local_files_only: bool = True,
         **kwargs,
     ) -> "Florence2HF":
         torch_dtype = torch.float16 if device.type == "cuda" else torch.bfloat16
@@ -86,7 +88,8 @@ class Florence2HF:
         model = Florence2ForConditionalGeneration.from_pretrained(  # type: ignore[arg-type]
             pretrained_model_name_or_path=base_model_path,
             torch_dtype=torch_dtype,
-            local_files_only=True,
+            local_files_only=local_files_only,
+            trust_remote_code=trust_remote_code,
         )
         if is_adapter_package:
             # Custom LoRA attach to also cover vision modules
@@ -148,7 +151,8 @@ class Florence2HF:
 
         processor = Florence2Processor.from_pretrained(  # type: ignore[arg-type]
             pretrained_model_name_or_path=base_model_path,
-            local_files_only=True,
+            local_files_only=local_files_only,
+            trust_remote_code=trust_remote_code,
         )
 
         return cls(
