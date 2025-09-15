@@ -19,13 +19,12 @@ class Qwen25VLHF:
         local_files_only: bool = True,
         **kwargs,
     ) -> "Qwen25VLHF":
-        torch_dtype = torch.bfloat16 if device.type == "cuda" else torch.float32
         adapter_config_path = os.path.join(model_name_or_path, "adapter_config.json")
         if os.path.exists(adapter_config_path):
             base_model_path = os.path.join(model_name_or_path, "base")
             model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
                 base_model_path,
-                torch_dtype=torch_dtype,
+                torch_dtype="auto",
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
             )
@@ -40,7 +39,7 @@ class Qwen25VLHF:
         else:
             model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
                 model_name_or_path,
-                torch_dtype=torch_dtype,
+                torch_dtype="auto",
                 device_map=device,
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
@@ -51,7 +50,7 @@ class Qwen25VLHF:
                 local_files_only=local_files_only,
             )
         return cls(
-            model=model, processor=processor, device=device, torch_dtype=torch_dtype
+            model=model, processor=processor, device=device
         )
 
     def __init__(
@@ -59,12 +58,10 @@ class Qwen25VLHF:
         model: Qwen2_5_VLForConditionalGeneration,
         processor: Qwen2_5_VLProcessor,
         device: torch.device,
-        torch_dtype: torch.dtype,
     ):
         self._model = model
         self._processor = processor
         self._device = device
-        self._torch_dtype = torch_dtype
         self.default_system_prompt = (
             "You are a Qwen2.5-VL model that can answer questions about any image."
         )
