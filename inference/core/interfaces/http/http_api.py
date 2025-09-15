@@ -165,6 +165,7 @@ from inference.core.exceptions import (
     InputImageLoadError,
     MissingServiceSecretError,
     RoboflowAPINotAuthorizedError,
+    WorkspaceLoadError,
 )
 from inference.core.interfaces.base import BaseInterface
 from inference.core.interfaces.http.dependencies import (
@@ -407,8 +408,66 @@ class HttpInterface(BaseInterface):
                 )
                 return JSONResponse(status_code=200, content=container_stats)
 
+        cached_api_keys = dict()
+
+        if GCP_SERVERLESS:
+
+            @app.middleware("http")
+            async def check_authorization_serverless(request: Request, call_next):
+                # exclusions
+                skip_check = (
+                    request.method not in ["GET", "POST"]
+                    or request.url.path
+                    in [
+                        "/",
+                        "/docs",
+                        "/info",
+                        "/openapi.json",  # needed for /docs and /redoc
+                        # "/workflows/blocks/describe",
+                        # "/workflows/definition/schema",
+                    ]
+                    or request.url.path.startswith("/static/")
+                    or request.url.path.startswith("/_next/")
+                )
+                if skip_check:
+                    return await call_next(request)
+
+                def _unauthorized_response(msg):
+                    return JSONResponse(
+                        status_code=401,
+                        content={
+                            "status": 401,
+                            "message": msg,
+                        },
+                    )
+
+                # check api_key
+                req_params = request.query_params
+                json_params = dict()
+                if (
+                    request.headers.get("content-type", None) == "application/json"
+                    and int(request.headers.get("content-length", 0)) > 0
+                ):
+                    json_params = await request.json()
+                api_key = req_params.get("api_key", None) or json_params.get(
+                    "api_key", None
+                )
+
+                if api_key is None:
+                    return _unauthorized_response("Unauthorized api_key")
+
+                if cached_api_keys.get(api_key, 0) < time.time():
+                    try:
+                        await get_roboflow_workspace_async(api_key=api_key)
+                        cached_api_keys[api_key] = (
+                            time.time() + 3600
+                        )  # expired after 1 hour
+                    except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
+                        return _unauthorized_response("Unauthorized api_key")
+
+                return await call_next(request)
+
         if DEDICATED_DEPLOYMENT_WORKSPACE_URL:
-            cached_api_keys = dict()
 
             @app.middleware("http")
             async def check_authorization(request: Request, call_next):
@@ -468,7 +527,7 @@ class HttpInterface(BaseInterface):
                         cached_api_keys[api_key] = (
                             time.time() + 3600
                         )  # expired after 1 hour
-                    except RoboflowAPINotAuthorizedError as e:
+                    except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
                         return _unauthorized_response("Unauthorized api_key")
 
                 return await call_next(request)
@@ -523,6 +582,7 @@ class HttpInterface(BaseInterface):
             background_tasks: Optional[BackgroundTasks],
             profiler: WorkflowsProfiler,
         ) -> WorkflowInferenceResponse:
+
             workflow_init_parameters = {
                 "workflows_core.model_manager": model_manager,
                 "workflows_core.api_key": workflow_request.api_key,
