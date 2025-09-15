@@ -12,7 +12,7 @@ from inference_exp.models.common.roboflow.pre_processing import (
     extract_input_images_dimensions,
 )
 from peft import PeftModel
-from transformers import AutoModelForCausalLM, AutoProcessor
+from transformers import Florence2Processor, Florence2ForConditionalGeneration
 
 GRANULARITY_2TASK = {
     "normal": "<CAPTION>",
@@ -41,7 +41,7 @@ class Florence2HF:
         adapter_config_path = os.path.join(model_name_or_path, "adapter_config.json")
         if os.path.exists(adapter_config_path):
             base_model_path = os.path.join(model_name_or_path, "base")
-            model = AutoModelForCausalLM.from_pretrained(
+            model = Florence2ForConditionalGeneration.from_pretrained(
                 base_model_path,
                 torch_dtype=torch_dtype,
                 trust_remote_code=True,
@@ -51,17 +51,17 @@ class Florence2HF:
             model.merge_and_unload()
             model.to(device)
 
-            processor = AutoProcessor.from_pretrained(
+            processor = Florence2Processor.from_pretrained(
                 base_model_path, trust_remote_code=True, local_files_only=True
             )
         else:
-            model = AutoModelForCausalLM.from_pretrained(
+            model = Florence2ForConditionalGeneration.from_pretrained(
                 model_name_or_path,
                 torch_dtype=torch_dtype,
                 trust_remote_code=True,
                 local_files_only=True,
             ).to(device)
-            processor = AutoProcessor.from_pretrained(
+            processor = Florence2Processor.from_pretrained(
                 model_name_or_path,
                 trust_remote_code=True,
                 local_files_only=True,
@@ -73,8 +73,8 @@ class Florence2HF:
 
     def __init__(
         self,
-        model: AutoModelForCausalLM,
-        processor: AutoProcessor,
+        model: Florence2ForConditionalGeneration,
+        processor: Florence2Processor,
         device: torch.device,
         torch_dtype: torch.dtype,
     ):
