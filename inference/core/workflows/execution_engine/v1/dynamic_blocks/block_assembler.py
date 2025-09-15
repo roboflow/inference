@@ -4,7 +4,10 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
-from inference.core.env import ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS
+from inference.core.env import (
+    ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
+    WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
+)
 from inference.core.workflows.errors import (
     DynamicBlockError,
     WorkflowEnvironmentConfigurationError,
@@ -75,11 +78,27 @@ def compile_dynamic_blocks(
 
 
 def ensure_dynamic_blocks_allowed(dynamic_blocks_definitions: List[dict]) -> None:
-    if dynamic_blocks_definitions and not ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS:
+    """Ensure that dynamic blocks are allowed based on configuration.
+
+    Dynamic blocks are allowed if:
+    1. Local custom Python execution is enabled (ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True)
+    2. OR Modal execution mode is set (WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE=modal)
+
+    This allows secure execution via Modal sandboxes even when local execution is disabled.
+    """
+    if not dynamic_blocks_definitions:
+        return
+
+    # Check if we're using Modal for secure remote execution
+    is_modal_mode = WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE == "modal"
+
+    # Allow if either local execution is enabled OR Modal mode is set
+    if not ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS and not is_modal_mode:
         raise WorkflowEnvironmentConfigurationError(
             public_message="Cannot use dynamic blocks with custom Python code in this installation of `workflows`. "
-            "This can be changed by setting environmental variable "
-            "`ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True`",
+            "This can be changed by either setting environmental variable "
+            "`ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True` for local execution "
+            "or `WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE=modal` for secure remote execution.",
             context="workflow_compilation | dynamic_blocks_compilation",
         )
 

@@ -143,6 +143,7 @@ from inference.core.env import (
     ENABLE_STREAM_API,
     ENABLE_WORKFLOWS_PROFILING,
     GCP_SERVERLESS,
+    GET_MODEL_REGISTRY_ENABLED,
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
     LMM_ENABLED,
@@ -751,8 +752,7 @@ class HttpInterface(BaseInterface):
                     status_code=500, detail="Logging system not properly initialized"
                 )
 
-        # The current AWS Lambda authorizer only supports path parameters, therefore we can only use the legacy infer route. This case statement excludes routes which won't work for the current Lambda authorizer.
-        if not (LAMBDA or GCP_SERVERLESS):
+        if not LAMBDA and GET_MODEL_REGISTRY_ENABLED:
 
             @app.get(
                 "/model/registry",
@@ -771,6 +771,9 @@ class HttpInterface(BaseInterface):
                 return ModelsDescriptions.from_models_descriptions(
                     models_descriptions=models_descriptions
                 )
+
+        # The current AWS Lambda authorizer only supports path parameters, therefore we can only use the legacy infer route. This case statement excludes routes which won't work for the current Lambda authorizer.
+        if not (LAMBDA or GCP_SERVERLESS):
 
             @app.post(
                 "/model/add",
@@ -2514,8 +2517,8 @@ class HttpInterface(BaseInterface):
                 model_id = f"{dataset_id}/{version_id}"
                 if confidence >= 1:
                     confidence /= 100
-                elif confidence < 0.01:
-                    confidence = 0.01
+                elif confidence < 0:
+                    confidence = 0
 
                 if overlap >= 1:
                     overlap /= 100
