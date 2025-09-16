@@ -17,41 +17,39 @@ def analyze_webrtc_latency():
     Analyze potential sources of 2-second latency.
     """
 
-    print("WebRTC Latency Analysis")
-    print("=" * 50)
-
-    # 1. Check if it's encoding lag
-    print("\n1. ENCODING LAG ANALYSIS:")
-    print("   - H.264 encoder uses ThreadPoolExecutor with unbounded queue")
-    print("   - Even on M3 Pro, encoding at 1080p can take 20-50ms per frame")
-    print("   - At 30 FPS input: 30 frames/sec * 50ms = 1.5 seconds backlog")
-    print("   - Add network jitter buffer: could reach 2 seconds total")
-
-    # 2. Browser buffering
-    print("\n2. BROWSER/CLIENT BUFFERING:")
-    print("   - Browsers buffer 1-3 seconds for smooth playback")
-    print("   - Chrome: typically buffers 1-2 seconds")
-    print("   - Safari: can buffer up to 3 seconds")
-    print("   - This is NOT controlled by aiortc")
-
-    # 3. Frame timestamp vs wall clock
-    print("\n3. FRAME TIMING MISMATCH:")
-    print("   - Incoming frames have RTP timestamps")
-    print("   - Outgoing frames need new timestamps")
-    print("   - If timestamps aren't adjusted, playback delays occur")
-
-    # 4. Calculation
     fps = 30
     encoding_time_ms = 40  # Typical H.264 encoding time
     frames_in_2_sec = 2 * fps
 
-    print(f"\n4. LATENCY CALCULATION:")
-    print(f"   - Input FPS: {fps}")
-    print(f"   - Encoding time per frame: {encoding_time_ms}ms")
-    print(f"   - Frames accumulated in 2 seconds: {frames_in_2_sec}")
-    print(
-        f"   - Total encoding time for {frames_in_2_sec} frames: {frames_in_2_sec * encoding_time_ms / 1000:.1f}s"
-    )
+    output_lines = [
+        "WebRTC Latency Analysis",
+        "=" * 50,
+            # 1. Check if it's encoding lag
+        "\n1. ENCODING LAG ANALYSIS:",
+        "   - H.264 encoder uses ThreadPoolExecutor with unbounded queue",
+        "   - Even on M3 Pro, encoding at 1080p can take 20-50ms per frame",
+        "   - At 30 FPS input: 30 frames/sec * 50ms = 1.5 seconds backlog",
+        "   - Add network jitter buffer: could reach 2 seconds total",
+            # 2. Browser buffering
+        "\n2. BROWSER/CLIENT BUFFERING:",
+        "   - Browsers buffer 1-3 seconds for smooth playback",
+        "   - Chrome: typically buffers 1-2 seconds",
+        "   - Safari: can buffer up to 3 seconds",
+        "   - This is NOT controlled by aiortc",
+            # 3. Frame timestamp vs wall clock
+        "\n3. FRAME TIMING MISMATCH:",
+        "   - Incoming frames have RTP timestamps",
+        "   - Outgoing frames need new timestamps",
+        "   - If timestamps aren't adjusted, playback delays occur",
+            # 4. Calculation
+        f"\n4. LATENCY CALCULATION:",
+        f"   - Input FPS: {fps}",
+        f"   - Encoding time per frame: {encoding_time_ms}ms",
+        f"   - Frames accumulated in 2 seconds: {frames_in_2_sec}",
+        f"   - Total encoding time for {frames_in_2_sec} frames: {frames_in_2_sec * encoding_time_ms / 1000:.1f}s",
+    ]
+
+    print("\n".join(output_lines))
 
     return {
         "likely_causes": [
