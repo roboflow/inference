@@ -539,8 +539,9 @@ MODAL_TOKEN_ID = _modal_token_id.strip("\"'") if _modal_token_id else None
 MODAL_TOKEN_SECRET = _modal_token_secret.strip("\"'") if _modal_token_secret else None
 MODAL_WORKSPACE_NAME = os.getenv("MODAL_WORKSPACE_NAME", "roboflow")
 
-ALLOW_ANONYMOUS_MODAL_EXECUTION = str2bool(
-    os.getenv("ALLOW_ANONYMOUS_MODAL_EXECUTION", "False")
+# Control whether anonymous Modal execution is allowed (when no api_key is available)
+MODAL_ALLOW_ANONYMOUS_EXECUTION = str2bool(
+    os.getenv("MODAL_ALLOW_ANONYMOUS_EXECUTION", "False")
 )
 
 MODEL_VALIDATION_DISABLED = str2bool(os.getenv("MODEL_VALIDATION_DISABLED", "False"))

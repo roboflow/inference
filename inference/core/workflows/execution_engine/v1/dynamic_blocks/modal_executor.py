@@ -273,6 +273,17 @@ class ModalExecutor:
                 f"Executing remote execution on modal to {endpoint_url} with workspace_id: {workspace}"
             )
 
+            if not workspace or workspace == "anonymous" or workspace == "unauthorized":
+                from inference.core.env import MODAL_ALLOW_ANONYMOUS_EXECUTION
+
+                if not MODAL_ALLOW_ANONYMOUS_EXECUTION:
+                    raise DynamicBlockError(
+                        public_message="Modal validation requires an API key when anonymous execution is disabled. "
+                        "Please provide an API key or enable anonymous execution by setting "
+                        "MODAL_ALLOW_ANONYMOUS_EXECUTION=True",
+                        context="modal_executor | validation_authentication",
+                    )
+
             # Make HTTP request to Modal endpoint
             response = requests.post(
                 endpoint_url,
