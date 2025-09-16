@@ -467,7 +467,7 @@ class Florence2HF:
         **kwargs,
     ) -> List[str]:
         inputs, image_dimensions = self.pre_process_generation(
-            images=images, prompt=prompt
+            images=images, prompt=prompt, input_color_format=input_color_format
         )
         generated_ids = self.generate(
             inputs=inputs,

@@ -61,7 +61,7 @@ class SmolVLMHF:
             base_model_path = os.path.join(model_name_or_path, "base")
             model = AutoModelForImageTextToText.from_pretrained(
                 base_model_path,
-                torch_dtype=torch_dtype,
+                dtype=torch_dtype,
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
                 quantization_config=quantization_config,
@@ -81,7 +81,7 @@ class SmolVLMHF:
         else:
             model = AutoModelForImageTextToText.from_pretrained(
                 model_name_or_path,
-                torch_dtype=torch_dtype,
+                dtype=torch_dtype,
                 device_map=device,
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,

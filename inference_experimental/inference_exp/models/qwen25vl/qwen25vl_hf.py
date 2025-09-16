@@ -62,7 +62,7 @@ class Qwen25VLHF:
             base_model_path = os.path.join(model_name_or_path, "base")
             model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
                 base_model_path,
-                torch_dtype="auto",
+                dtype="auto",
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
                 quantization_config=quantization_config,
@@ -80,7 +80,7 @@ class Qwen25VLHF:
         else:
             model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
                 model_name_or_path,
-                torch_dtype="auto",
+                dtype="auto",
                 device_map=device,
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
