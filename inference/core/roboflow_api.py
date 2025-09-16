@@ -193,6 +193,9 @@ def wrap_roboflow_api_errors_async(
 @ttl_cache(ttl=MODELS_CACHE_AUTH_CACHE_TTL, maxsize=MODELS_CACHE_AUTH_CACHE_MAX_SIZE)
 @wrap_roboflow_api_errors()
 def get_roboflow_workspace(api_key: str) -> WorkspaceID:
+    if not api_key:
+        raise WorkspaceLoadError(f"Empty workspace encountered, check your API key.")
+
     api_url = _add_params_to_url(
         url=f"{API_BASE_URL}/",
         params=[("api_key", api_key), ("nocache", "true")],

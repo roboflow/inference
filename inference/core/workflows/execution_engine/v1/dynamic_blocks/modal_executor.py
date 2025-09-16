@@ -269,6 +269,10 @@ class ModalExecutor:
                 "inputs_json": inputs_json,
             }
 
+            logger.warning(
+                f"Executing remote execution on modal to {endpoint_url} with workspace_id: {workspace}"
+            )
+
             # Make HTTP request to Modal endpoint
             response = requests.post(
                 endpoint_url,
@@ -346,6 +350,18 @@ def validate_code_in_modal(
             public_message="Modal credentials not configured. Please set MODAL_TOKEN_ID and MODAL_TOKEN_SECRET environment variables.",
             context="modal_executor | credentials_check",
         )
+
+    # Check if anonymous execution is allowed when no workspace_id
+    if not workspace_id:
+        from inference.core.env import ALLOW_ANONYMOUS_MODAL_EXECUTION
+
+        if not ALLOW_ANONYMOUS_MODAL_EXECUTION:
+            raise DynamicBlockError(
+                public_message="Modal validation requires an API key when anonymous execution is disabled. "
+                "Please provide an API key or enable anonymous execution by setting "
+                "ALLOW_ANONYMOUS_MODAL_EXECUTION=True",
+                context="modal_executor | validation_authentication",
+            )
 
     workspace = workspace_id or "anonymous"
 

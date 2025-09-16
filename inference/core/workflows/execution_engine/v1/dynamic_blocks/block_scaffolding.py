@@ -3,6 +3,7 @@ import types
 from typing import List, Optional, Type
 
 from inference.core.env import (
+    ALLOW_ANONYMOUS_MODAL_EXECUTION,
     ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
     WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
 )
@@ -42,13 +43,15 @@ def assembly_custom_python_block(
     unique_identifier: str,
     manifest: Type[WorkflowBlockManifest],
     python_code: PythonCode,
-    workspace_id: Optional[str] = None,
+    api_key: Optional[str] = None,
+    skip_class_eval: Optional[bool] = False,
 ) -> Type[WorkflowBlock]:
     code_module = create_dynamic_module(
         block_type_name=block_type_name,
         python_code=python_code,
         module_name=f"dynamic_module_{unique_identifier}",
-        workspace_id=workspace_id,
+        api_key=api_key,
+        skip_class_eval=skip_class_eval,
     )
     if not hasattr(code_module, python_code.run_function_name):
         raise DynamicBlockError(
@@ -74,6 +77,14 @@ def assembly_custom_python_block(
             # Fall back to "anonymous" for non-authenticated users
             if not workspace_id:
                 workspace_id = "anonymous"
+
+            if workspace_id == "anonymous" and (not ALLOW_ANONYMOUS_MODAL_EXECUTION):
+                raise DynamicBlockError(
+                    public_message="Modal execution requires an API key when anonymous execution is disabled. "
+                    "Please provide an API key or enable anonymous execution by setting "
+                    "ALLOW_ANONYMOUS_MODAL_EXECUTION=True",
+                    context="workflow_execution | dynamic_block_execution | modal_authentication",
+                )
 
             executor = ModalExecutor(workspace_id)
             return executor.execute_remote(
@@ -149,8 +160,21 @@ def create_dynamic_module(
     block_type_name: str,
     python_code: PythonCode,
     module_name: str,
-    workspace_id: Optional[str] = None,
+    api_key: Optional[str] = None,
+    skip_class_eval: Optional[bool] = False,
 ) -> types.ModuleType:
+
+    if skip_class_eval:
+        # Create a stub module for local reference
+        dynamic_module = types.ModuleType(module_name)
+        # Add placeholder function
+        setattr(
+            dynamic_module, python_code.run_function_name, lambda *args, **kwargs: None
+        )
+        if python_code.init_function_code:
+            setattr(dynamic_module, python_code.init_function_name, lambda: {})
+        return dynamic_module
+
     imports = _get_python_code_imports(python_code)
     code = python_code.run_function_code
     if python_code.init_function_code:
@@ -164,8 +188,24 @@ def create_dynamic_module(
             validate_code_in_modal,
         )
 
-        # Use anonymous workspace if not provided
-        validation_workspace = workspace_id or "anonymous"
+        try:  # Get workspace_id from context if available
+            validation_workspace = get_roboflow_workspace(api_key)
+        except WorkspaceLoadError:
+            validation_workspace = None
+
+        # Fall back to "anonymous" for non-authenticated users
+        if not validation_workspace:
+            validation_workspace = "anonymous"
+
+        if validation_workspace == "anonymous" and (
+            not ALLOW_ANONYMOUS_MODAL_EXECUTION
+        ):
+            raise DynamicBlockError(
+                public_message="Modal execution requires an API key when anonymous execution is disabled. "
+                "Please provide an API key or enable anonymous execution by setting "
+                "ALLOW_ANONYMOUS_MODAL_EXECUTION=True",
+                context="workflow_execution | dynamic_block_execution | modal_authentication",
+            )
 
         # This will raise if validation fails
         validate_code_in_modal(python_code, validation_workspace)
