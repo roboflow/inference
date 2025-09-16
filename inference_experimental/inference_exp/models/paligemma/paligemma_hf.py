@@ -14,7 +14,11 @@ from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
 from peft import PeftModel
-from transformers import AutoProcessor, PaliGemmaForConditionalGeneration
+from transformers import (
+    AutoProcessor,
+    BitsAndBytesConfig,
+    PaliGemmaForConditionalGeneration,
+)
 
 
 class PaliGemmaHF:
@@ -26,6 +30,7 @@ class PaliGemmaHF:
         device: torch.device = DEFAULT_DEVICE,
         trust_remote_code: bool = False,
         local_files_only: bool = True,
+        quantization_config: Optional[BitsAndBytesConfig] = None,
         **kwargs,
     ) -> "PaliGemmaHF":
         torch_dtype = torch.float16 if device.type == "cuda" else torch.float32
@@ -43,6 +48,12 @@ class PaliGemmaHF:
                     ResizeMode.LETTERBOX_REFLECT_EDGES,
                 },
             )
+        if quantization_config is None and device.type == "cuda":
+            quantization_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=torch.bfloat16,
+            )
         adapter_config_path = os.path.join(model_name_or_path, "adapter_config.json")
         if os.path.exists(adapter_config_path):
             base_model_path = os.path.join(model_name_or_path, "base")
@@ -51,6 +62,7 @@ class PaliGemmaHF:
                 torch_dtype=torch_dtype,
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
+                quantization_config=quantization_config,
             )
             model = PeftModel.from_pretrained(model, model_name_or_path)
             model.merge_and_unload()
@@ -60,6 +72,7 @@ class PaliGemmaHF:
                 base_model_path,
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
+                use_fast=True,
             )
         else:
             model = PaliGemmaForConditionalGeneration.from_pretrained(
@@ -68,11 +81,13 @@ class PaliGemmaHF:
                 device_map=device,
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
+                quantization_config=quantization_config,
             ).eval()
             processor = AutoProcessor.from_pretrained(
                 model_name_or_path,
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
+                use_fast=True,
             )
         return cls(
             model=model,

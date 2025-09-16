@@ -14,7 +14,7 @@ from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
 from peft import PeftModel
-from transformers import AutoModelForImageTextToText, AutoProcessor
+from transformers import AutoModelForImageTextToText, AutoProcessor, BitsAndBytesConfig
 
 
 class SmolVLMHF:
@@ -26,6 +26,7 @@ class SmolVLMHF:
         device: torch.device = DEFAULT_DEVICE,
         trust_remote_code: bool = False,
         local_files_only: bool = True,
+        quantization_config: Optional[BitsAndBytesConfig] = None,
         **kwargs,
     ) -> "SmolVLMHF":
         torch_dtype = torch.float16 if device.type == "cuda" else torch.float32
@@ -44,6 +45,10 @@ class SmolVLMHF:
                 },
             )
         adapter_config_path = os.path.join(model_name_or_path, "adapter_config.json")
+        if quantization_config is None and device.type == "cuda":
+            quantization_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+            )
         if os.path.exists(adapter_config_path):
 
             base_model_path = os.path.join(model_name_or_path, "base")
@@ -52,6 +57,7 @@ class SmolVLMHF:
                 torch_dtype=torch_dtype,
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
+                quantization_config=quantization_config,
             )
             model = PeftModel.from_pretrained(model, model_name_or_path)
             model.merge_and_unload()
@@ -62,6 +68,7 @@ class SmolVLMHF:
                 padding_side="left",
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
+                use_fast=True,
             )
         else:
             model = AutoModelForImageTextToText.from_pretrained(
@@ -70,12 +77,14 @@ class SmolVLMHF:
                 device_map=device,
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
+                quantization_config=quantization_config,
             ).eval()
             processor = AutoProcessor.from_pretrained(
                 model_name_or_path,
                 padding_side="left",
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
+                use_fast=True,
             )
         return cls(
             model=model,

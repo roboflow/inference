@@ -18,9 +18,13 @@ from inference_exp.models.common.roboflow.pre_processing import (
     extract_input_images_dimensions,
     pre_process_network_input,
 )
-from peft import LoraConfig, PeftModel, get_peft_model
+from peft import LoraConfig, get_peft_model
 from peft.utils.save_and_load import set_peft_model_state_dict
-from transformers import Florence2ForConditionalGeneration, Florence2Processor
+from transformers import (
+    BitsAndBytesConfig,
+    Florence2ForConditionalGeneration,
+    Florence2Processor,
+)
 
 GRANULARITY_2TASK = {
     "normal": "<CAPTION>",
@@ -44,6 +48,7 @@ class Florence2HF:
         device: torch.device = DEFAULT_DEVICE,
         trust_remote_code: bool = False,
         local_files_only: bool = True,
+        quantization_config: Optional[BitsAndBytesConfig] = None,
         **kwargs,
     ) -> "Florence2HF":
         torch_dtype = torch.float16 if device.type == "cuda" else torch.bfloat16
@@ -83,13 +88,15 @@ class Florence2HF:
                 ),
                 help_url="https://todo",
             )
-
+        if quantization_config is None and device.type == "cuda":
+            quantization_config = BitsAndBytesConfig(load_in_4bit=True)
         # Native HF Florence2 path only (require transformers >= 4.56)
         model = Florence2ForConditionalGeneration.from_pretrained(  # type: ignore[arg-type]
             pretrained_model_name_or_path=base_model_path,
             torch_dtype=torch_dtype,
             local_files_only=local_files_only,
             trust_remote_code=trust_remote_code,
+            quantization_config=quantization_config,
         )
         if is_adapter_package:
             # Custom LoRA attach to also cover vision modules
@@ -153,6 +160,7 @@ class Florence2HF:
             pretrained_model_name_or_path=base_model_path,
             local_files_only=local_files_only,
             trust_remote_code=trust_remote_code,
+            use_fast=True,
         )
 
         return cls(

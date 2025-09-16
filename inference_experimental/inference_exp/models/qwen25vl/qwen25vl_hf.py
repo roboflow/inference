@@ -14,7 +14,11 @@ from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
 from peft import PeftModel
-from transformers import Qwen2_5_VLForConditionalGeneration, Qwen2_5_VLProcessor
+from transformers import (
+    BitsAndBytesConfig,
+    Qwen2_5_VLForConditionalGeneration,
+    Qwen2_5_VLProcessor,
+)
 
 
 class Qwen25VLHF:
@@ -25,6 +29,7 @@ class Qwen25VLHF:
         device: torch.device = DEFAULT_DEVICE,
         trust_remote_code: bool = False,
         local_files_only: bool = True,
+        quantization_config: Optional[BitsAndBytesConfig] = None,
         **kwargs,
     ) -> "Qwen25VLHF":
         adapter_config_path = os.path.join(model_name_or_path, "adapter_config.json")
@@ -42,6 +47,10 @@ class Qwen25VLHF:
                     ResizeMode.LETTERBOX_REFLECT_EDGES,
                 },
             )
+        if quantization_config is None and device.type == "cuda":
+            quantization_config = BitsAndBytesConfig(
+                load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16
+            )
         if os.path.exists(adapter_config_path):
             base_model_path = os.path.join(model_name_or_path, "base")
             model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
@@ -49,6 +58,7 @@ class Qwen25VLHF:
                 torch_dtype="auto",
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
+                quantization_config=quantization_config,
             )
             model = PeftModel.from_pretrained(model, model_name_or_path)
             model.merge_and_unload()
@@ -57,6 +67,7 @@ class Qwen25VLHF:
                 model_name_or_path,
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
+                use_fast=True,
             )
         else:
             model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
@@ -65,12 +76,14 @@ class Qwen25VLHF:
                 device_map=device,
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
+                quantization_config=quantization_config,
             ).eval()
             Qwen2_5_VLProcessor.image_processor_class = "Qwen2VLImageProcessor"
             processor = Qwen2_5_VLProcessor.from_pretrained(
                 model_name_or_path,
                 trust_remote_code=trust_remote_code,
                 local_files_only=local_files_only,
+                use_fast=True,
             )
         return cls(
             model=model,
