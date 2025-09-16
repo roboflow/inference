@@ -3,7 +3,7 @@ from typing import Any, Dict
 
 import torch
 from PIL.Image import Image
-from transformers import AutoModelForCausalLM
+from transformers import AutoModelForCausalLM, CONFIG_MAPPING
 
 from inference.core.entities.responses.inference import LMMInferenceResponse
 from inference.core.models.types import PreprocessReturnMetadata
@@ -31,10 +31,13 @@ class Florence2(Florence2Processing, TransformerModel):
             from transformers import (
                 Florence2ForConditionalGeneration,
                 Florence2Processor,
+                AutoConfig,
+                Florence2Config
             )
 
             self.transformers_class = Florence2ForConditionalGeneration
             self.processor_class = Florence2Processor
+            AutoConfig.register("florence2_language", Florence2Config)
         except ImportError:
             self.transformers_class = import_class_from_file(
                 os.path.join(self.cache_dir, "modeling_florence2.py"),
@@ -66,10 +69,13 @@ class LoRAFlorence2(Florence2Processing, LoRATransformerModel):
             from transformers import (
                 Florence2ForConditionalGeneration,
                 Florence2Processor,
+                AutoConfig,
+                Florence2Config
             )
 
             self.transformers_class = Florence2ForConditionalGeneration
             self.processor_class = Florence2Processor
+            AutoConfig.register("florence2_language", Florence2Config)
         except ImportError:
             self.transformers_class = import_class_from_file(
                 os.path.join(self.cache_dir, "modeling_florence2.py"),
