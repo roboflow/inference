@@ -34,7 +34,6 @@ class Florence2(Florence2Processing, TransformerModel):
         original_init = self.transformers_class.__init__
 
         def fixed_init(self, *args, **kwargs):
-            raise Exception("DUMMY")
             self._supports_sdpa = False
             original_init(self, *args, **kwargs)
 
@@ -66,6 +65,13 @@ class LoRAFlorence2(Florence2Processing, LoRATransformerModel):
             os.path.join(cache_dir, "modeling_florence2.py"),
             "Florence2ForConditionalGeneration",
         )
+        original_init = self.transformers_class.__init__
+
+        def fixed_init(self, *args, **kwargs):
+            self._supports_sdpa = False
+            original_init(self, *args, **kwargs)
+
+        self.transformers_class.__init__ = fixed_init
 
         self.processor_class = import_class_from_file(
             os.path.join(cache_dir, "processing_florence2.py"),
