@@ -117,7 +117,7 @@ def assembly_custom_python_block(
 
     init_function = getattr(code_module, python_code.init_function_name, dict)
 
-    def constructor(self, api_key: Optional[str]):
+    def constructor(self, api_key: Optional[str] = None):
         self._init_results = init_function()
         self._api_key = api_key
 
