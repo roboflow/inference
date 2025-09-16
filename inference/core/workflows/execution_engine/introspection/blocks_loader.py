@@ -498,9 +498,11 @@ def get_plugin_modules() -> List[str]:
         return []
     return plugins_to_load.split(",")
 
+
 @lru_cache(maxsize=256)
 def _cached_model_json_schema(manifest_class):
     return manifest_class.model_json_schema()
+
 
 @lru_cache(maxsize=256)
 def _cached_describe_outputs(manifest_class):
