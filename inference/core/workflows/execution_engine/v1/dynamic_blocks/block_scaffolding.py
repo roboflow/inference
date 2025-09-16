@@ -6,6 +6,7 @@ from inference.core.env import (
     ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
     WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
 )
+from inference.core.roboflow_api import get_roboflow_workspace
 from inference.core.workflows.errors import (
     DynamicBlockError,
     WorkflowEnvironmentConfigurationError,
@@ -65,10 +66,7 @@ def assembly_custom_python_block(
             )
 
             # Get workspace_id from context if available
-            workspace_id = kwargs.pop("workspace_id", None)
-            if not workspace_id:
-                # Try to extract from self or context
-                workspace_id = getattr(self, "workspace_id", None)
+            workspace_id = get_roboflow_workspace(self._api_key)
 
             # Fall back to "anonymous" for non-authenticated users
             if not workspace_id:
@@ -116,12 +114,13 @@ def assembly_custom_python_block(
 
     init_function = getattr(code_module, python_code.init_function_name, dict)
 
-    def constructor(self):
+    def constructor(self, api_key: Optional[str]):
         self._init_results = init_function()
+        self._api_key = api_key
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return []
+        return ["api_key"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
