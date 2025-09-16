@@ -94,11 +94,15 @@ class Florence2HF:
             and device.type == "cuda"
             and not disable_quantization
         ):
-            quantization_config = BitsAndBytesConfig(load_in_4bit=True)
+            quantization_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_quant_type="nf4",
+            )
         # Native HF Florence2 path only (require transformers >= 4.56)
         model = Florence2ForConditionalGeneration.from_pretrained(  # type: ignore[arg-type]
             pretrained_model_name_or_path=base_model_path,
-            torch_dtype=torch_dtype,
+            dtype=torch_dtype,
             local_files_only=local_files_only,
             trust_remote_code=trust_remote_code,
             quantization_config=quantization_config,
