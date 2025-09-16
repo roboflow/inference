@@ -269,10 +269,6 @@ class ModalExecutor:
                 "inputs_json": inputs_json,
             }
 
-            logger.warning(
-                f"Executing remote execution on modal to {endpoint_url} with workspace_id: {workspace}"
-            )
-
             if not workspace or workspace == "anonymous" or workspace == "unauthorized":
                 from inference.core.env import MODAL_ALLOW_ANONYMOUS_EXECUTION
 
