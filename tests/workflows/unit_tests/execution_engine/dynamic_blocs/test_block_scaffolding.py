@@ -107,7 +107,7 @@ def run_function(self, a, b) -> BlockResult:
     # then
     assert workflow_block_class.get_init_parameters() == [
         "api_key"
-    ], "Expected no init parameters defined"
+    ], "Expected api_key parameter defined"
     assert (
         workflow_block_class.get_manifest() == BlockManifest
     ), "Expected manifest to be returned"
@@ -143,7 +143,7 @@ def run_function(self, a, b) -> BlockResult:
     # then
     assert workflow_block_class.get_init_parameters() == [
         "api_key"
-    ], "Expected no init parameters defined"
+    ], "Expected api_key parameters defined"
     assert (
         workflow_block_class.get_manifest() == BlockManifest
     ), "Expected manifest to be returned"
