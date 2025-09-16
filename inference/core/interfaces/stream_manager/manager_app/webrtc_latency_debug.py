@@ -11,6 +11,8 @@ from datetime import datetime
 
 from av import VideoFrame
 
+_TIME_BASE = (1, 90000)
+
 
 def analyze_webrtc_latency():
     """
@@ -72,13 +74,13 @@ def create_timestamp_adjuster():
     """
     Create a function to adjust frame timestamps to reduce latency.
     """
-    start_time = time.time()
+    start_time = time.monotonic()
     frame_count = 0
 
     def adjust_timestamp(frame: VideoFrame) -> VideoFrame:
         nonlocal frame_count
         # Force frames to have current timestamp
-        current_time = time.time() - start_time
+        current_time = time.monotonic() - start_time
         frame.pts = int(current_time * 90000)  # 90kHz clock
         frame.time_base = (1, 90000)
         frame_count += 1
