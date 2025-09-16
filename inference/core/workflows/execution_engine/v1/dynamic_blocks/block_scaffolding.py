@@ -4,8 +4,8 @@ from typing import List, Optional, Type
 
 from inference.core.env import (
     ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
-    WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
     MODAL_ANONYMOUS_WORKSPACE_NAME,
+    WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
 )
 from inference.core.exceptions import WorkspaceLoadError
 from inference.core.roboflow_api import get_roboflow_workspace

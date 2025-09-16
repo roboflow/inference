@@ -14,10 +14,10 @@ import numpy as np
 import requests
 
 from inference.core.env import (
+    MODAL_ANONYMOUS_WORKSPACE_NAME,
     MODAL_TOKEN_ID,
     MODAL_TOKEN_SECRET,
     MODAL_WORKSPACE_NAME,
-    MODAL_ANONYMOUS_WORKSPACE_NAME,
 )
 from inference.core.logger import logger
 from inference.core.workflows.errors import DynamicBlockError
