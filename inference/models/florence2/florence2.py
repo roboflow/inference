@@ -34,7 +34,7 @@ class Florence2(Florence2Processing, TransformerModel):
         original_init = self.transformers_class.__init__
 
         def fixed_init(self, *args, **kwargs):
-            self._supports_sdpa = False
+            self._supports_sdpa = property(lambda self: False)
             original_init(self, *args, **kwargs)
 
         self.transformers_class.__init__ = fixed_init
@@ -68,7 +68,7 @@ class LoRAFlorence2(Florence2Processing, LoRATransformerModel):
         original_init = self.transformers_class.__init__
 
         def fixed_init(self, *args, **kwargs):
-            self._supports_sdpa = False
+            self._supports_sdpa = property(lambda self: False)
             original_init(self, *args, **kwargs)
 
         self.transformers_class.__init__ = fixed_init
