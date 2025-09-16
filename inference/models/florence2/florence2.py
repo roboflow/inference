@@ -34,6 +34,7 @@ class Florence2(Florence2Processing, TransformerModel):
         original_init = self.transformers_class.__init__
 
         def fixed_init(self, *args, **kwargs):
+            raise Exception("DUMMY")
             self._supports_sdpa = False
             original_init(self, *args, **kwargs)
 
