@@ -27,16 +27,23 @@ class Florence2(Florence2Processing, TransformerModel):
     skip_special_tokens = False
 
     def initialize_model(self, **kwargs):
-        self.transformers_class = import_class_from_file(
-            os.path.join(self.cache_dir, "modeling_florence2.py"),
-            "Florence2ForConditionalGeneration",
-        )
-        self.transformers_class._supports_sdpa = property(lambda self: True)
+        try:
+            from transformers import (
+                Florence2ForConditionalGeneration,
+                Florence2Processor,
+            )
 
-        self.processor_class = import_class_from_file(
-            os.path.join(self.cache_dir, "processing_florence2.py"),
-            "Florence2Processor",
-        )
+            self.transformers_class = Florence2ForConditionalGeneration
+            self.processor_class = Florence2Processor
+        except ImportError:
+            self.transformers_class = import_class_from_file(
+                os.path.join(self.cache_dir, "modeling_florence2.py"),
+                "Florence2ForConditionalGeneration",
+            )
+            self.processor_class = import_class_from_file(
+                os.path.join(self.cache_dir, "processing_florence2.py"),
+                "Florence2Processor",
+            )
         super().initialize_model(**kwargs)
 
     def prepare_generation_params(
@@ -55,16 +62,23 @@ class LoRAFlorence2(Florence2Processing, LoRATransformerModel):
 
     def get_lora_base_from_roboflow(self, model_id, revision):
         cache_dir = super().get_lora_base_from_roboflow(model_id, revision)
-        self.transformers_class = import_class_from_file(
-            os.path.join(cache_dir, "modeling_florence2.py"),
-            "Florence2ForConditionalGeneration",
-        )
-        self.transformers_class._supports_sdpa = property(lambda self: True)
+        try:
+            from transformers import (
+                Florence2ForConditionalGeneration,
+                Florence2Processor,
+            )
 
-        self.processor_class = import_class_from_file(
-            os.path.join(cache_dir, "processing_florence2.py"),
-            "Florence2Processor",
-        )
+            self.transformers_class = Florence2ForConditionalGeneration
+            self.processor_class = Florence2Processor
+        except ImportError:
+            self.transformers_class = import_class_from_file(
+                os.path.join(self.cache_dir, "modeling_florence2.py"),
+                "Florence2ForConditionalGeneration",
+            )
+            self.processor_class = import_class_from_file(
+                os.path.join(self.cache_dir, "processing_florence2.py"),
+                "Florence2Processor",
+            )
 
         return cache_dir
 
