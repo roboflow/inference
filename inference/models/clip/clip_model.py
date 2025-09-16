@@ -1,3 +1,4 @@
+from threading import Lock
 from time import perf_counter
 from typing import Any, Dict, List, Tuple, Union
 
@@ -66,12 +67,12 @@ class Clip(OnnxRoboflowCoreModel):
             self.cache_file("visual.onnx"),
             providers=self.onnxruntime_execution_providers,
         )
-
+        self._visual_session_lock = Lock()
         self.textual_onnx_session = onnxruntime.InferenceSession(
             self.cache_file("textual.onnx"),
             providers=self.onnxruntime_execution_providers,
         )
-
+        self._textual_session_lock = Lock()
         if REQUIRED_ONNX_PROVIDERS:
             available_providers = onnxruntime.get_available_providers()
             for provider in REQUIRED_ONNX_PROVIDERS:
@@ -209,13 +210,13 @@ class Clip(OnnxRoboflowCoreModel):
             img_in = self.preproc_image(image)
 
         onnx_input_image = {self.visual_onnx_session.get_inputs()[0].name: img_in}
-        embeddings = self.visual_onnx_session.run(None, onnx_input_image)[0]
-
-        return embeddings
+        with self._visual_session_lock:
+            return self.visual_onnx_session.run(None, onnx_input_image)[0]
 
     def predict(self, img_in: np.ndarray, **kwargs) -> Tuple[np.ndarray]:
         onnx_input_image = {self.visual_onnx_session.get_inputs()[0].name: img_in}
-        embeddings = self.visual_onnx_session.run(None, onnx_input_image)[0]
+        with self._visual_session_lock:
+            embeddings = self.visual_onnx_session.run(None, onnx_input_image)[0]
         return (embeddings,)
 
     def make_embed_image_response(
@@ -272,7 +273,8 @@ class Clip(OnnxRoboflowCoreModel):
             onnx_input_text = {
                 self.textual_onnx_session.get_inputs()[0].name: tokenized_batch
             }
-            embeddings = self.textual_onnx_session.run(None, onnx_input_text)[0]
+            with self._textual_session_lock:
+                embeddings = self.textual_onnx_session.run(None, onnx_input_text)[0]
             results.append(embeddings)
         return np.concatenate(results, axis=0)
 

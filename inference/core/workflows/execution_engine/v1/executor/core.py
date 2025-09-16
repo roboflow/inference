@@ -4,6 +4,10 @@ from functools import partial
 from typing import Any, Callable, Dict, List, Optional, Set
 
 from inference.core import logger
+from inference.core.exceptions import (
+    InferenceModelNotFound,
+    ModelManagerLockAcquisitionError,
+)
 from inference.core.workflows.errors import (
     ExecutionEngineRuntimeError,
     StepExecutionError,
@@ -136,6 +140,8 @@ def safe_execute_step(
         logger.info(
             f"finished execution of: {step_selector} - {datetime.now().isoformat()}"
         )
+    except (ModelManagerLockAcquisitionError, InferenceModelNotFound) as error:
+        raise error
     except WorkflowError as error:
         raise error
     except Exception as error:
@@ -180,7 +186,13 @@ def run_simd_step(
     step_name = get_last_chunk_of_selector(selector=step_selector)
     step_instance = workflow.steps[step_name].step
     step_manifest = workflow.steps[step_name].manifest
-    if step_manifest.accepts_batch_input():
+    collapse_of_batch_to_scalar_expected = (
+        step_manifest.get_output_dimensionality_offset() < 0
+        and not execution_data_manager.does_step_produce_batches(
+            step_selector=step_selector
+        )
+    )
+    if step_manifest.accepts_batch_input() or collapse_of_batch_to_scalar_expected:
         return run_simd_step_in_batch_mode(
             step_selector=step_selector,
             step_instance=step_instance,
@@ -300,15 +312,6 @@ def run_non_simd_step(
         },
     ):
         step_result = step_instance.run(**step_input)
-    if isinstance(step_result, list):
-        raise ExecutionEngineRuntimeError(
-            public_message=f"Error in execution engine. Non-SIMD step {step_name} "
-            f"produced list of results which is not expected. This is most likely bug. "
-            f"Contact Roboflow team through github issues "
-            f"(https://github.com/roboflow/inference/issues) providing full context of"
-            f"the problem - including workflow definition you use.",
-            context="workflow_execution | step_output_registration",
-        )
     with profiler.profile_execution_phase(
         name="step_output_registration",
         categories=["execution_engine_operation"],

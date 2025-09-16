@@ -14,8 +14,9 @@ from aiohttp import (
     ClientResponseError,
     RequestInfo,
 )
-from requests import Response
+from requests import Response, Timeout
 
+from inference_sdk.http.errors import RetryError
 from inference_sdk.http.utils.iterables import make_batches
 from inference_sdk.http.utils.request_building import RequestData
 from inference_sdk.http.utils.requests import api_key_safe_raise_for_status
@@ -262,3 +263,34 @@ def response_is_not_retryable_error(response: ClientResponse) -> bool:
         True if the response is not a retryable error, False otherwise.
     """
     return response.status != 200 and response.status not in RETRYABLE_STATUS_CODES
+
+
+@backoff.on_exception(
+    backoff.constant,
+    exception=RetryError,
+    max_tries=3,
+    interval=1,
+    backoff_log_level=logging.DEBUG,
+    giveup_log_level=logging.DEBUG,
+)
+def send_post_request(
+    url: str,
+    payload: dict,
+    headers: dict,
+    enable_retries: bool,
+) -> Response:
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+    except (ConnectionError, Timeout, requests.exceptions.ConnectionError) as error:
+        if enable_retries:
+            raise RetryError(
+                "Could not connect to the API.", inner_error=error
+            ) from error
+        raise error
+    if enable_retries and response.status_code in RETRYABLE_STATUS_CODES:
+        raise RetryError(
+            f"Transient error in HTTP request - response with status code: {response.status_code} received.",
+            status_code=response.status_code,
+        )
+    api_key_safe_raise_for_status(response=response)
+    return response

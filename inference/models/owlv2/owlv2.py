@@ -5,6 +5,7 @@ import pickle
 import time
 import weakref
 from collections import defaultdict
+from threading import RLock
 from typing import Any, Dict, List, Literal, NewType, Optional, Tuple, Union
 
 import numpy as np
@@ -374,6 +375,9 @@ class OwlV2(RoboflowInferenceModel):
     def __init__(self, model_id=f"owlv2/{OWLV2_VERSION_ID}", *args, **kwargs):
         super().__init__(model_id, *args, **kwargs)
         # TODO: owlv2 makes use of version_id - version_id is being dropped so this class needs to be refactored
+
+        self.owlv2_lock = RLock()
+
         if self.version_id is None:
             owlv2_model_id_chunks = model_id.split("/")
             if len(owlv2_model_id_chunks) != 2:
@@ -564,6 +568,7 @@ class OwlV2(RoboflowInferenceModel):
         query_embeddings: Dict[str, PosNegDictType],
         confidence: float,
         iou_threshold: float,
+        max_detections: int = MAX_DETECTIONS,
     ) -> List[Dict]:
         image_embeds = self.get_image_embeds(image_hash)
         if image_embeds is None:
@@ -601,6 +606,11 @@ class OwlV2(RoboflowInferenceModel):
         all_predicted_classes = all_predicted_classes[survival_indices]
         all_predicted_scores = all_predicted_scores[survival_indices]
 
+        if len(all_predicted_boxes) > max_detections:
+            all_predicted_boxes = all_predicted_boxes[:max_detections]
+            all_predicted_classes = all_predicted_classes[:max_detections]
+            all_predicted_scores = all_predicted_scores[:max_detections]
+
         # move tensors to numpy before returning
         all_predicted_boxes = all_predicted_boxes.cpu().numpy()
         all_predicted_classes = all_predicted_classes.cpu().numpy()
@@ -626,14 +636,20 @@ class OwlV2(RoboflowInferenceModel):
         training_data: Dict,
         confidence: float = 0.99,
         iou_threshold: float = 0.3,
+        max_detections: int = MAX_DETECTIONS,
         **kwargs,
     ):
-        class_embeddings_dict = self.make_class_embeddings_dict(
-            training_data, iou_threshold
-        )
-        return self.infer_from_embedding_dict(
-            image, class_embeddings_dict, confidence, iou_threshold
-        )
+        with self.owlv2_lock:
+            class_embeddings_dict = self.make_class_embeddings_dict(
+                training_data, iou_threshold
+            )
+            return self.infer_from_embedding_dict(
+                image,
+                class_embeddings_dict,
+                confidence,
+                iou_threshold,
+                max_detections=max_detections,
+            )
 
     def infer_from_embedding_dict(
         self,
@@ -641,31 +657,37 @@ class OwlV2(RoboflowInferenceModel):
         class_embeddings_dict: Dict[str, PosNegDictType],
         confidence: float,
         iou_threshold: float,
+        max_detections: int = MAX_DETECTIONS,
         **kwargs,
     ):
-        if not isinstance(image, list):
-            images = [image]
-        else:
-            images = image
+        with self.owlv2_lock:
+            if not isinstance(image, list):
+                images = [image]
+            else:
+                images = image
 
-        images = [LazyImageRetrievalWrapper(image) for image in images]
+            images = [LazyImageRetrievalWrapper(image) for image in images]
 
-        results = []
-        image_sizes = []
-        for image_wrapper in images:
-            # happy path here is that both image size and image embeddings are cached
-            # in which case we avoid loading the image at all
-            image_size = self.compute_image_size(image_wrapper)
-            image_sizes.append(image_size)
-            image_hash = self.embed_image(image_wrapper)
-            image_wrapper.unload_numpy_image()
-            result = self.infer_from_embed(
-                image_hash, class_embeddings_dict, confidence, iou_threshold
+            results = []
+            image_sizes = []
+            for image_wrapper in images:
+                # happy path here is that both image size and image embeddings are cached
+                # in which case we avoid loading the image at all
+                image_size = self.compute_image_size(image_wrapper)
+                image_sizes.append(image_size)
+                image_hash = self.embed_image(image_wrapper)
+                image_wrapper.unload_numpy_image()
+                result = self.infer_from_embed(
+                    image_hash,
+                    class_embeddings_dict,
+                    confidence,
+                    iou_threshold,
+                    max_detections=max_detections,
+                )
+                results.append(result)
+            return self.make_response(
+                results, image_sizes, sorted(list(class_embeddings_dict.keys()))
             )
-            results.append(result)
-        return self.make_response(
-            results, image_sizes, sorted(list(class_embeddings_dict.keys()))
-        )
 
     def make_class_embeddings_dict(
         self,
@@ -873,7 +895,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
     def download_model_artefacts_from_s3(self):
         raise NotImplementedError("Owlv2 not currently supported on hosted inference")
 
-    def download_model_artifacts_from_roboflow_api(self):
+    def download_model_artifacts_from_roboflow_api(self, **kwargs):
         logger.info(f"Downloading OWLv2 model artifacts")
         if self.version_id is not None:
             api_data = get_roboflow_model_data(
@@ -944,7 +966,12 @@ class SerializedOwlV2(RoboflowInferenceModel):
         return self.weights_file_path
 
     def infer(
-        self, image, confidence: float = 0.99, iou_threshold: float = 0.3, **kwargs
+        self,
+        image,
+        confidence: float = 0.99,
+        iou_threshold: float = 0.3,
+        max_detections: int = MAX_DETECTIONS,
+        **kwargs,
     ):
         logger.info(f"Inferring OWLv2 model")
         result = self.owlv2.infer_from_embedding_dict(
@@ -952,6 +979,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
             self.train_data_dict,
             confidence=confidence,
             iou_threshold=iou_threshold,
+            max_detections=max_detections,
             **kwargs,
         )
         logger.info(f"OWLv2 model inference complete")

@@ -60,6 +60,10 @@ class BlockManifest(WorkflowBlockManifest):
         return -1
 
     @classmethod
+    def get_parameters_enforcing_auto_batch_casting(cls) -> List[str]:
+        return ["data"]
+
+    @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(

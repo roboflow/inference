@@ -1,17 +1,31 @@
 
-
 # Divert the program flow in worker sub-process as soon as possible,
 # before importing heavy-weight modules.
 import multiprocessing
 if __name__ == "__main__":
-    multiprocessing.freeze_support()   
+    multiprocessing.freeze_support()    
 
 
-print("=== Inference Launcher ===") 
-
-print("importing system libraries")
+import logging
 import os
 import sys
+
+# Set up logging configuration for bundled app
+# Enable in-memory logging for the FastAPI server to use
+os.environ.setdefault("ENABLE_IN_MEMORY_LOGS", "True")
+os.environ.setdefault("ENABLE_DASHBOARD", "True")
+
+# Set up minimal console logging (only warnings and errors)
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.WARNING)
+console_formatter = logging.Formatter("%(levelname)s: %(message)s")
+console_handler.setFormatter(console_formatter)
+
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+root_logger.addHandler(console_handler)
+
+logger = logging.getLogger("inference.app")
 import certifi
 from platformdirs import user_cache_dir, user_data_dir
 
@@ -36,13 +50,13 @@ def setup_runtime_cache_env(app_name="roboflow-inference"):
     os.environ.setdefault("MATPLOTLIBCONFIGDIR", os.path.join(cache_dir, "matplotlib"))
     os.environ.setdefault("MODEL_CACHE_DIR", os.path.join(cache_dir, "models"))
 
-    print("🧠 Runtime cache environment configured:")
-    print(f" - TLD_EXTRACT_CACHE: {os.environ['TLD_EXTRACT_CACHE']}")
-    print(f" - MATPLOTLIBCONFIGDIR: {os.environ['MATPLOTLIBCONFIGDIR']}")
-    print(f" - TRANSFORMERS_CACHE: {os.environ['TRANSFORMERS_CACHE']}")
-    print(f" - TORCH_HOME: {os.environ['TORCH_HOME']}")
-    print(f" - HF_HOME: {os.environ['HF_HOME']}")
-    print(f" - MODEL_CACHE_DIR: {os.environ['HF_HOME']}")
+    logger.info("🧠 Runtime cache environment configured:")
+    logger.info(f" - TLD_EXTRACT_CACHE: {os.environ['TLD_EXTRACT_CACHE']}")
+    logger.info(f" - MATPLOTLIBCONFIGDIR: {os.environ['MATPLOTLIBCONFIGDIR']}")
+    logger.info(f" - TRANSFORMERS_CACHE: {os.environ['TRANSFORMERS_CACHE']}")
+    logger.info(f" - TORCH_HOME: {os.environ['TORCH_HOME']}")
+    logger.info(f" - HF_HOME: {os.environ['HF_HOME']}")
+    logger.info(f" - MODEL_CACHE_DIR: {os.environ['MODEL_CACHE_DIR']}")
 
     return {
         "cache_dir": cache_dir,
@@ -52,7 +66,7 @@ def setup_runtime_cache_env(app_name="roboflow-inference"):
 
 # Determine app_dir
 if getattr(sys, 'frozen', False):
-    print("Running from PyInstaller bundle")
+    logger.info("Launching Roboflow Inference (bundle)")
 
     app_dir = os.path.dirname(sys.executable)
     
@@ -64,19 +78,19 @@ if getattr(sys, 'frozen', False):
     gdal_data = os.path.join(os.path.dirname(rasterio.__file__), 'gdal_data')
     os.environ['GDAL_DATA'] = gdal_data
 
-    #setup global cache env for models some packages that need writable folders
+    #setup global cache env needed for tldexract and other packages
     setup_runtime_cache_env()
 
 else:
     app_dir = os.path.dirname(os.path.abspath(__file__))
-    print("Running from source")
+    logger.info("Launching Roboflow Inference (source)")
 
 
-print(f"Changing working directory to: {app_dir}")
+logger.info("Initializing services")
 os.chdir(app_dir)
 
 
-print("Configuring environment")
+logger.info("Configuring environment")
 # Fix for SSL certs in PyInstaller bundle
 os.environ["SSL_CERT_FILE"] = certifi.where()
 
@@ -133,13 +147,67 @@ os.environ.setdefault("ENABLE_BUILDER", "True")
 
 
 if __name__ == "__main__":
-    print("Starting infernece server")
+    logger.info("Starting server")
     # Import the FastAPI app
     from cpu_http import app
     import uvicorn
+    import asyncio
+
+    class FilteredAccessLogConfig(logging.Filter):
+        """Filter out static file requests from access logs"""
+        def filter(self, record):
+            message = record.getMessage()
+            # Filter out static paths and root requests (any HTTP method)
+            if '/static' in message or '/_next/static' in message or ' / HTTP' in message:
+                return False
+            return True
+
+    async def _serve_with_banner():
+        port = int(os.environ.get("PORT", "9001"))
+        url = f"http://localhost:{port}/"
+        
+        # Configure access log filtering
+        access_logger = logging.getLogger("uvicorn.access")
+        access_logger.addFilter(FilteredAccessLogConfig())
+        
+        config = uvicorn.Config(
+            app,
+            host="0.0.0.0",
+            port=port,
+            log_level="info",
+            access_log=True,
+        )
+        server = uvicorn.Server(config)
+        serve_task = asyncio.create_task(server.serve())
+        try:
+            await server.started.wait()
+        except Exception:
+            # Fallback if the readiness event is unavailable
+            await asyncio.sleep(0.5)
+
+        # After startup: remove console stream handlers (keeps non-stream handlers like memory handlers)
+        def _remove_console_handlers(logger_name: str):
+            lg = logging.getLogger(logger_name)
+            for handler in list(lg.handlers):
+                if isinstance(handler, logging.StreamHandler):
+                    lg.removeHandler(handler)
+
+        for name in ("", "uvicorn", "uvicorn.error", "uvicorn.access", "inference", "inference.app"):
+            _remove_console_handlers(name)
+        banner = (
+            "\n\n\n\n\n\n\n\n\n"
+            "─────────────────────────────────────────────────────────── \n"
+            "                                                           \n"
+            "  Roboflow Inference is ready                              \n"
+            f"  Dashboard: {url:<44} │\n"
+            "                                                           \n"
+            "───────────────────────────────────────────────────────────\n"
+        )
+        print(banner, flush=True)
+        await serve_task
 
     try:
-        uvicorn.run(app, host="0.0.0.0", port=int(os.environ["PORT"]))
+        asyncio.run(_serve_with_banner())
     except Exception as e:
-        print("Error starting server:", e)
+        logger.exception("Error starting server: %s", e)
         sys.exit(1)

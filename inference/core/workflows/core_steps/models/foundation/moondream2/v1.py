@@ -38,10 +38,13 @@ from inference.core.workflows.prototypes.block import (
 class BlockManifest(WorkflowBlockManifest):
     # SmolVLM needs an image and a text prompt.
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
-    prompt: Optional[str] = Field(
+    prompt: Union[
+        Selector(kind=[STRING_KIND]),
+        str,
+    ] = Field(
+        description="Optional text prompt to provide additional context to Moondream2.",
+        examples=["my prompt", "$inputs.prompt"],
         default=None,
-        description="Optional text prompt to provide additional context to Moondream2. Otherwise it will just be None",
-        examples=["What is in this image?"],
     )
 
     # Standard model configuration for UI, schema, etc.
@@ -148,11 +151,13 @@ class Moondream2BlockV1(WorkflowBlock):
         inference_images = [
             i.to_inference_format(numpy_preferred=False) for i in images
         ]
+
         # Use the provided prompt (or an empty string if None) for every image.
         prompt = prompt or ""
+
         prompts = [prompt] * len(inference_images)
 
-        # Register SmolVLM2 with the model manager.
+        # Register Moondream2 with the model manager.
         self._model_manager.add_model(model_id=model_version, api_key=self._api_key)
 
         predictions = []
@@ -161,7 +166,8 @@ class Moondream2BlockV1(WorkflowBlock):
                 api_key=self._api_key,
                 model_id=model_version,
                 image=image,
-                text=[single_prompt],
+                text=[],
+                prompt=single_prompt,
             )
             # Run inference.
             prediction = self._model_manager.infer_from_request_sync(

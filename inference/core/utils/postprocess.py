@@ -247,7 +247,6 @@ def process_mask_accurate(
         masks_in=masks_in,
         shape=shape,
     )
-
     # Order = 1 -> bilinear
     if len(masks.shape) == 2:
         masks = np.expand_dims(masks, axis=0)

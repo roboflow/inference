@@ -1,0 +1,149 @@
+name: Build and Push Inference Experimental Images
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_variant:
+        type: string
+        description: "Image variant to build (e.g., 'cpu', 'cu124', 'jp61') or 'all' for all images. Run 'ls inference_experimental/dockerfiles/' to see available options."
+        required: true
+        default: "all"
+      force_push:
+        type: boolean
+        description: "Force push to registries"
+        default: false
+      custom_tag:
+        type: string
+        description: "Custom tag to use instead of version"
+        required: false
+  release:
+    types: [published]
+  push:
+    branches:
+      - main
+
+env:
+  DEPOT_PROJECT_ID: grl7ffzxd7
+
+jobs:
+  determine-tags:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      base-tag: ${{ steps.tags.outputs.base-tag }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Read version from pyproject.toml
+        run: |
+          cd inference_experimental
+          VERSION=$(grep -E '^version = ' pyproject.toml | cut -d'"' -f2)
+          echo "VERSION=${VERSION}"
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+
+      - name: generate tags
+        id: tags
+        run: |
+          BASE_TAG="${{ env.VERSION }}"
+          
+          # Use custom tag if provided
+          if [ -n "${{ github.event.inputs.custom_tag }}" ]; then
+            BASE_TAG="${{ github.event.inputs.custom_tag }}"
+          fi
+          
+          echo "base-tag=${BASE_TAG}"
+          echo "base-tag=${BASE_TAG}" >> $GITHUB_OUTPUT
+
+  build:
+    name: ${{ matrix.dockerfile }}:${{ matrix.platform }}
+    needs: determine-tags
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      # permission lets the workflow issue OIDC tokens, required by depot.dev auth
+      id-token: write
+      contents: read
+    strategy:
+      matrix:
+        include:
+          - dockerfile: "x86.cpu.base.dockerfile"
+            platform: "linux/amd64"
+            build_platforms: "linux/amd64"
+          - dockerfile: "x86.cu118.base.dockerfile"
+            platform: "cu118"
+            build_platforms: "linux/amd64"
+          - dockerfile: "x86.cu124.base.dockerfile"
+            platform: "cu124"
+            build_platforms: "linux/amd64"
+          - dockerfile: "x86.cu126.base.dockerfile"
+            platform: "cu126"
+            build_platforms: "linux/amd64"
+          - dockerfile: "x86.cu128.base.dockerfile"
+            platform: "cu128"
+            build_platforms: "linux/amd64"
+          # - dockerfile: "jp61.cu126.base.dockerfile"
+          #   platform: "jp61"
+          #   build_platforms: "linux/arm64"
+    steps:
+      - name: Check if should build
+        id: should-build
+        run: |
+          if [[ "${{ github.event_name }}" == "release" ]] || \
+             [[ "${{ github.event.inputs.image_variant }}" == "all" ]] || \
+             [[ -z "${{ github.event.inputs.image_variant }}" ]] || \
+             [[ "${{ github.event.inputs.image_variant }}" == "${{ matrix.platform }}" ]] || \
+             [[ "${{ github.event.inputs.image_variant }}" == "cpu" && "${{ matrix.platform }}" == "linux/amd64" ]]; then
+            echo "should-build=true" >> $GITHUB_OUTPUT
+          else
+            echo "should-build=false" >> $GITHUB_OUTPUT
+            echo "Skipping build for ${{ matrix.platform }} (selected: ${{ github.event.inputs.image_variant }})"
+          fi
+
+      - name: Checkout code
+        if: steps.should-build.outputs.should-build == 'true'
+        uses: actions/checkout@v4
+
+      - name: Determine image tags
+        if: steps.should-build.outputs.should-build == 'true'
+        id: image-tags
+        run: |
+          BASE_TAG="${{ needs.determine-tags.outputs.base-tag }}"
+          PLATFORM="${{ matrix.platform }}"
+          if [ "${{ matrix.platform }}" == "linux/amd64" ]; then
+            PLATFORM="cpu"
+          fi
+          
+          if [ "${{ github.event_name }}" = "release" ]; then
+            # For releases, use version tag and latest
+            TAGS="roboflow/inference-exp:${PLATFORM}-${BASE_TAG},roboflow/inference-exp:${PLATFORM}-latest"
+          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            # For main branch, use test tag
+            TAGS="roboflow/inference-exp:${PLATFORM}-test"
+          else
+            # For other cases, use custom tag or version
+            TAGS="roboflow/inference-exp:${PLATFORM}-${BASE_TAG}"
+          fi
+          
+          echo "tags=${TAGS}"
+          echo "tags=${TAGS}" >> $GITHUB_OUTPUT
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Set up Depot
+        if: steps.should-build.outputs.should-build == 'true'
+        uses: depot/setup-action@v1
+      - name: Build and push ${{ matrix.platform }} image
+        if: steps.should-build.outputs.should-build == 'true'
+        uses: depot/build-push-action@v1
+        with:
+          push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true')}}
+          project: grl7ffzxd7
+          tags: ${{ steps.image-tags.outputs.tags }}
+          platforms: ${{ matrix.build_platforms }}
+          file: ./inference_experimental/dockerfiles/${{ matrix.dockerfile }}
+          context: ./inference_experimental

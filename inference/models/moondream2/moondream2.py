@@ -1,4 +1,5 @@
 import os
+import re
 from typing import List, Tuple
 
 import torch
@@ -23,7 +24,7 @@ class Moondream2(TransformerModel):
     version_id = None
     default_dtype = torch.bfloat16
     load_weights_as_transformers = True
-    endpoint = "moondream2/moondream2-2b"
+    endpoint = "moondream2/moondream2_2b_jul24"
     trust_remote_code = True
     revision = "2025-03-27"
 
@@ -34,13 +35,54 @@ class Moondream2(TransformerModel):
 
         super().__init__(self.endpoint, *args, **kwargs)
 
-    def initialize_model(self):
+    def get_infer_bucket_file_list(self) -> list:
+        """Get the list of required files for inference.
+
+        Returns:
+            list: A list of required files for inference, e.g., ["model.pt"].
+        """
+        if self.endpoint == "moondream2/moondream2_2b_jul24":
+            return [
+                "added_tokens.json",
+                "config.json",
+                "config.py",
+                "configuration_moondream.py",
+                "fourier_features.py",
+                "generation_config.json",
+                "handler.py",
+                "hf_moondream.py",
+                "image_crops.py",
+                "layers.py",
+                "lora.py",
+                re.compile(r"model.*\.safetensors"),
+                "moondream.py",
+                "region.py",
+                "region_model.py",
+                "rope.py",
+                "special_tokens_map.json",
+                "text.py",
+                "tokenizer.json",
+                "tokenizer_config.json",
+                "utils.py",
+                "versions.txt",
+                "vision.py",
+                "vision_encoder.py",
+                "vocab.json",
+                "weights.py",
+            ]
+        else:
+            return super().get_infer_bucket_file_list()
+
+    def initialize_model(self, **kwargs):
         model = import_class_from_file(
             os.path.join(self.cache_dir, "hf_moondream.py"),
             "HfMoondream",
         )
 
-        self.model = model.from_pretrained(self.cache_dir)
+        self.model = model.from_pretrained(
+            self.cache_dir,
+            device_map={"": "cuda" if torch.cuda.is_available() else "cpu"},
+        )
 
     def predict(self, image_in: Image.Image, prompt="", history=None, **kwargs):
         return self.detect(image_in, prompt=prompt, history=history, **kwargs)
@@ -85,7 +127,7 @@ class Moondream2(TransformerModel):
                             "width": width,
                             "height": height,
                             "confidence": 1.0,  # confidence is not returned by the model
-                            "class": prompt,
+                            "class": prompt if prompt is not None else "",
                             "class_id": 0,  # you can only prompt for one object at once
                         }
                     )

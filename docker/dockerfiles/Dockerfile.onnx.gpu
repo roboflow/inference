@@ -1,4 +1,5 @@
 FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 as builder
+#has python 3.10
 
 WORKDIR /app
 
@@ -19,7 +20,6 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.clip.txt \
     requirements/requirements.http.txt \
     requirements/requirements.gpu.txt \
-    requirements/requirements.waf.txt \
     requirements/requirements.gaze.txt \
     requirements/requirements.doctr.txt \
     requirements/requirements.groundingdino.txt \
@@ -36,7 +36,6 @@ RUN python3 -m pip install \
     -r requirements.clip.txt \
     -r requirements.http.txt \
     -r requirements.gpu.txt \
-    -r requirements.waf.txt \
     -r requirements.gaze.txt \
     -r requirements.groundingdino.txt \
     -r requirements.doctr.txt \
@@ -70,6 +69,7 @@ RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_
     python3-pip \
     git \
     libgdal-dev \
+    libvips-dev \
     wget \
     rustc \
     cargo \

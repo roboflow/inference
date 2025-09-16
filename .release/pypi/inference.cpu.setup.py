@@ -41,6 +41,8 @@ setuptools.setup(
             "tests.*",
             "development",
             "development.*",
+            "inference_experimental",
+            "inference_experimental.*"
         ),
     ),
     package_data={
@@ -70,7 +72,6 @@ setuptools.setup(
         "hosted": read_requirements("requirements/requirements.hosted.txt"),
         "http": read_requirements("requirements/requirements.http.txt"),
         "sam": read_requirements("requirements/requirements.sam.txt"),
-        "waf": read_requirements("requirements/requirements.waf.txt"),
         "yolo-world": read_requirements("requirements/requirements.yolo_world.txt"),
         "transformers": read_requirements("requirements/requirements.transformers.txt"),
     },

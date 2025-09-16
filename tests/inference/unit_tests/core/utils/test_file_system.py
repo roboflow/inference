@@ -1,13 +1,19 @@
 import json
+import os
 import os.path
+import tempfile
 
 import pytest
 from humanfriendly.testing import touch
 
 from inference.core.utils.file_system import (
+    AtomicPath,
     dump_bytes,
+    dump_bytes_atomic,
     dump_json,
+    dump_json_atomic,
     dump_text_lines,
+    dump_text_lines_atomic,
     ensure_parent_dir_exists,
     ensure_write_is_allowed,
     read_json,
@@ -382,3 +388,355 @@ def assert_text_file_content_correct(file_path: str, content: str) -> None:
 def assert_bytes_file_content_correct(file_path: str, content: bytes) -> None:
     with open(file_path, "rb") as f:
         assert f.read() == content
+
+
+# Tests for AtomicPath context manager
+
+
+def test_atomic_path_successful_write(empty_local_dir: str) -> None:
+    # given
+    target_path = os.path.join(empty_local_dir, "test.txt")
+    content = "test content"
+
+    # when
+    with AtomicPath(target_path) as temp_path:
+        assert temp_path != target_path
+        assert os.path.dirname(temp_path) == os.path.dirname(target_path)
+        with open(temp_path, "w") as f:
+            f.write(content)
+
+    # then
+    assert os.path.exists(target_path)
+    assert not os.path.exists(temp_path)
+    with open(target_path) as f:
+        assert f.read() == content
+
+
+def test_atomic_path_cleans_up_on_exception(empty_local_dir: str) -> None:
+    # given
+    target_path = os.path.join(empty_local_dir, "test.txt")
+    temp_path_ref = None
+
+    # when
+    try:
+        with AtomicPath(target_path) as temp_path:
+            temp_path_ref = temp_path
+            assert os.path.exists(temp_path)
+            with open(temp_path, "w") as f:
+                f.write("partial content")
+            raise ValueError("Simulated error")
+    except ValueError:
+        pass
+
+    # then
+    assert not os.path.exists(target_path)
+    assert not os.path.exists(temp_path_ref)
+
+
+def test_atomic_path_with_existing_file_no_override(empty_local_dir: str) -> None:
+    # given
+    target_path = os.path.join(empty_local_dir, "test.txt")
+    touch(target_path)
+
+    # when/then
+    with pytest.raises(RuntimeError):
+        with AtomicPath(target_path, allow_override=False) as temp_path:
+            pass
+
+
+def test_atomic_path_with_existing_file_override(empty_local_dir: str) -> None:
+    # given
+    target_path = os.path.join(empty_local_dir, "test.txt")
+    original_content = "original"
+    new_content = "new content"
+
+    with open(target_path, "w") as f:
+        f.write(original_content)
+
+    # when
+    with AtomicPath(target_path, allow_override=True) as temp_path:
+        with open(temp_path, "w") as f:
+            f.write(new_content)
+
+    # then
+    with open(target_path) as f:
+        assert f.read() == new_content
+
+
+def test_atomic_path_creates_parent_dirs(empty_local_dir: str) -> None:
+    # given
+    target_path = os.path.join(empty_local_dir, "subdir", "test.txt")
+    content = "test content"
+
+    # when
+    with AtomicPath(target_path) as temp_path:
+        with open(temp_path, "w") as f:
+            f.write(content)
+
+    # then
+    assert os.path.exists(target_path)
+    with open(target_path) as f:
+        assert f.read() == content
+
+
+# Tests for dump_json_atomic
+
+
+def test_dump_json_atomic_when_file_does_not_exist(empty_local_dir: str) -> None:
+    # given
+    file_path = os.path.join(empty_local_dir, "test.json")
+    content = {"key": "value", "number": 42}
+
+    # when
+    dump_json_atomic(path=file_path, content=content)
+
+    # then
+    assert os.path.exists(file_path)
+    with open(file_path) as f:
+        assert json.load(f) == content
+
+
+def test_dump_json_atomic_when_file_exists_no_override(empty_local_dir: str) -> None:
+    # given
+    file_path = os.path.join(empty_local_dir, "test.json")
+    touch(file_path)
+
+    # when/then
+    with pytest.raises(RuntimeError):
+        dump_json_atomic(path=file_path, content={"key": "value"}, allow_override=False)
+
+
+def test_dump_json_atomic_when_file_exists_with_override(empty_local_dir: str) -> None:
+    # given
+    file_path = os.path.join(empty_local_dir, "test.json")
+    original_content = {"old": "data"}
+    new_content = {"new": "data"}
+
+    with open(file_path, "w") as f:
+        json.dump(original_content, f)
+
+    # when
+    dump_json_atomic(path=file_path, content=new_content, allow_override=True)
+
+    # then
+    with open(file_path) as f:
+        assert json.load(f) == new_content
+
+
+def test_dump_json_atomic_with_indent(empty_local_dir: str) -> None:
+    # given
+    file_path = os.path.join(empty_local_dir, "test.json")
+    content = {"key": "value", "nested": {"inner": "data"}}
+
+    # when
+    dump_json_atomic(path=file_path, content=content, indent=2)
+
+    # then
+    with open(file_path) as f:
+        file_content = f.read()
+        assert "  " in file_content  # Check indentation exists
+        assert json.loads(file_content) == content
+
+
+def test_dump_json_atomic_creates_parent_dir(empty_local_dir: str) -> None:
+    # given
+    file_path = os.path.join(empty_local_dir, "subdir", "test.json")
+    content = {"key": "value"}
+
+    # when
+    dump_json_atomic(path=file_path, content=content)
+
+    # then
+    assert os.path.exists(file_path)
+    with open(file_path) as f:
+        assert json.load(f) == content
+
+
+# Tests for dump_text_lines_atomic
+
+
+def test_dump_text_lines_atomic_when_file_does_not_exist(empty_local_dir: str) -> None:
+    # given
+    file_path = os.path.join(empty_local_dir, "test.txt")
+    content = ["line1", "line2", "line3"]
+
+    # when
+    dump_text_lines_atomic(path=file_path, content=content)
+
+    # then
+    assert os.path.exists(file_path)
+    with open(file_path) as f:
+        assert f.read() == "line1\nline2\nline3"
+
+
+def test_dump_text_lines_atomic_when_file_exists_no_override(
+    empty_local_dir: str,
+) -> None:
+    # given
+    file_path = os.path.join(empty_local_dir, "test.txt")
+    touch(file_path)
+
+    # when/then
+    with pytest.raises(RuntimeError):
+        dump_text_lines_atomic(path=file_path, content=["line1"], allow_override=False)
+
+
+def test_dump_text_lines_atomic_when_file_exists_with_override(
+    empty_local_dir: str,
+) -> None:
+    # given
+    file_path = os.path.join(empty_local_dir, "test.txt")
+    with open(file_path, "w") as f:
+        f.write("original content")
+
+    new_content = ["new", "lines"]
+
+    # when
+    dump_text_lines_atomic(path=file_path, content=new_content, allow_override=True)
+
+    # then
+    with open(file_path) as f:
+        assert f.read() == "new\nlines"
+
+
+def test_dump_text_lines_atomic_with_custom_connector(empty_local_dir: str) -> None:
+    # given
+    file_path = os.path.join(empty_local_dir, "test.txt")
+    content = ["line1", "line2", "line3"]
+
+    # when
+    dump_text_lines_atomic(path=file_path, content=content, lines_connector="|")
+
+    # then
+    with open(file_path) as f:
+        assert f.read() == "line1|line2|line3"
+
+
+def test_dump_text_lines_atomic_creates_parent_dir(empty_local_dir: str) -> None:
+    # given
+    file_path = os.path.join(empty_local_dir, "subdir", "test.txt")
+    content = ["line1", "line2"]
+
+    # when
+    dump_text_lines_atomic(path=file_path, content=content)
+
+    # then
+    assert os.path.exists(file_path)
+    with open(file_path) as f:
+        assert f.read() == "line1\nline2"
+
+
+# Tests for dump_bytes_atomic
+
+
+def test_dump_bytes_atomic_when_file_does_not_exist(empty_local_dir: str) -> None:
+    # given
+    file_path = os.path.join(empty_local_dir, "test.bin")
+    content = b"binary content \x00\x01\x02"
+
+    # when
+    dump_bytes_atomic(path=file_path, content=content)
+
+    # then
+    assert os.path.exists(file_path)
+    with open(file_path, "rb") as f:
+        assert f.read() == content
+
+
+def test_dump_bytes_atomic_when_file_exists_no_override(empty_local_dir: str) -> None:
+    # given
+    file_path = os.path.join(empty_local_dir, "test.bin")
+    touch(file_path)
+
+    # when/then
+    with pytest.raises(RuntimeError):
+        dump_bytes_atomic(path=file_path, content=b"data", allow_override=False)
+
+
+def test_dump_bytes_atomic_when_file_exists_with_override(empty_local_dir: str) -> None:
+    # given
+    file_path = os.path.join(empty_local_dir, "test.bin")
+    with open(file_path, "wb") as f:
+        f.write(b"original data")
+
+    new_content = b"new binary data"
+
+    # when
+    dump_bytes_atomic(path=file_path, content=new_content, allow_override=True)
+
+    # then
+    with open(file_path, "rb") as f:
+        assert f.read() == new_content
+
+
+def test_dump_bytes_atomic_creates_parent_dir(empty_local_dir: str) -> None:
+    # given
+    file_path = os.path.join(empty_local_dir, "subdir", "test.bin")
+    content = b"binary content"
+
+    # when
+    dump_bytes_atomic(path=file_path, content=content)
+
+    # then
+    assert os.path.exists(file_path)
+    with open(file_path, "rb") as f:
+        assert f.read() == content
+
+
+# Test atomicity of operations
+
+
+def test_atomic_write_maintains_original_on_error(empty_local_dir: str) -> None:
+    """Test that original file is preserved if write fails partway through"""
+    # given
+    file_path = os.path.join(empty_local_dir, "test.txt")
+    original_content = "original content that should be preserved"
+
+    with open(file_path, "w") as f:
+        f.write(original_content)
+
+    # when - simulate a write error by mocking
+    class WriteError(Exception):
+        pass
+
+    try:
+        with AtomicPath(file_path, allow_override=True) as temp_path:
+            with open(temp_path, "w") as f:
+                f.write("partial new content")
+                # Simulate error partway through write
+                raise WriteError("Simulated write failure")
+    except WriteError:
+        pass
+
+    # then - original file should be unchanged
+    assert os.path.exists(file_path)
+    with open(file_path) as f:
+        assert f.read() == original_content
+
+
+def test_atomic_operations_concurrent_safety(empty_local_dir: str) -> None:
+    """Test that temp files don't collide when multiple atomic writes happen"""
+    # given
+    target_path = os.path.join(empty_local_dir, "test.txt")
+
+    # when - create multiple atomic writes to same target
+    temp_paths = []
+    contexts = []
+
+    for i in range(3):
+        ctx = AtomicPath(target_path, allow_override=True)
+        temp_path = ctx.__enter__()
+        temp_paths.append(temp_path)
+        contexts.append(ctx)
+
+    # then - all temp paths should be unique
+    assert len(set(temp_paths)) == 3
+
+    # cleanup
+    for ctx, temp_path in zip(contexts, temp_paths):
+        try:
+            ctx.__exit__(None, None, None)
+        except:
+            pass
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)

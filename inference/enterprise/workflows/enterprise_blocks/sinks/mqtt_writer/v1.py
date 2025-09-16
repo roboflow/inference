@@ -42,6 +42,13 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Roboflow Enterprise License",
             "block_type": "sink",
+            "ui_manifest": {
+                "section": "industrial",
+                "icon": "fal fa-network-wired",
+                "blockPriority": 10,
+                "enterprise_only": True,
+                "local_only": True,
+            },
         }
     )
     type: Literal["mqtt_writer_sink@v1"]

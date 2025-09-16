@@ -227,7 +227,7 @@ def serialise_image(image: WorkflowImageData) -> Dict[str, Any]:
     return {
         "type": "base64",
         "value": image.base64_image,
-        "video_metadata": image.video_metadata.dict(),
+        "video_metadata": image.video_metadata.dict() if image.video_metadata else None,
     }
 
 
