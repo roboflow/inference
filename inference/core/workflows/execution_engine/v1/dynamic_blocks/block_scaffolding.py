@@ -6,6 +6,7 @@ from inference.core.env import (
     ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
     WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
 )
+from inference.core.exceptions import WorkspaceLoadError
 from inference.core.roboflow_api import get_roboflow_workspace
 from inference.core.workflows.errors import (
     DynamicBlockError,
@@ -65,8 +66,10 @@ def assembly_custom_python_block(
                 ModalExecutor,
             )
 
-            # Get workspace_id from context if available
-            workspace_id = get_roboflow_workspace(self._api_key)
+            try:  # Get workspace_id from context if available
+                workspace_id = get_roboflow_workspace(self._api_key)
+            except WorkspaceLoadError:
+                workspace_id = None
 
             # Fall back to "anonymous" for non-authenticated users
             if not workspace_id:
