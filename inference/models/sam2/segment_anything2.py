@@ -1,6 +1,7 @@
 import copy
 import hashlib
 from io import BytesIO
+from threading import Lock
 from time import perf_counter
 from typing import Any, Dict, List, Optional, Tuple, TypedDict, Union
 
@@ -96,7 +97,7 @@ class SegmentAnything2(RoboflowCoreModel):
         self.embedding_cache_keys = []
         self.low_res_logits_cache: Dict[Tuple[str, str], LogitsCacheType] = {}
         self.low_res_logits_cache_keys = []
-
+        self._state_lock = Lock()
         self.task_type = "unsupervised-segmentation"
 
     def get_infer_bucket_file_list(self) -> List[str]:
@@ -179,33 +180,36 @@ class SegmentAnything2(RoboflowCoreModel):
         Returns:
             Union[SamEmbeddingResponse, SamSegmentationResponse]: The inference response.
         """
-        t1 = perf_counter()
-        if isinstance(request, Sam2EmbeddingRequest):
-            _, _, image_id = self.embed_image(**request.dict())
-            inference_time = perf_counter() - t1
-            return Sam2EmbeddingResponse(time=inference_time, image_id=image_id)
-        elif isinstance(request, Sam2SegmentationRequest):
-            masks, scores, low_resolution_logits = self.segment_image(**request.dict())
-            if request.format == "json":
-                return turn_segmentation_results_into_api_response(
-                    masks=masks,
-                    scores=scores,
-                    mask_threshold=self.predictor.mask_threshold,
-                    inference_start_timestamp=t1,
+        with self._state_lock:
+            t1 = perf_counter()
+            if isinstance(request, Sam2EmbeddingRequest):
+                _, _, image_id = self.embed_image(**request.dict())
+                inference_time = perf_counter() - t1
+                return Sam2EmbeddingResponse(time=inference_time, image_id=image_id)
+            elif isinstance(request, Sam2SegmentationRequest):
+                masks, scores, low_resolution_logits = self.segment_image(
+                    **request.dict()
                 )
-            elif request.format == "binary":
-                binary_vector = BytesIO()
-                np.savez_compressed(
-                    binary_vector, masks=masks, low_res_masks=low_resolution_logits
-                )
-                binary_vector.seek(0)
-                binary_data = binary_vector.getvalue()
-                return binary_data
-            else:
-                raise ValueError(f"Invalid format {request.format}")
+                if request.format == "json":
+                    return turn_segmentation_results_into_api_response(
+                        masks=masks,
+                        scores=scores,
+                        mask_threshold=self.predictor.mask_threshold,
+                        inference_start_timestamp=t1,
+                    )
+                elif request.format == "binary":
+                    binary_vector = BytesIO()
+                    np.savez_compressed(
+                        binary_vector, masks=masks, low_res_masks=low_resolution_logits
+                    )
+                    binary_vector.seek(0)
+                    binary_data = binary_vector.getvalue()
+                    return binary_data
+                else:
+                    raise ValueError(f"Invalid format {request.format}")
 
-        else:
-            raise ValueError(f"Invalid request type {type(request)}")
+            else:
+                raise ValueError(f"Invalid request type {type(request)}")
 
     def preproc_image(self, image: InferenceRequestImage):
         """Preprocesses an image.

@@ -266,6 +266,8 @@ LAMBDA = str2bool(os.getenv("LAMBDA", False))
 # Whether is's GCP serverless service
 GCP_SERVERLESS = str2bool(os.getenv("GCP_SERVERLESS", "False"))
 
+GET_MODEL_REGISTRY_ENABLED = str2bool(os.getenv("GET_MODEL_REGISTRY_ENABLED", "True"))
+
 # Flag to enable API logging, default is False
 API_LOGGING_ENABLED = str2bool(os.getenv("API_LOGGING_ENABLED", "False"))
 
@@ -522,6 +524,20 @@ WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS = int(
 ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS = str2bool(
     os.getenv("ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS", True)
 )
+
+# Modal configuration for Custom Python Blocks
+WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE = os.getenv(
+    "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "local"
+).lower()  # "local" or "modal"
+
+# Strip quotes from Modal credentials in case users include them
+_modal_token_id = os.getenv("MODAL_TOKEN_ID")
+_modal_token_secret = os.getenv("MODAL_TOKEN_SECRET")
+
+# Remove common quote characters that users might accidentally include
+MODAL_TOKEN_ID = _modal_token_id.strip("\"'") if _modal_token_id else None
+MODAL_TOKEN_SECRET = _modal_token_secret.strip("\"'") if _modal_token_secret else None
+MODAL_WORKSPACE_NAME = os.getenv("MODAL_WORKSPACE_NAME", "roboflow")
 
 MODEL_VALIDATION_DISABLED = str2bool(os.getenv("MODEL_VALIDATION_DISABLED", "False"))
 
