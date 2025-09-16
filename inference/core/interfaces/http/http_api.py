@@ -429,6 +429,26 @@ class HttpInterface(BaseInterface):
                     or request.url.path.startswith("/static/")
                     or request.url.path.startswith("/_next/")
                 )
+
+                # for these routes we only want to auth if dynamic python modules are provided
+                if request.url.path in [
+                    "/workflows/blocks/describe",
+                    "/workflows/definition/schema",
+                ]:
+                    if request.method == "GET":
+                        skip_check = True
+
+                    elif (
+                        request.headers.get("content-type", None) == "application/json"
+                        and int(request.headers.get("content-length", 0)) > 0
+                    ):
+                        json_params = await request.json()
+                        dynamic_blocks_definitions = json_params.get(
+                            "dynamic_blocks_definitions", None
+                        )
+                        if not dynamic_blocks_definitions:
+                            skip_check = True
+
                 if skip_check:
                     return await call_next(request)
 
