@@ -501,8 +501,6 @@ class HttpInterface(BaseInterface):
                         "/redoc",
                         "/info",
                         "/openapi.json",  # needed for /docs and /redoc
-                        # "/workflows/blocks/describe", #this has to require API key because it loads custom python block code dynamically!
-                        # "/workflows/definition/schema",
                     ]
                     or request.url.path.startswith("/static/")
                     or request.url.path.startswith("/_next/")
