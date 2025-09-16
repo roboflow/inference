@@ -63,6 +63,12 @@ def initialise_step(
         explicit_init_parameters=explicit_init_parameters,
         initializers=initializers,
     )
+    
+    # Special handling for dynamic blocks - always provide api_key if available
+    if block_specification.block_source == "dynamic_workflows_blocks":
+        if "workflows_core.api_key" in explicit_init_parameters:
+            init_parameters_values["api_key"] = explicit_init_parameters["workflows_core.api_key"]
+    
     try:
         step = block_specification.block_class(**init_parameters_values)
     except TypeError as e:

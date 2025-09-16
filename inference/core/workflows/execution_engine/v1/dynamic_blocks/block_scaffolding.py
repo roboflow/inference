@@ -64,8 +64,8 @@ def assembly_custom_python_block(
                 ModalExecutor,
             )
 
-            # Get api_key from kwargs if available
-            api_key = kwargs.pop("api_key", None)
+            # Use the api_key that was stored during initialization
+            api_key = getattr(self, "_api_key", None)
             
             # Fall back to "anonymous" for non-authenticated users (if allowed)
             if not api_key:
@@ -122,11 +122,14 @@ def assembly_custom_python_block(
 
     init_function = getattr(code_module, python_code.init_function_name, dict)
 
-    def constructor(self):
+    def constructor(self, api_key=None, **kwargs):
+        # Store the api_key as an instance variable
+        self._api_key = api_key
         self._init_results = init_function()
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
+        # Return an empty list but we'll handle api_key specially in the init parameter resolution
         return []
 
     @classmethod
