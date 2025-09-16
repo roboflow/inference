@@ -31,6 +31,7 @@ class Florence2(Florence2Processing, TransformerModel):
             os.path.join(self.cache_dir, "modeling_florence2.py"),
             "Florence2ForConditionalGeneration",
         )
+        self.transformers_class._supports_sdpa = False
 
         self.processor_class = import_class_from_file(
             os.path.join(self.cache_dir, "processing_florence2.py"),
