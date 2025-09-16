@@ -60,6 +60,10 @@ class Executor:
     # Parameterize by workspace_id
     workspace_id: str = modal.parameter()
 
+    @modal.enter()
+    def identify(self):
+        print(f"Initializing sandbox for {self.workspace_id}")
+
     @modal.fastapi_endpoint(method="POST", requires_proxy_auth=True)
     def execute_block(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """Execute the custom block with the given inputs via web endpoint.

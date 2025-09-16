@@ -41,6 +41,12 @@ class ExecutionEngineV1(BaseExecutionEngine):
     ) -> "ExecutionEngineV1":
         if init_parameters is None:
             init_parameters = {}
+
+        init_parameters["dynamic_workflows_blocks.api_key"] = init_parameters.get(
+            "dynamic_workflows_blocks.api_key",
+            init_parameters.get("workflows_core.api_key"),
+        )
+
         if profiler is None:
             profiler = NullWorkflowsProfiler.init()
         compiled_workflow = compile_workflow(

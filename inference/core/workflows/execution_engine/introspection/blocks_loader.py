@@ -60,8 +60,8 @@ def describe_available_blocks(
     )
     result = []
     for block in blocks:
-        block_schema = block.manifest_class.model_json_schema()
-        outputs_manifest = block.manifest_class.describe_outputs()
+        block_schema = _cached_model_json_schema(block.manifest_class)
+        outputs_manifest = _cached_describe_outputs(block.manifest_class)
         manifest_type_identifiers = get_manifest_type_identifiers(
             block_schema=block_schema,
             block_source=block.block_source,
@@ -497,3 +497,13 @@ def get_plugin_modules() -> List[str]:
     if plugins_to_load is None:
         return []
     return plugins_to_load.split(",")
+
+
+@lru_cache(maxsize=256)
+def _cached_model_json_schema(manifest_class):
+    return manifest_class.model_json_schema()
+
+
+@lru_cache(maxsize=256)
+def _cached_describe_outputs(manifest_class):
+    return manifest_class.describe_outputs()

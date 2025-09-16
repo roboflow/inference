@@ -13,7 +13,12 @@ from typing import Any, Dict, Optional
 import numpy as np
 import requests
 
-from inference.core.env import MODAL_TOKEN_ID, MODAL_TOKEN_SECRET, MODAL_WORKSPACE_NAME
+from inference.core.env import (
+    MODAL_ANONYMOUS_WORKSPACE_NAME,
+    MODAL_TOKEN_ID,
+    MODAL_TOKEN_SECRET,
+    MODAL_WORKSPACE_NAME,
+)
 from inference.core.logger import logger
 from inference.core.workflows.errors import DynamicBlockError
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
@@ -179,7 +184,7 @@ class ModalExecutor:
         Args:
             workspace_id: The workspace ID to namespace execution, defaults to "anonymous"
         """
-        self.workspace_id = workspace_id or "anonymous"
+        self.workspace_id = workspace_id or MODAL_ANONYMOUS_WORKSPACE_NAME
         self._base_url = None
 
     def _get_endpoint_url(self, workspace_id: str) -> str:
@@ -269,6 +274,22 @@ class ModalExecutor:
                 "inputs_json": inputs_json,
             }
 
+            if (
+                not workspace
+                or workspace == "anonymous"
+                or workspace == "unauthorized"
+                or workspace == MODAL_ANONYMOUS_WORKSPACE_NAME
+            ):
+                from inference.core.env import MODAL_ALLOW_ANONYMOUS_EXECUTION
+
+                if not MODAL_ALLOW_ANONYMOUS_EXECUTION:
+                    raise DynamicBlockError(
+                        public_message="Modal validation requires an API key when anonymous execution is disabled. "
+                        "Please provide an API key or enable anonymous execution by setting "
+                        "MODAL_ALLOW_ANONYMOUS_EXECUTION=True",
+                        context="modal_executor | validation_authentication",
+                    )
+
             # Make HTTP request to Modal endpoint
             response = requests.post(
                 endpoint_url,
@@ -347,7 +368,7 @@ def validate_code_in_modal(
             context="modal_executor | credentials_check",
         )
 
-    workspace = workspace_id or "anonymous"
+    workspace = workspace_id or MODAL_ANONYMOUS_WORKSPACE_NAME
 
     # Construct the full code to validate (same as in create_dynamic_module)
     full_code = python_code.run_function_code
