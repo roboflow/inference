@@ -5,6 +5,7 @@ from typing import List, Optional, Type
 from inference.core.env import (
     ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
     WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
+    ALLOW_ANONYMOUS_MODAL_EXECUTION,
 )
 from inference.core.workflows.errors import (
     DynamicBlockError,
@@ -69,8 +70,6 @@ def assembly_custom_python_block(
             
             # Fall back to "anonymous" for non-authenticated users (if allowed)
             if not api_key:
-                from inference.core.env import ALLOW_ANONYMOUS_MODAL_EXECUTION
-                
                 if not ALLOW_ANONYMOUS_MODAL_EXECUTION:
                     raise DynamicBlockError(
                         public_message="Modal execution requires an API key when anonymous execution is disabled. "
@@ -171,11 +170,9 @@ def create_dynamic_module(
             validate_code_in_modal,
         )
 
-        # Use anonymous workspace if not provided
-        validation_workspace = workspace_id or "anonymous"
-
-        # This will raise if validation fails
-        validate_code_in_modal(python_code, validation_workspace)
+        # Pass workspace_id directly - validate_code_in_modal will handle None case
+        # This will raise if validation fails (including if anonymous is not allowed)
+        validate_code_in_modal(python_code, workspace_id)
 
         # Create a stub module for local reference
         dynamic_module = types.ModuleType(module_name)

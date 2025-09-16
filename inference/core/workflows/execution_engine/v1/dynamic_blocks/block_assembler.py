@@ -56,7 +56,9 @@ from inference.core.workflows.prototypes.block import WorkflowBlockManifest
     categories=["execution_engine_operation"],
 )
 def compile_dynamic_blocks(
-    dynamic_blocks_definitions: List[dict], profiler: Optional[WorkflowsProfiler] = None
+    dynamic_blocks_definitions: List[dict], 
+    profiler: Optional[WorkflowsProfiler] = None,
+    workspace_id: Optional[str] = None
 ) -> List[BlockSpecification]:
     if not dynamic_blocks_definitions:
         return []
@@ -72,6 +74,7 @@ def compile_dynamic_blocks(
         block_specification = create_dynamic_block_specification(
             dynamic_block_definition=dynamic_block,
             kinds_lookup=kinds_lookup,
+            workspace_id=workspace_id,
         )
         compiled_blocks.append(block_specification)
     return compiled_blocks
@@ -106,6 +109,7 @@ def ensure_dynamic_blocks_allowed(dynamic_blocks_definitions: List[dict]) -> Non
 def create_dynamic_block_specification(
     dynamic_block_definition: DynamicBlockDefinition,
     kinds_lookup: Dict[str, Kind],
+    workspace_id: Optional[str] = None,
 ) -> BlockSpecification:
     unique_identifier = str(uuid4())
     block_manifest = assembly_dynamic_block_manifest(
@@ -118,6 +122,7 @@ def create_dynamic_block_specification(
         unique_identifier=unique_identifier,
         manifest=block_manifest,
         python_code=dynamic_block_definition.code,
+        workspace_id=workspace_id,
     )
     return BlockSpecification(
         block_source=BLOCK_SOURCE,
