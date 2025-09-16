@@ -3,7 +3,6 @@ import types
 from typing import List, Optional, Type
 
 from inference.core.env import (
-    ALLOW_ANONYMOUS_MODAL_EXECUTION,
     ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
     WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
 )
@@ -77,14 +76,6 @@ def assembly_custom_python_block(
             # Fall back to "anonymous" for non-authenticated users
             if not workspace_id:
                 workspace_id = "anonymous"
-
-            if workspace_id == "anonymous" and (not ALLOW_ANONYMOUS_MODAL_EXECUTION):
-                raise DynamicBlockError(
-                    public_message="Modal execution requires an API key when anonymous execution is disabled. "
-                    "Please provide an API key or enable anonymous execution by setting "
-                    "ALLOW_ANONYMOUS_MODAL_EXECUTION=True",
-                    context="workflow_execution | dynamic_block_execution | modal_authentication",
-                )
 
             executor = ModalExecutor(workspace_id)
             return executor.execute_remote(
@@ -196,16 +187,6 @@ def create_dynamic_module(
         # Fall back to "anonymous" for non-authenticated users
         if not validation_workspace:
             validation_workspace = "anonymous"
-
-        if validation_workspace == "anonymous" and (
-            not ALLOW_ANONYMOUS_MODAL_EXECUTION
-        ):
-            raise DynamicBlockError(
-                public_message="Modal execution requires an API key when anonymous execution is disabled. "
-                "Please provide an API key or enable anonymous execution by setting "
-                "ALLOW_ANONYMOUS_MODAL_EXECUTION=True",
-                context="workflow_execution | dynamic_block_execution | modal_authentication",
-            )
 
         # This will raise if validation fails
         validate_code_in_modal(python_code, validation_workspace)

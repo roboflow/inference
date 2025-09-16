@@ -362,18 +362,6 @@ def validate_code_in_modal(
             context="modal_executor | credentials_check",
         )
 
-    # Check if anonymous execution is allowed when no workspace_id
-    if not workspace_id:
-        from inference.core.env import ALLOW_ANONYMOUS_MODAL_EXECUTION
-
-        if not ALLOW_ANONYMOUS_MODAL_EXECUTION:
-            raise DynamicBlockError(
-                public_message="Modal validation requires an API key when anonymous execution is disabled. "
-                "Please provide an API key or enable anonymous execution by setting "
-                "ALLOW_ANONYMOUS_MODAL_EXECUTION=True",
-                context="modal_executor | validation_authentication",
-            )
-
     workspace = workspace_id or "anonymous"
 
     # Construct the full code to validate (same as in create_dynamic_module)
