@@ -193,7 +193,6 @@ def determine_default_allowed_quantization(
             return [
                 Quantization.UNKNOWN,
                 Quantization.FP32,
-                Quantization.FP16,
                 Quantization.BF16,
             ]
         return [

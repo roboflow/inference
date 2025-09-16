@@ -1,6 +1,6 @@
+import json
 import os
 from typing import List, Literal, Optional, Tuple, Union
-import json
 
 import cv2
 import numpy as np
@@ -18,7 +18,7 @@ from inference_exp.models.common.roboflow.pre_processing import (
     extract_input_images_dimensions,
     pre_process_network_input,
 )
-from peft import PeftModel, LoraConfig, get_peft_model
+from peft import LoraConfig, PeftModel, get_peft_model
 from peft.utils.save_and_load import set_peft_model_state_dict
 from transformers import Florence2ForConditionalGeneration, Florence2Processor
 
@@ -156,9 +156,12 @@ class Florence2HF:
         )
 
         return cls(
-            model=model, processor=processor, inference_config=inference_config, device=device, torch_dtype=torch_dtype
+            model=model,
+            processor=processor,
+            inference_config=inference_config,
+            device=device,
+            torch_dtype=torch_dtype,
         )
-
 
     def __init__(
         self,
