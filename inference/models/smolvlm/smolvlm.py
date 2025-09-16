@@ -69,7 +69,7 @@ class LoRASmolVLM(LoRATransformerModel):
         cache_dir = super().get_lora_base_from_roboflow(model_id, revision)
         return cache_dir
 
-    def initialize_model(self):
+    def initialize_model(self, **kwargs):
         config_file = os.path.join(self.cache_dir, "adapter_config.json")
 
         with open(config_file, "r") as file:

@@ -56,6 +56,7 @@ setuptools.setup(
             "requirements/requirements.gaze.txt",
             "requirements/requirements.groundingdino.txt",
             "requirements/requirements.hosted.txt",
+            "requirements/requirements.modal.txt",
             "requirements/requirements.yolo_world.txt",
             "requirements/requirements.code_analysis.txt",
             "requirements/requirements.test.unit.txt",

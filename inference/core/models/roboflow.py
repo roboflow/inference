@@ -449,7 +449,7 @@ class RoboflowInferenceModel(Model):
         logger.debug(f"Resize method is '{self.resize_method}'")
         self.multiclass = self.environment.get("MULTICLASS", False)
 
-    def initialize_model(self) -> None:
+    def initialize_model(self, **kwargs) -> None:
         """Initialize the model.
 
         Raises:

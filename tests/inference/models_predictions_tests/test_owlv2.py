@@ -1,6 +1,7 @@
 import gc
 import os
 from unittest.mock import MagicMock
+from threading import RLock
 
 import numpy as np
 import pytest
@@ -439,6 +440,7 @@ def test_infer_with_numpy_image_uses_image_after_sizing() -> None:
             self.cpu_image_embed_cache = {}
             self.before_unload_image_none = False
             self.after_unload = False
+            self.owlv2_lock = RLock()
 
         compute_image_size = OwlV2.compute_image_size
         infer = OwlV2.infer

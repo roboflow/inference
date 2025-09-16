@@ -73,7 +73,7 @@ class Moondream2(TransformerModel):
         else:
             return super().get_infer_bucket_file_list()
 
-    def initialize_model(self):
+    def initialize_model(self, **kwargs):
         model = import_class_from_file(
             os.path.join(self.cache_dir, "hf_moondream.py"),
             "HfMoondream",

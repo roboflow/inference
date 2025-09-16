@@ -80,13 +80,13 @@ class TransformerModel(RoboflowInferenceModel):
         if self.dtype is None:
             self.dtype = self.default_dtype
 
-        self.cache_model_artefacts()
+        self.cache_model_artefacts(**kwargs)
 
         self.cache_dir = os.path.join(MODEL_CACHE_DIR, self.endpoint + "/")
 
-        self.initialize_model()
+        self.initialize_model(**kwargs)
 
-    def initialize_model(self):
+    def initialize_model(self, **kwargs):
         if not self.load_base_from_roboflow:
             model_id = self.dataset_id
         else:
@@ -182,7 +182,7 @@ class TransformerModel(RoboflowInferenceModel):
             "tokenizer_config.json",
         ]
 
-    def download_model_artifacts_from_roboflow_api(self) -> None:
+    def download_model_artifacts_from_roboflow_api(self, **kwargs) -> None:
         if self.load_weights_as_transformers:
             api_data = get_roboflow_model_data(
                 api_key=self.api_key,
@@ -289,7 +289,7 @@ class TransformerModel(RoboflowInferenceModel):
 class LoRATransformerModel(TransformerModel):
     load_base_from_roboflow = False
 
-    def initialize_model(self):
+    def initialize_model(self, **kwargs):
         import torch
         from peft import LoraConfig
         from peft.peft_model import PeftModel
