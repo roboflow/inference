@@ -64,22 +64,28 @@ def assembly_custom_python_block(
                 ModalExecutor,
             )
 
-            # Get workspace_id from context if available
-            workspace_id = kwargs.pop("workspace_id", None)
-            if not workspace_id:
-                # Try to extract from self or context
-                workspace_id = getattr(self, "workspace_id", None)
+            # Get api_key from kwargs if available
+            api_key = kwargs.pop("api_key", None)
+            
+            # Fall back to "anonymous" for non-authenticated users (if allowed)
+            if not api_key:
+                from inference.core.env import ALLOW_ANONYMOUS_MODAL_EXECUTION
+                
+                if not ALLOW_ANONYMOUS_MODAL_EXECUTION:
+                    raise DynamicBlockError(
+                        public_message="Modal execution requires an API key when anonymous execution is disabled. "
+                        "Please provide an API key or enable anonymous execution by setting "
+                        "ALLOW_ANONYMOUS_MODAL_EXECUTION=True",
+                        context="workflow_execution | dynamic_block_execution | modal_authentication",
+                    )
+                api_key = "anonymous"
 
-            # Fall back to "anonymous" for non-authenticated users
-            if not workspace_id:
-                workspace_id = "anonymous"
-
-            executor = ModalExecutor(workspace_id)
+            executor = ModalExecutor(workspace_id=api_key)
             return executor.execute_remote(
                 block_type_name=block_type_name,
                 python_code=python_code,
                 inputs=kwargs,
-                workspace_id=workspace_id,
+                workspace_id=api_key,
             )
         else:
             # Local execution - check if allowed

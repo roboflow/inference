@@ -269,6 +269,8 @@ class ModalExecutor:
                 "inputs_json": inputs_json,
             }
 
+            logger.info(f"Executing remote execution on modal to {endpoint_url} with workspace_id: {workspace}")
+
             # Make HTTP request to Modal endpoint
             response = requests.post(
                 endpoint_url,
