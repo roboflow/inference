@@ -31,6 +31,7 @@ class PaliGemmaHF:
         trust_remote_code: bool = False,
         local_files_only: bool = True,
         quantization_config: Optional[BitsAndBytesConfig] = None,
+        disable_quantization: bool = False,
         **kwargs,
     ) -> "PaliGemmaHF":
         torch_dtype = torch.float16 if device.type == "cuda" else torch.float32
@@ -48,7 +49,11 @@ class PaliGemmaHF:
                     ResizeMode.LETTERBOX_REFLECT_EDGES,
                 },
             )
-        if quantization_config is None and device.type == "cuda":
+        if (
+            quantization_config is None
+            and device.type == "cuda"
+            and not disable_quantization
+        ):
             quantization_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_quant_type="nf4",

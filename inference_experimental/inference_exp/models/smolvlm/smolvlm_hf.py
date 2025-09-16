@@ -27,6 +27,7 @@ class SmolVLMHF:
         trust_remote_code: bool = False,
         local_files_only: bool = True,
         quantization_config: Optional[BitsAndBytesConfig] = None,
+        disable_quantization: bool = False,
         **kwargs,
     ) -> "SmolVLMHF":
         torch_dtype = torch.float16 if device.type == "cuda" else torch.float32
@@ -45,7 +46,11 @@ class SmolVLMHF:
                 },
             )
         adapter_config_path = os.path.join(model_name_or_path, "adapter_config.json")
-        if quantization_config is None and device.type == "cuda":
+        if (
+            quantization_config is None
+            and device.type == "cuda"
+            and not disable_quantization
+        ):
             quantization_config = BitsAndBytesConfig(
                 load_in_4bit=True,
             )

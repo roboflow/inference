@@ -30,6 +30,7 @@ class Qwen25VLHF:
         trust_remote_code: bool = False,
         local_files_only: bool = True,
         quantization_config: Optional[BitsAndBytesConfig] = None,
+        disable_quantization: bool = False,
         **kwargs,
     ) -> "Qwen25VLHF":
         adapter_config_path = os.path.join(model_name_or_path, "adapter_config.json")
@@ -47,7 +48,11 @@ class Qwen25VLHF:
                     ResizeMode.LETTERBOX_REFLECT_EDGES,
                 },
             )
-        if quantization_config is None and device.type == "cuda":
+        if (
+            quantization_config is None
+            and device.type == "cuda"
+            and not disable_quantization
+        ):
             quantization_config = BitsAndBytesConfig(
                 load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16
             )
