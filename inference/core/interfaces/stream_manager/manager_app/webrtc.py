@@ -199,7 +199,7 @@ class VideoTransformTrack(VideoStreamTrack):
             logger.info("WebRTC reader loop cancelled")
         except MediaStreamError:
             if not self.complete:
-                logger.info("WebRTC reader loop finished due to MediaStreamError")
+                logger.error("WebRTC reader loop finished due to MediaStreamError")
         except Exception as exc:
             logger.error("Error in WebRTC reader loop: %s", exc)
 
