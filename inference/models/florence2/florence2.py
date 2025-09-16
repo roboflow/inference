@@ -37,6 +37,8 @@ class Florence2(Florence2Processing, TransformerModel):
 
             self.transformers_class = Florence2ForConditionalGeneration
             self.processor_class = Florence2Processor
+            # watch out - this breaks the general usage of florence in transformers lib!
+            Florence2Config.model_type = "florence2_language"
             AutoConfig.register("florence2_language", Florence2Config)
         except ImportError:
             self.transformers_class = import_class_from_file(
@@ -75,6 +77,8 @@ class LoRAFlorence2(Florence2Processing, LoRATransformerModel):
 
             self.transformers_class = Florence2ForConditionalGeneration
             self.processor_class = Florence2Processor
+            # watch out - this breaks the general usage of florence in transformers lib!
+            Florence2Config.model_type = "florence2_language"
             AutoConfig.register("florence2_language", Florence2Config)
         except ImportError:
             self.transformers_class = import_class_from_file(
