@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from typing import List, Literal, Optional, Tuple, Union
 
 import cv2
@@ -8,7 +9,7 @@ import torch
 from inference_exp import Detections, InstanceDetections
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat, ImageDimensions
-from inference_exp.errors import ModelRuntimeError
+from inference_exp.errors import CorruptedModelPackageError, ModelRuntimeError
 from inference_exp.models.common.roboflow.model_packages import (
     InferenceConfig,
     ResizeMode,
@@ -19,7 +20,8 @@ from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
 from peft import LoraConfig, get_peft_model
-from peft.utils.save_and_load import set_peft_model_state_dict
+from peft.mapping import PEFT_TYPE_TO_PREFIX_MAPPING
+from peft.utils.save_and_load import load_peft_weights, set_peft_model_state_dict
 from transformers import (
     BitsAndBytesConfig,
     Florence2ForConditionalGeneration,
@@ -114,51 +116,40 @@ class Florence2HF:
                 adapter_cfg = json.load(f)
 
             requested_target_modules = adapter_cfg.get("target_modules") or []
-            # Common Florence-2 module names across text and vision
-            target_modules = {
-                "q_proj",
-                "k_proj",
-                "v_proj",
-                "o_proj",
-                "fc1",
-                "fc2",
-                # vision attention names
-                "qkv",
-                "proj",
-            }
-            # Keep any explicit targets from adapter config
-            for tm in requested_target_modules:
-                target_modules.add(tm)
-            # Build LoRA config (avoid target_module_types for broad PEFT compatibility)
             adapter_task_type = adapter_cfg.get("task_type") or "SEQ_2_SEQ_LM"
             lora_config = LoraConfig(
                 r=adapter_cfg.get("r", 8),
                 lora_alpha=adapter_cfg.get("lora_alpha", 8),
                 lora_dropout=adapter_cfg.get("lora_dropout", 0.0),
                 bias="none",
-                target_modules=sorted(target_modules),
+                target_modules=sorted(requested_target_modules),
                 use_dora=bool(adapter_cfg.get("use_dora", False)),
                 use_rslora=bool(adapter_cfg.get("use_rslora", False)),
                 task_type=adapter_task_type,
             )
 
             model = get_peft_model(model, lora_config)
-
             # Load adapter weights
-            adapter_weights_path = os.path.join(
-                model_name_or_path, "adapter_model.safetensors"
-            )
-            from safetensors.torch import load_file as load_safetensors
-
-            adapter_state = load_safetensors(adapter_weights_path)
+            adapter_state = load_peft_weights(model_name_or_path, device=device.type)
             adapter_state = normalize_adapter_state_dict(adapter_state)
-            # Cast adapter tensors to base model dtype (fp16/bf16) for safe merge
-            target_dtype = next(model.parameters()).dtype
-            cast_adapter_state = {
-                k: (v.to(dtype=target_dtype) if hasattr(v, "dtype") else v)
-                for k, v in adapter_state.items()
-            }
-            set_peft_model_state_dict(model, cast_adapter_state, adapter_name="default")
+            load_result = set_peft_model_state_dict(
+                model, adapter_state, adapter_name="default"
+            )
+            tuner = lora_config.peft_type
+            tuner_prefix = PEFT_TYPE_TO_PREFIX_MAPPING.get(tuner, "")
+            adapter_missing_keys = []
+            # Filter missing keys specific to the current adapter and tuner prefix.
+            for key in load_result.missing_keys:
+                if tuner_prefix in key and "default" in key:
+                    adapter_missing_keys.append(key)
+            load_result.missing_keys.clear()
+            load_result.missing_keys.extend(adapter_missing_keys)
+            if len(load_result.missing_keys) > 0:
+                raise CorruptedModelPackageError(
+                    message="Could not load LoRA weights for the model - found missing checkpoint keys "
+                    f"({len(load_result.missing_keys)}): {load_result.missing_keys}",
+                    help_url="https://todo",
+                )
             if quantization_config is None:
                 model.merge_and_unload()
         # Ensure global dtype consistency (handles CPU bfloat16 vs fp32 mismatches)
