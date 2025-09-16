@@ -31,13 +31,7 @@ class Florence2(Florence2Processing, TransformerModel):
             os.path.join(self.cache_dir, "modeling_florence2.py"),
             "Florence2ForConditionalGeneration",
         )
-        original_init = self.transformers_class.__init__
-
-        def fixed_init(self, *args, **kwargs):
-            self._supports_sdpa = property(lambda self: False)
-            original_init(self, *args, **kwargs)
-
-        self.transformers_class.__init__ = fixed_init
+        self.transformers_class._supports_sdpa = property(lambda self: True)
 
         self.processor_class = import_class_from_file(
             os.path.join(self.cache_dir, "processing_florence2.py"),
@@ -65,7 +59,7 @@ class LoRAFlorence2(Florence2Processing, LoRATransformerModel):
             os.path.join(cache_dir, "modeling_florence2.py"),
             "Florence2ForConditionalGeneration",
         )
-        self.transformers_class._supports_sdpa = property(lambda self: False)
+        self.transformers_class._supports_sdpa = property(lambda self: True)
 
         self.processor_class = import_class_from_file(
             os.path.join(cache_dir, "processing_florence2.py"),
