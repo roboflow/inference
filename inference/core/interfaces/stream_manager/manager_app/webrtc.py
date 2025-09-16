@@ -379,6 +379,7 @@ async def init_rtc_peer_connection(
     asyncio_loop: asyncio.AbstractEventLoop,
     fps_probe_frames: int,
     webrtc_turn_config: Optional[WebRTCTURNConfig] = None,
+    webrtc_realtime_processing: bool = True,
     webcam_fps: Optional[float] = None,
     stream_output: Optional[str] = None,
     data_output: Optional[str] = None,
@@ -391,6 +392,7 @@ async def init_rtc_peer_connection(
         webcam_fps=webcam_fps,
         fps_probe_frames=fps_probe_frames,
         media_relay=relay,
+        drain_remote_stream_track=webrtc_realtime_processing,
     )
 
     if webrtc_turn_config:

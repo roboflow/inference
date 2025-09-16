@@ -276,6 +276,7 @@ class InferencePipelineManager(Process):
                 init_rtc_peer_connection(
                     webrtc_offer=webrtc_offer,
                     webrtc_turn_config=webrtc_turn_config,
+                    webrtc_realtime_processing=parsed_payload.webrtc_realtime_processing,
                     to_inference_queue=to_inference_queue,
                     from_inference_queue=from_inference_queue,
                     asyncio_loop=loop,
