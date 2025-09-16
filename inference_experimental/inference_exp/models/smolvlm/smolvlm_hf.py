@@ -54,6 +54,7 @@ class SmolVLMHF:
             quantization_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_quant_type="nf4",
             )
         if os.path.exists(adapter_config_path):
 
@@ -66,7 +67,7 @@ class SmolVLMHF:
                 quantization_config=quantization_config,
             )
             model = PeftModel.from_pretrained(model, model_name_or_path)
-            if quantization_config is None or not quantization_config.load_in_4bit:
+            if quantization_config is None:
                 model.merge_and_unload()
             model.to(device)
 

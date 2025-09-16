@@ -54,7 +54,9 @@ class Qwen25VLHF:
             and not disable_quantization
         ):
             quantization_config = BitsAndBytesConfig(
-                load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_quant_type="nf4",
             )
         if os.path.exists(adapter_config_path):
             base_model_path = os.path.join(model_name_or_path, "base")
@@ -66,7 +68,8 @@ class Qwen25VLHF:
                 quantization_config=quantization_config,
             )
             model = PeftModel.from_pretrained(model, model_name_or_path)
-            model.merge_and_unload()
+            if quantization_config is None:
+                model.merge_and_unload()
             model.to(device)
             processor = Qwen2_5_VLProcessor.from_pretrained(
                 model_name_or_path,

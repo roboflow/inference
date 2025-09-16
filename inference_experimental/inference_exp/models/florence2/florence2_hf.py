@@ -155,8 +155,8 @@ class Florence2HF:
                 for k, v in adapter_state.items()
             }
             set_peft_model_state_dict(model, cast_adapter_state, adapter_name="default")
-
-            model = model.merge_and_unload()
+            if quantization_config is None:
+                model.merge_and_unload()
         # Ensure global dtype consistency (handles CPU bfloat16 vs fp32 mismatches)
         model = model.to(dtype=torch_dtype)
         model = model.to(device)
