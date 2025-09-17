@@ -1,6 +1,5 @@
 import numpy as np
 import pytest
-
 from inference_exp.models.smolvlm.smolvlm_hf import SmolVLMHF
 
 

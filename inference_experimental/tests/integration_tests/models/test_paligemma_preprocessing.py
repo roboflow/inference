@@ -1,7 +1,6 @@
 import numpy as np
 import pytest
 import torch
-
 from inference_exp.models.paligemma.paligemma_hf import PaliGemmaHF
 
 

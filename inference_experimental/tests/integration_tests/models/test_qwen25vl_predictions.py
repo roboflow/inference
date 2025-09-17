@@ -1,6 +1,5 @@
 import numpy as np
 import pytest
-
 from inference_exp.models.qwen25vl.qwen25vl_hf import Qwen25VLHF
 
 

@@ -1,3 +1,4 @@
+from typing import Union
 from unittest import mock
 from unittest.mock import MagicMock
 
@@ -2440,7 +2441,12 @@ def test_rank_packages_ids() -> None:
     assert result == [1, 0]
 
 
-def test_retrieve_fused_nms_rank_when_no_model_features_declared() -> None:
+@pytest.mark.parametrize(
+    "nms_fusion_preferences", [None, True, False, {"max_detections": (100, 200)}]
+)
+def test_retrieve_fused_nms_rank_when_no_model_features_declared(
+    nms_fusion_preferences: Union[bool, dict, None]
+) -> None:
     # given
     model_package = ModelPackageMetadata(
         package_id="my-package-id-2",
@@ -2456,15 +2462,21 @@ def test_retrieve_fused_nms_rank_when_no_model_features_declared() -> None:
     )
 
     # when
-    result = retrieve_fused_nms_rank(model_package=model_package)
+    result = retrieve_fused_nms_rank(
+        model_package=model_package,
+        nms_fusion_preferences=nms_fusion_preferences,
+    )
 
     # then
     assert result == 0
 
 
-def test_retrieve_fused_nms_rank_when_model_features_declared_but_without_nsm_fused() -> (
-    None
-):
+@pytest.mark.parametrize(
+    "nms_fusion_preferences", [None, True, False, {"max_detections": (100, 200)}]
+)
+def test_retrieve_fused_nms_rank_when_model_features_declared_but_without_nsm_fused(
+    nms_fusion_preferences: Union[bool, dict, None]
+) -> None:
     # given
     model_package = ModelPackageMetadata(
         package_id="my-package-id-2",
@@ -2481,15 +2493,18 @@ def test_retrieve_fused_nms_rank_when_model_features_declared_but_without_nsm_fu
     )
 
     # when
-    result = retrieve_fused_nms_rank(model_package=model_package)
+    result = retrieve_fused_nms_rank(
+        model_package=model_package, nms_fusion_preferences=nms_fusion_preferences
+    )
 
     # then
     assert result == 0
 
 
-def test_retrieve_fused_nms_rank_when_model_features_declared_but_with_nms_fused_turned_off() -> (
-    None
-):
+@pytest.mark.parametrize("nms_fusion_preferences", [None, False])
+def test_retrieve_fused_nms_rank_when_model_features_declared_but_with_nms_fused_turned_on_and_no_nms_preferences(
+    nms_fusion_preferences: Union[bool, dict, None]
+) -> None:
     # given
     model_package = ModelPackageMetadata(
         package_id="my-package-id-2",
@@ -2502,19 +2517,47 @@ def test_retrieve_fused_nms_rank_when_model_features_declared_but_with_nms_fused
             opt_dynamic_batch_size=8,
             max_dynamic_batch_size=32,
         ),
-        model_features={"nms_fused": False},
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.4,
+                "iou_threshold": 0.7,
+                "class_agnostic": True,
+            },
+        },
     )
 
     # when
-    result = retrieve_fused_nms_rank(model_package=model_package)
+    result = retrieve_fused_nms_rank(
+        model_package=model_package,
+        nms_fusion_preferences=nms_fusion_preferences,
+    )
 
     # then
     assert result == 0
 
 
-def test_retrieve_fused_nms_rank_when_model_features_declared_but_with_nms_fused_turned_on() -> (
-    None
-):
+@pytest.mark.parametrize(
+    "nms_fusion_preferences",
+    [
+        {"max_detections": 500},
+        {"max_detections": (400, 600)},
+        {"confidence_threshold": 0.5},
+        {"confidence_threshold": (0.45, 0.65)},
+        {"iou_threshold": 0.5},
+        {"iou_threshold": (0.3, 0.5)},
+        {"class_agnostic": False},
+        {
+            "max_detections": 500,
+            "confidence_threshold": (0.45, 0.65),
+            "iou_threshold": (0.3, 0.5),
+            "class_agnostic": False,
+        },
+    ],
+)
+def test_retrieve_fused_nms_rank_when_model_features_declared_but_with_nms_fused_turned_on_nms_preferences_not_matching(
+    nms_fusion_preferences: Union[bool, dict, None]
+) -> None:
     # given
     model_package = ModelPackageMetadata(
         package_id="my-package-id-2",
@@ -2527,14 +2570,98 @@ def test_retrieve_fused_nms_rank_when_model_features_declared_but_with_nms_fused
             opt_dynamic_batch_size=8,
             max_dynamic_batch_size=32,
         ),
-        model_features={"nms_fused": True},
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.4,
+                "iou_threshold": 0.7,
+                "class_agnostic": True,
+            },
+        },
     )
 
     # when
-    result = retrieve_fused_nms_rank(model_package=model_package)
+    result = retrieve_fused_nms_rank(
+        model_package=model_package,
+        nms_fusion_preferences=nms_fusion_preferences,
+    )
 
     # then
-    assert result == 1
+    assert result == 0
+
+
+@pytest.mark.parametrize(
+    "nms_fusion_preferences, expected_score",
+    [
+        ({"max_detections": 300}, 1.0),
+        ({"max_detections": (200, 400)}, 1.0),
+        ({"max_detections": (300, 500)}, 0.5),
+        ({"max_detections": (300, 600)}, 0.5),
+        ({"max_detections": (100, 600)}, 0.9),
+        ({"max_detections": (0, 600)}, 1.0),
+        ({"max_detections": (0, 1200)}, 0.75),
+        ({"confidence_threshold": 0.4}, 1.0),
+        ({"confidence_threshold": (0.3, 0.5)}, 1.0),
+        ({"confidence_threshold": (0.0, 0.8)}, 1.0),
+        ({"confidence_threshold": (0.0, 1.0)}, 0.9),
+        ({"iou_threshold": 0.7}, 1.0),
+        ({"iou_threshold": (0.6, 0.8)}, 1.0),
+        ({"iou_threshold": (0.5, 0.9)}, 1.0),
+        ({"iou_threshold": (0.7, 1.0)}, 0.5),
+        ({"class_agnostic": True}, 1.0),
+        (
+            {
+                "max_detections": (300, 500),
+                "confidence_threshold": (0.0, 1.0),
+                "iou_threshold": (0.7, 1.0),
+            },
+            1.9,
+        ),
+        (
+            {
+                "max_detections": (300, 500),
+                "confidence_threshold": (0.0, 1.0),
+                "iou_threshold": (0.7, 1.0),
+                "class_agnostic": True,
+            },
+            2.9,
+        ),
+    ],
+)
+def test_retrieve_fused_nms_rank_when_model_features_declared_but_with_nms_fused_turned_on_nms_preferences_matching(
+    nms_fusion_preferences: Union[bool, dict, None],
+    expected_score: float,
+) -> None:
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id-2",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        package_artefacts=[],
+        trt_package_details=TRTPackageDetails(
+            min_dynamic_batch_size=1,
+            opt_dynamic_batch_size=8,
+            max_dynamic_batch_size=32,
+        ),
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.4,
+                "iou_threshold": 0.7,
+                "class_agnostic": True,
+            },
+        },
+    )
+
+    # when
+    result = retrieve_fused_nms_rank(
+        model_package=model_package,
+        nms_fusion_preferences=nms_fusion_preferences,
+    )
+
+    # then
+    assert abs(result - expected_score) < 1e-5
 
 
 def test_rank_model_packages_when_package_id_should_be_ordered_correctly() -> None:
@@ -2573,7 +2700,9 @@ def test_rank_model_packages_when_package_id_should_be_ordered_correctly() -> No
     assert [r.package_id for r in result] == ["my-package-id-2", "my-package-id-1"]
 
 
-def test_rank_model_packages_when_nms_fused_should_be_ordered_correctly() -> None:
+def test_rank_model_packages_when_nms_fused_should_be_ordered_correctly_when_nms_preferred() -> (
+    None
+):
     # given
     model_packages = [
         ModelPackageMetadata(
@@ -2599,12 +2728,71 @@ def test_rank_model_packages_when_nms_fused_should_be_ordered_correctly() -> Non
                 opt_dynamic_batch_size=8,
                 max_dynamic_batch_size=32,
             ),
-            model_features={"nms_fused": True},
+            model_features={
+                "nms_fused": {
+                    "max_detections": 300,
+                    "confidence_threshold": 0.4,
+                    "iou_threshold": 0.7,
+                    "class_agnostic": True,
+                },
+            },
         ),
     ]
 
     # when
-    result = rank_model_packages(model_packages=model_packages)
+    result = rank_model_packages(
+        model_packages=model_packages,
+        nms_fusion_preferences=True,
+    )
 
     # then
     assert [r.package_id for r in result] == ["my-package-id-1", "my-package-id-2"]
+
+
+def test_rank_model_packages_when_nms_fused_should_be_ordered_correctly_when_nms_not_preferred() -> (
+    None
+):
+    # given
+    model_packages = [
+        ModelPackageMetadata(
+            package_id="my-package-id-2",
+            backend=BackendType.TRT,
+            quantization=Quantization.FP32,
+            dynamic_batch_size_supported=True,
+            package_artefacts=[],
+            trt_package_details=TRTPackageDetails(
+                min_dynamic_batch_size=1,
+                opt_dynamic_batch_size=8,
+                max_dynamic_batch_size=32,
+            ),
+        ),
+        ModelPackageMetadata(
+            package_id="my-package-id-1",
+            backend=BackendType.TRT,
+            quantization=Quantization.FP32,
+            dynamic_batch_size_supported=True,
+            package_artefacts=[],
+            trt_package_details=TRTPackageDetails(
+                min_dynamic_batch_size=1,
+                opt_dynamic_batch_size=8,
+                max_dynamic_batch_size=32,
+            ),
+            model_features={
+                "nms_fused": {
+                    "max_detections": 300,
+                    "confidence_threshold": 0.4,
+                    "iou_threshold": 0.7,
+                    "class_agnostic": True,
+                },
+            },
+        ),
+    ]
+
+    # when
+    result = rank_model_packages(
+        model_packages=model_packages,
+        nms_fusion_preferences=False,
+    )
+
+    # then
+    assert [r.package_id for r in result] == ["my-package-id-2", "my-package-id-1"]

@@ -286,7 +286,8 @@ def retrieve_fused_nms_rank(
     actual_max_detections = nms_fused[NMS_MAX_DETECTIONS_KEY]
     actual_confidence_threshold = nms_fused[NMS_CONFIDENCE_THRESHOLD_KEY]
     actual_iou_threshold = nms_fused[NMS_IOU_THRESHOLD_KEY]
-    final_score = 0
+    actual_class_agnostic = nms_fused[NMS_CLASS_AGNOSTIC_KEY]
+    final_score = 0.0
     if NMS_MAX_DETECTIONS_KEY in nms_fusion_preferences:
         requested_max_detections = nms_fusion_preferences[NMS_MAX_DETECTIONS_KEY]
         if isinstance(requested_max_detections, (list, tuple)):
@@ -329,6 +330,10 @@ def retrieve_fused_nms_rank(
             max_value=max_iou_threshold,
             examined_value=actual_iou_threshold,
         )
+    if NMS_CLASS_AGNOSTIC_KEY in nms_fusion_preferences:
+        final_score += float(
+            actual_class_agnostic == nms_fusion_preferences[NMS_CLASS_AGNOSTIC_KEY]
+        )
     return final_score
 
 
@@ -337,10 +342,12 @@ def score_distance_from_mean(
 ) -> float:
     min_value, max_value = min(min_value, max_value), max(min_value, max_value)
     if min_value == max_value:
-        return float(examined_value == max_value)
+        return float(abs(examined_value - max_value) < 1e-5)
+    if examined_value < min_value or examined_value > max_value:
+        return 0.0
     span = max_value - min_value
     examined_value_scaled = min(max((examined_value - min_value) / (span + 1e-6), 0), 1)
-    return 1.0 - 2 * abs(0.5 - examined_value_scaled)
+    return 1.0 - abs(0.5 - examined_value_scaled)
 
 
 def rank_cuda_versions(model_packages: List[ModelPackageMetadata]) -> List[int]:
