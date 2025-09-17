@@ -37,6 +37,9 @@ IMPORTS_LINES = [
     "from inference.core.workflows.prototypes.block import BlockResult",
 ]
 
+# Shared globals dict for all custom python blocks in local mode
+_LOCAL_SHARED_GLOBALS = {}
+
 
 def assembly_custom_python_block(
     block_type_name: str,
@@ -205,6 +208,8 @@ def create_dynamic_module(
         # Local validation and module creation
         try:
             dynamic_module = types.ModuleType(module_name)
+            # Inject the shared globals dict into the module namespace
+            dynamic_module.__dict__["globals"] = _LOCAL_SHARED_GLOBALS
             exec(code, dynamic_module.__dict__)
             return dynamic_module
         except Exception as error:
