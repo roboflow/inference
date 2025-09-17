@@ -721,7 +721,10 @@ WORKFLOW_WITH_PYTHON_BLOCK_RUNNING_ON_BATCH = {
     ],
 }
 
-@pytest.mark.skip(reason="No longer valid after custom python support was added on serverless"
+
+@pytest.mark.skip(
+    reason="No longer valid after custom python support was added on serverless"
+)
 @pytest.mark.flaky(retries=4, delay=1)
 def test_workflow_run_with_dynamic_blocks(
     object_detection_service_url: str, detection_model_id: str
@@ -755,7 +758,9 @@ def test_workflow_run_with_dynamic_blocks(
     ), "Expected execution to be prevented"
 
 
-@pytest.mark.skip(reason="No longer valid after custom python support was added on serverless"
+@pytest.mark.skip(
+    reason="No longer valid after custom python support was added on serverless"
+)
 @pytest.mark.flaky(retries=4, delay=1)
 def test_workflow_validate_with_dynamic_blocks(
     object_detection_service_url: str, detection_model_id: str
