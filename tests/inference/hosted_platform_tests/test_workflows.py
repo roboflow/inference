@@ -202,10 +202,9 @@ def test_getting_block_descriptions_from_new_post_endpoint_with_dynamic_blocks(
     assert response.status_code == 500
     response_data = response.json()
 
-
-assert (
-    "Cannot use dynamic blocks with custom Python code" in response_data["message"]
-), "Expected execution to be prevented"
+    assert (
+        "Cannot use dynamic blocks with custom Python code" in response_data["message"]
+    ), "Expected execution to be prevented"
 
 
 @pytest.mark.flaky(retries=4, delay=1)
