@@ -108,6 +108,23 @@ def key_points_metadata_with_missing_classes() -> str:
 
 
 @pytest.fixture
+def key_points_metadata_with_missing_edges() -> str:
+    return os.path.join(ASSETS_DIR, "key_points_metadata_with_missing_edges.json")
+
+
+@pytest.fixture
+def key_points_metadata_with_malformed_edges() -> str:
+    return os.path.join(ASSETS_DIR, "key_points_metadata_with_malformed_edges.json")
+
+
+@pytest.fixture
+def key_points_metadata_with_edges_pointing_non_existing_class() -> str:
+    return os.path.join(
+        ASSETS_DIR, "key_points_metadata_with_edges_pointing_non_existing_class.json"
+    )
+
+
+@pytest.fixture
 def valid_model_characteristics() -> str:
     return os.path.join(ASSETS_DIR, "valid_model_characteristics.json")
 

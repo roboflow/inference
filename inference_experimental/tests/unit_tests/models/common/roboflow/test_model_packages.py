@@ -131,12 +131,12 @@ def test_parse_key_points_metadata_when_valid_input_provided(
     valid_key_points_metadata: str,
 ) -> None:
     # when
-    result = parse_key_points_metadata(
+    keypoints, edges = parse_key_points_metadata(
         key_points_metadata_path=valid_key_points_metadata
     )
 
     # then
-    assert result == [
+    assert keypoints == [
         ["shoulder-right", "shoulder-left", "neck"],
         [
             "nose",
@@ -158,6 +158,7 @@ def test_parse_key_points_metadata_when_valid_input_provided(
             "right_ankle",
         ],
     ]
+    assert edges == [[(0, 2)], [(0, 2)]]
 
 
 def test_parse_key_points_metadata_when_object_class_id_not_available(
@@ -197,6 +198,36 @@ def test_parse_key_points_metadata_with_missing_classes(
     with pytest.raises(CorruptedModelPackageError):
         _ = parse_key_points_metadata(
             key_points_metadata_path=key_points_metadata_with_missing_classes
+        )
+
+
+def test_parse_key_points_metadata_with_missing_edges(
+    key_points_metadata_with_missing_edges: str,
+) -> None:
+    # when
+    with pytest.raises(CorruptedModelPackageError):
+        _ = parse_key_points_metadata(
+            key_points_metadata_path=key_points_metadata_with_missing_edges
+        )
+
+
+def test_parse_key_points_metadata_with_malformed_edges(
+    key_points_metadata_with_malformed_edges: str,
+) -> None:
+    # when
+    with pytest.raises(CorruptedModelPackageError):
+        _ = parse_key_points_metadata(
+            key_points_metadata_path=key_points_metadata_with_malformed_edges
+        )
+
+
+def test_parse_key_points_metadata_with_edges_pointing_non_existing_class(
+    key_points_metadata_with_edges_pointing_non_existing_class: str,
+) -> None:
+    # when
+    with pytest.raises(CorruptedModelPackageError):
+        _ = parse_key_points_metadata(
+            key_points_metadata_path=key_points_metadata_with_edges_pointing_non_existing_class
         )
 
 
