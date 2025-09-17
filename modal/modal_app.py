@@ -64,12 +64,16 @@ class Executor:
     # Store state for each unique code block within this container
     # Key is the hash of the code, value is the namespace dict for that code
     _code_namespaces: Dict[str, dict] = {}
+    
+    # Shared globals dict that all custom python blocks can access
+    _shared_globals: Dict[str, Any] = {}
 
     @modal.enter()
     def identify(self):
         print(f"Initializing sandbox for {self.workspace_id}")
-        # Initialize the namespaces dict
+        # Initialize the namespaces dict and shared globals
         self._code_namespaces = {}
+        self._shared_globals = {}
 
     def _get_code_hash(self, code_str: str, imports: list) -> str:
         """Compute a stable hash for the code to identify unique blocks."""
@@ -116,7 +120,10 @@ class Executor:
         # Check if we already have a namespace for this code
         if code_hash not in self._code_namespaces:
             # Create a new namespace for this code block
-            self._code_namespaces[code_hash] = {"__name__": "__main__"}
+            self._code_namespaces[code_hash] = {
+                "__name__": "__main__",
+                "globals": self._shared_globals  # Inject the shared globals dict
+            }
             
             # Execute imports and code in the namespace to initialize it
             import_code = "\n".join(imports) if imports else ""
