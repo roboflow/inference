@@ -40,7 +40,7 @@ def test_getting_block_descriptions_from_new_post_endpoint(
 ) -> None:
     # when
     response = requests.post(
-        f"{object_detection_service_url}/workflows/blocks/describe"
+        f"{object_detection_service_url}/workflows/blocks/describe?api_key={ROBOFLOW_API_KEY}"
     )
 
     # then
@@ -123,7 +123,7 @@ def test_getting_schemas_from_new_post_endpoint_when_not_matching_execution_engi
 def test_get_versions_of_execution_engine(object_detection_service_url: str) -> None:
     # when
     response = requests.get(
-        f"{object_detection_service_url}/workflows/execution_engine/versions"
+        f"{object_detection_service_url}/workflows/execution_engine/versions?api_key={ROBOFLOW_API_KEY}"
     )
 
     # then
@@ -194,16 +194,18 @@ def test_getting_block_descriptions_from_new_post_endpoint_with_dynamic_blocks(
 ) -> None:
     # when
     response = requests.post(
-        f"{object_detection_service_url}/workflows/blocks/describe",
+        f"{object_detection_service_url}/workflows/blocks/describe?api_key={ROBOFLOW_API_KEY}",
         json={"dynamic_blocks_definitions": DYNAMIC_BLOCKS_DEFINITION},
     )
 
     # then
     assert response.status_code == 500
     response_data = response.json()
-    assert (
-        "Cannot use dynamic blocks with custom Python code" in response_data["message"]
-    ), "Expected execution to be prevented"
+
+
+assert (
+    "Cannot use dynamic blocks with custom Python code" in response_data["message"]
+), "Expected execution to be prevented"
 
 
 @pytest.mark.flaky(retries=4, delay=1)
@@ -233,7 +235,7 @@ def test_getting_block_schema_from_get_endpoint(
 def test_getting_dynamic_outputs(object_detection_service_url: str) -> None:
     # when
     response = requests.post(
-        f"{object_detection_service_url}/workflows/blocks/dynamic_outputs",
+        f"{object_detection_service_url}/workflows/blocks/dynamic_outputs?api_key={ROBOFLOW_API_KEY}",
         json={
             "type": "LMM",
             "name": "step_1",
@@ -289,7 +291,7 @@ def test_compilation_endpoint_when_compilation_succeeds(
 
     # when
     response = requests.post(
-        f"{object_detection_service_url}/workflows/validate",
+        f"{object_detection_service_url}/workflows/validate?api_key={ROBOFLOW_API_KEY}",
         json=valid_workflow_definition,
     )
 
@@ -327,7 +329,7 @@ def test_compilation_endpoint_when_compilation_fails_due_to_invalid_requested_ex
 
     # when
     response = requests.post(
-        f"{object_detection_service_url}/workflows/validate",
+        f"{object_detection_service_url}/workflows/validate?api_key={ROBOFLOW_API_KEY}",
         json=valid_workflow_definition,
     )
 
@@ -361,7 +363,7 @@ def test_compilation_endpoint_when_compilation_fails(
 
     # when
     response = requests.post(
-        f"{object_detection_service_url}/workflows/validate",
+        f"{object_detection_service_url}/workflows/validate?api_key={ROBOFLOW_API_KEY}",
         json=valid_workflow_definition,
     )
 
@@ -481,6 +483,7 @@ def test_simple_workflow_run_when_api_key_is_invalid(
     # then
     assert (
         response.status_code == 500
+        or response.status_code == 401  # serverless will return 401
     ), "Auth error is expected to be manifested as runtime error for one of the step"
 
 
@@ -741,7 +744,9 @@ def test_workflow_run_with_dynamic_blocks(
     )
 
     # then
-    assert response.status_code == 500
+    assert (
+        response.status_code == 500.0
+    )  # returns 400 on new serverless with custom python support?
     response_data = response.json()
     assert (
         "Cannot use dynamic blocks with custom Python code" in response_data["message"]
@@ -754,7 +759,7 @@ def test_workflow_validate_with_dynamic_blocks(
 ) -> None:
     # when
     response = requests.post(
-        f"{object_detection_service_url}/workflows/validate",
+        f"{object_detection_service_url}/workflows/validate?api_key={ROBOFLOW_API_KEY}",
         json=WORKFLOW_WITH_PYTHON_BLOCK_RUNNING_ON_BATCH,
     )
 
@@ -875,7 +880,7 @@ def test_discovering_interface_of_valid_workflow_from_payload(
         f"{object_detection_service_url}/workflows/describe_interface",
         json={
             "specification": valid_definition,
-            "api_key": "some",
+            "api_key": ROBOFLOW_API_KEY,
         },
     )
 
@@ -947,7 +952,7 @@ def test_discovering_interface_of_invalid_workflow_from_payload(
         f"{object_detection_service_url}/workflows/describe_interface",
         json={
             "specification": valid_definition,
-            "api_key": "some",
+            "api_key": ROBOFLOW_API_KEY,
         },
     )
 
