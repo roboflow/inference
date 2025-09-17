@@ -461,17 +461,20 @@ class HttpInterface(BaseInterface):
                         },
                     )
 
-                # check api_key
                 req_params = request.query_params
                 json_params = dict()
+                api_key = req_params.get("api_key", None)
                 if (
-                    request.headers.get("content-type", None) == "application/json"
+                    api_key is None
+                    and request.headers.get("content-type", None) == "application/json"
                     and int(request.headers.get("content-length", 0)) > 0
                 ):
-                    json_params = await request.json()
-                api_key = req_params.get("api_key", None) or json_params.get(
-                    "api_key", None
-                )
+                    # have to try catch here, because some legacy endpoints that abuse Content-Type header but dont actually receive json
+                    try:
+                        json_params = await request.json()
+                    except Exception:
+                        pass
+                api_key = json_params.get("api_key", api_key)
 
                 if api_key is None:
                     return _unauthorized_response("Unauthorized api_key")
@@ -520,14 +523,21 @@ class HttpInterface(BaseInterface):
                 # check api_key
                 req_params = request.query_params
                 json_params = dict()
+                api_key = req_params.get("api_key", None)
                 if (
-                    request.headers.get("content-type", None) == "application/json"
+                    api_key is None
+                    and request.headers.get("content-type", None) == "application/json"
                     and int(request.headers.get("content-length", 0)) > 0
                 ):
-                    json_params = await request.json()
-                api_key = req_params.get("api_key", None) or json_params.get(
-                    "api_key", None
-                )
+                    # have to try catch here, because some legacy endpoints that abuse Content-Type header but dont actually receive json
+                    try:
+                        json_params = await request.json()
+                    except Exception:
+                        pass
+                api_key = json_params.get("api_key", api_key)
+
+                if api_key is None:
+                    return _unauthorized_response("Unauthorized api_key")
 
                 if cached_api_keys.get(api_key, 0) < time.time():
                     try:
