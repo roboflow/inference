@@ -188,13 +188,16 @@ DYNAMIC_BLOCKS_DEFINITION = [
 ]
 
 
+@pytest.mark.skip(
+    reason="No longer valid after custom python support was added on serverless"
+)
 @pytest.mark.flaky(retries=4, delay=1)
 def test_getting_block_descriptions_from_new_post_endpoint_with_dynamic_blocks(
     object_detection_service_url: str,
 ) -> None:
     # when
     response = requests.post(
-        f"{object_detection_service_url}/workflows/blocks/describe?api_key={ROBOFLOW_API_KEY}",
+        f"{object_detection_service_url}/workflows/blocks/describe",
         json={"dynamic_blocks_definitions": DYNAMIC_BLOCKS_DEFINITION},
     )
 
@@ -718,7 +721,7 @@ WORKFLOW_WITH_PYTHON_BLOCK_RUNNING_ON_BATCH = {
     ],
 }
 
-
+@pytest.mark.skip(reason="No longer valid after custom python support was added on serverless"
 @pytest.mark.flaky(retries=4, delay=1)
 def test_workflow_run_with_dynamic_blocks(
     object_detection_service_url: str, detection_model_id: str
@@ -752,6 +755,7 @@ def test_workflow_run_with_dynamic_blocks(
     ), "Expected execution to be prevented"
 
 
+@pytest.mark.skip(reason="No longer valid after custom python support was added on serverless"
 @pytest.mark.flaky(retries=4, delay=1)
 def test_workflow_validate_with_dynamic_blocks(
     object_detection_service_url: str, detection_model_id: str
