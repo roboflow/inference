@@ -295,8 +295,8 @@ def handle_tensor_input_preparation_with_stretch(
         original_size=original_size,
         size_after_pre_processing=size_after_pre_processing,
         inference_size=target_size,
-        scale_width=target_size.width / original_size.width,
-        scale_height=target_size.height / original_size.height,
+        scale_width=target_size.width / size_after_pre_processing.width,
+        scale_height=target_size.height / size_after_pre_processing.height,
         static_crop_offset=static_crop_offset,
     )
     return image.contiguous(), [metadata] * image.shape[0]
@@ -384,28 +384,28 @@ def handle_torch_input_preparation_with_center_crop(
     )
     padding_ltrb = [0, 0, 0, 0]
     if (
-        target_size.width > original_size.width
-        or target_size.height > original_size.height
+        target_size.width > size_after_pre_processing.width
+        or target_size.height > size_after_pre_processing.height
     ):
         padding_ltrb = [
             (
-                (target_size.width - original_size.width) // 2
-                if target_size.width > original_size.width
+                (target_size.width - size_after_pre_processing.width) // 2
+                if target_size.width > size_after_pre_processing.width
                 else 0
             ),
             (
-                (target_size.height - original_size.height) // 2
-                if target_size.height > original_size.height
+                (target_size.height - size_after_pre_processing.height) // 2
+                if target_size.height > size_after_pre_processing.height
                 else 0
             ),
             (
-                (target_size.width - original_size.width + 1) // 2
-                if target_size.width > original_size.width
+                (target_size.width - size_after_pre_processing.width + 1) // 2
+                if target_size.width > size_after_pre_processing.width
                 else 0
             ),
             (
-                (target_size.height - original_size.height + 1) // 2
-                if target_size.height > original_size.height
+                (target_size.height - size_after_pre_processing.height + 1) // 2
+                if target_size.height > size_after_pre_processing.height
                 else 0
             ),
         ]
@@ -420,13 +420,13 @@ def handle_torch_input_preparation_with_center_crop(
         image = functional.crop(
             image, crop_top, crop_left, target_size.height, target_size.width
         )
-    if target_size.height > original_size.height:
+    if target_size.height > size_after_pre_processing.height:
         reported_padding_top = padding_ltrb[1]
         reported_padding_bottom = padding_ltrb[3]
     else:
         reported_padding_top = -crop_ltrb[1]
         reported_padding_bottom = -crop_ltrb[3]
-    if target_size.width > original_size.width:
+    if target_size.width > size_after_pre_processing.width:
         reported_padding_left = padding_ltrb[0]
         reported_padding_right = padding_ltrb[2]
     else:
@@ -467,13 +467,13 @@ def handle_torch_input_preparation_fitting_longer_edge(
     size_after_pre_processing = ImageDimensions(
         height=original_height, width=original_width
     )
-    scale_ox = target_size.width / original_size.width
-    scale_oy = target_size.height / original_size.height
+    scale_ox = target_size.width / size_after_pre_processing.width
+    scale_oy = target_size.height / size_after_pre_processing.height
     if scale_ox < scale_oy:
         actual_target_width = target_size.width
-        actual_target_height = round(scale_ox * original_size.height)
+        actual_target_height = round(scale_ox * size_after_pre_processing.height)
     else:
-        actual_target_width = round(scale_oy * original_size.width)
+        actual_target_width = round(scale_oy * size_after_pre_processing.width)
         actual_target_height = target_size.height
     actual_target_size = ImageDimensions(
         height=actual_target_height,
@@ -496,8 +496,8 @@ def handle_torch_input_preparation_fitting_longer_edge(
         original_size=original_size,
         size_after_pre_processing=size_after_pre_processing,
         inference_size=actual_target_size,
-        scale_width=actual_target_size.width / original_size.width,
-        scale_height=actual_target_size.height / original_size.height,
+        scale_width=actual_target_size.width / size_after_pre_processing.width,
+        scale_height=actual_target_size.height / size_after_pre_processing.height,
         static_crop_offset=static_crop_offset,
     )
     if network_input.scaling_factor is not None:
@@ -650,8 +650,8 @@ def handle_tensor_list_input_preparation_with_stretch(
             original_size=original_size,
             size_after_pre_processing=size_after_pre_processing,
             inference_size=target_size,
-            scale_width=target_size.width / original_size.width,
-            scale_height=target_size.height / original_size.height,
+            scale_width=target_size.width / size_after_pre_processing.width,
+            scale_height=target_size.height / size_after_pre_processing.height,
             static_crop_offset=offset,
         )
         images_metadata.append(image_metadata)
@@ -962,7 +962,7 @@ def handle_numpy_input_preparation_with_stretch(
     size_after_pre_processing = ImageDimensions(
         height=image.shape[0], width=image.shape[1]
     )
-    resized_image = cv2.resize(image, target_size)
+    resized_image = cv2.resize(image, (target_size.width, target_size.height))
     tensor = torch.from_numpy(resized_image).to(device=target_device)
     tensor = torch.unsqueeze(tensor, 0)
     tensor = tensor.permute(0, 3, 1, 2)
@@ -984,8 +984,8 @@ def handle_numpy_input_preparation_with_stretch(
         original_size=original_size,
         size_after_pre_processing=size_after_pre_processing,
         inference_size=target_size,
-        scale_width=target_size.width / original_size.width,
-        scale_height=target_size.height / original_size.height,
+        scale_width=target_size.width / size_after_pre_processing.width,
+        scale_height=target_size.height / size_after_pre_processing.height,
         static_crop_offset=static_crop_offset,
     )
     return tensor.contiguous(), [image_metadata]
@@ -1160,13 +1160,13 @@ def handle_numpy_input_preparation_fitting_longer_edge(
     size_after_pre_processing = ImageDimensions(
         height=original_height, width=original_width
     )
-    scale_ox = target_size.width / original_size.width
-    scale_oy = target_size.height / original_size.height
+    scale_ox = target_size.width / size_after_pre_processing.width
+    scale_oy = target_size.height / size_after_pre_processing.height
     if scale_ox < scale_oy:
         actual_target_width = target_size.width
-        actual_target_height = round(scale_ox * original_size.height)
+        actual_target_height = round(scale_ox * size_after_pre_processing.height)
     else:
-        actual_target_width = round(scale_oy * original_size.width)
+        actual_target_width = round(scale_oy * size_after_pre_processing.width)
         actual_target_height = target_size.height
     actual_target_size = ImageDimensions(
         height=actual_target_height,
@@ -1183,8 +1183,8 @@ def handle_numpy_input_preparation_fitting_longer_edge(
         original_size=original_size,
         size_after_pre_processing=size_after_pre_processing,
         inference_size=actual_target_size,
-        scale_width=actual_target_size.width / original_size.width,
-        scale_height=actual_target_size.height / original_size.height,
+        scale_width=actual_target_size.width / size_after_pre_processing.width,
+        scale_height=actual_target_size.height / size_after_pre_processing.height,
         static_crop_offset=static_crop_offset,
     )
     tensor = torch.from_numpy(scaled_image).to(device=target_device)
