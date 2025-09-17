@@ -24,19 +24,6 @@ def parse_class_names_file(class_names_path: str) -> List[str]:
         ) from error
 
 
-class PreProcessingMode(Enum):
-    NONE = "NONE"
-    STRETCH = "STRETCH"
-    LETTERBOX = "LETTERBOX"
-
-
-@dataclass(frozen=True)
-class PreProcessingConfig:
-    mode: PreProcessingMode
-    target_size: Optional[ImageDimensions] = None
-    padding_value: Optional[int] = None
-
-
 PADDING_VALUES_MAPPING = {
     "black edges": 0,
     "grey edges": 127,
@@ -49,8 +36,6 @@ StaticCropOffset = namedtuple(
         "offset_y",
         "crop_width",
         "crop_height",
-        "original_height",
-        "original_width",
     ],
 )
 PreProcessingMetadata = namedtuple(
@@ -61,6 +46,7 @@ PreProcessingMetadata = namedtuple(
         "pad_right",
         "pad_bottom",
         "original_size",
+        "size_after_pre_processing",
         "inference_size",
         "scale_width",
         "scale_height",

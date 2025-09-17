@@ -324,12 +324,13 @@ def align_instance_segmentation_results(
     scale_width: float,
     scale_height: float,
     original_size: ImageDimensions,
+    size_after_pre_processing: ImageDimensions,
     inference_size: ImageDimensions,
     static_crop_offset: StaticCropOffset,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     if image_bboxes.shape[0] == 0:
         empty_masks = torch.empty(
-            size=(0, original_size.height, original_size.width),
+            size=(0, size_after_pre_processing.height, size_after_pre_processing.width),
             dtype=torch.bool,
             device=image_bboxes.device,
         )
@@ -361,7 +362,7 @@ def align_instance_segmentation_results(
     masks = (
         functional.resize(
             masks,
-            [original_size.height, original_size.width],
+            [size_after_pre_processing.height, size_after_pre_processing.width],
             interpolation=functional.InterpolationMode.BILINEAR,
         )
         .gt_(0.0)
@@ -371,8 +372,8 @@ def align_instance_segmentation_results(
         mask_canvas = torch.zeros(
             (
                 masks.shape[0],
-                static_crop_offset.original_height,
-                static_crop_offset.original_width,
+                original_size.height,
+                original_size.width,
             ),
             dtype=torch.bool,
             device=masks.device,

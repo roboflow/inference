@@ -12,6 +12,7 @@ from inference_exp.entities import ColorFormat, ImageDimensions
 from inference_exp.errors import CorruptedModelPackageError, ModelRuntimeError
 from inference_exp.models.common.roboflow.model_packages import (
     InferenceConfig,
+    PreProcessingMetadata,
     ResizeMode,
     parse_inference_config,
 )
@@ -286,21 +287,32 @@ class Florence2HF:
         loc_phrases = region_to_loc_phrase(images=images, xyxy=xyxy)
         prompt = [f"<REGION_TO_SEGMENTATION>{phrase}" for phrase in loc_phrases]
         task = "<REGION_TO_SEGMENTATION>"
-        result = self.prompt(
-            images=images,
-            prompt=prompt,
+        inputs, image_dimensions, pre_processing_metadata = self.pre_process_generation(
+            images=images, prompt=prompt, input_color_format=input_color_format
+        )
+        generated_ids = self.generate(
+            inputs=inputs,
             max_new_tokens=max_new_tokens,
             num_beams=num_beams,
             do_sample=do_sample,
-            task=task,
-            input_color_format=input_color_format,
         )
-        image_dimensions = extract_input_images_dimensions(images=images)
+        result = self.post_process_generation(
+            generated_ids=generated_ids,
+            image_dimensions=image_dimensions,
+            task=task,
+        )
+        if pre_processing_metadata is None:
+            pre_processing_metadata = [None] * len(image_dimensions)
         return [
             parse_instance_segmentation_prediction(
-                prediction=r[task], input_image_dimensions=i, device=self._device
+                prediction=r[task],
+                input_image_dimensions=i,
+                image_metadata=image_metadata,
+                device=self._device,
             )
-            for r, i in zip(result, image_dimensions)
+            for r, i, image_metadata in zip(
+                result, image_dimensions, pre_processing_metadata
+            )
         ]
 
     def segment_phrase(
@@ -314,21 +326,33 @@ class Florence2HF:
     ) -> List[InstanceDetections]:
         prompt = f"<REFERRING_EXPRESSION_SEGMENTATION>{phrase}"
         task = "<REFERRING_EXPRESSION_SEGMENTATION>"
-        result = self.prompt(
-            images=images,
-            prompt=prompt,
+        inputs, image_dimensions, pre_processing_metadata = self.pre_process_generation(
+            images=images, prompt=prompt, input_color_format=input_color_format
+        )
+        generated_ids = self.generate(
+            inputs=inputs,
             max_new_tokens=max_new_tokens,
             num_beams=num_beams,
             do_sample=do_sample,
-            task=task,
-            input_color_format=input_color_format,
         )
+        result = self.post_process_generation(
+            generated_ids=generated_ids,
+            image_dimensions=image_dimensions,
+            task=task,
+        )
+        if pre_processing_metadata is None:
+            pre_processing_metadata = [None] * len(image_dimensions)
         image_dimensions = extract_input_images_dimensions(images=images)
         return [
             parse_instance_segmentation_prediction(
-                prediction=r[task], input_image_dimensions=i, device=self._device
+                prediction=r[task],
+                input_image_dimensions=i,
+                image_metadata=image_metadata,
+                device=self._device,
             )
-            for r, i in zip(result, image_dimensions)
+            for r, i, image_metadata in zip(
+                result, image_dimensions, pre_processing_metadata
+            )
         ]
 
     def ground_phrase(
@@ -342,18 +366,29 @@ class Florence2HF:
     ) -> List[Detections]:
         prompt = f"<CAPTION_TO_PHRASE_GROUNDING>{phrase}"
         task = "<CAPTION_TO_PHRASE_GROUNDING>"
-        result = self.prompt(
-            images=images,
-            prompt=prompt,
+        inputs, image_dimensions, pre_processing_metadata = self.pre_process_generation(
+            images=images, prompt=prompt, input_color_format=input_color_format
+        )
+        generated_ids = self.generate(
+            inputs=inputs,
             max_new_tokens=max_new_tokens,
             num_beams=num_beams,
             do_sample=do_sample,
-            task=task,
-            input_color_format=input_color_format,
         )
+        result = self.post_process_generation(
+            generated_ids=generated_ids,
+            image_dimensions=image_dimensions,
+            task=task,
+        )
+        if pre_processing_metadata is None:
+            pre_processing_metadata = [None] * len(image_dimensions)
         return [
-            parse_object_detection_prediction(prediction=r[task], device=self._device)
-            for r in result
+            parse_object_detection_prediction(
+                prediction=r[task],
+                image_metadata=image_metadata,
+                device=self._device,
+            )
+            for r, image_metadata in zip(result, pre_processing_metadata)
         ]
 
     def detect_objects(
@@ -374,20 +409,30 @@ class Florence2HF:
         else:
             task = LABEL_MODE2TASK[labels_mode]
             prompt = task
-        result = self.prompt(
-            images=images,
-            prompt=prompt,
+        inputs, image_dimensions, pre_processing_metadata = self.pre_process_generation(
+            images=images, prompt=prompt, input_color_format=input_color_format
+        )
+        generated_ids = self.generate(
+            inputs=inputs,
             max_new_tokens=max_new_tokens,
             num_beams=num_beams,
             do_sample=do_sample,
-            task=task,
-            input_color_format=input_color_format,
         )
+        result = self.post_process_generation(
+            generated_ids=generated_ids,
+            image_dimensions=image_dimensions,
+            task=task,
+        )
+        if pre_processing_metadata is None:
+            pre_processing_metadata = [None] * len(image_dimensions)
         return [
             parse_object_detection_prediction(
-                prediction=r[task], expected_classes=classes, device=self._device
+                prediction=r[task],
+                image_metadata=image_metadata,
+                expected_classes=classes,
+                device=self._device,
             )
-            for r in result
+            for r, image_metadata in zip(result, pre_processing_metadata)
         ]
 
     def caption_image(
@@ -420,18 +465,27 @@ class Florence2HF:
         input_color_format: Optional[ColorFormat] = None,
     ) -> List[Detections]:
         task = "<OCR_WITH_REGION>"
-        result = self.prompt(
-            images=images,
-            prompt=task,
+        inputs, image_dimensions, pre_processing_metadata = self.pre_process_generation(
+            images=images, prompt=task, input_color_format=input_color_format
+        )
+        generated_ids = self.generate(
+            inputs=inputs,
             max_new_tokens=max_new_tokens,
             num_beams=num_beams,
             do_sample=do_sample,
-            task=task,
-            input_color_format=input_color_format,
         )
+        result = self.post_process_generation(
+            generated_ids=generated_ids,
+            image_dimensions=image_dimensions,
+            task=task,
+        )
+        if pre_processing_metadata is None:
+            pre_processing_metadata = [None] * len(image_dimensions)
         return [
-            parse_dense_ocr_prediction(prediction=r[task], device=self._device)
-            for r in result
+            parse_dense_ocr_prediction(
+                prediction=r[task], image_metadata=image_metadata, device=self._device
+            )
+            for r, image_metadata in zip(result, pre_processing_metadata)
         ]
 
     def ocr_image(
@@ -466,7 +520,7 @@ class Florence2HF:
         input_color_format: Optional[ColorFormat] = None,
         **kwargs,
     ) -> List[str]:
-        inputs, image_dimensions = self.pre_process_generation(
+        inputs, image_dimensions, _ = self.pre_process_generation(
             images=images, prompt=prompt, input_color_format=input_color_format
         )
         generated_ids = self.generate(
@@ -488,7 +542,7 @@ class Florence2HF:
         prompt: Union[str, List[str]],
         input_color_format: Optional[ColorFormat] = None,
         **kwargs,
-    ) -> Tuple[dict, List[ImageDimensions]]:
+    ) -> Tuple[dict, List[ImageDimensions], Optional[List[PreProcessingMetadata]]]:
         # # maybe don't need to convert to tensor here, since processor also accepts numpy arrays
         # # but need to handle input_color_format here and this is consistent with how we do it in other models
         def _to_tensor(image: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
@@ -509,6 +563,7 @@ class Florence2HF:
             else:
                 image_list = [_to_tensor(img) for img in images]
             image_dimensions = extract_input_images_dimensions(images=image_list)
+            pre_processing_metadata = None
         else:
             images, pre_processing_metadata = pre_process_network_input(
                 images=images,
@@ -518,7 +573,9 @@ class Florence2HF:
                 input_color_format=input_color_format,
             )
             image_list = [e[0] for e in torch.split(images, 1, dim=0)]
-            image_dimensions = [e.original_size for e in pre_processing_metadata]
+            image_dimensions = [
+                e.size_after_pre_processing for e in pre_processing_metadata
+            ]
 
         if isinstance(prompt, list):
             if len(prompt) != len(image_dimensions):
@@ -532,7 +589,7 @@ class Florence2HF:
         inputs = self._processor(
             text=prompt, images=image_list, return_tensors="pt"
         ).to(self._device, self._torch_dtype)
-        return inputs, image_dimensions
+        return inputs, image_dimensions, pre_processing_metadata
 
     def generate(
         self,
@@ -654,6 +711,7 @@ def _scale_value(
 
 def parse_dense_ocr_prediction(
     prediction: dict,
+    image_metadata: Optional[PreProcessingMetadata],
     device: torch.device,
 ) -> Detections:
     bboxes = prediction["quad_boxes"]
@@ -666,6 +724,21 @@ def parse_dense_ocr_prediction(
         max_x, max_y = np_box[:, 0].max(), np_box[:, 1].max()
         xyxy.append([min_x, min_y, max_x, max_y])
     xyxy = torch.tensor(xyxy, device=device).round().int()
+    if image_metadata is not None and (
+        image_metadata.static_crop_offset.offset_x > 0
+        or image_metadata.static_crop_offset.offset_y > 0
+    ):
+        static_crop_offsets = torch.as_tensor(
+            [
+                image_metadata.static_crop_offset.offset_x,
+                image_metadata.static_crop_offset.offset_y,
+                image_metadata.static_crop_offset.offset_x,
+                image_metadata.static_crop_offset.offset_y,
+            ],
+            dtype=xyxy.dtype,
+            device=xyxy.device,
+        )
+        xyxy.add_(static_crop_offsets).round_()
     class_ids = torch.tensor(class_ids, device=device).int()
     confidence = torch.tensor([1.0] * len(labels), device=device)
     bboxes_metadata = [{"class_name": label} for label in labels]
@@ -679,6 +752,7 @@ def parse_dense_ocr_prediction(
 
 def parse_object_detection_prediction(
     prediction: dict,
+    image_metadata: Optional[PreProcessingMetadata],
     device: torch.device,
     expected_classes: Optional[List[int]] = None,
 ) -> Detections:
@@ -695,6 +769,21 @@ def parse_object_detection_prediction(
         for label in labels:
             class_ids.append(class_name2idx.get(label, unknown_class_id))
     xyxy = torch.tensor(bboxes, device=device).round().int()
+    if image_metadata is not None and (
+        image_metadata.static_crop_offset.offset_x > 0
+        or image_metadata.static_crop_offset.offset_y > 0
+    ):
+        static_crop_offsets = torch.as_tensor(
+            [
+                image_metadata.static_crop_offset.offset_x,
+                image_metadata.static_crop_offset.offset_y,
+                image_metadata.static_crop_offset.offset_x,
+                image_metadata.static_crop_offset.offset_y,
+            ],
+            dtype=xyxy.dtype,
+            device=xyxy.device,
+        )
+        xyxy.add_(static_crop_offsets).round_()
     class_ids = torch.tensor(class_ids, device=device).int()
     confidence = torch.tensor([1.0] * len(labels), device=device)
     bboxes_metadata = None
@@ -717,6 +806,7 @@ def deduce_localisation(result: str) -> str:
 def parse_instance_segmentation_prediction(
     prediction: dict,
     input_image_dimensions: ImageDimensions,
+    image_metadata: Optional[PreProcessingMetadata],
     device: torch.device,
 ) -> InstanceDetections:
     xyxy = []
@@ -738,11 +828,44 @@ def parse_instance_segmentation_prediction(
             xyxy.append([min_x, min_y, max_x, max_y])
     class_ids = [0] * len(xyxy)
     confidence = [1.0] * len(xyxy)
+    xyxy = torch.tensor(xyxy, device=device).round().int()
+    mask = torch.from_numpy(np.stack(masks, axis=0)).to(device)
+    if image_metadata is not None and (
+        image_metadata.static_crop_offset.offset_x > 0
+        or image_metadata.static_crop_offset.offset_y > 0
+    ):
+        static_crop_offsets = torch.as_tensor(
+            [
+                image_metadata.static_crop_offset.offset_x,
+                image_metadata.static_crop_offset.offset_y,
+                image_metadata.static_crop_offset.offset_x,
+                image_metadata.static_crop_offset.offset_y,
+            ],
+            dtype=xyxy.dtype,
+            device=device,
+        )
+        xyxy.add_(static_crop_offsets).round_()
+        mask_canvas = torch.zeros(
+            (
+                mask.shape[0],
+                image_metadata.original_size.height,
+                image_metadata.original_size.width,
+            ),
+            dtype=torch.bool,
+            device=device,
+        )
+        mask_canvas[
+            :,
+            image_metadata.static_crop_offset.offset_y : image_metadata.static_crop_offset.offset_y
+            + mask.shape[1],
+            image_metadata.static_crop_offset.offset_x : image_metadata.static_crop_offset.offset_x
+            + mask.shape[2],
+        ] = mask
     return InstanceDetections(
-        xyxy=torch.tensor(xyxy, device=device).round().int(),
+        xyxy=xyxy,
         class_id=torch.tensor(class_ids, device=device).int(),
-        confidence=torch.tensor(confidence),
-        mask=torch.from_numpy(np.stack(masks, axis=0)).to(device),
+        confidence=torch.tensor(confidence, device=device),
+        mask=mask,
     )
 
 

@@ -155,14 +155,16 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
                 mask_pad_left : mw - mask_pad_right,
             ]
             if (
-                image_results.shape[1] != image_metadata.original_size.height
-                or image_results.shape[2] != image_metadata.original_size.width
+                image_results.shape[1]
+                != image_metadata.size_after_pre_processing.height
+                or image_results.shape[2]
+                != image_metadata.size_after_pre_processing.width
             ):
                 image_results = functional.resize(
                     image_results,
                     [
-                        image_metadata.original_size.height,
-                        image_metadata.original_size.width,
+                        image_metadata.size_after_pre_processing.height,
+                        image_metadata.size_after_pre_processing.width,
                     ],
                     interpolation=functional.InterpolationMode.BILINEAR,
                 )
@@ -177,8 +179,8 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
             ):
                 original_size_confidence_canvas = torch.zeros(
                     (
-                        image_metadata.static_crop_offset.original_height,
-                        image_metadata.static_crop_offset.original_width,
+                        image_metadata.original_size.height,
+                        image_metadata.original_size.width,
                     ),
                     device=self._device,
                     dtype=image_confidence.dtype,
@@ -192,8 +194,8 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
                 original_size_confidence_class_id_canvas = (
                     torch.ones(
                         (
-                            image_metadata.static_crop_offset.original_height,
-                            image_metadata.static_crop_offset.original_width,
+                            image_metadata.original_size.height,
+                            image_metadata.original_size.width,
                         ),
                         device=self._device,
                         dtype=image_class_ids.dtype,

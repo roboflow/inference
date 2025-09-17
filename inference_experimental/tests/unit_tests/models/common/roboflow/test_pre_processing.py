@@ -4,9 +4,8 @@ import torch
 from inference_exp.entities import ImageDimensions
 from inference_exp.errors import ModelRuntimeError
 from inference_exp.models.common.roboflow.model_packages import (
-    PreProcessingConfig,
+    ColorMode,
     PreProcessingMetadata,
-    PreProcessingMode,
 )
 from inference_exp.models.common.roboflow.pre_processing import (
     extract_input_images_dimensions,
@@ -666,21 +665,6 @@ def test_extract_input_images_dimensions_when_invalid_batch_element_provided() -
         _ = extract_input_images_dimensions(images=["some"])
 
 
-def test_pre_process_numpy_image_when_pre_processing_is_invalid() -> None:
-    # given
-    pre_processing_config = PreProcessingConfig(mode=PreProcessingMode.NONE)
-    image = (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
-
-    # when
-    with pytest.raises(ModelRuntimeError):
-        _ = pre_process_numpy_image(
-            image=image,
-            pre_processing_config=pre_processing_config,
-            expected_network_color_format="rgb",
-            target_device=torch.device("cpu"),
-        )
-
-
 def test_pre_process_numpy_image_with_stretch() -> None:
     # given
     pre_processing_config = PreProcessingConfig(
@@ -690,10 +674,10 @@ def test_pre_process_numpy_image_with_stretch() -> None:
     # when
     result_image, result_meta = pre_process_numpy_image(
         image=image,
-        pre_processing_config=pre_processing_config,
-        expected_network_color_format="rgb",
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
         target_device=torch.device("cpu"),
-        rescaling_constant=None,
+        input_color_mode=ColorMode.RGB,
     )
 
     # then

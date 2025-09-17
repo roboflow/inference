@@ -204,6 +204,7 @@ class YOLOv5ForInstanceSegmentationOnnx(
                 scale_height=image_meta.scale_height,
                 scale_width=image_meta.scale_width,
                 original_size=image_meta.original_size,
+                size_after_pre_processing=image_meta.size_after_pre_processing,
                 inference_size=image_meta.inference_size,
                 static_crop_offset=image_meta.static_crop_offset,
             )
