@@ -473,6 +473,12 @@ ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING = str2bool(
     os.getenv("ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING", "False")
 )
 
+DEBUG_AIORTC_QUEUES = str2bool(os.getenv("DEBUG_AIORTC_QUEUES", "False"))
+DEBUG_WEBRTC_PROCESSING_LATENCY = str2bool(
+    os.getenv("DEBUG_WEBRTC_PROCESSING_LATENCY", "False")
+)
+WEBRTC_REALTIME_PROCESSING = str2bool(os.getenv("WEBRTC_REALTIME_PROCESSING", "True"))
+
 NUM_CELERY_WORKERS = os.getenv("NUM_CELERY_WORKERS", 4)
 CELERY_LOG_LEVEL = os.getenv("CELERY_LOG_LEVEL", "WARNING")
 
@@ -538,6 +544,15 @@ _modal_token_secret = os.getenv("MODAL_TOKEN_SECRET")
 MODAL_TOKEN_ID = _modal_token_id.strip("\"'") if _modal_token_id else None
 MODAL_TOKEN_SECRET = _modal_token_secret.strip("\"'") if _modal_token_secret else None
 MODAL_WORKSPACE_NAME = os.getenv("MODAL_WORKSPACE_NAME", "roboflow")
+
+# Control whether anonymous Modal execution is allowed (when no api_key is available)
+MODAL_ALLOW_ANONYMOUS_EXECUTION = str2bool(
+    os.getenv("MODAL_ALLOW_ANONYMOUS_EXECUTION", "False")
+)
+
+MODAL_ANONYMOUS_WORKSPACE_NAME = os.getenv(
+    "MODAL_ANONYMOUS_WORKSPACE_NAME", "anonymous"
+)
 
 MODEL_VALIDATION_DISABLED = str2bool(os.getenv("MODEL_VALIDATION_DISABLED", "False"))
 

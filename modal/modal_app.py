@@ -8,6 +8,7 @@ as a dependency for the main inference package.
 
 from typing import Any, Dict
 import base64
+import hashlib
 
 import modal
 
@@ -59,6 +60,26 @@ class Executor:
 
     # Parameterize by workspace_id
     workspace_id: str = modal.parameter()
+    
+    # Store state for each unique code block within this container
+    # Key is the hash of the code, value is the namespace dict for that code
+    _code_namespaces: Dict[str, dict] = {}
+    
+    # Shared globals dict that all custom python blocks can access
+    _shared_globals: Dict[str, Any] = {}
+
+    @modal.enter()
+    def identify(self):
+        print(f"Initializing sandbox for {self.workspace_id}")
+        # Initialize the namespaces dict and shared globals
+        self._code_namespaces = {}
+        self._shared_globals = {}
+
+    def _get_code_hash(self, code_str: str, imports: list) -> str:
+        """Compute a stable hash for the code to identify unique blocks."""
+        # Combine code and imports to create a unique identifier
+        content = code_str + "\n" + "\n".join(imports if imports else [])
+        return hashlib.md5(content.encode()).hexdigest()
 
     @modal.fastapi_endpoint(method="POST", requires_proxy_auth=True)
     def execute_block(self, request: Dict[str, Any]) -> Dict[str, Any]:
@@ -93,11 +114,18 @@ class Executor:
         run_function_name = request.get("run_function_name", "")
         inputs_json = request.get("inputs_json", "{}")
 
-        # Build the execution namespace
-        namespace = {"__name__": "__main__"}
-
-        try:
-            # Execute imports
+        # Get the hash of this code to identify it uniquely
+        code_hash = self._get_code_hash(code_str, imports)
+        
+        # Check if we already have a namespace for this code
+        if code_hash not in self._code_namespaces:
+            # Create a new namespace for this code block
+            self._code_namespaces[code_hash] = {
+                "__name__": "__main__",
+                "globals": self._shared_globals  # Inject the shared globals dict
+            }
+            
+            # Execute imports and code in the namespace to initialize it
             import_code = "\n".join(imports) if imports else ""
             full_imports = f"""
 from typing import Any, List, Dict, Set, Optional
@@ -117,7 +145,25 @@ from inference.core.workflows.prototypes.block import BlockResult
 
 from datetime import datetime
 """
+            try:
+                # Execute imports in this namespace
+                exec(full_imports, self._code_namespaces[code_hash])
+                
+                # Execute the user code to define functions in this namespace
+                exec(code_str, self._code_namespaces[code_hash])
+            except Exception as e:
+                # If there's an error in code initialization, remove the namespace
+                del self._code_namespaces[code_hash]
+                return {
+                    "success": False,
+                    "error": f"Code initialization failed: {str(e)}",
+                    "error_type": type(e).__name__,
+                }
+        
+        # Get the namespace for this code
+        namespace = self._code_namespaces[code_hash]
 
+        try:
             # we should import serialize_for_modal_remote_execution and deserialize_for_modal_remote_execution
             # from inference package, but need to have them included in the modal build for that
             # so just copy pasted for now
@@ -275,12 +321,6 @@ from datetime import datetime
                 return inputs
 
             inputs = deserialize_for_modal_remote_execution(inputs_json)
-
-            # Execute imports
-            exec(full_imports, namespace)
-
-            # Execute the user code
-            exec(code_str, namespace)
 
             # Call the user function
             if run_function_name not in namespace:
