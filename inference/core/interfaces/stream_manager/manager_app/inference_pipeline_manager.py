@@ -341,6 +341,16 @@ class InferencePipelineManager(Process):
                 ):
                     if peer_connection.data_output in prediction:
                         workflow_output = prediction[peer_connection.data_output]
+                        json_data = {
+                            peer_connection.data_output: None,
+                            "_video_metadata": {
+                                "frame_id": video_frame.frame_id,
+                                "frame_timestamp": video_frame.frame_timestamp.isoformat(),
+                                "measured_fps": video_frame.measured_fps,
+                                "fps": video_frame.fps,
+                            },
+                        }
+
                         serialized_data = None
                         if isinstance(workflow_output, WorkflowImageData):
                             errors.append(
@@ -351,22 +361,30 @@ class InferencePipelineManager(Process):
                                 parsed_detections = serialise_sv_detections(
                                     workflow_output
                                 )
-                                serialized_data = json.dumps(parsed_detections)
+                                json_data[peer_connection.data_output] = (
+                                    parsed_detections
+                                )
+                                serialized_data = json.dumps(json_data)
                             except Exception as error:
                                 errors.append(
                                     f"Failed to serialise output: {peer_connection.data_output}"
                                 )
                         elif isinstance(workflow_output, dict):
                             try:
-                                serialized_data = json.dumps(workflow_output)
+                                json_data[peer_connection.data_output] = workflow_output
+                                serialized_data = json.dumps(json_data)
                             except Exception as error:
                                 errors.append(
                                     f"Failed to serialise output: {peer_connection.data_output}"
                                 )
                         else:
-                            serialized_data = str(workflow_output)
-                        if serialized_data is not None:
-                            peer_connection.data_channel.send(serialized_data)
+                            json_data[peer_connection.data_output] = str(
+                                workflow_output
+                            )
+                            serialized_data = json.dumps(json_data)
+                        if serialized_data is None:
+                            serialized_data = json.dumps(json_data)
+                        peer_connection.data_channel.send(serialized_data)
                     else:
                         errors.append(
                             f"Selected data output '{peer_connection.data_output}' not found in workflow outputs"
