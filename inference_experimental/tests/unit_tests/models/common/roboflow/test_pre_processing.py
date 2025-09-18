@@ -717,6 +717,262 @@ def test_pre_process_numpy_image_with_stretch() -> None:
     )
 
 
+def test_pre_process_numpy_images_list_with_stretch() -> None:
+    # given
+    image_pre_processing = ImagePreProcessing()
+    network_input = NetworkInputDefinition(
+        training_input_size=TrainingInputSize(height=64, width=96),
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.BGR,
+        resize_mode=ResizeMode.STRETCH_TO,
+        input_channels=3,
+    )
+    image = (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+    # when
+    result_image, result_meta = pre_process_network_input(
+        images=[image, image],
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format="rgb",
+    )
+
+    # then
+    assert isinstance(result_image, torch.Tensor)
+    assert tuple(result_image.shape) == (2, 3, 64, 96)
+    assert torch.all(result_image[0][0] == 30)
+    assert torch.all(result_image[0][1] == 20)
+    assert torch.all(result_image[0][2] == 10)
+    assert torch.all(result_image[1][0] == 30)
+    assert torch.all(result_image[1][1] == 20)
+    assert torch.all(result_image[1][2] == 10)
+    expected_meta = PreProcessingMetadata(
+        pad_left=0,
+        pad_top=0,
+        pad_right=0,
+        pad_bottom=0,
+        original_size=ImageDimensions(height=192, width=168),
+        size_after_pre_processing=ImageDimensions(height=192, width=168),
+        inference_size=ImageDimensions(height=64, width=96),
+        scale_width=96 / 168,
+        scale_height=64 / 192,
+        static_crop_offset=StaticCropOffset(
+            offset_x=0,
+            offset_y=0,
+            crop_width=168,
+            crop_height=192,
+        ),
+    )
+    assert result_meta[0] == expected_meta
+    assert result_meta[1] == expected_meta
+
+
+def test_pre_process_3d_torch_image_with_stretch() -> None:
+    # given
+    image_pre_processing = ImagePreProcessing()
+    network_input = NetworkInputDefinition(
+        training_input_size=TrainingInputSize(height=64, width=96),
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.BGR,
+        resize_mode=ResizeMode.STRETCH_TO,
+        input_channels=3,
+    )
+    image = torch.from_numpy(
+        (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+    )
+    image = torch.permute(image, (2, 0, 1))
+
+    # when
+    result_image, result_meta = pre_process_network_input(
+        images=image,
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format="rgb",
+    )
+
+    # then
+    assert isinstance(result_image, torch.Tensor)
+    assert tuple(result_image.shape) == (1, 3, 64, 96)
+    assert torch.all(result_image[0][0] == 30)
+    assert torch.all(result_image[0][1] == 20)
+    assert torch.all(result_image[0][2] == 10)
+    assert result_meta[0] == PreProcessingMetadata(
+        pad_left=0,
+        pad_top=0,
+        pad_right=0,
+        pad_bottom=0,
+        original_size=ImageDimensions(height=192, width=168),
+        size_after_pre_processing=ImageDimensions(height=192, width=168),
+        inference_size=ImageDimensions(height=64, width=96),
+        scale_width=96 / 168,
+        scale_height=64 / 192,
+        static_crop_offset=StaticCropOffset(
+            offset_x=0,
+            offset_y=0,
+            crop_width=168,
+            crop_height=192,
+        ),
+    )
+
+
+def test_pre_process_3d_torch_image_not_permuted_with_stretch() -> None:
+    # given
+    image_pre_processing = ImagePreProcessing()
+    network_input = NetworkInputDefinition(
+        training_input_size=TrainingInputSize(height=64, width=96),
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.BGR,
+        resize_mode=ResizeMode.STRETCH_TO,
+        input_channels=3,
+    )
+    image = torch.from_numpy(
+        (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+    )
+
+    # when
+    result_image, result_meta = pre_process_network_input(
+        images=image,
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format="rgb",
+    )
+
+    # then
+    assert isinstance(result_image, torch.Tensor)
+    assert tuple(result_image.shape) == (1, 3, 64, 96)
+    assert torch.all(result_image[0][0] == 30)
+    assert torch.all(result_image[0][1] == 20)
+    assert torch.all(result_image[0][2] == 10)
+    assert result_meta[0] == PreProcessingMetadata(
+        pad_left=0,
+        pad_top=0,
+        pad_right=0,
+        pad_bottom=0,
+        original_size=ImageDimensions(height=192, width=168),
+        size_after_pre_processing=ImageDimensions(height=192, width=168),
+        inference_size=ImageDimensions(height=64, width=96),
+        scale_width=96 / 168,
+        scale_height=64 / 192,
+        static_crop_offset=StaticCropOffset(
+            offset_x=0,
+            offset_y=0,
+            crop_width=168,
+            crop_height=192,
+        ),
+    )
+
+
+def test_pre_process_4d_torch_image_with_stretch() -> None:
+    # given
+    image_pre_processing = ImagePreProcessing()
+    network_input = NetworkInputDefinition(
+        training_input_size=TrainingInputSize(height=64, width=96),
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.BGR,
+        resize_mode=ResizeMode.STRETCH_TO,
+        input_channels=3,
+    )
+    image = torch.from_numpy(
+        (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+    )
+    image = torch.permute(image, (2, 0, 1))
+    image = torch.stack([image, image], dim=0)
+
+    # when
+    result_image, result_meta = pre_process_network_input(
+        images=image,
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format="rgb",
+    )
+
+    # then
+    assert isinstance(result_image, torch.Tensor)
+    assert tuple(result_image.shape) == (2, 3, 64, 96)
+    assert torch.all(result_image[0][0] == 30)
+    assert torch.all(result_image[0][1] == 20)
+    assert torch.all(result_image[0][2] == 10)
+    assert torch.all(result_image[1][0] == 30)
+    assert torch.all(result_image[1][1] == 20)
+    assert torch.all(result_image[1][2] == 10)
+    expected_meta = PreProcessingMetadata(
+        pad_left=0,
+        pad_top=0,
+        pad_right=0,
+        pad_bottom=0,
+        original_size=ImageDimensions(height=192, width=168),
+        size_after_pre_processing=ImageDimensions(height=192, width=168),
+        inference_size=ImageDimensions(height=64, width=96),
+        scale_width=96 / 168,
+        scale_height=64 / 192,
+        static_crop_offset=StaticCropOffset(
+            offset_x=0,
+            offset_y=0,
+            crop_width=168,
+            crop_height=192,
+        ),
+    )
+    assert result_meta[0] == expected_meta
+    assert result_meta[1] == expected_meta
+
+
+def test_pre_process_4d_torch_image_not_permuted_with_stretch() -> None:
+    # given
+    image_pre_processing = ImagePreProcessing()
+    network_input = NetworkInputDefinition(
+        training_input_size=TrainingInputSize(height=64, width=96),
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.BGR,
+        resize_mode=ResizeMode.STRETCH_TO,
+        input_channels=3,
+    )
+    image = torch.from_numpy(
+        (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+    )
+    image = torch.stack([image, image], dim=0)
+
+    # when
+    result_image, result_meta = pre_process_network_input(
+        images=image,
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format="rgb",
+    )
+
+    # then
+    assert isinstance(result_image, torch.Tensor)
+    assert tuple(result_image.shape) == (2, 3, 64, 96)
+    assert torch.all(result_image[0][0] == 30)
+    assert torch.all(result_image[0][1] == 20)
+    assert torch.all(result_image[0][2] == 10)
+    assert torch.all(result_image[1][0] == 30)
+    assert torch.all(result_image[1][1] == 20)
+    assert torch.all(result_image[1][2] == 10)
+    expected_meta = PreProcessingMetadata(
+        pad_left=0,
+        pad_top=0,
+        pad_right=0,
+        pad_bottom=0,
+        original_size=ImageDimensions(height=192, width=168),
+        size_after_pre_processing=ImageDimensions(height=192, width=168),
+        inference_size=ImageDimensions(height=64, width=96),
+        scale_width=96 / 168,
+        scale_height=64 / 192,
+        static_crop_offset=StaticCropOffset(
+            offset_x=0,
+            offset_y=0,
+            crop_width=168,
+            crop_height=192,
+        ),
+    )
+    assert result_meta[0] == expected_meta
+    assert result_meta[1] == expected_meta
+
+
 def test_pre_process_numpy_image_with_stretch_and_crop() -> None:
     # given
     image_pre_processing = ImagePreProcessing(
@@ -768,6 +1024,294 @@ def test_pre_process_numpy_image_with_stretch_and_crop() -> None:
             crop_height=120,
         ),
     )
+
+
+def test_pre_process_numpy_images_list_with_stretch_and_crop() -> None:
+    # given
+    image_pre_processing = ImagePreProcessing(
+        **{
+            "static-crop": StaticCrop(
+                enabled=True, x_min=10, x_max=90, y_min=20, y_max=80
+            )
+        }
+    )
+    network_input = NetworkInputDefinition(
+        training_input_size=TrainingInputSize(height=64, width=96),
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.RGB,
+        resize_mode=ResizeMode.STRETCH_TO,
+        input_channels=3,
+    )
+    image = np.ones((200, 100, 3), dtype=np.uint8)
+    image[40:160, 10:90, :] = (image[40:160, 10:90, :] * (10, 20, 30)).astype(np.uint8)
+
+    # when
+    result_image, result_meta = pre_process_network_input(
+        images=[image, image],
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format="rgb",
+    )
+
+    # then
+    assert isinstance(result_image, torch.Tensor)
+    assert tuple(result_image.shape) == (2, 3, 64, 96)
+    assert torch.all(result_image[0][2] == 30)
+    assert torch.all(result_image[0][1] == 20)
+    assert torch.all(result_image[0][0] == 10)
+    assert torch.all(result_image[1][2] == 30)
+    assert torch.all(result_image[1][1] == 20)
+    assert torch.all(result_image[1][0] == 10)
+    expected_meta = PreProcessingMetadata(
+        pad_left=0,
+        pad_top=0,
+        pad_right=0,
+        pad_bottom=0,
+        original_size=ImageDimensions(height=200, width=100),
+        size_after_pre_processing=ImageDimensions(height=120, width=80),
+        inference_size=ImageDimensions(height=64, width=96),
+        scale_width=96 / 80,
+        scale_height=64 / 120,
+        static_crop_offset=StaticCropOffset(
+            offset_x=10,
+            offset_y=40,
+            crop_width=80,
+            crop_height=120,
+        ),
+    )
+    assert result_meta[0] == expected_meta
+    assert result_meta[1] == expected_meta
+
+
+def test_pre_process_torch_3d_image_with_stretch_and_crop() -> None:
+    # given
+    image_pre_processing = ImagePreProcessing(
+        **{
+            "static-crop": StaticCrop(
+                enabled=True, x_min=10, x_max=90, y_min=20, y_max=80
+            )
+        }
+    )
+    network_input = NetworkInputDefinition(
+        training_input_size=TrainingInputSize(height=64, width=96),
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.RGB,
+        resize_mode=ResizeMode.STRETCH_TO,
+        input_channels=3,
+    )
+    image = np.ones((200, 100, 3), dtype=np.uint8)
+    image[40:160, 10:90, :] = (image[40:160, 10:90, :] * (10, 20, 30)).astype(np.uint8)
+    image = torch.from_numpy(image)
+    image = torch.permute(image, (2, 0, 1))
+
+    # when
+    result_image, result_meta = pre_process_network_input(
+        images=image,
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format="rgb",
+    )
+
+    # then
+    assert isinstance(result_image, torch.Tensor)
+    assert tuple(result_image.shape) == (1, 3, 64, 96)
+    assert torch.all(result_image[0][2] == 30)
+    assert torch.all(result_image[0][1] == 20)
+    assert torch.all(result_image[0][0] == 10)
+    assert result_meta[0] == PreProcessingMetadata(
+        pad_left=0,
+        pad_top=0,
+        pad_right=0,
+        pad_bottom=0,
+        original_size=ImageDimensions(height=200, width=100),
+        size_after_pre_processing=ImageDimensions(height=120, width=80),
+        inference_size=ImageDimensions(height=64, width=96),
+        scale_width=96 / 80,
+        scale_height=64 / 120,
+        static_crop_offset=StaticCropOffset(
+            offset_x=10,
+            offset_y=40,
+            crop_width=80,
+            crop_height=120,
+        ),
+    )
+
+
+def test_pre_process_torch_3d_not_permuted_image_with_stretch_and_crop() -> None:
+    # given
+    image_pre_processing = ImagePreProcessing(
+        **{
+            "static-crop": StaticCrop(
+                enabled=True, x_min=10, x_max=90, y_min=20, y_max=80
+            )
+        }
+    )
+    network_input = NetworkInputDefinition(
+        training_input_size=TrainingInputSize(height=64, width=96),
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.RGB,
+        resize_mode=ResizeMode.STRETCH_TO,
+        input_channels=3,
+    )
+    image = np.ones((200, 100, 3), dtype=np.uint8)
+    image[40:160, 10:90, :] = (image[40:160, 10:90, :] * (10, 20, 30)).astype(np.uint8)
+    image = torch.from_numpy(image)
+
+    # when
+    result_image, result_meta = pre_process_network_input(
+        images=image,
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format="rgb",
+    )
+
+    # then
+    assert isinstance(result_image, torch.Tensor)
+    assert tuple(result_image.shape) == (1, 3, 64, 96)
+    assert torch.all(result_image[0][2] == 30)
+    assert torch.all(result_image[0][1] == 20)
+    assert torch.all(result_image[0][0] == 10)
+    assert result_meta[0] == PreProcessingMetadata(
+        pad_left=0,
+        pad_top=0,
+        pad_right=0,
+        pad_bottom=0,
+        original_size=ImageDimensions(height=200, width=100),
+        size_after_pre_processing=ImageDimensions(height=120, width=80),
+        inference_size=ImageDimensions(height=64, width=96),
+        scale_width=96 / 80,
+        scale_height=64 / 120,
+        static_crop_offset=StaticCropOffset(
+            offset_x=10,
+            offset_y=40,
+            crop_width=80,
+            crop_height=120,
+        ),
+    )
+
+
+def test_pre_process_torch_4d_image_with_stretch_and_crop() -> None:
+    # given
+    image_pre_processing = ImagePreProcessing(
+        **{
+            "static-crop": StaticCrop(
+                enabled=True, x_min=10, x_max=90, y_min=20, y_max=80
+            )
+        }
+    )
+    network_input = NetworkInputDefinition(
+        training_input_size=TrainingInputSize(height=64, width=96),
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.RGB,
+        resize_mode=ResizeMode.STRETCH_TO,
+        input_channels=3,
+    )
+    image = np.ones((200, 100, 3), dtype=np.uint8)
+    image[40:160, 10:90, :] = (image[40:160, 10:90, :] * (10, 20, 30)).astype(np.uint8)
+    image = torch.from_numpy(image)
+    image = torch.permute(image, (2, 0, 1))
+    image = torch.stack([image, image], dim=0)
+
+    # when
+    result_image, result_meta = pre_process_network_input(
+        images=image,
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format="rgb",
+    )
+
+    # then
+    assert isinstance(result_image, torch.Tensor)
+    assert tuple(result_image.shape) == (2, 3, 64, 96)
+    assert torch.all(result_image[0][2] == 30)
+    assert torch.all(result_image[0][1] == 20)
+    assert torch.all(result_image[0][0] == 10)
+    assert torch.all(result_image[1][2] == 30)
+    assert torch.all(result_image[1][1] == 20)
+    assert torch.all(result_image[1][0] == 10)
+    expected_meta = PreProcessingMetadata(
+        pad_left=0,
+        pad_top=0,
+        pad_right=0,
+        pad_bottom=0,
+        original_size=ImageDimensions(height=200, width=100),
+        size_after_pre_processing=ImageDimensions(height=120, width=80),
+        inference_size=ImageDimensions(height=64, width=96),
+        scale_width=96 / 80,
+        scale_height=64 / 120,
+        static_crop_offset=StaticCropOffset(
+            offset_x=10,
+            offset_y=40,
+            crop_width=80,
+            crop_height=120,
+        ),
+    )
+    assert result_meta[0] == expected_meta
+    assert result_meta[1] == expected_meta
+
+
+def test_pre_process_torch_4d_not_peruted_image_with_stretch_and_crop() -> None:
+    # given
+    image_pre_processing = ImagePreProcessing(
+        **{
+            "static-crop": StaticCrop(
+                enabled=True, x_min=10, x_max=90, y_min=20, y_max=80
+            )
+        }
+    )
+    network_input = NetworkInputDefinition(
+        training_input_size=TrainingInputSize(height=64, width=96),
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.RGB,
+        resize_mode=ResizeMode.STRETCH_TO,
+        input_channels=3,
+    )
+    image = np.ones((200, 100, 3), dtype=np.uint8)
+    image[40:160, 10:90, :] = (image[40:160, 10:90, :] * (10, 20, 30)).astype(np.uint8)
+    image = torch.from_numpy(image)
+    image = torch.stack([image, image], dim=0)
+
+    # when
+    result_image, result_meta = pre_process_network_input(
+        images=image,
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format="rgb",
+    )
+
+    # then
+    assert isinstance(result_image, torch.Tensor)
+    assert tuple(result_image.shape) == (2, 3, 64, 96)
+    assert torch.all(result_image[0][2] == 30)
+    assert torch.all(result_image[0][1] == 20)
+    assert torch.all(result_image[0][0] == 10)
+    assert torch.all(result_image[1][2] == 30)
+    assert torch.all(result_image[1][1] == 20)
+    assert torch.all(result_image[1][0] == 10)
+    expected_meta = PreProcessingMetadata(
+        pad_left=0,
+        pad_top=0,
+        pad_right=0,
+        pad_bottom=0,
+        original_size=ImageDimensions(height=200, width=100),
+        size_after_pre_processing=ImageDimensions(height=120, width=80),
+        inference_size=ImageDimensions(height=64, width=96),
+        scale_width=96 / 80,
+        scale_height=64 / 120,
+        static_crop_offset=StaticCropOffset(
+            offset_x=10,
+            offset_y=40,
+            crop_width=80,
+            crop_height=120,
+        ),
+    )
+    assert result_meta[0] == expected_meta
+    assert result_meta[1] == expected_meta
 
 
 def test_pre_process_numpy_image_with_stretch_and_rescaling() -> None:
@@ -1619,737 +2163,878 @@ def test_pre_process_numpy_image_with_static_crop_and_center_crop_selected_and_c
     )
 
 
-def test_pre_process_numpy_images_list() -> None:
+def test_pre_process_numpy_image_with_longer_edge_fit_selected() -> None:
     # given
-    pre_processing_config = PreProcessingConfig(
-        mode=PreProcessingMode.STRETCH,
-        target_size=ImageDimensions(height=64, width=64),
+    image_pre_processing = ImagePreProcessing()
+    network_input = NetworkInputDefinition(
+        training_input_size=TrainingInputSize(height=64, width=96),
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.RGB,
+        resize_mode=ResizeMode.FIT_LONGER_EDGE,
+        input_channels=3,
     )
     image = (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+
     # when
-    result_image, result_meta = pre_process_numpy_images_list(
-        images=[image, image],
-        pre_processing_config=pre_processing_config,
-        expected_network_color_format="rgb",
+    result_image, result_meta = pre_process_network_input(
+        images=image,
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
         target_device=torch.device("cpu"),
-        rescaling_constant=10.0,
-        normalization=([2, 2, 2], [6, 6, 6]),
     )
 
     # then
     assert isinstance(result_image, torch.Tensor)
-    assert tuple(result_image.shape) == (2, 3, 64, 64)
+    assert tuple(result_image.shape) == (1, 3, 64, 56)
+    assert torch.all(result_image[0][0] == 30)
+    assert torch.all(result_image[0][1] == 20)
+    assert torch.all(result_image[0][2] == 10)
+    assert result_meta[0] == PreProcessingMetadata(
+        pad_left=0,
+        pad_top=0,
+        pad_right=0,
+        pad_bottom=0,
+        original_size=ImageDimensions(height=192, width=168),
+        size_after_pre_processing=ImageDimensions(height=192, width=168),
+        inference_size=ImageDimensions(height=64, width=56),
+        scale_width=64 / 192,
+        scale_height=64 / 192,
+        static_crop_offset=StaticCropOffset(
+            offset_x=0,
+            offset_y=0,
+            crop_width=168,
+            crop_height=192,
+        ),
+    )
+
+
+def test_pre_process_numpy_image_with_longer_edge_fit_selected_with_scaling() -> None:
+    # given
+    image_pre_processing = ImagePreProcessing()
+    network_input = NetworkInputDefinition(
+        training_input_size=TrainingInputSize(height=64, width=96),
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.RGB,
+        resize_mode=ResizeMode.FIT_LONGER_EDGE,
+        input_channels=3,
+        scaling_factor=10.0,
+    )
+    image = (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+
+    # when
+    result_image, result_meta = pre_process_network_input(
+        images=image,
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+    )
+
+    # then
+    assert isinstance(result_image, torch.Tensor)
+    assert tuple(result_image.shape) == (1, 3, 64, 56)
+    assert torch.all(result_image[0][0] == 3.0)
+    assert torch.all(result_image[0][1] == 2.0)
+    assert torch.all(result_image[0][2] == 1.0)
+    assert result_meta[0] == PreProcessingMetadata(
+        pad_left=0,
+        pad_top=0,
+        pad_right=0,
+        pad_bottom=0,
+        original_size=ImageDimensions(height=192, width=168),
+        size_after_pre_processing=ImageDimensions(height=192, width=168),
+        inference_size=ImageDimensions(height=64, width=56),
+        scale_width=64 / 192,
+        scale_height=64 / 192,
+        static_crop_offset=StaticCropOffset(
+            offset_x=0,
+            offset_y=0,
+            crop_width=168,
+            crop_height=192,
+        ),
+    )
+
+
+def test_pre_process_numpy_image_with_longer_edge_fit_selected_with_scaling_and_normalisation() -> (
+    None
+):
+    # given
+    image_pre_processing = ImagePreProcessing()
+    network_input = NetworkInputDefinition(
+        training_input_size=TrainingInputSize(height=64, width=96),
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.RGB,
+        resize_mode=ResizeMode.FIT_LONGER_EDGE,
+        input_channels=3,
+        scaling_factor=10.0,
+        normalization=([2, 2, 2], [6, 6, 6]),
+    )
+    image = (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+
+    # when
+    result_image, result_meta = pre_process_network_input(
+        images=image,
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+    )
+
+    # then
+    assert isinstance(result_image, torch.Tensor)
+    assert tuple(result_image.shape) == (1, 3, 64, 56)
     assert torch.all(result_image[0][0] == 1 / 6)
     assert torch.all(result_image[0][1] == 0.0)
     assert torch.all(result_image[0][2] == -1 / 6)
-    assert torch.all(result_image[1][0] == 1 / 6)
-    assert torch.all(result_image[1][1] == 0.0)
-    assert torch.all(result_image[1][2] == -1 / 6)
-    assert len(result_meta) == 2
     assert result_meta[0] == PreProcessingMetadata(
         pad_left=0,
         pad_top=0,
         pad_right=0,
         pad_bottom=0,
         original_size=ImageDimensions(height=192, width=168),
-        inference_size=ImageDimensions(height=64, width=64),
-        scale_width=64 / 168,
+        size_after_pre_processing=ImageDimensions(height=192, width=168),
+        inference_size=ImageDimensions(height=64, width=56),
+        scale_width=64 / 192,
         scale_height=64 / 192,
-    )
-    assert result_meta[1] == PreProcessingMetadata(
-        pad_left=0,
-        pad_top=0,
-        pad_right=0,
-        pad_bottom=0,
-        original_size=ImageDimensions(height=192, width=168),
-        inference_size=ImageDimensions(height=64, width=64),
-        scale_width=64 / 168,
-        scale_height=64 / 192,
-    )
-
-
-def test_pre_process_images_tensor_list_when_invalid_pre_processing_config_provided() -> (
-    None
-):
-    # given
-    pre_processing_config = PreProcessingConfig(
-        mode=PreProcessingMode.NONE,
-    )
-    image = torch.from_numpy(
-        (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
-    ).permute(2, 0, 1)
-
-    # when
-    with pytest.raises(ModelRuntimeError):
-        _ = pre_process_images_tensor_list(
-            images=[image],
-            pre_processing_config=pre_processing_config,
-            expected_network_color_format="rgb",
-            target_device=torch.device("cpu"),
-        )
-
-
-def test_pre_process_images_tensor_list_when_stretch_config_provided_and_hwc_format_provided() -> (
-    None
-):
-    # given
-    pre_processing_config = PreProcessingConfig(
-        mode=PreProcessingMode.STRETCH,
-        target_size=ImageDimensions(height=64, width=64),
-    )
-    image = torch.from_numpy(
-        (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
-    )
-
-    # when
-    result_tensor, result_meta = pre_process_images_tensor_list(
-        images=[image],
-        pre_processing_config=pre_processing_config,
-        expected_network_color_format="rgb",
-        target_device=torch.device("cpu"),
-        rescaling_constant=None,
-    )
-
-    # then
-    assert tuple(result_tensor.shape) == (1, 3, 64, 64)
-    assert len(result_meta) == 1
-    assert torch.all(result_tensor[0][2] == 30)
-    assert torch.all(result_tensor[0][1] == 20)
-    assert torch.all(result_tensor[0][0] == 10)
-    assert result_meta[0] == PreProcessingMetadata(
-        pad_left=0,
-        pad_top=0,
-        pad_right=0,
-        pad_bottom=0,
-        original_size=ImageDimensions(height=192, width=168),
-        inference_size=ImageDimensions(height=64, width=64),
-        scale_width=64 / 168,
-        scale_height=64 / 192,
-    )
-
-
-def test_pre_process_images_tensor_list_when_stretch_config_provided_and_chw_format_provided() -> (
-    None
-):
-    # given
-    pre_processing_config = PreProcessingConfig(
-        mode=PreProcessingMode.STRETCH,
-        target_size=ImageDimensions(height=64, width=64),
-    )
-    image = torch.from_numpy(
-        (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
-    ).permute(2, 0, 1)
-
-    # when
-    result_tensor, result_meta = pre_process_images_tensor_list(
-        images=[image],
-        pre_processing_config=pre_processing_config,
-        expected_network_color_format="rgb",
-        target_device=torch.device("cpu"),
-        rescaling_constant=None,
-    )
-
-    # then
-    assert tuple(result_tensor.shape) == (1, 3, 64, 64)
-    assert len(result_meta) == 1
-    assert torch.all(result_tensor[0][2] == 30)
-    assert torch.all(result_tensor[0][1] == 20)
-    assert torch.all(result_tensor[0][0] == 10)
-    assert result_meta[0] == PreProcessingMetadata(
-        pad_left=0,
-        pad_top=0,
-        pad_right=0,
-        pad_bottom=0,
-        original_size=ImageDimensions(height=192, width=168),
-        inference_size=ImageDimensions(height=64, width=64),
-        scale_width=64 / 168,
-        scale_height=64 / 192,
-    )
-
-
-def test_pre_process_images_tensor_list_when_stretch_config_provided_and_rescaling_selected() -> (
-    None
-):
-    # given
-    pre_processing_config = PreProcessingConfig(
-        mode=PreProcessingMode.STRETCH,
-        target_size=ImageDimensions(height=64, width=64),
-    )
-    image = torch.from_numpy(
-        (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
-    ).permute(2, 0, 1)
-
-    # when
-    result_tensor, result_meta = pre_process_images_tensor_list(
-        images=[image],
-        pre_processing_config=pre_processing_config,
-        expected_network_color_format="rgb",
-        target_device=torch.device("cpu"),
-        rescaling_constant=10.0,
-    )
-
-    # then
-    assert tuple(result_tensor.shape) == (1, 3, 64, 64)
-    assert len(result_meta) == 1
-    assert torch.all(result_tensor[0][2] == 3)
-    assert torch.all(result_tensor[0][1] == 2)
-    assert torch.all(result_tensor[0][0] == 1)
-    assert result_meta[0] == PreProcessingMetadata(
-        pad_left=0,
-        pad_top=0,
-        pad_right=0,
-        pad_bottom=0,
-        original_size=ImageDimensions(height=192, width=168),
-        inference_size=ImageDimensions(height=64, width=64),
-        scale_width=64 / 168,
-        scale_height=64 / 192,
-    )
-
-
-def test_pre_process_images_tensor_list_when_stretch_config_provided_and_rescaling_with_normalization_selected() -> (
-    None
-):
-    # given
-    pre_processing_config = PreProcessingConfig(
-        mode=PreProcessingMode.STRETCH,
-        target_size=ImageDimensions(height=64, width=64),
-    )
-    image = torch.from_numpy(
-        (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
-    ).permute(2, 0, 1)
-
-    # when
-    result_tensor, result_meta = pre_process_images_tensor_list(
-        images=[image],
-        pre_processing_config=pre_processing_config,
-        expected_network_color_format="rgb",
-        target_device=torch.device("cpu"),
-        rescaling_constant=10.0,
-        normalization=([2, 2, 2], [6, 6, 6]),
-    )
-
-    # then
-    assert tuple(result_tensor.shape) == (1, 3, 64, 64)
-    assert len(result_meta) == 1
-    assert torch.all(result_tensor[0][2] == 1 / 6)
-    assert torch.all(result_tensor[0][1] == 0)
-    assert torch.all(result_tensor[0][0] == -1 / 6)
-    assert result_meta[0] == PreProcessingMetadata(
-        pad_left=0,
-        pad_top=0,
-        pad_right=0,
-        pad_bottom=0,
-        original_size=ImageDimensions(height=192, width=168),
-        inference_size=ImageDimensions(height=64, width=64),
-        scale_width=64 / 168,
-        scale_height=64 / 192,
-    )
-
-
-def test_pre_process_images_tensor_list_when_invalid_letterbox_config_provided() -> (
-    None
-):
-    # given
-    pre_processing_config = PreProcessingConfig(
-        mode=PreProcessingMode.LETTERBOX,
-        target_size=ImageDimensions(height=64, width=64),
-    )
-    image = torch.from_numpy(
-        (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
-    ).permute(2, 0, 1)
-
-    # when
-    with pytest.raises(ModelRuntimeError):
-        _ = pre_process_images_tensor_list(
-            images=[image],
-            pre_processing_config=pre_processing_config,
-            expected_network_color_format="rgb",
-            target_device=torch.device("cpu"),
-            rescaling_constant=10.0,
-            normalization=([2, 2, 2], [6, 6, 6]),
-        )
-
-
-def test_pre_process_images_tensor_list_when_letterbox_selected() -> None:
-    # given
-    pre_processing_config = PreProcessingConfig(
-        mode=PreProcessingMode.LETTERBOX,
-        target_size=ImageDimensions(height=64, width=64),
-        padding_value=0,
-    )
-    image = torch.from_numpy(
-        (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
-    ).permute(2, 0, 1)
-
-    # when
-    result_tensor, result_meta = pre_process_images_tensor_list(
-        images=[image],
-        pre_processing_config=pre_processing_config,
-        expected_network_color_format="rgb",
-        target_device=torch.device("cpu"),
-        rescaling_constant=None,
-    )
-
-    # then
-    assert tuple(result_tensor.shape) == (1, 3, 64, 64)
-    assert len(result_meta) == 1
-    assert torch.all(result_tensor[0, :, :, :4] == 0)
-    assert torch.all(result_tensor[0, :, :, 60:] == 0)
-    assert torch.all(result_tensor[0, 0, :, 4:60] == 10)
-    assert torch.all(result_tensor[0, 1, :, 4:60] == 20)
-    assert torch.allclose(
-        result_tensor[0, 2, :, 4:60], torch.ones_like(result_tensor[0, 2, :, 4:60]) * 30
-    )
-    assert (result_meta[0].pad_left, result_meta[0].pad_right) == (4, 4)
-    assert (result_meta[0].pad_top, result_meta[0].pad_bottom) == (0, 0)
-    assert abs(result_meta[0].scale_width - 1 / 3) < 1e-5
-    assert abs(result_meta[0].scale_height - 1 / 3) < 1e-5
-
-
-def test_pre_process_images_tensor_list_when_letterbox_with_rescaling_selected() -> (
-    None
-):
-    # given
-    pre_processing_config = PreProcessingConfig(
-        mode=PreProcessingMode.LETTERBOX,
-        target_size=ImageDimensions(height=64, width=64),
-        padding_value=0,
-    )
-    image = torch.from_numpy(
-        (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
-    ).permute(2, 0, 1)
-
-    # when
-    result_tensor, result_meta = pre_process_images_tensor_list(
-        images=[image],
-        pre_processing_config=pre_processing_config,
-        expected_network_color_format="rgb",
-        target_device=torch.device("cpu"),
-        rescaling_constant=10.0,
-    )
-
-    # then
-    assert tuple(result_tensor.shape) == (1, 3, 64, 64)
-    assert len(result_meta) == 1
-    assert torch.all(result_tensor[0, :, :, :4] == 0)
-    assert torch.all(result_tensor[0, :, :, 60:] == 0)
-    assert torch.allclose(
-        result_tensor[0, 0, :, 4:60], torch.ones_like(result_tensor[0, 0, :, 4:60])
-    )
-    assert torch.allclose(
-        result_tensor[0, 1, :, 4:60], torch.ones_like(result_tensor[0, 1, :, 4:60]) * 2
-    )
-    assert torch.allclose(
-        result_tensor[0, 2, :, 4:60],
-        torch.ones_like(result_tensor[0, 2, :, 4:60]) * 3.0,
-    )
-    assert (result_meta[0].pad_left, result_meta[0].pad_right) == (4, 4)
-    assert (result_meta[0].pad_top, result_meta[0].pad_bottom) == (0, 0)
-    assert abs(result_meta[0].scale_width - 1 / 3) < 1e-5
-    assert abs(result_meta[0].scale_height - 1 / 3) < 1e-5
-
-
-def test_pre_process_images_tensor_list_when_letterbox_with_rescaling_and_normalization_selected() -> (
-    None
-):
-    # given
-    pre_processing_config = PreProcessingConfig(
-        mode=PreProcessingMode.LETTERBOX,
-        target_size=ImageDimensions(height=64, width=64),
-        padding_value=0,
-    )
-    image = torch.from_numpy(
-        (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
-    ).permute(2, 0, 1)
-
-    # when
-    result_tensor, result_meta = pre_process_images_tensor_list(
-        images=[image],
-        pre_processing_config=pre_processing_config,
-        expected_network_color_format="rgb",
-        target_device=torch.device("cpu"),
-        rescaling_constant=10.0,
-        normalization=([2, 2, 2], [6, 6, 6]),
-    )
-
-    # then
-    assert tuple(result_tensor.shape) == (1, 3, 64, 64)
-    assert len(result_meta) == 1
-    assert torch.allclose(
-        result_tensor[0, :, :, :4], torch.ones_like(result_tensor[0, :, :, :4]) * -1 / 3
-    )
-    assert torch.allclose(
-        result_tensor[0, :, :, 60:],
-        torch.ones_like(result_tensor[0, :, :, :4]) * -1 / 3,
-    )
-    assert torch.allclose(
-        result_tensor[0, 0, :, 4:60],
-        torch.ones_like(result_tensor[0, 0, :, 4:60]) * -1 / 6,
-    )
-    assert torch.allclose(
-        result_tensor[0, 1, :, 4:60], torch.zeros_like(result_tensor[0, 1, :, 4:60])
-    )
-    assert torch.allclose(
-        result_tensor[0, 2, :, 4:60],
-        torch.ones_like(result_tensor[0, 2, :, 4:60]) * 1 / 6,
-    )
-    assert (result_meta[0].pad_left, result_meta[0].pad_right) == (4, 4)
-    assert (result_meta[0].pad_top, result_meta[0].pad_bottom) == (0, 0)
-    assert abs(result_meta[0].scale_width - 1 / 3) < 1e-5
-    assert abs(result_meta[0].scale_height - 1 / 3) < 1e-5
-
-
-def test_pre_process_images_tensor_list_when_unsupported_pre_processing_mode_selected() -> (
-    None
-):
-    # given
-    pre_processing_config = PreProcessingConfig(
-        mode="some",
-        target_size=ImageDimensions(height=64, width=64),
-        padding_value=0,
-    )
-    image = torch.from_numpy(
-        (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
-    ).permute(2, 0, 1)
-
-    # when
-    with pytest.raises(ModelRuntimeError):
-        _ = pre_process_images_tensor_list(
-            images=[image],
-            pre_processing_config=pre_processing_config,
-            expected_network_color_format="rgb",
-            target_device=torch.device("cpu"),
-            rescaling_constant=10.0,
-        )
-
-
-def test_pre_process_images_tensor_when_pre_processing_was_misconfigured() -> None:
-    # given
-    pre_processing_config = PreProcessingConfig(
-        mode=PreProcessingMode.NONE,
-    )
-    images = torch.from_numpy(
-        (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
-    ).permute(2, 0, 1)
-
-    # when
-    with pytest.raises(ModelRuntimeError):
-        _ = pre_process_images_tensor(
-            images=images,
-            pre_processing_config=pre_processing_config,
-            expected_network_color_format="rgb",
-            target_device=torch.device("cpu"),
-            rescaling_constant=10.0,
-        )
-
-
-def test_pre_process_images_tensor_when_stretch_config_provided_and_hwc_format_provided() -> (
-    None
-):
-    # given
-    pre_processing_config = PreProcessingConfig(
-        mode=PreProcessingMode.STRETCH,
-        target_size=ImageDimensions(height=64, width=64),
-    )
-    images = torch.from_numpy(
-        (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
-    )
-
-    # when
-    result_tensor, result_meta = pre_process_images_tensor(
-        images=images,
-        pre_processing_config=pre_processing_config,
-        expected_network_color_format="rgb",
-        target_device=torch.device("cpu"),
-        rescaling_constant=None,
-    )
-
-    # then
-    assert tuple(result_tensor.shape) == (1, 3, 64, 64)
-    assert len(result_meta) == 1
-    assert torch.all(result_tensor[0][2] == 30)
-    assert torch.all(result_tensor[0][1] == 20)
-    assert torch.all(result_tensor[0][0] == 10)
-    assert result_meta[0] == PreProcessingMetadata(
-        pad_left=0,
-        pad_top=0,
-        pad_right=0,
-        pad_bottom=0,
-        original_size=ImageDimensions(height=192, width=168),
-        inference_size=ImageDimensions(height=64, width=64),
-        scale_width=64 / 168,
-        scale_height=64 / 192,
-    )
-
-
-def test_pre_process_images_tensor_when_stretch_config_provided_and_chw_format_provided() -> (
-    None
-):
-    # given
-    pre_processing_config = PreProcessingConfig(
-        mode=PreProcessingMode.STRETCH,
-        target_size=ImageDimensions(height=64, width=64),
-    )
-    images = torch.from_numpy(
-        (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
-    ).permute(2, 0, 1)
-
-    # when
-    result_tensor, result_meta = pre_process_images_tensor(
-        images=images,
-        pre_processing_config=pre_processing_config,
-        expected_network_color_format="rgb",
-        target_device=torch.device("cpu"),
-        rescaling_constant=None,
-    )
-
-    # then
-    assert tuple(result_tensor.shape) == (1, 3, 64, 64)
-    assert len(result_meta) == 1
-    assert torch.all(result_tensor[0][2] == 30)
-    assert torch.all(result_tensor[0][1] == 20)
-    assert torch.all(result_tensor[0][0] == 10)
-    assert result_meta[0] == PreProcessingMetadata(
-        pad_left=0,
-        pad_top=0,
-        pad_right=0,
-        pad_bottom=0,
-        original_size=ImageDimensions(height=192, width=168),
-        inference_size=ImageDimensions(height=64, width=64),
-        scale_width=64 / 168,
-        scale_height=64 / 192,
-    )
-
-
-def test_pre_process_images_tensor_when_stretch_config_provided_with_rescaling() -> (
-    None
-):
-    # given
-    pre_processing_config = PreProcessingConfig(
-        mode=PreProcessingMode.STRETCH,
-        target_size=ImageDimensions(height=64, width=64),
-    )
-    images = torch.from_numpy(
-        (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
-    ).permute(2, 0, 1)
-
-    # when
-    result_tensor, result_meta = pre_process_images_tensor(
-        images=images,
-        pre_processing_config=pre_processing_config,
-        expected_network_color_format="rgb",
-        target_device=torch.device("cpu"),
-        rescaling_constant=10.0,
-    )
-
-    # then
-    assert tuple(result_tensor.shape) == (1, 3, 64, 64)
-    assert len(result_meta) == 1
-    assert torch.all(result_tensor[0][2] == 3)
-    assert torch.all(result_tensor[0][1] == 2)
-    assert torch.all(result_tensor[0][0] == 1)
-    assert result_meta[0] == PreProcessingMetadata(
-        pad_left=0,
-        pad_top=0,
-        pad_right=0,
-        pad_bottom=0,
-        original_size=ImageDimensions(height=192, width=168),
-        inference_size=ImageDimensions(height=64, width=64),
-        scale_width=64 / 168,
-        scale_height=64 / 192,
-    )
-
-
-def test_pre_process_images_tensor_when_stretch_config_provided_with_rescaling_and_normalization() -> (
-    None
-):
-    # given
-    pre_processing_config = PreProcessingConfig(
-        mode=PreProcessingMode.STRETCH,
-        target_size=ImageDimensions(height=64, width=64),
-    )
-    images = torch.from_numpy(
-        (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
-    ).permute(2, 0, 1)
-
-    # when
-    result_tensor, result_meta = pre_process_images_tensor(
-        images=images,
-        pre_processing_config=pre_processing_config,
-        expected_network_color_format="rgb",
-        target_device=torch.device("cpu"),
-        rescaling_constant=10.0,
-        normalization=([2, 2, 2], [6, 6, 6]),
-    )
-
-    # then
-    assert tuple(result_tensor.shape) == (1, 3, 64, 64)
-    assert len(result_meta) == 1
-    assert torch.all(result_tensor[0][2] == 1 / 6)
-    assert torch.all(result_tensor[0][1] == 0)
-    assert torch.all(result_tensor[0][0] == -1 / 6)
-    assert result_meta[0] == PreProcessingMetadata(
-        pad_left=0,
-        pad_top=0,
-        pad_right=0,
-        pad_bottom=0,
-        original_size=ImageDimensions(height=192, width=168),
-        inference_size=ImageDimensions(height=64, width=64),
-        scale_width=64 / 168,
-        scale_height=64 / 192,
-    )
-
-
-def test_pre_process_images_tensor_when_letterbox_config_provided_without_padding() -> (
-    None
-):
-    # given
-    pre_processing_config = PreProcessingConfig(
-        mode=PreProcessingMode.LETTERBOX,
-        target_size=ImageDimensions(height=64, width=64),
-    )
-    images = torch.from_numpy(
-        (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
-    ).permute(2, 0, 1)
-
-    # when
-    with pytest.raises(ModelRuntimeError):
-        _ = pre_process_images_tensor(
-            images=images,
-            pre_processing_config=pre_processing_config,
-            expected_network_color_format="rgb",
-            target_device=torch.device("cpu"),
-            rescaling_constant=None,
-        )
-
-
-def test_pre_process_images_tensor_when_letterbox_config_provided() -> None:
-    # given
-    pre_processing_config = PreProcessingConfig(
-        mode=PreProcessingMode.LETTERBOX,
-        target_size=ImageDimensions(height=64, width=64),
-        padding_value=0,
-    )
-    images = torch.from_numpy(
-        (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
-    ).permute(2, 0, 1)
-
-    # when
-    result_tensor, result_meta = pre_process_images_tensor(
-        images=images,
-        pre_processing_config=pre_processing_config,
-        expected_network_color_format="rgb",
-        target_device=torch.device("cpu"),
-        rescaling_constant=None,
-    )
-
-    # then
-    assert tuple(result_tensor.shape) == (1, 3, 64, 64)
-    assert len(result_meta) == 1
-    assert torch.all(result_tensor[0, :, :, :4] == 0)
-    assert torch.all(result_tensor[0, :, :, 60:] == 0)
-    assert torch.allclose(
-        result_tensor[0, 0, :, 4:60], torch.ones_like(result_tensor[0, 0, :, 4:60]) * 10
-    )
-    assert torch.allclose(
-        result_tensor[0, 1, :, 4:60], torch.ones_like(result_tensor[0, 1, :, 4:60]) * 20
-    )
-    assert torch.allclose(
-        result_tensor[0, 2, :, 4:60], torch.ones_like(result_tensor[0, 2, :, 4:60]) * 30
-    )
-    assert (result_meta[0].pad_left, result_meta[0].pad_right) == (4, 4)
-    assert (result_meta[0].pad_top, result_meta[0].pad_bottom) == (0, 0)
-    assert abs(result_meta[0].scale_width - 1 / 3) < 1e-5
-    assert abs(result_meta[0].scale_height - 1 / 3) < 1e-5
-
-
-def test_pre_process_images_tensor_when_letterbox_config_with_rescaling_provided() -> (
-    None
-):
-    # given
-    pre_processing_config = PreProcessingConfig(
-        mode=PreProcessingMode.LETTERBOX,
-        target_size=ImageDimensions(height=64, width=64),
-        padding_value=0,
-    )
-    images = torch.from_numpy(
-        (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
-    ).permute(2, 0, 1)
-
-    # when
-    result_tensor, result_meta = pre_process_images_tensor(
-        images=images,
-        pre_processing_config=pre_processing_config,
-        expected_network_color_format="rgb",
-        target_device=torch.device("cpu"),
-        rescaling_constant=10.0,
-    )
-
-    # then
-    assert tuple(result_tensor.shape) == (1, 3, 64, 64)
-    assert len(result_meta) == 1
-    assert torch.all(result_tensor[0, :, :, :4] == 0)
-    assert torch.all(result_tensor[0, :, :, 60:] == 0)
-    assert torch.allclose(
-        result_tensor[0, 0, :, 4:60], torch.ones_like(result_tensor[0, 0, :, 4:60])
-    )
-    assert torch.allclose(
-        result_tensor[0, 1, :, 4:60], torch.ones_like(result_tensor[0, 1, :, 4:60]) * 2
-    )
-    assert torch.allclose(
-        result_tensor[0, 2, :, 4:60], torch.ones_like(result_tensor[0, 2, :, 4:60]) * 3
-    )
-    assert (result_meta[0].pad_left, result_meta[0].pad_right) == (4, 4)
-    assert (result_meta[0].pad_top, result_meta[0].pad_bottom) == (0, 0)
-    assert abs(result_meta[0].scale_width - 1 / 3) < 1e-5
-    assert abs(result_meta[0].scale_height - 1 / 3) < 1e-5
-
-
-def test_pre_process_images_tensor_when_letterbox_config_with_rescaling_and_normalization_provided() -> (
-    None
-):
-    # given
-    pre_processing_config = PreProcessingConfig(
-        mode=PreProcessingMode.LETTERBOX,
-        target_size=ImageDimensions(height=64, width=64),
-        padding_value=0,
-    )
-    images = torch.from_numpy(
-        (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
-    ).permute(2, 0, 1)
-
-    # when
-    result_tensor, result_meta = pre_process_images_tensor(
-        images=images,
-        pre_processing_config=pre_processing_config,
-        expected_network_color_format="rgb",
-        target_device=torch.device("cpu"),
-        rescaling_constant=10.0,
-        normalization=([2, 2, 2], [6, 6, 6]),
-    )
-
-    # then
-    assert tuple(result_tensor.shape) == (1, 3, 64, 64)
-    assert len(result_meta) == 1
-    assert torch.allclose(
-        result_tensor[0, :, :, :4], torch.ones_like(result_tensor[0, :, :, :4]) * -1 / 3
-    )
-    assert torch.allclose(
-        result_tensor[0, :, :, 60:],
-        torch.ones_like(result_tensor[0, :, :, :4]) * -1 / 3,
-    )
-    assert torch.allclose(
-        result_tensor[0, 0, :, 4:60],
-        torch.ones_like(result_tensor[0, 0, :, 4:60]) * -1 / 6,
-    )
-    assert torch.allclose(
-        result_tensor[0, 1, :, 4:60], torch.zeros_like(result_tensor[0, 1, :, 4:60])
-    )
-    assert torch.allclose(
-        result_tensor[0, 2, :, 4:60],
-        torch.ones_like(result_tensor[0, 2, :, 4:60]) * 1 / 6,
-    )
-    assert (result_meta[0].pad_left, result_meta[0].pad_right) == (4, 4)
-    assert (result_meta[0].pad_top, result_meta[0].pad_bottom) == (0, 0)
-    assert abs(result_meta[0].scale_width - 1 / 3) < 1e-5
-    assert abs(result_meta[0].scale_height - 1 / 3) < 1e-5
+        static_crop_offset=StaticCropOffset(
+            offset_x=0,
+            offset_y=0,
+            crop_width=168,
+            crop_height=192,
+        ),
+    )
+
+
+#
+# def test_pre_process_numpy_images_list() -> None:
+#     # given
+#     pre_processing_config = PreProcessingConfig(
+#         mode=PreProcessingMode.STRETCH,
+#         target_size=ImageDimensions(height=64, width=64),
+#     )
+#     image = (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+#     # when
+#     result_image, result_meta = pre_process_numpy_images_list(
+#         images=[image, image],
+#         pre_processing_config=pre_processing_config,
+#         expected_network_color_format="rgb",
+#         target_device=torch.device("cpu"),
+#         rescaling_constant=10.0,
+#         normalization=([2, 2, 2], [6, 6, 6]),
+#     )
+#
+#     # then
+#     assert isinstance(result_image, torch.Tensor)
+#     assert tuple(result_image.shape) == (2, 3, 64, 64)
+#     assert torch.all(result_image[0][0] == 1 / 6)
+#     assert torch.all(result_image[0][1] == 0.0)
+#     assert torch.all(result_image[0][2] == -1 / 6)
+#     assert torch.all(result_image[1][0] == 1 / 6)
+#     assert torch.all(result_image[1][1] == 0.0)
+#     assert torch.all(result_image[1][2] == -1 / 6)
+#     assert len(result_meta) == 2
+#     assert result_meta[0] == PreProcessingMetadata(
+#         pad_left=0,
+#         pad_top=0,
+#         pad_right=0,
+#         pad_bottom=0,
+#         original_size=ImageDimensions(height=192, width=168),
+#         inference_size=ImageDimensions(height=64, width=64),
+#         scale_width=64 / 168,
+#         scale_height=64 / 192,
+#     )
+#     assert result_meta[1] == PreProcessingMetadata(
+#         pad_left=0,
+#         pad_top=0,
+#         pad_right=0,
+#         pad_bottom=0,
+#         original_size=ImageDimensions(height=192, width=168),
+#         inference_size=ImageDimensions(height=64, width=64),
+#         scale_width=64 / 168,
+#         scale_height=64 / 192,
+#     )
+#
+#
+# def test_pre_process_images_tensor_list_when_invalid_pre_processing_config_provided() -> (
+#     None
+# ):
+#     # given
+#     pre_processing_config = PreProcessingConfig(
+#         mode=PreProcessingMode.NONE,
+#     )
+#     image = torch.from_numpy(
+#         (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+#     ).permute(2, 0, 1)
+#
+#     # when
+#     with pytest.raises(ModelRuntimeError):
+#         _ = pre_process_images_tensor_list(
+#             images=[image],
+#             pre_processing_config=pre_processing_config,
+#             expected_network_color_format="rgb",
+#             target_device=torch.device("cpu"),
+#         )
+#
+#
+# def test_pre_process_images_tensor_list_when_stretch_config_provided_and_hwc_format_provided() -> (
+#     None
+# ):
+#     # given
+#     pre_processing_config = PreProcessingConfig(
+#         mode=PreProcessingMode.STRETCH,
+#         target_size=ImageDimensions(height=64, width=64),
+#     )
+#     image = torch.from_numpy(
+#         (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+#     )
+#
+#     # when
+#     result_tensor, result_meta = pre_process_images_tensor_list(
+#         images=[image],
+#         pre_processing_config=pre_processing_config,
+#         expected_network_color_format="rgb",
+#         target_device=torch.device("cpu"),
+#         rescaling_constant=None,
+#     )
+#
+#     # then
+#     assert tuple(result_tensor.shape) == (1, 3, 64, 64)
+#     assert len(result_meta) == 1
+#     assert torch.all(result_tensor[0][2] == 30)
+#     assert torch.all(result_tensor[0][1] == 20)
+#     assert torch.all(result_tensor[0][0] == 10)
+#     assert result_meta[0] == PreProcessingMetadata(
+#         pad_left=0,
+#         pad_top=0,
+#         pad_right=0,
+#         pad_bottom=0,
+#         original_size=ImageDimensions(height=192, width=168),
+#         inference_size=ImageDimensions(height=64, width=64),
+#         scale_width=64 / 168,
+#         scale_height=64 / 192,
+#     )
+#
+#
+# def test_pre_process_images_tensor_list_when_stretch_config_provided_and_chw_format_provided() -> (
+#     None
+# ):
+#     # given
+#     pre_processing_config = PreProcessingConfig(
+#         mode=PreProcessingMode.STRETCH,
+#         target_size=ImageDimensions(height=64, width=64),
+#     )
+#     image = torch.from_numpy(
+#         (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+#     ).permute(2, 0, 1)
+#
+#     # when
+#     result_tensor, result_meta = pre_process_images_tensor_list(
+#         images=[image],
+#         pre_processing_config=pre_processing_config,
+#         expected_network_color_format="rgb",
+#         target_device=torch.device("cpu"),
+#         rescaling_constant=None,
+#     )
+#
+#     # then
+#     assert tuple(result_tensor.shape) == (1, 3, 64, 64)
+#     assert len(result_meta) == 1
+#     assert torch.all(result_tensor[0][2] == 30)
+#     assert torch.all(result_tensor[0][1] == 20)
+#     assert torch.all(result_tensor[0][0] == 10)
+#     assert result_meta[0] == PreProcessingMetadata(
+#         pad_left=0,
+#         pad_top=0,
+#         pad_right=0,
+#         pad_bottom=0,
+#         original_size=ImageDimensions(height=192, width=168),
+#         inference_size=ImageDimensions(height=64, width=64),
+#         scale_width=64 / 168,
+#         scale_height=64 / 192,
+#     )
+#
+#
+# def test_pre_process_images_tensor_list_when_stretch_config_provided_and_rescaling_selected() -> (
+#     None
+# ):
+#     # given
+#     pre_processing_config = PreProcessingConfig(
+#         mode=PreProcessingMode.STRETCH,
+#         target_size=ImageDimensions(height=64, width=64),
+#     )
+#     image = torch.from_numpy(
+#         (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+#     ).permute(2, 0, 1)
+#
+#     # when
+#     result_tensor, result_meta = pre_process_images_tensor_list(
+#         images=[image],
+#         pre_processing_config=pre_processing_config,
+#         expected_network_color_format="rgb",
+#         target_device=torch.device("cpu"),
+#         rescaling_constant=10.0,
+#     )
+#
+#     # then
+#     assert tuple(result_tensor.shape) == (1, 3, 64, 64)
+#     assert len(result_meta) == 1
+#     assert torch.all(result_tensor[0][2] == 3)
+#     assert torch.all(result_tensor[0][1] == 2)
+#     assert torch.all(result_tensor[0][0] == 1)
+#     assert result_meta[0] == PreProcessingMetadata(
+#         pad_left=0,
+#         pad_top=0,
+#         pad_right=0,
+#         pad_bottom=0,
+#         original_size=ImageDimensions(height=192, width=168),
+#         inference_size=ImageDimensions(height=64, width=64),
+#         scale_width=64 / 168,
+#         scale_height=64 / 192,
+#     )
+#
+#
+# def test_pre_process_images_tensor_list_when_stretch_config_provided_and_rescaling_with_normalization_selected() -> (
+#     None
+# ):
+#     # given
+#     pre_processing_config = PreProcessingConfig(
+#         mode=PreProcessingMode.STRETCH,
+#         target_size=ImageDimensions(height=64, width=64),
+#     )
+#     image = torch.from_numpy(
+#         (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+#     ).permute(2, 0, 1)
+#
+#     # when
+#     result_tensor, result_meta = pre_process_images_tensor_list(
+#         images=[image],
+#         pre_processing_config=pre_processing_config,
+#         expected_network_color_format="rgb",
+#         target_device=torch.device("cpu"),
+#         rescaling_constant=10.0,
+#         normalization=([2, 2, 2], [6, 6, 6]),
+#     )
+#
+#     # then
+#     assert tuple(result_tensor.shape) == (1, 3, 64, 64)
+#     assert len(result_meta) == 1
+#     assert torch.all(result_tensor[0][2] == 1 / 6)
+#     assert torch.all(result_tensor[0][1] == 0)
+#     assert torch.all(result_tensor[0][0] == -1 / 6)
+#     assert result_meta[0] == PreProcessingMetadata(
+#         pad_left=0,
+#         pad_top=0,
+#         pad_right=0,
+#         pad_bottom=0,
+#         original_size=ImageDimensions(height=192, width=168),
+#         inference_size=ImageDimensions(height=64, width=64),
+#         scale_width=64 / 168,
+#         scale_height=64 / 192,
+#     )
+#
+#
+# def test_pre_process_images_tensor_list_when_invalid_letterbox_config_provided() -> (
+#     None
+# ):
+#     # given
+#     pre_processing_config = PreProcessingConfig(
+#         mode=PreProcessingMode.LETTERBOX,
+#         target_size=ImageDimensions(height=64, width=64),
+#     )
+#     image = torch.from_numpy(
+#         (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+#     ).permute(2, 0, 1)
+#
+#     # when
+#     with pytest.raises(ModelRuntimeError):
+#         _ = pre_process_images_tensor_list(
+#             images=[image],
+#             pre_processing_config=pre_processing_config,
+#             expected_network_color_format="rgb",
+#             target_device=torch.device("cpu"),
+#             rescaling_constant=10.0,
+#             normalization=([2, 2, 2], [6, 6, 6]),
+#         )
+#
+#
+# def test_pre_process_images_tensor_list_when_letterbox_selected() -> None:
+#     # given
+#     pre_processing_config = PreProcessingConfig(
+#         mode=PreProcessingMode.LETTERBOX,
+#         target_size=ImageDimensions(height=64, width=64),
+#         padding_value=0,
+#     )
+#     image = torch.from_numpy(
+#         (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+#     ).permute(2, 0, 1)
+#
+#     # when
+#     result_tensor, result_meta = pre_process_images_tensor_list(
+#         images=[image],
+#         pre_processing_config=pre_processing_config,
+#         expected_network_color_format="rgb",
+#         target_device=torch.device("cpu"),
+#         rescaling_constant=None,
+#     )
+#
+#     # then
+#     assert tuple(result_tensor.shape) == (1, 3, 64, 64)
+#     assert len(result_meta) == 1
+#     assert torch.all(result_tensor[0, :, :, :4] == 0)
+#     assert torch.all(result_tensor[0, :, :, 60:] == 0)
+#     assert torch.all(result_tensor[0, 0, :, 4:60] == 10)
+#     assert torch.all(result_tensor[0, 1, :, 4:60] == 20)
+#     assert torch.allclose(
+#         result_tensor[0, 2, :, 4:60], torch.ones_like(result_tensor[0, 2, :, 4:60]) * 30
+#     )
+#     assert (result_meta[0].pad_left, result_meta[0].pad_right) == (4, 4)
+#     assert (result_meta[0].pad_top, result_meta[0].pad_bottom) == (0, 0)
+#     assert abs(result_meta[0].scale_width - 1 / 3) < 1e-5
+#     assert abs(result_meta[0].scale_height - 1 / 3) < 1e-5
+#
+#
+# def test_pre_process_images_tensor_list_when_letterbox_with_rescaling_selected() -> (
+#     None
+# ):
+#     # given
+#     pre_processing_config = PreProcessingConfig(
+#         mode=PreProcessingMode.LETTERBOX,
+#         target_size=ImageDimensions(height=64, width=64),
+#         padding_value=0,
+#     )
+#     image = torch.from_numpy(
+#         (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+#     ).permute(2, 0, 1)
+#
+#     # when
+#     result_tensor, result_meta = pre_process_images_tensor_list(
+#         images=[image],
+#         pre_processing_config=pre_processing_config,
+#         expected_network_color_format="rgb",
+#         target_device=torch.device("cpu"),
+#         rescaling_constant=10.0,
+#     )
+#
+#     # then
+#     assert tuple(result_tensor.shape) == (1, 3, 64, 64)
+#     assert len(result_meta) == 1
+#     assert torch.all(result_tensor[0, :, :, :4] == 0)
+#     assert torch.all(result_tensor[0, :, :, 60:] == 0)
+#     assert torch.allclose(
+#         result_tensor[0, 0, :, 4:60], torch.ones_like(result_tensor[0, 0, :, 4:60])
+#     )
+#     assert torch.allclose(
+#         result_tensor[0, 1, :, 4:60], torch.ones_like(result_tensor[0, 1, :, 4:60]) * 2
+#     )
+#     assert torch.allclose(
+#         result_tensor[0, 2, :, 4:60],
+#         torch.ones_like(result_tensor[0, 2, :, 4:60]) * 3.0,
+#     )
+#     assert (result_meta[0].pad_left, result_meta[0].pad_right) == (4, 4)
+#     assert (result_meta[0].pad_top, result_meta[0].pad_bottom) == (0, 0)
+#     assert abs(result_meta[0].scale_width - 1 / 3) < 1e-5
+#     assert abs(result_meta[0].scale_height - 1 / 3) < 1e-5
+#
+#
+# def test_pre_process_images_tensor_list_when_letterbox_with_rescaling_and_normalization_selected() -> (
+#     None
+# ):
+#     # given
+#     pre_processing_config = PreProcessingConfig(
+#         mode=PreProcessingMode.LETTERBOX,
+#         target_size=ImageDimensions(height=64, width=64),
+#         padding_value=0,
+#     )
+#     image = torch.from_numpy(
+#         (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+#     ).permute(2, 0, 1)
+#
+#     # when
+#     result_tensor, result_meta = pre_process_images_tensor_list(
+#         images=[image],
+#         pre_processing_config=pre_processing_config,
+#         expected_network_color_format="rgb",
+#         target_device=torch.device("cpu"),
+#         rescaling_constant=10.0,
+#         normalization=([2, 2, 2], [6, 6, 6]),
+#     )
+#
+#     # then
+#     assert tuple(result_tensor.shape) == (1, 3, 64, 64)
+#     assert len(result_meta) == 1
+#     assert torch.allclose(
+#         result_tensor[0, :, :, :4], torch.ones_like(result_tensor[0, :, :, :4]) * -1 / 3
+#     )
+#     assert torch.allclose(
+#         result_tensor[0, :, :, 60:],
+#         torch.ones_like(result_tensor[0, :, :, :4]) * -1 / 3,
+#     )
+#     assert torch.allclose(
+#         result_tensor[0, 0, :, 4:60],
+#         torch.ones_like(result_tensor[0, 0, :, 4:60]) * -1 / 6,
+#     )
+#     assert torch.allclose(
+#         result_tensor[0, 1, :, 4:60], torch.zeros_like(result_tensor[0, 1, :, 4:60])
+#     )
+#     assert torch.allclose(
+#         result_tensor[0, 2, :, 4:60],
+#         torch.ones_like(result_tensor[0, 2, :, 4:60]) * 1 / 6,
+#     )
+#     assert (result_meta[0].pad_left, result_meta[0].pad_right) == (4, 4)
+#     assert (result_meta[0].pad_top, result_meta[0].pad_bottom) == (0, 0)
+#     assert abs(result_meta[0].scale_width - 1 / 3) < 1e-5
+#     assert abs(result_meta[0].scale_height - 1 / 3) < 1e-5
+#
+#
+# def test_pre_process_images_tensor_list_when_unsupported_pre_processing_mode_selected() -> (
+#     None
+# ):
+#     # given
+#     pre_processing_config = PreProcessingConfig(
+#         mode="some",
+#         target_size=ImageDimensions(height=64, width=64),
+#         padding_value=0,
+#     )
+#     image = torch.from_numpy(
+#         (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+#     ).permute(2, 0, 1)
+#
+#     # when
+#     with pytest.raises(ModelRuntimeError):
+#         _ = pre_process_images_tensor_list(
+#             images=[image],
+#             pre_processing_config=pre_processing_config,
+#             expected_network_color_format="rgb",
+#             target_device=torch.device("cpu"),
+#             rescaling_constant=10.0,
+#         )
+#
+#
+# def test_pre_process_images_tensor_when_pre_processing_was_misconfigured() -> None:
+#     # given
+#     pre_processing_config = PreProcessingConfig(
+#         mode=PreProcessingMode.NONE,
+#     )
+#     images = torch.from_numpy(
+#         (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+#     ).permute(2, 0, 1)
+#
+#     # when
+#     with pytest.raises(ModelRuntimeError):
+#         _ = pre_process_images_tensor(
+#             images=images,
+#             pre_processing_config=pre_processing_config,
+#             expected_network_color_format="rgb",
+#             target_device=torch.device("cpu"),
+#             rescaling_constant=10.0,
+#         )
+#
+#
+# def test_pre_process_images_tensor_when_stretch_config_provided_and_hwc_format_provided() -> (
+#     None
+# ):
+#     # given
+#     pre_processing_config = PreProcessingConfig(
+#         mode=PreProcessingMode.STRETCH,
+#         target_size=ImageDimensions(height=64, width=64),
+#     )
+#     images = torch.from_numpy(
+#         (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+#     )
+#
+#     # when
+#     result_tensor, result_meta = pre_process_images_tensor(
+#         images=images,
+#         pre_processing_config=pre_processing_config,
+#         expected_network_color_format="rgb",
+#         target_device=torch.device("cpu"),
+#         rescaling_constant=None,
+#     )
+#
+#     # then
+#     assert tuple(result_tensor.shape) == (1, 3, 64, 64)
+#     assert len(result_meta) == 1
+#     assert torch.all(result_tensor[0][2] == 30)
+#     assert torch.all(result_tensor[0][1] == 20)
+#     assert torch.all(result_tensor[0][0] == 10)
+#     assert result_meta[0] == PreProcessingMetadata(
+#         pad_left=0,
+#         pad_top=0,
+#         pad_right=0,
+#         pad_bottom=0,
+#         original_size=ImageDimensions(height=192, width=168),
+#         inference_size=ImageDimensions(height=64, width=64),
+#         scale_width=64 / 168,
+#         scale_height=64 / 192,
+#     )
+#
+#
+# def test_pre_process_images_tensor_when_stretch_config_provided_and_chw_format_provided() -> (
+#     None
+# ):
+#     # given
+#     pre_processing_config = PreProcessingConfig(
+#         mode=PreProcessingMode.STRETCH,
+#         target_size=ImageDimensions(height=64, width=64),
+#     )
+#     images = torch.from_numpy(
+#         (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+#     ).permute(2, 0, 1)
+#
+#     # when
+#     result_tensor, result_meta = pre_process_images_tensor(
+#         images=images,
+#         pre_processing_config=pre_processing_config,
+#         expected_network_color_format="rgb",
+#         target_device=torch.device("cpu"),
+#         rescaling_constant=None,
+#     )
+#
+#     # then
+#     assert tuple(result_tensor.shape) == (1, 3, 64, 64)
+#     assert len(result_meta) == 1
+#     assert torch.all(result_tensor[0][2] == 30)
+#     assert torch.all(result_tensor[0][1] == 20)
+#     assert torch.all(result_tensor[0][0] == 10)
+#     assert result_meta[0] == PreProcessingMetadata(
+#         pad_left=0,
+#         pad_top=0,
+#         pad_right=0,
+#         pad_bottom=0,
+#         original_size=ImageDimensions(height=192, width=168),
+#         inference_size=ImageDimensions(height=64, width=64),
+#         scale_width=64 / 168,
+#         scale_height=64 / 192,
+#     )
+#
+#
+# def test_pre_process_images_tensor_when_stretch_config_provided_with_rescaling() -> (
+#     None
+# ):
+#     # given
+#     pre_processing_config = PreProcessingConfig(
+#         mode=PreProcessingMode.STRETCH,
+#         target_size=ImageDimensions(height=64, width=64),
+#     )
+#     images = torch.from_numpy(
+#         (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+#     ).permute(2, 0, 1)
+#
+#     # when
+#     result_tensor, result_meta = pre_process_images_tensor(
+#         images=images,
+#         pre_processing_config=pre_processing_config,
+#         expected_network_color_format="rgb",
+#         target_device=torch.device("cpu"),
+#         rescaling_constant=10.0,
+#     )
+#
+#     # then
+#     assert tuple(result_tensor.shape) == (1, 3, 64, 64)
+#     assert len(result_meta) == 1
+#     assert torch.all(result_tensor[0][2] == 3)
+#     assert torch.all(result_tensor[0][1] == 2)
+#     assert torch.all(result_tensor[0][0] == 1)
+#     assert result_meta[0] == PreProcessingMetadata(
+#         pad_left=0,
+#         pad_top=0,
+#         pad_right=0,
+#         pad_bottom=0,
+#         original_size=ImageDimensions(height=192, width=168),
+#         inference_size=ImageDimensions(height=64, width=64),
+#         scale_width=64 / 168,
+#         scale_height=64 / 192,
+#     )
+#
+#
+# def test_pre_process_images_tensor_when_stretch_config_provided_with_rescaling_and_normalization() -> (
+#     None
+# ):
+#     # given
+#     pre_processing_config = PreProcessingConfig(
+#         mode=PreProcessingMode.STRETCH,
+#         target_size=ImageDimensions(height=64, width=64),
+#     )
+#     images = torch.from_numpy(
+#         (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+#     ).permute(2, 0, 1)
+#
+#     # when
+#     result_tensor, result_meta = pre_process_images_tensor(
+#         images=images,
+#         pre_processing_config=pre_processing_config,
+#         expected_network_color_format="rgb",
+#         target_device=torch.device("cpu"),
+#         rescaling_constant=10.0,
+#         normalization=([2, 2, 2], [6, 6, 6]),
+#     )
+#
+#     # then
+#     assert tuple(result_tensor.shape) == (1, 3, 64, 64)
+#     assert len(result_meta) == 1
+#     assert torch.all(result_tensor[0][2] == 1 / 6)
+#     assert torch.all(result_tensor[0][1] == 0)
+#     assert torch.all(result_tensor[0][0] == -1 / 6)
+#     assert result_meta[0] == PreProcessingMetadata(
+#         pad_left=0,
+#         pad_top=0,
+#         pad_right=0,
+#         pad_bottom=0,
+#         original_size=ImageDimensions(height=192, width=168),
+#         inference_size=ImageDimensions(height=64, width=64),
+#         scale_width=64 / 168,
+#         scale_height=64 / 192,
+#     )
+#
+#
+# def test_pre_process_images_tensor_when_letterbox_config_provided_without_padding() -> (
+#     None
+# ):
+#     # given
+#     pre_processing_config = PreProcessingConfig(
+#         mode=PreProcessingMode.LETTERBOX,
+#         target_size=ImageDimensions(height=64, width=64),
+#     )
+#     images = torch.from_numpy(
+#         (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+#     ).permute(2, 0, 1)
+#
+#     # when
+#     with pytest.raises(ModelRuntimeError):
+#         _ = pre_process_images_tensor(
+#             images=images,
+#             pre_processing_config=pre_processing_config,
+#             expected_network_color_format="rgb",
+#             target_device=torch.device("cpu"),
+#             rescaling_constant=None,
+#         )
+#
+#
+# def test_pre_process_images_tensor_when_letterbox_config_provided() -> None:
+#     # given
+#     pre_processing_config = PreProcessingConfig(
+#         mode=PreProcessingMode.LETTERBOX,
+#         target_size=ImageDimensions(height=64, width=64),
+#         padding_value=0,
+#     )
+#     images = torch.from_numpy(
+#         (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+#     ).permute(2, 0, 1)
+#
+#     # when
+#     result_tensor, result_meta = pre_process_images_tensor(
+#         images=images,
+#         pre_processing_config=pre_processing_config,
+#         expected_network_color_format="rgb",
+#         target_device=torch.device("cpu"),
+#         rescaling_constant=None,
+#     )
+#
+#     # then
+#     assert tuple(result_tensor.shape) == (1, 3, 64, 64)
+#     assert len(result_meta) == 1
+#     assert torch.all(result_tensor[0, :, :, :4] == 0)
+#     assert torch.all(result_tensor[0, :, :, 60:] == 0)
+#     assert torch.allclose(
+#         result_tensor[0, 0, :, 4:60], torch.ones_like(result_tensor[0, 0, :, 4:60]) * 10
+#     )
+#     assert torch.allclose(
+#         result_tensor[0, 1, :, 4:60], torch.ones_like(result_tensor[0, 1, :, 4:60]) * 20
+#     )
+#     assert torch.allclose(
+#         result_tensor[0, 2, :, 4:60], torch.ones_like(result_tensor[0, 2, :, 4:60]) * 30
+#     )
+#     assert (result_meta[0].pad_left, result_meta[0].pad_right) == (4, 4)
+#     assert (result_meta[0].pad_top, result_meta[0].pad_bottom) == (0, 0)
+#     assert abs(result_meta[0].scale_width - 1 / 3) < 1e-5
+#     assert abs(result_meta[0].scale_height - 1 / 3) < 1e-5
+#
+#
+# def test_pre_process_images_tensor_when_letterbox_config_with_rescaling_provided() -> (
+#     None
+# ):
+#     # given
+#     pre_processing_config = PreProcessingConfig(
+#         mode=PreProcessingMode.LETTERBOX,
+#         target_size=ImageDimensions(height=64, width=64),
+#         padding_value=0,
+#     )
+#     images = torch.from_numpy(
+#         (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+#     ).permute(2, 0, 1)
+#
+#     # when
+#     result_tensor, result_meta = pre_process_images_tensor(
+#         images=images,
+#         pre_processing_config=pre_processing_config,
+#         expected_network_color_format="rgb",
+#         target_device=torch.device("cpu"),
+#         rescaling_constant=10.0,
+#     )
+#
+#     # then
+#     assert tuple(result_tensor.shape) == (1, 3, 64, 64)
+#     assert len(result_meta) == 1
+#     assert torch.all(result_tensor[0, :, :, :4] == 0)
+#     assert torch.all(result_tensor[0, :, :, 60:] == 0)
+#     assert torch.allclose(
+#         result_tensor[0, 0, :, 4:60], torch.ones_like(result_tensor[0, 0, :, 4:60])
+#     )
+#     assert torch.allclose(
+#         result_tensor[0, 1, :, 4:60], torch.ones_like(result_tensor[0, 1, :, 4:60]) * 2
+#     )
+#     assert torch.allclose(
+#         result_tensor[0, 2, :, 4:60], torch.ones_like(result_tensor[0, 2, :, 4:60]) * 3
+#     )
+#     assert (result_meta[0].pad_left, result_meta[0].pad_right) == (4, 4)
+#     assert (result_meta[0].pad_top, result_meta[0].pad_bottom) == (0, 0)
+#     assert abs(result_meta[0].scale_width - 1 / 3) < 1e-5
+#     assert abs(result_meta[0].scale_height - 1 / 3) < 1e-5
+#
+#
+# def test_pre_process_images_tensor_when_letterbox_config_with_rescaling_and_normalization_provided() -> (
+#     None
+# ):
+#     # given
+#     pre_processing_config = PreProcessingConfig(
+#         mode=PreProcessingMode.LETTERBOX,
+#         target_size=ImageDimensions(height=64, width=64),
+#         padding_value=0,
+#     )
+#     images = torch.from_numpy(
+#         (np.ones((192, 168, 3), dtype=np.uint8) * (10, 20, 30)).astype(np.uint8)
+#     ).permute(2, 0, 1)
+#
+#     # when
+#     result_tensor, result_meta = pre_process_images_tensor(
+#         images=images,
+#         pre_processing_config=pre_processing_config,
+#         expected_network_color_format="rgb",
+#         target_device=torch.device("cpu"),
+#         rescaling_constant=10.0,
+#         normalization=([2, 2, 2], [6, 6, 6]),
+#     )
+#
+#     # then
+#     assert tuple(result_tensor.shape) == (1, 3, 64, 64)
+#     assert len(result_meta) == 1
+#     assert torch.allclose(
+#         result_tensor[0, :, :, :4], torch.ones_like(result_tensor[0, :, :, :4]) * -1 / 3
+#     )
+#     assert torch.allclose(
+#         result_tensor[0, :, :, 60:],
+#         torch.ones_like(result_tensor[0, :, :, :4]) * -1 / 3,
+#     )
+#     assert torch.allclose(
+#         result_tensor[0, 0, :, 4:60],
+#         torch.ones_like(result_tensor[0, 0, :, 4:60]) * -1 / 6,
+#     )
+#     assert torch.allclose(
+#         result_tensor[0, 1, :, 4:60], torch.zeros_like(result_tensor[0, 1, :, 4:60])
+#     )
+#     assert torch.allclose(
+#         result_tensor[0, 2, :, 4:60],
+#         torch.ones_like(result_tensor[0, 2, :, 4:60]) * 1 / 6,
+#     )
+#     assert (result_meta[0].pad_left, result_meta[0].pad_right) == (4, 4)
+#     assert (result_meta[0].pad_top, result_meta[0].pad_bottom) == (0, 0)
+#     assert abs(result_meta[0].scale_width - 1 / 3) < 1e-5
+#     assert abs(result_meta[0].scale_height - 1 / 3) < 1e-5
