@@ -463,7 +463,7 @@ def handle_torch_input_preparation_fitting_longer_edge(
     target_size: ImageDimensions,
     static_crop_offset: StaticCropOffset,
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-    original_height, original_width = image.shape[0], image.shape[1]
+    original_height, original_width = image.shape[2], image.shape[3]
     size_after_pre_processing = ImageDimensions(
         height=original_height, width=original_width
     )
@@ -486,7 +486,7 @@ def handle_torch_input_preparation_fitting_longer_edge(
         [actual_target_size.height, actual_target_size.width],
         mode="bilinear",
     )
-    if input_color_mode != input_color_mode:
+    if input_color_mode != network_input.color_mode:
         image = image[:, [2, 1, 0], :, :]
     image_metadata = PreProcessingMetadata(
         pad_left=0,
