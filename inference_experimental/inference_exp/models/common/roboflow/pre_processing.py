@@ -33,6 +33,12 @@ def pre_process_network_input(
     input_color_format: Optional[ColorFormat] = None,
     image_size_wh: Optional[Union[int, Tuple[int, int]]] = None,
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
+    if network_input.input_channels != 3:
+        raise ModelRuntimeError(
+            message=f"`inference` currently does not support Roboflow pre-processing for model inputs with "
+            f"channels numbers different than 1. Let us know if you need this feature.",
+            help_url="https://todo",
+        )
     input_color_mode = None
     if input_color_format is not None:
         input_color_mode = ColorMode(input_color_format)
@@ -891,8 +897,7 @@ def apply_pre_processing_to_numpy_image(
             else cv2.COLOR_RGB2GRAY
         )
         image = cv2.cvtColor(image, mode)
-        if network_input_channels != 1:
-            image = np.stack([image] * network_input_channels, axis=2)
+        image = np.stack([image] * network_input_channels, axis=2)
     if image_pre_processing.contrast and image_pre_processing.contrast.enabled:
         if (
             image_pre_processing.contrast.type
