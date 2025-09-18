@@ -1063,7 +1063,9 @@ def test_pre_process_numpy_image_with_letterbox_rescaling_and_normalization() ->
     )
 
 
-def test_pre_process_numpy_image_with_center_crop_selected_and_crop_fitting_inside_original_image() -> None:
+def test_pre_process_numpy_image_with_center_crop_selected_and_crop_fitting_inside_original_image() -> (
+    None
+):
     # given
     image_pre_processing = ImagePreProcessing()
     network_input = NetworkInputDefinition(
@@ -1108,7 +1110,9 @@ def test_pre_process_numpy_image_with_center_crop_selected_and_crop_fitting_insi
     )
 
 
-def test_pre_process_numpy_image_with_center_crop_selected_and_crop_not_fitting_inside_original_image() -> None:
+def test_pre_process_numpy_image_with_center_crop_selected_and_crop_not_fitting_inside_original_image() -> (
+    None
+):
     # given
     image_pre_processing = ImagePreProcessing()
     network_input = NetworkInputDefinition(
@@ -1157,7 +1161,9 @@ def test_pre_process_numpy_image_with_center_crop_selected_and_crop_not_fitting_
     )
 
 
-def test_pre_process_numpy_image_with_center_crop_selected_and_crop_not_fitting_inside_original_image_along_width_dimension() -> None:
+def test_pre_process_numpy_image_with_center_crop_selected_and_crop_not_fitting_inside_original_image_along_width_dimension() -> (
+    None
+):
     # given
     image_pre_processing = ImagePreProcessing()
     network_input = NetworkInputDefinition(
@@ -1204,7 +1210,9 @@ def test_pre_process_numpy_image_with_center_crop_selected_and_crop_not_fitting_
     )
 
 
-def test_pre_process_numpy_image_with_center_crop_selected_and_crop_not_fitting_inside_original_image_along_heigght_dimension() -> None:
+def test_pre_process_numpy_image_with_center_crop_selected_and_crop_not_fitting_inside_original_image_along_heigght_dimension() -> (
+    None
+):
     # given
     image_pre_processing = ImagePreProcessing()
     network_input = NetworkInputDefinition(
@@ -1251,7 +1259,9 @@ def test_pre_process_numpy_image_with_center_crop_selected_and_crop_not_fitting_
     )
 
 
-def test_pre_process_numpy_image_with_static_crop_and_center_crop_selected_and_crop_fitting_inside_original_image() -> None:
+def test_pre_process_numpy_image_with_static_crop_and_center_crop_selected_and_crop_fitting_inside_original_image() -> (
+    None
+):
     # given
     image_pre_processing = ImagePreProcessing(
         **{
@@ -1268,7 +1278,9 @@ def test_pre_process_numpy_image_with_static_crop_and_center_crop_selected_and_c
         input_channels=3,
     )
     image = np.ones((200, 200, 3), dtype=np.uint8)
-    image[40:160,20:180, :] = (image[40:160,20:180, :] * (10, 20, 30)).astype(np.uint8)
+    image[40:160, 20:180, :] = (image[40:160, 20:180, :] * (10, 20, 30)).astype(
+        np.uint8
+    )
     # after center crop - image of size (120, 160, 3) available
 
     # when
@@ -1304,7 +1316,9 @@ def test_pre_process_numpy_image_with_static_crop_and_center_crop_selected_and_c
     )
 
 
-def test_pre_process_numpy_image_with_static_crop_and_center_crop_selected_and_crop_not_fitting_inside_original_image() -> None:
+def test_pre_process_numpy_image_with_static_crop_and_center_crop_selected_and_crop_not_fitting_inside_original_image() -> (
+    None
+):
     # given
     image_pre_processing = ImagePreProcessing(
         **{
@@ -1321,7 +1335,9 @@ def test_pre_process_numpy_image_with_static_crop_and_center_crop_selected_and_c
         input_channels=3,
     )
     image = np.ones((200, 200, 3), dtype=np.uint8)
-    image[40:160,20:180, :] = (image[40:160,20:180, :] * (10, 20, 30)).astype(np.uint8)
+    image[40:160, 20:180, :] = (image[40:160, 20:180, :] * (10, 20, 30)).astype(
+        np.uint8
+    )
     # after center crop - image of size (120, 160, 3) available
 
     # when
@@ -1361,7 +1377,9 @@ def test_pre_process_numpy_image_with_static_crop_and_center_crop_selected_and_c
     )
 
 
-def test_pre_process_numpy_image_with_static_crop_and_center_crop_selected_and_crop_fitting_inside_original_image_with_scaling() -> None:
+def test_pre_process_numpy_image_with_static_crop_and_center_crop_selected_and_crop_fitting_inside_original_image_with_scaling() -> (
+    None
+):
     # given
     image_pre_processing = ImagePreProcessing(
         **{
@@ -1376,10 +1394,12 @@ def test_pre_process_numpy_image_with_static_crop_and_center_crop_selected_and_c
         color_mode=ColorMode.RGB,
         resize_mode=ResizeMode.CENTER_CROP,
         input_channels=3,
-        scaling_factor=10.0
+        scaling_factor=10.0,
     )
     image = np.ones((200, 200, 3), dtype=np.uint8)
-    image[40:160,20:180, :] = (image[40:160,20:180, :] * (10, 20, 30)).astype(np.uint8)
+    image[40:160, 20:180, :] = (image[40:160, 20:180, :] * (10, 20, 30)).astype(
+        np.uint8
+    )
     # after center crop - image of size (120, 160, 3) available
 
     # when
@@ -1415,7 +1435,9 @@ def test_pre_process_numpy_image_with_static_crop_and_center_crop_selected_and_c
     )
 
 
-def test_pre_process_numpy_image_with_static_crop_and_center_crop_selected_and_crop_not_fitting_inside_original_image_with_scaling() -> None:
+def test_pre_process_numpy_image_with_static_crop_and_center_crop_selected_and_crop_not_fitting_inside_original_image_with_scaling() -> (
+    None
+):
     # given
     image_pre_processing = ImagePreProcessing(
         **{
@@ -1433,7 +1455,9 @@ def test_pre_process_numpy_image_with_static_crop_and_center_crop_selected_and_c
         scaling_factor=10.0,
     )
     image = np.ones((200, 200, 3), dtype=np.uint8)
-    image[40:160,20:180, :] = (image[40:160,20:180, :] * (10, 20, 30)).astype(np.uint8)
+    image[40:160, 20:180, :] = (image[40:160, 20:180, :] * (10, 20, 30)).astype(
+        np.uint8
+    )
     # after center crop - image of size (120, 160, 3) available
 
     # when
@@ -1473,7 +1497,9 @@ def test_pre_process_numpy_image_with_static_crop_and_center_crop_selected_and_c
     )
 
 
-def test_pre_process_numpy_image_with_static_crop_and_center_crop_selected_and_crop_fitting_inside_original_image_with_scaling_and_normalisation() -> None:
+def test_pre_process_numpy_image_with_static_crop_and_center_crop_selected_and_crop_fitting_inside_original_image_with_scaling_and_normalisation() -> (
+    None
+):
     # given
     image_pre_processing = ImagePreProcessing(
         **{
@@ -1492,7 +1518,9 @@ def test_pre_process_numpy_image_with_static_crop_and_center_crop_selected_and_c
         normalization=([2, 2, 2], [6, 6, 6]),
     )
     image = np.ones((200, 200, 3), dtype=np.uint8)
-    image[40:160,20:180, :] = (image[40:160,20:180, :] * (10, 20, 30)).astype(np.uint8)
+    image[40:160, 20:180, :] = (image[40:160, 20:180, :] * (10, 20, 30)).astype(
+        np.uint8
+    )
     # after center crop - image of size (120, 160, 3) available
 
     # when
@@ -1506,9 +1534,9 @@ def test_pre_process_numpy_image_with_static_crop_and_center_crop_selected_and_c
     # then
     assert isinstance(result_image, torch.Tensor)
     assert tuple(result_image.shape) == (1, 3, 64, 96)
-    assert torch.all(result_image[0][0] == 1/6)
+    assert torch.all(result_image[0][0] == 1 / 6)
     assert torch.all(result_image[0][1] == 0.0)
-    assert torch.all(result_image[0][2] == -1/6)
+    assert torch.all(result_image[0][2] == -1 / 6)
     assert result_meta[0] == PreProcessingMetadata(
         pad_left=-32,
         pad_top=-28,
@@ -1528,7 +1556,9 @@ def test_pre_process_numpy_image_with_static_crop_and_center_crop_selected_and_c
     )
 
 
-def test_pre_process_numpy_image_with_static_crop_and_center_crop_selected_and_crop_not_fitting_inside_original_image_with_scaling_and_normalisation() -> None:
+def test_pre_process_numpy_image_with_static_crop_and_center_crop_selected_and_crop_not_fitting_inside_original_image_with_scaling_and_normalisation() -> (
+    None
+):
     # given
     image_pre_processing = ImagePreProcessing(
         **{
@@ -1547,7 +1577,9 @@ def test_pre_process_numpy_image_with_static_crop_and_center_crop_selected_and_c
         normalization=([2, 2, 2], [6, 6, 6]),
     )
     image = np.ones((200, 200, 3), dtype=np.uint8)
-    image[40:160,20:180, :] = (image[40:160,20:180, :] * (10, 20, 30)).astype(np.uint8)
+    image[40:160, 20:180, :] = (image[40:160, 20:180, :] * (10, 20, 30)).astype(
+        np.uint8
+    )
     # after center crop - image of size (120, 160, 3) available
 
     # when
@@ -1561,13 +1593,13 @@ def test_pre_process_numpy_image_with_static_crop_and_center_crop_selected_and_c
     # then
     assert isinstance(result_image, torch.Tensor)
     assert tuple(result_image.shape) == (1, 3, 200, 200)
-    assert torch.all(result_image[0][0, 40:160, 20:180] == 1/6)
+    assert torch.all(result_image[0][0, 40:160, 20:180] == 1 / 6)
     assert torch.all(result_image[0][1, 40:160, 20:180] == 0.0)
-    assert torch.all(result_image[0][2, 40:160, 20:180] == -1/6)
-    assert torch.all(result_image[0][:, :40, :] == -1/3)
-    assert torch.all(result_image[0][:, 160:, :] == -1/3)
-    assert torch.all(result_image[0][:, :, :20] == -1/3)
-    assert torch.all(result_image[0][:, :, 180:] == -1/3)
+    assert torch.all(result_image[0][2, 40:160, 20:180] == -1 / 6)
+    assert torch.all(result_image[0][:, :40, :] == -1 / 3)
+    assert torch.all(result_image[0][:, 160:, :] == -1 / 3)
+    assert torch.all(result_image[0][:, :, :20] == -1 / 3)
+    assert torch.all(result_image[0][:, :, 180:] == -1 / 3)
     assert result_meta[0] == PreProcessingMetadata(
         pad_left=20,
         pad_top=40,
@@ -1585,6 +1617,7 @@ def test_pre_process_numpy_image_with_static_crop_and_center_crop_selected_and_c
             crop_height=120,
         ),
     )
+
 
 def test_pre_process_numpy_images_list() -> None:
     # given

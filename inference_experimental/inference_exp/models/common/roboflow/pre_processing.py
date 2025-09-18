@@ -1078,16 +1078,20 @@ def handle_numpy_input_preparation_with_center_crop(
     canvas_padding_bottom = canvas_oy_padding - canvas_padding_top
     original_image_ox_padding = max(image.shape[1] - target_size.width, 0)
     original_image_padding_left = original_image_ox_padding // 2
-    original_image_padding_right = original_image_ox_padding - original_image_padding_left
+    original_image_padding_right = (
+        original_image_ox_padding - original_image_padding_left
+    )
     original_image_oy_padding = max(image.shape[0] - target_size.height, 0)
     original_image_padding_top = original_image_oy_padding // 2
-    original_image_padding_bottom = original_image_oy_padding - original_image_padding_top
+    original_image_padding_bottom = (
+        original_image_oy_padding - original_image_padding_top
+    )
     canvas[
-        canvas_padding_top:canvas.shape[0] - canvas_padding_bottom,
-        canvas_padding_left:canvas.shape[1] - canvas_padding_right,
+        canvas_padding_top : canvas.shape[0] - canvas_padding_bottom,
+        canvas_padding_left : canvas.shape[1] - canvas_padding_right,
     ] = image[
-        original_image_padding_top:image.shape[0] - original_image_padding_bottom,
-        original_image_padding_left:image.shape[1] - original_image_padding_right,
+        original_image_padding_top : image.shape[0] - original_image_padding_bottom,
+        original_image_padding_left : image.shape[1] - original_image_padding_right,
     ]
     if canvas.shape[0] > image.shape[0]:
         reported_padding_top = canvas_padding_top
