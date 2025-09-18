@@ -100,7 +100,7 @@ class AutoModel:
         model_id: str,
         weights_provider: str = "roboflow",
         api_key: Optional[str] = None,
-        pull_artefacts_size: bool = True,
+        pull_artefacts_size: bool = False,
     ) -> None:
         model_metadata = get_model_from_provider(
             provider=weights_provider,
@@ -132,6 +132,13 @@ class AutoModel:
             "\nUse AutoModel.describe_model_package('model_id', 'package_id').",
         )
         console.print(text)
+        if not pull_artefacts_size:
+            text = Text.assemble(
+                ("\nWant to verify the size of model package?", "bold"),
+                "\nUse AutoModel.describe_model('model_id', pull_artefacts_size=True) - the execution will be "
+                "slightly longer, as we must collect the size of all elements of model package.",
+            )
+            console.print(text)
 
     @classmethod
     def describe_model_package(
@@ -170,6 +177,13 @@ class AutoModel:
         )
         console = Console()
         console.print(table)
+        if not pull_artefacts_size:
+            text = Text.assemble(
+                ("\nWant to verify the size of model package?", "bold"),
+                "\nUse AutoModel.describe_model_package('model_id', 'package_id', pull_artefacts_size=True)"
+                "- the execution will be slightly longer, as we must collect the size of all elements of model package.",
+            )
+            console.print(text)
 
     @classmethod
     def describe_compute_environment(cls) -> None:

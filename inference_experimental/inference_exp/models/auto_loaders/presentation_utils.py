@@ -111,7 +111,7 @@ def render_model_package_details_table(
     if requested_model_id != model_id:
         model_id_str = f"{model_id_str} (alias: {requested_model_id})"
     if artefacts_size is None:
-        size_str = "N"
+        size_str = "N/A"
     else:
         size, status = artefacts_size
         size_str = bytes_to_human_format(size=size)
