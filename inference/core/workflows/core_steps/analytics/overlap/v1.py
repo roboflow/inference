@@ -4,7 +4,7 @@ from typing import List, Optional, Union
 import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
-from supervision.detection.utils import get_data_item
+from supervision.detection.utils.internal import get_data_item
 from typing_extensions import Literal, Type
 
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition

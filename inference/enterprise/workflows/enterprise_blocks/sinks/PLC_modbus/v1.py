@@ -47,9 +47,11 @@ class ModbusTCPBlockManifest(WorkflowBlockManifest):
             "license": "Apache-2.0",
             "block_type": "analytics",
             "ui_manifest": {
-                "section": "enterprise_blocks",
-                "icon": "far fa-building",
-                "blockPriority": 1,
+                "section": "industrial",
+                "icon": "fal fa-network-wired",
+                "blockPriority": 14,
+                "enterprise_only": True,
+                "local_only": True,
             },
         }
     )

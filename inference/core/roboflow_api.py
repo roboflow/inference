@@ -1,3 +1,5 @@
+import asyncio
+import base64
 import hashlib
 import json
 import os
@@ -5,11 +7,14 @@ import re
 import urllib.parse
 from enum import Enum
 from hashlib import sha256
+from json import JSONDecodeError
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
+import aiohttp
 import backoff
 import requests
+from cachetools.func import ttl_cache
 from requests import Response, Timeout
 from requests_toolbelt import MultipartEncoder
 
@@ -27,7 +32,10 @@ from inference.core.entities.types import (
 from inference.core.env import (
     API_BASE_URL,
     INTERNAL_WEIGHTS_URL_SUFFIX,
+    MD5_VERIFICATION_ENABLED,
     MODEL_CACHE_DIR,
+    MODELS_CACHE_AUTH_CACHE_MAX_SIZE,
+    MODELS_CACHE_AUTH_CACHE_TTL,
     MODELS_CACHE_AUTH_ENABLED,
     RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API,
     ROBOFLOW_API_EXTRA_HEADERS,
@@ -55,7 +63,10 @@ from inference.core.exceptions import (
     WorkspaceLoadError,
 )
 from inference.core.utils.file_system import sanitize_path_segment
-from inference.core.utils.requests import api_key_safe_raise_for_status
+from inference.core.utils.requests import (
+    api_key_safe_raise_for_status,
+    api_key_safe_raise_for_status_aiohttp,
+)
 from inference.core.utils.url_utils import wrap_url
 
 MODEL_TYPE_DEFAULTS = {
@@ -134,8 +145,57 @@ def wrap_roboflow_api_errors(
     return decorator
 
 
+def wrap_roboflow_api_errors_async(
+    http_errors_handlers: Optional[
+        Dict[int, Callable[[Union[aiohttp.ClientError]], None]]
+    ] = None,
+) -> callable:
+    def decorator(function: callable) -> callable:
+        async def wrapper(*args, **kwargs) -> Any:
+            try:
+                try:
+                    return await function(*args, **kwargs)
+                except RetryRequestError as error:
+                    raise error.inner_error
+            except asyncio.TimeoutError as error:
+                raise RoboflowAPITimeoutError(
+                    "Timeout when attempting to connect to Roboflow API."
+                ) from error
+            except (aiohttp.ClientConnectionError, ConnectionError) as error:
+                raise RoboflowAPIConnectionError(
+                    "Could not connect to Roboflow API."
+                ) from error
+            except (aiohttp.ContentTypeError, JSONDecodeError) as error:
+                raise MalformedRoboflowAPIResponseError(
+                    "Could not decode JSON response from Roboflow API."
+                ) from error
+            except aiohttp.ClientResponseError as error:
+                user_handler_override = (
+                    http_errors_handlers if http_errors_handlers is not None else {}
+                )
+                status_code = error.status
+                default_handler = DEFAULT_ERROR_HANDLERS.get(status_code)
+                error_handler = user_handler_override.get(status_code, default_handler)
+                if error_handler is not None:
+                    error_handler(error)
+                raise RoboflowAPIUnsuccessfulRequestError(
+                    f"Unsuccessful request to Roboflow API with response code: {status_code}"
+                ) from error
+            # remaining aiohttp.ClientError seems to qualify to simply pass-through raise, as
+            # this seems to be adequate to trigger HTTP 500 upstream or let final client to handle
+            # such cases like invalid pattern of API_BASE_URL (as we are setting it correctly)
+
+        return wrapper
+
+    return decorator
+
+
+@ttl_cache(ttl=MODELS_CACHE_AUTH_CACHE_TTL, maxsize=MODELS_CACHE_AUTH_CACHE_MAX_SIZE)
 @wrap_roboflow_api_errors()
 def get_roboflow_workspace(api_key: str) -> WorkspaceID:
+    if not api_key:
+        raise WorkspaceLoadError(f"Empty workspace encountered, check your API key.")
+
     api_url = _add_params_to_url(
         url=f"{API_BASE_URL}/",
         params=[("api_key", api_key), ("nocache", "true")],
@@ -145,6 +205,46 @@ def get_roboflow_workspace(api_key: str) -> WorkspaceID:
     if workspace_id is None:
         raise WorkspaceLoadError(f"Empty workspace encountered, check your API key.")
     return workspace_id
+
+
+@wrap_roboflow_api_errors_async()
+@backoff.on_exception(
+    backoff.constant,
+    exception=RetryRequestError,
+    max_tries=TRANSIENT_ROBOFLOW_API_ERRORS_RETRIES,
+    interval=TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL,
+)
+async def get_roboflow_workspace_async(api_key: str) -> WorkspaceID:
+    try:
+        headers = build_roboflow_api_headers()
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{API_BASE_URL}/",
+                params={"api_key": api_key, "nocache": "true"},
+                headers=headers,
+                timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
+            ) as response:
+                try:
+                    api_key_safe_raise_for_status_aiohttp(response=response)
+                except Exception as error:
+                    if response.status in TRANSIENT_ROBOFLOW_API_ERRORS:
+                        raise RetryRequestError(
+                            message=str(error), inner_error=error
+                        ) from error
+                    raise error
+                response_payload = await response.json()
+                workspace_id = response_payload.get("workspace")
+                if workspace_id is None:
+                    raise WorkspaceLoadError(
+                        f"Empty workspace encountered, check your API key."
+                    )
+                return workspace_id
+    except (aiohttp.ClientConnectionError, ConnectionError) as error:
+        if RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API:
+            raise RetryRequestError(
+                message="Connectivity error", inner_error=error
+            ) from error
+        raise error
 
 
 @wrap_roboflow_api_errors()
@@ -747,6 +847,20 @@ def _get_from_url(
             raise RetryRequestError(message=str(error), inner_error=error) from error
         raise error
 
+    if MD5_VERIFICATION_ENABLED and "x-goog-hash" in response.headers:
+        x_goog_hash = response.headers["x-goog-hash"]
+        md5_part = None
+        for part in x_goog_hash.split(","):
+            if part.strip().startswith("md5="):
+                md5_part = part.strip()[4:]
+                break
+        if md5_part is not None:
+            md5_from_header = base64.b64decode(md5_part)
+            if md5_from_header != hashlib.md5(response.content).digest():
+                raise RoboflowAPIUnsuccessfulRequestError(
+                    "MD5 hash does not match MD5 received from x-goog-hash header"
+                )
+
     if verify_content_length:
         content_length = str(response.headers.get("Content-Length"))
         if not content_length.isnumeric():
@@ -756,7 +870,10 @@ def _get_from_url(
         if int(content_length) != len(response.content):
             error = "Content-Length header does not match response content length"
             if RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API:
-                raise RetryRequestError(message=error)
+                raise RetryRequestError(
+                    message=error,
+                    inner_error=RuntimeError("Content-length validation failed"),
+                )
             raise RoboflowAPIUnsuccessfulRequestError(error)
 
     if json_response:

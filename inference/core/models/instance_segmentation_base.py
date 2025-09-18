@@ -108,6 +108,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
             max_detections=max_detections,
             return_image_dims=return_image_dims,
             tradeoff_factor=tradeoff_factor,
+            **kwargs,
         )
 
     def postprocess(
@@ -246,7 +247,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
         for ind, (batch_predictions, batch_masks) in enumerate(zip(predictions, masks)):
             predictions = []
             for pred, mask in zip(batch_predictions, batch_masks):
-                if class_filter and self.class_names[int(pred[6])] in class_filter:
+                if class_filter and not self.class_names[int(pred[6])] in class_filter:
                     # TODO: logger.debug
                     continue
                 # Passing args as a dictionary here since one of the args is 'class' (a protected term in Python)

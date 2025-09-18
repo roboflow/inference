@@ -1,4 +1,4 @@
-FROM python:3.9 as base
+FROM python:3.11-bookworm as base
 
 ARG DEBIAN_FRONTEND=noninteractive
 
@@ -14,7 +14,9 @@ RUN apt update -y && apt install -y \
     rustc \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements/requirements.sam.txt \
+# Copy requirements files
+COPY requirements/_requirements.txt \
+    requirements/requirements.sam.txt \
     requirements/requirements.clip.txt \
     requirements/requirements.cpu.txt \
     requirements/requirements.vino.txt \
@@ -24,7 +26,6 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.groundingdino.txt \
     requirements/requirements.yolo_world.txt \
     requirements/requirements.transformers.txt \
-    requirements/_requirements.txt \
     ./
 
 RUN pip3 install --upgrade pip && pip3 install "wheel>=0.38.1,<=0.45.1"

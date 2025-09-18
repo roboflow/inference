@@ -26,7 +26,7 @@ class Florence2(Florence2Processing, TransformerModel):
     default_dtype = torch.float32
     skip_special_tokens = False
 
-    def initialize_model(self):
+    def initialize_model(self, **kwargs):
         self.transformers_class = import_class_from_file(
             os.path.join(self.cache_dir, "modeling_florence2.py"),
             "Florence2ForConditionalGeneration",
@@ -36,7 +36,7 @@ class Florence2(Florence2Processing, TransformerModel):
             os.path.join(self.cache_dir, "processing_florence2.py"),
             "Florence2Processor",
         )
-        super().initialize_model()
+        super().initialize_model(**kwargs)
 
     def prepare_generation_params(
         self, preprocessed_inputs: Dict[str, Any]

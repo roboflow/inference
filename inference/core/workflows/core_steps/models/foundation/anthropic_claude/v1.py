@@ -164,6 +164,9 @@ class BlockManifest(WorkflowBlockManifest):
     model_version: Union[
         Selector(kind=[STRING_KIND]),
         Literal[
+            "claude-opus-4-1",
+            "claude-opus-4",
+            "claude-sonnet-4",
             "claude-3-7-sonnet",
             "claude-3-5-sonnet-v2",
             "claude-3-5-haiku",
@@ -174,7 +177,7 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         default="claude-3-5-sonnet",
         description="Model to be used",
-        examples=["claude-3-5-sonnet", "$inputs.claude"],
+        examples=["claude-sonnet-4", "$inputs.claude"],
     )
     max_tokens: int = Field(
         default=450,
@@ -362,6 +365,9 @@ def execute_claude_requests(
 
 
 EXACT_MODELS_VERSIONS_MAPPING = {
+    "claude-opus-4-1": "claude-opus-4-1-20250805",
+    "claude-opus-4": "claude-opus-4-20250514",
+    "claude-sonnet-4": "claude-sonnet-4-20250514",
     "claude-3-7-sonnet": "claude-3-7-sonnet-20250219",
     "claude-3-5-sonnet-v2": "claude-3-5-sonnet-20241022",
     "claude-3-5-haiku": "claude-3-5-haiku-20241022",

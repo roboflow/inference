@@ -1,4 +1,5 @@
 import math
+from threading import Lock
 from time import perf_counter
 from typing import List, Optional, Tuple, Union
 
@@ -67,6 +68,7 @@ class Gaze(OnnxRoboflowCoreModel):
                 "CPUExecutionProvider",
             ],
         )
+        self._gaze_session_lock = Lock()
 
         if REQUIRED_ONNX_PROVIDERS:
             available_providers = onnxruntime.get_available_providers()
@@ -138,8 +140,8 @@ class Gaze(OnnxRoboflowCoreModel):
 
             img_batch = np.concatenate(img_batch, axis=0)
             onnx_input_image = {self.gaze_onnx_session.get_inputs()[0].name: img_batch}
-            yaw, pitch = self.gaze_onnx_session.run(None, onnx_input_image)
-
+            with self._gaze_session_lock:
+                yaw, pitch = self.gaze_onnx_session.run(None, onnx_input_image)
             for j in range(len(img_batch)):
                 ret.append((yaw[j], pitch[j]))
 

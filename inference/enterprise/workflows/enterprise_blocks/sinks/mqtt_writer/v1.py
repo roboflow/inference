@@ -43,9 +43,11 @@ class BlockManifest(WorkflowBlockManifest):
             "license": "Roboflow Enterprise License",
             "block_type": "sink",
             "ui_manifest": {
-                "section": "enterprise_blocks",
-                "icon": "far fa-building",
-                "blockPriority": 1,
+                "section": "industrial",
+                "icon": "fal fa-network-wired",
+                "blockPriority": 10,
+                "enterprise_only": True,
+                "local_only": True,
             },
         }
     )
