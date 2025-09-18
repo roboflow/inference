@@ -597,7 +597,7 @@ def apply_pre_processing_to_list_of_torch_image(
             )
         image = image.to(target_device)
         if image.shape[0] != 3 and image.shape[-1] == 3:
-            image = image.permute(0, 3, 1, 2)
+            image = image.permute(2, 0, 1)
         original_sizes.append(
             ImageDimensions(height=image.shape[1], width=image.shape[2])
         )
@@ -755,10 +755,10 @@ def handle_tensor_list_input_preparation_with_center_crop(
             )
         image = image.to(target_device)
         if (
-            images.shape[1] != network_input.input_channels
-            and images.shape[3] == network_input.input_channels
+            image.shape[1] != network_input.input_channels
+            and image.shape[3] == network_input.input_channels
         ):
-            images = images.permute(0, 3, 1, 2)
+            image = image.permute(0, 3, 1, 2)
         original_size = ImageDimensions(height=image.shape[2], width=image.shape[3])
         tensor, metadata = handle_torch_input_preparation_with_center_crop(
             image=image,
