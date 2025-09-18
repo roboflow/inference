@@ -328,7 +328,7 @@ def handle_torch_input_preparation_with_letterbox(
         [new_height, new_width],
         mode="bilinear",
     )
-    if input_color_mode != input_color_mode:
+    if input_color_mode != network_input.color_mode:
         image = image[:, [2, 1, 0], :, :]
     final_batch = torch.full(
         (
@@ -377,7 +377,7 @@ def handle_torch_input_preparation_with_center_crop(
     target_size: ImageDimensions,
     static_crop_offset: StaticCropOffset,
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-    if input_color_mode != input_color_mode:
+    if input_color_mode != network_input.color_mode:
         image = image[:, [2, 1, 0], :, :]
     size_after_pre_processing = ImageDimensions(
         height=image.shape[2], width=image.shape[3]
