@@ -149,11 +149,40 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
                 round(mask_w_scale * image_metadata.pad_right),
             )
             _, mh, mw = image_results.shape
-            image_results = image_results[
-                :,
-                mask_pad_top : mh - mask_pad_bottom,
-                mask_pad_left : mw - mask_pad_right,
-            ]
+            if (
+                mask_pad_top < 0
+                or mask_pad_bottom < 0
+                or mask_pad_left < 0
+                or mask_pad_right < 0
+            ):
+                image_results = torch.nn.functional.pad(
+                    image_results,
+                    (
+                        abs(min(mask_pad_left, 0)),
+                        abs(min(mask_pad_right, 0)),
+                        abs(min(mask_pad_top, 0)),
+                        abs(min(mask_pad_bottom, 0)),
+                    ),
+                    "constant",
+                    -1,
+                )
+                padded_mask_offset_top = max(mask_pad_top, 0)
+                padded_mask_offset_bottom = max(mask_pad_bottom, 0)
+                padded_mask_offset_left = max(mask_pad_left, 0)
+                padded_mask_offset_right = max(mask_pad_right, 0)
+                image_results = image_results[
+                    :,
+                    padded_mask_offset_top : image_results.shape[1]
+                    - padded_mask_offset_bottom,
+                    padded_mask_offset_left : image_results.shape[1]
+                    - padded_mask_offset_right,
+                ]
+            else:
+                image_results = image_results[
+                    :,
+                    mask_pad_top : mh - mask_pad_bottom,
+                    mask_pad_left : mw - mask_pad_right,
+                ]
             if (
                 image_results.shape[1]
                 != image_metadata.size_after_pre_processing.height

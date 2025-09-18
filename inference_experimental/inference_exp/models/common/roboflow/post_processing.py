@@ -356,9 +356,36 @@ def align_instance_segmentation_results(
         round(mask_w_scale * pad_left),
         round(mask_w_scale * pad_right),
     )
-    masks = masks[
-        :, mask_pad_top : mh - mask_pad_bottom, mask_pad_left : mw - mask_pad_right
-    ]
+    if (
+        mask_pad_top < 0
+        or mask_pad_bottom < 0
+        or mask_pad_left < 0
+        or mask_pad_right < 0
+    ):
+        masks = torch.nn.functional.pad(
+            masks,
+            (
+                abs(min(mask_pad_left, 0)),
+                abs(min(mask_pad_right, 0)),
+                abs(min(mask_pad_top, 0)),
+                abs(min(mask_pad_bottom, 0)),
+            ),
+            "constant",
+            0,
+        )
+        padded_mask_offset_top = max(mask_pad_top, 0)
+        padded_mask_offset_bottom = max(mask_pad_bottom, 0)
+        padded_mask_offset_left = max(mask_pad_left, 0)
+        padded_mask_offset_right = max(mask_pad_right, 0)
+        masks = masks[
+            :,
+            padded_mask_offset_top : masks.shape[1] - padded_mask_offset_bottom,
+            padded_mask_offset_left : masks.shape[1] - padded_mask_offset_right,
+        ]
+    else:
+        masks = masks[
+            :, mask_pad_top : mh - mask_pad_bottom, mask_pad_left : mw - mask_pad_right
+        ]
     masks = (
         functional.resize(
             masks,
