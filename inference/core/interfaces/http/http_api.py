@@ -143,6 +143,7 @@ from inference.core.env import (
     ENABLE_STREAM_API,
     ENABLE_WORKFLOWS_PROFILING,
     GCP_SERVERLESS,
+    GET_MODEL_REGISTRY_ENABLED,
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
     LMM_ENABLED,
@@ -164,6 +165,7 @@ from inference.core.exceptions import (
     InputImageLoadError,
     MissingServiceSecretError,
     RoboflowAPINotAuthorizedError,
+    WorkspaceLoadError,
 )
 from inference.core.interfaces.base import BaseInterface
 from inference.core.interfaces.http.dependencies import (
@@ -406,8 +408,89 @@ class HttpInterface(BaseInterface):
                 )
                 return JSONResponse(status_code=200, content=container_stats)
 
+        cached_api_keys = dict()
+
+        if GCP_SERVERLESS:
+
+            @app.middleware("http")
+            async def check_authorization_serverless(request: Request, call_next):
+                # exclusions
+                skip_check = (
+                    request.method not in ["GET", "POST"]
+                    or request.url.path
+                    in [
+                        "/",
+                        "/docs",
+                        "/info",
+                        "/openapi.json",  # needed for /docs and /redoc
+                        # "/workflows/blocks/describe",
+                        # "/workflows/definition/schema",
+                    ]
+                    or request.url.path.startswith("/static/")
+                    or request.url.path.startswith("/_next/")
+                )
+
+                # for these routes we only want to auth if dynamic python modules are provided
+                if request.url.path in [
+                    "/workflows/blocks/describe",
+                    "/workflows/definition/schema",
+                ]:
+                    if request.method == "GET":
+                        skip_check = True
+
+                    elif (
+                        request.headers.get("content-type", None) == "application/json"
+                        and int(request.headers.get("content-length", 0)) > 0
+                    ):
+                        json_params = await request.json()
+                        dynamic_blocks_definitions = json_params.get(
+                            "dynamic_blocks_definitions", None
+                        )
+                        if not dynamic_blocks_definitions:
+                            skip_check = True
+
+                if skip_check:
+                    return await call_next(request)
+
+                def _unauthorized_response(msg):
+                    return JSONResponse(
+                        status_code=401,
+                        content={
+                            "status": 401,
+                            "message": msg,
+                        },
+                    )
+
+                req_params = request.query_params
+                json_params = dict()
+                api_key = req_params.get("api_key", None)
+                if (
+                    api_key is None
+                    and request.headers.get("content-type", None) == "application/json"
+                    and int(request.headers.get("content-length", 0)) > 0
+                ):
+                    # have to try catch here, because some legacy endpoints that abuse Content-Type header but dont actually receive json
+                    try:
+                        json_params = await request.json()
+                    except Exception:
+                        pass
+                api_key = json_params.get("api_key", api_key)
+
+                if api_key is None:
+                    return _unauthorized_response("Unauthorized api_key")
+
+                if cached_api_keys.get(api_key, 0) < time.time():
+                    try:
+                        await get_roboflow_workspace_async(api_key=api_key)
+                        cached_api_keys[api_key] = (
+                            time.time() + 3600
+                        )  # expired after 1 hour
+                    except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
+                        return _unauthorized_response("Unauthorized api_key")
+
+                return await call_next(request)
+
         if DEDICATED_DEPLOYMENT_WORKSPACE_URL:
-            cached_api_keys = dict()
 
             @app.middleware("http")
             async def check_authorization(request: Request, call_next):
@@ -421,8 +504,6 @@ class HttpInterface(BaseInterface):
                         "/redoc",
                         "/info",
                         "/openapi.json",  # needed for /docs and /redoc
-                        "/workflows/blocks/describe",
-                        "/workflows/definition/schema",
                     ]
                     or request.url.path.startswith("/static/")
                     or request.url.path.startswith("/_next/")
@@ -442,14 +523,21 @@ class HttpInterface(BaseInterface):
                 # check api_key
                 req_params = request.query_params
                 json_params = dict()
+                api_key = req_params.get("api_key", None)
                 if (
-                    request.headers.get("content-type", None) == "application/json"
+                    api_key is None
+                    and request.headers.get("content-type", None) == "application/json"
                     and int(request.headers.get("content-length", 0)) > 0
                 ):
-                    json_params = await request.json()
-                api_key = req_params.get("api_key", None) or json_params.get(
-                    "api_key", None
-                )
+                    # have to try catch here, because some legacy endpoints that abuse Content-Type header but dont actually receive json
+                    try:
+                        json_params = await request.json()
+                    except Exception:
+                        pass
+                api_key = json_params.get("api_key", api_key)
+
+                if api_key is None:
+                    return _unauthorized_response("Unauthorized api_key")
 
                 if cached_api_keys.get(api_key, 0) < time.time():
                     try:
@@ -467,7 +555,7 @@ class HttpInterface(BaseInterface):
                         cached_api_keys[api_key] = (
                             time.time() + 3600
                         )  # expired after 1 hour
-                    except RoboflowAPINotAuthorizedError as e:
+                    except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
                         return _unauthorized_response("Unauthorized api_key")
 
                 return await call_next(request)
@@ -522,6 +610,7 @@ class HttpInterface(BaseInterface):
             background_tasks: Optional[BackgroundTasks],
             profiler: WorkflowsProfiler,
         ) -> WorkflowInferenceResponse:
+
             workflow_init_parameters = {
                 "workflows_core.model_manager": model_manager,
                 "workflows_core.api_key": workflow_request.api_key,
@@ -751,8 +840,7 @@ class HttpInterface(BaseInterface):
                     status_code=500, detail="Logging system not properly initialized"
                 )
 
-        # The current AWS Lambda authorizer only supports path parameters, therefore we can only use the legacy infer route. This case statement excludes routes which won't work for the current Lambda authorizer.
-        if not (LAMBDA or GCP_SERVERLESS):
+        if not LAMBDA and GET_MODEL_REGISTRY_ENABLED:
 
             @app.get(
                 "/model/registry",
@@ -771,6 +859,9 @@ class HttpInterface(BaseInterface):
                 return ModelsDescriptions.from_models_descriptions(
                     models_descriptions=models_descriptions
                 )
+
+        # The current AWS Lambda authorizer only supports path parameters, therefore we can only use the legacy infer route. This case statement excludes routes which won't work for the current Lambda authorizer.
+        if not (LAMBDA or GCP_SERVERLESS):
 
             @app.post(
                 "/model/add",
@@ -1203,6 +1294,7 @@ class HttpInterface(BaseInterface):
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 dynamic_blocks_definitions = None
                 requested_execution_engine_version = None
+                api_key = None
                 if request_payload is not None:
                     dynamic_blocks_definitions = (
                         request_payload.dynamic_blocks_definitions
@@ -1210,9 +1302,13 @@ class HttpInterface(BaseInterface):
                     requested_execution_engine_version = (
                         request_payload.execution_engine_version
                     )
+                    api_key = request_payload.api_key or request.query_params.get(
+                        "api_key", None
+                    )
                 result = handle_describe_workflows_blocks_request(
                     dynamic_blocks_definitions=dynamic_blocks_definitions,
                     requested_execution_engine_version=requested_execution_engine_version,
+                    api_key=api_key,
                 )
                 return gzip_response_if_requested(request=request, response=result)
 

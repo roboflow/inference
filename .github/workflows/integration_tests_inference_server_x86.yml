@@ -11,7 +11,7 @@ jobs:
     if: ${{ !github.event.act }}
     runs-on:
       group: group8core
-    timeout-minutes: 35
+    timeout-minutes: 60
 
     steps:
       - name: Set up QEMU
