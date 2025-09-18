@@ -506,7 +506,7 @@ def filter_model_packages_based_on_model_features(
             results.append(model_package)
             continue
         eliminated_by_nms_fusion_preferences, reason = (
-            should_model_package_be_filtered_out_based_on_nms_fusion_preferencess(
+            should_model_package_be_filtered_out_based_on_nms_fusion_preferences(
                 model_package=model_package,
                 nms_fusion_preferences=nms_fusion_preferences,
                 model_architecture=model_architecture,
@@ -529,7 +529,7 @@ def filter_model_packages_based_on_model_features(
     return results, discarded_packages
 
 
-def should_model_package_be_filtered_out_based_on_nms_fusion_preferencess(
+def should_model_package_be_filtered_out_based_on_nms_fusion_preferences(
     model_package: ModelPackageMetadata,
     nms_fusion_preferences: Optional[Union[bool, dict]],
     model_architecture: ModelArchitecture,

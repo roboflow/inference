@@ -15,6 +15,7 @@ from inference_exp.errors import (
 from inference_exp.models.auto_loaders import auto_negotiation
 from inference_exp.models.auto_loaders.auto_negotiation import (
     determine_default_allowed_quantization,
+    filter_model_packages_based_on_model_features,
     filter_model_packages_by_requested_batch_size,
     filter_model_packages_by_requested_quantization,
     hf_transformers_package_matches_runtime_environment,
@@ -3213,7 +3214,6 @@ def test_torch_script_package_matches_runtime_environment_when_no_torch_availabl
         package_artefacts=[],
         quantization=Quantization.FP32,
         trusted_source=True,
-        model_features={"nms_fused": True},
         torch_script_package_details=TorchScriptPackageDetails(
             supported_device_types={"cuda", "cpu", "mps"},
             torch_version=Version("2.6.0"),
@@ -3267,7 +3267,6 @@ def test_torch_script_package_matches_runtime_environment_when_no_torch_script_p
         package_artefacts=[],
         quantization=Quantization.FP32,
         trusted_source=True,
-        model_features={"nms_fused": True},
         torch_script_package_details=None,
     )
 
@@ -3317,7 +3316,6 @@ def test_torch_script_package_matches_runtime_environment_when_device_not_availa
         package_artefacts=[],
         quantization=Quantization.FP32,
         trusted_source=True,
-        model_features={"nms_fused": True},
         torch_script_package_details=TorchScriptPackageDetails(
             supported_device_types={"cuda", "cpu", "mps"},
             torch_version=Version("2.6.0"),
@@ -3371,7 +3369,6 @@ def test_torch_script_package_matches_runtime_environment_when_device_not_suppor
         package_artefacts=[],
         quantization=Quantization.FP32,
         trusted_source=True,
-        model_features={"nms_fused": True},
         torch_script_package_details=TorchScriptPackageDetails(
             supported_device_types={"cuda", "mps"},
             torch_version=Version("2.6.0"),
@@ -3425,7 +3422,6 @@ def test_torch_script_package_matches_runtime_environment_when_torch_version_not
         package_artefacts=[],
         quantization=Quantization.FP32,
         trusted_source=True,
-        model_features={"nms_fused": True},
         torch_script_package_details=TorchScriptPackageDetails(
             supported_device_types={"cuda", "cpu", "mps"},
             torch_version=Version("2.6.0"),
@@ -3479,7 +3475,6 @@ def test_torch_script_package_matches_runtime_environment_when_torch_version_doe
         package_artefacts=[],
         quantization=Quantization.FP32,
         trusted_source=True,
-        model_features={"nms_fused": True},
         torch_script_package_details=TorchScriptPackageDetails(
             supported_device_types={"cuda", "cpu", "mps"},
             torch_version=Version("2.6.0"),
@@ -3533,7 +3528,6 @@ def test_torch_script_package_matches_runtime_environment_when_torch_version_equ
         package_artefacts=[],
         quantization=Quantization.FP32,
         trusted_source=True,
-        model_features={"nms_fused": True},
         torch_script_package_details=TorchScriptPackageDetails(
             supported_device_types={"cuda", "cpu", "mps"},
             torch_version=Version("2.6.0"),
@@ -3587,7 +3581,6 @@ def test_torch_script_package_matches_runtime_environment_when_torch_version_hig
         package_artefacts=[],
         quantization=Quantization.FP32,
         trusted_source=True,
-        model_features={"nms_fused": True},
         torch_script_package_details=TorchScriptPackageDetails(
             supported_device_types={"cuda", "cpu", "mps"},
             torch_version=Version("2.6.0"),
@@ -3641,7 +3634,6 @@ def test_torch_script_package_matches_runtime_environment_when_torchvision_versi
         package_artefacts=[],
         quantization=Quantization.FP32,
         trusted_source=True,
-        model_features={"nms_fused": True},
         torch_script_package_details=TorchScriptPackageDetails(
             supported_device_types={"cuda", "cpu", "mps"},
             torch_version=Version("2.6.0"),
@@ -3695,7 +3687,6 @@ def test_torch_script_package_matches_runtime_environment_when_torchvision_versi
         package_artefacts=[],
         quantization=Quantization.FP32,
         trusted_source=True,
-        model_features={"nms_fused": True},
         torch_script_package_details=TorchScriptPackageDetails(
             supported_device_types={"cuda", "cpu", "mps"},
             torch_version=Version("2.6.0"),
@@ -3749,7 +3740,6 @@ def test_torch_script_package_matches_runtime_environment_when_torchvision_versi
         package_artefacts=[],
         quantization=Quantization.FP32,
         trusted_source=True,
-        model_features={"nms_fused": True},
         torch_script_package_details=TorchScriptPackageDetails(
             supported_device_types={"cuda", "cpu", "mps"},
             torch_version=Version("2.6.0"),
@@ -3803,7 +3793,6 @@ def test_torch_script_package_matches_runtime_environment_when_torchvision_versi
         package_artefacts=[],
         quantization=Quantization.FP32,
         trusted_source=True,
-        model_features={"nms_fused": True},
         torch_script_package_details=TorchScriptPackageDetails(
             supported_device_types={"cuda", "cpu", "mps"},
             torch_version=Version("2.6.0"),
@@ -3821,3 +3810,827 @@ def test_torch_script_package_matches_runtime_environment_when_torchvision_versi
     # then
     assert result[0] is True
     assert result[1] is None
+
+
+def test_filter_model_packages_based_on_model_features_when_package_should_not_be_eliminated_as_no_nms_fused_features_registered() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences=True,
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert remaining_packages == [model_package]
+    assert len(discarded_packages) == 0
+
+
+def test_filter_model_packages_based_on_model_features_when_package_should_be_eliminated_as_nms_fused_features_registered_but_no_preferences() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.3,
+                "iou_threshold": 0.7,
+                "class_agnostic": True,
+            }
+        },
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences=None,
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert len(remaining_packages) == 0
+    assert len(discarded_packages) == 1
+    assert discarded_packages[0].package_id == "my-package-id"
+
+
+def test_filter_model_packages_based_on_model_features_when_package_should_be_eliminated_as_nms_fused_features_registered_but_nms_not_preferred() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.3,
+                "iou_threshold": 0.7,
+                "class_agnostic": True,
+            }
+        },
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences=False,
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert len(remaining_packages) == 0
+    assert len(discarded_packages) == 1
+    assert discarded_packages[0].package_id == "my-package-id"
+
+
+def test_filter_model_packages_based_on_model_features_when_package_should_be_eliminated_as_malformed_nms_fused_features_registered() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={
+            "nms_fused": {
+                "invalid_key_max_detections": 300,
+                "confidence_threshold": 0.3,
+                "iou_threshold": 0.7,
+                "class_agnostic": True,
+            }
+        },
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences=True,
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert len(remaining_packages) == 0
+    assert len(discarded_packages) == 1
+    assert discarded_packages[0].package_id == "my-package-id"
+
+
+def test_filter_model_packages_based_on_model_features_when_package_should_not_be_eliminated_as_matches_default() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.25,
+                "iou_threshold": 0.7,
+                "class_agnostic": False,
+            }
+        },
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences=True,
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert remaining_packages == [model_package]
+    assert len(discarded_packages) == 0
+
+
+def test_filter_model_packages_based_on_model_features_when_package_should_be_eliminated_based_on_max_nms_detections_equal_comparison() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.25,
+                "iou_threshold": 0.7,
+                "class_agnostic": False,
+            }
+        },
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences={
+                "max_detections": 350,
+            },
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert len(remaining_packages) == 0
+    assert len(discarded_packages) == 1
+
+
+def test_filter_model_packages_based_on_model_features_when_package_should_be_eliminated_based_on_max_nms_detections_range_comparison() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.25,
+                "iou_threshold": 0.7,
+                "class_agnostic": False,
+            }
+        },
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences={
+                "max_detections": (350, 400),
+            },
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert len(remaining_packages) == 0
+    assert len(discarded_packages) == 1
+
+
+def test_filter_model_packages_based_on_model_features_when_package_should_be_accepted_based_on_max_nms_detections_range_comparison() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.25,
+                "iou_threshold": 0.7,
+                "class_agnostic": False,
+            }
+        },
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences={
+                "max_detections": (250, 400),
+            },
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert len(remaining_packages) == 1
+    assert len(discarded_packages) == 0
+
+
+def test_filter_model_packages_based_on_model_features_when_package_should_be_accepted_based_on_max_nms_detections_equal_comparison() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.25,
+                "iou_threshold": 0.7,
+                "class_agnostic": False,
+            }
+        },
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences={
+                "max_detections": 300,
+            },
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert len(remaining_packages) == 1
+    assert len(discarded_packages) == 0
+
+
+def test_filter_model_packages_based_on_model_features_when_package_should_be_eliminated_based_on_confidence_equal_comparison() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.25,
+                "iou_threshold": 0.7,
+                "class_agnostic": False,
+            }
+        },
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences={
+                "confidence_threshold": 0.3,
+            },
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert len(remaining_packages) == 0
+    assert len(discarded_packages) == 1
+
+
+def test_filter_model_packages_based_on_model_features_when_package_should_be_eliminated_based_on_confidence_range_comparison() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.25,
+                "iou_threshold": 0.7,
+                "class_agnostic": False,
+            }
+        },
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences={
+                "confidence_threshold": (0.3, 0.7),
+            },
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert len(remaining_packages) == 0
+    assert len(discarded_packages) == 1
+
+
+def test_filter_model_packages_based_on_model_features_when_package_should_be_accepted_based_on_confidence_range_comparison() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.25,
+                "iou_threshold": 0.7,
+                "class_agnostic": False,
+            }
+        },
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences={
+                "confidence_threshold": (0.2, 0.3),
+            },
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert len(remaining_packages) == 1
+    assert len(discarded_packages) == 0
+
+
+def test_filter_model_packages_based_on_model_features_when_package_should_be_accepted_based_on_confidence_equal_comparison() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.25,
+                "iou_threshold": 0.7,
+                "class_agnostic": False,
+            }
+        },
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences={
+                "confidence_threshold": 0.25,
+            },
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert len(remaining_packages) == 1
+    assert len(discarded_packages) == 0
+
+
+# xxx
+
+
+def test_filter_model_packages_based_on_model_features_when_package_should_be_eliminated_based_on_iou_equal_comparison() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.25,
+                "iou_threshold": 0.7,
+                "class_agnostic": False,
+            }
+        },
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences={
+                "iou_threshold": 0.3,
+            },
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert len(remaining_packages) == 0
+    assert len(discarded_packages) == 1
+
+
+def test_filter_model_packages_based_on_model_features_when_package_should_be_eliminated_based_on_iou_range_comparison() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.25,
+                "iou_threshold": 0.7,
+                "class_agnostic": False,
+            }
+        },
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences={
+                "iou_threshold": (0.3, 0.65),
+            },
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert len(remaining_packages) == 0
+    assert len(discarded_packages) == 1
+
+
+def test_filter_model_packages_based_on_model_features_when_package_should_be_accepted_based_on_iou_range_comparison() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.25,
+                "iou_threshold": 0.7,
+                "class_agnostic": False,
+            }
+        },
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences={
+                "iou_threshold": (0.2, 0.7),
+            },
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert len(remaining_packages) == 1
+    assert len(discarded_packages) == 0
+
+
+def test_filter_model_packages_based_on_model_features_when_package_should_be_accepted_based_on_iou_equal_comparison() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.25,
+                "iou_threshold": 0.7,
+                "class_agnostic": False,
+            }
+        },
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences={
+                "iou_threshold": 0.7,
+            },
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert len(remaining_packages) == 1
+    assert len(discarded_packages) == 0
+
+
+def test_filter_model_packages_based_on_model_features_when_package_should_be_eliminated_based_on_class_agnostic() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.25,
+                "iou_threshold": 0.7,
+                "class_agnostic": False,
+            }
+        },
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences={
+                "class_agnostic": True,
+            },
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert len(remaining_packages) == 0
+    assert len(discarded_packages) == 1
+
+
+def test_filter_model_packages_based_on_model_features_when_package_not_should_be_eliminated_based_on_class_agnostic() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.25,
+                "iou_threshold": 0.7,
+                "class_agnostic": False,
+            }
+        },
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences={
+                "class_agnostic": False,
+            },
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert len(remaining_packages) == 1
+    assert len(discarded_packages) == 0
