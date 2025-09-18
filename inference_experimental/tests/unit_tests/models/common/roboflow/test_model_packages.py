@@ -1,8 +1,19 @@
 import pytest
 from inference_exp.errors import CorruptedModelPackageError
 from inference_exp.models.common.roboflow.model_packages import (
+    AnySizePadding,
+    AutoOrient,
+    ColorMode,
+    ForwardPassConfiguration,
+    ImagePreProcessing,
+    InferenceConfig,
+    NetworkInputDefinition,
+    ResizeMode,
+    StaticCrop,
+    TrainingInputSize,
     TRTConfig,
     parse_class_names_file,
+    parse_inference_config,
     parse_key_points_metadata,
     parse_trt_config,
 )
@@ -253,3 +264,140 @@ def test_parse_class_names_file_when_valid_config_provided(
 
     # then
     assert result == ["some", "other", "yet-another"]
+
+
+def test_parse_inference_config_when_path_does_not_exists() -> None:
+    # when
+    with pytest.raises(CorruptedModelPackageError):
+        _ = parse_inference_config(
+            config_path="/some/non/existing.json",
+            allowed_resize_modes={ResizeMode.CENTER_CROP},
+        )
+
+
+def test_parse_inference_config_when_file_is_not_json(class_names_valid: str) -> None:
+    with pytest.raises(CorruptedModelPackageError):
+        _ = parse_inference_config(
+            config_path=class_names_valid, allowed_resize_modes={ResizeMode.CENTER_CROP}
+        )
+
+
+def test_parse_inference_config_when_json_file_does_not_define_dict_config(
+    json_without_dict_path: str,
+) -> None:
+    with pytest.raises(CorruptedModelPackageError):
+        _ = parse_inference_config(
+            config_path=json_without_dict_path,
+            allowed_resize_modes={ResizeMode.STRETCH_TO},
+        )
+
+
+def test_parse_inference_config_when_invalid_image_pre_processing(
+    inference_config_invalid_image_pre_processing: str,
+) -> None:
+    with pytest.raises(CorruptedModelPackageError):
+        _ = parse_inference_config(
+            config_path=inference_config_invalid_image_pre_processing,
+            allowed_resize_modes={ResizeMode.STRETCH_TO},
+        )
+
+
+def test_parse_inference_config_when_invalid_network_input(
+    inference_config_invalid_network_input: str,
+) -> None:
+    with pytest.raises(CorruptedModelPackageError):
+        _ = parse_inference_config(
+            config_path=inference_config_invalid_network_input,
+            allowed_resize_modes={ResizeMode.STRETCH_TO},
+        )
+
+
+def test_parse_inference_config_when_missing_network_input(
+    inference_config_missing_network_input: str,
+) -> None:
+    with pytest.raises(CorruptedModelPackageError):
+        _ = parse_inference_config(
+            config_path=inference_config_missing_network_input,
+            allowed_resize_modes={ResizeMode.STRETCH_TO},
+        )
+
+
+def test_parse_inference_config_when_invalid_forward_pass_config(
+    inference_config_invalid_forward_pass_config: str,
+) -> None:
+    with pytest.raises(CorruptedModelPackageError):
+        _ = parse_inference_config(
+            config_path=inference_config_invalid_forward_pass_config,
+            allowed_resize_modes={ResizeMode.STRETCH_TO},
+        )
+
+
+def test_parse_inference_config_when_invalid_post_processing_config(
+    inference_config_invalid_post_processing_config: str,
+) -> None:
+    with pytest.raises(CorruptedModelPackageError):
+        _ = parse_inference_config(
+            config_path=inference_config_invalid_post_processing_config,
+            allowed_resize_modes={ResizeMode.STRETCH_TO},
+        )
+
+
+def test_parse_inference_config_when_invalid_class_names_operations(
+    inference_config_invalid_class_names_operations: str,
+) -> None:
+    with pytest.raises(CorruptedModelPackageError):
+        _ = parse_inference_config(
+            config_path=inference_config_invalid_class_names_operations,
+            allowed_resize_modes={ResizeMode.STRETCH_TO},
+        )
+
+
+def test_parse_inference_config_when_parsing_should_succeed(
+    inference_config_valid_config: str,
+) -> None:
+    # when
+    result = parse_inference_config(
+        config_path=inference_config_valid_config,
+        allowed_resize_modes={ResizeMode.STRETCH_TO},
+    )
+
+    # then
+    expected_result = InferenceConfig(
+        image_pre_processing=ImagePreProcessing(
+            **{
+                "auto-orient": AutoOrient(enabled=True),
+                "static-crop": StaticCrop(
+                    enabled=True, x_min=9, x_max=94, y_min=9, y_max=75
+                ),
+            }
+        ),
+        network_input=NetworkInputDefinition(
+            training_input_size=TrainingInputSize(height=412, width=412),
+            dynamic_spatial_size_supported=True,
+            dynamic_spatial_size_mode=AnySizePadding(type="any-size"),
+            color_mode=ColorMode.RGB,
+            resize_mode=ResizeMode.STRETCH_TO,
+            padding_value=None,
+            input_channels=3,
+            scaling_factor=None,
+            normalization=None,
+        ),
+        forward_pass=ForwardPassConfiguration(
+            static_batch_size=None, max_dynamic_batch_size=None
+        ),
+        post_processing=None,
+        model_initialization=None,
+        class_names_operations=None,
+    )
+    assert result == expected_result
+
+
+def test_parse_inference_config_when_resize_mode_is_invalid(
+    inference_config_valid_config: str,
+) -> None:
+    # when
+    with pytest.raises(CorruptedModelPackageError):
+        _ = parse_inference_config(
+            config_path=inference_config_valid_config,
+            allowed_resize_modes={ResizeMode.LETTERBOX},
+        )

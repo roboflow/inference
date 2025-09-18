@@ -199,3 +199,44 @@ def class_names_empty() -> str:
 @pytest.fixture
 def class_names_valid() -> str:
     return os.path.join(ASSETS_DIR, "class_names_valid.txt")
+
+
+@pytest.fixture
+def inference_config_invalid_image_pre_processing() -> str:
+    return os.path.join(
+        ASSETS_DIR, "inference_config_invalid_image_pre_processing.json"
+    )
+
+
+@pytest.fixture
+def inference_config_invalid_network_input() -> str:
+    return os.path.join(ASSETS_DIR, "inference_config_invalid_network_input.json")
+
+
+@pytest.fixture
+def inference_config_missing_network_input() -> str:
+    return os.path.join(ASSETS_DIR, "inference_config_missing_network_input.json")
+
+
+@pytest.fixture
+def inference_config_invalid_forward_pass_config() -> str:
+    return os.path.join(ASSETS_DIR, "inference_config_invalid_forward_pass_config.json")
+
+
+@pytest.fixture
+def inference_config_invalid_post_processing_config() -> str:
+    return os.path.join(
+        ASSETS_DIR, "inference_config_invalid_post_processing_config.json"
+    )
+
+
+@pytest.fixture
+def inference_config_invalid_class_names_operations() -> str:
+    return os.path.join(
+        ASSETS_DIR, "inference_config_invalid_class_names_operations.json"
+    )
+
+
+@pytest.fixture
+def inference_config_valid_config() -> str:
+    return os.path.join(ASSETS_DIR, "inference_config_valid_config.json")
