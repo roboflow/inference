@@ -100,12 +100,15 @@ class BlockManifest(WorkflowBlockManifest):
     # SAM3 does not have multiple server-side versions like SAM2 here; keep a placeholder for UI parity
     version: Union[
         Selector(kind=[STRING_KIND]),
-        Literal["default", "checkpoint_model_only_presence_0_5"],
+        Literal[
+            "checkpoint_model_only_presence_0_5",
+            "sam3_prod_v12_interactive_5box_image_only",
+        ],
     ] = Field(
-        default="default",
+        default="checkpoint_model_only_presence_0_5",
         # description="Model variant placeholder (SAM3 local image model).",
         description="model version",
-        examples=["default", "$inputs.model_variant"],
+        examples=["checkpoint_model_only_presence_0_5", "$inputs.model_variant"],
     )
     text: Union[Optional[str], Selector(kind=[STRING_KIND])] = Field(
         default=None,

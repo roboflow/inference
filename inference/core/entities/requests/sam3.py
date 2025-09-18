@@ -20,7 +20,7 @@ class Sam3InferenceRequest(BaseRequest):
         description="The model ID of SAM3. Use 'sam3' to target the generic core model.",
     )
     sam3_version_id: Optional[str] = Field(
-        default="default",
+        default="checkpoint_model_only_presence_0_5",
         description="Placeholder version field required by core model loader.",
     )
 
@@ -76,5 +76,3 @@ class Sam3SegmentationRequest(Sam3InferenceRequest):
     output_prob_thresh: Optional[float] = Field(
         default=0.5, description="Score threshold for outputs."
     )
-
-

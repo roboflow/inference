@@ -32,7 +32,9 @@ print("sam3.__version__", sam3.__version__)
 class SegmentAnything3(RoboflowCoreModel):
     """SAM3 wrapper with a similar interface to SAM2 in this codebase."""
 
-    def __init__(self, *args, model_id: str = "sam3/default", **kwargs):
+    def __init__(
+        self, *args, model_id: str = "sam3/checkpoint_model_only_presence_0_5", **kwargs
+    ):
         super().__init__(*args, model_id=model_id, **kwargs)
         # Lazy import SAM3 to avoid hard dependency when disabled
         # import sys
@@ -42,14 +44,12 @@ class SegmentAnything3(RoboflowCoreModel):
 
         model_version = model_id.split("/")[1]
 
-        has_presence_token = False
-        if model_version == "default":
-            checkpoint = self.cache_file("sam3_prod_v12_interactive_5box_image_only.pt")
-        else:
-            has_presence_token = True
-            checkpoint = self.cache_file("weights.pt")
-
+        has_presence_token = True
+        checkpoint = self.cache_file("weights.pt")
         bpe_path = self.cache_file("bpe_simple_vocab_16e6.txt.gz")
+
+        if model_version == "sam3_prod_v12_interactive_5box_image_only":
+            has_presence_token = False
 
         self.sam3_lock = threading.RLock()
 
@@ -77,11 +77,7 @@ class SegmentAnything3(RoboflowCoreModel):
         model_version = self.endpoint.split("/")[1]
 
         return [
-            (
-                f"sam3_prod_v12_interactive_5box_image_only.pt"
-                if model_version == "default"
-                else "weights.pt"
-            ),
+            "weights.pt",
             "bpe_simple_vocab_16e6.txt.gz",
         ]
 
