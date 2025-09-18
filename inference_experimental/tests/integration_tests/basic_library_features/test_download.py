@@ -3,7 +3,7 @@ import os.path
 
 import pytest
 from inference_exp.errors import FileHashSumMissmatch, UntrustedFileError
-from inference_exp.utils.download import download_files_to_directory
+from inference_exp.utils.download import download_files_to_directory, get_content_length
 
 
 @pytest.mark.timeout(10)
@@ -235,3 +235,12 @@ def calculate_md5(file: str) -> str:
                 break
             hash_object.update(chunk)
     return hash_object.hexdigest()
+
+
+@pytest.mark.timeout(10)
+def test_get_content_length_against_real_asset() -> None:
+    # when
+    result = get_content_length("https://media.roboflow.com/dog.jpeg")
+
+    # then
+    assert result == 106055
