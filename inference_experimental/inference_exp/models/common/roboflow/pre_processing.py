@@ -1070,55 +1070,37 @@ def handle_numpy_input_preparation_with_center_crop(
         height=original_height, width=original_width
     )
     canvas = np.zeros((target_size.height, target_size.width, 3), dtype=np.uint8)
-    canvas_ox_padding = target_size.width - image.shape[1]
-    canvas_padding_left = max(0, canvas_ox_padding // 2)
-    canvas_padding_left_reminder = max(0, canvas_ox_padding) % 2
-    canvas_padding_right = max(
-        target_size.width - canvas_padding_left - canvas_padding_left_reminder, 0
-    )
-    canvas_oy_padding = target_size.height - image.shape[0]
-    canvas_padding_top = max(0, canvas_oy_padding // 2)
-    canvas_oy_padding_reminder = max(0, canvas_oy_padding) % 2
-    canvas_padding_bottom = max(
-        target_size.height - canvas_padding_top - canvas_oy_padding_reminder, 0
-    )
-    original_image_ox_padding = image.shape[1] - target_size.width
-    original_image_padding_left = max(0, original_image_ox_padding // 2)
-    original_image_ox_padding_reminder = max(0, original_image_ox_padding) % 2
-    original_image_padding_right = max(
-        0,
-        image.shape[1]
-        - original_image_padding_left
-        - original_image_ox_padding_reminder,
-    )
-    original_image_oy_padding = image.shape[0] - target_size.height
-    original_image_padding_top = max(0, original_image_oy_padding // 2)
-    original_image_oy_padding_reminder = max(0, original_image_oy_padding) % 2
-    original_image_padding_bottom = max(
-        0,
-        image.shape[0]
-        - original_image_padding_top
-        - original_image_oy_padding_reminder,
-    )
+    canvas_ox_padding = max(target_size.width - image.shape[1], 0)
+    canvas_padding_left = canvas_ox_padding // 2
+    canvas_padding_right = canvas_ox_padding - canvas_padding_left
+    canvas_oy_padding = max(target_size.height - image.shape[0], 0)
+    canvas_padding_top = canvas_oy_padding // 2
+    canvas_padding_bottom = canvas_oy_padding - canvas_padding_top
+    original_image_ox_padding = max(image.shape[1] - target_size.width, 0)
+    original_image_padding_left = original_image_ox_padding // 2
+    original_image_padding_right = original_image_ox_padding - original_image_padding_left
+    original_image_oy_padding = max(image.shape[0] - target_size.height, 0)
+    original_image_padding_top = original_image_oy_padding // 2
+    original_image_padding_bottom = original_image_oy_padding - original_image_padding_top
     canvas[
-        canvas_padding_top:canvas_padding_bottom,
-        canvas_padding_left:canvas_padding_right,
+        canvas_padding_top:canvas.shape[0] - canvas_padding_bottom,
+        canvas_padding_left:canvas.shape[1] - canvas_padding_right,
     ] = image[
-        original_image_padding_top:original_image_padding_bottom,
-        original_image_padding_left:original_image_padding_right,
+        original_image_padding_top:image.shape[0] - original_image_padding_bottom,
+        original_image_padding_left:image.shape[1] - original_image_padding_right,
     ]
     if canvas.shape[0] > image.shape[0]:
         reported_padding_top = canvas_padding_top
-        reported_padding_bottom = canvas.shape[0] - canvas_padding_bottom
+        reported_padding_bottom = canvas_padding_bottom
     else:
         reported_padding_top = -original_image_padding_top
-        reported_padding_bottom = -(image.shape[0] - original_image_padding_bottom)
+        reported_padding_bottom = -original_image_padding_bottom
     if canvas.shape[1] > image.shape[1]:
         reported_padding_left = canvas_padding_left
-        reported_padding_right = canvas.shape[1] - canvas_padding_left
+        reported_padding_right = canvas_padding_right
     else:
         reported_padding_left = -original_image_padding_left
-        reported_padding_right = -(image.shape[1] - original_image_padding_right)
+        reported_padding_right = -original_image_padding_right
     image_metadata = PreProcessingMetadata(
         pad_left=reported_padding_left,
         pad_top=reported_padding_top,
