@@ -6,13 +6,75 @@ include the manifest and Python code for blocks defined in place, which are dyna
 Execution Engine. These in-place blocks function similarly to those statically defined in
 [plugins](/workflows/blocks_bundling.md) yet provide much more flexibility.
 
+## Execution Modes
+
+Dynamic Python blocks support two execution modes:
+
+### Local Execution
+When running inference locally on your own hardware, dynamic blocks execute directly in your environment. This provides the fastest performance for development and testing.
 
 !!! Warning
 
-    Dynamic blocks only work in your local deployment of `inference` and are not supported 
-    on the Roboflow hosted platform.
+    Local execution of dynamic blocks only works in your local deployment of `inference` and requires careful consideration of security implications when running untrusted code.
 
     If you wish to disable the functionality, `export ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=False`
+
+### Cloud Execution (Roboflow Serverless v2)
+When using Roboflow's cloud infrastructure with Serverless v2 API, dynamic blocks execute in secure, isolated containers. This ensures safe execution of custom code without compromising your infrastructure.
+
+!!! Important "Data Serialization Requirements"
+
+    When using cloud execution, all input and output data must be serializable through Inference's serialization system. This means:
+    
+    - Use simple Python types (str, int, float, bool, list, dict)
+    - Numpy arrays and standard computer vision data structures are supported
+    - Complex custom objects may need to be converted to simpler representations
+    - Avoid returning functions, lambda expressions, or other non-serializable Python objects
+
+The cloud execution environment provides the same standard libraries and imports as local execution, ensuring your code works consistently across both modes.
+
+## State Management and Shared Data
+
+Variables defined at the module level (outside of your `run` function) in your block's code are scoped to instances of that block. These variables:
+
+- **Persist across invocations** of the same block (as long as the code doesn't change)
+- **Reset when the block's code changes** any modification to the block's code creates a new namespace
+- **Are lost when the server/container restarts**
+
+**Example:**
+
+This block increments a counter each time the block is run and remembers the last result:
+
+```python
+# This variable is block-scoped
+counter = 0
+last_result = None
+
+def run(self, input_value):
+    global counter, last_result
+    
+    counter += 1
+    
+    # Store the last result for comparison
+    previous = last_result
+    last_result = input_value * 2
+    
+    return {
+        "run_count": counter,
+        "current": last_result,
+        "previous": previous
+    }
+```
+
+### Best Practices for State Management
+
+Custom Block state is meant for caching expensive computations and optimization of artifact and dependency loading.
+
+- Do not rely on state for critical data persistence - use external storage for important data.
+- State may be lost at any time due to server restarts or container scaling
+- In cloud environments, subsequent requests may hit different servers with different state
+- Initialize block-scoped variables with default values to handle fresh starts
+- Keep state lightweight. Large objects consume memory and may impact performance.
 
 ## Theory
 

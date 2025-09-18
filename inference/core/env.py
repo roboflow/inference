@@ -267,6 +267,8 @@ LAMBDA = str2bool(os.getenv("LAMBDA", False))
 # Whether is's GCP serverless service
 GCP_SERVERLESS = str2bool(os.getenv("GCP_SERVERLESS", "False"))
 
+GET_MODEL_REGISTRY_ENABLED = str2bool(os.getenv("GET_MODEL_REGISTRY_ENABLED", "True"))
+
 # Flag to enable API logging, default is False
 API_LOGGING_ENABLED = str2bool(os.getenv("API_LOGGING_ENABLED", "False"))
 
@@ -477,6 +479,12 @@ ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING = str2bool(
     os.getenv("ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING", "False")
 )
 
+DEBUG_AIORTC_QUEUES = str2bool(os.getenv("DEBUG_AIORTC_QUEUES", "False"))
+DEBUG_WEBRTC_PROCESSING_LATENCY = str2bool(
+    os.getenv("DEBUG_WEBRTC_PROCESSING_LATENCY", "False")
+)
+WEBRTC_REALTIME_PROCESSING = str2bool(os.getenv("WEBRTC_REALTIME_PROCESSING", "True"))
+
 NUM_CELERY_WORKERS = os.getenv("NUM_CELERY_WORKERS", 4)
 CELERY_LOG_LEVEL = os.getenv("CELERY_LOG_LEVEL", "WARNING")
 
@@ -527,6 +535,29 @@ WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS = int(
 )
 ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS = str2bool(
     os.getenv("ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS", True)
+)
+
+# Modal configuration for Custom Python Blocks
+WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE = os.getenv(
+    "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "local"
+).lower()  # "local" or "modal"
+
+# Strip quotes from Modal credentials in case users include them
+_modal_token_id = os.getenv("MODAL_TOKEN_ID")
+_modal_token_secret = os.getenv("MODAL_TOKEN_SECRET")
+
+# Remove common quote characters that users might accidentally include
+MODAL_TOKEN_ID = _modal_token_id.strip("\"'") if _modal_token_id else None
+MODAL_TOKEN_SECRET = _modal_token_secret.strip("\"'") if _modal_token_secret else None
+MODAL_WORKSPACE_NAME = os.getenv("MODAL_WORKSPACE_NAME", "roboflow")
+
+# Control whether anonymous Modal execution is allowed (when no api_key is available)
+MODAL_ALLOW_ANONYMOUS_EXECUTION = str2bool(
+    os.getenv("MODAL_ALLOW_ANONYMOUS_EXECUTION", "False")
+)
+
+MODAL_ANONYMOUS_WORKSPACE_NAME = os.getenv(
+    "MODAL_ANONYMOUS_WORKSPACE_NAME", "anonymous"
 )
 
 MODEL_VALIDATION_DISABLED = str2bool(os.getenv("MODEL_VALIDATION_DISABLED", "False"))

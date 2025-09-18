@@ -1,3 +1,6 @@
+watch-dev.sh
+cpu_http.py
+
 # IDE
 .idea/
 .vscode/
