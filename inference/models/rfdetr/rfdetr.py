@@ -381,10 +381,10 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         res = self.make_response(processed_predictions, img_dims, **kwargs)
         return res
 
-    def initialize_model(self) -> None:
+    def initialize_model(self, **kwargs) -> None:
         """Initializes the ONNX model, setting up the inference session and other necessary properties."""
         logger.debug("Getting model artefacts")
-        self.get_model_artifacts()
+        self.get_model_artifacts(**kwargs)
         logger.debug("Creating inference session")
         if self.load_weights or not self.has_model_metadata:
             t1_session = perf_counter()

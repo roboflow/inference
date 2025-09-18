@@ -45,11 +45,13 @@ from inference.core.workflows.execution_engine.v1.introspection.types_discovery 
 def handle_describe_workflows_blocks_request(
     dynamic_blocks_definitions: Optional[List[DynamicBlockDefinition]] = None,
     requested_execution_engine_version: Optional[str] = None,
+    api_key: Optional[str] = None,
 ) -> WorkflowsBlocksDescription:
     if dynamic_blocks_definitions is None:
         dynamic_blocks_definitions = []
     dynamic_blocks = compile_dynamic_blocks(
         dynamic_blocks_definitions=dynamic_blocks_definitions,
+        api_key=api_key,
     )
     blocks_description = describe_available_blocks(
         dynamic_blocks=dynamic_blocks,
