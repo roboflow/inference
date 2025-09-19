@@ -249,7 +249,11 @@ class RoboflowInferenceModel(Model):
                 raise RoboflowAPINotAuthorizedError(
                     f"API key {self.api_key} does not have access to model {self.endpoint}"
                 )
-        self.cache_model_artefacts(**kwargs)
+        self.cache_model_artefacts(
+            countinference=countinference,
+            service_secret=service_secret,
+            **kwargs,
+        )
         self.load_model_artifacts_from_cache()
 
     def cache_model_artefacts(self, **kwargs) -> None:
