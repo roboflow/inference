@@ -1,4 +1,5 @@
 import hashlib
+from collections import OrderedDict
 from typing import Dict, List, Literal, Optional, Tuple, Type, Union
 
 import cv2 as cv
@@ -80,11 +81,12 @@ class PolygonZoneVisualizationManifest(VisualizationManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
 
+CACHE_MAXSIZE = 200
 
 class PolygonZoneVisualizationBlockV1(VisualizationBlock):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._cache: Dict[str, np.ndarray] = {}
+        self._cache: OrderedDict[str, np.ndarray] = OrderedDict()
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -107,11 +109,18 @@ class PolygonZoneVisualizationBlockV1(VisualizationBlock):
         h, w, *_ = image.numpy_image.shape
         zone_fingerprint = hashlib.md5(str(zone).encode()).hexdigest()
         key = f"{zone_fingerprint}_{color}_{opacity}_{w}_{h}"
-        if key not in self._cache:
+        zero_key = f"{w}_{h}"
+        mask = None
+        if zero_key not in self._cache:
             mask = np.zeros(
                 shape=image.numpy_image.shape,
                 dtype=image.numpy_image.dtype,
             )
+            self._cache[zero_key] = mask
+            if len(self._cache) > CACHE_MAXSIZE:
+                self._cache.popitem(last=False)
+        else:
+            mask = self._cache[zero_key]
 
         if zone and len(zone) > 0:
             pts = []
@@ -125,6 +134,8 @@ class PolygonZoneVisualizationBlockV1(VisualizationBlock):
                 color=str_to_color(color).as_bgr(),
             )
             self._cache[key] = mask
+            if len(self._cache) > CACHE_MAXSIZE:
+                self._cache.popitem(last=False)
         else:
             return {OUTPUT_IMAGE_KEY: image}
 
