@@ -1,6 +1,6 @@
 import hashlib
 from collections import OrderedDict
-from typing import Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import List, Literal, Optional, Tuple, Type, Union
 
 import cv2 as cv
 import numpy as np
@@ -81,7 +81,9 @@ class PolygonZoneVisualizationManifest(VisualizationManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
 
+
 CACHE_MAXSIZE = 200
+
 
 class PolygonZoneVisualizationBlockV1(VisualizationBlock):
     def __init__(self, *args, **kwargs):
