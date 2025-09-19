@@ -53,6 +53,11 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
                 ResizeMode.FIT_LONGER_EDGE,
             },
         )
+        if inference_config.model_initialization is None:
+            raise CorruptedModelPackageError(
+                message="Expected model initialization parameters not provided in inference config.",
+                help_url="https://todo",
+            )
         num_classes = inference_config.model_initialization.get("classes")
         in_channels = inference_config.model_initialization.get("in_channels")
         encoder_name = inference_config.model_initialization.get("encoder_name")

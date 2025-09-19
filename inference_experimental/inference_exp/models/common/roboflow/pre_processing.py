@@ -634,14 +634,14 @@ def handle_tensor_list_input_preparation_with_stretch(
         )
         if input_color_mode != network_input.color_mode:
             img = img[:, [2, 1, 0], :, :]
-        img = functional.resize(
+        img = torch.nn.functional.interpolate(
             img,
-            [target_size.height, target_size.width],
-            interpolation=functional.InterpolationMode.BILINEAR,
+            size=[target_size.height, target_size.width],
+            mode="bilinear",
         )
         if network_input.scaling_factor is not None:
             img = img / network_input.scaling_factor
-        if network_input.normalization:
+        if network_input.normalization is not None:
             img = functional.normalize(
                 img,
                 mean=network_input.normalization[0],

@@ -1,14 +1,9 @@
 import os.path
 import zipfile
 
-import cv2
-import numpy as np
 import pytest
 import requests
-import torch
-import torchvision.io
 from filelock import FileLock
-from PIL import Image
 
 ASSETS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "assets"))
 MODELS_DIR = os.path.join(ASSETS_DIR, "models")
@@ -29,7 +24,12 @@ SMOLVLM_BASE_FT_URL = (
 MOONDREAM2_BASE_FT_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/moondream2/moondream2-2b.zip"
 )
-
+COIN_COUNTING_RFDETR_NANO_TORCH_CS_STRETCH_URL = (
+    "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/coin-counting-rfdetr-nano-torch-cs-stretch-640.zip"
+)
+COIN_COUNTING_RFDETR_NANO_ONNX_CS_STRETCH_URL = (
+    "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-onnx-cs-stretch-640.zip"
+)
 
 @pytest.fixture(scope="module")
 def original_clip_download_dir() -> str:
@@ -171,3 +171,37 @@ def moondream2_path() -> str:
             with zipfile.ZipFile(zip_path, "r") as zip_ref:
                 zip_ref.extractall(package_dir)
     return unzipped_package_path
+
+
+def download_model_package(
+    model_package_zip_url: str,
+    package_name: str,
+) -> str:
+    package_dir = os.path.join(MODELS_DIR, package_name)
+    unzipped_package_path = os.path.join(package_dir, "unpacked")
+    os.makedirs(package_dir, exist_ok=True)
+    zip_path = os.path.join(package_dir, "package.zip")
+    _download_if_not_exists(file_path=zip_path, url=model_package_zip_url)
+    lock_path = f"{unzipped_package_path}.lock"
+    with FileLock(lock_path, timeout=120):
+        if not os.path.exists(unzipped_package_path):
+            with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                zip_ref.extractall(unzipped_package_path)
+    return unzipped_package_path
+
+
+@pytest.fixture(scope="module")
+def coin_counting_rfdetr_nano_torch_cs_stretch_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_RFDETR_NANO_TORCH_CS_STRETCH_URL,
+        package_name="coin-counting-rfdetr-nano-torch-cs-stretch",
+    )
+
+
+@pytest.fixture(scope="module")
+def coin_counting_rfdetr_nano_onnx_cs_stretch_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_RFDETR_NANO_ONNX_CS_STRETCH_URL,
+        package_name="coin-counting-rfdetr-nano-onnx-cs-stretch",
+    )
+

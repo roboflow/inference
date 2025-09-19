@@ -19,6 +19,7 @@ from inference_exp.models.common.roboflow.model_packages import (
 from inference_exp.models.common.roboflow.pre_processing import (
     extract_input_images_dimensions,
     images_to_pillow,
+    make_the_value_divisible,
     pre_process_network_input,
 )
 from PIL.Image import Image
@@ -9324,3 +9325,19 @@ def test_grayscale_pre_processing_for_list_of_4d_torch_tensor_not_permuted_image
             target_device=torch.device("cpu"),
             input_color_format="rgb",
         )
+
+
+def test_make_the_value_divisible_when_value_already_divisible() -> None:
+    # when
+    result = make_the_value_divisible(4, 2)
+
+    # then
+    assert result == 4
+
+
+def test_make_the_value_divisible_when_value_not_divisible() -> None:
+    # when
+    result = make_the_value_divisible(13, 2)
+
+    # then
+    assert result == 14
