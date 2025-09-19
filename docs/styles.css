@@ -111,7 +111,7 @@
   color: #EE0F0F;
 }
 
-.link-caret::after {
+/* .link-caret::after {
   content: "";
   width: 11px;
   height: 11px;
@@ -121,7 +121,7 @@
   background-repeat: no-repeat;
   background-size: contain;
   display: inline-block;
-}
+} */
 
 
 /* Download page styles */
