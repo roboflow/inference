@@ -1,5 +1,6 @@
 import json
 import urllib.parse
+from typing import Optional
 
 import pytest
 from inference_exp.configuration import API_CALLS_MAX_TRIES, ROBOFLOW_API_HOST
@@ -17,6 +18,7 @@ from inference_exp.weights_providers.entities import (
     ONNXPackageDetails,
     Quantization,
     ServerEnvironmentRequirements,
+    TorchScriptPackageDetails,
     TRTPackageDetails,
 )
 from inference_exp.weights_providers.roboflow import (
@@ -61,7 +63,10 @@ def test_parse_ultralytics_model_package() -> None:
     metadata = RoboflowModelPackageV1(
         type="external-model-package-v1",
         packageId="my-package-id",
-        packageManifest={},
+        packageManifest={
+            "type": "ultralytics-model-package-v1",
+            "backendType": "ultralytics",
+        },
         packageFiles=[
             RoboflowModelPackageFile(
                 fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
@@ -71,7 +76,7 @@ def test_parse_ultralytics_model_package() -> None:
     )
 
     # when
-    result = parse_ultralytics_model_package(metadata=metadata)
+    result = parse_model_package_metadata(metadata=metadata)
 
     # then
     assert result == ModelPackageMetadata(
@@ -106,7 +111,7 @@ def test_parse_hf_model_package_model_package_when_valid_input_provided() -> Non
     )
 
     # when
-    result = parse_hf_model_package(metadata=metadata)
+    result = parse_model_package_metadata(metadata=metadata)
 
     # then
     assert result == ModelPackageMetadata(
@@ -127,7 +132,7 @@ def test_parse_hf_model_package_model_package_when_invalid_input_provided() -> N
     metadata = RoboflowModelPackageV1(
         type="external-model-package-v1",
         packageId="my-package-id",
-        packageManifest={},
+        packageManifest={"type": "hf-model-package-v1"},
         packageFiles=[
             RoboflowModelPackageFile(
                 fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
@@ -137,8 +142,8 @@ def test_parse_hf_model_package_model_package_when_invalid_input_provided() -> N
     )
 
     # when
-    with pytest.raises(ValidationError):
-        _ = parse_hf_model_package(metadata=metadata)
+    with pytest.raises(ModelMetadataConsistencyError):
+        _ = parse_model_package_metadata(metadata=metadata)
 
 
 def test_parse_torch_model_package_when_batch_size_missmatch_present() -> None:
@@ -161,7 +166,7 @@ def test_parse_torch_model_package_when_batch_size_missmatch_present() -> None:
 
     # when
     with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_torch_model_package(metadata=metadata)
+        _ = parse_model_package_metadata(metadata=metadata)
 
 
 def test_parse_torch_model_package_when_invalid_manifest_provided() -> None:
@@ -169,7 +174,7 @@ def test_parse_torch_model_package_when_invalid_manifest_provided() -> None:
     metadata = RoboflowModelPackageV1(
         type="external-model-package-v1",
         packageId="my-package-id",
-        packageManifest={},
+        packageManifest={"type": "torch-model-package-v1"},
         packageFiles=[
             RoboflowModelPackageFile(
                 fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
@@ -179,8 +184,44 @@ def test_parse_torch_model_package_when_invalid_manifest_provided() -> None:
     )
 
     # when
-    with pytest.raises(ValidationError):
-        _ = parse_torch_model_package(metadata=metadata)
+    with pytest.raises(ModelMetadataConsistencyError):
+        _ = parse_model_package_metadata(metadata=metadata)
+
+
+@pytest.mark.parametrize(
+    "dynamic_batch_size, static_batch_size",
+    [
+        (True, 2),
+        (False, 0),
+        (False, None),
+    ],
+)
+def test_parse_torch_model_package_when_invalid_manifest_provided_regarding_batch_size(
+    dynamic_batch_size: bool,
+    static_batch_size: Optional[int],
+) -> None:
+    # given
+    metadata = RoboflowModelPackageV1(
+        type="external-model-package-v1",
+        packageId="my-package-id",
+        packageManifest={
+            "type": "torch-model-package-v1",
+            "backendType": "torch",
+            "quantization": "fp32",
+            "dynamicBatchSize": dynamic_batch_size,
+            "staticBatchSize": static_batch_size,
+        },
+        packageFiles=[
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
+        ],
+        trustedSource=True,
+    )
+
+    # when
+    with pytest.raises(ModelMetadataConsistencyError):
+        _ = parse_model_package_metadata(metadata=metadata)
 
 
 def test_parse_torch_model_package_when_valid_manifest_provided() -> None:
@@ -203,7 +244,7 @@ def test_parse_torch_model_package_when_valid_manifest_provided() -> None:
     )
 
     # when
-    result = parse_torch_model_package(metadata=metadata)
+    result = parse_model_package_metadata(metadata=metadata)
 
     # then
     assert result == ModelPackageMetadata(
@@ -226,7 +267,7 @@ def test_parse_trt_model_package_when_invalid_manifest_provided() -> None:
     metadata = RoboflowModelPackageV1(
         type="external-model-package-v1",
         packageId="my-package-id",
-        packageManifest={},
+        packageManifest={"type": "trt-model-package-v1"},
         packageFiles=[
             RoboflowModelPackageFile(
                 fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
@@ -235,8 +276,8 @@ def test_parse_trt_model_package_when_invalid_manifest_provided() -> None:
         trustedSource=True,
     )
 
-    with pytest.raises(ValidationError):
-        _ = parse_trt_model_package(metadata=metadata)
+    with pytest.raises(ModelMetadataConsistencyError):
+        _ = parse_model_package_metadata(metadata=metadata)
 
 
 def test_parse_trt_model_package_when_manifest_with_batch_size_missmatch_provided() -> (
@@ -250,7 +291,7 @@ def test_parse_trt_model_package_when_manifest_with_batch_size_missmatch_provide
             "type": "trt-model-package-v1",
             "backendType": "trt",
             "dynamicBatchSize": False,
-            "static_batch_size": None,
+            "staticBatchSize": None,
             "quantization": "fp16",
             "cudaDeviceType": "orin",
             "cudaDeviceCC": "8.7",
@@ -277,7 +318,7 @@ def test_parse_trt_model_package_when_manifest_with_batch_size_missmatch_provide
 
     # when
     with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_trt_model_package(metadata=metadata)
+        _ = parse_model_package_metadata(metadata=metadata)
 
 
 def test_parse_trt_model_package_when_manifest_with_dynamic_batch_size_missmatch_provided() -> (
@@ -318,7 +359,7 @@ def test_parse_trt_model_package_when_manifest_with_dynamic_batch_size_missmatch
 
     # when
     with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_trt_model_package(metadata=metadata)
+        _ = parse_model_package_metadata(metadata=metadata)
 
 
 def test_parse_trt_model_package_when_manifest_with_environment_specification_missmatch_for_gpu_server() -> (
@@ -362,7 +403,7 @@ def test_parse_trt_model_package_when_manifest_with_environment_specification_mi
 
     # when
     with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_trt_model_package(metadata=metadata)
+        _ = parse_model_package_metadata(metadata=metadata)
 
 
 def test_parse_trt_model_package_when_manifest_with_environment_specification_missmatch_for_jetson() -> (
@@ -405,7 +446,7 @@ def test_parse_trt_model_package_when_manifest_with_environment_specification_mi
 
     # when
     with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_trt_model_package(metadata=metadata)
+        _ = parse_model_package_metadata(metadata=metadata)
 
 
 def test_parse_trt_model_package_when_manifest_with_jetson_environment_specification() -> (
@@ -448,7 +489,7 @@ def test_parse_trt_model_package_when_manifest_with_jetson_environment_specifica
     )
 
     # when
-    result = parse_trt_model_package(metadata=metadata)
+    result = parse_model_package_metadata(metadata=metadata)
 
     # then
     environment_requirements = JetsonEnvironmentRequirements(
@@ -524,7 +565,7 @@ def test_parse_trt_model_package_when_manifest_with_server_environment_specifica
     )
 
     # when
-    result = parse_trt_model_package(metadata=metadata)
+    result = parse_model_package_metadata(metadata=metadata)
 
     # then
     environment_requirements = ServerEnvironmentRequirements(
@@ -565,7 +606,7 @@ def test_parse_onnx_model_package_when_invalid_manifest_provided() -> None:
     metadata = RoboflowModelPackageV1(
         type="external-model-package-v1",
         packageId="my-package-id",
-        packageManifest={},
+        packageManifest={"type": "onnx-model-package-v1"},
         packageFiles=[
             RoboflowModelPackageFile(
                 fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
@@ -574,8 +615,9 @@ def test_parse_onnx_model_package_when_invalid_manifest_provided() -> None:
         trustedSource=True,
     )
 
-    with pytest.raises(ValidationError):
-        _ = parse_onnx_model_package(metadata=metadata)
+    # when
+    with pytest.raises(ModelMetadataConsistencyError):
+        _ = parse_model_package_metadata(metadata=metadata)
 
 
 def test_parse_onnx_model_package_when_valid_manifest_with_batch_size_missmatch_provided() -> (
@@ -601,7 +643,45 @@ def test_parse_onnx_model_package_when_valid_manifest_with_batch_size_missmatch_
     )
 
     with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_onnx_model_package(metadata=metadata)
+        _ = parse_model_package_metadata(metadata=metadata)
+
+
+@pytest.mark.parametrize(
+    "dynamic_batch_size, static_batch_size",
+    [
+        (True, 2),
+        (False, 0),
+        (False, None),
+    ],
+)
+def test_parse_onnx_model_package_when_invalid_manifest_provided_regarding_batch_size(
+    dynamic_batch_size: bool,
+    static_batch_size: Optional[int],
+) -> None:
+    # given
+    metadata = RoboflowModelPackageV1(
+        type="external-model-package-v1",
+        packageId="my-package-id",
+        packageManifest={
+            "type": "onnx-model-package-v1",
+            "backendType": "onnx",
+            "quantization": "fp32",
+            "dynamicBatchSize": dynamic_batch_size,
+            "staticBatchSize": static_batch_size,
+            "opset": 19,
+            "incompatibleProviders": ["TRTExecutionProvider"],
+        },
+        packageFiles=[
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
+        ],
+        trustedSource=True,
+    )
+
+    # when
+    with pytest.raises(ModelMetadataConsistencyError):
+        _ = parse_model_package_metadata(metadata=metadata)
 
 
 def test_parse_onnx_model_package_when_valid_manifest_provided() -> None:
@@ -626,7 +706,7 @@ def test_parse_onnx_model_package_when_valid_manifest_provided() -> None:
     )
 
     # when
-    result = parse_onnx_model_package(metadata=metadata)
+    result = parse_model_package_metadata(metadata=metadata)
 
     # then
     assert result == ModelPackageMetadata(
@@ -645,6 +725,115 @@ def test_parse_onnx_model_package_when_valid_manifest_provided() -> None:
             incompatible_providers=["TRTExecutionProvider"],
         ),
         trusted_source=metadata.trusted_source,
+    )
+
+
+def test_parse_torch_script_model_package_when_package_is_manifest_invalid() -> None:
+    # given
+    metadata = RoboflowModelPackageV1(
+        type="external-model-package-v1",
+        packageId="my-package-id",
+        packageManifest={
+            "type": "torch-script-model-package-v1",
+        },
+        packageFiles=[
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
+        ],
+        trustedSource=True,
+    )
+
+    # when
+    with pytest.raises(ModelMetadataConsistencyError):
+        _ = parse_model_package_metadata(metadata=metadata)
+
+
+@pytest.mark.parametrize(
+    "dynamic_batch_size, static_batch_size",
+    [
+        (True, 2),
+        (False, 0),
+        (False, None),
+    ],
+)
+def test_parse_torch_script_model_package_when_package_batch_settings_are_invalid(
+    dynamic_batch_size: bool,
+    static_batch_size: Optional[int],
+) -> None:
+    # given
+    metadata = RoboflowModelPackageV1(
+        type="external-model-package-v1",
+        packageId="my-package-id",
+        packageManifest={
+            "type": "torch-script-model-package-v1",
+            "backendType": "torch-script",
+            "dynamicBatchSize": dynamic_batch_size,
+            "staticBatchSize": static_batch_size,
+            "quantization": "fp32",
+            "supportedDeviceTypes": ["cuda", "cpu", "mps"],
+            "torchVersion": "2.6.0",
+            "torchVisionVersion": "0.22.0",
+        },
+        packageFiles=[
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
+        ],
+        trustedSource=True,
+    )
+
+    # when
+    with pytest.raises(ModelMetadataConsistencyError):
+        _ = parse_model_package_metadata(metadata=metadata)
+
+
+def test_parse_torch_script_model_package_when_package_is_manifest_valid() -> None:
+    # given
+    metadata = RoboflowModelPackageV1(
+        type="external-model-package-v1",
+        packageId="my-package-id",
+        packageManifest={
+            "type": "torch-script-model-package-v1",
+            "backendType": "torch-script",
+            "dynamicBatchSize": False,
+            "staticBatchSize": 2,
+            "quantization": "fp32",
+            "supportedDeviceTypes": ["cuda", "cpu", "mps"],
+            "torchVersion": "2.6.0",
+            "torchVisionVersion": "0.22.0",
+        },
+        packageFiles=[
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
+        ],
+        modelFeatures={"nms_fused": True},
+        trustedSource=True,
+    )
+
+    # when
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result == ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[
+            FileDownloadSpecs(
+                download_url="https://dummy.com", file_handle="some", md5_hash="some"
+            ),
+        ],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={"nms_fused": True},
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
     )
 
 

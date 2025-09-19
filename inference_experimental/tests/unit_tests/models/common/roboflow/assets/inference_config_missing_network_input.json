@@ -1,0 +1,14 @@
+{
+  "image_pre_processing": {
+    "auto-orient": {
+      "enabled": true
+    },
+    "static-crop": {
+      "enabled": true,
+      "x_min": 9,
+      "y_min": 9,
+      "x_max": 94,
+      "y_max": 75
+    }
+  }
+}

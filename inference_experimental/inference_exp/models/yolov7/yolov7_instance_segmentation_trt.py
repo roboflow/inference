@@ -6,15 +6,20 @@ import torch
 from inference_exp import InstanceDetections, InstanceSegmentationModel
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
-from inference_exp.errors import MissingDependencyError, ModelRuntimeError
+from inference_exp.errors import (
+    CorruptedModelPackageError,
+    MissingDependencyError,
+    ModelRuntimeError,
+)
 from inference_exp.models.common.cuda import use_cuda_context, use_primary_cuda_context
 from inference_exp.models.common.model_packages import get_model_package_contents
 from inference_exp.models.common.roboflow.model_packages import (
-    PreProcessingConfig,
+    InferenceConfig,
     PreProcessingMetadata,
+    ResizeMode,
     TRTConfig,
     parse_class_names_file,
-    parse_pre_processing_config,
+    parse_inference_config,
     parse_trt_config,
 )
 from inference_exp.models.common.roboflow.post_processing import (
@@ -27,7 +32,7 @@ from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
 from inference_exp.models.common.trt import (
-    get_output_tensor_names,
+    get_engine_inputs_and_outputs,
     infer_from_trt_engine,
     load_model,
 )
@@ -78,7 +83,7 @@ class YOLOv7ForInstanceSegmentationTRT(
             model_package_dir=model_name_or_path,
             elements=[
                 "class_names.txt",
-                "environment.json",
+                "inference_config.json",
                 "trt_config.json",
                 "engine.plan",
             ],
@@ -86,8 +91,14 @@ class YOLOv7ForInstanceSegmentationTRT(
         class_names = parse_class_names_file(
             class_names_path=model_package_content["class_names.txt"]
         )
-        pre_processing_config = parse_pre_processing_config(
-            config_path=model_package_content["environment.json"],
+        inference_config = parse_inference_config(
+            config_path=model_package_content["inference_config.json"],
+            allowed_resize_modes={
+                ResizeMode.STRETCH_TO,
+                ResizeMode.LETTERBOX,
+                ResizeMode.CENTER_CROP,
+                ResizeMode.LETTERBOX_REFLECT_EDGES,
+            },
         )
         trt_config = parse_trt_config(
             config_path=model_package_content["trt_config.json"]
@@ -100,36 +111,49 @@ class YOLOv7ForInstanceSegmentationTRT(
                 engine_host_code_allowed=engine_host_code_allowed,
             )
             execution_context = engine.create_execution_context()
-        all_output_tensors = get_output_tensor_names(engine=engine)
-        output_tensors = [all_output_tensors[0], all_output_tensors[4]]
+        inputs, outputs = get_engine_inputs_and_outputs(engine=engine)
+        if len(inputs) != 1:
+            raise CorruptedModelPackageError(
+                message=f"Implementation assume single model input, found: {len(inputs)}.",
+                help_url="https://todo",
+            )
+        if len(outputs) < 5:
+            raise CorruptedModelPackageError(
+                message=f"Implementation assume at least 5 model outputs, found: {len(outputs)}.",
+                help_url="https://todo",
+            )
+        output_tensors = [outputs[0], outputs[4]]
         return cls(
             engine=engine,
+            input_name=inputs[0],
+            output_tensors=output_tensors,
             class_names=class_names,
-            pre_processing_config=pre_processing_config,
+            inference_config=inference_config,
             trt_config=trt_config,
             device=device,
             cuda_context=cuda_context,
             execution_context=execution_context,
-            output_tensors=output_tensors,
         )
 
     def __init__(
         self,
         engine: trt.ICudaEngine,
+        input_name: str,
+        output_tensors: List[str],
         class_names: List[str],
-        pre_processing_config: PreProcessingConfig,
+        inference_config: InferenceConfig,
         trt_config: TRTConfig,
         device: torch.device,
         cuda_context: cuda.Context,
         execution_context: trt.IExecutionContext,
-        output_tensors: List[str],
     ):
         self._engine = engine
+        self._input_name = input_name
+        self._output_tensors = output_tensors
         self._class_names = class_names
-        self._pre_processing_config = pre_processing_config
+        self._inference_config = inference_config
         self._trt_config = trt_config
         self._device = device
-        self._output_tensors = output_tensors
         self._cuda_context = cuda_context
         self._execution_context = execution_context
         self._session_thread_lock = Lock()
@@ -146,8 +170,8 @@ class YOLOv7ForInstanceSegmentationTRT(
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         return pre_process_network_input(
             images=images,
-            pre_processing_config=self._pre_processing_config,
-            expected_network_color_format="rgb",
+            image_pre_processing=self._inference_config.image_pre_processing,
+            network_input=self._inference_config.network_input,
             target_device=self._device,
             input_color_format=input_color_format,
         )
@@ -163,7 +187,7 @@ class YOLOv7ForInstanceSegmentationTRT(
                     engine=self._engine,
                     context=self._execution_context,
                     device=self._device,
-                    input_name="images",
+                    input_name=self._input_name,
                     outputs=self._output_tensors,
                 )
                 return instances, protos
@@ -210,7 +234,9 @@ class YOLOv7ForInstanceSegmentationTRT(
                 scale_height=image_meta.scale_height,
                 scale_width=image_meta.scale_width,
                 original_size=image_meta.original_size,
+                size_after_pre_processing=image_meta.size_after_pre_processing,
                 inference_size=image_meta.inference_size,
+                static_crop_offset=image_meta.static_crop_offset,
             )
             final_results.append(
                 InstanceDetections(

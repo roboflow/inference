@@ -1,6 +1,5 @@
 import numpy as np
 import pytest
-
 from inference_exp.models.paligemma.paligemma_hf import PaliGemmaHF
 
 

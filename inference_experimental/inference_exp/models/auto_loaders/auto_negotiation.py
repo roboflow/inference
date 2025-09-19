@@ -6,6 +6,7 @@ from typing import List, Optional, Set, Tuple, Union
 import torch
 from inference_exp.errors import (
     AmbiguousModelPackageResolutionError,
+    AssumptionError,
     InvalidRequestedBatchSizeError,
     ModelPackageNegotiationError,
     NoModelPackagesAvailableError,
@@ -13,6 +14,13 @@ from inference_exp.errors import (
     UnknownQuantizationError,
 )
 from inference_exp.logger import verbose_info
+from inference_exp.models.auto_loaders.constants import (
+    NMS_CLASS_AGNOSTIC_KEY,
+    NMS_CONFIDENCE_THRESHOLD_KEY,
+    NMS_FUSED_FEATURE,
+    NMS_IOU_THRESHOLD_KEY,
+    NMS_MAX_DETECTIONS_KEY,
+)
 from inference_exp.models.auto_loaders.entities import ModelArchitecture, TaskType
 from inference_exp.models.auto_loaders.models_registry import (
     model_implementation_exists,
@@ -58,6 +66,7 @@ def negotiate_model_packages(
     onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
     allow_untrusted_packages: bool = False,
     trt_engine_host_code_allowed: bool = True,
+    nms_fusion_preferences: Optional[Union[bool, dict]] = None,
     verbose: bool = False,
 ) -> List[ModelPackageMetadata]:
     verbose_info(
@@ -134,6 +143,14 @@ def negotiate_model_packages(
         )
     )
     discarded_packages.extend(discarded_by_env_matching)
+    model_packages, discarded_by_model_features = (
+        filter_model_packages_based_on_model_features(
+            model_packages=model_packages,
+            nms_fusion_preferences=nms_fusion_preferences,
+            model_architecture=model_architecture,
+            task_type=task_type,
+        )
+    )
     if not model_packages:
         rejections_summary = summarise_discarded_packages(
             discarded_packages=discarded_packages
@@ -146,7 +163,9 @@ def negotiate_model_packages(
             help_url="https://todo",
         )
     model_packages = rank_model_packages(
-        model_packages=model_packages, selected_device=device
+        model_packages=model_packages,
+        selected_device=device,
+        nms_fusion_preferences=nms_fusion_preferences,
     )
     verbose_info("Eligible packages ranked:", verbose_requested=verbose)
     print_model_packages(model_packages=model_packages, verbose=verbose)
@@ -191,6 +210,7 @@ def determine_default_allowed_quantization(
     return [
         Quantization.UNKNOWN,
         Quantization.FP32,
+        Quantization.FP16,
         Quantization.BF16,
     ]
 
@@ -219,18 +239,22 @@ def remove_packages_not_matching_implementation(
             model_architecture=model_architecture,
             task_type=task_type,
             backend=model_package.backend,
+            model_features=model_package.model_features,
         ):
             verbose_info(
                 message=f"Model package with id `{model_package.package_id}` is filtered out as `inference-exp` "
                 f"does not provide implementation for the model architecture {model_architecture} with "
-                f"task type: {task_type} and backend {model_package.backend}.",
+                f"task type: {task_type}, backend {model_package.backend} and requested model "
+                f"features {model_package.model_features}.",
                 verbose_requested=verbose,
             )
             discarded.append(
                 DiscardedPackage(
                     package_id=model_package.package_id,
                     reason=f"`inference-exp` does not provide implementation for the model {model_architecture} "
-                    f"({task_type}) with backend {model_package.backend.value}",
+                    f"({task_type}) with backend {model_package.backend.value} and "
+                    f"requested model features {model_package.model_features}. If new versions of package available, "
+                    f"consider the upgrade - we may already have this package supported.",
                 )
             )
             continue
@@ -468,6 +492,149 @@ def filter_model_packages_matching_runtime_environment(
             continue
         results.append(model_package)
     return results, discarded_packages
+
+
+def filter_model_packages_based_on_model_features(
+    model_packages: List[ModelPackageMetadata],
+    nms_fusion_preferences: Optional[Union[bool, dict]],
+    model_architecture: ModelArchitecture,
+    task_type: Optional[TaskType],
+) -> Tuple[List[ModelPackageMetadata], List[DiscardedPackage]]:
+    results, discarded_packages = [], []
+    for model_package in model_packages:
+        if not model_package.model_features:
+            results.append(model_package)
+            continue
+        eliminated_by_nms_fusion_preferences, reason = (
+            should_model_package_be_filtered_out_based_on_nms_fusion_preferences(
+                model_package=model_package,
+                nms_fusion_preferences=nms_fusion_preferences,
+                model_architecture=model_architecture,
+                task_type=task_type,
+            )
+        )
+        if eliminated_by_nms_fusion_preferences:
+            if reason is None:
+                raise AssumptionError(
+                    message="Detected bug in `inference` - "
+                    "`should_model_package_be_filtered_out_based_on_nms_fusion_preferencess()` returned malformed "
+                    "result. Please raise the issue: https://github.com/roboflow/inference/issues",
+                    help_url="https://todo",
+                )
+            discarded_packages.append(
+                DiscardedPackage(package_id=model_package.package_id, reason=reason)
+            )
+            continue
+        results.append(model_package)
+    return results, discarded_packages
+
+
+def should_model_package_be_filtered_out_based_on_nms_fusion_preferences(
+    model_package: ModelPackageMetadata,
+    nms_fusion_preferences: Optional[Union[bool, dict]],
+    model_architecture: ModelArchitecture,
+    task_type: Optional[TaskType],
+) -> Tuple[bool, Optional[str]]:
+    nms_fused_config = model_package.model_features.get(NMS_FUSED_FEATURE)
+    if nms_fused_config is None:
+        return False, None
+    if nms_fusion_preferences is None or nms_fusion_preferences is False:
+        return (
+            True,
+            "Package specifies NMS fusion, but auto-loading used with `nms_fusion_preferences`=None rejecting such packages.",
+        )
+    if nms_fusion_preferences is True:
+        nms_fusion_preferences = get_default_nms_settings(
+            model_architecture=model_architecture,
+            task_type=task_type,
+        )
+    try:
+        actual_max_detections = nms_fused_config[NMS_MAX_DETECTIONS_KEY]
+        actual_confidence_threshold = nms_fused_config[NMS_CONFIDENCE_THRESHOLD_KEY]
+        actual_iou_threshold = nms_fused_config[NMS_IOU_THRESHOLD_KEY]
+        actual_class_agnostic = nms_fused_config[NMS_CLASS_AGNOSTIC_KEY]
+    except KeyError as error:
+        return (
+            True,
+            f"Package specifies malformed `{NMS_FUSED_FEATURE}` property in model features - missing key: {error}",
+        )
+    if NMS_MAX_DETECTIONS_KEY in nms_fusion_preferences:
+        requested_max_detections = nms_fusion_preferences[NMS_MAX_DETECTIONS_KEY]
+        if isinstance(requested_max_detections, (list, tuple)):
+            min_detections, max_detections = requested_max_detections
+        else:
+            min_detections, max_detections = (
+                requested_max_detections,
+                requested_max_detections,
+            )
+        min_detections, max_detections = min(min_detections, max_detections), max(
+            min_detections, max_detections
+        )
+        if not min_detections <= actual_max_detections <= max_detections:
+            return (
+                True,
+                f"Package specifies NMS fusion with `{NMS_MAX_DETECTIONS_KEY}` not matching the preference passed to "
+                f"auto-loading.",
+            )
+    if NMS_CONFIDENCE_THRESHOLD_KEY in nms_fusion_preferences:
+        requested_confidence = nms_fusion_preferences[NMS_CONFIDENCE_THRESHOLD_KEY]
+        if isinstance(requested_confidence, (list, tuple)):
+            min_confidence, max_confidence = requested_confidence
+        else:
+            min_confidence, max_confidence = (
+                requested_confidence,
+                requested_confidence,
+            )
+        min_confidence, max_confidence = min(min_confidence, max_confidence), max(
+            min_confidence, max_confidence
+        )
+        if not min_confidence <= actual_confidence_threshold <= max_confidence:
+            return (
+                True,
+                f"Package specifies NMS fusion with `{NMS_CONFIDENCE_THRESHOLD_KEY}` not matching the preference passed to "
+                f"auto-loading.",
+            )
+
+    if NMS_IOU_THRESHOLD_KEY in nms_fusion_preferences:
+        requested_iou_threshold = nms_fusion_preferences[NMS_IOU_THRESHOLD_KEY]
+        if isinstance(requested_iou_threshold, (list, tuple)):
+            min_iou_threshold, max_iou_threshold = requested_iou_threshold
+        else:
+            min_iou_threshold, max_iou_threshold = (
+                requested_iou_threshold,
+                requested_iou_threshold,
+            )
+        min_iou_threshold, max_iou_threshold = min(
+            min_iou_threshold, max_iou_threshold
+        ), max(min_iou_threshold, max_iou_threshold)
+        if not min_iou_threshold <= actual_iou_threshold <= max_iou_threshold:
+            return (
+                True,
+                f"Package specifies NMS fusion with `{NMS_IOU_THRESHOLD_KEY}` not matching the preference passed to "
+                f"auto-loading.",
+            )
+    if NMS_CLASS_AGNOSTIC_KEY in nms_fusion_preferences:
+        if actual_class_agnostic != nms_fusion_preferences[NMS_CLASS_AGNOSTIC_KEY]:
+            return (
+                True,
+                f"Package specifies NMS fusion with `{NMS_CLASS_AGNOSTIC_KEY}` not matching the preference passed to "
+                f"auto-loading.",
+            )
+    return False, None
+
+
+def get_default_nms_settings(
+    model_architecture: ModelArchitecture,
+    task_type: Optional[TaskType],
+) -> dict:
+    # TODO - over time it may change - but please keep it specific, without ranges (for the sake of simplicity
+    #   of ranking)
+    return {
+        NMS_MAX_DETECTIONS_KEY: 300,
+        NMS_CONFIDENCE_THRESHOLD_KEY: 0.25,
+        NMS_IOU_THRESHOLD_KEY: 0.7,
+        NMS_CLASS_AGNOSTIC_KEY: False,
+    }
 
 
 def model_package_matches_runtime_environment(
@@ -900,6 +1067,120 @@ def verify_trt_package_compatibility_with_cuda_device(
     return any(dev == compilation_device for dev in all_available_cuda_devices)
 
 
+def torch_script_package_matches_runtime_environment(
+    model_package: ModelPackageMetadata,
+    runtime_x_ray: RuntimeXRayResult,
+    device: Optional[torch.device] = None,
+    onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
+    trt_engine_host_code_allowed: bool = True,
+    verbose: bool = False,
+) -> Tuple[bool, Optional[str]]:
+    if not runtime_x_ray.torch_available:
+        verbose_info(
+            message=f"Mode package with id '{model_package.package_id}' filtered out as torch not detected",
+            verbose_requested=verbose,
+        )
+        return (
+            False,
+            "Torch backend not installed - consider installing relevant torch extras: "
+            "`torch-cpu`, `torch-cu118`, `torch-cu124`, `torch-cu126`, `torch-cu128` or `torch-jp6-cu126` \
+            depending on hardware you run `inference-exp`",
+        )
+    if model_package.torch_script_package_details is None:
+        verbose_info(
+            message=f"Mode package with id '{model_package.package_id}' filtered out as TorchScript package details "
+            f"not provided by backend.",
+            verbose_requested=verbose,
+        )
+        return (
+            False,
+            "Model package metadata delivered by weights provider lack required TorchScript package details",
+        )
+    if device is None:
+        verbose_info(
+            message=f"Mode package with id '{model_package.package_id}' filtered out as auto-negotiation does not "
+            f"specify `device` parameter which makes it impossible to match with compatible devices registered "
+            f"for the package.",
+            verbose_requested=verbose,
+        )
+        return (
+            False,
+            "Auto-negotiation run with `device=None` which makes it impossible to match the request with TorchScript "
+            "model package. Specify the device.",
+        )
+    supported_device_types = (
+        model_package.torch_script_package_details.supported_device_types
+    )
+    if device.type not in supported_device_types:
+        verbose_info(
+            message=f"Mode package with id '{model_package.package_id}' filtered out as requested device type "
+            f"is {device.type}, whereas model package is compatible with the following devices: "
+            f"{supported_device_types}.",
+            verbose_requested=verbose,
+        )
+        return (
+            False,
+            f"Model package is supported with the following device types: {supported_device_types}, but "
+            f"auto-negotiation requested model for device with type: {device.type}",
+        )
+    if not runtime_x_ray.torch_version:
+        verbose_info(
+            message=f"Model package with id '{model_package.package_id}' filtered out as it was not possible "
+            f"to extract torch version from environment. This may be a problem worth reporting at "
+            f"https://github.com/roboflow/inference/issues/",
+            verbose_requested=verbose,
+        )
+        return (
+            False,
+            f"Model package is not supported when torch version cannot be determined. This may be a bug - "
+            f"please report: https://github.com/roboflow/inference/issues/",
+        )
+    requested_torch_version = model_package.torch_script_package_details.torch_version
+    if runtime_x_ray.torch_version < requested_torch_version:
+        verbose_info(
+            message=f"Model package with id '{model_package.package_id}' filtered out as it request torch in version "
+            f"at least {requested_torch_version}, but the version {runtime_x_ray.torch_version} is installed. "
+            f"Consider the upgrade of torch.",
+            verbose_requested=verbose,
+        )
+        return (
+            False,
+            f"Model package requires torch in version at least {requested_torch_version}, but your environment "
+            f"has the following version installed: {runtime_x_ray.torch_version} - consider the upgrade of torch.",
+        )
+    requested_torch_vision_version = (
+        model_package.torch_script_package_details.torch_vision_version
+    )
+    if requested_torch_vision_version is None:
+        return True, None
+    if runtime_x_ray.torchvision_version is None:
+        verbose_info(
+            message=f"Model package with id '{model_package.package_id}' filtered out as it was not possible "
+            f"to extract torchvision version from environment. This may be a problem worth reporting at "
+            f"https://github.com/roboflow/inference/issues/",
+            verbose_requested=verbose,
+        )
+        return (
+            False,
+            f"Model package is not supported when torchvision version cannot be determined. This may be a bug - "
+            f"please report: https://github.com/roboflow/inference/issues/",
+        )
+    if runtime_x_ray.torchvision_version < requested_torch_vision_version:
+        verbose_info(
+            message=f"Model package with id '{model_package.package_id}' filtered out as it request torchvision in  "
+            f"version at least {requested_torch_vision_version}, but the version "
+            f"{runtime_x_ray.torchvision_version} is installed. Consider the upgrade of torch.",
+            verbose_requested=verbose,
+        )
+        return (
+            False,
+            f"Model package requires torchvision in version at least {requested_torch_vision_version}, but your "
+            f"environment has the following version installed: {runtime_x_ray.torchvision_version} - consider "
+            f"the upgrade of torchvision.",
+        )
+    return True, None
+
+
 def verify_versions_up_to_major_and_minor(x: Version, y: Version) -> bool:
     x_simplified = Version(f"{x.major}.{x.minor}")
     y_simplified = Version(f"{y.major}.{y.minor}")
@@ -912,6 +1193,7 @@ MODEL_TO_RUNTIME_COMPATIBILITY_MATCHERS = {
     BackendType.ONNX: onnx_package_matches_runtime_environment,
     BackendType.TORCH: torch_package_matches_runtime_environment,
     BackendType.ULTRALYTICS: ultralytics_package_matches_runtime_environment,
+    BackendType.TORCH_SCRIPT: torch_script_package_matches_runtime_environment,
 }
 
 
@@ -925,7 +1207,7 @@ def range_within_other(
 
 
 def parse_batch_size(
-    requested_batch_size: Union[int, Tuple[int, int]]
+    requested_batch_size: Union[int, Tuple[int, int]],
 ) -> Tuple[int, int]:
     if isinstance(requested_batch_size, tuple):
         if len(requested_batch_size) != 2:
@@ -993,7 +1275,7 @@ def parse_backend_type(value: str) -> BackendType:
 
 
 def parse_requested_quantization(
-    value: Union[str, Quantization, List[Union[str, Quantization]]]
+    value: Union[str, Quantization, List[Union[str, Quantization]]],
 ) -> Set[Quantization]:
     if not isinstance(value, list):
         value = [value]

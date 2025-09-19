@@ -15,6 +15,7 @@ from inference_exp.errors import (
 from inference_exp.models.auto_loaders import auto_negotiation
 from inference_exp.models.auto_loaders.auto_negotiation import (
     determine_default_allowed_quantization,
+    filter_model_packages_based_on_model_features,
     filter_model_packages_by_requested_batch_size,
     filter_model_packages_by_requested_quantization,
     hf_transformers_package_matches_runtime_environment,
@@ -30,6 +31,7 @@ from inference_exp.models.auto_loaders.auto_negotiation import (
     remove_untrusted_packages,
     select_model_package_by_id,
     torch_package_matches_runtime_environment,
+    torch_script_package_matches_runtime_environment,
     trt_package_matches_runtime_environment,
     ultralytics_package_matches_runtime_environment,
     verify_trt_package_compatibility_with_cuda_device,
@@ -38,11 +40,13 @@ from inference_exp.models.auto_loaders.auto_negotiation import (
 from inference_exp.runtime_introspection.core import RuntimeXRayResult
 from inference_exp.weights_providers.entities import (
     BackendType,
+    FileDownloadSpecs,
     JetsonEnvironmentRequirements,
     ModelPackageMetadata,
     ONNXPackageDetails,
     Quantization,
     ServerEnvironmentRequirements,
+    TorchScriptPackageDetails,
     TRTPackageDetails,
 )
 from packaging.version import Version
@@ -427,6 +431,8 @@ def test_trt_package_matches_runtime_environment_when_trt_not_detected_in_env() 
         l4t_version=Version("36.4.0"),
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -478,6 +484,8 @@ def test_trt_package_matches_runtime_environment_when_trt_python_package_not_det
         l4t_version=Version("36.4.0"),
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -521,6 +529,8 @@ def test_trt_package_matches_runtime_environment_when_environment_requirements_n
         l4t_version=Version("36.4.0"),
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -573,6 +583,8 @@ def test_trt_package_matches_runtime_for_jetson_when_trt_version_not_declared_in
         l4t_version=Version("36.4.0"),
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -623,6 +635,8 @@ def test_trt_package_matches_runtime_for_jetson_when_cpu_device_declared() -> No
         l4t_version=Version("36.4.0"),
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -676,6 +690,8 @@ def test_trt_package_matches_runtime_for_jetson_when_device_not_declared_but_doe
         l4t_version=Version("36.4.0"),
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -729,6 +745,8 @@ def test_trt_package_matches_runtime_for_jetson_when_device_not_declared_but_doe
         l4t_version=Version("36.4.0"),
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -778,6 +796,8 @@ def test_trt_package_matches_runtime_for_jetson_when_trt_versions_missmatch() ->
         l4t_version=Version("36.4.0"),
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -828,6 +848,8 @@ def test_trt_package_matches_runtime_for_jetson_when_l4t_versions_missmatch() ->
         l4t_version=Version("36.0.0"),
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -880,6 +902,8 @@ def test_trt_package_matches_runtime_for_jetson_when_trt_versions_missmatch_desp
         l4t_version=Version("36.4.3"),
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -933,6 +957,8 @@ def test_trt_package_matches_runtime_for_jetson_when_trt_versions_missmatch_but_
         l4t_version=Version("36.4.3"),
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -987,6 +1013,8 @@ def test_trt_package_matches_runtime_for_jetson_when_trt_versions_missmatch_forw
         l4t_version=Version("36.4.3"),
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1039,6 +1067,8 @@ def test_trt_package_matches_runtime_for_jetson_when_trt_versions_missmatch_with
         l4t_version=Version("36.4.3"),
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1085,6 +1115,8 @@ def test_trt_package_matches_runtime_when_unknown_environment_requirements_decla
         l4t_version=Version("36.4.3"),
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1131,6 +1163,8 @@ def test_trt_package_matches_runtime_for_server_when_trt_version_not_declared() 
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1183,6 +1217,8 @@ def test_trt_package_matches_runtime_environment_for_server_when_package_exclude
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1235,6 +1271,8 @@ def test_trt_package_matches_runtime_environment_for_server_when_package_exclude
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1288,6 +1326,8 @@ def test_trt_package_matches_runtime_environment_for_server_when_selected_device
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1341,6 +1381,8 @@ def test_trt_package_matches_runtime_environment_for_server_when_selected_device
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1394,6 +1436,8 @@ def test_trt_package_matches_runtime_environment_for_server_when_selected_device
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1447,6 +1491,8 @@ def test_trt_package_matches_runtime_environment_for_server_when_no_trt_forward_
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1500,6 +1546,8 @@ def test_trt_package_matches_runtime_environment_for_server_when_trt_forward_com
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1554,6 +1602,8 @@ def test_trt_package_matches_runtime_environment_for_server_when_trt_forward_com
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1609,6 +1659,8 @@ def test_trt_package_matches_runtime_environment_for_server_when_trt_forward_com
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1662,6 +1714,8 @@ def test_trt_package_matches_runtime_environment_for_server_when_trt_forward_com
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1706,6 +1760,8 @@ def test_ultralytics_package_matches_runtime_environment_when_ultralytics_not_av
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1748,6 +1804,8 @@ def test_ultralytics_package_matches_runtime_environment_when_ultralytics_availa
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1790,6 +1848,8 @@ def test_hf_transformers_package_matches_runtime_environment_when_ultralytics_no
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1832,6 +1892,8 @@ def test_hf_transformers_package_matches_runtime_environment_when_ultralytics_av
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1874,6 +1936,8 @@ def test_torch_package_matches_runtime_environment_when_ultralytics_not_availabl
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=False,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1914,6 +1978,8 @@ def test_torch_package_matches_runtime_environment_when_ultralytics_available() 
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1957,6 +2023,8 @@ def test_onnx_package_matches_runtime_environment_when_onnx_not_detected_in_envi
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=False,
+        torch_version=None,
+        torchvision_version=None,
         onnxruntime_version=None,
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -1998,6 +2066,8 @@ def test_onnx_package_matches_runtime_environment_when_no_available_onnx_ep() ->
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=False,
+        torch_version=None,
+        torchvision_version=None,
         onnxruntime_version=Version("1.15.0"),
         available_onnx_execution_providers=None,
         hf_transformers_available=False,
@@ -2038,6 +2108,8 @@ def test_onnx_package_matches_runtime_environment_when_no_onnx_package_details()
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=False,
+        torch_version=None,
+        torchvision_version=None,
         onnxruntime_version=Version("1.15.0"),
         available_onnx_execution_providers={"CPUExecutionProvider"},
         hf_transformers_available=False,
@@ -2080,6 +2152,8 @@ def test_onnx_package_matches_runtime_environment_when_no_matching_execution_pro
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=False,
+        torch_version=None,
+        torchvision_version=None,
         onnxruntime_version=Version("1.15.0"),
         available_onnx_execution_providers={"CPUExecutionProvider"},
         hf_transformers_available=False,
@@ -2120,6 +2194,8 @@ def test_onnx_package_matches_runtime_environment_when_no_matching_execution_pro
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=False,
+        torch_version=None,
+        torchvision_version=None,
         onnxruntime_version=Version("1.15.0"),
         available_onnx_execution_providers={"CPUExecutionProvider"},
         hf_transformers_available=False,
@@ -2163,6 +2239,8 @@ def test_onnx_package_matches_runtime_environment_when_no_matching_execution_pro
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=False,
+        torch_version=None,
+        torchvision_version=None,
         onnxruntime_version=Version("1.15.0"),
         available_onnx_execution_providers={
             "CPUExecutionProvider",
@@ -2208,6 +2286,8 @@ def test_onnx_package_matches_runtime_environment_when_unknown_onnx_version_spot
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=False,
+        torch_version=None,
+        torchvision_version=None,
         onnxruntime_version=Version("1.10.0"),
         available_onnx_execution_providers={
             "CPUExecutionProvider",
@@ -2253,6 +2333,8 @@ def test_onnx_package_matches_runtime_environment_when_unknown_onnx_version_spot
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=False,
+        torch_version=None,
+        torchvision_version=None,
         onnxruntime_version=Version("1.10.0"),
         available_onnx_execution_providers={
             "CPUExecutionProvider",
@@ -2296,6 +2378,8 @@ def test_onnx_package_matches_runtime_environment_when_opset_matches() -> None:
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=False,
+        torch_version=None,
+        torchvision_version=None,
         onnxruntime_version=Version("1.22.0"),
         available_onnx_execution_providers={
             "CPUExecutionProvider",
@@ -2339,6 +2423,8 @@ def test_onnx_package_matches_runtime_environment_when_opset_to_high() -> None:
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=False,
+        torch_version=None,
+        torchvision_version=None,
         onnxruntime_version=Version("1.22.0"),
         available_onnx_execution_providers={
             "CPUExecutionProvider",
@@ -2384,6 +2470,8 @@ def test_model_package_matches_runtime_environment_when_backend_is_not_registere
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=False,
+        torch_version=None,
+        torchvision_version=None,
         onnxruntime_version=Version("1.22.0"),
         available_onnx_execution_providers={
             "CPUExecutionProvider",
@@ -2424,6 +2512,8 @@ def test_model_package_matches_runtime_environment_when_package_should_be_allowe
         l4t_version=None,
         os_version="ubuntu-20.04",
         torch_available=False,
+        torch_version=None,
+        torchvision_version=None,
         onnxruntime_version=Version("1.22.0"),
         available_onnx_execution_providers={
             "CPUExecutionProvider",
@@ -2916,6 +3006,8 @@ def test_determine_default_allowed_quantization_for_cuda_device_detected_in_runt
         l4t_version=Version("36.4.0"),
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -2957,6 +3049,8 @@ def test_determine_default_allowed_quantization_for_no_cuda_device_detected_in_r
         l4t_version=Version("36.4.0"),
         os_version="ubuntu-20.04",
         torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
         onnxruntime_version=Version("1.21.0"),
         available_onnx_execution_providers={
             "CUDAExecutionProvider",
@@ -2978,6 +3072,7 @@ def test_determine_default_allowed_quantization_for_no_cuda_device_detected_in_r
     assert set(results) == {
         Quantization.UNKNOWN,
         Quantization.FP32,
+        Quantization.FP16,
         Quantization.BF16,
     }
 
@@ -3083,3 +3178,1459 @@ def test_remove_packages_not_matching_implementation_when_all_entries_to_be_remo
     assert len(result) == 0
     assert len(discarded) == 1
     assert discarded[0].package_id == "my-package-id-2"
+
+
+def test_torch_script_package_matches_runtime_environment_when_no_torch_available() -> (
+    None
+):
+    # given
+    runtime_xray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["nvidia-l4"],
+        gpu_devices_cc=[Version("8.7")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=None,
+        jetson_type=None,
+        l4t_version=Version("36.4.0"),
+        os_version="ubuntu-20.04",
+        torch_available=False,
+        torch_version=None,
+        torchvision_version=None,
+        onnxruntime_version=Version("1.21.0"),
+        available_onnx_execution_providers={
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
+        },
+        hf_transformers_available=True,
+        ultralytics_available=True,
+        trt_python_package_available=False,
+    )
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    result = torch_script_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_xray,
+        device=torch.device("cpu"),
+    )
+
+    # then
+    assert result[0] is False
+    assert result[1] is not None
+
+
+def test_torch_script_package_matches_runtime_environment_when_no_torch_script_package_details_available() -> (
+    None
+):
+    # given
+    runtime_xray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["nvidia-l4"],
+        gpu_devices_cc=[Version("8.7")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=None,
+        jetson_type=None,
+        l4t_version=Version("36.4.0"),
+        os_version="ubuntu-20.04",
+        torch_available=True,
+        torch_version=Version("2.6.0"),
+        torchvision_version=Version("0.22.0"),
+        onnxruntime_version=Version("1.21.0"),
+        available_onnx_execution_providers={
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
+        },
+        hf_transformers_available=True,
+        ultralytics_available=True,
+        trt_python_package_available=False,
+    )
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        torch_script_package_details=None,
+    )
+
+    # when
+    result = torch_script_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_xray,
+        device=torch.device("cpu"),
+    )
+
+    # then
+    assert result[0] is False
+    assert result[1] is not None
+
+
+def test_torch_script_package_matches_runtime_environment_when_device_not_available() -> (
+    None
+):
+    # given
+    runtime_xray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["nvidia-l4"],
+        gpu_devices_cc=[Version("8.7")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=None,
+        jetson_type=None,
+        l4t_version=Version("36.4.0"),
+        os_version="ubuntu-20.04",
+        torch_available=True,
+        torch_version=Version("2.6.0"),
+        torchvision_version=Version("0.22.0"),
+        onnxruntime_version=Version("1.21.0"),
+        available_onnx_execution_providers={
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
+        },
+        hf_transformers_available=True,
+        ultralytics_available=True,
+        trt_python_package_available=False,
+    )
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    result = torch_script_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_xray,
+        device=None,
+    )
+
+    # then
+    assert result[0] is False
+    assert result[1] is not None
+
+
+def test_torch_script_package_matches_runtime_environment_when_device_not_supported() -> (
+    None
+):
+    # given
+    runtime_xray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["nvidia-l4"],
+        gpu_devices_cc=[Version("8.7")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=None,
+        jetson_type=None,
+        l4t_version=Version("36.4.0"),
+        os_version="ubuntu-20.04",
+        torch_available=True,
+        torch_version=Version("2.6.0"),
+        torchvision_version=Version("0.22.0"),
+        onnxruntime_version=Version("1.21.0"),
+        available_onnx_execution_providers={
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
+        },
+        hf_transformers_available=True,
+        ultralytics_available=True,
+        trt_python_package_available=False,
+    )
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    result = torch_script_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_xray,
+        device=torch.device("cpu"),
+    )
+
+    # then
+    assert result[0] is False
+    assert result[1] is not None
+
+
+def test_torch_script_package_matches_runtime_environment_when_torch_version_not_available_in_env() -> (
+    None
+):
+    # given
+    runtime_xray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["nvidia-l4"],
+        gpu_devices_cc=[Version("8.7")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=None,
+        jetson_type=None,
+        l4t_version=Version("36.4.0"),
+        os_version="ubuntu-20.04",
+        torch_available=True,
+        torch_version=None,
+        torchvision_version=Version("0.22.0"),
+        onnxruntime_version=Version("1.21.0"),
+        available_onnx_execution_providers={
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
+        },
+        hf_transformers_available=True,
+        ultralytics_available=True,
+        trt_python_package_available=False,
+    )
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    result = torch_script_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_xray,
+        device=torch.device("cpu"),
+    )
+
+    # then
+    assert result[0] is False
+    assert result[1] is not None
+
+
+def test_torch_script_package_matches_runtime_environment_when_torch_version_does_not_match() -> (
+    None
+):
+    # given
+    runtime_xray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["nvidia-l4"],
+        gpu_devices_cc=[Version("8.7")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=None,
+        jetson_type=None,
+        l4t_version=Version("36.4.0"),
+        os_version="ubuntu-20.04",
+        torch_available=True,
+        torch_version=Version("2.5.0"),
+        torchvision_version=Version("0.22.0"),
+        onnxruntime_version=Version("1.21.0"),
+        available_onnx_execution_providers={
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
+        },
+        hf_transformers_available=True,
+        ultralytics_available=True,
+        trt_python_package_available=False,
+    )
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    result = torch_script_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_xray,
+        device=torch.device("cpu"),
+    )
+
+    # then
+    assert result[0] is False
+    assert result[1] is not None
+
+
+def test_torch_script_package_matches_runtime_environment_when_torch_version_equal() -> (
+    None
+):
+    # given
+    runtime_xray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["nvidia-l4"],
+        gpu_devices_cc=[Version("8.7")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=None,
+        jetson_type=None,
+        l4t_version=Version("36.4.0"),
+        os_version="ubuntu-20.04",
+        torch_available=True,
+        torch_version=Version("2.6.0"),
+        torchvision_version=Version("0.22.0"),
+        onnxruntime_version=Version("1.21.0"),
+        available_onnx_execution_providers={
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
+        },
+        hf_transformers_available=True,
+        ultralytics_available=True,
+        trt_python_package_available=False,
+    )
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=None,
+        ),
+    )
+
+    # when
+    result = torch_script_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_xray,
+        device=torch.device("cpu"),
+    )
+
+    # then
+    assert result[0] is True
+    assert result[1] is None
+
+
+def test_torch_script_package_matches_runtime_environment_when_torch_version_higher() -> (
+    None
+):
+    # given
+    runtime_xray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["nvidia-l4"],
+        gpu_devices_cc=[Version("8.7")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=None,
+        jetson_type=None,
+        l4t_version=Version("36.4.0"),
+        os_version="ubuntu-20.04",
+        torch_available=True,
+        torch_version=Version("2.6.1"),
+        torchvision_version=Version("0.22.0"),
+        onnxruntime_version=Version("1.21.0"),
+        available_onnx_execution_providers={
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
+        },
+        hf_transformers_available=True,
+        ultralytics_available=True,
+        trt_python_package_available=False,
+    )
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=None,
+        ),
+    )
+
+    # when
+    result = torch_script_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_xray,
+        device=torch.device("cpu"),
+    )
+
+    # then
+    assert result[0] is True
+    assert result[1] is None
+
+
+def test_torch_script_package_matches_runtime_environment_when_torchvision_version_required_but_not_found() -> (
+    None
+):
+    # given
+    runtime_xray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["nvidia-l4"],
+        gpu_devices_cc=[Version("8.7")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=None,
+        jetson_type=None,
+        l4t_version=Version("36.4.0"),
+        os_version="ubuntu-20.04",
+        torch_available=True,
+        torch_version=Version("2.6.0"),
+        torchvision_version=None,
+        onnxruntime_version=Version("1.21.0"),
+        available_onnx_execution_providers={
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
+        },
+        hf_transformers_available=True,
+        ultralytics_available=True,
+        trt_python_package_available=False,
+    )
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    result = torch_script_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_xray,
+        device=torch.device("cpu"),
+    )
+
+    # then
+    assert result[0] is False
+    assert result[1] is not None
+
+
+def test_torch_script_package_matches_runtime_environment_when_torchvision_version_required_and_found_too_low() -> (
+    None
+):
+    # given
+    runtime_xray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["nvidia-l4"],
+        gpu_devices_cc=[Version("8.7")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=None,
+        jetson_type=None,
+        l4t_version=Version("36.4.0"),
+        os_version="ubuntu-20.04",
+        torch_available=True,
+        torch_version=Version("2.6.0"),
+        torchvision_version=Version("0.21.0"),
+        onnxruntime_version=Version("1.21.0"),
+        available_onnx_execution_providers={
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
+        },
+        hf_transformers_available=True,
+        ultralytics_available=True,
+        trt_python_package_available=False,
+    )
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    result = torch_script_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_xray,
+        device=torch.device("cpu"),
+    )
+
+    # then
+    assert result[0] is False
+    assert result[1] is not None
+
+
+def test_torch_script_package_matches_runtime_environment_when_torchvision_version_required_and_matches_exactly() -> (
+    None
+):
+    # given
+    runtime_xray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["nvidia-l4"],
+        gpu_devices_cc=[Version("8.7")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=None,
+        jetson_type=None,
+        l4t_version=Version("36.4.0"),
+        os_version="ubuntu-20.04",
+        torch_available=True,
+        torch_version=Version("2.6.0"),
+        torchvision_version=Version("0.22.0"),
+        onnxruntime_version=Version("1.21.0"),
+        available_onnx_execution_providers={
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
+        },
+        hf_transformers_available=True,
+        ultralytics_available=True,
+        trt_python_package_available=False,
+    )
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    result = torch_script_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_xray,
+        device=torch.device("cpu"),
+    )
+
+    # then
+    assert result[0] is True
+    assert result[1] is None
+
+
+def test_torch_script_package_matches_runtime_environment_when_torchvision_version_required_and_matches_higher() -> (
+    None
+):
+    # given
+    runtime_xray = RuntimeXRayResult(
+        gpu_available=True,
+        gpu_devices=["nvidia-l4"],
+        gpu_devices_cc=[Version("8.7")],
+        driver_version=Version("510.0.4"),
+        cuda_version=Version("12.6"),
+        trt_version=None,
+        jetson_type=None,
+        l4t_version=Version("36.4.0"),
+        os_version="ubuntu-20.04",
+        torch_available=True,
+        torch_version=Version("2.6.0"),
+        torchvision_version=Version("0.23.0"),
+        onnxruntime_version=Version("1.21.0"),
+        available_onnx_execution_providers={
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
+        },
+        hf_transformers_available=True,
+        ultralytics_available=True,
+        trt_python_package_available=False,
+    )
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    result = torch_script_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_xray,
+        device=torch.device("cpu"),
+    )
+
+    # then
+    assert result[0] is True
+    assert result[1] is None
+
+
+def test_filter_model_packages_based_on_model_features_when_package_should_not_be_eliminated_as_no_nms_fused_features_registered() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences=True,
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert remaining_packages == [model_package]
+    assert len(discarded_packages) == 0
+
+
+def test_filter_model_packages_based_on_model_features_when_package_should_be_eliminated_as_nms_fused_features_registered_but_no_preferences() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.3,
+                "iou_threshold": 0.7,
+                "class_agnostic": True,
+            }
+        },
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences=None,
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert len(remaining_packages) == 0
+    assert len(discarded_packages) == 1
+    assert discarded_packages[0].package_id == "my-package-id"
+
+
+def test_filter_model_packages_based_on_model_features_when_package_should_be_eliminated_as_nms_fused_features_registered_but_nms_not_preferred() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.3,
+                "iou_threshold": 0.7,
+                "class_agnostic": True,
+            }
+        },
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences=False,
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert len(remaining_packages) == 0
+    assert len(discarded_packages) == 1
+    assert discarded_packages[0].package_id == "my-package-id"
+
+
+def test_filter_model_packages_based_on_model_features_when_package_should_be_eliminated_as_malformed_nms_fused_features_registered() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={
+            "nms_fused": {
+                "invalid_key_max_detections": 300,
+                "confidence_threshold": 0.3,
+                "iou_threshold": 0.7,
+                "class_agnostic": True,
+            }
+        },
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences=True,
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert len(remaining_packages) == 0
+    assert len(discarded_packages) == 1
+    assert discarded_packages[0].package_id == "my-package-id"
+
+
+def test_filter_model_packages_based_on_model_features_when_package_should_not_be_eliminated_as_matches_default() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.25,
+                "iou_threshold": 0.7,
+                "class_agnostic": False,
+            }
+        },
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences=True,
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert remaining_packages == [model_package]
+    assert len(discarded_packages) == 0
+
+
+def test_filter_model_packages_based_on_model_features_when_package_should_be_eliminated_based_on_max_nms_detections_equal_comparison() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.25,
+                "iou_threshold": 0.7,
+                "class_agnostic": False,
+            }
+        },
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences={
+                "max_detections": 350,
+            },
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert len(remaining_packages) == 0
+    assert len(discarded_packages) == 1
+
+
+def test_filter_model_packages_based_on_model_features_when_package_should_be_eliminated_based_on_max_nms_detections_range_comparison() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.25,
+                "iou_threshold": 0.7,
+                "class_agnostic": False,
+            }
+        },
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences={
+                "max_detections": (350, 400),
+            },
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert len(remaining_packages) == 0
+    assert len(discarded_packages) == 1
+
+
+def test_filter_model_packages_based_on_model_features_when_package_should_be_accepted_based_on_max_nms_detections_range_comparison() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.25,
+                "iou_threshold": 0.7,
+                "class_agnostic": False,
+            }
+        },
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences={
+                "max_detections": (250, 400),
+            },
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert len(remaining_packages) == 1
+    assert len(discarded_packages) == 0
+
+
+def test_filter_model_packages_based_on_model_features_when_package_should_be_accepted_based_on_max_nms_detections_equal_comparison() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.25,
+                "iou_threshold": 0.7,
+                "class_agnostic": False,
+            }
+        },
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences={
+                "max_detections": 300,
+            },
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert len(remaining_packages) == 1
+    assert len(discarded_packages) == 0
+
+
+def test_filter_model_packages_based_on_model_features_when_package_should_be_eliminated_based_on_confidence_equal_comparison() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.25,
+                "iou_threshold": 0.7,
+                "class_agnostic": False,
+            }
+        },
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences={
+                "confidence_threshold": 0.3,
+            },
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert len(remaining_packages) == 0
+    assert len(discarded_packages) == 1
+
+
+def test_filter_model_packages_based_on_model_features_when_package_should_be_eliminated_based_on_confidence_range_comparison() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.25,
+                "iou_threshold": 0.7,
+                "class_agnostic": False,
+            }
+        },
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences={
+                "confidence_threshold": (0.3, 0.7),
+            },
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert len(remaining_packages) == 0
+    assert len(discarded_packages) == 1
+
+
+def test_filter_model_packages_based_on_model_features_when_package_should_be_accepted_based_on_confidence_range_comparison() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.25,
+                "iou_threshold": 0.7,
+                "class_agnostic": False,
+            }
+        },
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences={
+                "confidence_threshold": (0.2, 0.3),
+            },
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert len(remaining_packages) == 1
+    assert len(discarded_packages) == 0
+
+
+def test_filter_model_packages_based_on_model_features_when_package_should_be_accepted_based_on_confidence_equal_comparison() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.25,
+                "iou_threshold": 0.7,
+                "class_agnostic": False,
+            }
+        },
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences={
+                "confidence_threshold": 0.25,
+            },
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert len(remaining_packages) == 1
+    assert len(discarded_packages) == 0
+
+
+# xxx
+
+
+def test_filter_model_packages_based_on_model_features_when_package_should_be_eliminated_based_on_iou_equal_comparison() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.25,
+                "iou_threshold": 0.7,
+                "class_agnostic": False,
+            }
+        },
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences={
+                "iou_threshold": 0.3,
+            },
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert len(remaining_packages) == 0
+    assert len(discarded_packages) == 1
+
+
+def test_filter_model_packages_based_on_model_features_when_package_should_be_eliminated_based_on_iou_range_comparison() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.25,
+                "iou_threshold": 0.7,
+                "class_agnostic": False,
+            }
+        },
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences={
+                "iou_threshold": (0.3, 0.65),
+            },
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert len(remaining_packages) == 0
+    assert len(discarded_packages) == 1
+
+
+def test_filter_model_packages_based_on_model_features_when_package_should_be_accepted_based_on_iou_range_comparison() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.25,
+                "iou_threshold": 0.7,
+                "class_agnostic": False,
+            }
+        },
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences={
+                "iou_threshold": (0.2, 0.7),
+            },
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert len(remaining_packages) == 1
+    assert len(discarded_packages) == 0
+
+
+def test_filter_model_packages_based_on_model_features_when_package_should_be_accepted_based_on_iou_equal_comparison() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.25,
+                "iou_threshold": 0.7,
+                "class_agnostic": False,
+            }
+        },
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences={
+                "iou_threshold": 0.7,
+            },
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert len(remaining_packages) == 1
+    assert len(discarded_packages) == 0
+
+
+def test_filter_model_packages_based_on_model_features_when_package_should_be_eliminated_based_on_class_agnostic() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.25,
+                "iou_threshold": 0.7,
+                "class_agnostic": False,
+            }
+        },
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences={
+                "class_agnostic": True,
+            },
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert len(remaining_packages) == 0
+    assert len(discarded_packages) == 1
+
+
+def test_filter_model_packages_based_on_model_features_when_package_not_should_be_eliminated_based_on_class_agnostic() -> (
+    None
+):
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={
+            "nms_fused": {
+                "max_detections": 300,
+                "confidence_threshold": 0.25,
+                "iou_threshold": 0.7,
+                "class_agnostic": False,
+            }
+        },
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+    # when
+    remaining_packages, discarded_packages = (
+        filter_model_packages_based_on_model_features(
+            model_packages=[model_package],
+            nms_fusion_preferences={
+                "class_agnostic": False,
+            },
+            model_architecture="yolov8",
+            task_type="object-detection",
+        )
+    )
+
+    # then
+    assert len(remaining_packages) == 1
+    assert len(discarded_packages) == 0
