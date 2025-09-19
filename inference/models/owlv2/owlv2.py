@@ -887,7 +887,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
 
     def __init__(self, model_id, *args, **kwargs):
         super().__init__(model_id, *args, **kwargs)
-        self.get_model_artifacts()
+        self.get_model_artifacts(**kwargs)
 
     def get_infer_bucket_file_list(self):
         return []
