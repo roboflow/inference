@@ -25,8 +25,13 @@ SHORT_DESCRIPTION = (
     "Draw labels on an image at specific coordinates based on provided detections."
 )
 LONG_DESCRIPTION = """
-The `LabelVisualization` block draws labels on an image at specific coordinates
-based on provided detections using Supervision's `sv.LabelAnnotator`.
+The Label Visualization block draws the labels from a detections-based model (i.e. object detection, segmentation) on an image.
+
+The Label Visualization block only draws labels. You may want to use this block in combination with a Bounding Box Visualization (for object detection predictions) or a Polygon Visualization (for instance segmentation predictions).
+
+Here is an example of the block in use:
+
+![](https://docs.roboflow.com/~gitbook/image?url=https%3A%2F%2F662926385-files.gitbook.io%2F%7E%2Ffiles%2Fv0%2Fb%2Fgitbook-x-prod.appspot.com%2Fo%2Fspaces%252F-M6S9nPJhEX9FYH6clfW%252Fuploads%252FLFC41iegU996uWFu4CsU%252FScreenshot%25202025-05-23%2520at%252018.13.46.png%3Falt%3Dmedia%26token%3Df8549aaa-98fd-4c99-ab41-047476712f78&width=768&dpr=4&quality=100&sign=8e5f7af1&sv=2)
 """
 
 

@@ -111,6 +111,36 @@
   color: #EE0F0F;
 }
 
+/* .link-caret::after {
+  content: "";
+  width: 11px;
+  height: 11px;
+  margin-left: 4px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' viewBox='0 0 16 16'%3E%3Cpath fill-rule='evenodd' d='M8.636 3.5a.5.5 0 0 0-.5-.5H1.5A1.5 1.5 0 0 0 0 4.5v10A1.5 1.5 0 0 0 1.5 16h10a1.5 1.5 0 0 0 1.5-1.5V7.864a.5.5 0 0 0-1 0V14.5a.5.5 0 0 1-.5.5h-10a.5.5 0 0 1-.5-.5v-10a.5.5 0 0 1 .5-.5h6.636a.5.5 0 0 0 .5-.5z'/%3E%3Cpath fill-rule='evenodd' d='M16 .5a.5.5 0 0 0-.5-.5h-5a.5.5 0 0 0 0 1h3.793L6.146 9.146a.5.5 0 1 0 .708.708L15 1.707V5.5a.5.5 0 0 0 1 0v-5z'/%3E%3C/svg%3E");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+  display: inline-block;
+} */
+
+
+/* Download page styles */
+:root {
+  --download-border-radius: 0.5rem;
+  --download-padding: 0.875rem 1.5rem;
+  --download-gap: 0.625rem;
+  --download-font-size: 0.875rem;
+  --download-icon-size: 1.125rem;
+  --download-shadow: 0 0.25rem 0.75rem var(--md-primary-fg-color--transparent);
+}
+
+.download-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1rem;
+  margin: 1rem 0;
+  max-width: 700px;
+}
 /* Download page styles */
 :root {
   --download-border-radius: 0.5rem;
@@ -144,11 +174,49 @@
   font-size: var(--download-font-size);
 }
 
+.install-link a {
+  margin: 0;
+  font-size: var(--download-font-size);
+}
+
 .md-typeset .install-link a {
   color: var(--md-default-fg-color--light);
   text-decoration: underline;
 }
 
+.md-typeset .install-link a:hover {
+  color: var(--md-primary-fg-color);
+}
+
+.md-typeset .download-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--download-gap);
+  background: transparent;
+  color: var(--md-primary-fg-color);
+  border: 0.094rem solid var(--md-primary-fg-color);
+  padding: var(--download-padding);
+  border-radius: var(--download-border-radius);
+  text-decoration: none;
+  transition: all 0.2s ease;
+  font-weight: 500;
+  font-size: var(--download-font-size);
+  min-width: 12.5rem;
+  white-space: nowrap;
+}
+
+.md-typeset .download-button:hover {
+  background: var(--md-primary-fg-color);
+  color: white;
+  transform: translateY(-0.063rem);
+  box-shadow: var(--download-shadow);
+}
+
+.download-button img {
+  width: 18px;
+  height: 18px;
+}
 .md-typeset .install-link a:hover {
   color: var(--md-primary-fg-color);
 }
@@ -199,6 +267,10 @@
     padding: 1.25rem;
   }
   
+  .md-typeset .download-button {
+    min-width: 11.25rem;
+    padding: 0.75rem 1.25rem;
+  }
   .md-typeset .download-button {
     min-width: 11.25rem;
     padding: 0.75rem 1.25rem;

@@ -23,8 +23,15 @@ SHORT_DESCRIPTION = (
     "Draw dots on an image at specific coordinates based on provided detections."
 )
 LONG_DESCRIPTION = """
-The `DotVisualization` block draws dots on an image at specific coordinates
-based on provided detections using Supervision's `sv.DotAnnotator`.
+The Dot Visualization block adds a dot in a detected region.
+
+By default, the block adds a dot at the center point of a detected region. You can choose other anchor points for the box, such as at the bottom or top of a detected region.
+
+Here is an example of the block in use:
+
+![](https://media.roboflow.com/inference/workflows/dot.png)
+
+The purple dot is at the center of the bounding box returned by an object detection model.
 """
 
 

@@ -22,7 +22,7 @@ from inference.core.workflows.prototypes.block import (
 )
 
 LONG_DESCRIPTION = """
-Fetches a previously stored value from a cache entry.
+Read a previously stored value from a cache entry.
 
 Use the `Cache Set` block to store values in the cache.
 """

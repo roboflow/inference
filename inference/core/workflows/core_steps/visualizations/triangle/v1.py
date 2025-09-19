@@ -21,8 +21,15 @@ from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlock
 TYPE: str = "roboflow_core/triangle_visualization@v1"
 SHORT_DESCRIPTION = "Draw triangle markers on an image at specific coordinates based on provided detections."
 LONG_DESCRIPTION = """
-The `TriangleVisualization` block draws triangle markers on an image at specific coordinates
-based on provided detections using Supervision's `sv.TriangleAnnotator`.
+The Triangle Visualization block draws triangles in a detected region.
+
+This block is useful for highlighting specific areas of interest within an image.
+
+The block adds a triangle at the top center of a detected region by default. You can adjust the position to place the triangle at different anchor points, such as the center, bottom, or corners of the detected region.
+
+Here is an example of the block in use:
+
+![](https://media.roboflow.com/inference/workflows/triangle.png)
 """
 
 
