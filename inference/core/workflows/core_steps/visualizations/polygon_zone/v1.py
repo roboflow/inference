@@ -1,5 +1,6 @@
 import hashlib
-from typing import Dict, List, Literal, Optional, Tuple, Type, Union
+from collections import OrderedDict
+from typing import List, Literal, Optional, Tuple, Type, Union
 
 import cv2 as cv
 import numpy as np
@@ -84,7 +85,7 @@ class PolygonZoneVisualizationManifest(VisualizationManifest):
 class PolygonZoneVisualizationBlockV1(VisualizationBlock):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._cache: Dict[str, np.ndarray] = {}
+        self._cache: OrderedDict[str, np.ndarray] = OrderedDict()
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -107,26 +108,28 @@ class PolygonZoneVisualizationBlockV1(VisualizationBlock):
         h, w, *_ = image.numpy_image.shape
         zone_fingerprint = hashlib.md5(str(zone).encode()).hexdigest()
         key = f"{zone_fingerprint}_{color}_{opacity}_{w}_{h}"
+        CACHE_MAXSIZE = 200
         if key not in self._cache:
             mask = np.zeros(
                 shape=image.numpy_image.shape,
                 dtype=image.numpy_image.dtype,
             )
-
-        if zone and len(zone) > 0:
-            pts = []
-            if zone and zone[0] and isinstance(zone[0][0], (int, float, np.int32)):
-                pts = [np.array(zone, dtype=np.int32)]
+            if zone and len(zone) > 0:
+                pts = []
+                if zone and zone[0] and isinstance(zone[0][0], (int, float, np.int32)):
+                    pts = [np.array(zone, dtype=np.int32)]
+                else:
+                    pts = [np.array(z, dtype=np.int32) for z in zone]
+                mask = cv.fillPoly(
+                    img=mask,
+                    pts=pts,
+                    color=str_to_color(color).as_bgr(),
+                )
+                self._cache[key] = mask
+                if len(self._cache) > CACHE_MAXSIZE:
+                    self._cache.popitem(last=False)
             else:
-                pts = [np.array(z, dtype=np.int32) for z in zone]
-            mask = cv.fillPoly(
-                img=mask,
-                pts=pts,
-                color=str_to_color(color).as_bgr(),
-            )
-            self._cache[key] = mask
-        else:
-            return {OUTPUT_IMAGE_KEY: image}
+                return {OUTPUT_IMAGE_KEY: image}
 
         mask = self._cache[key]
 
