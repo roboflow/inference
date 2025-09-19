@@ -1,11 +1,11 @@
-from collections import OrderedDict
 import hashlib
+from collections import OrderedDict
 from typing import List, Literal, Optional, Tuple, Type, Union
 
 import cv2 as cv
 import numpy as np
-from pydantic import ConfigDict, Field
 import supervision as sv
+from pydantic import ConfigDict, Field
 
 from inference.core.cache.lru_cache import LRUCache
 from inference.core.workflows.core_steps.visualizations.common.base import (
@@ -17,9 +17,9 @@ from inference.core.workflows.core_steps.visualizations.common.utils import str_
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
-    FloatZeroToOne,
     LIST_OF_VALUES_KIND,
     STRING_KIND,
+    FloatZeroToOne,
     Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
