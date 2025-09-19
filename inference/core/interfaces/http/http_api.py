@@ -464,8 +464,10 @@ class HttpInterface(BaseInterface):
                 req_params = request.query_params
                 json_params = dict()
                 api_key = req_params.get("api_key", None)
+                service_secret = req_params.get("service_secret", None)
                 if (
                     api_key is None
+                    and service_secret is None
                     and request.headers.get("content-type", None) == "application/json"
                     and int(request.headers.get("content-length", 0)) > 0
                 ):
@@ -475,18 +477,24 @@ class HttpInterface(BaseInterface):
                     except Exception:
                         pass
                 api_key = json_params.get("api_key", api_key)
+                service_secret = json_params.get("service_secret", service_secret)
 
-                if api_key is None:
-                    return _unauthorized_response("Unauthorized api_key")
-
-                if cached_api_keys.get(api_key, 0) < time.time():
-                    try:
-                        await get_roboflow_workspace_async(api_key=api_key)
-                        cached_api_keys[api_key] = (
-                            time.time() + 3600
-                        )  # expired after 1 hour
-                    except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
-                        return _unauthorized_response("Unauthorized api_key")
+                # we assume only one of api_key, service_secret will be provided
+                # if both provided, api_key will take precedence
+                if api_key is not None:
+                    if cached_api_keys.get(api_key, 0) < time.time():
+                        try:
+                            await get_roboflow_workspace_async(api_key=api_key)
+                            cached_api_keys[api_key] = (
+                                time.time() + 3600
+                            )  # expired after 1 hour
+                        except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
+                            return _unauthorized_response("Unauthorized api_key")
+                elif service_secret is not None:
+                    if service_secret != ROBOFLOW_SERVICE_SECRET:
+                        return _unauthorized_response("Unauthorized service_secret")
+                else: # both are None
+                    return _unauthorized_response("Unauthorized api_key and service_secret are null")
 
                 return await call_next(request)
 
