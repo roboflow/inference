@@ -22,6 +22,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
+from inference.core.cache.lru_cache import LRUCache
 
 TYPE: str = "roboflow_core/polygon_zone_visualization@v1"
 SHORT_DESCRIPTION = "Apply a mask over a polygon zone in an image."
@@ -85,7 +86,7 @@ class PolygonZoneVisualizationManifest(VisualizationManifest):
 class PolygonZoneVisualizationBlockV1(VisualizationBlock):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._cache: OrderedDict[str, np.ndarray] = OrderedDict()
+        self._cache: LRUCache[str, np.ndarray] = LRUCache()
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -105,37 +106,38 @@ class PolygonZoneVisualizationBlockV1(VisualizationBlock):
         color: str,
         opacity: float,
     ) -> BlockResult:
-        h, w, *_ = image.numpy_image.shape
-        zone_fingerprint = hashlib.md5(str(zone).encode()).hexdigest()
-        key = f"{zone_fingerprint}_{color}_{opacity}_{w}_{h}"
-        CACHE_MAXSIZE = 200
-        if key not in self._cache:
-            mask = np.zeros(
-                shape=image.numpy_image.shape,
-                dtype=image.numpy_image.dtype,
-            )
-            if zone and len(zone) > 0:
-                pts = []
-                if zone and zone[0] and isinstance(zone[0][0], (int, float, np.int32)):
-                    pts = [np.array(zone, dtype=np.int32)]
-                else:
-                    pts = [np.array(z, dtype=np.int32) for z in zone]
-                mask = cv.fillPoly(
-                    img=mask,
-                    pts=pts,
-                    color=str_to_color(color).as_bgr(),
-                )
-                self._cache[key] = mask
-                if len(self._cache) > CACHE_MAXSIZE:
-                    self._cache.popitem(last=False)
-            else:
-                return {OUTPUT_IMAGE_KEY: image}
-
-        mask = self._cache[key]
-
         np_image = image.numpy_image
         if copy_image:
             np_image = np_image.copy()
+
+        if not zone or len(zone) == 0:
+            return {
+                OUTPUT_IMAGE_KEY: WorkflowImageData.copy_and_replace(
+                    origin_image_data=image, numpy_image=np_image
+                )
+            }
+
+        h, w, *_ = np_image.shape
+        zone_fingerprint = hashlib.md5(str(zone).encode()).hexdigest()
+        key = f"{zone_fingerprint}_{color}_{opacity}_{w}_{h}"
+        mask = self._cache.get(key)
+        if mask is None:
+            mask = np.zeros(
+                shape=np_image.shape,
+                dtype=np_image.dtype,
+            )
+            pts = []
+            if zone and zone[0] and isinstance(zone[0][0], (int, float, np.int32)):
+                pts = [np.array(zone, dtype=np.int32)]
+            else:
+                pts = [np.array(z, dtype=np.int32) for z in zone]
+            mask = cv.fillPoly(
+                img=mask,
+                pts=pts,
+                color=str_to_color(color).as_bgr(),
+            )
+            self._cache.set(key, mask)
+
         annotated_image = cv.addWeighted(
             src1=mask,
             alpha=opacity,
