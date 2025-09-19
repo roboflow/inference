@@ -705,10 +705,10 @@ def handle_tensor_list_input_preparation_with_letterbox(
         if input_color_mode != network_input.color_mode:
             img = img[:, [2, 1, 0], :, :]
         new_h_i, new_w_i = new_hs[i].item(), new_ws[i].item()
-        img = functional.resize(
+        img = torch.nn.functional.interpolate(
             img,
-            [new_h_i, new_w_i],
-            interpolation=functional.InterpolationMode.BILINEAR,
+            size=[new_h_i, new_w_i],
+            mode="bilinear",
         )
         pad_top_i, pad_left_i = pad_tops[i].item(), pad_lefts[i].item()
         final_batch[

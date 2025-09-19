@@ -1,4 +1,6 @@
+import matplotlib.pyplot as plt
 import numpy as np
+import supervision
 import torch
 from inference_exp.models.rfdetr.rfdetr_object_detection_onnx import (
     RFDetrForObjectDetectionONNX,
@@ -415,6 +417,247 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_torch_batch(
         [1087, 2342, 1264, 2524],
         [919, 1835, 1102, 2009],
 
+    ], dtype=torch.int32)
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+
+
+def test_torch_package_with_static_crop_letterbox_numpy(
+    coin_counting_rfdetr_nano_torch_static_crop_letterbox_package: str,
+    coins_counting_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = RFDetrForObjectDetectionTorch.from_pretrained(
+        model_name_or_path=coin_counting_rfdetr_nano_torch_static_crop_letterbox_package,
+    )
+
+    # when
+    predictions = model(coins_counting_image_numpy)
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor(
+            [0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]
+        ),
+        atol=0.01
+    )
+    expected_xyxy = torch.tensor([
+        [1253, 2056, 1424, 2227],
+        [1460, 2302, 1625, 2469],
+        [1743, 2295, 1914, 2467],
+        [1094, 2348, 1256, 2524],
+        [925, 1840, 1091, 2003],
+        [1505, 1880, 1721, 2092],
+        [1706, 2570, 1889, 2755],
+        [1165, 2628, 1376, 2847]
+    ], dtype=torch.int32)
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+
+
+def test_torch_package_with_static_crop_letterbox_numpy_batch(
+    coin_counting_rfdetr_nano_torch_static_crop_letterbox_package: str,
+    coins_counting_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = RFDetrForObjectDetectionTorch.from_pretrained(
+        model_name_or_path=coin_counting_rfdetr_nano_torch_static_crop_letterbox_package,
+    )
+
+    # when
+    predictions = model([coins_counting_image_numpy, coins_counting_image_numpy])
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor(
+            [0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]
+        ),
+        atol=0.01
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor(
+            [0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]
+        ),
+        atol=0.01
+    )
+    expected_xyxy = torch.tensor([
+        [1253, 2056, 1424, 2227],
+        [1460, 2302, 1625, 2469],
+        [1743, 2295, 1914, 2467],
+        [1094, 2348, 1256, 2524],
+        [925, 1840, 1091, 2003],
+        [1505, 1880, 1721, 2092],
+        [1706, 2570, 1889, 2755],
+        [1165, 2628, 1376, 2847]
+    ], dtype=torch.int32)
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+
+
+def test_torch_package_with_static_crop_letterbox_torch(
+    coin_counting_rfdetr_nano_torch_static_crop_letterbox_package: str,
+    coins_counting_image_torch: np.ndarray,
+) -> None:
+    # given
+    model = RFDetrForObjectDetectionTorch.from_pretrained(
+        model_name_or_path=coin_counting_rfdetr_nano_torch_static_crop_letterbox_package,
+    )
+
+    # when
+    predictions = model(coins_counting_image_torch)
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor(
+            [0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]
+        ),
+        atol=0.02
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor([
+        [1253, 2056, 1424, 2227],
+        [1460, 2302, 1625, 2469],
+        [1743, 2295, 1914, 2467],
+        [925, 1840, 1091, 2003],
+        [1094, 2348, 1256, 2524],
+        [1505, 1880, 1721, 2092],
+        [1706, 2570, 1889, 2755],
+        [1165, 2628, 1376, 2847]
+    ], dtype=torch.int32)
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+
+
+def test_torch_package_with_static_crop_letterbox_torch_batch(
+    coin_counting_rfdetr_nano_torch_static_crop_letterbox_package: str,
+    coins_counting_image_torch: np.ndarray,
+) -> None:
+    # given
+    model = RFDetrForObjectDetectionTorch.from_pretrained(
+        model_name_or_path=coin_counting_rfdetr_nano_torch_static_crop_letterbox_package,
+    )
+
+    # when
+    predictions = model(torch.stack([coins_counting_image_torch]*2, dim=0))
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor(
+            [0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]
+        ),
+        atol=0.02
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor(
+            [0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]
+        ),
+        atol=0.02
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+    )
+    assert torch.allclose(
+        predictions[1].class_id,
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor([
+        [1253, 2056, 1424, 2227],
+        [1460, 2302, 1625, 2469],
+        [1743, 2295, 1914, 2467],
+        [925, 1840, 1091, 2003],
+        [1094, 2348, 1256, 2524],
+        [1505, 1880, 1721, 2092],
+        [1706, 2570, 1889, 2755],
+        [1165, 2628, 1376, 2847]
+    ], dtype=torch.int32)
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+
+
+def test_torch_package_with_static_crop_letterbox_torch_list(
+    coin_counting_rfdetr_nano_torch_static_crop_letterbox_package: str,
+    coins_counting_image_torch: np.ndarray,
+) -> None:
+    # given
+    model = RFDetrForObjectDetectionTorch.from_pretrained(
+        model_name_or_path=coin_counting_rfdetr_nano_torch_static_crop_letterbox_package,
+    )
+
+    # when
+    predictions = model([coins_counting_image_torch, coins_counting_image_torch])
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor(
+            [0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]
+        ),
+        atol=0.02
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor(
+            [0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]
+        ),
+        atol=0.02
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+    )
+    assert torch.allclose(
+        predictions[1].class_id,
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor([
+        [1253, 2056, 1424, 2227],
+        [1460, 2302, 1625, 2469],
+        [1743, 2295, 1914, 2467],
+        [925, 1840, 1091, 2003],
+        [1094, 2348, 1256, 2524],
+        [1505, 1880, 1721, 2092],
+        [1706, 2570, 1889, 2755],
+        [1165, 2628, 1376, 2847]
     ], dtype=torch.int32)
     assert torch.allclose(
         predictions[0].xyxy,
