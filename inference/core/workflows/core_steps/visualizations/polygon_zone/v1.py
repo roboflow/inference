@@ -85,7 +85,7 @@ class PolygonZoneVisualizationManifest(VisualizationManifest):
 class PolygonZoneVisualizationBlockV1(VisualizationBlock):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._cache: OrderedDict[str, np.ndarray] = OrderedDict(maxsize=200)
+        self._cache: OrderedDict[str, np.ndarray] = OrderedDict()
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
