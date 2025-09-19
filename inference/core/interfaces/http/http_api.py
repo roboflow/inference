@@ -432,8 +432,7 @@ class HttpInterface(BaseInterface):
                         "/docs",
                         "/info",
                         "/openapi.json",  # needed for /docs and /redoc
-                        # "/workflows/blocks/describe",
-                        # "/workflows/definition/schema",
+                        "/model/registry",  # dont auth this route, usually not used on serverlerless, but queue based serverless uses it internally (not accessible from outside)
                     ]
                     or request.url.path.startswith("/static/")
                     or request.url.path.startswith("/_next/")
