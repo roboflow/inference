@@ -1,12 +1,13 @@
-import hashlib
 from collections import OrderedDict
+import hashlib
 from typing import List, Literal, Optional, Tuple, Type, Union
 
 import cv2 as cv
 import numpy as np
-import supervision as sv
 from pydantic import ConfigDict, Field
+import supervision as sv
 
+from inference.core.cache.lru_cache import LRUCache
 from inference.core.workflows.core_steps.visualizations.common.base import (
     OUTPUT_IMAGE_KEY,
     VisualizationBlock,
@@ -16,13 +17,12 @@ from inference.core.workflows.core_steps.visualizations.common.utils import str_
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
+    FloatZeroToOne,
     LIST_OF_VALUES_KIND,
     STRING_KIND,
-    FloatZeroToOne,
     Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
-from inference.core.cache.lru_cache import LRUCache
 
 TYPE: str = "roboflow_core/polygon_zone_visualization@v1"
 SHORT_DESCRIPTION = "Apply a mask over a polygon zone in an image."
