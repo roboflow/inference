@@ -897,8 +897,8 @@ class SerializedOwlV2(RoboflowInferenceModel):
 
     def download_model_artifacts_from_roboflow_api(
         self,
-        countinference: bool = None,
-        service_secret: str = None,
+        countinference: Optional[bool] = None,
+        service_secret: Optional[str] = None,
         **kwargs,
     ):
         logger.info(f"Downloading OWLv2 model artifacts")
