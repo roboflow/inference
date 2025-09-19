@@ -271,7 +271,7 @@ REGISTERED_MODELS: Dict[
     ),
     ("resnet", CLASSIFICATION_TASK, BackendType.ONNX): LazyClass(
         module_name="inference_exp.models.resnet.resnet_classification_onnx",
-        class_name="ResNetClassificationOnnx",
+        class_name="ResNetForClassificationOnnx",
     ),
     ("resnet", MULTI_LABEL_CLASSIFICATION_TASK, BackendType.ONNX): LazyClass(
         module_name="inference_exp.models.resnet.resnet_classification_onnx",
@@ -279,7 +279,7 @@ REGISTERED_MODELS: Dict[
     ),
     ("resnet", CLASSIFICATION_TASK, BackendType.TORCH): LazyClass(
         module_name="inference_exp.models.resnet.resnet_classification_torch",
-        class_name="ResNetClassificationTorch",
+        class_name="ResNetForClassificationTorch",
     ),
     ("resnet", MULTI_LABEL_CLASSIFICATION_TASK, BackendType.TORCH): LazyClass(
         module_name="inference_exp.models.resnet.resnet_classification_torch",

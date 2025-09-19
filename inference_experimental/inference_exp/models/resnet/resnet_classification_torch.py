@@ -39,7 +39,7 @@ class ResNetClassifier(nn.Module):
         return results
 
 
-class ResNetClassificationTorch(ClassificationModel[torch.Tensor, torch.Tensor]):
+class ResNetForClassificationTorch(ClassificationModel[torch.Tensor, torch.Tensor]):
 
     @classmethod
     def from_pretrained(
@@ -47,7 +47,7 @@ class ResNetClassificationTorch(ClassificationModel[torch.Tensor, torch.Tensor])
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
         **kwargs,
-    ) -> "ResNetClassificationTorch":
+    ) -> "ResNetForClassificationTorch":
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
             elements=[

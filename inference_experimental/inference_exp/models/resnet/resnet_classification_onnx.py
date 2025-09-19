@@ -50,7 +50,7 @@ except ImportError as import_error:
     ) from import_error
 
 
-class ResNetClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):
+class ResNetForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):
 
     @classmethod
     def from_pretrained(
@@ -60,7 +60,7 @@ class ResNetClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):
         default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
         **kwargs,
-    ) -> "ResNetClassificationOnnx":
+    ) -> "ResNetForClassificationOnnx":
         if onnx_execution_providers is None:
             onnx_execution_providers = get_selected_onnx_execution_providers()
         if not onnx_execution_providers:
