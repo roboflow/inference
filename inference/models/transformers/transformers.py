@@ -5,7 +5,7 @@ import re
 import subprocess
 import tarfile
 from time import perf_counter
-from typing import TYPE_CHECKING, Any, Dict, Tuple, Type
+from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, Type
 
 from inference.core.cache.model_artifacts import (
     get_cache_dir,
@@ -182,13 +182,20 @@ class TransformerModel(RoboflowInferenceModel):
             "tokenizer_config.json",
         ]
 
-    def download_model_artifacts_from_roboflow_api(self, **kwargs) -> None:
+    def download_model_artifacts_from_roboflow_api(
+        self,
+        countinference: Optional[bool] = None,
+        service_secret: Optional[str] = None,
+        **kwargs,
+    ) -> None:
         if self.load_weights_as_transformers:
             api_data = get_roboflow_model_data(
                 api_key=self.api_key,
                 model_id=self.endpoint,
                 endpoint_type=ModelEndpointType.CORE_MODEL,
                 device_id=self.device_id,
+                countinference=countinference,
+                service_secret=service_secret,
             )
             if "weights" not in api_data:
                 raise ModelArtefactError(
@@ -201,6 +208,8 @@ class TransformerModel(RoboflowInferenceModel):
                 model_id=self.endpoint,
                 endpoint_type=ModelEndpointType.ORT,
                 device_id=self.device_id,
+                countinference=countinference,
+                service_secret=service_secret,
             )
             if "weights" not in api_data["ort"]:
                 raise ModelArtefactError(
@@ -211,6 +220,8 @@ class TransformerModel(RoboflowInferenceModel):
             api_data = get_roboflow_instant_model_data(
                 api_key=self.api_key,
                 model_id=self.endpoint,
+                countinference=countinference,
+                service_secret=service_secret,
             )
             if "modelFiles" not in api_data:
                 raise ModelArtefactError(
@@ -261,6 +272,8 @@ class TransformerModel(RoboflowInferenceModel):
                         model_id=self.endpoint,
                         endpoint_type=ModelEndpointType.CORE_MODEL,
                         device_id=self.device_id,
+                        countinference=countinference,
+                        service_secret=service_secret,
                     )
                     weights = api_data["weights"]
                 elif self.version_id is not None:
@@ -269,12 +282,16 @@ class TransformerModel(RoboflowInferenceModel):
                         model_id=self.endpoint,
                         endpoint_type=ModelEndpointType.ORT,
                         device_id=self.device_id,
+                        countinference=countinference,
+                        service_secret=service_secret,
                     )
                     weights = api_data["ort"]["weights"]
                 else:
                     api_data = get_roboflow_instant_model_data(
                         api_key=self.api_key,
                         model_id=self.endpoint,
+                        countinference=countinference,
+                        service_secret=service_secret,
                     )
                     weights = api_data["modelFiles"]["transformers"]
 
