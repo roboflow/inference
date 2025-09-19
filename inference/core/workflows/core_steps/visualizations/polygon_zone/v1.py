@@ -82,13 +82,10 @@ class PolygonZoneVisualizationManifest(VisualizationManifest):
         return ">=1.3.0,<2.0.0"
 
 
-CACHE_MAXSIZE = 200
-
-
 class PolygonZoneVisualizationBlockV1(VisualizationBlock):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._cache: OrderedDict[str, np.ndarray] = OrderedDict()
+        self._cache: OrderedDict[str, np.ndarray] = OrderedDict(maxsize=200)
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -111,35 +108,28 @@ class PolygonZoneVisualizationBlockV1(VisualizationBlock):
         h, w, *_ = image.numpy_image.shape
         zone_fingerprint = hashlib.md5(str(zone).encode()).hexdigest()
         key = f"{zone_fingerprint}_{color}_{opacity}_{w}_{h}"
-        zero_key = f"{w}_{h}"
-        mask = None
-        if zero_key not in self._cache:
+        CACHE_MAXSIZE = 200
+        if key not in self._cache:
             mask = np.zeros(
                 shape=image.numpy_image.shape,
                 dtype=image.numpy_image.dtype,
             )
-            self._cache[zero_key] = mask
-            if len(self._cache) > CACHE_MAXSIZE:
-                self._cache.popitem(last=False)
-        else:
-            mask = self._cache[zero_key]
-
-        if zone and len(zone) > 0:
-            pts = []
-            if zone and zone[0] and isinstance(zone[0][0], (int, float, np.int32)):
-                pts = [np.array(zone, dtype=np.int32)]
+            if zone and len(zone) > 0:
+                pts = []
+                if zone and zone[0] and isinstance(zone[0][0], (int, float, np.int32)):
+                    pts = [np.array(zone, dtype=np.int32)]
+                else:
+                    pts = [np.array(z, dtype=np.int32) for z in zone]
+                mask = cv.fillPoly(
+                    img=mask,
+                    pts=pts,
+                    color=str_to_color(color).as_bgr(),
+                )
+                self._cache[key] = mask
+                if len(self._cache) > CACHE_MAXSIZE:
+                    self._cache.popitem(last=False)
             else:
-                pts = [np.array(z, dtype=np.int32) for z in zone]
-            mask = cv.fillPoly(
-                img=mask,
-                pts=pts,
-                color=str_to_color(color).as_bgr(),
-            )
-            self._cache[key] = mask
-            if len(self._cache) > CACHE_MAXSIZE:
-                self._cache.popitem(last=False)
-        else:
-            return {OUTPUT_IMAGE_KEY: image}
+                return {OUTPUT_IMAGE_KEY: image}
 
         mask = self._cache[key]
 
