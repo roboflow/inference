@@ -137,6 +137,7 @@ class PerceptionEncoderModelBlockV1(WorkflowBlock):
                 text=[data],
                 api_key=self._api_key,
             )
+            print("====2====", version, inference_request)
             pe_model_id = load_core_model(
                 model_manager=self._model_manager,
                 inference_request=inference_request,

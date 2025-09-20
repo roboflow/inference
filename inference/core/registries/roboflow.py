@@ -49,6 +49,7 @@ GENERIC_MODELS = {
     "sam2": ("embed", "sam2"),
     "gaze": ("gaze", "l2cs"),
     "doctr": ("ocr", "doctr"),
+    #"easy-ocr": ("ocr", "english_g2"),
     "trocr": ("ocr", "trocr"),
     "grounding_dino": ("object-detection", "grounding-dino"),
     "paligemma": ("llm", "paligemma"),
@@ -197,6 +198,7 @@ def get_model_type(
         )
         return project_task_type, model_type
 
+    print("====version_id====", version_id)
     if version_id is not None:
         api_data = get_roboflow_model_data(
             api_key=api_key,

@@ -227,6 +227,9 @@ from inference.core.workflows.core_steps.models.foundation.stability_ai.outpaint
 from inference.core.workflows.core_steps.models.foundation.yolo_world.v1 import (
     YoloWorldModelBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.easy_ocr.v1 import (
+    EasyOCRBlockV1,
+)
 from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v1 import (
     RoboflowInstanceSegmentationModelBlockV1,
 )
@@ -259,9 +262,6 @@ from inference.core.workflows.core_steps.models.roboflow.object_detection.v2 imp
 )
 from inference.core.workflows.core_steps.models.third_party.barcode_detection.v1 import (
     BarcodeDetectorBlockV1,
-)
-from inference.core.workflows.core_steps.models.third_party.easy_ocr.v1 import (
-    EasyOCRBlockV1,
 )
 from inference.core.workflows.core_steps.models.third_party.qr_code_detection.v1 import (
     QRCodeDetectorBlockV1,

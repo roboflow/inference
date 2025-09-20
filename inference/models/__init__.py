@@ -4,6 +4,7 @@ from typing import Any
 from inference.core.env import (
     CORE_MODEL_CLIP_ENABLED,
     CORE_MODEL_DOCTR_ENABLED,
+    CORE_MODEL_EASYOCR_ENABLED,
     CORE_MODEL_GAZE_ENABLED,
     CORE_MODEL_GROUNDINGDINO_ENABLED,
     CORE_MODEL_SAM2_ENABLED,
@@ -21,6 +22,7 @@ CORE_MODELS = {
     "SegmentAnything": ("inference.models.sam", CORE_MODEL_SAM_ENABLED),
     "SegmentAnything2": ("inference.models.sam2", CORE_MODEL_SAM2_ENABLED),
     "DocTR": ("inference.models.doctr", CORE_MODEL_DOCTR_ENABLED),
+    "EasyOCR": ("inference.models.easy_ocr", CORE_MODEL_EASYOCR_ENABLED),
     "GroundingDINO": (
         "inference.models.grounding_dino",
         CORE_MODEL_GROUNDINGDINO_ENABLED,

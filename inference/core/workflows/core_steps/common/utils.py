@@ -10,6 +10,7 @@ from supervision.config import CLASS_NAME_DATA_FIELD
 
 from inference.core.entities.requests.clip import ClipCompareRequest
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
+from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
 from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
 from inference.core.entities.requests.sam2 import Sam2InferenceRequest
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
@@ -56,6 +57,7 @@ def load_core_model(
     model_manager: ModelManager,
     inference_request: Union[
         DoctrOCRInferenceRequest,
+        EasyOCRInferenceRequest,
         ClipCompareRequest,
         YOLOWorldInferenceRequest,
         Sam2InferenceRequest,

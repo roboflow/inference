@@ -4,6 +4,7 @@ from inference.core.env import (
     API_KEY,
     CORE_MODEL_CLIP_ENABLED,
     CORE_MODEL_DOCTR_ENABLED,
+    CORE_MODEL_EASYOCR_ENABLED,
     CORE_MODEL_GAZE_ENABLED,
     CORE_MODEL_GROUNDINGDINO_ENABLED,
     CORE_MODEL_OWLV2_ENABLED,
@@ -45,6 +46,7 @@ from inference.models import (
     YOLOv11InstanceSegmentation,
     YOLOv11ObjectDetection,
     YOLOv12ObjectDetection,
+    EasyOCR
 )
 from inference.models.yolov8.yolov8_keypoints_detection import YOLOv8KeypointsDetection
 from inference.models.yolov11.yolov11_keypoints_detection import (
@@ -472,6 +474,14 @@ try:
         from inference.models import DocTR
 
         ROBOFLOW_MODEL_TYPES[("ocr", "doctr")] = DocTR
+except:
+    pass
+
+try:
+    if CORE_MODEL_EASYOCR_ENABLED:
+        from inference.models import EasyOCR
+
+        ROBOFLOW_MODEL_TYPES[("object-detection", "easy_ocr")] = EasyOCR
 except:
     pass
 
