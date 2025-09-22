@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import supervision
 import torch
+from inference_exp import AutoModel
 from inference_exp.models.rfdetr.rfdetr_object_detection_onnx import (
     RFDetrForObjectDetectionONNX,
 )
@@ -1847,6 +1848,36 @@ def test_onnx_package_with_static_crop_and_center_crop_batch_torch(
     )
     assert torch.allclose(
         predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+
+
+def test_rfdetr_base_og_with_numpy(
+    og_rfdetr_base_weights: str, dog_image_numpy: np.ndarray
+) -> None:
+    # given
+    model = AutoModel.from_pretrained(
+        model_id_or_path=og_rfdetr_base_weights, model_type="rfdetr-base"
+    )
+
+    # when
+    predictions = model(dog_image_numpy)
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence, torch.tensor([0.7783, 0.7684, 0.5685]), atol=0.01
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([3, 18, 27], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [[625, 728, 700, 787], [65, 248, 648, 928], [1, 660, 447, 1271]],
+        dtype=torch.int32,
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
         expected_xyxy,
         atol=2,
     )

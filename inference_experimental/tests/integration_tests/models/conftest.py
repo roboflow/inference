@@ -34,6 +34,8 @@ COIN_COUNTING_RFDETR_NANO_TORCH_CENTER_CROP_URL = "https://storage.googleapis.co
 COIN_COUNTING_RFDETR_NANO_ONNX_STATIC_CROP_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-onnx-static-crop-center-crop-640.zip"
 COIN_COUNTING_RFDETR_NANO_TORCH_STATIC_CROP_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-torch-static-crop-center-crop-640.zip"
 
+OG_RFDETR_WEIGHTS_URL = "https://storage.googleapis.com/rfdetr/rf-detr-base-coco.pth"
+
 
 @pytest.fixture(scope="module")
 def original_clip_download_dir() -> str:
@@ -256,3 +258,12 @@ def coin_counting_rfdetr_nano_torch_static_crop_center_crop_package() -> str:
         model_package_zip_url=COIN_COUNTING_RFDETR_NANO_TORCH_STATIC_CROP_CENTER_CROP_URL,
         package_name="coin-counting-rfdetr-nano-torch-static-crop-center-crop",
     )
+
+
+@pytest.fixture(scope="module")
+def og_rfdetr_base_weights() -> str:
+    package_path = os.path.join(MODELS_DIR, "og-rfdetr-base")
+    os.makedirs(package_path, exist_ok=True)
+    model_path = os.path.join(package_path, "model.pt")
+    _download_if_not_exists(file_path=model_path, url=OG_RFDETR_WEIGHTS_URL)
+    return model_path
