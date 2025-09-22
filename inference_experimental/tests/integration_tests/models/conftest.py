@@ -33,8 +33,18 @@ COIN_COUNTING_RFDETR_NANO_ONNX_CENTER_CROP_URL = "https://storage.googleapis.com
 COIN_COUNTING_RFDETR_NANO_TORCH_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-torch-center-crop-640.zip"
 COIN_COUNTING_RFDETR_NANO_ONNX_STATIC_CROP_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-onnx-static-crop-center-crop-640.zip"
 COIN_COUNTING_RFDETR_NANO_TORCH_STATIC_CROP_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-torch-static-crop-center-crop-640.zip"
-
 OG_RFDETR_WEIGHTS_URL = "https://storage.googleapis.com/rfdetr/rf-detr-base-coco.pth"
+
+COIN_COUNTING_YOLOV8N_ONNX_DYNAMIC_BS_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-onnx-dynamic-bs-letterbox.zip"
+COIN_COUNTING_YOLOV8N_ONNX_DYNAMIC_BS_LETTERBOX_FUSED_NMS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-onnx-dynamic-bs-letterbox-fused-nms.zip"
+COIN_COUNTING_YOLOV8N_ONNX_STATIC_BS_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-onnx-static-bs-letterbox.zip"
+COIN_COUNTING_YOLOV8N_TORCH_SCRIPT_STATIC_BS_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-torchscript-static-bs-letterbox.zip"
+COIN_COUNTING_YOLOV8N_TORCH_SCRIPT_STATIC_BS_LETTERBOX_FUSED_NMS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-torchscript-static-bs-letterbox-fused-nms.zip"
+COIN_COUNTING_YOLOV8N_ONNX_DYNAMIC_BS_STATIC_CROP_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-onnx-dynamic-bs-static-crop-stretch.zip"
+COIN_COUNTING_YOLOV8N_ONNX_DYNAMIC_BS_STATIC_CROP_STRETCH_NMS_FUSED_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-onnx-dynamic-bs-static-crop-stretch-nms-fused.zip"
+COIN_COUNTING_YOLOV8N_ONNX_STATIC_BS_STATIC_CROP_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-onnx-static-bs-static-crop-stretch.zip"
+COIN_COUNTING_YOLOV8N_TORCH_SCRIPT_STATIC_BS_STATIC_CROP_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-torchscript-static-bs-static-crop-stretch.zip"
+COIN_COUNTING_YOLOV8N_TORCH_SCRIPT_STATIC_BS_STATIC_CROP_STRETCH_NMS_FUSED_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-torchscript-static-bs-static-crop-stretch-nms-fused.zip"
 
 
 @pytest.fixture(scope="module")
@@ -267,3 +277,87 @@ def og_rfdetr_base_weights() -> str:
     model_path = os.path.join(package_path, "model.pt")
     _download_if_not_exists(file_path=model_path, url=OG_RFDETR_WEIGHTS_URL)
     return model_path
+
+
+@pytest.fixture(scope="module")
+def coin_counting_yolov8n_onnx_dynamic_bs_letterbox_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_YOLOV8N_ONNX_DYNAMIC_BS_LETTERBOX_URL,
+        package_name="coin-counting-yolov8n-onnx-dynamic-bs-letterbox",
+    )
+
+
+@pytest.fixture(scope="module")
+def coin_counting_yolov8n_onnx_dynamic_bs_letterbox_fused_nms_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_YOLOV8N_ONNX_DYNAMIC_BS_LETTERBOX_FUSED_NMS_URL,
+        package_name="coin-counting-yolov8n-onnx-dynamic-bs-letterbox-fused-nms",
+    )
+
+
+@pytest.fixture(scope="module")
+def coin_counting_yolov8n_onnx_static_bs_letterbox_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_YOLOV8N_ONNX_STATIC_BS_LETTERBOX_URL,
+        package_name="coin-counting-yolov8n-onnx-static-bs-letterbox",
+    )
+
+
+@pytest.fixture(scope="module")
+def coin_counting_yolov8n_torch_script_static_bs_letterbox_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_YOLOV8N_TORCH_SCRIPT_STATIC_BS_LETTERBOX_URL,
+        package_name="coin-counting-yolov8n-torchscript-static-bs-letterbox",
+    )
+
+
+@pytest.fixture(scope="module")
+def coin_counting_yolov8n_torch_script_static_bs_letterbox_fused_nms_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_YOLOV8N_TORCH_SCRIPT_STATIC_BS_LETTERBOX_FUSED_NMS_URL,
+        package_name="coin-counting-yolov8n-torchscript-static-bs-fused-nms-letterbox",
+    )
+
+
+@pytest.fixture(scope="module")
+def coin_counting_yolov8n_onnx_dynamic_bs_static_crop_stretch_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_YOLOV8N_ONNX_DYNAMIC_BS_STATIC_CROP_STRETCH_URL,
+        package_name="coin-counting-yolov8n-onnx-dynamic-bs-static-crop-stretch",
+    )
+
+
+@pytest.fixture(scope="module")
+def coin_counting_yolov8n_onnx_dynamic_bs_static_crop_stretch_nms_fused_package() -> (
+    str
+):
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_YOLOV8N_ONNX_DYNAMIC_BS_STATIC_CROP_STRETCH_NMS_FUSED_URL,
+        package_name="coin-counting-yolov8n-onnx-dynamic-bs-static-crop-stretch-nms-fused",
+    )
+
+
+@pytest.fixture(scope="module")
+def coin_counting_yolov8n_onnx_static_bs_static_crop_stretch_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_YOLOV8N_ONNX_STATIC_BS_STATIC_CROP_STRETCH_URL,
+        package_name="coin-counting-yolov8n-onnx-static-bs-static-crop-stretch",
+    )
+
+
+@pytest.fixture(scope="module")
+def coin_counting_yolov8n_torch_script_dynamic_bs_static_crop_stretch_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_YOLOV8N_TORCH_SCRIPT_STATIC_BS_STATIC_CROP_STRETCH_URL,
+        package_name="coin-counting-yolov8n-torchscript-static-bs-static-crop-stretch",
+    )
+
+
+@pytest.fixture(scope="module")
+def coin_counting_yolov8n_torch_script_dynamic_bs_static_crop_stretch_fused_nms_package() -> (
+    str
+):
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_YOLOV8N_TORCH_SCRIPT_STATIC_BS_STATIC_CROP_STRETCH_NMS_FUSED_URL,
+        package_name="coin-counting-yolov8n-torchscript-static-bs-static-crop-stretch-fused-nms",
+    )
