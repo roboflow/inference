@@ -24,18 +24,14 @@ SMOLVLM_BASE_FT_URL = (
 MOONDREAM2_BASE_FT_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/moondream2/moondream2-2b.zip"
 )
-COIN_COUNTING_RFDETR_NANO_TORCH_CS_STRETCH_URL = (
-    "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/coin-counting-rfdetr-nano-torch-cs-stretch-640.zip"
-)
-COIN_COUNTING_RFDETR_NANO_ONNX_CS_STRETCH_URL = (
-    "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-onnx-cs-stretch-640.zip"
-)
-COIN_COUNTING_RFDETR_NANO_ONNX_STATIC_CROP_LETTERBOX_URL = (
-    "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-onnx-static-crop-letterbox-640.zip"
-)
-COIN_COUNTING_RFDETR_NANO_TORCH_STATIC_CROP_LETTERBOX_URL = (
-    "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-torch-static-crop-letterbox-640.zip"
-)
+COIN_COUNTING_RFDETR_NANO_TORCH_CS_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/coin-counting-rfdetr-nano-torch-cs-stretch-640.zip"
+COIN_COUNTING_RFDETR_NANO_ONNX_CS_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-onnx-cs-stretch-640.zip"
+COIN_COUNTING_RFDETR_NANO_ONNX_STATIC_CROP_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-onnx-static-crop-letterbox-640.zip"
+COIN_COUNTING_RFDETR_NANO_TORCH_STATIC_CROP_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-torch-static-crop-letterbox-640.zip"
+
+COIN_COUNTING_RFDETR_NANO_ONNX_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-onnx-center-crop-640.zip"
+COIN_COUNTING_RFDETR_NANO_TORCH_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-torch-center-crop-640.zip"
+
 
 @pytest.fixture(scope="module")
 def original_clip_download_dir() -> str:
@@ -227,3 +223,18 @@ def coin_counting_rfdetr_nano_torch_static_crop_letterbox_package() -> str:
         package_name="coin-counting-rfdetr-nano-torch-static-crop-letterbox",
     )
 
+
+@pytest.fixture(scope="module")
+def coin_counting_rfdetr_nano_onnx_center_crop_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_RFDETR_NANO_ONNX_CENTER_CROP_URL,
+        package_name="coin-counting-rfdetr-nano-onnx-center-crop",
+    )
+
+
+@pytest.fixture(scope="module")
+def coin_counting_rfdetr_nano_torch_center_crop_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_RFDETR_NANO_TORCH_CENTER_CROP_URL,
+        package_name="coin-counting-rfdetr-nano-torch-center-crop",
+    )

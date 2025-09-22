@@ -364,7 +364,7 @@ class RFDetrForObjectDetectionTorch(
             for out_box_tensor, image_metadata in zip(
                 model_results["pred_boxes"], pre_processing_meta
             ):
-                box_center_offsets = torch.as_tensor(  # bboxes in format cxcywh now, so only cx, cy to be pusged
+                box_center_offsets = torch.as_tensor(  # bboxes in format cxcywh now, so only cx, cy to be pushed
                     [
                         image_metadata.pad_left / image_metadata.inference_size.width,
                         image_metadata.pad_top / image_metadata.inference_size.height,
@@ -380,7 +380,7 @@ class RFDetrForObjectDetectionTorch(
                 oy_padding = (
                     image_metadata.pad_top + image_metadata.pad_bottom
                 ) / image_metadata.inference_size.height
-                box_wh_offsets = torch.as_tensor(  # bboxes in format cxcywh now, so only cx, cy to be pusged
+                box_wh_offsets = torch.as_tensor(  # bboxes in format cxcywh now, so only cx, cy to be pushed
                     [
                         1.0 - ox_padding,
                         1.0 - oy_padding,
@@ -393,10 +393,19 @@ class RFDetrForObjectDetectionTorch(
                 out_box_tensor = (out_box_tensor - box_center_offsets) / box_wh_offsets
                 un_padding_results.append(out_box_tensor)
             model_results["pred_boxes"] = torch.stack(un_padding_results, dim=0)
-        orig_sizes = [
-            (e.static_crop_offset.crop_height, e.static_crop_offset.crop_width)
-            for e in pre_processing_meta
-        ]
+        if self._inference_config.network_input.resize_mode is ResizeMode.CENTER_CROP:
+            orig_sizes = [
+                (
+                    round(e.inference_size.height / e.scale_height),
+                    round(e.inference_size.width / e.scale_width),
+                )
+                for e in pre_processing_meta
+            ]
+        else:
+            orig_sizes = [
+                (e.size_after_pre_processing.height, e.size_after_pre_processing.width)
+                for e in pre_processing_meta
+            ]
         target_sizes = torch.tensor(orig_sizes, device=self._device)
         results = self._post_processor(model_results, target_sizes=target_sizes)
         detections_list = []
@@ -421,6 +430,21 @@ class RFDetrForObjectDetectionTorch(
             scores = scores[keep]
             labels = labels[keep]
             boxes = boxes[keep]
+            if (
+                self._inference_config.network_input.resize_mode
+                is ResizeMode.CENTER_CROP
+            ):
+                offsets = torch.as_tensor(
+                    [
+                        image_metadata.pad_left,
+                        image_metadata.pad_top,
+                        image_metadata.pad_left,
+                        image_metadata.pad_top,
+                    ],
+                    dtype=boxes.dtype,
+                    device=boxes.device,
+                )
+                boxes[:, :4].sub_(offsets)
             if (
                 image_metadata.static_crop_offset.offset_x != 0
                 or image_metadata.static_crop_offset.offset_y != 0
