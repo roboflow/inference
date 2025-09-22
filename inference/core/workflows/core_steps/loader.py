@@ -170,6 +170,9 @@ from inference.core.workflows.core_steps.models.foundation.cog_vlm.v1 import (
 from inference.core.workflows.core_steps.models.foundation.depth_estimation.v1 import (
     DepthEstimationBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.easy_ocr.v1 import (
+    EasyOCRBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.florence2.v1 import (
     Florence2BlockV1,
 )
@@ -226,9 +229,6 @@ from inference.core.workflows.core_steps.models.foundation.stability_ai.outpaint
 )
 from inference.core.workflows.core_steps.models.foundation.yolo_world.v1 import (
     YoloWorldModelBlockV1,
-)
-from inference.core.workflows.core_steps.models.foundation.easy_ocr.v1 import (
-    EasyOCRBlockV1,
 )
 from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v1 import (
     RoboflowInstanceSegmentationModelBlockV1,

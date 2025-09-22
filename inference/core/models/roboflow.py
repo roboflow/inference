@@ -688,7 +688,7 @@ class RoboflowCoreModel(RoboflowInferenceModel):
             List[str]: A list of filenames.
         """
         raise NotImplementedError(
-            "get_infer_bucket_file_list not implemented for OnnxRoboflowCoreModel"
+            "get_infer_bucket_file_list not implemented for RoboflowCoreModel"
         )
 
     def preprocess_image(self, image: Image.Image) -> Image.Image:

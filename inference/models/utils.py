@@ -31,6 +31,7 @@ from inference.core.registries.roboflow import get_model_type
 from inference.core.warnings import ModelDependencyMissing
 from inference.models import (
     YOLACT,
+    EasyOCR,
     ResNetClassification,
     RFDETRObjectDetection,
     VitClassification,
@@ -46,7 +47,6 @@ from inference.models import (
     YOLOv11InstanceSegmentation,
     YOLOv11ObjectDetection,
     YOLOv12ObjectDetection,
-    EasyOCR
 )
 from inference.models.yolov8.yolov8_keypoints_detection import YOLOv8KeypointsDetection
 from inference.models.yolov11.yolov11_keypoints_detection import (
@@ -481,7 +481,7 @@ try:
     if CORE_MODEL_EASYOCR_ENABLED:
         from inference.models import EasyOCR
 
-        ROBOFLOW_MODEL_TYPES[("object-detection", "easy_ocr")] = EasyOCR
+        ROBOFLOW_MODEL_TYPES[("ocr", "easy_ocr")] = EasyOCR
 except:
     pass
 

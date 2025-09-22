@@ -49,7 +49,7 @@ GENERIC_MODELS = {
     "sam2": ("embed", "sam2"),
     "gaze": ("gaze", "l2cs"),
     "doctr": ("ocr", "doctr"),
-    "easy_ocr": ("ocr", "english_g2"),
+    "easy_ocr": ("ocr", "easy_ocr"),
     "trocr": ("ocr", "trocr"),
     "grounding_dino": ("object-detection", "grounding-dino"),
     "paligemma": ("llm", "paligemma"),

@@ -4,9 +4,7 @@ from typing import Dict, List, Literal, Optional, Type, Union
 from pydantic import ConfigDict, Field
 
 from inference.core.cache.lru_cache import LRUCache
-from inference.core.entities.requests.easy_ocr import (
-    EasyOCRInferenceRequest,
-)
+from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
 from inference.core.env import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
@@ -43,14 +41,14 @@ LANGUAGES = Literal[
     "Simplified Chinese",
 ]
 
-MODELS:Dict[str, str] = {
-    "English":"english_g2",
-    "Japanese":"japanese_g2",
-    "Kannada":"kannada_g2",
-    "Korean":"korean_g2",
-    "Latin":"latin_g2",
-    "Telugu":"telugu_g2",
-    "Simplified Chinese":"zh_sim_g2",
+MODELS: Dict[str, str] = {
+    "English": "english_g2",
+    "Japanese": "japanese_g2",
+    "Kannada": "kannada_g2",
+    "Korean": "korean_g2",
+    "Latin": "latin_g2",
+    "Telugu": "telugu_g2",
+    "Simplified Chinese": "zh_sim_g2",
 }
 
 LONG_DESCRIPTION = """
@@ -102,7 +100,6 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
 
-
 text_cache = LRUCache()
 
 
@@ -135,7 +132,7 @@ class EasyOCRBlockV1(WorkflowBlock):
         if self._step_execution_mode is StepExecutionMode.LOCAL:
             return self.run_locally(data=data, version=version)
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
-            #return self.run_remotely(data=data, version=version)
+            # return self.run_remotely(data=data, version=version)
             # TBD
             return {"predictions": []}
         else:

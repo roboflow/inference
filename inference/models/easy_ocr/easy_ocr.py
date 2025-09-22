@@ -1,3 +1,5 @@
+from typing import List
+
 import torch
 
 from inference.core.env import DEVICE
@@ -32,3 +34,6 @@ class EasyOCR(RoboflowCoreModel):
         self.device = device
 
         self.log("Creating EasyOCR model")
+
+    def get_infer_bucket_file_list(self) -> List[str]:
+        return ["weights.pt"]
