@@ -3618,12 +3618,12 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_torc
 
 
 def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_fused_numpy(
-    coin_counting_yolov8n_torch_script_dynamic_bs_static_crop_stretch_fused_nms_package: str,
+    coin_counting_yolov8n_torch_script_static_bs_static_crop_stretch_fused_nms_package: str,
     coins_counting_image_numpy: np.ndarray,
 ) -> None:
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
-        model_name_or_path=coin_counting_yolov8n_torch_script_dynamic_bs_static_crop_stretch_fused_nms_package,
+        model_name_or_path=coin_counting_yolov8n_torch_script_static_bs_static_crop_stretch_fused_nms_package,
         device=torch.device("cpu"),
     )
 
@@ -3675,71 +3675,13 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_
     )
 
 
-def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_fused_torch(
-    coin_counting_yolov8n_torch_script_dynamic_bs_static_crop_stretch_fused_nms_package: str,
-    coins_counting_image_torch: torch.Tensor,
-) -> None:
-    # given
-    model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
-        model_name_or_path=coin_counting_yolov8n_torch_script_dynamic_bs_static_crop_stretch_fused_nms_package,
-        device=torch.device("cpu"),
-    )
-
-    # when
-    predictions = model(coins_counting_image_torch)
-
-    # then
-    assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor(
-            [
-                0.96573,
-                0.95899,
-                0.95171,
-                0.93903,
-                0.93697,
-                0.93555,
-                0.91717,
-                0.89604,
-                0.54311,
-                0.42117,
-            ]
-        ),
-        atol=0.01,
-    )
-    assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
-    )
-    expected_xyxy = torch.tensor(
-        [
-            [1710, 2569, 1889, 2759],
-            [1509, 1876, 1720, 2098],
-            [1253, 2055, 1424, 2226],
-            [1467, 2300, 1628, 2467],
-            [1095, 2352, 1260, 2519],
-            [1172, 2634, 1375, 2846],
-            [1746, 2295, 1913, 2469],
-            [932, 1842, 1094, 2000],
-            [1302, 509, 2732, 1926],
-            [2674, 809, 2720, 963],
-        ],
-        dtype=torch.int32,
-    )
-    assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
-        atol=2,
-    )
-
-
 def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_fused_batch_numpy(
-    coin_counting_yolov8n_torch_script_dynamic_bs_static_crop_stretch_fused_nms_package: str,
+    coin_counting_yolov8n_torch_script_static_bs_static_crop_stretch_fused_nms_package: str,
     coins_counting_image_numpy: np.ndarray,
 ) -> None:
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
-        model_name_or_path=coin_counting_yolov8n_torch_script_dynamic_bs_static_crop_stretch_fused_nms_package,
+        model_name_or_path=coin_counting_yolov8n_torch_script_static_bs_static_crop_stretch_fused_nms_package,
         device=torch.device("cpu"),
     )
 
@@ -3819,12 +3761,12 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_
 
 
 def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_fused_torch(
-    coin_counting_yolov8n_torch_script_dynamic_bs_static_crop_stretch_fused_nms_package: str,
+    coin_counting_yolov8n_torch_script_static_bs_static_crop_stretch_fused_nms_package: str,
     coins_counting_image_torch: torch.Tensor,
 ) -> None:
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
-        model_name_or_path=coin_counting_yolov8n_torch_script_dynamic_bs_static_crop_stretch_fused_nms_package,
+        model_name_or_path=coin_counting_yolov8n_torch_script_static_bs_static_crop_stretch_fused_nms_package,
         device=torch.device("cpu"),
     )
 
@@ -3877,12 +3819,12 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_
 
 
 def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_fused_batch_torch(
-    coin_counting_yolov8n_torch_script_dynamic_bs_static_crop_stretch_fused_nms_package: str,
+    coin_counting_yolov8n_torch_script_static_bs_static_crop_stretch_fused_nms_package: str,
     coins_counting_image_torch: torch.Tensor,
 ) -> None:
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
-        model_name_or_path=coin_counting_yolov8n_torch_script_dynamic_bs_static_crop_stretch_fused_nms_package,
+        model_name_or_path=coin_counting_yolov8n_torch_script_static_bs_static_crop_stretch_fused_nms_package,
         device=torch.device("cpu"),
     )
 
@@ -3964,12 +3906,12 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_
 
 
 def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_fused_torch_list(
-    coin_counting_yolov8n_torch_script_dynamic_bs_static_crop_stretch_fused_nms_package: str,
+    coin_counting_yolov8n_torch_script_static_bs_static_crop_stretch_fused_nms_package: str,
     coins_counting_image_torch: torch.Tensor,
 ) -> None:
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
-        model_name_or_path=coin_counting_yolov8n_torch_script_dynamic_bs_static_crop_stretch_fused_nms_package,
+        model_name_or_path=coin_counting_yolov8n_torch_script_static_bs_static_crop_stretch_fused_nms_package,
         device=torch.device("cpu"),
     )
 
@@ -4033,6 +3975,1290 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_
             [932, 1842, 1094, 2000],
             [1302, 509, 2732, 1926],
             [2674, 809, 2720, 963],
+        ],
+        dtype=torch.int32,
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+
+
+def test_onnx_package_with_dynamic_batch_size_and_center_crop_numpy(
+    coin_counting_yolov8n_onnx_dynamic_bs_center_crop_package: str,
+    coins_counting_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
+        model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_center_crop_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(coins_counting_image_numpy)
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [
+            [1755, 2297, 1831, 2336],
+            [1191, 1691, 1771, 2332],
+            [1379, 2069, 1422, 2159],
+            [1651, 1976, 1696, 2015],
+        ],
+        dtype=torch.int32,
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+
+
+def test_onnx_package_with_dynamic_batch_size_and_center_crop_batch_numpy(
+    coin_counting_yolov8n_onnx_dynamic_bs_center_crop_package: str,
+    coins_counting_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
+        model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_center_crop_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model([coins_counting_image_numpy, coins_counting_image_numpy])
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+    )
+    assert torch.allclose(
+        predictions[1].class_id,
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [
+            [1755, 2297, 1831, 2336],
+            [1191, 1691, 1771, 2332],
+            [1379, 2069, 1422, 2159],
+            [1651, 1976, 1696, 2015],
+        ],
+        dtype=torch.int32,
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+
+
+def test_onnx_package_with_dynamic_batch_size_and_center_torch(
+    coin_counting_yolov8n_onnx_dynamic_bs_center_crop_package: str,
+    coins_counting_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
+        model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_center_crop_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(coins_counting_image_torch)
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [
+            [1755, 2297, 1831, 2336],
+            [1191, 1691, 1771, 2332],
+            [1379, 2069, 1422, 2159],
+            [1651, 1976, 1696, 2015],
+        ],
+        dtype=torch.int32,
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+
+
+def test_onnx_package_with_dynamic_batch_size_and_center_batch_torch(
+    coin_counting_yolov8n_onnx_dynamic_bs_center_crop_package: str,
+    coins_counting_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
+        model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_center_crop_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(
+        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0)
+    )
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+    )
+    assert torch.allclose(
+        predictions[1].class_id,
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [
+            [1755, 2297, 1831, 2336],
+            [1191, 1691, 1771, 2332],
+            [1379, 2069, 1422, 2159],
+            [1651, 1976, 1696, 2015],
+        ],
+        dtype=torch.int32,
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+
+
+def test_onnx_package_with_dynamic_batch_size_and_center_torch_list(
+    coin_counting_yolov8n_onnx_dynamic_bs_center_crop_package: str,
+    coins_counting_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
+        model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_center_crop_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model([coins_counting_image_torch, coins_counting_image_torch])
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+    )
+    assert torch.allclose(
+        predictions[1].class_id,
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [
+            [1755, 2297, 1831, 2336],
+            [1191, 1691, 1771, 2332],
+            [1379, 2069, 1422, 2159],
+            [1651, 1976, 1696, 2015],
+        ],
+        dtype=torch.int32,
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+
+
+def test_onnx_package_with_dynamic_batch_size_and_center_crop_fused_nms_numpy(
+    coin_counting_yolov8n_onnx_dynamic_bs_center_crop_fused_nms_package: str,
+    coins_counting_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
+        model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_center_crop_fused_nms_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(coins_counting_image_numpy)
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [
+            [1755, 2297, 1831, 2336],
+            [1191, 1691, 1771, 2332],
+            [1379, 2069, 1422, 2159],
+            [1651, 1976, 1696, 2015],
+            [1365, 2067, 1422, 2153],
+        ],
+        dtype=torch.int32,
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+
+
+def test_onnx_package_with_dynamic_batch_size_and_center_crop_fused_nms_batch_numpy(
+    coin_counting_yolov8n_onnx_dynamic_bs_center_crop_fused_nms_package: str,
+    coins_counting_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
+        model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_center_crop_fused_nms_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model([coins_counting_image_numpy, coins_counting_image_numpy])
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32),
+    )
+    assert torch.allclose(
+        predictions[1].class_id,
+        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [
+            [1755, 2297, 1831, 2336],
+            [1191, 1691, 1771, 2332],
+            [1379, 2069, 1422, 2159],
+            [1651, 1976, 1696, 2015],
+            [1365, 2067, 1422, 2153],
+        ],
+        dtype=torch.int32,
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+
+
+def test_onnx_package_with_dynamic_batch_size_and_center_fused_nms_torch(
+    coin_counting_yolov8n_onnx_dynamic_bs_center_crop_fused_nms_package: str,
+    coins_counting_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
+        model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_center_crop_fused_nms_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(coins_counting_image_torch)
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [
+            [1755, 2297, 1831, 2336],
+            [1191, 1691, 1771, 2332],
+            [1379, 2069, 1422, 2159],
+            [1651, 1976, 1696, 2015],
+            [1365, 2067, 1422, 2153],
+        ],
+        dtype=torch.int32,
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+
+
+def test_onnx_package_with_dynamic_batch_size_and_center_fused_nms_batch_torch(
+    coin_counting_yolov8n_onnx_dynamic_bs_center_crop_fused_nms_package: str,
+    coins_counting_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
+        model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_center_crop_fused_nms_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(
+        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0)
+    )
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32),
+    )
+    assert torch.allclose(
+        predictions[1].class_id,
+        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [
+            [1755, 2297, 1831, 2336],
+            [1191, 1691, 1771, 2332],
+            [1379, 2069, 1422, 2159],
+            [1651, 1976, 1696, 2015],
+            [1365, 2067, 1422, 2153],
+        ],
+        dtype=torch.int32,
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+
+
+def test_onnx_package_with_dynamic_batch_size_and_center_fused_nms_torch_list(
+    coin_counting_yolov8n_onnx_dynamic_bs_center_crop_fused_nms_package: str,
+    coins_counting_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
+        model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_center_crop_fused_nms_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model([coins_counting_image_torch, coins_counting_image_torch])
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32),
+    )
+    assert torch.allclose(
+        predictions[1].class_id,
+        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [
+            [1755, 2297, 1831, 2336],
+            [1191, 1691, 1771, 2332],
+            [1379, 2069, 1422, 2159],
+            [1651, 1976, 1696, 2015],
+            [1365, 2067, 1422, 2153],
+        ],
+        dtype=torch.int32,
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+
+
+def test_onnx_package_with_static_batch_size_and_center_crop_numpy(
+    coin_counting_yolov8n_onnx_static_bs_center_crop_package: str,
+    coins_counting_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
+        model_name_or_path=coin_counting_yolov8n_onnx_static_bs_center_crop_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(coins_counting_image_numpy)
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [
+            [1755, 2297, 1831, 2336],
+            [1191, 1691, 1771, 2332],
+            [1379, 2069, 1422, 2159],
+            [1651, 1976, 1696, 2015],
+        ],
+        dtype=torch.int32,
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+
+
+def test_onnx_package_with_static_batch_size_and_center_crop_batch_numpy(
+    coin_counting_yolov8n_onnx_static_bs_center_crop_package: str,
+    coins_counting_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
+        model_name_or_path=coin_counting_yolov8n_onnx_static_bs_center_crop_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model([coins_counting_image_numpy, coins_counting_image_numpy])
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+    )
+    assert torch.allclose(
+        predictions[1].class_id,
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [
+            [1755, 2297, 1831, 2336],
+            [1191, 1691, 1771, 2332],
+            [1379, 2069, 1422, 2159],
+            [1651, 1976, 1696, 2015],
+        ],
+        dtype=torch.int32,
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+
+
+def test_onnx_package_with_static_batch_size_and_center_torch(
+    coin_counting_yolov8n_onnx_static_bs_center_crop_package: str,
+    coins_counting_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
+        model_name_or_path=coin_counting_yolov8n_onnx_static_bs_center_crop_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(coins_counting_image_torch)
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [
+            [1755, 2297, 1831, 2336],
+            [1191, 1691, 1771, 2332],
+            [1379, 2069, 1422, 2159],
+            [1651, 1976, 1696, 2015],
+        ],
+        dtype=torch.int32,
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+
+
+def test_onnx_package_with_static_batch_size_and_center_batch_torch(
+    coin_counting_yolov8n_onnx_static_bs_center_crop_package: str,
+    coins_counting_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
+        model_name_or_path=coin_counting_yolov8n_onnx_static_bs_center_crop_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(
+        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0)
+    )
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+    )
+    assert torch.allclose(
+        predictions[1].class_id,
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [
+            [1755, 2297, 1831, 2336],
+            [1191, 1691, 1771, 2332],
+            [1379, 2069, 1422, 2159],
+            [1651, 1976, 1696, 2015],
+        ],
+        dtype=torch.int32,
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+
+
+def test_onnx_package_with_static_batch_size_and_center_torch_list(
+    coin_counting_yolov8n_onnx_static_bs_center_crop_package: str,
+    coins_counting_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
+        model_name_or_path=coin_counting_yolov8n_onnx_static_bs_center_crop_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model([coins_counting_image_torch, coins_counting_image_torch])
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+    )
+    assert torch.allclose(
+        predictions[1].class_id,
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [
+            [1755, 2297, 1831, 2336],
+            [1191, 1691, 1771, 2332],
+            [1379, 2069, 1422, 2159],
+            [1651, 1976, 1696, 2015],
+        ],
+        dtype=torch.int32,
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+
+
+def test_torchscript_package_with_static_batch_size_and_center_crop_numpy(
+    coin_counting_yolov8n_toch_script_static_bs_center_crop_package: str,
+    coins_counting_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
+        model_name_or_path=coin_counting_yolov8n_toch_script_static_bs_center_crop_package,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model(coins_counting_image_numpy)
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [
+            [1755, 2297, 1831, 2336],
+            [1191, 1691, 1771, 2332],
+            [1379, 2069, 1422, 2159],
+            [1651, 1976, 1696, 2015],
+        ],
+        dtype=torch.int32,
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+
+
+def test_torchscript_package_with_static_batch_size_and_center_crop_torch(
+    coin_counting_yolov8n_toch_script_static_bs_center_crop_package: str,
+    coins_counting_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
+        model_name_or_path=coin_counting_yolov8n_toch_script_static_bs_center_crop_package,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model(coins_counting_image_torch)
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [
+            [1755, 2297, 1831, 2336],
+            [1191, 1691, 1771, 2332],
+            [1379, 2069, 1422, 2159],
+            [1651, 1976, 1696, 2015],
+        ],
+        dtype=torch.int32,
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+
+
+def test_torchscript_package_with_static_batch_size_and_center_crop_batch_numpy(
+    coin_counting_yolov8n_toch_script_static_bs_center_crop_package: str,
+    coins_counting_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
+        model_name_or_path=coin_counting_yolov8n_toch_script_static_bs_center_crop_package,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model([coins_counting_image_numpy, coins_counting_image_numpy])
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+    )
+    assert torch.allclose(
+        predictions[1].class_id,
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [
+            [1755, 2297, 1831, 2336],
+            [1191, 1691, 1771, 2332],
+            [1379, 2069, 1422, 2159],
+            [1651, 1976, 1696, 2015],
+        ],
+        dtype=torch.int32,
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+
+
+def test_torchscript_package_with_static_batch_size_and_center_crop_torch(
+    coin_counting_yolov8n_toch_script_static_bs_center_crop_package: str,
+    coins_counting_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
+        model_name_or_path=coin_counting_yolov8n_toch_script_static_bs_center_crop_package,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model(coins_counting_image_torch)
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [
+            [1755, 2297, 1831, 2336],
+            [1191, 1691, 1771, 2332],
+            [1379, 2069, 1422, 2159],
+            [1651, 1976, 1696, 2015],
+        ],
+        dtype=torch.int32,
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+
+
+def test_torchscript_package_with_static_batch_size_and_center_crop_batch_torch(
+    coin_counting_yolov8n_toch_script_static_bs_center_crop_package: str,
+    coins_counting_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
+        model_name_or_path=coin_counting_yolov8n_toch_script_static_bs_center_crop_package,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model(
+        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0)
+    )
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+    )
+    assert torch.allclose(
+        predictions[1].class_id,
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [
+            [1755, 2297, 1831, 2336],
+            [1191, 1691, 1771, 2332],
+            [1379, 2069, 1422, 2159],
+            [1651, 1976, 1696, 2015],
+        ],
+        dtype=torch.int32,
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+
+
+def test_torchscript_package_with_static_batch_size_and_center_crop_torch_list(
+    coin_counting_yolov8n_toch_script_static_bs_center_crop_package: str,
+    coins_counting_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
+        model_name_or_path=coin_counting_yolov8n_toch_script_static_bs_center_crop_package,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model([coins_counting_image_torch, coins_counting_image_torch])
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+    )
+    assert torch.allclose(
+        predictions[1].class_id,
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [
+            [1755, 2297, 1831, 2336],
+            [1191, 1691, 1771, 2332],
+            [1379, 2069, 1422, 2159],
+            [1651, 1976, 1696, 2015],
+        ],
+        dtype=torch.int32,
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+
+
+def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_numpy(
+    coin_counting_yolov8n_toch_script_static_bs_center_crop_fused_nms_package: str,
+    coins_counting_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
+        model_name_or_path=coin_counting_yolov8n_toch_script_static_bs_center_crop_fused_nms_package,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model(coins_counting_image_numpy)
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [
+            [1755, 2297, 1831, 2336],
+            [1191, 1691, 1771, 2332],
+            [1379, 2069, 1422, 2159],
+            [1651, 1976, 1696, 2015],
+            [1365, 2067, 1422, 2153],
+        ],
+        dtype=torch.int32,
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+
+
+def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_torch(
+    coin_counting_yolov8n_toch_script_static_bs_center_crop_fused_nms_package: str,
+    coins_counting_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
+        model_name_or_path=coin_counting_yolov8n_toch_script_static_bs_center_crop_fused_nms_package,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model(coins_counting_image_torch)
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [
+            [1755, 2297, 1831, 2336],
+            [1191, 1691, 1771, 2332],
+            [1379, 2069, 1422, 2159],
+            [1651, 1976, 1696, 2015],
+            [1365, 2067, 1422, 2153],
+        ],
+        dtype=torch.int32,
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+
+
+def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_batch_numpy(
+    coin_counting_yolov8n_toch_script_static_bs_center_crop_fused_nms_package: str,
+    coins_counting_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
+        model_name_or_path=coin_counting_yolov8n_toch_script_static_bs_center_crop_fused_nms_package,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model([coins_counting_image_numpy, coins_counting_image_numpy])
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32),
+    )
+    assert torch.allclose(
+        predictions[1].class_id,
+        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [
+            [1755, 2297, 1831, 2336],
+            [1191, 1691, 1771, 2332],
+            [1379, 2069, 1422, 2159],
+            [1651, 1976, 1696, 2015],
+            [1365, 2067, 1422, 2153],
+        ],
+        dtype=torch.int32,
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+
+
+def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_torch(
+    coin_counting_yolov8n_toch_script_static_bs_center_crop_fused_nms_package: str,
+    coins_counting_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
+        model_name_or_path=coin_counting_yolov8n_toch_script_static_bs_center_crop_fused_nms_package,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model(coins_counting_image_torch)
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [
+            [1755, 2297, 1831, 2336],
+            [1191, 1691, 1771, 2332],
+            [1379, 2069, 1422, 2159],
+            [1651, 1976, 1696, 2015],
+            [1365, 2067, 1422, 2153],
+        ],
+        dtype=torch.int32,
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+
+
+def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_batch_torch(
+    coin_counting_yolov8n_toch_script_static_bs_center_crop_fused_nms_package: str,
+    coins_counting_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
+        model_name_or_path=coin_counting_yolov8n_toch_script_static_bs_center_crop_fused_nms_package,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model(
+        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0)
+    )
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32),
+    )
+    assert torch.allclose(
+        predictions[1].class_id,
+        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [
+            [1755, 2297, 1831, 2336],
+            [1191, 1691, 1771, 2332],
+            [1379, 2069, 1422, 2159],
+            [1651, 1976, 1696, 2015],
+            [1365, 2067, 1422, 2153],
+        ],
+        dtype=torch.int32,
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+
+
+def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_torch_list(
+    coin_counting_yolov8n_toch_script_static_bs_center_crop_fused_nms_package: str,
+    coins_counting_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
+        model_name_or_path=coin_counting_yolov8n_toch_script_static_bs_center_crop_fused_nms_package,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model([coins_counting_image_torch, coins_counting_image_torch])
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32),
+    )
+    assert torch.allclose(
+        predictions[1].class_id,
+        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [
+            [1755, 2297, 1831, 2336],
+            [1191, 1691, 1771, 2332],
+            [1379, 2069, 1422, 2159],
+            [1651, 1976, 1696, 2015],
+            [1365, 2067, 1422, 2153],
         ],
         dtype=torch.int32,
     )

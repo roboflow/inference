@@ -45,6 +45,11 @@ COIN_COUNTING_YOLOV8N_ONNX_DYNAMIC_BS_STATIC_CROP_STRETCH_NMS_FUSED_URL = "https
 COIN_COUNTING_YOLOV8N_ONNX_STATIC_BS_STATIC_CROP_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-onnx-static-bs-static-crop-stretch.zip"
 COIN_COUNTING_YOLOV8N_TORCH_SCRIPT_STATIC_BS_STATIC_CROP_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-torchscript-static-bs-static-crop-stretch.zip"
 COIN_COUNTING_YOLOV8N_TORCH_SCRIPT_STATIC_BS_STATIC_CROP_STRETCH_NMS_FUSED_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-torchscript-static-bs-static-crop-stretch-nms-fused.zip"
+COIN_COUNTING_YOLOV8N_ONNX_DYNAMIC_BS_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-onnx-dynamic-bs-center-crop.zip"
+COIN_COUNTING_YOLOV8N_ONNX_DYNAMIC_BS_CENTER_CROP_NMS_FUSED_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-onnx-dynamic-bs-center-crop-fused-nms.zip"
+COIN_COUNTING_YOLOV8N_ONNX_STATIC_BS_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-onnx-static-bs-center-crop.zip"
+COIN_COUNTING_YOLOV8N_TORCHSCRIPT_STATIC_BS_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-torchscript-static-bs-center-crop.zip"
+COIN_COUNTING_YOLOV8N_TORCHSCRIPT_STATIC_BS_CENTER_CROP_FUSED_NMS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-torchscript-static-bs-center-crop-fused-nms.zip"
 
 
 @pytest.fixture(scope="module")
@@ -354,10 +359,55 @@ def coin_counting_yolov8n_torch_script_dynamic_bs_static_crop_stretch_package() 
 
 
 @pytest.fixture(scope="module")
-def coin_counting_yolov8n_torch_script_dynamic_bs_static_crop_stretch_fused_nms_package() -> (
+def coin_counting_yolov8n_torch_script_static_bs_static_crop_stretch_fused_nms_package() -> (
     str
 ):
     return download_model_package(
         model_package_zip_url=COIN_COUNTING_YOLOV8N_TORCH_SCRIPT_STATIC_BS_STATIC_CROP_STRETCH_NMS_FUSED_URL,
         package_name="coin-counting-yolov8n-torchscript-static-bs-static-crop-stretch-fused-nms",
+    )
+
+
+@pytest.fixture(scope="module")
+def coin_counting_yolov8n_onnx_dynamic_bs_center_crop_package() -> str:
+    # THIS MODEL IS KIND OF SHITTY IN TERMS OF OUTPUTS, IT'S HERE JUST TO VERIFY PRE- / POST- processing
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_YOLOV8N_ONNX_DYNAMIC_BS_CENTER_CROP_URL,
+        package_name="coin-counting-yolov8n-onnx-dynamic-bs-center-crop",
+    )
+
+
+@pytest.fixture(scope="module")
+def coin_counting_yolov8n_onnx_dynamic_bs_center_crop_fused_nms_package() -> str:
+    # THIS MODEL IS KIND OF SHITTY IN TERMS OF OUTPUTS, IT'S HERE JUST TO VERIFY PRE- / POST- processing
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_YOLOV8N_ONNX_DYNAMIC_BS_CENTER_CROP_NMS_FUSED_URL,
+        package_name="coin-counting-yolov8n-onnx-dynamic-bs-center-crop-fused-nms",
+    )
+
+
+@pytest.fixture(scope="module")
+def coin_counting_yolov8n_onnx_static_bs_center_crop_package() -> str:
+    # THIS MODEL IS KIND OF SHITTY IN TERMS OF OUTPUTS, IT'S HERE JUST TO VERIFY PRE- / POST- processing
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_YOLOV8N_ONNX_STATIC_BS_CENTER_CROP_URL,
+        package_name="coin-counting-yolov8n-onnx-static-bs-center-crop",
+    )
+
+
+@pytest.fixture(scope="module")
+def coin_counting_yolov8n_toch_script_static_bs_center_crop_package() -> str:
+    # THIS MODEL IS KIND OF SHITTY IN TERMS OF OUTPUTS, IT'S HERE JUST TO VERIFY PRE- / POST- processing
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_YOLOV8N_TORCHSCRIPT_STATIC_BS_CENTER_CROP_URL,
+        package_name="coin-counting-yolov8n-torchscript-static-bs-center-crop",
+    )
+
+
+@pytest.fixture(scope="module")
+def coin_counting_yolov8n_toch_script_static_bs_center_crop_fused_nms_package() -> str:
+    # THIS MODEL IS KIND OF SHITTY IN TERMS OF OUTPUTS, IT'S HERE JUST TO VERIFY PRE- / POST- processing
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_YOLOV8N_TORCHSCRIPT_STATIC_BS_CENTER_CROP_FUSED_NMS_URL,
+        package_name="coin-counting-yolov8n-torchscript-static-bs-center-fused-nms-crop",
     )
