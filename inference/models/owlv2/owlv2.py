@@ -8,6 +8,7 @@ from collections import defaultdict
 from threading import RLock
 from typing import Any, Dict, List, Literal, NewType, Optional, Tuple, Union
 
+from filelock import FileLock
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -902,52 +903,71 @@ class SerializedOwlV2(RoboflowInferenceModel):
         **kwargs,
     ):
         logger.info(f"Downloading OWLv2 model artifacts")
-        if self.version_id is not None:
-            api_data = get_roboflow_model_data(
-                api_key=self.api_key,
-                model_id=self.endpoint,
-                endpoint_type=ModelEndpointType.OWLV2,
-                device_id=self.device_id,
-                countinference=countinference,
-                service_secret=service_secret,
-            )
-            api_data = api_data["owlv2"]
-            if "model" not in api_data:
-                raise ModelArtefactError(
-                    "Could not find `model` key in roboflow API model description response."
+
+        # Use the same lock file pattern as in clear_cache
+        lock_dir = MODEL_CACHE_DIR + "/_file_locks"  # Dedicated lock directory
+        os.makedirs(lock_dir, exist_ok=True)  # Ensure lock directory exists.
+        lock_file = os.path.join(lock_dir, f"{os.path.basename(self.cache_dir)}.lock")
+        try:
+            lock = FileLock(lock_file, timeout=120)  # 120 second timeout for downloads
+            with lock:
+                if self.version_id is not None:
+                    api_data = get_roboflow_model_data(
+                        api_key=self.api_key,
+                        model_id=self.endpoint,
+                        endpoint_type=ModelEndpointType.OWLV2,
+                        device_id=self.device_id,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
+                    api_data = api_data["owlv2"]
+                    if "model" not in api_data:
+                        raise ModelArtefactError(
+                            "Could not find `model` key in roboflow API model description response."
+                        )
+                    logger.info(
+                        f"Downloading OWLv2 model weights from {api_data['model']}"
+                    )
+                    model_weights_response = get_from_url(
+                        api_data["model"], json_response=False
+                    )
+                else:
+                    logger.info(f"Getting OWLv2 model data for")
+                    api_data = get_roboflow_instant_model_data(
+                        api_key=self.api_key,
+                        model_id=self.endpoint,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
+                    if (
+                        "modelFiles" not in api_data
+                        or "owlv2" not in api_data["modelFiles"]
+                        or "model" not in api_data["modelFiles"]["owlv2"]
+                    ):
+                        raise ModelArtefactError(
+                            "Could not find `modelFiles` key or `modelFiles`.`owlv2` or `modelFiles`.`owlv2`.`model` key in roboflow API model description response."
+                        )
+                    logger.info(
+                        f"Downloading OWLv2 model weights from {api_data['modelFiles']['owlv2']['model']}"
+                    )
+                    model_weights_response = get_from_url(
+                        api_data["modelFiles"]["owlv2"]["model"], json_response=False
+                    )
+                save_bytes_in_cache(
+                    content=model_weights_response.content,
+                    file=self.weights_file,
+                    model_id=self.endpoint,
                 )
-            logger.info(f"Downloading OWLv2 model weights from {api_data['model']}")
-            model_weights_response = get_from_url(
-                api_data["model"], json_response=False
-            )
-        else:
-            logger.info(f"Getting OWLv2 model data for")
-            api_data = get_roboflow_instant_model_data(
-                api_key=self.api_key,
-                model_id=self.endpoint,
-                countinference=countinference,
-                service_secret=service_secret,
-            )
-            if (
-                "modelFiles" not in api_data
-                or "owlv2" not in api_data["modelFiles"]
-                or "model" not in api_data["modelFiles"]["owlv2"]
-            ):
-                raise ModelArtefactError(
-                    "Could not find `modelFiles` key or `modelFiles`.`owlv2` or `modelFiles`.`owlv2`.`model` key in roboflow API model description response."
-                )
-            logger.info(
-                f"Downloading OWLv2 model weights from {api_data['modelFiles']['owlv2']['model']}"
-            )
-            model_weights_response = get_from_url(
-                api_data["modelFiles"]["owlv2"]["model"], json_response=False
-            )
-        save_bytes_in_cache(
-            content=model_weights_response.content,
-            file=self.weights_file,
-            model_id=self.endpoint,
-        )
-        logger.info(f"OWLv2 model weights saved to cache")
+                logger.info(f"OWLv2 model weights saved to cache")
+        except Exception as e:
+            logger.error(f"Error downloading OWLv2 model artifacts: {e}")
+            raise
+        finally:
+            try:
+                if os.path.exists(lock_file):
+                    os.unlink(lock_file)  # Clean up lock file
+            except OSError:
+                pass  # Best effort cleanup
 
     def load_model_artifacts_from_cache(self):
         if DEVICE == "cpu":
