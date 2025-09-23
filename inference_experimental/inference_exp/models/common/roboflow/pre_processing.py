@@ -765,7 +765,6 @@ def handle_tensor_list_input_preparation_with_center_crop(
             and image.shape[3] == network_input.input_channels
         ):
             image = image.permute(0, 3, 1, 2)
-        original_size = ImageDimensions(height=image.shape[2], width=image.shape[3])
         tensor, metadata = handle_torch_input_preparation_with_center_crop(
             image=image,
             network_input=network_input,

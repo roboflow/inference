@@ -150,6 +150,7 @@ class YOLOv8ForInstanceSegmentationOnnx(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
+        image_size: Optional[Tuple[int, int]] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         return pre_process_network_input(
@@ -158,6 +159,7 @@ class YOLOv8ForInstanceSegmentationOnnx(
             network_input=self._inference_config.network_input,
             target_device=self._device,
             input_color_format=input_color_format,
+            image_size_wh=image_size,
         )
 
     def forward(
