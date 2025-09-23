@@ -1,7 +1,11 @@
 import hashlib
-from typing import Dict, List, Literal, Optional, Type, Union
+from typing import Dict, List, Literal, Optional, Tuple, Type, Union
+from uuid import uuid4
 
+import numpy as np
 from pydantic import ConfigDict, Field
+
+import supervision as sv
 
 from inference.core.cache.lru_cache import LRUCache
 from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
@@ -10,9 +14,16 @@ from inference.core.env import (
     LOCAL_INFERENCE_API_URL,
     WORKFLOWS_REMOTE_API_TARGET,
 )
+from supervision.config import CLASS_NAME_DATA_FIELD
+from inference.core.workflows.execution_engine.constants import (
+    DETECTION_ID_KEY,
+    IMAGE_DIMENSIONS_KEY,
+    PREDICTION_TYPE_KEY,
+)
+
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.utils import load_core_model
+from inference.core.workflows.core_steps.common.utils import attach_parents_coordinates_to_sv_detections, load_core_model
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
@@ -53,7 +64,6 @@ MODELS: Dict[str, str] = {
 
 LONG_DESCRIPTION = """
 """
-
 
 class BlockManifest(WorkflowBlockManifest):
 
@@ -100,8 +110,45 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
 
-text_cache = LRUCache()
+def ocr_result_to_detections(
+    image: WorkflowImageData, result: List[Tuple[List[List[int]], str, float]]
+) -> sv.Detections:
+    # Prepare lists for bounding boxes, confidences, class IDs, and labels
+    xyxy, confidences, class_ids, class_names = [], [], [], []
 
+    # Extract data from OCR result
+    for detection in result:
+        bbox, text, confidence = detection[0], detection[1], detection[2]
+
+        # Convert bounding box format
+        x_min = bbox[0][0]
+        y_min = bbox[0][1]
+        x_max = bbox[2][0]
+        y_max = bbox[2][1]
+
+        # Append data to lists
+        xyxy.append([x_min, y_min, x_max, y_max])
+        confidences.append(confidence)
+        class_ids.append(0)
+        class_names.append(text)
+
+    # Convert to NumPy arrays
+    detections = sv.Detections(
+        xyxy=np.array(xyxy),
+        confidence=np.array(confidences),
+        class_id=np.array(class_ids),
+        data={CLASS_NAME_DATA_FIELD: np.array(class_names)},
+    )
+    detections[DETECTION_ID_KEY] = np.array([uuid4() for _ in range(len(detections))])
+    detections[PREDICTION_TYPE_KEY] = np.array(["easy-ocr"] * len(detections))
+    img_height, img_width = image.numpy_image.shape[:2]
+    detections[IMAGE_DIMENSIONS_KEY] = np.array(
+        [[img_height, img_width]] * len(detections)
+    )
+    return attach_parents_coordinates_to_sv_detections(
+        detections=detections,
+        image=image,
+    )
 
 class EasyOCRBlockV1(WorkflowBlock):
     def __init__(
@@ -113,7 +160,6 @@ class EasyOCRBlockV1(WorkflowBlock):
         self._model_manager = model_manager
         self._api_key = api_key
         self._step_execution_mode = step_execution_mode
-        print("===EasyOCRBlockV1 init===", model_manager, api_key, step_execution_mode)
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
@@ -132,9 +178,9 @@ class EasyOCRBlockV1(WorkflowBlock):
         if self._step_execution_mode is StepExecutionMode.LOCAL:
             return self.run_locally(data=data, version=version)
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
-            # return self.run_remotely(data=data, version=version)
-            # TBD
-            return {"predictions": []}
+            raise NotImplementedError(
+                "Remote execution is not supported for EasyOCR. Please use a local or dedicated inference server."
+            )
         else:
             raise ValueError(
                 f"Unknown step execution mode: {self._step_execution_mode}"
@@ -146,13 +192,11 @@ class EasyOCRBlockV1(WorkflowBlock):
         version: str,
     ) -> BlockResult:
 
-        print("====1====")
         inference_request = EasyOCRInferenceRequest(
             easy_ocr_version_id=version,
             image=[data.to_inference_format(numpy_preferred=True)],
             api_key=self._api_key,
         )
-        print("====2====", version, inference_request)
         model_id = load_core_model(
             model_manager=self._model_manager,
             inference_request=inference_request,
@@ -161,11 +205,7 @@ class EasyOCRBlockV1(WorkflowBlock):
         predictions = self._model_manager.infer_from_request_sync(
             model_id, inference_request
         )
-        return {"predictions": []}
 
-    def run_remotely(
-        self,
-        data: Union[WorkflowImageData, str],
-        version: str,
-    ) -> BlockResult:
-        return {"predictions": []}
+        detections = ocr_result_to_detections(data, predictions.result)
+
+        return {"predictions": detections}
