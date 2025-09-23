@@ -33,7 +33,7 @@ version = project.version(1)
 version.deploy("model-type", "path/to/training/results/")
 ```
 
-<a name="supported_models">The following model types are supported:</a>
+The following model types are supported:
 
 |Model Architecture|Task      |Model Type ID                 |
 |------------------|----------------|-------------------|
