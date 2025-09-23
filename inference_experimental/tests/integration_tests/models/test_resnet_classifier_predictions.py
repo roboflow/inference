@@ -1,0 +1,994 @@
+import numpy as np
+import torch
+from inference_exp.models.resnet.resnet_classification_onnx import (
+    ResNetForClassificationOnnx,
+    ResNetForMultiLabelClassificationOnnx,
+)
+from inference_exp.models.resnet.resnet_classification_torch import (
+    ResNetForClassificationTorch,
+    ResNetForMultiLabelClassificationTorch,
+)
+
+
+def test_multi_label_torch_package_numpy(
+    flowers_multi_label_resnet_torch_package: str,
+    flowers_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = ResNetForMultiLabelClassificationTorch.from_pretrained(
+        model_name_or_path=flowers_multi_label_resnet_torch_package,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model(flowers_image_numpy)
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_ids,
+        torch.tensor([2], dtype=torch.int64),
+    )
+
+
+def test_multi_label_torch_package_numpy_custom_image_size(
+    flowers_multi_label_resnet_torch_package: str,
+    flowers_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = ResNetForMultiLabelClassificationTorch.from_pretrained(
+        model_name_or_path=flowers_multi_label_resnet_torch_package,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model(flowers_image_numpy, image_size=(100, 100))
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([3.5349e-04, 9.9397e-01, 8.3731e-03]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_ids,
+        torch.tensor([1], dtype=torch.int64),
+    )
+
+
+def test_multi_label_torch_package_batch_numpy(
+    flowers_multi_label_resnet_torch_package: str,
+    flowers_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = ResNetForMultiLabelClassificationTorch.from_pretrained(
+        model_name_or_path=flowers_multi_label_resnet_torch_package,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model([flowers_image_numpy, flowers_image_numpy])
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_ids,
+        torch.tensor([2], dtype=torch.int64),
+    )
+    assert torch.allclose(
+        predictions[1].class_ids,
+        torch.tensor([2], dtype=torch.int64),
+    )
+
+
+def test_multi_label_torch_package_torch(
+    flowers_multi_label_resnet_torch_package: str,
+    flowers_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = ResNetForMultiLabelClassificationTorch.from_pretrained(
+        model_name_or_path=flowers_multi_label_resnet_torch_package,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model(flowers_image_torch)
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_ids,
+        torch.tensor([2], dtype=torch.int64),
+    )
+
+
+def test_multi_label_torch_package_batch_torch(
+    flowers_multi_label_resnet_torch_package: str,
+    flowers_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = ResNetForMultiLabelClassificationTorch.from_pretrained(
+        model_name_or_path=flowers_multi_label_resnet_torch_package,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model(torch.stack([flowers_image_torch, flowers_image_torch], dim=0))
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_ids,
+        torch.tensor([2], dtype=torch.int64),
+    )
+    assert torch.allclose(
+        predictions[1].class_ids,
+        torch.tensor([2], dtype=torch.int64),
+    )
+
+
+def test_multi_label_torch_package_batch_torch_list(
+    flowers_multi_label_resnet_torch_package: str,
+    flowers_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = ResNetForMultiLabelClassificationTorch.from_pretrained(
+        model_name_or_path=flowers_multi_label_resnet_torch_package,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model([flowers_image_torch, flowers_image_torch])
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_ids,
+        torch.tensor([2], dtype=torch.int64),
+    )
+    assert torch.allclose(
+        predictions[1].class_ids,
+        torch.tensor([2], dtype=torch.int64),
+    )
+
+
+def test_multi_label_onnx_dynamic_bs_package_numpy(
+    flowers_multi_label_resnet_onnx_dynamic_bs_package: str,
+    flowers_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = ResNetForMultiLabelClassificationOnnx.from_pretrained(
+        model_name_or_path=flowers_multi_label_resnet_onnx_dynamic_bs_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(flowers_image_numpy)
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_ids,
+        torch.tensor([2], dtype=torch.int64),
+    )
+
+
+def test_multi_label_onnx_dynamic_bs_package_numpy_custom_image_size(
+    flowers_multi_label_resnet_onnx_dynamic_bs_package: str,
+    flowers_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = ResNetForMultiLabelClassificationOnnx.from_pretrained(
+        model_name_or_path=flowers_multi_label_resnet_onnx_dynamic_bs_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(flowers_image_numpy, image_size=(100, 100))
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([3.5349e-04, 9.9397e-01, 8.3731e-03]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_ids,
+        torch.tensor([1], dtype=torch.int64),
+    )
+
+
+def test_multi_label_onnx_dynamic_bs_package_batch_numpy(
+    flowers_multi_label_resnet_onnx_dynamic_bs_package: str,
+    flowers_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = ResNetForMultiLabelClassificationOnnx.from_pretrained(
+        model_name_or_path=flowers_multi_label_resnet_onnx_dynamic_bs_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model([flowers_image_numpy, flowers_image_numpy])
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_ids,
+        torch.tensor([2], dtype=torch.int64),
+    )
+    assert torch.allclose(
+        predictions[1].class_ids,
+        torch.tensor([2], dtype=torch.int64),
+    )
+
+
+def test_multi_label_onnx_dynamic_bs_package_torch(
+    flowers_multi_label_resnet_onnx_dynamic_bs_package: str,
+    flowers_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = ResNetForMultiLabelClassificationOnnx.from_pretrained(
+        model_name_or_path=flowers_multi_label_resnet_onnx_dynamic_bs_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(flowers_image_torch)
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_ids,
+        torch.tensor([2], dtype=torch.int64),
+    )
+
+
+def test_multi_label_onnx_dynamic_bs_package_batch_torch(
+    flowers_multi_label_resnet_onnx_dynamic_bs_package: str,
+    flowers_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = ResNetForMultiLabelClassificationOnnx.from_pretrained(
+        model_name_or_path=flowers_multi_label_resnet_onnx_dynamic_bs_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(torch.stack([flowers_image_torch, flowers_image_torch], dim=0))
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_ids,
+        torch.tensor([2], dtype=torch.int64),
+    )
+    assert torch.allclose(
+        predictions[1].class_ids,
+        torch.tensor([2], dtype=torch.int64),
+    )
+
+
+def test_multi_label_onnx_dynamic_bs_package_batch_torch_list(
+    flowers_multi_label_resnet_onnx_dynamic_bs_package: str,
+    flowers_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = ResNetForMultiLabelClassificationOnnx.from_pretrained(
+        model_name_or_path=flowers_multi_label_resnet_onnx_dynamic_bs_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model([flowers_image_torch, flowers_image_torch])
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_ids,
+        torch.tensor([2], dtype=torch.int64),
+    )
+    assert torch.allclose(
+        predictions[1].class_ids,
+        torch.tensor([2], dtype=torch.int64),
+    )
+
+
+def test_multi_label_onnx_static_bs_package_numpy(
+    flowers_multi_label_resnet_onnx_static_bs_package: str,
+    flowers_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = ResNetForMultiLabelClassificationOnnx.from_pretrained(
+        model_name_or_path=flowers_multi_label_resnet_onnx_static_bs_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(flowers_image_numpy)
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_ids,
+        torch.tensor([2], dtype=torch.int64),
+    )
+
+
+def test_multi_label_onnx_static_bs_package_numpy_custom_image_size(
+    flowers_multi_label_resnet_onnx_static_bs_package: str,
+    flowers_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = ResNetForMultiLabelClassificationOnnx.from_pretrained(
+        model_name_or_path=flowers_multi_label_resnet_onnx_static_bs_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(flowers_image_numpy, image_size=(100, 100))
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_ids,
+        torch.tensor([2], dtype=torch.int64),
+    )
+
+
+def test_multi_label_onnx_static_bs_package_batch_numpy(
+    flowers_multi_label_resnet_onnx_static_bs_package: str,
+    flowers_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = ResNetForMultiLabelClassificationOnnx.from_pretrained(
+        model_name_or_path=flowers_multi_label_resnet_onnx_static_bs_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model([flowers_image_numpy, flowers_image_numpy])
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_ids,
+        torch.tensor([2], dtype=torch.int64),
+    )
+    assert torch.allclose(
+        predictions[1].class_ids,
+        torch.tensor([2], dtype=torch.int64),
+    )
+
+
+def test_multi_label_onnx_static_bs_package_torch(
+    flowers_multi_label_resnet_onnx_static_bs_package: str,
+    flowers_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = ResNetForMultiLabelClassificationOnnx.from_pretrained(
+        model_name_or_path=flowers_multi_label_resnet_onnx_static_bs_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(flowers_image_torch)
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_ids,
+        torch.tensor([2], dtype=torch.int64),
+    )
+
+
+def test_multi_label_onnx_static_bs_package_batch_torch(
+    flowers_multi_label_resnet_onnx_static_bs_package: str,
+    flowers_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = ResNetForMultiLabelClassificationOnnx.from_pretrained(
+        model_name_or_path=flowers_multi_label_resnet_onnx_static_bs_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(torch.stack([flowers_image_torch, flowers_image_torch], dim=0))
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_ids,
+        torch.tensor([2], dtype=torch.int64),
+    )
+    assert torch.allclose(
+        predictions[1].class_ids,
+        torch.tensor([2], dtype=torch.int64),
+    )
+
+
+def test_multi_label_onnx_static_bs_package_batch_torch_list(
+    flowers_multi_label_resnet_onnx_static_bs_package: str,
+    flowers_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = ResNetForMultiLabelClassificationOnnx.from_pretrained(
+        model_name_or_path=flowers_multi_label_resnet_onnx_static_bs_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model([flowers_image_torch, flowers_image_torch])
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_ids,
+        torch.tensor([2], dtype=torch.int64),
+    )
+    assert torch.allclose(
+        predictions[1].class_ids,
+        torch.tensor([2], dtype=torch.int64),
+    )
+
+
+####
+
+
+def test_multi_class_torch_package_numpy(
+    vehicles_multi_class_resenet_torch_package: str,
+    bike_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = ResNetForClassificationTorch.from_pretrained(
+        model_name_or_path=vehicles_multi_class_resenet_torch_package,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model(bike_image_numpy)
+
+    # then
+    assert torch.allclose(
+        predictions.confidence,
+        torch.tensor([[0.0065, 0.2892, 0.7043]]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions.class_id,
+        torch.tensor([2], dtype=torch.int64),
+    )
+
+
+def test_multi_class_torch_package_numpy_custom_image_size(
+    vehicles_multi_class_resenet_torch_package: str,
+    bike_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = ResNetForClassificationTorch.from_pretrained(
+        model_name_or_path=vehicles_multi_class_resenet_torch_package,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model(bike_image_numpy, image_size=(100, 100))
+
+    # then
+    assert torch.allclose(
+        predictions.confidence,
+        torch.tensor([[0.0341, 0.6881, 0.2777]]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions.class_id,
+        torch.tensor([1], dtype=torch.int64),
+    )
+
+
+def test_multi_class_torch_package_batch_numpy(
+    vehicles_multi_class_resenet_torch_package: str,
+    bike_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = ResNetForClassificationTorch.from_pretrained(
+        model_name_or_path=vehicles_multi_class_resenet_torch_package,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model([bike_image_numpy, bike_image_numpy])
+
+    # then
+    assert torch.allclose(
+        predictions.confidence,
+        torch.tensor([[0.0065, 0.2892, 0.7043], [0.0065, 0.2892, 0.7043]]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions.class_id,
+        torch.tensor([2, 2], dtype=torch.int64),
+    )
+
+
+def test_multi_class_torch_package_torch(
+    vehicles_multi_class_resenet_torch_package: str,
+    bike_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = ResNetForClassificationTorch.from_pretrained(
+        model_name_or_path=vehicles_multi_class_resenet_torch_package,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model(bike_image_torch)
+
+    # then
+    assert torch.allclose(
+        predictions.confidence,
+        torch.tensor([[0.0065, 0.2892, 0.7043]]),
+        atol=0.02,
+    )
+    assert torch.allclose(
+        predictions.class_id,
+        torch.tensor([2], dtype=torch.int64),
+    )
+
+
+def test_multi_class_torch_package_batch_torch(
+    vehicles_multi_class_resenet_torch_package: str,
+    bike_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = ResNetForClassificationTorch.from_pretrained(
+        model_name_or_path=vehicles_multi_class_resenet_torch_package,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model(torch.stack([bike_image_torch, bike_image_torch], dim=0))
+
+    # then
+    assert torch.allclose(
+        predictions.confidence,
+        torch.tensor([[0.0065, 0.2892, 0.7043], [0.0065, 0.2892, 0.7043]]),
+        atol=0.02,
+    )
+    assert torch.allclose(
+        predictions.class_id,
+        torch.tensor([2, 2], dtype=torch.int64),
+    )
+
+
+def test_multi_class_torch_package_batch_torch_list(
+    vehicles_multi_class_resenet_torch_package: str,
+    bike_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = ResNetForClassificationTorch.from_pretrained(
+        model_name_or_path=vehicles_multi_class_resenet_torch_package,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model([bike_image_torch, bike_image_torch])
+
+    # then
+    assert torch.allclose(
+        predictions.confidence,
+        torch.tensor([[0.0065, 0.2892, 0.7043], [0.0065, 0.2892, 0.7043]]),
+        atol=0.02,
+    )
+    assert torch.allclose(
+        predictions.class_id,
+        torch.tensor([2, 2], dtype=torch.int64),
+    )
+
+
+def test_multi_class_onnx_dynamic_bs_package_numpy(
+    vehicles_multi_class_resenet_onnx_dynamic_bs_package: str,
+    bike_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = ResNetForClassificationOnnx.from_pretrained(
+        model_name_or_path=vehicles_multi_class_resenet_onnx_dynamic_bs_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(bike_image_numpy)
+
+    # then
+    assert torch.allclose(
+        predictions.confidence,
+        torch.tensor([[0.0065, 0.2892, 0.7043]]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions.class_id,
+        torch.tensor([2], dtype=torch.int64),
+    )
+
+
+def test_multi_class_onnx_dynamic_bs_package_numpy_custom_image_size(
+    vehicles_multi_class_resenet_onnx_dynamic_bs_package: str,
+    bike_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = ResNetForClassificationOnnx.from_pretrained(
+        model_name_or_path=vehicles_multi_class_resenet_onnx_dynamic_bs_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(bike_image_numpy, image_size=(100, 100))
+
+    # then
+    assert torch.allclose(
+        predictions.confidence,
+        torch.tensor([[0.0341, 0.6881, 0.2777]]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions.class_id,
+        torch.tensor([1], dtype=torch.int64),
+    )
+
+
+def test_multi_class_onnx_dynamic_bs_package_batch_numpy(
+    vehicles_multi_class_resenet_onnx_dynamic_bs_package: str,
+    bike_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = ResNetForClassificationOnnx.from_pretrained(
+        model_name_or_path=vehicles_multi_class_resenet_onnx_dynamic_bs_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model([bike_image_numpy, bike_image_numpy])
+
+    # then
+    assert torch.allclose(
+        predictions.confidence,
+        torch.tensor([[0.0065, 0.2892, 0.7043], [0.0065, 0.2892, 0.7043]]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions.class_id,
+        torch.tensor([2, 2], dtype=torch.int64),
+    )
+
+
+def test_multi_class_onnx_dynamic_bs_package_torch(
+    vehicles_multi_class_resenet_onnx_dynamic_bs_package: str,
+    bike_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = ResNetForClassificationOnnx.from_pretrained(
+        model_name_or_path=vehicles_multi_class_resenet_onnx_dynamic_bs_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(bike_image_torch)
+
+    # then
+    assert torch.allclose(
+        predictions.confidence,
+        torch.tensor([[0.0065, 0.2892, 0.7043]]),
+        atol=0.02,
+    )
+    assert torch.allclose(
+        predictions.class_id,
+        torch.tensor([2], dtype=torch.int64),
+    )
+
+
+def test_multi_class_onnx_dynamic_bs_package_batch_torch(
+    vehicles_multi_class_resenet_onnx_dynamic_bs_package: str,
+    bike_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = ResNetForClassificationOnnx.from_pretrained(
+        model_name_or_path=vehicles_multi_class_resenet_onnx_dynamic_bs_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(torch.stack([bike_image_torch, bike_image_torch], dim=0))
+
+    # then
+    assert torch.allclose(
+        predictions.confidence,
+        torch.tensor([[0.0065, 0.2892, 0.7043], [0.0065, 0.2892, 0.7043]]),
+        atol=0.02,
+    )
+    assert torch.allclose(
+        predictions.class_id,
+        torch.tensor([2, 2], dtype=torch.int64),
+    )
+
+
+def test_multi_class_onnx_dynamic_bs_package_batch_torch_list(
+    vehicles_multi_class_resenet_onnx_dynamic_bs_package: str,
+    bike_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = ResNetForClassificationOnnx.from_pretrained(
+        model_name_or_path=vehicles_multi_class_resenet_onnx_dynamic_bs_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model([bike_image_torch, bike_image_torch])
+
+    # then
+    assert torch.allclose(
+        predictions.confidence,
+        torch.tensor([[0.0065, 0.2892, 0.7043], [0.0065, 0.2892, 0.7043]]),
+        atol=0.02,
+    )
+    assert torch.allclose(
+        predictions.class_id,
+        torch.tensor([2, 2], dtype=torch.int64),
+    )
+
+
+def test_multi_class_onnx_static_bs_package_numpy(
+    vehicles_multi_class_resenet_onnx_static_bs_package: str,
+    bike_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = ResNetForClassificationOnnx.from_pretrained(
+        model_name_or_path=vehicles_multi_class_resenet_onnx_static_bs_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(bike_image_numpy)
+
+    # then
+    assert torch.allclose(
+        predictions.confidence,
+        torch.tensor([[0.0065, 0.2892, 0.7043]]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions.class_id,
+        torch.tensor([2], dtype=torch.int64),
+    )
+
+
+def test_multi_class_onnx_static_bs_package_numpy_custom_image_size(
+    vehicles_multi_class_resenet_onnx_static_bs_package: str,
+    bike_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = ResNetForClassificationOnnx.from_pretrained(
+        model_name_or_path=vehicles_multi_class_resenet_onnx_static_bs_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(bike_image_numpy, image_size=(100, 100))
+
+    # then
+    assert torch.allclose(
+        predictions.confidence,
+        torch.tensor([[0.0065, 0.2892, 0.7043]]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions.class_id,
+        torch.tensor([2], dtype=torch.int64),
+    )
+
+
+def test_multi_class_onnx_static_bs_package_batch_numpy(
+    vehicles_multi_class_resenet_onnx_static_bs_package: str,
+    bike_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = ResNetForClassificationOnnx.from_pretrained(
+        model_name_or_path=vehicles_multi_class_resenet_onnx_static_bs_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model([bike_image_numpy, bike_image_numpy])
+
+    # then
+    assert torch.allclose(
+        predictions.confidence,
+        torch.tensor([[0.0065, 0.2892, 0.7043], [0.0065, 0.2892, 0.7043]]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions.class_id,
+        torch.tensor([2, 2], dtype=torch.int64),
+    )
+
+
+def test_multi_class_onnx_static_bs_package_torch(
+    vehicles_multi_class_resenet_onnx_static_bs_package: str,
+    bike_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = ResNetForClassificationOnnx.from_pretrained(
+        model_name_or_path=vehicles_multi_class_resenet_onnx_static_bs_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(bike_image_torch)
+
+    # then
+    assert torch.allclose(
+        predictions.confidence,
+        torch.tensor([[0.0065, 0.2892, 0.7043]]),
+        atol=0.02,
+    )
+    assert torch.allclose(
+        predictions.class_id,
+        torch.tensor([2], dtype=torch.int64),
+    )
+
+
+def test_multi_class_onnx_static_bs_package_batch_torch(
+    vehicles_multi_class_resenet_onnx_static_bs_package: str,
+    bike_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = ResNetForClassificationOnnx.from_pretrained(
+        model_name_or_path=vehicles_multi_class_resenet_onnx_static_bs_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(torch.stack([bike_image_torch, bike_image_torch], dim=0))
+
+    # then
+    assert torch.allclose(
+        predictions.confidence,
+        torch.tensor([[0.0065, 0.2892, 0.7043], [0.0065, 0.2892, 0.7043]]),
+        atol=0.02,
+    )
+    assert torch.allclose(
+        predictions.class_id,
+        torch.tensor([2, 2], dtype=torch.int64),
+    )
+
+
+def test_multi_class_onnx_static_bs_package_batch_torch_list(
+    vehicles_multi_class_resenet_onnx_static_bs_package: str,
+    bike_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = ResNetForClassificationOnnx.from_pretrained(
+        model_name_or_path=vehicles_multi_class_resenet_onnx_static_bs_package,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model([bike_image_torch, bike_image_torch])
+
+    # then
+    assert torch.allclose(
+        predictions.confidence,
+        torch.tensor([[0.0065, 0.2892, 0.7043], [0.0065, 0.2892, 0.7043]]),
+        atol=0.02,
+    )
+    assert torch.allclose(
+        predictions.class_id,
+        torch.tensor([2, 2], dtype=torch.int64),
+    )

@@ -85,6 +85,22 @@ DEEP_LAB_V3_SEGMENTATION_TORCH_STATIC_CROP_LETTERBOX_URL = "https://storage.goog
 DEEP_LAB_V3_SEGMENTATION_ONNX_STATIC_CROP_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/deep-lab-v3-plus-segmentation-static-crop-center-crop-onnx.zip"
 DEEP_LAB_V3_SEGMENTATION_TORCH_STATIC_CROP_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/deep-lab-v3-plus-segmentation-static-crop-center-crop-torch.zip"
 
+FLOWERS_MULTI_LABEL_VIT_HF_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/vit-multi-label-hugging-face.zip"
+FLOWERS_MULTI_LABEL_VIT_ONNX_DYNAMIC_BS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/vit-multi-label-onnx-dynamic-bs.zip"
+FLOWERS_MULTI_LABEL_VIT_ONNX_STATIC_BS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/vit-multi-label-onnx-static-bs.zip"
+
+FLOWERS_MULTI_LABEL_RES_NET_TORCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/res-net-multi-label-torch.zip"
+FLOWERS_MULTI_LABEL_RES_NET_ONNX_DYNAMIC_BS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/res-net-multi-label-onnx-dynamic-bs.zip"
+FLOWERS_MULTI_LABEL_RES_NET_ONNX_STATIC_BS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/res-net-multi-label-onnx-static-bs.zip"
+
+VEHICLES_MULTI_CLASS_VIT_HF_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/vit-multi-class-hugging-face.zip"
+VEHICLES_MULTI_CLASS_VIT_ONNX_DYNAMIC_BS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/vit-multi-class-onnx-dynamic-bs.zip"
+VEHICLES_MULTI_CLASS_VIT_ONNX_STATIC_BS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/vit-multi-class-onnx-static-bs.zip"
+
+VEHICLES_MULTI_CLASS_RES_NET_TORCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/res-net-multi-class-torch.zip"
+VEHICLES_MULTI_CLASS_RES_NET_ONNX_DYNAMIC_BS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/res-net-multi-class-onnx-dynamic-bs.zip"
+VEHICLES_MULTI_CLASS_RES_NET_ONNX_STATIC_BS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/res-net-multi-class-onnx-static-bs.zip"
+
 
 @pytest.fixture(scope="module")
 def original_clip_download_dir() -> str:
@@ -684,4 +700,100 @@ def balloons_deep_lab_v3_torch_static_crop_center_crop_package() -> str:
     return download_model_package(
         model_package_zip_url=DEEP_LAB_V3_SEGMENTATION_TORCH_STATIC_CROP_CENTER_CROP_URL,
         package_name="balloons-deep-lab-v3-torch-static-crop-center-crop",
+    )
+
+
+@pytest.fixture(scope="module")
+def flowers_multi_label_vit_hf_package() -> str:
+    return download_model_package(
+        model_package_zip_url=FLOWERS_MULTI_LABEL_VIT_HF_URL,
+        package_name="flowers-multi-label-vit-hf",
+    )
+
+
+@pytest.fixture(scope="module")
+def flowers_multi_label_vit_onnx_static_bs_package() -> str:
+    return download_model_package(
+        model_package_zip_url=FLOWERS_MULTI_LABEL_VIT_ONNX_STATIC_BS_URL,
+        package_name="flowers-multi-label-vit-onnx-static-bs",
+    )
+
+
+@pytest.fixture(scope="module")
+def flowers_multi_label_vit_onnx_dynamic_bs_package() -> str:
+    return download_model_package(
+        model_package_zip_url=FLOWERS_MULTI_LABEL_VIT_ONNX_DYNAMIC_BS_URL,
+        package_name="flowers-multi-label-vit-onnx-dynamic-bs",
+    )
+
+
+@pytest.fixture(scope="module")
+def flowers_multi_label_resnet_torch_package() -> str:
+    return download_model_package(
+        model_package_zip_url=FLOWERS_MULTI_LABEL_RES_NET_TORCH_URL,
+        package_name="flowers-multi-label-resnet-torch",
+    )
+
+
+@pytest.fixture(scope="module")
+def flowers_multi_label_resnet_onnx_static_bs_package() -> str:
+    return download_model_package(
+        model_package_zip_url=FLOWERS_MULTI_LABEL_RES_NET_ONNX_STATIC_BS_URL,
+        package_name="flowers-multi-label-resnet-onnx-static-bs",
+    )
+
+
+@pytest.fixture(scope="module")
+def flowers_multi_label_resnet_onnx_dynamic_bs_package() -> str:
+    return download_model_package(
+        model_package_zip_url=FLOWERS_MULTI_LABEL_RES_NET_ONNX_DYNAMIC_BS_URL,
+        package_name="flowers-multi-label-resnet-onnx-dynamic-bs",
+    )
+
+
+@pytest.fixture(scope="module")
+def vehicles_multi_class_vit_hf_package() -> str:
+    return download_model_package(
+        model_package_zip_url=VEHICLES_MULTI_CLASS_VIT_HF_URL,
+        package_name="vehicles-multi-class-vit-hf",
+    )
+
+
+@pytest.fixture(scope="module")
+def vehicles_multi_class_vit_onnx_static_bs_package() -> str:
+    return download_model_package(
+        model_package_zip_url=VEHICLES_MULTI_CLASS_VIT_ONNX_STATIC_BS_URL,
+        package_name="vehicles-multi-class-vit-onnx-static-bs",
+    )
+
+
+@pytest.fixture(scope="module")
+def vehicles_multi_class_vit_onnx_dynamic_bs_package() -> str:
+    return download_model_package(
+        model_package_zip_url=VEHICLES_MULTI_CLASS_VIT_ONNX_DYNAMIC_BS_URL,
+        package_name="vehicles-multi-class-vit-onnx-dynamic-bs",
+    )
+
+
+@pytest.fixture(scope="module")
+def vehicles_multi_class_resenet_torch_package() -> str:
+    return download_model_package(
+        model_package_zip_url=VEHICLES_MULTI_CLASS_RES_NET_TORCH_URL,
+        package_name="vehicles-multi-class-resnet-torch",
+    )
+
+
+@pytest.fixture(scope="module")
+def vehicles_multi_class_resenet_onnx_static_bs_package() -> str:
+    return download_model_package(
+        model_package_zip_url=VEHICLES_MULTI_CLASS_RES_NET_ONNX_STATIC_BS_URL,
+        package_name="vehicles-multi-class-resnet-onnx-static-bs",
+    )
+
+
+@pytest.fixture(scope="module")
+def vehicles_multi_class_resenet_onnx_dynamic_bs_package() -> str:
+    return download_model_package(
+        model_package_zip_url=VEHICLES_MULTI_CLASS_RES_NET_ONNX_DYNAMIC_BS_URL,
+        package_name="vehicles-multi-class-resnet-onnx-dynamic-bs",
     )
