@@ -77,6 +77,10 @@ class DeepLabV3PlusForSemanticSegmentationOnnx(
         class_names = parse_class_names_file(
             class_names_path=model_package_content["class_names.txt"]
         )
+        try:
+            background_class_id = [c.lower() for c in class_names].index("background")
+        except ValueError:
+            background_class_id = -1
         inference_config = parse_inference_config(
             config_path=model_package_content["inference_config.json"],
             allowed_resize_modes={
@@ -99,6 +103,7 @@ class DeepLabV3PlusForSemanticSegmentationOnnx(
             input_name=input_name,
             class_names=class_names,
             inference_config=inference_config,
+            background_class_id=background_class_id,
             device=device,
             input_batch_size=input_batch_size,
         )
@@ -109,6 +114,7 @@ class DeepLabV3PlusForSemanticSegmentationOnnx(
         input_name: str,
         inference_config: InferenceConfig,
         class_names: List[str],
+        background_class_id: int,
         device: torch.device,
         input_batch_size: Optional[int],
     ):
@@ -116,6 +122,7 @@ class DeepLabV3PlusForSemanticSegmentationOnnx(
         self._input_name = input_name
         self._inference_config = inference_config
         self._class_names = class_names
+        self._background_class_id = background_class_id
         self._device = device
         self._input_batch_size = input_batch_size
         self._session_thread_lock = Lock()
@@ -183,7 +190,7 @@ class DeepLabV3PlusForSemanticSegmentationOnnx(
                         abs(min(mask_pad_bottom, 0)),
                     ),
                     "constant",
-                    -1,
+                    self._background_class_id,
                 )
                 padded_mask_offset_top = max(mask_pad_top, 0)
                 padded_mask_offset_bottom = max(mask_pad_bottom, 0)
@@ -220,7 +227,7 @@ class DeepLabV3PlusForSemanticSegmentationOnnx(
             image_confidence, image_class_ids = torch.max(image_results, dim=0)
             below_threshold = image_confidence < confidence_threshold
             image_confidence[below_threshold] = 0.0
-            image_class_ids[below_threshold] = -1
+            image_class_ids[below_threshold] = self._background_class_id
             if (
                 image_metadata.static_crop_offset.offset_x > 0
                 or image_metadata.static_crop_offset.offset_y > 0
@@ -248,7 +255,7 @@ class DeepLabV3PlusForSemanticSegmentationOnnx(
                         device=self._device,
                         dtype=image_class_ids.dtype,
                     )
-                    * -1
+                    * self._background_class_id
                 )
                 original_size_confidence_class_id_canvas[
                     image_metadata.static_crop_offset.offset_y : image_metadata.static_crop_offset.offset_y

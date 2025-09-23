@@ -78,6 +78,14 @@ ASL_YOLOV8N_SEG_ONNX_DYNAMIC_BS_STATIC_CROP_LETTERBOX_URL = "https://storage.goo
 ASL_YOLOV8N_SEG_TORCHSCRIPT_STATIC_BS_STATIC_CROP_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-seg-torchscript-static-bs-static-crop-letterbox.zip"
 
 
+DEEP_LAB_V3_SEGMENTATION_ONNX_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/deep-lab-v3-plus-segmentation-stretch-onnx.zip"
+DEEP_LAB_V3_SEGMENTATION_TORCH_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/deep-lab-v3-plus-segmentation-stretch-torch.zip"
+DEEP_LAB_V3_SEGMENTATION_ONNX_STATIC_CROP_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/deep-lab-v3-plus-segmentation-center-crop-letterbox-onnx.zip"
+DEEP_LAB_V3_SEGMENTATION_TORCH_STATIC_CROP_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/deep-lab-v3-plus-segmentation-center-crop-letterbox-torch.zip"
+DEEP_LAB_V3_SEGMENTATION_ONNX_STATIC_CROP_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/deep-lab-v3-plus-segmentation-static-crop-center-crop-onnx.zip"
+DEEP_LAB_V3_SEGMENTATION_TORCH_STATIC_CROP_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/deep-lab-v3-plus-segmentation-static-crop-center-crop-torch.zip"
+
+
 @pytest.fixture(scope="module")
 def original_clip_download_dir() -> str:
     clip_dir = os.path.join(MODELS_DIR, "clip_original")
@@ -628,4 +636,52 @@ def asl_yolov8n_torchscript_seg_static_bs_static_crop_letterbox() -> str:
     return download_model_package(
         model_package_zip_url=ASL_YOLOV8N_SEG_TORCHSCRIPT_STATIC_BS_STATIC_CROP_LETTERBOX_URL,
         package_name="asl-yolov8n-seg-torchscript-static-bs-static-crop-letterbox",
+    )
+
+
+@pytest.fixture(scope="module")
+def balloons_deep_lab_v3_onnx_stretch_package() -> str:
+    return download_model_package(
+        model_package_zip_url=DEEP_LAB_V3_SEGMENTATION_ONNX_STRETCH_URL,
+        package_name="balloons-deep-lab-v3-onnx-stretch",
+    )
+
+
+@pytest.fixture(scope="module")
+def balloons_deep_lab_v3_torch_stretch_package() -> str:
+    return download_model_package(
+        model_package_zip_url=DEEP_LAB_V3_SEGMENTATION_TORCH_STRETCH_URL,
+        package_name="balloons-deep-lab-v3-torch-stretch",
+    )
+
+
+@pytest.fixture(scope="module")
+def balloons_deep_lab_v3_onnx_static_crop_letterbox_package() -> str:
+    return download_model_package(
+        model_package_zip_url=DEEP_LAB_V3_SEGMENTATION_ONNX_STATIC_CROP_LETTERBOX_URL,
+        package_name="balloons-deep-lab-v3-onnx-static-crop-letterbox",
+    )
+
+
+@pytest.fixture(scope="module")
+def balloons_deep_lab_v3_torch_static_crop_letterbox_package() -> str:
+    return download_model_package(
+        model_package_zip_url=DEEP_LAB_V3_SEGMENTATION_TORCH_STATIC_CROP_LETTERBOX_URL,
+        package_name="balloons-deep-lab-v3-torch-static-crop-letterbox",
+    )
+
+
+@pytest.fixture(scope="module")
+def balloons_deep_lab_v3_onnx_static_crop_center_crop_package() -> str:
+    return download_model_package(
+        model_package_zip_url=DEEP_LAB_V3_SEGMENTATION_ONNX_STATIC_CROP_CENTER_CROP_URL,
+        package_name="balloons-deep-lab-v3-onnx-static-crop-center-crop",
+    )
+
+
+@pytest.fixture(scope="module")
+def balloons_deep_lab_v3_torch_static_crop_center_crop_package() -> str:
+    return download_model_package(
+        model_package_zip_url=DEEP_LAB_V3_SEGMENTATION_TORCH_STATIC_CROP_CENTER_CROP_URL,
+        package_name="balloons-deep-lab-v3-torch-static-crop-center-crop",
     )
