@@ -32,7 +32,7 @@ Inference supports a wide range of state-of-the-art models, including:
 * [RF-DETR](https://blog.roboflow.com/rf-detr/)
 * [ViT](https://blog.roboflow.com/train-vision-transformer/)
 * [ResNet](https://blog.roboflow.com/how-to-train-a-resnet-50-model/)
-* [SmolVLM2](/workflows/blocks/smol_vlm2/)
+* [SmolVLM2](//workflows/blocks/smol_vlm2/)
 * [Qwen2.5-VL](/workflows/blocks/qwen2.5_vl/)
 * [YOLOv12](/workflows/blocks/object_detection_model/)
 * [YOLO11](/workflows/blocks/object_detection_model/)
