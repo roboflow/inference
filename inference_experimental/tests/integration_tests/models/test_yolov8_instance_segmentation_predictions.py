@@ -2998,3 +2998,1350 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
     assert (
         13800 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 14000
     )
+
+
+def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_numpy(
+    asl_yolov8n_onnx_seg_static_bs_static_crop_center_crop: str,
+    asl_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
+        model_name_or_path=asl_yolov8n_onnx_seg_static_bs_static_crop_center_crop,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(asl_image_numpy)
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.8159524]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([20], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor([[64, 175, 188, 341]], dtype=torch.int32)
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert (
+        13800 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14000
+    )
+
+
+def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_batch_numpy(
+    asl_yolov8n_onnx_seg_static_bs_static_crop_center_crop: str,
+    asl_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
+        model_name_or_path=asl_yolov8n_onnx_seg_static_bs_static_crop_center_crop,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model([asl_image_numpy, asl_image_numpy])
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.8159524]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([0.8159524]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([20], dtype=torch.int32),
+    )
+    assert torch.allclose(
+        predictions[1].class_id,
+        torch.tensor([20], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor([[64, 175, 188, 341]], dtype=torch.int32)
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert (
+        13800 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14000
+    )
+    assert (
+        13800 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 14000
+    )
+
+
+def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_torch(
+    asl_yolov8n_onnx_seg_static_bs_static_crop_center_crop: str,
+    asl_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
+        model_name_or_path=asl_yolov8n_onnx_seg_static_bs_static_crop_center_crop,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(asl_image_torch)
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.8159524]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([20], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor([[64, 175, 188, 341]], dtype=torch.int32)
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert (
+        13800 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14000
+    )
+
+
+def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_batch_torch(
+    asl_yolov8n_onnx_seg_static_bs_static_crop_center_crop: str,
+    asl_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
+        model_name_or_path=asl_yolov8n_onnx_seg_static_bs_static_crop_center_crop,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(torch.stack([asl_image_torch, asl_image_torch], dim=0))
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.8159524]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([0.8159524]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([20], dtype=torch.int32),
+    )
+    assert torch.allclose(
+        predictions[1].class_id,
+        torch.tensor([20], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor([[64, 175, 188, 341]], dtype=torch.int32)
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert (
+        13800 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14000
+    )
+    assert (
+        13800 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 14000
+    )
+
+
+def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_list_torch(
+    asl_yolov8n_onnx_seg_static_bs_static_crop_center_crop: str,
+    asl_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
+        model_name_or_path=asl_yolov8n_onnx_seg_static_bs_static_crop_center_crop,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model([asl_image_torch, asl_image_torch])
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.8159524]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([0.8159524]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([20], dtype=torch.int32),
+    )
+    assert torch.allclose(
+        predictions[1].class_id,
+        torch.tensor([20], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor([[64, 175, 188, 341]], dtype=torch.int32)
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert (
+        13800 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14000
+    )
+    assert (
+        13800 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 14000
+    )
+
+
+def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_numpy(
+    asl_yolov8n_torchscript_seg_static_bs_static_crop_center_crop: str,
+    asl_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
+        model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_static_crop_center_crop,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model(asl_image_numpy)
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.8159524]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([20], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor([[64, 175, 188, 341]], dtype=torch.int32)
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert (
+        13800 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14000
+    )
+
+
+def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_batch_numpy(
+    asl_yolov8n_torchscript_seg_static_bs_static_crop_center_crop: str,
+    asl_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
+        model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_static_crop_center_crop,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model([asl_image_numpy, asl_image_numpy])
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.8159524]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([0.8159524]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([20], dtype=torch.int32),
+    )
+    assert torch.allclose(
+        predictions[1].class_id,
+        torch.tensor([20], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor([[64, 175, 188, 341]], dtype=torch.int32)
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert (
+        13800 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14000
+    )
+    assert (
+        13800 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 14000
+    )
+
+
+def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_torch(
+    asl_yolov8n_torchscript_seg_static_bs_static_crop_center_crop: str,
+    asl_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
+        model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_static_crop_center_crop,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model(asl_image_torch)
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.8159524]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([20], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor([[64, 175, 188, 341]], dtype=torch.int32)
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert (
+        13800 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14000
+    )
+
+
+def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_batch_torch(
+    asl_yolov8n_torchscript_seg_static_bs_static_crop_center_crop: str,
+    asl_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
+        model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_static_crop_center_crop,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model(torch.stack([asl_image_torch, asl_image_torch], dim=0))
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.8159524]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([0.8159524]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([20], dtype=torch.int32),
+    )
+    assert torch.allclose(
+        predictions[1].class_id,
+        torch.tensor([20], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor([[64, 175, 188, 341]], dtype=torch.int32)
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert (
+        13800 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14000
+    )
+    assert (
+        13800 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 14000
+    )
+
+
+def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_list_torch(
+    asl_yolov8n_torchscript_seg_static_bs_static_crop_center_crop: str,
+    asl_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
+        model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_static_crop_center_crop,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model([asl_image_torch, asl_image_torch])
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.8159524]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([0.8159524]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([20], dtype=torch.int32),
+    )
+    assert torch.allclose(
+        predictions[1].class_id,
+        torch.tensor([20], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor([[64, 175, 188, 341]], dtype=torch.int32)
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert (
+        13800 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14000
+    )
+    assert (
+        13800 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 14000
+    )
+
+
+def test_onnx_package_with_dynamic_batch_size_and_center_crop_numpy(
+    asl_yolov8n_onnx_seg_dynamic_bs_center_crop: str,
+    asl_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
+        model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_center_crop,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(asl_image_numpy)
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.9711]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([20], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor([[61, 172, 187, 367]], dtype=torch.int32)
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert (
+        16200 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+    )
+
+
+def test_onnx_package_with_dynamic_batch_size_and_center_crop_batch_numpy(
+    asl_yolov8n_onnx_seg_dynamic_bs_center_crop: str,
+    asl_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
+        model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_center_crop,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model([asl_image_numpy, asl_image_numpy])
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.9711]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([0.9711]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([20], dtype=torch.int32),
+    )
+    assert torch.allclose(
+        predictions[1].class_id,
+        torch.tensor([20], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor([[61, 172, 187, 367]], dtype=torch.int32)
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert (
+        16200 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+    )
+    assert (
+        16200 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+    )
+
+
+def test_onnx_package_with_dynamic_batch_size_and_center_crop_torch(
+    asl_yolov8n_onnx_seg_dynamic_bs_center_crop: str,
+    asl_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
+        model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_center_crop,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(asl_image_torch)
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.9711]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([20], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor([[61, 172, 187, 367]], dtype=torch.int32)
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert (
+        16200 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+    )
+
+
+def test_onnx_package_with_dynamic_batch_size_and_center_crop_batch_torch(
+    asl_yolov8n_onnx_seg_dynamic_bs_center_crop: str,
+    asl_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
+        model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_center_crop,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(torch.stack([asl_image_torch, asl_image_torch], dim=0))
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.9711]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([0.9711]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([20], dtype=torch.int32),
+    )
+    assert torch.allclose(
+        predictions[1].class_id,
+        torch.tensor([20], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor([[61, 172, 187, 367]], dtype=torch.int32)
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert (
+        16200 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+    )
+    assert (
+        16200 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+    )
+
+
+def test_onnx_package_with_dynamic_batch_size_and_center_crop_list_torch(
+    asl_yolov8n_onnx_seg_dynamic_bs_center_crop: str,
+    asl_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
+        model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_center_crop,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model([asl_image_torch, asl_image_torch])
+
+    # then
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.9711]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([0.9711]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([20], dtype=torch.int32),
+    )
+    assert torch.allclose(
+        predictions[1].class_id,
+        torch.tensor([20], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor([[61, 172, 187, 367]], dtype=torch.int32)
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert (
+        16200 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+    )
+    assert (
+        16200 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+    )
+
+
+def test_torchscript_package_with_static_batch_size_and_center_crop_numpy(
+    asl_yolov8n_torchscript_seg_static_bs_center_crop: str,
+    asl_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
+        model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_center_crop,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model(asl_image_numpy)
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.9711]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([20], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor([[61, 172, 187, 367]], dtype=torch.int32)
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert (
+        16200 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+    )
+
+
+def test_torchscript_package_with_static_batch_size_and_center_crop_batch_numpy(
+    asl_yolov8n_torchscript_seg_static_bs_center_crop: str,
+    asl_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
+        model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_center_crop,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model([asl_image_numpy, asl_image_numpy])
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.9711]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([0.9711]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([20], dtype=torch.int32),
+    )
+    assert torch.allclose(
+        predictions[1].class_id,
+        torch.tensor([20], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor([[61, 172, 187, 367]], dtype=torch.int32)
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert (
+        16200 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+    )
+    assert (
+        16200 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+    )
+
+
+def test_torchscript_package_with_static_batch_size_and_center_crop_torch(
+    asl_yolov8n_torchscript_seg_static_bs_center_crop: str,
+    asl_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
+        model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_center_crop,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model(asl_image_torch)
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.9711]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([20], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor([[61, 172, 187, 367]], dtype=torch.int32)
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert (
+        16200 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+    )
+
+
+def test_torchscript_package_with_static_batch_size_and_center_crop_batch_torch(
+    asl_yolov8n_torchscript_seg_static_bs_center_crop: str,
+    asl_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
+        model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_center_crop,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model(torch.stack([asl_image_torch, asl_image_torch], dim=0))
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.9711]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([0.9711]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([20], dtype=torch.int32),
+    )
+    assert torch.allclose(
+        predictions[1].class_id,
+        torch.tensor([20], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor([[61, 172, 187, 367]], dtype=torch.int32)
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert (
+        16200 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+    )
+    assert (
+        16200 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+    )
+
+
+def test_torchscript_package_with_static_batch_size_and_center_crop_list_torch(
+    asl_yolov8n_torchscript_seg_static_bs_center_crop: str,
+    asl_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
+        model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_center_crop,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model([asl_image_torch, asl_image_torch])
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.9711]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([0.9711]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([20], dtype=torch.int32),
+    )
+    assert torch.allclose(
+        predictions[1].class_id,
+        torch.tensor([20], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor([[61, 172, 187, 367]], dtype=torch.int32)
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert (
+        16200 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+    )
+    assert (
+        16200 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 16400
+    )
+
+
+def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_crop_numpy(
+    asl_yolov8n_torchscript_seg_static_bs_static_crop_letterbox: str,
+    asl_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
+        model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_static_crop_letterbox,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model(asl_image_numpy)
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.6637, 0.5337]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([20, 17], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [[63, 173, 187, 341], [61, 175, 187, 342]], dtype=torch.int32
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert (
+        13900 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+    )
+
+
+def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_batch_numpy(
+    asl_yolov8n_torchscript_seg_static_bs_static_crop_letterbox: str,
+    asl_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
+        model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_static_crop_letterbox,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model([asl_image_numpy, asl_image_numpy])
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.6637, 0.5337]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([0.6637, 0.5337]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([20, 17], dtype=torch.int32),
+    )
+    assert torch.allclose(
+        predictions[1].class_id,
+        torch.tensor([20, 17], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [[63, 173, 187, 341], [61, 175, 187, 342]], dtype=torch.int32
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert (
+        13900 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+    )
+    assert (
+        13900 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+    )
+
+
+def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_crop_torch(
+    asl_yolov8n_torchscript_seg_static_bs_static_crop_letterbox: str,
+    asl_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
+        model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_static_crop_letterbox,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model(asl_image_torch)
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.6599, 0.5505]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([20, 17], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [[63, 173, 187, 341], [61, 175, 187, 342]], dtype=torch.int32
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert (
+        13900 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+    )
+
+
+def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_batch_torch(
+    asl_yolov8n_torchscript_seg_static_bs_static_crop_letterbox: str,
+    asl_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
+        model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_static_crop_letterbox,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model(torch.stack([asl_image_torch, asl_image_torch], dim=0))
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.65991, 0.55051]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([0.65991, 0.55051]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([20, 17], dtype=torch.int32),
+    )
+    assert torch.allclose(
+        predictions[1].class_id,
+        torch.tensor([20, 17], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [[63, 173, 187, 341], [61, 175, 187, 342]], dtype=torch.int32
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert (
+        13900 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+    )
+    assert (
+        13900 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+    )
+
+
+def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_list_torch(
+    asl_yolov8n_torchscript_seg_static_bs_static_crop_letterbox: str,
+    asl_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
+        model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_static_crop_letterbox,
+        device=torch.device("cpu"),
+    )
+
+    # when
+    predictions = model([asl_image_torch, asl_image_torch])
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.65991, 0.55051]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([0.65991, 0.55051]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([20, 17], dtype=torch.int32),
+    )
+    assert torch.allclose(
+        predictions[1].class_id,
+        torch.tensor([20, 17], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [[63, 173, 187, 341], [61, 175, 187, 342]], dtype=torch.int32
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert (
+        13900 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+    )
+    assert (
+        13900 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+    )
+
+
+def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_numpy(
+    asl_yolov8n_onnx_seg_dynamic_bs_static_crop_letterbox: str,
+    asl_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
+        model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_letterbox,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(asl_image_numpy)
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.6637, 0.5337]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([20, 17], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [[63, 173, 187, 341], [61, 175, 187, 342]], dtype=torch.int32
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert (
+        13900 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+    )
+
+
+def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_batch_numpy(
+    asl_yolov8n_onnx_seg_dynamic_bs_static_crop_letterbox: str,
+    asl_image_numpy: np.ndarray,
+) -> None:
+    # given
+    model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
+        model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_letterbox,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model([asl_image_numpy, asl_image_numpy])
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.6637, 0.5337]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([0.6637, 0.5337]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([20, 17], dtype=torch.int32),
+    )
+    assert torch.allclose(
+        predictions[1].class_id,
+        torch.tensor([20, 17], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [[63, 173, 187, 341], [61, 175, 187, 342]], dtype=torch.int32
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert (
+        13900 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+    )
+    assert (
+        13900 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+    )
+
+
+def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_torch(
+    asl_yolov8n_onnx_seg_dynamic_bs_static_crop_letterbox: str,
+    asl_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
+        model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_letterbox,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(asl_image_torch)
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.6599, 0.5505]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([20, 17], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [[63, 173, 187, 341], [61, 175, 187, 342]], dtype=torch.int32
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert (
+        13900 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+    )
+
+
+def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_batch_torch(
+    asl_yolov8n_onnx_seg_dynamic_bs_static_crop_letterbox: str,
+    asl_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
+        model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_letterbox,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(torch.stack([asl_image_torch, asl_image_torch], dim=0))
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.65991, 0.55051]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([0.65991, 0.55051]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([20, 17], dtype=torch.int32),
+    )
+    assert torch.allclose(
+        predictions[1].class_id,
+        torch.tensor([20, 17], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [[63, 173, 187, 341], [61, 175, 187, 342]], dtype=torch.int32
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert (
+        13900 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+    )
+    assert (
+        13900 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+    )
+
+
+def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_list_torch(
+    asl_yolov8n_onnx_seg_dynamic_bs_static_crop_letterbox: str,
+    asl_image_torch: torch.Tensor,
+) -> None:
+    # given
+    model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
+        model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_letterbox,
+        onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model([asl_image_torch, asl_image_torch])
+
+    # then
+    assert torch.allclose(
+        predictions[0].confidence,
+        torch.tensor([0.65991, 0.55051]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1].confidence,
+        torch.tensor([0.65991, 0.55051]),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0].class_id,
+        torch.tensor([20, 17], dtype=torch.int32),
+    )
+    assert torch.allclose(
+        predictions[1].class_id,
+        torch.tensor([20, 17], dtype=torch.int32),
+    )
+    expected_xyxy = torch.tensor(
+        [[63, 173, 187, 341], [61, 175, 187, 342]], dtype=torch.int32
+    )
+    assert torch.allclose(
+        predictions[0].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1].xyxy,
+        expected_xyxy,
+        atol=2,
+    )
+    assert (
+        13900 <= predictions[0].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+    )
+    assert (
+        13900 <= predictions[1].to_supervision().mask[0, 174:371, 63:187].sum() <= 14100
+    )

@@ -70,6 +70,12 @@ ASL_YOLOV8N_SEG_TORCHSCRIPT_STATIC_BS_STATIC_CROP_STRETCH_URL = "https://storage
 ASL_YOLOV8N_SEG_TORCHSCRIPT_STATIC_BS_STATIC_CROP_STRETCH_FUSED_NMS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-seg-torchscript-static-bs-static-crop-stretch-fused-nms.zip"
 ASL_YOLOV8N_SEG_ONNX_DYNAMIC_BS_STATIC_CROP_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-seg-onnx-dynamic-bs-static-crop-center-crop.zip"
 ASL_YOLOV8N_SEG_ONNX_DYNAMIC_BS_STATIC_CROP_CENTER_CROP_FUSED_NMS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-seg-onnx-dynamic-bs-static-crop-center-crop-fused-nms.zip"
+ASL_YOLOV8N_SEG_ONNX_STATIC_BS_STATIC_CROP_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-seg-onnx-static-bs-static-crop-center-crop.zip"
+ASL_YOLOV8N_SEG_TORCHSCRIPT_STATIC_BS_STATIC_CROP_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-seg-torchscript-static-bs-static-crop-center-crop.zip"
+ASL_YOLOV8N_SEG_ONNX_DYNAMIC_BS_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-seg-onnx-dynamic-bs-center-crop.zip"
+ASL_YOLOV8N_SEG_TORCHSCRIPT_STATIC_BS_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-seg-torchscript-static-bs-center-crop.zip"
+ASL_YOLOV8N_SEG_ONNX_DYNAMIC_BS_STATIC_CROP_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-seg-onnx-dynamic-bs-static-crop-letterbox.zip"
+ASL_YOLOV8N_SEG_TORCHSCRIPT_STATIC_BS_STATIC_CROP_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-seg-torchscript-static-bs-static-crop-letterbox.zip"
 
 
 @pytest.fixture(scope="module")
@@ -574,4 +580,52 @@ def asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop_fused_nms() -> str:
     return download_model_package(
         model_package_zip_url=ASL_YOLOV8N_SEG_ONNX_DYNAMIC_BS_STATIC_CROP_CENTER_CROP_FUSED_NMS_URL,
         package_name="asl-yolov8n-seg-dynamic-bs-static-crop-center-crop-fused-nms",
+    )
+
+
+@pytest.fixture(scope="module")
+def asl_yolov8n_onnx_seg_static_bs_static_crop_center_crop() -> str:
+    return download_model_package(
+        model_package_zip_url=ASL_YOLOV8N_SEG_ONNX_STATIC_BS_STATIC_CROP_CENTER_CROP_URL,
+        package_name="asl-yolov8n-seg-static-bs-static-crop-center-crop",
+    )
+
+
+@pytest.fixture(scope="module")
+def asl_yolov8n_torchscript_seg_static_bs_static_crop_center_crop() -> str:
+    return download_model_package(
+        model_package_zip_url=ASL_YOLOV8N_SEG_TORCHSCRIPT_STATIC_BS_STATIC_CROP_CENTER_CROP_URL,
+        package_name="asl-yolov8n-seg-torchscript-static-bs-static-crop-center-crop",
+    )
+
+
+@pytest.fixture(scope="module")
+def asl_yolov8n_onnx_seg_dynamic_bs_center_crop() -> str:
+    return download_model_package(
+        model_package_zip_url=ASL_YOLOV8N_SEG_ONNX_DYNAMIC_BS_CENTER_CROP_URL,
+        package_name="asl-yolov8n-seg-dynamic-bs-center-crop",
+    )
+
+
+@pytest.fixture(scope="module")
+def asl_yolov8n_torchscript_seg_static_bs_center_crop() -> str:
+    return download_model_package(
+        model_package_zip_url=ASL_YOLOV8N_SEG_TORCHSCRIPT_STATIC_BS_CENTER_CROP_URL,
+        package_name="asl-yolov8n-seg-torchscript-static-bs-center-crop",
+    )
+
+
+@pytest.fixture(scope="module")
+def asl_yolov8n_onnx_seg_dynamic_bs_static_crop_letterbox() -> str:
+    return download_model_package(
+        model_package_zip_url=ASL_YOLOV8N_SEG_ONNX_DYNAMIC_BS_STATIC_CROP_LETTERBOX_URL,
+        package_name="asl-yolov8n-seg-dynamic-bs-static-crop-letterbox",
+    )
+
+
+@pytest.fixture(scope="module")
+def asl_yolov8n_torchscript_seg_static_bs_static_crop_letterbox() -> str:
+    return download_model_package(
+        model_package_zip_url=ASL_YOLOV8N_SEG_TORCHSCRIPT_STATIC_BS_STATIC_CROP_LETTERBOX_URL,
+        package_name="asl-yolov8n-seg-torchscript-static-bs-static-crop-letterbox",
     )
