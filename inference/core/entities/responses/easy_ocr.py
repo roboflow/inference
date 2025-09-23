@@ -1,5 +1,5 @@
 from typing import List, Optional, Tuple
-
+from supervision import Detections
 from pydantic import BaseModel, Field
 
 

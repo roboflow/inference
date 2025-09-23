@@ -1,3 +1,5 @@
+import os
+import shutil
 from time import perf_counter
 from typing import Any, List, Tuple, Union
 
@@ -41,23 +43,48 @@ class EasyOCR(RoboflowCoreModel):
         super().__init__(model_id=model_id.lower(), *args, **kwargs)
         self.device = device
 
+        shutil.copyfile(
+            f"{MODEL_CACHE_DIR}/{model_id}/weights.pt",
+            f"{MODEL_CACHE_DIR}/{model_id}/english_g2.pth",
+        )
+
         self.log("Creating EasyOCR model")
 
     def predict(self, image_in: Image.Image, prompt="", history=None, **kwargs):
         try:
 
             print("=== EasyOCR predict ===", f"{MODEL_CACHE_DIR}/easy_ocr/weights.pt")
+
+            '''
             reader = easyocr.Reader(['en'], #recog_network='easy_ocr_english_g2.pt',
-                download_enabled=True,
-                #detector=f"{MODEL_CACHE_DIR}/easy_ocr/weights.pt",
-                detector=f"{MODEL_CACHE_DIR}/easy_ocr/weights.pt",
-                recognizer=f"{MODEL_CACHE_DIR}/easy_ocr/weights.pt"
+                download_enabled=False,
+                #recognizer=f"{MODEL_CACHE_DIR}/easy_ocr/weights.pt",
+                detector=f"{MODEL_CACHE_DIR}/easy_ocr/english_g2/craft_mlt_25k.pt",
+                recognizer=f"{MODEL_CACHE_DIR}/easy_ocr/english_g2/weights.pt",
+                #model_storage_directory=f'.{MODEL_CACHE_DIR}/easy_ocr'
+                #gpu=True # use GPU if available (will ignore if no GPU)
                 )
+            '''
+
+
+            reader = easyocr.Reader(['en'], #recog_network='easy_ocr_english_g2.pt',
+                                        download_enabled=False,
+                                        user_network_directory='/tmp/cache/easy_ocr/english_g2/',
+                                        model_storage_directory='/tmp/cache/easy_ocr/english_g2/',
+                                        detect_network='craft',
+                                        recog_network='english_g2',
+                                        detector=True,
+                                        recognizer=True,
+                                        gpu=True
+                                        )
+                                        #user_config_path='path/to/your/model_config.yaml')
+
 
             img = np.array(image_in[0]["value"])
 
             results = reader.readtext(img)
 
+            # convert native EasyOCR results from numpy to standard python types
             results = [([[x.item() for x in c] for c in res[0]], res[1], res[2].item()) for res in results]
 
             return (results,)
@@ -98,4 +125,4 @@ class EasyOCR(RoboflowCoreModel):
         raise NotImplementedError
 
     def get_infer_bucket_file_list(self) -> List[str]:
-        return ["weights.pt"]
+        return ["weights.pt", "craft_mlt_25k.pt"]
