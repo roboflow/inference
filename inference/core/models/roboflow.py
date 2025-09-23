@@ -228,7 +228,12 @@ class RoboflowInferenceModel(Model):
     def has_model_metadata(self):
         return self.model_metadata_from_memcache() is not None
 
-    def get_model_artifacts(self, **kwargs) -> None:
+    def get_model_artifacts(
+        self,
+        countinference: Optional[bool] = None,
+        service_secret: Optional[str] = None,
+        **kwargs,
+    ) -> None:
         """Fetch or load the model artifacts.
 
         Downloads the model artifacts from S3 or the Roboflow API if they are not already cached.
@@ -238,14 +243,25 @@ class RoboflowInferenceModel(Model):
                 api_key=self.api_key,
                 model_id=self.endpoint,
                 endpoint_type=ModelEndpointType.ORT,
+                countinference=countinference,
+                service_secret=service_secret,
             ):
                 raise RoboflowAPINotAuthorizedError(
                     f"API key {self.api_key} does not have access to model {self.endpoint}"
                 )
-        self.cache_model_artefacts(**kwargs)
+        self.cache_model_artefacts(
+            countinference=countinference,
+            service_secret=service_secret,
+            **kwargs,
+        )
         self.load_model_artifacts_from_cache()
 
-    def cache_model_artefacts(self, **kwargs) -> None:
+    def cache_model_artefacts(
+        self,
+        countinference: Optional[bool] = None,
+        service_secret: Optional[str] = None,
+        **kwargs,
+    ) -> None:
         infer_bucket_files = self.get_all_required_infer_bucket_file()
 
         if are_all_files_cached(files=infer_bucket_files, model_id=self.endpoint):
@@ -253,7 +269,11 @@ class RoboflowInferenceModel(Model):
         if is_model_artefacts_bucket_available():
             self.download_model_artefacts_from_s3()
             return None
-        self.download_model_artifacts_from_roboflow_api(**kwargs)
+        self.download_model_artifacts_from_roboflow_api(
+            countinference=countinference,
+            service_secret=service_secret,
+            **kwargs,
+        )
 
     def get_all_required_infer_bucket_file(self) -> List[str]:
         infer_bucket_files = self.get_infer_bucket_file_list()
