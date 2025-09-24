@@ -236,13 +236,14 @@ class YOLOv8ForKeyPointsDetectionOnnx(
             confidence = key_points_reshaped[:, :, 2]
             key_points_classes_for_instance_class = (
                 self._key_points_classes_for_instances[class_id]
-            )
+            ).unsqueeze(1)
             instances_class_mask = (
                 torch.arange(self._key_points_slots_in_prediction, device=result.device)
                 .unsqueeze(0)
                 .repeat(result.shape[0], 1)
                 < key_points_classes_for_instance_class
             )
+
             confidence_mask = confidence < key_points_threshold
             mask = instances_class_mask & confidence_mask
             xy[mask] = 0.0

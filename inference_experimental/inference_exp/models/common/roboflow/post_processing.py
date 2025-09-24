@@ -288,6 +288,17 @@ def rescale_key_points_detections(
                 device=image_detections.device,
             )
             image_detections[:, 5 + num_classes :].add_(static_crop_offsets)
+            static_crop_offsets = torch.as_tensor(
+                [
+                    metadata.static_crop_offset.offset_x,
+                    metadata.static_crop_offset.offset_y,
+                    metadata.static_crop_offset.offset_x,
+                    metadata.static_crop_offset.offset_y,
+                ],
+                dtype=image_detections.dtype,
+                device=image_detections.device,
+            )
+            image_detections[:, :4].add_(static_crop_offsets)
     return detections
 
 
