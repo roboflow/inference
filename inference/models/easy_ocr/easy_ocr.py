@@ -53,19 +53,6 @@ class EasyOCR(RoboflowCoreModel):
     def predict(self, image_in: Image.Image, prompt="", history=None, **kwargs):
         try:
 
-            print("=== EasyOCR predict ===", f"{MODEL_CACHE_DIR}/easy_ocr/weights.pt")
-
-            '''
-            reader = easyocr.Reader(['en'], #recog_network='easy_ocr_english_g2.pt',
-                download_enabled=False,
-                #recognizer=f"{MODEL_CACHE_DIR}/easy_ocr/weights.pt",
-                detector=f"{MODEL_CACHE_DIR}/easy_ocr/english_g2/craft_mlt_25k.pt",
-                recognizer=f"{MODEL_CACHE_DIR}/easy_ocr/english_g2/weights.pt",
-                #model_storage_directory=f'.{MODEL_CACHE_DIR}/easy_ocr'
-                #gpu=True # use GPU if available (will ignore if no GPU)
-                )
-            '''
-
 
             reader = easyocr.Reader(['en'], #recog_network='easy_ocr_english_g2.pt',
                                         download_enabled=False,

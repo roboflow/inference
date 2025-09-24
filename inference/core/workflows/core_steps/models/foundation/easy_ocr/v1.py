@@ -206,6 +206,6 @@ class EasyOCRBlockV1(WorkflowBlock):
             model_id, inference_request
         )
 
-        detections = ocr_result_to_detections(data, predictions.result)
+        detections = sv.Detections.empty() if len(predictions.result)==0 else ocr_result_to_detections(data, predictions.result)
 
         return {"predictions": detections}

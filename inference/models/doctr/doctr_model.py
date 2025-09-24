@@ -39,13 +39,8 @@ class DocTR(RoboflowCoreModel):
         self.endpoint = model_id
         model_id = model_id.lower()
 
-        os.environ["DOCTR_CACHE_DIR"] = os.path.join(MODEL_CACHE_DIR, "doctr")
-
         self.det_model = DocTRDet(api_key=kwargs.get("api_key"))
         self.rec_model = DocTRRec(api_key=kwargs.get("api_key"))
-
-        print("===det_model===", self.det_model.version_id)
-        print("===rec_model===", self.rec_model.version_id)
 
         os.makedirs(f"{MODEL_CACHE_DIR}/doctr/models/", exist_ok=True)
 
@@ -62,21 +57,15 @@ class DocTR(RoboflowCoreModel):
 
         det_model = db_resnet50(pretrained=False, pretrained_backbone=False)
         det_model.load_state_dict(torch.load(detector_weights_path, map_location=DEVICE, weights_only=True))
-        #detector.from_pretrained(detector_weights_path, map_location=DEVICE)
 
         reco_model = crnn_vgg16_bn(pretrained=False, pretrained_backbone=False)
-        #recognizer.from_pretrained(recognizer_weights_path, map_location=DEVICE)
         reco_model.load_state_dict(torch.load(recognizer_weights_path, map_location=DEVICE, weights_only=True))
-
-        #print("===detector===", detector)
-        #print("===recognizer===", recognizer)
 
         self.model = ocr_predictor(
             det_arch=det_model,
             reco_arch=reco_model,
             pretrained=False,
         )
-        #self.model = ocr_predictor(det_arch=detector, reco_arch=recognizer)
         self.task_type = "ocr"
 
     def clear_cache(self, delete_from_disk: bool = True) -> None:
