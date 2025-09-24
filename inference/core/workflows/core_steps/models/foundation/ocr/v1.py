@@ -145,6 +145,7 @@ class OCRModelBlockV1(WorkflowBlock):
             inference_request = DoctrOCRInferenceRequest(
                 image=single_image.to_inference_format(numpy_preferred=True),
                 api_key=self._api_key,
+                generate_bounding_boxes=True,
             )
             doctr_model_id = load_core_model(
                 model_manager=self._model_manager,

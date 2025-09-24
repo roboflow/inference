@@ -99,9 +99,7 @@ class DocTR(RoboflowCoreModel):
         self, request: DoctrOCRInferenceRequest
     ) -> OCRInferenceResponse:
         t1 = perf_counter()
-        args = request.dict()
-        args["extended"] = True  # ensure we get bounding boxes, confidences, etc
-        result = self.infer(**args)
+        result = self.infer(**request.dict())
         return OCRInferenceResponse(
             result=result[0],
             strings=result[1],
@@ -149,7 +147,7 @@ class DocTR(RoboflowCoreModel):
             confidences = [float(word["objectness_score"]) for word in words]
 
             # previous implementation only returned result, so using "extended" option to maintain backwards compatibility
-            if kwargs.get("extended") is not None:
+            if kwargs.get("generate_bounding_boxes", False):
                 return result, strings, bounding_boxes, confidences
             else:
                 return result

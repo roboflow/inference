@@ -19,7 +19,7 @@ from inference.core.env import (
 
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.utils import attach_parents_coordinates_to_sv_detections, load_core_model, ocr_result_to_detections, post_process_ocr_result, remove_unexpected_keys_from_dictionary
+from inference.core.workflows.core_steps.common.utils import load_core_model, post_process_ocr_result
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
