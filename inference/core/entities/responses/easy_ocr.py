@@ -2,7 +2,6 @@ from typing import List, Optional, Tuple
 from supervision import Detections
 from pydantic import BaseModel, Field
 
-
 class EasyOCRInferenceResponse(BaseModel):
     """
     OCR Inference response.
@@ -12,6 +11,7 @@ class EasyOCRInferenceResponse(BaseModel):
         time: The time in seconds it took to produce the inference including preprocessing.
     """
 
+    # result is the native response format provided by EasyOCR
     result: List[Tuple[List[List[int]], str, float]] = Field(description="The OCR recognition result.")
     time: float = Field(
         description="The time in seconds it took to produce the inference including preprocessing."

@@ -26,8 +26,6 @@ class ModelRegistry:
         **kwargs,
     ) -> Model:
 
-        print("====get_model====", model_type, model_id)
-
         """Returns the model class based on the given model type.
 
         Args:
