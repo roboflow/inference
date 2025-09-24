@@ -1,5 +1,6 @@
 import base64
 from io import BytesIO
+from threading import Lock
 from time import perf_counter
 from typing import Any, List, Optional, Union
 
@@ -61,6 +62,7 @@ class SegmentAnything(RoboflowCoreModel):
                 "CPUExecutionProvider",
             ],
         )
+        self._state_lock = Lock()
         self.embedding_cache = {}
         self.image_size_cache = {}
         self.embedding_cache_keys = []
@@ -129,45 +131,46 @@ class SegmentAnything(RoboflowCoreModel):
         Returns:
             Union[SamEmbeddingResponse, SamSegmentationResponse]: The inference response.
         """
-        t1 = perf_counter()
-        if isinstance(request, SamEmbeddingRequest):
-            embedding, _ = self.embed_image(**request.dict())
-            inference_time = perf_counter() - t1
-            if request.format == "json":
-                return SamEmbeddingResponse(
-                    embeddings=embedding.tolist(), time=inference_time
-                )
-            elif request.format == "binary":
-                binary_vector = BytesIO()
-                np.save(binary_vector, embedding)
-                binary_vector.seek(0)
-                return SamEmbeddingResponse(
-                    embeddings=binary_vector.getvalue(), time=inference_time
-                )
-        elif isinstance(request, SamSegmentationRequest):
-            masks, low_res_masks = self.segment_image(**request.dict())
-            if request.format == "json":
-                masks = masks > self.predictor.model.mask_threshold
-                masks = masks2poly(masks)
-                low_res_masks = low_res_masks > self.predictor.model.mask_threshold
-                low_res_masks = masks2poly(low_res_masks)
-            elif request.format == "binary":
-                binary_vector = BytesIO()
-                np.savez_compressed(
-                    binary_vector, masks=masks, low_res_masks=low_res_masks
-                )
-                binary_vector.seek(0)
-                binary_data = binary_vector.getvalue()
-                return binary_data
-            else:
-                raise ValueError(f"Invalid format {request.format}")
+        with self._state_lock:
+            t1 = perf_counter()
+            if isinstance(request, SamEmbeddingRequest):
+                embedding, _ = self.embed_image(**request.dict())
+                inference_time = perf_counter() - t1
+                if request.format == "json":
+                    return SamEmbeddingResponse(
+                        embeddings=embedding.tolist(), time=inference_time
+                    )
+                elif request.format == "binary":
+                    binary_vector = BytesIO()
+                    np.save(binary_vector, embedding)
+                    binary_vector.seek(0)
+                    return SamEmbeddingResponse(
+                        embeddings=binary_vector.getvalue(), time=inference_time
+                    )
+            elif isinstance(request, SamSegmentationRequest):
+                masks, low_res_masks = self.segment_image(**request.dict())
+                if request.format == "json":
+                    masks = masks > self.predictor.model.mask_threshold
+                    masks = masks2poly(masks)
+                    low_res_masks = low_res_masks > self.predictor.model.mask_threshold
+                    low_res_masks = masks2poly(low_res_masks)
+                elif request.format == "binary":
+                    binary_vector = BytesIO()
+                    np.savez_compressed(
+                        binary_vector, masks=masks, low_res_masks=low_res_masks
+                    )
+                    binary_vector.seek(0)
+                    binary_data = binary_vector.getvalue()
+                    return binary_data
+                else:
+                    raise ValueError(f"Invalid format {request.format}")
 
-            response = SamSegmentationResponse(
-                masks=[m.tolist() for m in masks],
-                low_res_masks=[m.tolist() for m in low_res_masks],
-                time=perf_counter() - t1,
-            )
-            return response
+                response = SamSegmentationResponse(
+                    masks=[m.tolist() for m in masks],
+                    low_res_masks=[m.tolist() for m in low_res_masks],
+                    time=perf_counter() - t1,
+                )
+                return response
 
     def preproc_image(self, image: InferenceRequestImage):
         """Preprocesses an image.

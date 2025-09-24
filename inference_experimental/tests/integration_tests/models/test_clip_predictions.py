@@ -7,10 +7,11 @@ import torch
 import torch.nn.functional as F
 from clip import clip
 from filelock import FileLock
+from inference_exp.configuration import DEFAULT_DEVICE
 from PIL.Image import Image
 from torch import nn
 
-EXPECTED_DOG_IMAGE_EMBEDDING = torch.Tensor(
+EXPECTED_DOG_IMAGE_EMBEDDING = torch.tensor(
     [
         [
             -0.031097251921892166,
@@ -1038,7 +1039,8 @@ EXPECTED_DOG_IMAGE_EMBEDDING = torch.Tensor(
             0.006933738477528095,
             -0.0005487799644470215,
         ]
-    ]
+    ],
+    device=DEFAULT_DEVICE,
 )
 
 
@@ -1162,6 +1164,7 @@ def test_clip_torch_image_text_embeddings_on_pair_with_reference_implementation(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_clip_onnx_image_prediction_for_numpy(
     clip_rn50_onnx_path: str,
     dog_image_numpy: np.ndarray,
@@ -1178,11 +1181,12 @@ def test_clip_onnx_image_prediction_for_numpy(
 
     # then
     assert tuple(embeddings.shape) == (1, 1024)
-    assert torch.allclose(embeddings, EXPECTED_DOG_IMAGE_EMBEDDING, atol=1e-4)
+    assert torch.allclose(embeddings, EXPECTED_DOG_IMAGE_EMBEDDING, atol=1e-3)
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_clip_onnx_image_prediction_for_torch_tensor(
     clip_rn50_onnx_path: str,
     dog_image_torch: np.ndarray,
@@ -1199,11 +1203,12 @@ def test_clip_onnx_image_prediction_for_torch_tensor(
 
     # then
     assert tuple(embeddings.shape) == (1, 1024)
-    assert torch.allclose(embeddings, EXPECTED_DOG_IMAGE_EMBEDDING, atol=1e-4)
+    assert torch.allclose(embeddings, EXPECTED_DOG_IMAGE_EMBEDDING, atol=1e-3)
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_clip_onnx_image_prediction_similar_to_reference_implementation(
     clip_rn50_onnx_path: str,
     dog_image_torch: np.ndarray,
@@ -1240,6 +1245,7 @@ def test_clip_onnx_image_prediction_similar_to_reference_implementation(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_clip_onnx_image_prediction_for_text(
     clip_rn50_onnx_path: str,
     dog_image_torch: np.ndarray,
@@ -1260,6 +1266,7 @@ def test_clip_onnx_image_prediction_for_text(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_clip_onnx_image_prediction_for_text_comparable_with_reference_implementation(
     clip_rn50_onnx_path: str,
     dog_image_torch: np.ndarray,

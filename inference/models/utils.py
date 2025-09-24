@@ -107,6 +107,9 @@ ROBOFLOW_MODEL_TYPES = {
     ("object-detection", "yolov12x"): YOLOv12ObjectDetection,
     ("object-detection", "rfdetr-base"): RFDETRObjectDetection,
     ("object-detection", "rfdetr-large"): RFDETRObjectDetection,
+    ("object-detection", "rfdetr-nano"): RFDETRObjectDetection,
+    ("object-detection", "rfdetr-small"): RFDETRObjectDetection,
+    ("object-detection", "rfdetr-medium"): RFDETRObjectDetection,
     (
         "instance-segmentation",
         "yolov11n",

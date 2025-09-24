@@ -1,4 +1,5 @@
 import os.path
+from threading import Lock
 from time import perf_counter
 from typing import Any, List, Optional
 
@@ -58,6 +59,7 @@ class YOLOWorld(RoboflowCoreModel):
         logger.debug("CLIP loaded")
         self.clip_model = clip_model
         self.class_names = None
+        self._state_lock = Lock()
 
     def preproc_image(self, image: Any):
         """Preprocesses an image.
@@ -78,8 +80,8 @@ class YOLOWorld(RoboflowCoreModel):
         """
         Perform inference based on the details provided in the request, and return the associated responses.
         """
-        result = self.infer(**request.dict())
-        return result
+        with self._state_lock:
+            return self.infer(**request.dict())
 
     def infer(
         self,

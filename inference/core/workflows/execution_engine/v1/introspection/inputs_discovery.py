@@ -106,7 +106,7 @@ def parse_blocks(
     dynamic_blocks_definitions: List[dict],
 ) -> Tuple[Dict[str, BlockManifestMetadata], Dict[str, Type[WorkflowBlockManifest]]]:
     dynamic_blocks = compile_dynamic_blocks(
-        dynamic_blocks_definitions=dynamic_blocks_definitions
+        dynamic_blocks_definitions=dynamic_blocks_definitions, skip_class_eval=True
     )
     blocks_description = describe_available_blocks(
         dynamic_blocks=dynamic_blocks,

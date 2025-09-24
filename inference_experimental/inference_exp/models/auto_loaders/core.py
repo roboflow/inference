@@ -219,7 +219,7 @@ class AutoModel:
             raise DirectLocalStorageAccessError(
                 message="Attempted to load model directly pointing local path, rather than model ID. This "
                 "operation is forbidden as AutoModel.from_pretrained(...) was used with "
-                "`allow_direct_local_storage_loading=False`. If you are running `inference` outside Roboflow "
+                "`allow_direct_local_storage_loading=False`. If you are running `inference-exp` outside Roboflow "
                 "hosted solutions - verify your setup. If you see this error on Roboflow platform - this "
                 "feature was disabled for security reason. In rare cases when you use valid model ID, the "
                 "clash of ID with local path may cause this error - we ask you to report the issue here: "
@@ -377,7 +377,7 @@ def attempt_loading_matching_model_packages(
                 f"be caused several issues. If you see this warning after manually specifying model "
                 f"package to be loaded - make sure that all required dependencies are installed. If "
                 f"that warning is displayed when the model package was auto-selected - there is most "
-                f"likely a bug in `inference` and you should raise an issue providing full context of "
+                f"likely a bug in `inference-exp` and you should raise an issue providing full context of "
                 f"the event. https://github.com/roboflow/inference/issues"
             )
             failed_load_attempts.append((model_package.package_id, error))
@@ -391,7 +391,7 @@ def attempt_loading_matching_model_packages(
         f"be caused several issues. If you see this warning after manually specifying model "
         f"package to be loaded - make sure that all required dependencies are installed. If "
         f"that warning is displayed when the model package was auto-selected - there is most "
-        f"likely a bug in `inference` and you should raise an issue providing full context of "
+        f"likely a bug in `inference-exp` and you should raise an issue providing full context of "
         f"the event. https://github.com/roboflow/inference/issues\n\n"
         f"Here is the summary of errors for specific model packages:\n{summary_of_errors}\n\n",
         help_url="https://todo",
@@ -468,6 +468,7 @@ def initialize_model(
     symlinks_mapping = create_symlinks_to_shared_blobs(
         model_dir=model_package_cache_dir,
         shared_files_mapping=shared_files_mapping,
+        model_download_file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
         on_symlink_created=on_symlink_created,
         on_symlink_deleted=on_symlink_deleted,
     )
@@ -502,6 +503,7 @@ def initialize_model(
 def create_symlinks_to_shared_blobs(
     model_dir: str,
     shared_files_mapping: Dict[FileHandle, str],
+    model_download_file_lock_acquire_timeout: int = 10,
     on_symlink_created: Optional[Callable[[str, str], None]] = None,
     on_symlink_deleted: Optional[Callable[[str], None]] = None,
 ) -> Dict[str, str]:
@@ -514,6 +516,27 @@ def create_symlinks_to_shared_blobs(
         result[file_handle] = link_name
         if os.path.exists(link_name):
             continue
+        handle_symlink_creation(
+            target_path=target_path,
+            link_name=link_name,
+            model_download_file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
+            on_symlink_created=on_symlink_created,
+            on_symlink_deleted=on_symlink_deleted,
+        )
+    return result
+
+
+def handle_symlink_creation(
+    target_path: str,
+    link_name: str,
+    model_download_file_lock_acquire_timeout: int = 10,
+    on_symlink_created: Optional[Callable[[str, str], None]] = None,
+    on_symlink_deleted: Optional[Callable[[str], None]] = None,
+) -> None:
+    link_dir, link_file_name = os.path.split(os.path.abspath(link_name))
+    os.makedirs(link_dir, exist_ok=True)
+    lock_path = os.path.join(link_dir, f".{link_file_name}.lock")
+    with FileLock(lock_path, timeout=model_download_file_lock_acquire_timeout):
         if os.path.islink(link_name):
             # file does not exist, but is link = broken symlink - we should purge
             os.remove(link_name)
@@ -521,8 +544,7 @@ def create_symlinks_to_shared_blobs(
                 on_symlink_deleted(link_name)
         os.symlink(target_path, link_name)
         if on_symlink_created:
-            on_symlink_created(shared_files_mapping[file_handle], link_name)
-    return result
+            on_symlink_created(target_path, link_name)
 
 
 def dump_model_config_for_offline_use(

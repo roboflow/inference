@@ -1,4 +1,5 @@
 FROM nvcr.io/nvidia/l4t-ml:r35.2.1-py3
+#installs python 3.9
 
 ARG DEBIAN_FRONTEND=noninteractive
 ENV LANG en_US.UTF-8 
@@ -48,14 +49,9 @@ RUN python3.9 -m pip install --upgrade pip  && python3.9 -m pip install \
     --upgrade \
     && rm -rf ~/.cache/pip
 
-RUN python3.9 -m pip uninstall --yes onnxruntime
-RUN wget https://nvidia.box.com/shared/static/67zek28z497hs9aev7xg2c1wngdeyv4h.whl -O onnxruntime_gpu-1.16.0-cp39-cp39-linux_aarch64.whl
-RUN python3.9 -m pip install onnxruntime_gpu-1.16.0-cp39-cp39-linux_aarch64.whl "opencv-python-headless>4,<=4.10.0.84" \
-    && rm -rf ~/.cache/pip \
-    && rm onnxruntime_gpu-1.16.0-cp39-cp39-linux_aarch64.whl
-
 WORKDIR /app/
 COPY inference_cli/ ./inference_cli/
+COPY inference_sdk/ ./inference_sdk/
 COPY inference inference
 COPY .release .release
 COPY requirements requirements
@@ -64,17 +60,25 @@ COPY Makefile Makefile
 RUN make create_inference_cli_whl PYTHON=python3.9
 RUN python3.9 -m pip install dist/inference_cli*.whl
 
-ENV ORT_TENSORRT_FP16_ENABLE=1
-ENV ORT_TENSORRT_ENGINE_CACHE_ENABLE=1
-ENV CORE_MODEL_SAM_ENABLED=False
-ENV OPENBLAS_CORETYPE=ARMV8 
-ENV LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libgomp.so.1:/usr/local/lib/python3.8/dist-packages/torch.libs/libgomp-d22c30c5.so.1.0.0
-ENV VERSION_CHECK_MODE=continuous
-ENV PROJECT=roboflow-platform
-ENV HOST=0.0.0.0
-ENV PORT=7070
-ENV WORKFLOWS_STEP_EXECUTION_MODE=local
-ENV WORKFLOWS_MAX_CONCURRENT_STEPS=1
-ENV SUPERVISON_DEPRECATION_WARNING=0
+# BE CAREFUL, WE ENFORCE numpy 1.x for the sake of compatibility with onnxruntime
+RUN python3.9 -m pip uninstall --yes onnxruntime numpy
+RUN wget https://nvidia.box.com/shared/static/67zek28z497hs9aev7xg2c1wngdeyv4h.whl -O onnxruntime_gpu-1.16.0-cp39-cp39-linux_aarch64.whl
+RUN python3.9 -m pip install "numpy<=1.26.4" onnxruntime_gpu-1.16.0-cp39-cp39-linux_aarch64.whl "opencv-python-headless>4,<=4.10.0.84" \
+    && rm -rf ~/.cache/pip \
+    && rm onnxruntime_gpu-1.16.0-cp39-cp39-linux_aarch64.whl
+
+ENV ORT_TENSORRT_FP16_ENABLE=1 \
+    ORT_TENSORRT_ENGINE_CACHE_ENABLE=1 \
+    CORE_MODEL_SAM_ENABLED=False \
+    OPENBLAS_CORETYPE=ARMV8 \
+    LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libgomp.so.1:/usr/local/lib/python3.8/dist-packages/torch.libs/libgomp-d22c30c5.so.1.0.0 \
+    VERSION_CHECK_MODE=continuous \
+    PROJECT=roboflow-platform \
+    HOST=0.0.0.0 \
+    PORT=7070 \
+    WORKFLOWS_STEP_EXECUTION_MODE=local \
+    WORKFLOWS_MAX_CONCURRENT_STEPS=1 \
+    SUPERVISON_DEPRECATION_WARNING=0 \
+    PYTHONPATH=/app:$PYTHONPATH
 
 ENTRYPOINT ["python3.9", "-m", "inference.enterprise.stream_management.manager.app"]

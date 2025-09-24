@@ -14,7 +14,7 @@ def get_model_package_contents(
         if not os.path.exists(element_path):
             raise CorruptedModelPackageError(
                 message=f"Model package is incomplete. Could not find element {element}. "
-                f"If you attempt to run `inference` locally - inspect the contents of local directory to check for "
+                f"If you attempt to run `inference-exp` locally - inspect the contents of local directory to check for "
                 f"completeness of model package download - lack of files may indicate network issues. Verification "
                 f"of connectivity may be a good first step. If you prepared the model package manually - examine the "
                 f"correctness of the setup. If you run on managed serving - contact support if the issue is "

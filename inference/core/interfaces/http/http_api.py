@@ -1,20 +1,32 @@
-import asyncio
 import base64
+import concurrent
 import os
-from functools import partial, wraps
+from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
+from functools import partial
+from threading import Lock, Semaphore, Thread
 from time import sleep
-from typing import Any, Dict, List, Optional, Union
+from typing import Annotated, Any, Dict, List, Optional, Tuple, Union
 from uuid import uuid4
 
 import asgi_correlation_id
 import uvicorn
-from fastapi import BackgroundTasks, Depends, FastAPI, Path, Query, Request
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    HTTPException,
+    Path,
+    Query,
+    Request,
+)
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
+from starlette.datastructures import UploadFile
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from inference.core import logger
+from inference.core.constants import PROCESSING_TIME_HEADER
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
 from inference.core.entities.requests.clip import (
     ClipCompareRequest,
@@ -100,7 +112,6 @@ from inference.core.entities.responses.server_state import (
 from inference.core.entities.responses.workflows import (
     DescribeInterfaceResponse,
     ExecutionEngineVersions,
-    WorkflowErrorResponse,
     WorkflowInferenceResponse,
     WorkflowsBlocksDescription,
     WorkflowsBlocksSchemaDescription,
@@ -129,15 +140,17 @@ from inference.core.env import (
     DISABLE_WORKFLOW_ENDPOINTS,
     DOCKER_SOCKET_PATH,
     ENABLE_BUILDER,
+    ENABLE_DASHBOARD,
     ENABLE_PROMETHEUS,
     ENABLE_STREAM_API,
     ENABLE_WORKFLOWS_PROFILING,
     GCP_SERVERLESS,
+    GET_MODEL_REGISTRY_ENABLED,
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
     LMM_ENABLED,
-    METLO_KEY,
     METRICS_ENABLED,
+    MOONDREAM2_ENABLED,
     NOTEBOOK_ENABLED,
     NOTEBOOK_PASSWORD,
     NOTEBOOK_PORT,
@@ -151,28 +164,19 @@ from inference.core.env import (
 from inference.core.exceptions import (
     ContentTypeInvalid,
     ContentTypeMissing,
-    InferenceModelNotFound,
     InputImageLoadError,
-    InvalidEnvironmentVariableError,
-    InvalidMaskDecodeArgument,
-    InvalidModelIDError,
-    MalformedRoboflowAPIResponseError,
-    MalformedWorkflowResponseError,
-    MissingApiKeyError,
     MissingServiceSecretError,
-    ModelArtefactError,
-    OnnxProviderNotAvailable,
-    PostProcessingError,
-    PreProcessingError,
-    RoboflowAPIConnectionError,
     RoboflowAPINotAuthorizedError,
-    RoboflowAPINotNotFoundError,
-    RoboflowAPITimeoutError,
-    RoboflowAPIUnsuccessfulRequestError,
-    ServiceConfigurationError,
     WorkspaceLoadError,
 )
 from inference.core.interfaces.base import BaseInterface
+from inference.core.interfaces.http.dependencies import (
+    parse_body_content_for_legacy_request_handler,
+)
+from inference.core.interfaces.http.error_handlers import (
+    with_route_exceptions,
+    with_route_exceptions_async,
+)
 from inference.core.interfaces.http.handlers.workflows import (
     filter_out_unwanted_workflow_outputs,
     handle_describe_workflows_blocks_request,
@@ -188,12 +192,6 @@ from inference.core.interfaces.stream_manager.api.entities import (
     InitializeWebRTCPipelineResponse,
     ListPipelinesResponse,
 )
-from inference.core.interfaces.stream_manager.api.errors import (
-    ProcessesManagerAuthorisationError,
-    ProcessesManagerClientError,
-    ProcessesManagerInvalidPayload,
-    ProcessesManagerNotFoundError,
-)
 from inference.core.interfaces.stream_manager.api.stream_manager_client import (
     StreamManagerClient,
 )
@@ -202,40 +200,17 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
     InitialisePipelinePayload,
     InitialiseWebRTCPipelinePayload,
 )
-from inference.core.interfaces.stream_manager.manager_app.errors import (
-    CommunicationProtocolError,
-    MalformedPayloadError,
-    MessageToBigError,
-)
 from inference.core.managers.base import ModelManager
 from inference.core.managers.metrics import get_container_stats
 from inference.core.managers.prometheus import InferenceInstrumentator
 from inference.core.roboflow_api import (
     get_roboflow_workspace,
+    get_roboflow_workspace_async,
     get_workflow_specification,
 )
 from inference.core.utils.container import is_docker_socket_mounted
 from inference.core.utils.notebooks import start_notebook
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.query_language.errors import (
-    InvalidInputTypeError,
-    OperationTypeNotRecognisedError,
-)
-from inference.core.workflows.errors import (
-    DynamicBlockError,
-    ExecutionGraphStructureError,
-    InvalidReferenceTargetError,
-    NotSupportedExecutionEngineError,
-    ReferenceTypeError,
-    RuntimeInputError,
-    StepExecutionError,
-    StepInputDimensionalityError,
-    WorkflowBlockError,
-    WorkflowDefinitionError,
-    WorkflowError,
-    WorkflowExecutionEngineVersionError,
-    WorkflowSyntaxError,
-)
 from inference.core.workflows.execution_engine.core import (
     ExecutionEngine,
     get_available_versions,
@@ -258,271 +233,11 @@ from inference.usage_tracking.collector import usage_collector
 
 if LAMBDA:
     from inference.core.usage import trackUsage
-if METLO_KEY:
-    from metlo.fastapi import ASGIMiddleware
 
 import time
 
 from inference.core.roboflow_api import ModelEndpointType
 from inference.core.version import __version__
-
-
-def with_route_exceptions(route):
-    """
-    A decorator that wraps a FastAPI route to handle specific exceptions. If an exception
-    is caught, it returns a JSON response with the error message.
-
-    Args:
-        route (Callable): The FastAPI route to be wrapped.
-
-    Returns:
-        Callable: The wrapped route.
-    """
-
-    @wraps(route)
-    async def wrapped_route(*args, **kwargs):
-        try:
-            return await route(*args, **kwargs)
-        except ContentTypeInvalid as error:
-            logger.exception("%s: %s", type(error).__name__, error)
-            resp = JSONResponse(
-                status_code=400,
-                content={
-                    "message": "Invalid Content-Type header provided with request."
-                },
-            )
-        except ContentTypeMissing as error:
-            logger.exception("%s: %s", type(error).__name__, error)
-            resp = JSONResponse(
-                status_code=400,
-                content={"message": "Content-Type header not provided with request."},
-            )
-        except InputImageLoadError as error:
-            logger.exception("%s: %s", type(error).__name__, error)
-            resp = JSONResponse(
-                status_code=400,
-                content={
-                    "message": f"Could not load input image. Cause: {error.get_public_error_details()}"
-                },
-            )
-        except InvalidModelIDError as error:
-            logger.exception("%s: %s", type(error).__name__, error)
-            resp = JSONResponse(
-                status_code=400,
-                content={"message": "Invalid Model ID sent in request."},
-            )
-        except InvalidMaskDecodeArgument as error:
-            logger.exception("%s: %s", type(error).__name__, error)
-            resp = JSONResponse(
-                status_code=400,
-                content={
-                    "message": "Invalid mask decode argument sent. tradeoff_factor must be in [0.0, 1.0], "
-                    "mask_decode_mode: must be one of ['accurate', 'fast', 'tradeoff']"
-                },
-            )
-        except MissingApiKeyError as error:
-            logger.exception("%s: %s", type(error).__name__, error)
-            resp = JSONResponse(
-                status_code=400,
-                content={
-                    "message": "Required Roboflow API key is missing. Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key "
-                    "to learn how to retrieve one."
-                },
-            )
-        except (
-            WorkflowSyntaxError,
-            InvalidReferenceTargetError,
-            ExecutionGraphStructureError,
-            StepInputDimensionalityError,
-        ) as error:
-            logger.exception("%s: %s", type(error).__name__, error)
-            content = WorkflowErrorResponse(
-                message=str(error.public_message),
-                error_type=error.__class__.__name__,
-                context=str(error.context),
-                inner_error_type=str(error.inner_error_type),
-                inner_error_message=str(error.inner_error),
-                blocks_errors=error.blocks_errors,
-            )
-            resp = JSONResponse(status_code=400, content=content.model_dump())
-        except (
-            WorkflowDefinitionError,
-            ReferenceTypeError,
-            RuntimeInputError,
-            InvalidInputTypeError,
-            OperationTypeNotRecognisedError,
-            DynamicBlockError,
-            WorkflowExecutionEngineVersionError,
-            NotSupportedExecutionEngineError,
-        ) as error:
-            logger.exception("%s: %s", type(error).__name__, error)
-            resp = JSONResponse(
-                status_code=400,
-                content={
-                    "message": error.public_message,
-                    "error_type": error.__class__.__name__,
-                    "context": error.context,
-                    "inner_error_type": error.inner_error_type,
-                    "inner_error_message": str(error.inner_error),
-                },
-            )
-        except (
-            ProcessesManagerInvalidPayload,
-            MalformedPayloadError,
-            MessageToBigError,
-        ) as error:
-            logger.exception("%s: %s", type(error).__name__, error)
-            resp = JSONResponse(
-                status_code=400,
-                content={
-                    "message": error.public_message,
-                    "error_type": error.__class__.__name__,
-                    "inner_error_type": error.inner_error_type,
-                },
-            )
-        except (
-            RoboflowAPINotAuthorizedError,
-            ProcessesManagerAuthorisationError,
-        ) as error:
-            logger.exception("%s: %s", type(error).__name__, error)
-            resp = JSONResponse(
-                status_code=401,
-                content={
-                    "message": "Unauthorized access to roboflow API - check API key and make sure the key is valid for "
-                    "workspace you use. Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key "
-                    "to learn how to retrieve one."
-                },
-            )
-        except (RoboflowAPINotNotFoundError, InferenceModelNotFound) as error:
-            logger.exception("%s: %s", type(error).__name__, error)
-            resp = JSONResponse(
-                status_code=404,
-                content={
-                    "message": "Requested Roboflow resource not found. Make sure that workspace, project or model "
-                    "you referred in request exists."
-                },
-            )
-        except ProcessesManagerNotFoundError as error:
-            logger.exception("%s: %s", type(error).__name__, error)
-            resp = JSONResponse(
-                status_code=404,
-                content={
-                    "message": error.public_message,
-                    "error_type": error.__class__.__name__,
-                    "inner_error_type": error.inner_error_type,
-                },
-            )
-        except (
-            InvalidEnvironmentVariableError,
-            MissingServiceSecretError,
-            ServiceConfigurationError,
-        ) as error:
-            logger.exception("%s: %s", type(error).__name__, error)
-            resp = JSONResponse(
-                status_code=500, content={"message": "Service misconfiguration."}
-            )
-        except (
-            PreProcessingError,
-            PostProcessingError,
-        ) as error:
-            logger.exception("%s: %s", type(error).__name__, error)
-            resp = JSONResponse(
-                status_code=500,
-                content={
-                    "message": "Model configuration related to pre- or post-processing is invalid."
-                },
-            )
-        except ModelArtefactError as error:
-            logger.exception("%s: %s", type(error).__name__, error)
-            resp = JSONResponse(
-                status_code=500, content={"message": "Model package is broken."}
-            )
-        except OnnxProviderNotAvailable as error:
-            logger.exception("%s: %s", type(error).__name__, error)
-            resp = JSONResponse(
-                status_code=501,
-                content={
-                    "message": "Could not find requested ONNX Runtime Provider. Check that you are using "
-                    "the correct docker image on a supported device."
-                },
-            )
-        except (
-            MalformedRoboflowAPIResponseError,
-            RoboflowAPIUnsuccessfulRequestError,
-            WorkspaceLoadError,
-            MalformedWorkflowResponseError,
-        ) as error:
-            logger.exception("%s: %s", type(error).__name__, error)
-            resp = JSONResponse(
-                status_code=502,
-                content={"message": "Internal error. Request to Roboflow API failed."},
-            )
-        except RoboflowAPIConnectionError as error:
-            logger.exception("%s: %s", type(error).__name__, error)
-            resp = JSONResponse(
-                status_code=503,
-                content={
-                    "message": "Internal error. Could not connect to Roboflow API."
-                },
-            )
-        except RoboflowAPITimeoutError as error:
-            logger.exception("%s: %s", type(error).__name__, error)
-            resp = JSONResponse(
-                status_code=504,
-                content={
-                    "message": "Timeout when attempting to connect to Roboflow API."
-                },
-            )
-        except StepExecutionError as error:
-            logger.exception("%s: %s", type(error).__name__, error)
-            content = WorkflowErrorResponse(
-                message=str(error.public_message),
-                error_type=error.__class__.__name__,
-                context=str(error.context),
-                inner_error_type=str(error.inner_error_type),
-                inner_error_message=str(error.inner_error),
-                blocks_errors=[
-                    WorkflowBlockError(
-                        block_id=error.block_id,
-                        block_type=error.block_type,
-                    ),
-                ],
-            )
-            resp = JSONResponse(
-                status_code=500,
-                content=content.model_dump(),
-            )
-        except WorkflowError as error:
-            logger.exception("%s: %s", type(error).__name__, error)
-            resp = JSONResponse(
-                status_code=500,
-                content={
-                    "message": error.public_message,
-                    "error_type": error.__class__.__name__,
-                    "context": error.context,
-                    "inner_error_type": error.inner_error_type,
-                    "inner_error_message": str(error.inner_error),
-                },
-            )
-        except (
-            ProcessesManagerClientError,
-            CommunicationProtocolError,
-        ) as error:
-            logger.exception("%s: %s", type(error).__name__, error)
-            resp = JSONResponse(
-                status_code=500,
-                content={
-                    "message": error.public_message,
-                    "error_type": error.__class__.__name__,
-                    "inner_error_type": error.inner_error_type,
-                },
-            )
-        except Exception as error:
-            logger.exception("%s: %s", type(error).__name__, error)
-            resp = JSONResponse(status_code=500, content={"message": "Internal error."})
-        return resp
-
-    return wrapped_route
 
 
 class LambdaMiddleware(BaseHTTPMiddleware):
@@ -538,7 +253,7 @@ class GCPServerlessMiddleware(BaseHTTPMiddleware):
         t1 = time.time()
         response = await call_next(request)
         t2 = time.time()
-        response.headers["X-Processing-Time"] = str(t2 - t1)
+        response.headers[PROCESSING_TIME_HEADER] = str(t2 - t1)
         return response
 
 
@@ -587,6 +302,13 @@ class HttpInterface(BaseInterface):
             },
             root_path=root_path,
         )
+        # Ensure in-memory logging is initialized as early as possible for all runtimes
+        try:
+            from inference.core.logging.memory_handler import setup_memory_logging
+
+            setup_memory_logging()
+        except Exception:
+            pass
 
         app.mount(
             "/static",
@@ -604,15 +326,7 @@ class HttpInterface(BaseInterface):
             logger.info("Shutting down %s", description)
             await usage_collector.async_push_usage_payloads()
 
-        if ENABLE_PROMETHEUS:
-            InferenceInstrumentator(
-                app, model_manager=model_manager, endpoint="/metrics"
-            )
-
-        if METLO_KEY:
-            app.add_middleware(
-                ASGIMiddleware, host="https://app.metlo.com", api_key=METLO_KEY
-            )
+        InferenceInstrumentator(app, model_manager=model_manager, endpoint="/metrics")
         if LAMBDA:
             app.add_middleware(LambdaMiddleware)
         if GCP_SERVERLESS:
@@ -627,6 +341,7 @@ class HttpInterface(BaseInterface):
                 allow_credentials=True,
                 allow_methods=["*"],
                 allow_headers=["*"],
+                expose_headers=[PROCESSING_TIME_HEADER],
             )
 
         # Optionally add middleware for profiling the FastAPI server and underlying inference API code
@@ -672,7 +387,7 @@ class HttpInterface(BaseInterface):
         if not (LAMBDA or GCP_SERVERLESS):
 
             @app.get("/device/stats")
-            async def device_stats():
+            def device_stats():
                 not_configured_error_message = {
                     "error": "Device statistics endpoint is not enabled.",
                     "hint": "Mount the Docker socket and point its location when running the docker "
@@ -695,8 +410,88 @@ class HttpInterface(BaseInterface):
                 )
                 return JSONResponse(status_code=200, content=container_stats)
 
+        cached_api_keys = dict()
+
+        if GCP_SERVERLESS:
+
+            @app.middleware("http")
+            async def check_authorization_serverless(request: Request, call_next):
+                # exclusions
+                skip_check = (
+                    request.method not in ["GET", "POST"]
+                    or request.url.path
+                    in [
+                        "/",
+                        "/docs",
+                        "/info",
+                        "/openapi.json",  # needed for /docs and /redoc
+                        "/model/registry",  # dont auth this route, usually not used on serverlerless, but queue based serverless uses it internally (not accessible from outside)
+                    ]
+                    or request.url.path.startswith("/static/")
+                    or request.url.path.startswith("/_next/")
+                )
+
+                # for these routes we only want to auth if dynamic python modules are provided
+                if request.url.path in [
+                    "/workflows/blocks/describe",
+                    "/workflows/definition/schema",
+                ]:
+                    if request.method == "GET":
+                        skip_check = True
+
+                    elif (
+                        request.headers.get("content-type", None) == "application/json"
+                        and int(request.headers.get("content-length", 0)) > 0
+                    ):
+                        json_params = await request.json()
+                        dynamic_blocks_definitions = json_params.get(
+                            "dynamic_blocks_definitions", None
+                        )
+                        if not dynamic_blocks_definitions:
+                            skip_check = True
+
+                if skip_check:
+                    return await call_next(request)
+
+                def _unauthorized_response(msg):
+                    return JSONResponse(
+                        status_code=401,
+                        content={
+                            "status": 401,
+                            "message": msg,
+                        },
+                    )
+
+                req_params = request.query_params
+                json_params = dict()
+                api_key = req_params.get("api_key", None)
+                if (
+                    api_key is None
+                    and request.headers.get("content-type", None) == "application/json"
+                    and int(request.headers.get("content-length", 0)) > 0
+                ):
+                    # have to try catch here, because some legacy endpoints that abuse Content-Type header but dont actually receive json
+                    try:
+                        json_params = await request.json()
+                    except Exception:
+                        pass
+                api_key = json_params.get("api_key", api_key)
+
+                if api_key is None:
+                    return _unauthorized_response("Unauthorized api_key")
+
+                if cached_api_keys.get(api_key, 0) < time.time():
+                    try:
+                        await get_roboflow_workspace_async(api_key=api_key)
+                        cached_api_keys[api_key] = (
+                            time.time() + 3600
+                        )  # expired after 1 hour
+                    except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
+                        return _unauthorized_response("Unauthorized api_key")
+
+                return await call_next(request)
+
         if DEDICATED_DEPLOYMENT_WORKSPACE_URL:
-            cached_api_keys = dict()
 
             @app.middleware("http")
             async def check_authorization(request: Request, call_next):
@@ -710,8 +505,6 @@ class HttpInterface(BaseInterface):
                         "/redoc",
                         "/info",
                         "/openapi.json",  # needed for /docs and /redoc
-                        "/workflows/blocks/describe",
-                        "/workflows/definition/schema",
                     ]
                     or request.url.path.startswith("/static/")
                     or request.url.path.startswith("/_next/")
@@ -731,22 +524,31 @@ class HttpInterface(BaseInterface):
                 # check api_key
                 req_params = request.query_params
                 json_params = dict()
+                api_key = req_params.get("api_key", None)
                 if (
-                    request.headers.get("content-type", None) == "application/json"
+                    api_key is None
+                    and request.headers.get("content-type", None) == "application/json"
                     and int(request.headers.get("content-length", 0)) > 0
                 ):
-                    json_params = await request.json()
-                api_key = req_params.get("api_key", None) or json_params.get(
-                    "api_key", None
-                )
+                    # have to try catch here, because some legacy endpoints that abuse Content-Type header but dont actually receive json
+                    try:
+                        json_params = await request.json()
+                    except Exception:
+                        pass
+                api_key = json_params.get("api_key", api_key)
+
+                if api_key is None:
+                    return _unauthorized_response("Unauthorized api_key")
 
                 if cached_api_keys.get(api_key, 0) < time.time():
                     try:
-                        workspace_url = (
-                            get_roboflow_workspace(api_key)
-                            if api_key is not None
-                            else None
-                        )
+                        # TODO: make this request async!
+                        if api_key is None:
+                            workspace_url = None
+                        else:
+                            workspace_url = await get_roboflow_workspace_async(
+                                api_key=api_key
+                            )
 
                         if workspace_url != DEDICATED_DEPLOYMENT_WORKSPACE_URL:
                             return _unauthorized_response("Unauthorized api_key")
@@ -754,7 +556,7 @@ class HttpInterface(BaseInterface):
                         cached_api_keys[api_key] = (
                             time.time() + 3600
                         )  # expired after 1 hour
-                    except RoboflowAPINotAuthorizedError as e:
+                    except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
                         return _unauthorized_response("Unauthorized api_key")
 
                 return await call_next(request)
@@ -773,7 +575,7 @@ class HttpInterface(BaseInterface):
                 operations_timeout=operations_timeout,
             )
 
-        async def process_inference_request(
+        def process_inference_request(
             inference_request: InferenceRequest,
             countinference: Optional[bool] = None,
             service_secret: Optional[str] = None,
@@ -798,7 +600,7 @@ class HttpInterface(BaseInterface):
                 countinference=countinference,
                 service_secret=service_secret,
             )
-            resp = await self.model_manager.infer_from_request(
+            resp = self.model_manager.infer_from_request_sync(
                 de_aliased_model_id, inference_request, **kwargs
             )
             return orjson_response(resp)
@@ -809,6 +611,7 @@ class HttpInterface(BaseInterface):
             background_tasks: Optional[BackgroundTasks],
             profiler: WorkflowsProfiler,
         ) -> WorkflowInferenceResponse:
+
             workflow_init_parameters = {
                 "workflows_core.model_manager": model_manager,
                 "workflows_core.api_key": workflow_request.api_key,
@@ -989,7 +792,7 @@ class HttpInterface(BaseInterface):
             summary="Info",
             description="Get the server name and version number",
         )
-        async def root():
+        def root():
             """Endpoint to get the server name and version number.
 
             Returns:
@@ -1001,8 +804,55 @@ class HttpInterface(BaseInterface):
                 uuid=GLOBAL_INFERENCE_SERVER_ID,
             )
 
-        # The current AWS Lambda authorizer only supports path parameters, therefore we can only use the legacy infer route. This case statement excludes routes which won't work for the current Lambda authorizer.
-        if not (LAMBDA or GCP_SERVERLESS):
+        @app.get(
+            "/logs",
+            summary="Get Recent Logs",
+            description="Get recent application logs for debugging",
+        )
+        def get_logs(
+            limit: Optional[int] = Query(
+                100, description="Maximum number of log entries to return"
+            ),
+            level: Optional[str] = Query(
+                None,
+                description="Filter by log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
+            ),
+            since: Optional[str] = Query(
+                None, description="Return logs since this ISO timestamp"
+            ),
+        ):
+            """Get recent application logs from memory.
+
+            Only available when ENABLE_IN_MEMORY_LOGS environment variable is set to 'true'.
+
+            Args:
+                limit: Maximum number of log entries (default 100)
+                level: Filter by log level
+                since: ISO timestamp to filter logs since
+
+            Returns:
+                List of log entries with timestamp, level, logger, and message
+            """
+            # Check if in-memory logging is enabled
+            from inference.core.logging.memory_handler import (
+                get_recent_logs,
+                is_memory_logging_enabled,
+            )
+
+            if not is_memory_logging_enabled():
+                raise HTTPException(
+                    status_code=404, detail="Logs endpoint not available"
+                )
+
+            try:
+                logs = get_recent_logs(limit=limit or 100, level=level, since=since)
+                return {"logs": logs, "total_count": len(logs)}
+            except (ImportError, ModuleNotFoundError):
+                raise HTTPException(
+                    status_code=500, detail="Logging system not properly initialized"
+                )
+
+        if not LAMBDA and GET_MODEL_REGISTRY_ENABLED:
 
             @app.get(
                 "/model/registry",
@@ -1010,7 +860,7 @@ class HttpInterface(BaseInterface):
                 summary="Get model keys",
                 description="Get the ID of each loaded model",
             )
-            async def registry():
+            def registry():
                 """Get the ID of each loaded model in the registry.
 
                 Returns:
@@ -1022,6 +872,9 @@ class HttpInterface(BaseInterface):
                     models_descriptions=models_descriptions
                 )
 
+        # The current AWS Lambda authorizer only supports path parameters, therefore we can only use the legacy infer route. This case statement excludes routes which won't work for the current Lambda authorizer.
+        if not (LAMBDA or GCP_SERVERLESS):
+
             @app.post(
                 "/model/add",
                 response_model=ModelsDescriptions,
@@ -1029,7 +882,7 @@ class HttpInterface(BaseInterface):
                 description="Load the model with the given model ID",
             )
             @with_route_exceptions
-            async def model_add(
+            def model_add(
                 request: AddModelRequest,
                 countinference: Optional[bool] = None,
                 service_secret: Optional[str] = None,
@@ -1067,7 +920,7 @@ class HttpInterface(BaseInterface):
                 description="Remove the model with the given model ID",
             )
             @with_route_exceptions
-            async def model_remove(request: ClearModelRequest):
+            def model_remove(request: ClearModelRequest):
                 """Remove the model with the given model ID from the model manager.
 
                 Args:
@@ -1093,7 +946,7 @@ class HttpInterface(BaseInterface):
                 description="Remove all loaded models",
             )
             @with_route_exceptions
-            async def model_clear():
+            def model_clear():
                 """Remove all loaded models from the model manager.
 
                 Returns:
@@ -1122,7 +975,7 @@ class HttpInterface(BaseInterface):
             )
             @with_route_exceptions
             @usage_collector("request")
-            async def infer_object_detection(
+            def infer_object_detection(
                 inference_request: ObjectDetectionInferenceRequest,
                 background_tasks: BackgroundTasks,
                 countinference: Optional[bool] = None,
@@ -1138,7 +991,7 @@ class HttpInterface(BaseInterface):
                     Union[ObjectDetectionInferenceResponse, List[ObjectDetectionInferenceResponse]]: The response containing the inference results.
                 """
                 logger.debug(f"Reached /infer/object_detection")
-                return await process_inference_request(
+                return process_inference_request(
                     inference_request,
                     active_learning_eligible=True,
                     background_tasks=background_tasks,
@@ -1156,7 +1009,7 @@ class HttpInterface(BaseInterface):
             )
             @with_route_exceptions
             @usage_collector("request")
-            async def infer_instance_segmentation(
+            def infer_instance_segmentation(
                 inference_request: InstanceSegmentationInferenceRequest,
                 background_tasks: BackgroundTasks,
                 countinference: Optional[bool] = None,
@@ -1172,7 +1025,7 @@ class HttpInterface(BaseInterface):
                     InstanceSegmentationInferenceResponse: The response containing the inference results.
                 """
                 logger.debug(f"Reached /infer/instance_segmentation")
-                return await process_inference_request(
+                return process_inference_request(
                     inference_request,
                     active_learning_eligible=True,
                     background_tasks=background_tasks,
@@ -1192,7 +1045,7 @@ class HttpInterface(BaseInterface):
             )
             @with_route_exceptions
             @usage_collector("request")
-            async def infer_classification(
+            def infer_classification(
                 inference_request: ClassificationInferenceRequest,
                 background_tasks: BackgroundTasks,
                 countinference: Optional[bool] = None,
@@ -1208,7 +1061,7 @@ class HttpInterface(BaseInterface):
                     Union[ClassificationInferenceResponse, MultiLabelClassificationInferenceResponse]: The response containing the inference results.
                 """
                 logger.debug(f"Reached /infer/classification")
-                return await process_inference_request(
+                return process_inference_request(
                     inference_request,
                     active_learning_eligible=True,
                     background_tasks=background_tasks,
@@ -1224,7 +1077,7 @@ class HttpInterface(BaseInterface):
             )
             @with_route_exceptions
             @usage_collector("request")
-            async def infer_keypoints(
+            def infer_keypoints(
                 inference_request: KeypointsDetectionInferenceRequest,
                 countinference: Optional[bool] = None,
                 service_secret: Optional[str] = None,
@@ -1238,13 +1091,13 @@ class HttpInterface(BaseInterface):
                     Union[ClassificationInferenceResponse, MultiLabelClassificationInferenceResponse]: The response containing the inference results.
                 """
                 logger.debug(f"Reached /infer/keypoints_detection")
-                return await process_inference_request(
+                return process_inference_request(
                     inference_request,
                     countinference=countinference,
                     service_secret=service_secret,
                 )
 
-            if LMM_ENABLED:
+            if LMM_ENABLED or MOONDREAM2_ENABLED:
 
                 @app.post(
                     "/infer/lmm",
@@ -1259,7 +1112,7 @@ class HttpInterface(BaseInterface):
                 )
                 @with_route_exceptions
                 @usage_collector("request")
-                async def infer_lmm(
+                def infer_lmm(
                     inference_request: LMMInferenceRequest,
                     countinference: Optional[bool] = None,
                     service_secret: Optional[str] = None,
@@ -1274,7 +1127,7 @@ class HttpInterface(BaseInterface):
                         Union[ObjectDetectionInferenceResponse, List[ObjectDetectionInferenceResponse]]: The response containing the inference results.
                     """
                     logger.debug(f"Reached /infer/lmm")
-                    return await process_inference_request(
+                    return process_inference_request(
                         inference_request,
                         countinference=countinference,
                         service_secret=service_secret,
@@ -1289,7 +1142,7 @@ class HttpInterface(BaseInterface):
                 description="Checks Roboflow API for workflow definition, once acquired - describes workflow inputs and outputs",
             )
             @with_route_exceptions
-            async def describe_predefined_workflow_interface(
+            def describe_predefined_workflow_interface(
                 workspace_name: str,
                 workflow_id: str,
                 workflow_request: PredefinedWorkflowDescribeInterfaceRequest,
@@ -1311,7 +1164,7 @@ class HttpInterface(BaseInterface):
                 description="Parses workflow definition and retrieves describes inputs and outputs",
             )
             @with_route_exceptions
-            async def describe_workflow_interface(
+            def describe_workflow_interface(
                 workflow_request: WorkflowSpecificationDescribeInterfaceRequest,
             ) -> DescribeInterfaceResponse:
                 return handle_describe_workflows_interface(
@@ -1333,7 +1186,7 @@ class HttpInterface(BaseInterface):
             )
             @with_route_exceptions
             @usage_collector("request")
-            async def infer_from_predefined_workflow(
+            def infer_from_predefined_workflow(
                 workspace_name: str,
                 workflow_id: str,
                 workflow_request: PredefinedWorkflowInferenceRequest,
@@ -1387,7 +1240,7 @@ class HttpInterface(BaseInterface):
             )
             @with_route_exceptions
             @usage_collector("request")
-            async def infer_from_workflow(
+            def infer_from_workflow(
                 workflow_request: WorkflowSpecificationInferenceRequest,
                 background_tasks: BackgroundTasks,
             ) -> WorkflowInferenceResponse:
@@ -1414,7 +1267,7 @@ class HttpInterface(BaseInterface):
                 description="Returns available Execution Engine versions sorted from oldest to newest",
             )
             @with_route_exceptions
-            async def get_execution_engine_versions() -> ExecutionEngineVersions:
+            def get_execution_engine_versions() -> ExecutionEngineVersions:
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 versions = get_available_versions()
                 return ExecutionEngineVersions(versions=versions)
@@ -1429,7 +1282,7 @@ class HttpInterface(BaseInterface):
                 deprecated=True,
             )
             @with_route_exceptions
-            async def describe_workflows_blocks(
+            def describe_workflows_blocks(
                 request: Request,
             ) -> Union[WorkflowsBlocksDescription, Response]:
                 result = handle_describe_workflows_blocks_request()
@@ -1446,13 +1299,14 @@ class HttpInterface(BaseInterface):
                 "schemas and definitions of connections",
             )
             @with_route_exceptions
-            async def describe_workflows_blocks(
+            def describe_workflows_blocks(
                 request: Request,
                 request_payload: Optional[DescribeBlocksRequest] = None,
             ) -> Union[WorkflowsBlocksDescription, Response]:
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 dynamic_blocks_definitions = None
                 requested_execution_engine_version = None
+                api_key = None
                 if request_payload is not None:
                     dynamic_blocks_definitions = (
                         request_payload.dynamic_blocks_definitions
@@ -1460,9 +1314,13 @@ class HttpInterface(BaseInterface):
                     requested_execution_engine_version = (
                         request_payload.execution_engine_version
                     )
+                    api_key = request_payload.api_key or request.query_params.get(
+                        "api_key", None
+                    )
                 result = handle_describe_workflows_blocks_request(
                     dynamic_blocks_definitions=dynamic_blocks_definitions,
                     requested_execution_engine_version=requested_execution_engine_version,
+                    api_key=api_key,
                 )
                 return gzip_response_if_requested(request=request, response=result)
 
@@ -1474,8 +1332,11 @@ class HttpInterface(BaseInterface):
                 "used to validate workflow definitions and suggest syntax in the JSON editor.",
             )
             @with_route_exceptions
-            async def get_workflow_schema() -> WorkflowsBlocksSchemaDescription:
-                return get_workflow_schema_description()
+            def get_workflow_schema(
+                request: Request,
+            ) -> WorkflowsBlocksSchemaDescription:
+                result = get_workflow_schema_description()
+                return gzip_response_if_requested(request, response=result)
 
             @app.post(
                 "/workflows/blocks/dynamic_outputs",
@@ -1485,7 +1346,7 @@ class HttpInterface(BaseInterface):
                 "filling manifest with data.",
             )
             @with_route_exceptions
-            async def get_dynamic_block_outputs(
+            def get_dynamic_block_outputs(
                 step_manifest: Dict[str, Any],
             ) -> List[OutputDefinition]:
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
@@ -1512,7 +1373,7 @@ class HttpInterface(BaseInterface):
                 description="Endpoint provides a way to check validity of JSON workflow definition.",
             )
             @with_route_exceptions
-            async def validate_workflow(
+            def validate_workflow(
                 specification: dict,
             ) -> WorkflowValidationStatus:
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
@@ -1539,7 +1400,7 @@ class HttpInterface(BaseInterface):
                 summary="[EXPERIMENTAL] List active InferencePipelines",
                 description="[EXPERIMENTAL] Listing all active InferencePipelines processing videos",
             )
-            @with_route_exceptions
+            @with_route_exceptions_async
             async def list_pipelines(_: Request) -> ListPipelinesResponse:
                 return await self.stream_manager_client.list_pipelines()
 
@@ -1549,7 +1410,7 @@ class HttpInterface(BaseInterface):
                 summary="[EXPERIMENTAL] Get status of InferencePipeline",
                 description="[EXPERIMENTAL] Get status of InferencePipeline",
             )
-            @with_route_exceptions
+            @with_route_exceptions_async
             async def get_status(pipeline_id: str) -> InferencePipelineStatusResponse:
                 return await self.stream_manager_client.get_status(
                     pipeline_id=pipeline_id
@@ -1561,7 +1422,7 @@ class HttpInterface(BaseInterface):
                 summary="[EXPERIMENTAL] Starts new InferencePipeline",
                 description="[EXPERIMENTAL] Starts new InferencePipeline",
             )
-            @with_route_exceptions
+            @with_route_exceptions_async
             async def initialise(request: InitialisePipelinePayload) -> CommandResponse:
                 return await self.stream_manager_client.initialise_pipeline(
                     initialisation_request=request
@@ -1573,7 +1434,7 @@ class HttpInterface(BaseInterface):
                 summary="[EXPERIMENTAL] Establishes WebRTC peer connection and starts new InferencePipeline consuming video track",
                 description="[EXPERIMENTAL] Establishes WebRTC peer connection and starts new InferencePipeline consuming video track",
             )
-            @with_route_exceptions
+            @with_route_exceptions_async
             async def initialise_webrtc_inference_pipeline(
                 request: InitialiseWebRTCPipelinePayload,
             ) -> CommandResponse:
@@ -1590,7 +1451,7 @@ class HttpInterface(BaseInterface):
                 summary="[EXPERIMENTAL] Pauses the InferencePipeline",
                 description="[EXPERIMENTAL] Pauses the InferencePipeline",
             )
-            @with_route_exceptions
+            @with_route_exceptions_async
             async def pause(pipeline_id: str) -> CommandResponse:
                 return await self.stream_manager_client.pause_pipeline(
                     pipeline_id=pipeline_id
@@ -1602,7 +1463,7 @@ class HttpInterface(BaseInterface):
                 summary="[EXPERIMENTAL] Resumes the InferencePipeline",
                 description="[EXPERIMENTAL] Resumes the InferencePipeline",
             )
-            @with_route_exceptions
+            @with_route_exceptions_async
             async def resume(pipeline_id: str) -> CommandResponse:
                 return await self.stream_manager_client.resume_pipeline(
                     pipeline_id=pipeline_id
@@ -1614,7 +1475,7 @@ class HttpInterface(BaseInterface):
                 summary="[EXPERIMENTAL] Terminates the InferencePipeline",
                 description="[EXPERIMENTAL] Terminates the InferencePipeline",
             )
-            @with_route_exceptions
+            @with_route_exceptions_async
             async def terminate(pipeline_id: str) -> CommandResponse:
                 return await self.stream_manager_client.terminate_pipeline(
                     pipeline_id=pipeline_id
@@ -1626,7 +1487,7 @@ class HttpInterface(BaseInterface):
                 summary="[EXPERIMENTAL] Consumes InferencePipeline result",
                 description="[EXPERIMENTAL] Consumes InferencePipeline result",
             )
-            @with_route_exceptions
+            @with_route_exceptions_async
             async def consume(
                 pipeline_id: str,
                 request: Optional[ConsumeResultsPayload] = None,
@@ -1650,65 +1511,79 @@ class HttpInterface(BaseInterface):
 
                 def __init__(self):
                     self.is_ready = False
-                    self.lock = asyncio.Lock()  # For thread-safe updates
+                    self.lock = Lock()  # For thread-safe updates
                     self.initialization_errors = []  # Track errors per model
 
             model_init_state = ModelInitState()
 
-            async def initialize_models(state: ModelInitState):
+            def initialize_models(state: ModelInitState):
                 """Perform asynchronous initialization tasks to load models."""
                 # Limit the number of concurrent tasks to prevent resource exhaustion
-                semaphore = asyncio.Semaphore(2)  # Adjust the limit as needed
 
-                async def load_model(model_id):
+                def load_model(model_id):
+                    logger.debug(f"load_model({model_id}) - starting", flush=True)
                     try:
-                        async with semaphore:
-                            # Add a timeout to prevent indefinite hanging
-                            await asyncio.wait_for(
-                                model_add(
-                                    AddModelRequest(
-                                        model_id=model_id,
-                                        model_type=None,
-                                        api_key=API_KEY,
-                                    )
-                                ),
-                                timeout=300,  # Timeout after 5 minutes
+                        # TODO: how to add timeout here? Probably best to timeout model loading?
+                        model_add(
+                            AddModelRequest(
+                                model_id=model_id,
+                                model_type=None,
+                                api_key=API_KEY,
                             )
-                            logger.info(f"Model {model_id} loaded successfully.")
-                    except asyncio.TimeoutError:
-                        error_msg = f"Timeout while loading model {model_id}"
-                        logger.error(error_msg)
-                        async with state.lock:
-                            state.initialization_errors.append((model_id, error_msg))
+                        )
+                        logger.info(f"Model {model_id} loaded successfully.")
                     except Exception as e:
                         error_msg = f"Error loading model {model_id}: {e}"
                         logger.error(error_msg)
-                        async with state.lock:
+                        with state.lock:
                             state.initialization_errors.append((model_id, str(e)))
+                    logger.debug(f"load_model({model_id}) - finished", flush=True)
 
                 if PRELOAD_MODELS:
                     # Create tasks for each model to be loaded
-                    tasks = [load_model(model_id) for model_id in PRELOAD_MODELS]
+                    model_loading_executor = ThreadPoolExecutor(max_workers=2)
+                    loaded_futures: List[Tuple[str, Future]] = []
+                    for model_id in PRELOAD_MODELS:
+                        future = model_loading_executor.submit(
+                            load_model, model_id=model_id
+                        )
+                        loaded_futures.append((model_id, future))
 
-                    # Wait for all tasks to complete, collecting exceptions
-                    await asyncio.gather(*tasks, return_exceptions=True)
+                    for model_id, future in loaded_futures:
+                        try:
+                            future.result(timeout=300)
+                        except (
+                            TimeoutError,
+                            CancelledError,
+                            concurrent.futures.TimeoutError,
+                        ):
+                            state.initialization_errors.append(
+                                (
+                                    model_id,
+                                    "Could not finalise model loading before timeout",
+                                )
+                            )
+                            future.cancel()
 
                 # Update the readiness state in a thread-safe manner
-                async with state.lock:
+                with state.lock:
                     state.is_ready = True
 
             @app.on_event("startup")
-            async def startup_model_init():
+            def startup_model_init():
                 """Initialize the models on startup."""
-                asyncio.create_task(initialize_models(model_init_state))
+                startup_thread = Thread(
+                    target=initialize_models, args=(model_init_state,), daemon=True
+                )
+                startup_thread.start()
                 logger.info("Model initialization started in the background.")
 
             @app.get("/readiness", status_code=200)
-            async def readiness(
+            def readiness(
                 state: ModelInitState = Depends(lambda: model_init_state),
             ):
                 """Readiness endpoint for Kubernetes readiness probe."""
-                async with state.lock:
+                with state.lock:
                     if state.is_ready:
                         return {"status": "ready"}
                     else:
@@ -1717,7 +1592,7 @@ class HttpInterface(BaseInterface):
                         )
 
             @app.get("/healthz", status_code=200)
-            async def healthz():
+            def healthz():
                 """Health endpoint for Kubernetes liveness probe."""
                 return {"status": "healthy"}
 
@@ -1732,7 +1607,7 @@ class HttpInterface(BaseInterface):
                 )
                 @with_route_exceptions
                 @usage_collector("request")
-                async def clip_embed_image(
+                def clip_embed_image(
                     inference_request: ClipImageEmbeddingRequest,
                     request: Request,
                     api_key: Optional[str] = Query(
@@ -1760,7 +1635,7 @@ class HttpInterface(BaseInterface):
                         countinference=countinference,
                         service_secret=service_secret,
                     )
-                    response = await self.model_manager.infer_from_request(
+                    response = self.model_manager.infer_from_request_sync(
                         clip_model_id, inference_request
                     )
                     if LAMBDA:
@@ -1778,7 +1653,7 @@ class HttpInterface(BaseInterface):
                 )
                 @with_route_exceptions
                 @usage_collector("request")
-                async def clip_embed_text(
+                def clip_embed_text(
                     inference_request: ClipTextEmbeddingRequest,
                     request: Request,
                     api_key: Optional[str] = Query(
@@ -1806,7 +1681,7 @@ class HttpInterface(BaseInterface):
                         countinference=countinference,
                         service_secret=service_secret,
                     )
-                    response = await self.model_manager.infer_from_request(
+                    response = self.model_manager.infer_from_request_sync(
                         clip_model_id, inference_request
                     )
                     if LAMBDA:
@@ -1824,7 +1699,7 @@ class HttpInterface(BaseInterface):
                 )
                 @with_route_exceptions
                 @usage_collector("request")
-                async def clip_compare(
+                def clip_compare(
                     inference_request: ClipCompareRequest,
                     request: Request,
                     api_key: Optional[str] = Query(
@@ -1852,7 +1727,7 @@ class HttpInterface(BaseInterface):
                         countinference=countinference,
                         service_secret=service_secret,
                     )
-                    response = await self.model_manager.infer_from_request(
+                    response = self.model_manager.infer_from_request_sync(
                         clip_model_id, inference_request
                     )
                     if LAMBDA:
@@ -1872,7 +1747,7 @@ class HttpInterface(BaseInterface):
                 )
                 @with_route_exceptions
                 @usage_collector("request")
-                async def pe_embed_image(
+                def pe_embed_image(
                     inference_request: PerceptionEncoderImageEmbeddingRequest,
                     request: Request,
                     api_key: Optional[str] = Query(
@@ -1900,7 +1775,7 @@ class HttpInterface(BaseInterface):
                         countinference=countinference,
                         service_secret=service_secret,
                     )
-                    response = await self.model_manager.infer_from_request(
+                    response = self.model_manager.infer_from_request_sync(
                         pe_model_id, inference_request
                     )
                     if LAMBDA:
@@ -1918,7 +1793,7 @@ class HttpInterface(BaseInterface):
                 )
                 @with_route_exceptions
                 @usage_collector("request")
-                async def pe_embed_text(
+                def pe_embed_text(
                     inference_request: PerceptionEncoderTextEmbeddingRequest,
                     request: Request,
                     api_key: Optional[str] = Query(
@@ -1946,7 +1821,7 @@ class HttpInterface(BaseInterface):
                         countinference=countinference,
                         service_secret=service_secret,
                     )
-                    response = await self.model_manager.infer_from_request(
+                    response = self.model_manager.infer_from_request_sync(
                         pe_model_id, inference_request
                     )
                     if LAMBDA:
@@ -1964,7 +1839,7 @@ class HttpInterface(BaseInterface):
                 )
                 @with_route_exceptions
                 @usage_collector("request")
-                async def pe_compare(
+                def pe_compare(
                     inference_request: PerceptionEncoderCompareRequest,
                     request: Request,
                     api_key: Optional[str] = Query(
@@ -1992,7 +1867,7 @@ class HttpInterface(BaseInterface):
                         countinference=countinference,
                         service_secret=service_secret,
                     )
-                    response = await self.model_manager.infer_from_request(
+                    response = self.model_manager.infer_from_request_sync(
                         pe_model_id, inference_request
                     )
                     if LAMBDA:
@@ -2012,7 +1887,7 @@ class HttpInterface(BaseInterface):
                 )
                 @with_route_exceptions
                 @usage_collector("request")
-                async def grounding_dino_infer(
+                def grounding_dino_infer(
                     inference_request: GroundingDINOInferenceRequest,
                     request: Request,
                     api_key: Optional[str] = Query(
@@ -2040,7 +1915,7 @@ class HttpInterface(BaseInterface):
                         countinference=countinference,
                         service_secret=service_secret,
                     )
-                    response = await self.model_manager.infer_from_request(
+                    response = self.model_manager.infer_from_request_sync(
                         grounding_dino_model_id, inference_request
                     )
                     if LAMBDA:
@@ -2061,7 +1936,7 @@ class HttpInterface(BaseInterface):
                 )
                 @with_route_exceptions
                 @usage_collector("request")
-                async def yolo_world_infer(
+                def yolo_world_infer(
                     inference_request: YOLOWorldInferenceRequest,
                     request: Request,
                     api_key: Optional[str] = Query(
@@ -2090,7 +1965,7 @@ class HttpInterface(BaseInterface):
                         service_secret=service_secret,
                     )
                     logger.debug("YOLOWorld model loaded. Staring the inference.")
-                    response = await self.model_manager.infer_from_request(
+                    response = self.model_manager.infer_from_request_sync(
                         yolo_world_model_id, inference_request
                     )
                     logger.debug("YOLOWorld prediction available.")
@@ -2112,7 +1987,7 @@ class HttpInterface(BaseInterface):
                 )
                 @with_route_exceptions
                 @usage_collector("request")
-                async def doctr_retrieve_text(
+                def doctr_retrieve_text(
                     inference_request: DoctrOCRInferenceRequest,
                     request: Request,
                     api_key: Optional[str] = Query(
@@ -2140,7 +2015,7 @@ class HttpInterface(BaseInterface):
                         countinference=countinference,
                         service_secret=service_secret,
                     )
-                    response = await self.model_manager.infer_from_request(
+                    response = self.model_manager.infer_from_request_sync(
                         doctr_model_id, inference_request
                     )
                     if LAMBDA:
@@ -2208,7 +2083,7 @@ class HttpInterface(BaseInterface):
                 )
                 @with_route_exceptions
                 @usage_collector("request")
-                async def sam_embed_image(
+                def sam_embed_image(
                     inference_request: SamEmbeddingRequest,
                     request: Request,
                     api_key: Optional[str] = Query(
@@ -2236,7 +2111,7 @@ class HttpInterface(BaseInterface):
                         countinference=countinference,
                         service_secret=service_secret,
                     )
-                    model_response = await self.model_manager.infer_from_request(
+                    model_response = self.model_manager.infer_from_request_sync(
                         sam_model_id, inference_request
                     )
                     if LAMBDA:
@@ -2259,7 +2134,7 @@ class HttpInterface(BaseInterface):
                 )
                 @with_route_exceptions
                 @usage_collector("request")
-                async def sam_segment_image(
+                def sam_segment_image(
                     inference_request: SamSegmentationRequest,
                     request: Request,
                     api_key: Optional[str] = Query(
@@ -2287,7 +2162,7 @@ class HttpInterface(BaseInterface):
                         countinference=countinference,
                         service_secret=service_secret,
                     )
-                    model_response = await self.model_manager.infer_from_request(
+                    model_response = self.model_manager.infer_from_request_sync(
                         sam_model_id, inference_request
                     )
                     if LAMBDA:
@@ -2312,7 +2187,7 @@ class HttpInterface(BaseInterface):
                 )
                 @with_route_exceptions
                 @usage_collector("request")
-                async def sam2_embed_image(
+                def sam2_embed_image(
                     inference_request: Sam2EmbeddingRequest,
                     request: Request,
                     api_key: Optional[str] = Query(
@@ -2340,7 +2215,7 @@ class HttpInterface(BaseInterface):
                         countinference=countinference,
                         service_secret=service_secret,
                     )
-                    model_response = await self.model_manager.infer_from_request(
+                    model_response = self.model_manager.infer_from_request_sync(
                         sam2_model_id, inference_request
                     )
                     return model_response
@@ -2353,7 +2228,7 @@ class HttpInterface(BaseInterface):
                 )
                 @with_route_exceptions
                 @usage_collector("request")
-                async def sam2_segment_image(
+                def sam2_segment_image(
                     inference_request: Sam2SegmentationRequest,
                     request: Request,
                     api_key: Optional[str] = Query(
@@ -2381,7 +2256,7 @@ class HttpInterface(BaseInterface):
                         countinference=countinference,
                         service_secret=service_secret,
                     )
-                    model_response = await self.model_manager.infer_from_request(
+                    model_response = self.model_manager.infer_from_request_sync(
                         sam2_model_id, inference_request
                     )
                     if inference_request.format == "binary":
@@ -2401,7 +2276,7 @@ class HttpInterface(BaseInterface):
                 )
                 @with_route_exceptions
                 @usage_collector("request")
-                async def owlv2_infer(
+                def owlv2_infer(
                     inference_request: OwlV2InferenceRequest,
                     request: Request,
                     api_key: Optional[str] = Query(
@@ -2429,7 +2304,7 @@ class HttpInterface(BaseInterface):
                         countinference=countinference,
                         service_secret=service_secret,
                     )
-                    model_response = await self.model_manager.infer_from_request(
+                    model_response = self.model_manager.infer_from_request_sync(
                         owl2_model_id, inference_request
                     )
                     return model_response
@@ -2444,7 +2319,7 @@ class HttpInterface(BaseInterface):
                 )
                 @with_route_exceptions
                 @usage_collector("request")
-                async def gaze_detection(
+                def gaze_detection(
                     inference_request: GazeDetectionInferenceRequest,
                     request: Request,
                     api_key: Optional[str] = Query(
@@ -2472,7 +2347,7 @@ class HttpInterface(BaseInterface):
                         countinference=countinference,
                         service_secret=service_secret,
                     )
-                    response = await self.model_manager.infer_from_request(
+                    response = self.model_manager.infer_from_request_sync(
                         gaze_model_id, inference_request
                     )
                     if LAMBDA:
@@ -2492,7 +2367,7 @@ class HttpInterface(BaseInterface):
                 )
                 @with_route_exceptions
                 @usage_collector("request")
-                async def depth_estimation(
+                def depth_estimation(
                     inference_request: DepthEstimationRequest,
                     request: Request,
                     api_key: Optional[str] = Query(
@@ -2521,7 +2396,7 @@ class HttpInterface(BaseInterface):
                         countinference=countinference,
                         service_secret=service_secret,
                     )
-                    response = await self.model_manager.infer_from_request(
+                    response = self.model_manager.infer_from_request_sync(
                         depth_model_id, inference_request
                     )
                     if LAMBDA:
@@ -2548,7 +2423,7 @@ class HttpInterface(BaseInterface):
                 )
                 @with_route_exceptions
                 @usage_collector("request")
-                async def trocr_retrieve_text(
+                def trocr_retrieve_text(
                     inference_request: TrOCRInferenceRequest,
                     request: Request,
                     api_key: Optional[str] = Query(
@@ -2576,7 +2451,7 @@ class HttpInterface(BaseInterface):
                         countinference=countinference,
                         service_secret=service_secret,
                     )
-                    response = await self.model_manager.infer_from_request(
+                    response = self.model_manager.infer_from_request_sync(
                         trocr_model_id, inference_request
                     )
                     if LAMBDA:
@@ -2594,7 +2469,7 @@ class HttpInterface(BaseInterface):
                 description="Starts a jupyter lab server for running development code",
             )
             @with_route_exceptions
-            async def notebook_start(browserless: bool = False):
+            def notebook_start(browserless: bool = False):
                 """Starts a jupyter lab server for running development code.
 
                 Args:
@@ -2676,9 +2551,13 @@ class HttpInterface(BaseInterface):
             )
             @with_route_exceptions
             @usage_collector("request")
-            async def legacy_infer_from_request(
+            def legacy_infer_from_request(
                 background_tasks: BackgroundTasks,
                 request: Request,
+                request_body: Annotated[
+                    Optional[Union[bytes, UploadFile]],
+                    Depends(parse_body_content_for_legacy_request_handler),
+                ],
                 dataset_id: str = Path(
                     description="ID of a Roboflow dataset corresponding to the model to use for inference OR workspace ID"
                 ),
@@ -2789,15 +2668,13 @@ class HttpInterface(BaseInterface):
                     f"Reached legacy route /:dataset_id/:version_id with {dataset_id}/{version_id}"
                 )
                 model_id = f"{dataset_id}/{version_id}"
-
                 if confidence >= 1:
                     confidence /= 100
-                elif confidence < 0.01:
-                    confidence = 0.01
+                elif confidence < 0:
+                    confidence = 0
 
                 if overlap >= 1:
                     overlap /= 100
-
                 if image is not None:
                     request_image = InferenceRequestImage(type="url", value=image)
                 else:
@@ -2805,21 +2682,20 @@ class HttpInterface(BaseInterface):
                         raise ContentTypeMissing(
                             f"Request must include a Content-Type header"
                         )
-                    if "multipart/form-data" in request.headers["Content-Type"]:
-                        form_data = await request.form()
-                        base64_image_str = await form_data["file"].read()
+                    if isinstance(request_body, UploadFile):
+                        base64_image_str = request_body.file.read()
                         base64_image_str = base64.b64encode(base64_image_str)
                         request_image = InferenceRequestImage(
                             type="base64", value=base64_image_str.decode("ascii")
                         )
-                    elif (
-                        "application/x-www-form-urlencoded"
-                        in request.headers["Content-Type"]
-                        or "application/json" in request.headers["Content-Type"]
-                    ):
-                        data = await request.body()
+                    elif isinstance(request_body, bytes):
                         request_image = InferenceRequestImage(
-                            type=image_type, value=data
+                            type=image_type, value=request_body
+                        )
+                    elif request_body is None:
+                        raise InputImageLoadError(
+                            message="Image not found in request body.",
+                            public_message="Image not found in request body.",
                         )
                     else:
                         raise ContentTypeInvalid(
@@ -2901,7 +2777,7 @@ class HttpInterface(BaseInterface):
                     usage_billable=countinference,
                     **args,
                 )
-                inference_response = await self.model_manager.infer_from_request(
+                inference_response = self.model_manager.infer_from_request_sync(
                     inference_request.model_id,
                     inference_request,
                     active_learning_eligible=True,
@@ -2919,7 +2795,7 @@ class HttpInterface(BaseInterface):
         if not (LAMBDA or GCP_SERVERLESS):
             # Legacy clear cache endpoint for backwards compatibility
             @app.get("/clear_cache", response_model=str)
-            async def legacy_clear_cache():
+            def legacy_clear_cache():
                 """
                 Clears the model cache.
 
@@ -2929,12 +2805,12 @@ class HttpInterface(BaseInterface):
                     str: A string indicating that the cache has been cleared.
                 """
                 logger.debug(f"Reached /clear_cache")
-                await model_clear()
+                model_clear()
                 return "Cache Cleared"
 
             # Legacy add model endpoint for backwards compatibility
             @app.get("/start/{dataset_id}/{version_id}")
-            async def model_add_legacy(
+            def model_add_legacy(
                 dataset_id: str,
                 version_id: str,
                 api_key: str = None,
@@ -2973,6 +2849,22 @@ class HttpInterface(BaseInterface):
                         "message": "inference session started from local memory.",
                     }
                 )
+
+        if not ENABLE_DASHBOARD:
+
+            @app.get("/dashboard.html")
+            @app.head("/dashboard.html")
+            async def dashboard_guard():
+                return Response(status_code=404)
+
+        @app.exception_handler(InputImageLoadError)
+        async def unicorn_exception_handler(request: Request, exc: InputImageLoadError):
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "message": f"Could not load input image. Cause: {exc.get_public_error_details()}"
+                },
+            )
 
         app.mount(
             "/",

@@ -9,7 +9,7 @@ try:
 except ImportError as import_error:
     raise MissingDependencyError(
         message=f"Could not import onnx tools required to run models with ONNX backend - this error means that some additional "
-        f"dependencies are not installed in the environment. If you run the `inference` library directly in your "
+        f"dependencies are not installed in the environment. If you run the `inference-exp` library directly in your "
         f"Python program, make sure the following extras of the package are installed: \n"
         f"\t* `onnx-cpu` - when you wish to use library with CPU support only\n"
         f"\t* `onnx-cu12` - for running on GPU with Cuda 12 installed\n"
@@ -196,9 +196,9 @@ def run_session_via_iobinding(
     )
     device = get_input_device(inputs=inputs)
     if device.type != "cuda":
-        inputs_np = {name: value.numpy() for name, value in inputs.items()}
+        inputs_np = {name: value.cpu().numpy() for name, value in inputs.items()}
         results = session.run(None, inputs_np)
-        return [torch.from_numpy(element) for element in results]
+        return [torch.from_numpy(element).to(device=device) for element in results]
     try:
         import pycuda.driver as cuda
         from inference_exp.models.common.cuda import use_primary_cuda_context
