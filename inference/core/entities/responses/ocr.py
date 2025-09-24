@@ -1,7 +1,12 @@
-from typing import List, Optional, Tuple
+from typing import List, Optional
+from typing_extensions import TypedDict
 
 from pydantic import BaseModel, Field
 
+class Object(TypedDict, total=True):
+    bounding_box: List[int]
+    confidence: float
+    string: str
 
 class OCRInferenceResponse(BaseModel):
     """
@@ -16,9 +21,8 @@ class OCRInferenceResponse(BaseModel):
     """
 
     result: str = Field(description="The combined OCR recognition result.")
-    strings: Optional[List[str]] = Field(description="List of strings detected by OCR", default=None)
-    bounding_boxes: Optional[List[List[int]]] = Field(description="List of bounding boxes detected by OCR", default=None)
-    confidences: Optional[List[float]] = Field(description="List of confidence scores for each OCR detection", default=None)
+    # fields are bounding_box:List[int], confidence:float, string:str
+    objects: Optional[List[Object]] = Field(description="List of objects detected by OCR", default=None),
     time: float = Field(
         description="The time in seconds it took to produce the inference including preprocessing."
     )

@@ -102,9 +102,7 @@ class DocTR(RoboflowCoreModel):
         result = self.infer(**request.dict())
         return OCRInferenceResponse(
             result=result[0],
-            strings=result[1],
-            bounding_boxes=result[2],
-            confidences=result[3],
+            objects=result[1],
             time=perf_counter() - t1,
         )
 
@@ -142,13 +140,18 @@ class DocTR(RoboflowCoreModel):
             ]
 
             result = " ".join([word["value"] for word in words])
-            strings = [word["value"] for word in words]
-            bounding_boxes = [_geometry_to_bbox(page_dimensions, word["geometry"]) for word in words]
-            confidences = [float(word["objectness_score"]) for word in words]
+            objects = [
+                {
+                    "bounding_box": _geometry_to_bbox(page_dimensions, word["geometry"]),
+                    "confidence": float(word["objectness_score"]),
+                    "string": word["value"],
+                }
+                for word in words
+            ]
 
             # previous implementation only returned result, so using "extended" option to maintain backwards compatibility
             if kwargs.get("generate_bounding_boxes", False):
-                return result, strings, bounding_boxes, confidences
+                return result, objects
             else:
                 return result
 

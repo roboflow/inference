@@ -435,9 +435,10 @@ def ocr_result_to_detections(
     ''' Convert OCRInferenceResponse dictionary to sv.Detections instance '''
 
     # Prepare lists for bounding boxes, confidences, class IDs, and labels
-    class_names = response_dict.get("strings", [])
-    xyxy = response_dict.get("bounding_boxes", [])
-    confidences = response_dict.get("confidences", [])
+    objects = response_dict.get("objects", [])
+    class_names = [obj.get("string", "") for obj in objects]
+    xyxy = [obj.get("bounding_box", []) for obj in objects]
+    confidences = [obj.get("confidence", 0.0) for obj in objects]
     class_ids = [0] * len(class_names)
 
     # Convert to NumPy arrays
@@ -465,7 +466,8 @@ def post_process_ocr_result(
     expected_output_keys: Set[str]
 ) -> BlockResult:
     for prediction, image in zip(predictions, images):
-        prediction["predictions"] = sv.Detections.empty() if len(prediction["strings"])==0 else ocr_result_to_detections(image, prediction)
+        objects = prediction.get("objects",[])
+        prediction["predictions"] = sv.Detections.empty() if not objects else ocr_result_to_detections(image, prediction)
         prediction[PREDICTION_TYPE_KEY] = "ocr"
         prediction[PARENT_ID_KEY] = image.parent_metadata.parent_id
         prediction[ROOT_PARENT_ID_KEY] = (
