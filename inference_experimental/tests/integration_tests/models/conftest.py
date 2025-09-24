@@ -101,6 +101,23 @@ VEHICLES_MULTI_CLASS_RES_NET_TORCH_URL = "https://storage.googleapis.com/roboflo
 VEHICLES_MULTI_CLASS_RES_NET_ONNX_DYNAMIC_BS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/res-net-multi-class-onnx-dynamic-bs.zip"
 VEHICLES_MULTI_CLASS_RES_NET_ONNX_STATIC_BS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/res-net-multi-class-onnx-static-bs.zip"
 
+YOLOV8N_POSE_ONNX_STATIC_CENTER_CROP_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-pose-onnx-static-center-crop.zip"
+YOLOV8N_POSE_ONNX_STATIC_STATIC_CROP_CENTER_CROP_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-pose-onnx-static-static-crop-center-crop.zip"
+YOLOV8N_POSE_ONNX_STATIC_STATIC_CROP_LETTERBOX_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-pose-onnx-static-static-crop-letterbox.zip"
+YOLOV8N_POSE_ONNX_STATIC_STATIC_CROP_STRETCH_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-pose-onnx-static-static-crop-stretch.zip"
+YOLOV8N_POSE_ONNX_DYNAMIC_CENTER_CROP_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-pose-onnx-dynamic-center-crop.zip"
+YOLOV8N_POSE_ONNX_DYNAMIC_STATIC_CROP_CENTER_CROP_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-pose-onnx-dynamic-static-crop-center-crop.zip"
+YOLOV8N_POSE_ONNX_DYNAMIC_STATIC_CROP_LETTERBOX_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-pose-onnx-dynamic-static-crop-letterbox.zip"
+YOLOV8N_POSE_ONNX_DYNAMIC_STATIC_CROP_STRETCH_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-pose-onnx-dynamic-static-crop-stretch.zip"
+YOLOV8N_POSE_ONNX_DYNAMIC_NMS_FUSED_CENTER_CROP_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-pose-onnx-dynamic-nms-fused-center-crop.zip"
+YOLOV8N_POSE_ONNX_DYNAMIC_NMS_FUSED_STATIC_CROP_CENTER_CROP_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-pose-onnx-dynamic-nms-fused-static-crop-center-crop.zip"
+YOLOV8N_POSE_TORCHSCRIPT_STATIC_CENTER_CROP_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-pose-torchscript-static-center-crop.zip"
+YOLOV8N_POSE_TORCHSCRIPT_STATIC_STATIC_CROP_CENTER_CROP_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-pose-torchscript-static-static-crop-center-crop.zip"
+YOLOV8N_POSE_TORCHSCRIPT_STATIC_STATIC_CROP_LETTERBOX_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-pose-torchscript-static-static-crop-letterbox.zip"
+YOLOV8N_POSE_TORCHSCRIPT_STATIC_STATIC_CROP_STRETCH_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-pose-torchscript-static-static-crop-stretch.zip"
+YOLOV8N_POSE_TORCHSCRIPT_STATIC_NMS_FUSED_CENTER_CROP_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-pose-torchscript-static-nms-fused-center-crop.zip"
+YOLOV8N_POSE_TORCHSCRIPT_STATIC_NMS_FUSED_STATIC_CROP_CENTER_CROP_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-pose-torchscript-static-nms-fused-static-crop-center-crop.zip"
+
 
 @pytest.fixture(scope="module")
 def original_clip_download_dir() -> str:
@@ -796,4 +813,132 @@ def vehicles_multi_class_resenet_onnx_dynamic_bs_package() -> str:
     return download_model_package(
         model_package_zip_url=VEHICLES_MULTI_CLASS_RES_NET_ONNX_DYNAMIC_BS_URL,
         package_name="vehicles-multi-class-resnet-onnx-dynamic-bs",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolov8n_pose_onnx_static_center_crop_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLOV8N_POSE_ONNX_STATIC_CENTER_CROP_PACKAGE_URL,
+        package_name="yolov8n-pose-onnx-static-center-crop",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolov8n_pose_onnx_static_static_crop_center_crop_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLOV8N_POSE_ONNX_STATIC_STATIC_CROP_CENTER_CROP_PACKAGE_URL,
+        package_name="yolov8n-pose-onnx-static-static-crop-center-crop",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolov8n_pose_onnx_static_static_crop_letterbox_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLOV8N_POSE_ONNX_STATIC_STATIC_CROP_LETTERBOX_PACKAGE_URL,
+        package_name="yolov8n-pose-onnx-static-static-crop-letterbox",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolov8n_pose_onnx_static_static_crop_stretch_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLOV8N_POSE_ONNX_STATIC_STATIC_CROP_STRETCH_PACKAGE_URL,
+        package_name="yolov8n-pose-onnx-static-static-crop-stretch",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolov8n_pose_onnx_dynamic_center_crop_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLOV8N_POSE_ONNX_DYNAMIC_CENTER_CROP_PACKAGE_URL,
+        package_name="yolov8n-pose-onnx-dynamic-center-crop",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolov8n_pose_onnx_dynamic_static_crop_center_crop_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLOV8N_POSE_ONNX_DYNAMIC_STATIC_CROP_CENTER_CROP_PACKAGE_URL,
+        package_name="yolov8n-pose-onnx-dynamic-static-crop-center-crop",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolov8n_pose_onnx_dynamic_static_crop_letterbox_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLOV8N_POSE_ONNX_DYNAMIC_STATIC_CROP_LETTERBOX_PACKAGE_URL,
+        package_name="yolov8n-pose-onnx-dynamic-static-crop-letterbox",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolov8n_pose_onnx_dynamic_static_crop_stretch_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLOV8N_POSE_ONNX_DYNAMIC_STATIC_CROP_STRETCH_PACKAGE_URL,
+        package_name="yolov8n-pose-onnx-dynamic-static-crop-stretch",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLOV8N_POSE_ONNX_DYNAMIC_NMS_FUSED_CENTER_CROP_PACKAGE_URL,
+        package_name="yolov8n-pose-onnx-dynamic-nms-fused-center-crop",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolov8n_pose_onnx_dynamic_nms_fused_static_crop_center_crop_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLOV8N_POSE_ONNX_DYNAMIC_NMS_FUSED_STATIC_CROP_CENTER_CROP_PACKAGE_URL,
+        package_name="yolov8n-pose-onnx-dynamic-nms-fused-static-crop-center-crop",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolov8n_pose_torchscript_static_center_crop_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLOV8N_POSE_TORCHSCRIPT_STATIC_CENTER_CROP_PACKAGE_URL,
+        package_name="yolov8n-pose-torchscript-static-center-crop",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolov8n_pose_torchscript_static_static_crop_center_crop_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLOV8N_POSE_TORCHSCRIPT_STATIC_STATIC_CROP_CENTER_CROP_PACKAGE_URL,
+        package_name="yolov8n-pose-torchscript-static-static-crop-center-crop",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolov8n_pose_torchscript_static_static_crop_letterbox_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLOV8N_POSE_TORCHSCRIPT_STATIC_STATIC_CROP_LETTERBOX_PACKAGE_URL,
+        package_name="yolov8n-pose-torchscript-static-static-crop-letterbox",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolov8n_pose_torchscript_static_static_crop_stretch_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLOV8N_POSE_TORCHSCRIPT_STATIC_STATIC_CROP_STRETCH_PACKAGE_URL,
+        package_name="yolov8n-pose-torchscript-static-static-crop-stretch",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolov8n_pose_torchscript_static_nms_fused_center_crop_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLOV8N_POSE_TORCHSCRIPT_STATIC_NMS_FUSED_CENTER_CROP_PACKAGE_URL,
+        package_name="yolov8n-pose-torchscript-static-nms-fused-center-crop",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolov8n_pose_torchscript_static_nms_fused_static_crop_center_crop_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLOV8N_POSE_TORCHSCRIPT_STATIC_NMS_FUSED_STATIC_CROP_CENTER_CROP_PACKAGE_URL,
+        package_name="yolov8n-pose-torchscript-static-nms-fused-static-crop-center-crop",
     )

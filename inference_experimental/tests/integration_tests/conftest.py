@@ -37,6 +37,10 @@ COIN_COUNTING_IMAGE_URL = (
     "https://media.roboflow.com/inference/example-input-images/image-coin-counting.jpg"
 )
 COIN_COUNTING_IMAGE_PATH = os.path.join(ASSETS_DIR, "image-coin-counting.jpg")
+PEOPLE_WALKING_IMAGE_URL = (
+    "https://media.roboflow.com/inference/example-input-images/people-walking.jpg"
+)
+PEOPLE_WALKING_IMAGE_PATH = os.path.join(ASSETS_DIR, "people-walking.jpg")
 
 
 def _download_if_not_exists(file_path: str, url: str, lock_timeout: int = 180) -> None:
@@ -154,3 +158,21 @@ def ocr_test_image_numpy() -> np.ndarray:
     image = cv2.imread(OCR_TEST_IMAGE_PATH)
     assert image is not None, "Could not load OCR test image"
     return image
+
+
+@pytest.fixture(scope="function")
+def people_walking_image_numpy() -> np.ndarray:
+    _download_if_not_exists(
+        file_path=PEOPLE_WALKING_IMAGE_PATH, url=PEOPLE_WALKING_IMAGE_URL
+    )
+    image = cv2.imread(PEOPLE_WALKING_IMAGE_PATH)
+    assert image is not None, "Could not load test image"
+    return image
+
+
+@pytest.fixture(scope="function")
+def people_walking_image_torch() -> torch.Tensor:
+    _download_if_not_exists(
+        file_path=PEOPLE_WALKING_IMAGE_PATH, url=PEOPLE_WALKING_IMAGE_URL
+    )
+    return torchvision.io.read_image(PEOPLE_WALKING_IMAGE_PATH)
