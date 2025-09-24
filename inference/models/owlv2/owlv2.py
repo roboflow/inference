@@ -8,11 +8,11 @@ from collections import defaultdict
 from threading import RLock
 from typing import Any, Dict, List, Literal, NewType, Optional, Tuple, Union
 
-from filelock import FileLock
 import numpy as np
 import torch
 import torch.nn.functional as F
 import torchvision
+from filelock import FileLock
 from transformers import Owlv2ForObjectDetection, Owlv2Processor
 from transformers.models.owlv2.modeling_owlv2 import box_iou
 
