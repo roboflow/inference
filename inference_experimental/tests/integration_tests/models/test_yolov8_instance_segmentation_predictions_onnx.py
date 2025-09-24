@@ -1,9 +1,6 @@
 import numpy as np
 import pytest
 import torch
-from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
-    YOLOv8ForInstanceSegmentationOnnx,
-)
 
 
 @pytest.mark.slow
@@ -13,6 +10,10 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_numpy(
     asl_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_stretch,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -49,6 +50,10 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_numpy_custom_size(
     asl_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_stretch,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -85,6 +90,10 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_torch_custom_size(
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_stretch,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -121,6 +130,10 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_batch_numpy(
     asl_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_stretch,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -174,6 +187,10 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_torch(
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_stretch,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -210,6 +227,10 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_batch_torch(
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_stretch,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -263,6 +284,10 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_list_torch(
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_stretch,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -316,6 +341,10 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_numpy(
     asl_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_stretch_fused_nms,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -352,6 +381,10 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_batch_numpy(
     asl_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_stretch_fused_nms,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -405,6 +438,10 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_torch(
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_stretch_fused_nms,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -441,6 +478,10 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_batch_torch(
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_stretch_fused_nms,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -494,6 +535,10 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_list_torch(
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_stretch_fused_nms,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -547,6 +592,10 @@ def test_onnx_package_with_static_batch_size_and_stretch_numpy(
     asl_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_static_bs_stretch,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -583,6 +632,10 @@ def test_onnx_package_with_static_batch_size_and_stretch_batch_numpy(
     asl_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_static_bs_stretch,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -636,6 +689,10 @@ def test_onnx_package_with_static_batch_size_and_stretch_torch(
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_static_bs_stretch,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -672,6 +729,10 @@ def test_onnx_package_with_static_batch_size_and_stretch_batch_torch(
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_static_bs_stretch,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -725,6 +786,10 @@ def test_onnx_package_with_static_batch_size_and_stretch_list_torch(
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_static_bs_stretch,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -778,6 +843,10 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_numpy(
     asl_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -814,6 +883,10 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_numpy_cust
     asl_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -850,6 +923,10 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_torch_cust
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -886,6 +963,10 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_batch_nump
     asl_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -939,6 +1020,10 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_torch(
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -975,6 +1060,10 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_batch_torc
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1028,6 +1117,10 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_list_torch
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1081,6 +1174,10 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
     asl_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch_fused_nms,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1117,6 +1214,10 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
     asl_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch_fused_nms,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1153,6 +1254,10 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch_fused_nms,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1189,6 +1294,10 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
     asl_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch_fused_nms,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1242,6 +1351,10 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch_fused_nms,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1278,6 +1391,10 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch_fused_nms,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1331,6 +1448,10 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch_fused_nms,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1384,6 +1505,10 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_numpy(
     asl_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_static_bs_static_crop_stretch,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1420,6 +1545,10 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_numpy
     asl_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_static_bs_static_crop_stretch,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1473,6 +1602,10 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_torch(
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_static_bs_static_crop_stretch,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1509,6 +1642,10 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_torch
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_static_bs_static_crop_stretch,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1562,6 +1699,10 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_list_torch(
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_static_bs_static_crop_stretch,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1615,6 +1756,10 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_numpy(
     asl_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1651,6 +1796,10 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_numpy_
     asl_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1687,6 +1836,10 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_torch_
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1723,6 +1876,10 @@ def test_onnx_package_with_dynamic_batch_size_and_tatic_crop_center_crop_batch_n
     asl_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1776,6 +1933,10 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_torch(
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1812,6 +1973,10 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_batch_
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1865,6 +2030,10 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_list_t
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1918,6 +2087,10 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
     asl_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop_fused_nms,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1954,6 +2127,10 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
     asl_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop_fused_nms,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1990,6 +2167,10 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop_fused_nms,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -2026,6 +2207,10 @@ def test_onnx_package_with_dynamic_batch_size_and_tatic_crop_center_crop_fused_n
     asl_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop_fused_nms,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -2079,6 +2264,10 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop_fused_nms,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -2115,6 +2304,10 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop_fused_nms,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -2168,6 +2361,10 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop_fused_nms,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -2221,6 +2418,10 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_numpy(
     asl_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_static_bs_static_crop_center_crop,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -2257,6 +2458,10 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_batch_n
     asl_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_static_bs_static_crop_center_crop,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -2310,6 +2515,10 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_torch(
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_static_bs_static_crop_center_crop,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -2346,6 +2555,10 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_batch_t
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_static_bs_static_crop_center_crop,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -2399,6 +2612,10 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_list_to
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_static_bs_static_crop_center_crop,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -2452,6 +2669,10 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_numpy(
     asl_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_center_crop,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -2488,6 +2709,10 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_batch_numpy(
     asl_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_center_crop,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -2541,6 +2766,10 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_torch(
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_center_crop,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -2577,6 +2806,10 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_batch_torch(
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_center_crop,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -2630,6 +2863,10 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_list_torch(
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_center_crop,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -2684,6 +2921,10 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_numpy(
     asl_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_letterbox,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -2722,6 +2963,10 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_batch_nu
     asl_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_letterbox,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -2777,6 +3022,10 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_torch(
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_letterbox,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -2815,6 +3064,10 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_batch_to
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_letterbox,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -2870,6 +3123,10 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_list_tor
     asl_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
+        YOLOv8ForInstanceSegmentationOnnx,
+    )
+
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_letterbox,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],

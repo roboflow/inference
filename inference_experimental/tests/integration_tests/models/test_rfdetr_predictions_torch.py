@@ -41,11 +41,6 @@ def test_rfdetr_base_og_with_numpy(
     )
 
 
-from inference_exp.models.rfdetr.rfdetr_object_detection_onnx import (
-    RFDetrForObjectDetectionONNX,
-)
-
-
 @pytest.mark.slow
 @pytest.mark.torch_models
 def test_torch_package_with_stretch_resize_and_contrast_stretching_numpy(

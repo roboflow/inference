@@ -1,9 +1,6 @@
 import numpy as np
 import pytest
 import torch
-from inference_exp.models.deep_lab_v3_plus.deep_lab_v3_plus_segmentation_onnx import (
-    DeepLabV3PlusForSemanticSegmentationOnnx,
-)
 
 
 @pytest.mark.slow
@@ -13,6 +10,10 @@ def test_onnx_package_with_stretch_numpy(
     balloons_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.deep_lab_v3_plus.deep_lab_v3_plus_segmentation_onnx import (
+        DeepLabV3PlusForSemanticSegmentationOnnx,
+    )
+
     model = DeepLabV3PlusForSemanticSegmentationOnnx.from_pretrained(
         model_name_or_path=balloons_deep_lab_v3_onnx_stretch_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -46,6 +47,10 @@ def test_onnx_package_with_stretch_batch_numpy(
     balloons_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.deep_lab_v3_plus.deep_lab_v3_plus_segmentation_onnx import (
+        DeepLabV3PlusForSemanticSegmentationOnnx,
+    )
+
     model = DeepLabV3PlusForSemanticSegmentationOnnx.from_pretrained(
         model_name_or_path=balloons_deep_lab_v3_onnx_stretch_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -94,6 +99,10 @@ def test_onnx_package_with_stretch_torch(
     balloons_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.deep_lab_v3_plus.deep_lab_v3_plus_segmentation_onnx import (
+        DeepLabV3PlusForSemanticSegmentationOnnx,
+    )
+
     model = DeepLabV3PlusForSemanticSegmentationOnnx.from_pretrained(
         model_name_or_path=balloons_deep_lab_v3_onnx_stretch_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -127,6 +136,10 @@ def test_onnx_package_with_stretch_batch_torch(
     balloons_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.deep_lab_v3_plus.deep_lab_v3_plus_segmentation_onnx import (
+        DeepLabV3PlusForSemanticSegmentationOnnx,
+    )
+
     model = DeepLabV3PlusForSemanticSegmentationOnnx.from_pretrained(
         model_name_or_path=balloons_deep_lab_v3_onnx_stretch_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -177,6 +190,10 @@ def test_onnx_package_with_stretch_batch_torch_list(
     balloons_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.deep_lab_v3_plus.deep_lab_v3_plus_segmentation_onnx import (
+        DeepLabV3PlusForSemanticSegmentationOnnx,
+    )
+
     model = DeepLabV3PlusForSemanticSegmentationOnnx.from_pretrained(
         model_name_or_path=balloons_deep_lab_v3_onnx_stretch_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -225,6 +242,10 @@ def test_onnx_package_with_static_crop_letterbox_numpy(
     balloons_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.deep_lab_v3_plus.deep_lab_v3_plus_segmentation_onnx import (
+        DeepLabV3PlusForSemanticSegmentationOnnx,
+    )
+
     model = DeepLabV3PlusForSemanticSegmentationOnnx.from_pretrained(
         model_name_or_path=balloons_deep_lab_v3_onnx_static_crop_letterbox_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -258,6 +279,10 @@ def test_onnx_package_with_static_crop_letterbox_batch_numpy(
     balloons_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.deep_lab_v3_plus.deep_lab_v3_plus_segmentation_onnx import (
+        DeepLabV3PlusForSemanticSegmentationOnnx,
+    )
+
     model = DeepLabV3PlusForSemanticSegmentationOnnx.from_pretrained(
         model_name_or_path=balloons_deep_lab_v3_onnx_static_crop_letterbox_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -306,6 +331,10 @@ def test_onnx_package_with_static_crop_letterbox_torch(
     balloons_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.deep_lab_v3_plus.deep_lab_v3_plus_segmentation_onnx import (
+        DeepLabV3PlusForSemanticSegmentationOnnx,
+    )
+
     model = DeepLabV3PlusForSemanticSegmentationOnnx.from_pretrained(
         model_name_or_path=balloons_deep_lab_v3_onnx_static_crop_letterbox_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -339,6 +368,10 @@ def test_onnx_package_with_static_crop_letterbox_batch_torch(
     balloons_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.deep_lab_v3_plus.deep_lab_v3_plus_segmentation_onnx import (
+        DeepLabV3PlusForSemanticSegmentationOnnx,
+    )
+
     model = DeepLabV3PlusForSemanticSegmentationOnnx.from_pretrained(
         model_name_or_path=balloons_deep_lab_v3_onnx_static_crop_letterbox_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -389,6 +422,10 @@ def test_onnx_package_with_static_crop_letterbox_batch_torch_list(
     balloons_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.deep_lab_v3_plus.deep_lab_v3_plus_segmentation_onnx import (
+        DeepLabV3PlusForSemanticSegmentationOnnx,
+    )
+
     model = DeepLabV3PlusForSemanticSegmentationOnnx.from_pretrained(
         model_name_or_path=balloons_deep_lab_v3_onnx_static_crop_letterbox_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -437,6 +474,10 @@ def test_onnx_package_with_static_crop_center_crop_numpy(
     balloons_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.deep_lab_v3_plus.deep_lab_v3_plus_segmentation_onnx import (
+        DeepLabV3PlusForSemanticSegmentationOnnx,
+    )
+
     model = DeepLabV3PlusForSemanticSegmentationOnnx.from_pretrained(
         model_name_or_path=balloons_deep_lab_v3_onnx_static_crop_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -471,6 +512,10 @@ def test_onnx_package_with_static_crop_center_crop_batch_numpy(
     balloons_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.deep_lab_v3_plus.deep_lab_v3_plus_segmentation_onnx import (
+        DeepLabV3PlusForSemanticSegmentationOnnx,
+    )
+
     model = DeepLabV3PlusForSemanticSegmentationOnnx.from_pretrained(
         model_name_or_path=balloons_deep_lab_v3_onnx_static_crop_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -521,6 +566,10 @@ def test_onnx_package_with_static_crop_center_crop_torch(
     balloons_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.deep_lab_v3_plus.deep_lab_v3_plus_segmentation_onnx import (
+        DeepLabV3PlusForSemanticSegmentationOnnx,
+    )
+
     model = DeepLabV3PlusForSemanticSegmentationOnnx.from_pretrained(
         model_name_or_path=balloons_deep_lab_v3_onnx_static_crop_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -555,6 +604,10 @@ def test_onnx_package_with_static_crop_center_crop_batch_torch(
     balloons_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.deep_lab_v3_plus.deep_lab_v3_plus_segmentation_onnx import (
+        DeepLabV3PlusForSemanticSegmentationOnnx,
+    )
+
     model = DeepLabV3PlusForSemanticSegmentationOnnx.from_pretrained(
         model_name_or_path=balloons_deep_lab_v3_onnx_static_crop_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -607,6 +660,10 @@ def test_onnx_package_with_static_crop_center_crop_batch_torch_list(
     balloons_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.deep_lab_v3_plus.deep_lab_v3_plus_segmentation_onnx import (
+        DeepLabV3PlusForSemanticSegmentationOnnx,
+    )
+
     model = DeepLabV3PlusForSemanticSegmentationOnnx.from_pretrained(
         model_name_or_path=balloons_deep_lab_v3_onnx_static_crop_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],

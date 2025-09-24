@@ -1,9 +1,6 @@
 import numpy as np
 import pytest
 import torch
-from inference_exp.models.rfdetr.rfdetr_object_detection_onnx import (
-    RFDetrForObjectDetectionONNX,
-)
 
 
 @pytest.mark.slow
@@ -13,6 +10,10 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_numpy(
     coins_counting_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.rfdetr.rfdetr_object_detection_onnx import (
+        RFDetrForObjectDetectionONNX,
+    )
+
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_cs_stretch_package,
         onnx_execution_providers=["CPUExecutionProvider"],
@@ -57,6 +58,10 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_batch_numpy(
     coins_counting_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.rfdetr.rfdetr_object_detection_onnx import (
+        RFDetrForObjectDetectionONNX,
+    )
+
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_cs_stretch_package,
         onnx_execution_providers=["CPUExecutionProvider"],
@@ -113,6 +118,10 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_torch(
     coins_counting_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.rfdetr.rfdetr_object_detection_onnx import (
+        RFDetrForObjectDetectionONNX,
+    )
+
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_cs_stretch_package,
         onnx_execution_providers=["CPUExecutionProvider"],
@@ -157,6 +166,10 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_torch_batch(
     coins_counting_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.rfdetr.rfdetr_object_detection_onnx import (
+        RFDetrForObjectDetectionONNX,
+    )
+
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_cs_stretch_package,
         onnx_execution_providers=["CPUExecutionProvider"],
@@ -213,6 +226,10 @@ def test_onnx_package_with_static_crop_letterbox_numpy(
     coins_counting_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.rfdetr.rfdetr_object_detection_onnx import (
+        RFDetrForObjectDetectionONNX,
+    )
+
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_static_crop_letterbox_package,
         onnx_execution_providers=["CPUExecutionProvider"],
@@ -256,6 +273,10 @@ def test_onnx_package_with_static_crop_letterbox_numpy_batch(
     coins_counting_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.rfdetr.rfdetr_object_detection_onnx import (
+        RFDetrForObjectDetectionONNX,
+    )
+
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_static_crop_letterbox_package,
         onnx_execution_providers=["CPUExecutionProvider"],
@@ -311,6 +332,10 @@ def test_onnx_package_with_static_crop_letterbox_torch(
     coins_counting_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.rfdetr.rfdetr_object_detection_onnx import (
+        RFDetrForObjectDetectionONNX,
+    )
+
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_static_crop_letterbox_package,
         onnx_execution_providers=["CPUExecutionProvider"],
@@ -358,6 +383,10 @@ def test_onnx_package_with_static_crop_letterbox_torch_batch(
     coins_counting_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.rfdetr.rfdetr_object_detection_onnx import (
+        RFDetrForObjectDetectionONNX,
+    )
+
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_static_crop_letterbox_package,
         onnx_execution_providers=["CPUExecutionProvider"],
@@ -421,6 +450,10 @@ def test_onnx_package_with_static_crop_letterbox_torch_list(
     coins_counting_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.rfdetr.rfdetr_object_detection_onnx import (
+        RFDetrForObjectDetectionONNX,
+    )
+
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_static_crop_letterbox_package,
         onnx_execution_providers=["CPUExecutionProvider"],
@@ -484,6 +517,10 @@ def test_onnx_package_with_center_crop_numpy(
     coins_counting_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.rfdetr.rfdetr_object_detection_onnx import (
+        RFDetrForObjectDetectionONNX,
+    )
+
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_center_crop_package,
         onnx_execution_providers=["CPUExecutionProvider"],
@@ -520,6 +557,10 @@ def test_onnx_package_with_center_crop_batch_numpy(
     coins_counting_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.rfdetr.rfdetr_object_detection_onnx import (
+        RFDetrForObjectDetectionONNX,
+    )
+
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_center_crop_package,
         onnx_execution_providers=["CPUExecutionProvider"],
@@ -570,6 +611,10 @@ def test_onnx_package_with_center_crop_torch(
     coins_counting_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.rfdetr.rfdetr_object_detection_onnx import (
+        RFDetrForObjectDetectionONNX,
+    )
+
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_center_crop_package,
         onnx_execution_providers=["CPUExecutionProvider"],
@@ -606,6 +651,10 @@ def test_onnx_package_with_center_crop_batch_torch(
     coins_counting_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.rfdetr.rfdetr_object_detection_onnx import (
+        RFDetrForObjectDetectionONNX,
+    )
+
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_center_crop_package,
         onnx_execution_providers=["CPUExecutionProvider"],
@@ -658,6 +707,10 @@ def test_onnx_package_with_center_crop_list_of_torch(
     coins_counting_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.rfdetr.rfdetr_object_detection_onnx import (
+        RFDetrForObjectDetectionONNX,
+    )
+
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_center_crop_package,
         onnx_execution_providers=["CPUExecutionProvider"],
@@ -708,6 +761,10 @@ def test_onnx_package_with_static_crop_and_center_crop_numpy(
     coins_counting_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.rfdetr.rfdetr_object_detection_onnx import (
+        RFDetrForObjectDetectionONNX,
+    )
+
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_static_crop_center_crop_package,
         onnx_execution_providers=["CPUExecutionProvider"],
@@ -744,6 +801,10 @@ def test_onnx_package_with_static_crop_and_center_crop_numpy_when_image_smaller_
     coins_counting_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.rfdetr.rfdetr_object_detection_onnx import (
+        RFDetrForObjectDetectionONNX,
+    )
+
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_static_crop_center_crop_package,
         onnx_execution_providers=["CPUExecutionProvider"],
@@ -778,6 +839,10 @@ def test_onnx_package_with_static_crop_and_center_crop_batch_numpy(
     coins_counting_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.rfdetr.rfdetr_object_detection_onnx import (
+        RFDetrForObjectDetectionONNX,
+    )
+
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_static_crop_center_crop_package,
         onnx_execution_providers=["CPUExecutionProvider"],
@@ -828,6 +893,10 @@ def test_onnx_package_with_static_crop_and_center_crop_torch(
     coins_counting_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.rfdetr.rfdetr_object_detection_onnx import (
+        RFDetrForObjectDetectionONNX,
+    )
+
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_static_crop_center_crop_package,
         onnx_execution_providers=["CPUExecutionProvider"],
@@ -864,6 +933,10 @@ def test_onnx_package_with_static_crop_and_center_crop_batch_torch(
     coins_counting_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.rfdetr.rfdetr_object_detection_onnx import (
+        RFDetrForObjectDetectionONNX,
+    )
+
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_static_crop_center_crop_package,
         onnx_execution_providers=["CPUExecutionProvider"],

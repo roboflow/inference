@@ -1,9 +1,6 @@
 import numpy as np
 import pytest
 import torch
-from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
-    YOLOv8ForKeyPointsDetectionOnnx,
-)
 
 
 @pytest.mark.slow
@@ -13,6 +10,10 @@ def test_yolov8n_pose_onnx_static_center_crop_package_numpy(
     people_walking_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_static_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -138,6 +139,10 @@ def test_yolov8n_pose_onnx_static_center_crop_package_batch_numpy(
     yolov8n_pose_onnx_static_center_crop_package: str,
     people_walking_image_numpy: np.ndarray,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_static_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -290,6 +295,10 @@ def test_yolov8n_pose_onnx_static_center_crop_package_torch(
     yolov8n_pose_onnx_static_center_crop_package: str,
     people_walking_image_torch: torch.Tensor,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_static_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -415,6 +424,10 @@ def test_yolov8n_pose_onnx_static_center_crop_package_batch_torch(
     yolov8n_pose_onnx_static_center_crop_package: str,
     people_walking_image_torch: torch.Tensor,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_static_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -569,6 +582,10 @@ def test_yolov8n_pose_onnx_static_center_crop_package_list_torch(
     yolov8n_pose_onnx_static_center_crop_package: str,
     people_walking_image_torch: torch.Tensor,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_static_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -720,6 +737,10 @@ def test_yolov8n_pose_onnx_static_static_crop_center_crop_package_numpy(
     yolov8n_pose_onnx_static_static_crop_center_crop_package: str,
     people_walking_image_numpy: np.ndarray,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_static_static_crop_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -843,6 +864,10 @@ def test_yolov8n_pose_onnx_static_static_crop_center_crop_package_batch_numpy(
     yolov8n_pose_onnx_static_static_crop_center_crop_package: str,
     people_walking_image_numpy: np.ndarray,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_static_static_crop_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -990,6 +1015,10 @@ def test_yolov8n_pose_onnx_static_static_crop_center_crop_package_torch(
     yolov8n_pose_onnx_static_static_crop_center_crop_package: str,
     people_walking_image_torch: torch.Tensor,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_static_static_crop_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1112,6 +1141,10 @@ def test_yolov8n_pose_onnx_static_static_crop_center_crop_package_batch_torch(
     yolov8n_pose_onnx_static_static_crop_center_crop_package: str,
     people_walking_image_torch: torch.Tensor,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_static_static_crop_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1261,6 +1294,10 @@ def test_yolov8n_pose_onnx_static_static_crop_center_crop_package_list_torch(
     yolov8n_pose_onnx_static_static_crop_center_crop_package: str,
     people_walking_image_torch: torch.Tensor,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_static_static_crop_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1408,6 +1445,10 @@ def test_yolov8n_pose_onnx_static_static_crop_letterbox_package_numpy(
     yolov8n_pose_onnx_static_static_crop_letterbox_package: str,
     people_walking_image_numpy: np.ndarray,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_static_static_crop_letterbox_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1532,6 +1573,10 @@ def test_yolov8n_pose_onnx_static_static_crop_letterbox_package_batch_numpy(
     yolov8n_pose_onnx_static_static_crop_letterbox_package: str,
     people_walking_image_numpy: np.ndarray,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_static_static_crop_letterbox_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1678,6 +1723,10 @@ def test_yolov8n_pose_onnx_static_static_crop_letterbox_package_torch(
     yolov8n_pose_onnx_static_static_crop_letterbox_package: str,
     people_walking_image_torch: torch.Tensor,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_static_static_crop_letterbox_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1803,6 +1852,10 @@ def test_yolov8n_pose_onnx_static_static_crop_letterbox_package_batch_torch(
     yolov8n_pose_onnx_static_static_crop_letterbox_package: str,
     people_walking_image_torch: torch.Tensor,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_static_static_crop_letterbox_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1951,6 +2004,10 @@ def test_yolov8n_pose_onnx_static_static_crop_letterbox_package_list_torch(
     yolov8n_pose_onnx_static_static_crop_letterbox_package: str,
     people_walking_image_torch: torch.Tensor,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_static_static_crop_letterbox_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -2097,6 +2154,10 @@ def test_yolov8n_pose_onnx_static_static_crop_stretch_package_numpy(
     yolov8n_pose_onnx_static_static_crop_stretch_package: str,
     people_walking_image_numpy: np.ndarray,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_static_static_crop_stretch_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -2222,6 +2283,10 @@ def test_yolov8n_pose_onnx_static_static_crop_stretch_package_batch_numpy(
     yolov8n_pose_onnx_static_static_crop_stretch_package: str,
     people_walking_image_numpy: np.ndarray,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_static_static_crop_stretch_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -2374,6 +2439,10 @@ def test_yolov8n_pose_onnx_static_static_crop_stretch_package_torch(
     yolov8n_pose_onnx_static_static_crop_stretch_package: str,
     people_walking_image_torch: torch.Tensor,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_static_static_crop_stretch_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -2499,6 +2568,10 @@ def test_yolov8n_pose_onnx_static_static_crop_stretch_package_batch_torch(
     yolov8n_pose_onnx_static_static_crop_stretch_package: str,
     people_walking_image_torch: torch.Tensor,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_static_static_crop_stretch_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -2652,6 +2725,10 @@ def test_yolov8n_pose_onnx_static_static_crop_stretch_package_list_torch(
     yolov8n_pose_onnx_static_static_crop_stretch_package: str,
     people_walking_image_torch: torch.Tensor,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_static_static_crop_stretch_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -2803,6 +2880,10 @@ def test_yolov8n_pose_onnx_dynamic_center_crop_package_numpy(
     yolov8n_pose_onnx_dynamic_center_crop_package: str,
     people_walking_image_numpy: np.ndarray,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -2927,6 +3008,10 @@ def test_yolov8n_pose_onnx_dynamic_center_crop_package_numpy_custom_size(
     yolov8n_pose_onnx_dynamic_center_crop_package: str,
     people_walking_image_numpy: np.ndarray,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -3052,6 +3137,10 @@ def test_yolov8n_pose_onnx_dynamic_center_crop_package_batch_numpy(
     yolov8n_pose_onnx_dynamic_center_crop_package: str,
     people_walking_image_numpy: np.ndarray,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -3204,6 +3293,10 @@ def test_yolov8n_pose_onnx_dynamic_center_crop_package_torch(
     yolov8n_pose_onnx_dynamic_center_crop_package: str,
     people_walking_image_torch: torch.Tensor,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -3328,6 +3421,10 @@ def test_yolov8n_pose_onnx_dynamic_center_crop_package_batch_torch(
     yolov8n_pose_onnx_dynamic_center_crop_package: str,
     people_walking_image_torch: torch.Tensor,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -3481,6 +3578,10 @@ def test_yolov8n_pose_onnx_dynamic_center_crop_package_list_torch(
     yolov8n_pose_onnx_dynamic_center_crop_package: str,
     people_walking_image_torch: torch.Tensor,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -3632,6 +3733,10 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_center_crop_package_numpy(
     yolov8n_pose_onnx_dynamic_static_crop_center_crop_package: str,
     people_walking_image_numpy: np.ndarray,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_static_crop_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -3755,6 +3860,10 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_center_crop_package_numpy_custom_
     yolov8n_pose_onnx_dynamic_static_crop_center_crop_package: str,
     people_walking_image_numpy: np.ndarray,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_static_crop_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -3840,6 +3949,10 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_center_crop_package_batch_numpy(
     yolov8n_pose_onnx_dynamic_static_crop_center_crop_package: str,
     people_walking_image_numpy: np.ndarray,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_static_crop_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -3987,6 +4100,10 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_center_crop_package_torch(
     yolov8n_pose_onnx_dynamic_static_crop_center_crop_package: str,
     people_walking_image_torch: torch.Tensor,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_static_crop_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -4109,6 +4226,10 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_center_crop_package_batch_torch(
     yolov8n_pose_onnx_dynamic_static_crop_center_crop_package: str,
     people_walking_image_torch: torch.Tensor,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_static_crop_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -4258,6 +4379,10 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_center_crop_package_list_torch(
     yolov8n_pose_onnx_dynamic_static_crop_center_crop_package: str,
     people_walking_image_torch: torch.Tensor,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_static_crop_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -4405,6 +4530,10 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_letterbox_package_numpy(
     yolov8n_pose_onnx_dynamic_static_crop_letterbox_package: str,
     people_walking_image_numpy: np.ndarray,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_static_crop_letterbox_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -4529,6 +4658,10 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_letterbox_package_batch_numpy(
     yolov8n_pose_onnx_dynamic_static_crop_letterbox_package: str,
     people_walking_image_numpy: np.ndarray,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_static_crop_letterbox_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -4675,6 +4808,10 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_letterbox_package_torch(
     yolov8n_pose_onnx_dynamic_static_crop_letterbox_package: str,
     people_walking_image_torch: torch.Tensor,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_static_crop_letterbox_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -4799,6 +4936,10 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_letterbox_package_batch_torch(
     yolov8n_pose_onnx_dynamic_static_crop_letterbox_package: str,
     people_walking_image_torch: torch.Tensor,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_static_crop_letterbox_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -4947,6 +5088,10 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_letterbox_package_list_torch(
     yolov8n_pose_onnx_dynamic_static_crop_letterbox_package: str,
     people_walking_image_torch: torch.Tensor,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_static_crop_letterbox_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -5093,6 +5238,10 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_stretch_package_numpy(
     yolov8n_pose_onnx_dynamic_static_crop_stretch_package: str,
     people_walking_image_numpy: np.ndarray,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_static_crop_stretch_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -5218,6 +5367,10 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_stretch_package_batch_numpy(
     yolov8n_pose_onnx_dynamic_static_crop_stretch_package: str,
     people_walking_image_numpy: np.ndarray,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_static_crop_stretch_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -5370,6 +5523,10 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_stretch_package_torch(
     yolov8n_pose_onnx_dynamic_static_crop_stretch_package: str,
     people_walking_image_torch: torch.Tensor,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_static_crop_stretch_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -5495,6 +5652,10 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_stretch_package_batch_torch(
     yolov8n_pose_onnx_dynamic_static_crop_stretch_package: str,
     people_walking_image_torch: torch.Tensor,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_static_crop_stretch_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -5648,6 +5809,10 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_stretch_package_list_torch(
     yolov8n_pose_onnx_dynamic_static_crop_stretch_package: str,
     people_walking_image_torch: torch.Tensor,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_static_crop_stretch_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -5799,6 +5964,10 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package_numpy(
     yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package: str,
     people_walking_image_numpy: np.ndarray,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -5923,6 +6092,10 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package_numpy_custom_si
     yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package: str,
     people_walking_image_numpy: np.ndarray,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -6048,6 +6221,10 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package_batch_numpy(
     yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package: str,
     people_walking_image_numpy: np.ndarray,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -6200,6 +6377,10 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package_torch(
     yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package: str,
     people_walking_image_torch: torch.Tensor,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -6324,6 +6505,10 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package_batch_torch(
     yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package: str,
     people_walking_image_torch: torch.Tensor,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -6478,6 +6663,10 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package_list_torch(
     yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package: str,
     people_walking_image_torch: torch.Tensor,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -6629,6 +6818,10 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_static_crop_center_crop_package_num
     yolov8n_pose_onnx_dynamic_nms_fused_static_crop_center_crop_package: str,
     people_walking_image_numpy: np.ndarray,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_nms_fused_static_crop_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -6752,6 +6945,10 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_static_crop_center_crop_package_bat
     yolov8n_pose_onnx_dynamic_nms_fused_static_crop_center_crop_package: str,
     people_walking_image_numpy: np.ndarray,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_nms_fused_static_crop_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -6899,6 +7096,10 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_static_crop_center_crop_package_tor
     yolov8n_pose_onnx_dynamic_nms_fused_static_crop_center_crop_package: str,
     people_walking_image_torch: torch.Tensor,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_nms_fused_static_crop_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -7021,6 +7222,10 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_static_crop_center_crop_package_bat
     yolov8n_pose_onnx_dynamic_nms_fused_static_crop_center_crop_package: str,
     people_walking_image_torch: torch.Tensor,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_nms_fused_static_crop_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -7170,6 +7375,10 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_static_crop_center_crop_package_lis
     yolov8n_pose_onnx_dynamic_nms_fused_static_crop_center_crop_package: str,
     people_walking_image_torch: torch.Tensor,
 ) -> None:
+    from inference_exp.models.yolov8.yolov8_key_points_detection_onnx import (
+        YOLOv8ForKeyPointsDetectionOnnx,
+    )
+
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_nms_fused_static_crop_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],

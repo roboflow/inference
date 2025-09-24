@@ -16,6 +16,7 @@ on:
         options:
           - ''
           - onnx_extras
+          - torch_models
       python_version:
         description: 'Python version to test. Available options: 3.10, 3.11, 3.12. Leave empty to run all.'
         required: false
