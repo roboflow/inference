@@ -13,6 +13,7 @@ class BaseRequest(BaseModel):
         id (str_): A unique request identifier.
         api_key (Optional[str]): Roboflow API Key that will be passed to the model during initialization for artifact retrieval.
         start (Optional[float]): start time of request
+        disable_model_monitoring (Optional[bool]): If true, disables model monitoring for this request.
     """
 
     def __init__(self, **kwargs):
@@ -26,6 +27,9 @@ class BaseRequest(BaseModel):
     start: Optional[float] = None
     source: Optional[str] = None
     source_info: Optional[str] = None
+    disable_model_monitoring: Optional[bool] = Field(
+        default=False, description="If true, disables model monitoring for this request"
+    )
 
 
 class InferenceRequest(BaseRequest):
