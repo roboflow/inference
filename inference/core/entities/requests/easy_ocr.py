@@ -20,6 +20,7 @@ class EasyOCRInferenceRequest(BaseRequest):
     image: Union[List[InferenceRequestImage], InferenceRequestImage]
     easy_ocr_version_id: Optional[str] = EASYOCR_VERSION_ID
     model_id: Optional[str] = Field(None)
+    language_codes: List[str] = Field(default_factory=lambda: ['en'])
 
     # TODO[pydantic]: We couldn't refactor the `validator`, please replace it by `field_validator` manually.
     # Check https://docs.pydantic.dev/dev-v2/migration/#changes-to-validators for more information.

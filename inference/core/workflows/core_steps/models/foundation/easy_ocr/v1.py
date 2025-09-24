@@ -42,6 +42,7 @@ from inference.core.workflows.prototypes.block import (
 from inference_sdk import InferenceHTTPClient
 from inference_sdk.http.entities import InferenceConfiguration
 
+# These are the displayed languages in the UI dropdown
 LANGUAGES = Literal[
     "English",
     "Japanese",
@@ -52,14 +53,16 @@ LANGUAGES = Literal[
     "Simplified Chinese",
 ]
 
+# Dictionary of displayed_language: (model, language_code)
+# This is not an extensive list of supported languages, more codes can be added
 MODELS: Dict[str, str] = {
-    "English": "english_g2",
-    "Japanese": "japanese_g2",
-    "Kannada": "kannada_g2",
-    "Korean": "korean_g2",
-    "Latin": "latin_g2",
-    "Telugu": "telugu_g2",
-    "Simplified Chinese": "zh_sim_g2",
+    "English": ("english_g2",['en']),
+    "Japanese": ("japanese_g2", ['en', 'ja']),
+    "Kannada": ("kannada_g2", ['en', 'kn']),
+    "Korean": ("korean_g2", ['en', 'ko']),
+    "Latin": ("latin_g2", ['en', 'la', 'es','fr','it','pt','de','pl','nl']),
+    "Telugu": ("telugu_g2", ['en', 'te']),
+    "Simplified Chinese": ("zh_sim_g2", ['en', 'ch_sim']),
 }
 
 LONG_DESCRIPTION = """
@@ -149,11 +152,15 @@ class EasyOCRBlockV1(WorkflowBlock):
         images: Batch[WorkflowImageData],
         language: LANGUAGES = "English",
     ) -> BlockResult:
-        version = MODELS.get(language, "english_g2")
+
+        if language not in MODELS:
+            raise ValueError(f"Unsupported language: {language}")
+
+        version, language_codes = MODELS.get(language, "english_g2")
         if self._step_execution_mode is StepExecutionMode.LOCAL:
-            return self.run_locally(images=images, version=version)
+            return self.run_locally(images=images, version=version, language_codes=language_codes)
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
-            return self.run_remotely(images=images, version=version)
+            return self.run_remotely(images=images, version=version, language_codes=language_codes)
         else:
             raise ValueError(
                 f"Unknown step execution mode: {self._step_execution_mode}"
@@ -163,6 +170,7 @@ class EasyOCRBlockV1(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         version: str = "english_g2",
+        language_codes: List[str] = ['en'],
     ) -> BlockResult:
 
         predictions = []
@@ -172,6 +180,7 @@ class EasyOCRBlockV1(WorkflowBlock):
                 easy_ocr_version_id=version,
                 image=[single_image.to_inference_format(numpy_preferred=True)],
                 api_key=self._api_key,
+                language_codes=language_codes
             )
             model_id = load_core_model(
                 model_manager=self._model_manager,

@@ -63,9 +63,11 @@ class EasyOCR(RoboflowCoreModel):
         super().__init__(model_id=model_id.lower(), *args, **kwargs)
         self.device = device
 
+        self.recognizer = model_id.split("/")[1]
+
         shutil.copyfile(
             f"{MODEL_CACHE_DIR}/{model_id}/weights.pt",
-            f"{MODEL_CACHE_DIR}/{model_id}/english_g2.pth",
+            f"{MODEL_CACHE_DIR}/{model_id}/{self.recognizer}.pth",
         )
 
         self.log("Creating EasyOCR model")
@@ -73,19 +75,19 @@ class EasyOCR(RoboflowCoreModel):
     def predict(self, image_in: Image.Image, prompt="", history=None, **kwargs):
         try:
 
+            language_codes = kwargs.get("language_codes", ['en'])
 
-            reader = easyocr.Reader(['en'], #recog_network='easy_ocr_english_g2.pt',
-                                        download_enabled=False,
-                                        user_network_directory='/tmp/cache/easy_ocr/english_g2/',
-                                        model_storage_directory='/tmp/cache/easy_ocr/english_g2/',
-                                        detect_network='craft',
-                                        recog_network='english_g2',
-                                        detector=True,
-                                        recognizer=True,
-                                        gpu=True
-                                        )
-                                        #user_config_path='path/to/your/model_config.yaml')
-
+            reader = easyocr.Reader(
+                language_codes,
+                download_enabled=False,
+                user_network_directory=f'/tmp/cache/easy_ocr/{self.recognizer}/',
+                model_storage_directory=f'/tmp/cache/easy_ocr/{self.recognizer}/',
+                detect_network='craft',
+                recog_network=self.recognizer,
+                detector=True,
+                recognizer=True,
+                gpu=True
+                )
 
             img = np.array(image_in[0]["value"])
 
