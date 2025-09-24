@@ -432,7 +432,7 @@ def remove_unexpected_keys_from_dictionary(
 def ocr_result_to_detections(
     image: WorkflowImageData, response_dict: Dict
 ) -> sv.Detections:
-    ''' Convert OCRResponse dictionary to sv.Detections instance '''
+    ''' Convert OCRInferenceResponse dictionary to sv.Detections instance '''
 
     # Prepare lists for bounding boxes, confidences, class IDs, and labels
     class_names = response_dict.get("strings", [])
