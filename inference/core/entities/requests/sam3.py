@@ -20,7 +20,7 @@ class Sam3InferenceRequest(BaseRequest):
         description="The model ID of SAM3. Use 'sam3' to target the generic core model.",
     )
     sam3_version_id: Optional[str] = Field(
-        default="checkpoint_model_only_presence_0_5",
+        default="paper_image_only_checkpoint_presence_0.35_completed_model_only",
         description="Placeholder version field required by core model loader.",
     )
 

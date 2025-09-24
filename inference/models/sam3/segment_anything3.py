@@ -33,7 +33,10 @@ class SegmentAnything3(RoboflowCoreModel):
     """SAM3 wrapper with a similar interface to SAM2 in this codebase."""
 
     def __init__(
-        self, *args, model_id: str = "sam3/checkpoint_model_only_presence_0_5", **kwargs
+        self,
+        *args,
+        model_id: str = "sam3/paper_image_only_checkpoint_presence_0.35_completed_model_only",
+        **kwargs,
     ):
         super().__init__(*args, model_id=model_id, **kwargs)
         # Lazy import SAM3 to avoid hard dependency when disabled

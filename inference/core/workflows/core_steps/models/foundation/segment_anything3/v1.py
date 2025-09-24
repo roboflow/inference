@@ -101,14 +101,18 @@ class BlockManifest(WorkflowBlockManifest):
     version: Union[
         Selector(kind=[STRING_KIND]),
         Literal[
+            "paper_image_only_checkpoint_presence_0.35_completed_model_only",
             "checkpoint_model_only_presence_0_5",
             "sam3_prod_v12_interactive_5box_image_only",
         ],
     ] = Field(
-        default="checkpoint_model_only_presence_0_5",
+        default="paper_image_only_checkpoint_presence_0.35_completed_model_only",
         # description="Model variant placeholder (SAM3 local image model).",
         description="model version",
-        examples=["checkpoint_model_only_presence_0_5", "$inputs.model_variant"],
+        examples=[
+            "paper_image_only_checkpoint_presence_0.35_completed_model_only",
+            "$inputs.model_variant",
+        ],
     )
     text: Union[Optional[str], Selector(kind=[STRING_KIND])] = Field(
         default=None,
