@@ -9,35 +9,29 @@ import supervision as sv
 
 from inference.core.cache.lru_cache import LRUCache
 from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
-from inference.core.entities.responses.ocr import OCRInferenceResponse
 from inference.core.env import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
     WORKFLOWS_REMOTE_API_TARGET,
-)
-from supervision.config import CLASS_NAME_DATA_FIELD
-from inference.core.workflows.execution_engine.constants import (
-    DETECTION_ID_KEY,
-    IMAGE_DIMENSIONS_KEY,
-    PARENT_ID_KEY,
-    PREDICTION_TYPE_KEY,
-    ROOT_PARENT_ID_KEY,
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.utils import attach_parents_coordinates_to_sv_detections, load_core_model, remove_unexpected_keys_from_dictionary
+from inference.core.workflows.core_steps.common.utils import attach_parents_coordinates_to_sv_detections, load_core_model, ocr_result_to_detections, post_process_ocr_result, remove_unexpected_keys_from_dictionary
 from inference.core.workflows.execution_engine.entities.base import (
+    Batch,
     OutputDefinition,
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    EMBEDDING_KIND,
     IMAGE_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     PARENT_ID_KIND,
     PREDICTION_TYPE_KIND,
     STRING_KIND,
+    ImageInputField,
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -46,6 +40,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 from inference_sdk import InferenceHTTPClient
+from inference_sdk.http.entities import InferenceConfiguration
 
 LANGUAGES = Literal[
     "English",
@@ -68,7 +63,20 @@ MODELS: Dict[str, str] = {
 }
 
 LONG_DESCRIPTION = """
+ Retrieve the characters in an image using EasyOCR Optical Character Recognition (OCR).
+
+This block returns the text within an image.
+
+You may want to use this block in combination with a detections-based block (i.e.
+ObjectDetectionBlock). An object detection model could isolate specific regions from an
+image (i.e. a shipping container ID in a logistics use case) for further processing.
+You can then use a DynamicCropBlock to crop the region of interest before running OCR.
+
+Using a detections model then cropping detections allows you to isolate your analysis
+on particular regions of an image.
 """
+
+EXPECTED_OUTPUT_KEYS = {"result", "parent_id", "root_parent_id", "prediction_type", "predictions"}
 
 class BlockManifest(WorkflowBlockManifest):
 
@@ -91,16 +99,16 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/easy_ocr@v1", "EasyOCR"]
     name: str = Field(description="Unique name of step in workflows")
-    data: Selector(kind=[IMAGE_KIND]) = Field(
-        title="Input Image",
-        description="The input image for this step.",
-        examples=["$inputs.image"],
-    )
+    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     language: LANGUAGES = Field(
         title="Language",
         description="Language model to use for OCR",
         default="English",
     )
+
+    @classmethod
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -116,41 +124,6 @@ class BlockManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
 
-
-def _ocr_result_to_detections(
-    image: WorkflowImageData, response: OCRInferenceResponse
-) -> sv.Detections:
-    # Prepare lists for bounding boxes, confidences, class IDs, and labels
-    xyxy, confidences, class_ids, class_names = [], [], [], []
-
-    # Extract data from OCR result
-    for i, text in enumerate(response.strings):
-        bbox = response.bounding_boxes[i]
-        confidence = response.confidences[i]
-
-        # Append data to lists
-        xyxy.append(bbox)
-        confidences.append(confidence)
-        class_ids.append(0)
-        class_names.append(text)
-
-    # Convert to NumPy arrays
-    detections = sv.Detections(
-        xyxy=np.array(xyxy),
-        confidence=np.array(confidences),
-        class_id=np.array(class_ids),
-        data={CLASS_NAME_DATA_FIELD: np.array(class_names)},
-    )
-    detections[DETECTION_ID_KEY] = np.array([uuid4() for _ in range(len(detections))])
-    detections[PREDICTION_TYPE_KEY] = np.array(["easy-ocr"] * len(detections))
-    img_height, img_width = image.numpy_image.shape[:2]
-    detections[IMAGE_DIMENSIONS_KEY] = np.array(
-        [[img_height, img_width]] * len(detections)
-    )
-    return attach_parents_coordinates_to_sv_detections(
-        detections=detections,
-        image=image,
-    )
 
 class EasyOCRBlockV1(WorkflowBlock):
     def __init__(
@@ -173,16 +146,14 @@ class EasyOCRBlockV1(WorkflowBlock):
 
     def run(
         self,
-        data: WorkflowImageData,
-        language: str = "English",
+        images: Batch[WorkflowImageData],
+        language: LANGUAGES = "English",
     ) -> BlockResult:
-        version = MODELS[language]
+        version = MODELS.get(language, "english_g2")
         if self._step_execution_mode is StepExecutionMode.LOCAL:
-            return self.run_locally(data=data, version=version)
+            return self.run_locally(images=images, version=version)
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
-            raise NotImplementedError(
-                "Remote execution is not supported for EasyOCR. Please use a local or dedicated inference server."
-            )
+            return self.run_remotely(images=images, version=version)
         else:
             raise ValueError(
                 f"Unknown step execution mode: {self._step_execution_mode}"
@@ -190,35 +161,65 @@ class EasyOCRBlockV1(WorkflowBlock):
 
     def run_locally(
         self,
-        data: WorkflowImageData,
-        version: str,
+        images: Batch[WorkflowImageData],
+        version: str = "english_g2",
     ) -> BlockResult:
 
-        inference_request = EasyOCRInferenceRequest(
-            easy_ocr_version_id=version,
-            image=[data.to_inference_format(numpy_preferred=True)],
+        predictions = []
+        for single_image in images:
+
+            inference_request = EasyOCRInferenceRequest(
+                easy_ocr_version_id=version,
+                image=[single_image.to_inference_format(numpy_preferred=True)],
+                api_key=self._api_key,
+            )
+            model_id = load_core_model(
+                model_manager=self._model_manager,
+                inference_request=inference_request,
+                core_model="easy_ocr",
+            )
+            result = self._model_manager.infer_from_request_sync(
+                model_id, inference_request
+            )
+
+            predictions.append(result.model_dump())
+
+        return post_process_ocr_result(
+            predictions=predictions,
+            images=images,
+            expected_output_keys=EXPECTED_OUTPUT_KEYS
+        )
+
+    def run_remotely(
+        self,
+        images: Batch[WorkflowImageData],
+        version: str = "english_g2",
+    ) -> BlockResult:
+        api_url = (
+            LOCAL_INFERENCE_API_URL
+            if WORKFLOWS_REMOTE_API_TARGET != "hosted"
+            else HOSTED_CORE_MODEL_URL
+        )
+        client = InferenceHTTPClient(
+            api_url=api_url,
             api_key=self._api_key,
         )
-        model_id = load_core_model(
-            model_manager=self._model_manager,
-            inference_request=inference_request,
-            core_model="easy_ocr",
+        if WORKFLOWS_REMOTE_API_TARGET == "hosted":
+            client.select_api_v0()
+        configuration = InferenceConfiguration(
+            max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
+            max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
         )
-        predictions = self._model_manager.infer_from_request_sync(
-            model_id, inference_request
+        client.configure(configuration)
+        non_empty_inference_images = [i.base64_image for i in images]
+        predictions = client.ocr_image(
+            inference_input=non_empty_inference_images,
+            model="easy_ocr", version=version
         )
-
-        object_detections = sv.Detections.empty() if len(predictions.strings)==0 else _ocr_result_to_detections(data, predictions)
-
-        prediction = {
-            "result":predictions.result,
-            "predictions": object_detections,
-        }
-
-        prediction[PREDICTION_TYPE_KEY] = "ocr"
-        prediction[PARENT_ID_KEY] = data.parent_metadata.parent_id
-        prediction[ROOT_PARENT_ID_KEY] = (
-            data.workflow_root_ancestor_metadata.parent_id
+        if len(images) == 1:
+            predictions = [predictions]
+        return post_process_ocr_result(
+            predictions=predictions,
+            images=images,
+            expected_output_keys=EXPECTED_OUTPUT_KEYS,
         )
-
-        return prediction

@@ -9,7 +9,6 @@ import supervision as sv
 from pydantic import ConfigDict, Field
 
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
-from inference.core.entities.responses.ocr import OCRInferenceResponse
 from inference.core.env import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
@@ -20,20 +19,9 @@ from inference.core.env import (
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
-    attach_parents_coordinates_to_sv_detections,
     load_core_model,
-    remove_unexpected_keys_from_dictionary,
+    post_process_ocr_result,
 )
-
-from inference.core.workflows.execution_engine.constants import (
-    DETECTION_ID_KEY,
-    IMAGE_DIMENSIONS_KEY,
-    PARENT_ID_KEY,
-    PREDICTION_TYPE_KEY,
-    ROOT_PARENT_ID_KEY,
-)
-
-from supervision.config import CLASS_NAME_DATA_FIELD
 
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -57,7 +45,7 @@ from inference.core.workflows.prototypes.block import (
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 LONG_DESCRIPTION = """
- Retrieve the characters in an image using Optical Character Recognition (OCR).
+ Retrieve the characters in an image using DocTR Optical Character Recognition (OCR).
 
 This block returns the text within an image.
 
@@ -72,33 +60,6 @@ on particular regions of an image.
 
 EXPECTED_OUTPUT_KEYS = {"result", "parent_id", "root_parent_id", "prediction_type", "predictions"}
 
-def _ocr_result_to_detections(
-    image: WorkflowImageData, response_dict: Dict
-) -> sv.Detections:
-    # Prepare lists for bounding boxes, confidences, class IDs, and labels
-    class_names = response_dict.get("strings", [])
-    xyxy = response_dict.get("bounding_boxes", [])
-    confidences = response_dict.get("confidences", [])
-    class_ids = [0] * len(class_names)
-
-    # Convert to NumPy arrays
-    detections = sv.Detections(
-        xyxy=np.array(xyxy),
-        confidence=np.array(confidences),
-        class_id=np.array(class_ids),
-        data={CLASS_NAME_DATA_FIELD: np.array(class_names)},
-    )
-
-    detections[DETECTION_ID_KEY] = np.array([uuid4() for _ in range(len(detections))])
-    detections[PREDICTION_TYPE_KEY] = np.array(["easy-ocr"] * len(detections))
-    img_height, img_width = image.numpy_image.shape[:2]
-    detections[IMAGE_DIMENSIONS_KEY] = np.array(
-        [[img_height, img_width]] * len(detections)
-    )
-    return attach_parents_coordinates_to_sv_detections(
-        detections=detections,
-        image=image,
-    )
 
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
@@ -194,9 +155,10 @@ class OCRModelBlockV1(WorkflowBlock):
                 doctr_model_id, inference_request
             )
             predictions.append(result.model_dump())
-        return self._post_process_result(
+        return post_process_ocr_result(
             predictions=predictions,
             images=images,
+            expected_output_keys=EXPECTED_OUTPUT_KEYS
         )
 
     def run_remotely(
@@ -225,25 +187,8 @@ class OCRModelBlockV1(WorkflowBlock):
         )
         if len(images) == 1:
             predictions = [predictions]
-        return self._post_process_result(
+        return post_process_ocr_result(
             predictions=predictions,
             images=images,
+            expected_output_keys=EXPECTED_OUTPUT_KEYS
         )
-
-    def _post_process_result(
-        self,
-        images: Batch[WorkflowImageData],
-        predictions: List[dict],
-    ) -> BlockResult:
-        for prediction, image in zip(predictions, images):
-            prediction["predictions"] = sv.Detections.empty() if len(prediction["strings"])==0 else _ocr_result_to_detections(image, prediction)
-            prediction[PREDICTION_TYPE_KEY] = "ocr"
-            prediction[PARENT_ID_KEY] = image.parent_metadata.parent_id
-            prediction[ROOT_PARENT_ID_KEY] = (
-                image.workflow_root_ancestor_metadata.parent_id
-            )
-            _ = remove_unexpected_keys_from_dictionary(
-                dictionary=prediction,
-                expected_keys=EXPECTED_OUTPUT_KEYS,
-            )
-        return predictions

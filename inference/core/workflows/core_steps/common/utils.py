@@ -2,7 +2,7 @@ import logging
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
-from typing import Any, Callable, Dict, Iterable, List, Optional, TypeVar, Union
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, TypeVar, Union
 
 import numpy as np
 import supervision as sv
@@ -49,6 +49,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     OriginCoordinatesSystem,
     WorkflowImageData,
 )
+from inference.core.workflows.prototypes.block import BlockResult
 
 T = TypeVar("T")
 
@@ -427,6 +428,54 @@ def remove_unexpected_keys_from_dictionary(
         del dictionary[unexpected_key]
     return dictionary
 
+
+def ocr_result_to_detections(
+    image: WorkflowImageData, response_dict: Dict
+) -> sv.Detections:
+    ''' Convert OCRResponse dictionary to sv.Detections instance '''
+
+    # Prepare lists for bounding boxes, confidences, class IDs, and labels
+    class_names = response_dict.get("strings", [])
+    xyxy = response_dict.get("bounding_boxes", [])
+    confidences = response_dict.get("confidences", [])
+    class_ids = [0] * len(class_names)
+
+    # Convert to NumPy arrays
+    detections = sv.Detections(
+        xyxy=np.array(xyxy),
+        confidence=np.array(confidences),
+        class_id=np.array(class_ids),
+        data={CLASS_NAME_DATA_FIELD: np.array(class_names)},
+    )
+
+    detections[DETECTION_ID_KEY] = np.array([uuid.uuid4() for _ in range(len(detections))])
+    detections[PREDICTION_TYPE_KEY] = np.array(["easy-ocr"] * len(detections))
+    img_height, img_width = image.numpy_image.shape[:2]
+    detections[IMAGE_DIMENSIONS_KEY] = np.array(
+        [[img_height, img_width]] * len(detections)
+    )
+    return attach_parents_coordinates_to_sv_detections(
+        detections=detections,
+        image=image,
+    )
+
+def post_process_ocr_result(
+    images: Batch[WorkflowImageData],
+    predictions: List[dict],
+    expected_output_keys: Set[str]
+) -> BlockResult:
+    for prediction, image in zip(predictions, images):
+        prediction["predictions"] = sv.Detections.empty() if len(prediction["strings"])==0 else ocr_result_to_detections(image, prediction)
+        prediction[PREDICTION_TYPE_KEY] = "ocr"
+        prediction[PARENT_ID_KEY] = image.parent_metadata.parent_id
+        prediction[ROOT_PARENT_ID_KEY] = (
+            image.workflow_root_ancestor_metadata.parent_id
+        )
+        _ = remove_unexpected_keys_from_dictionary(
+            dictionary=prediction,
+            expected_keys=expected_output_keys,
+        )
+    return predictions
 
 def run_in_parallel(tasks: List[Callable[[], T]], max_workers: int = 1) -> List[T]:
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
