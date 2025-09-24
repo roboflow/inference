@@ -35,8 +35,10 @@ jobs:
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
         extras:
-          - { install: "onnx-cu12", marker: "onnx_extras" }
-          - { install: "trt10", marker: "trt_extras" }
+          - { install: "onnx-cu12", marker: "onnx_extras", workers: "auto" }
+          - { install: "trt10", marker: "trt_extras", workers: "auto" }
+          - { install: "torch-cu124", marker: "torch_models", workers: "auto" }
+          - { install: "torch-cu124", marker: "hf_vlm_models", workers: "1" }
     steps:
       - name: 🛎️ Checkout
         if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
@@ -99,4 +101,4 @@ jobs:
         timeout-minutes: 30
         run: |
           source .venv/bin/activate
-          python -m pytest -n auto -m "${{ matrix.extras.marker }} and not cpu_only" tests/integration_tests
+          python -m pytest -n ${{ matrix.extras.workers }} -m "${{ matrix.extras.marker }} and not cpu_only" tests/integration_tests

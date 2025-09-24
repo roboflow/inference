@@ -624,8 +624,10 @@ class TextTransformer(nn.Module):
 
         m, u = self.load_state_dict(_sd, strict=False)
 
-        LOGGER.warning(f"Missing keys for loading model: {m}")
-        LOGGER.warning(f"Unexpected keys for loading model: {u}")
+        if m:
+            LOGGER.warning(f"Missing keys for loading model: {m}")
+        if u:
+            LOGGER.warning(f"Unexpected keys for loading model: {u}")
 
     def build_cls_mask(self, text):
         cls_mask = (text != self.pad_id).unsqueeze(1)

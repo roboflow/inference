@@ -1037,6 +1037,7 @@ EXPECTED_DOG_IMAGE_EMBEDDING = torch.tensor(
 
 
 @pytest.mark.slow
+@pytest.mark.torch_models
 def test_perception_encoder_torch_image_prediction_for_numpy(
     perception_encoder_path: str,
     dog_image_numpy: np.ndarray,
@@ -1057,6 +1058,7 @@ def test_perception_encoder_torch_image_prediction_for_numpy(
 
 
 @pytest.mark.slow
+@pytest.mark.torch_models
 def test_perception_encoder_torch_image_prediction_for_torch_tensor(
     perception_encoder_path: str,
     dog_image_torch: torch.Tensor,
@@ -1077,6 +1079,7 @@ def test_perception_encoder_torch_image_prediction_for_torch_tensor(
 
 
 @pytest.mark.slow
+@pytest.mark.torch_models
 def test_perception_encoder_torch_image_prediction_for_list_of_numpy_bgr(
     perception_encoder_path: str,
     dog_image_numpy: np.ndarray,
@@ -1098,6 +1101,7 @@ def test_perception_encoder_torch_image_prediction_for_list_of_numpy_bgr(
 
 
 @pytest.mark.slow
+@pytest.mark.torch_models
 def test_perception_encoder_torch_image_prediction_for_list_of_numpy_rgb(
     perception_encoder_path: str,
     dog_image_numpy: np.ndarray,
@@ -1120,6 +1124,7 @@ def test_perception_encoder_torch_image_prediction_for_list_of_numpy_rgb(
 
 
 @pytest.mark.slow
+@pytest.mark.torch_models
 def test_perception_encoder_torch_image_prediction_for_list_of_tensors(
     perception_encoder_path: str,
     dog_image_torch: torch.Tensor,
@@ -1141,6 +1146,7 @@ def test_perception_encoder_torch_image_prediction_for_list_of_tensors(
 
 
 @pytest.mark.slow
+@pytest.mark.torch_models
 def test_perception_encoder_torch_image_prediction_for_list_of_mixed_types(
     perception_encoder_path: str,
     dog_image_numpy: np.ndarray,
@@ -1163,6 +1169,7 @@ def test_perception_encoder_torch_image_prediction_for_list_of_mixed_types(
 
 
 @pytest.mark.slow
+@pytest.mark.torch_models
 def test_perception_encoder_torch_image_prediction_for_batched_tensor(
     perception_encoder_path: str,
     dog_image_torch: torch.Tensor,

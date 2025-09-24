@@ -11,7 +11,7 @@ from inference_exp.models.rfdetr.rfdetr_object_detection_pytorch import (
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torch_package_with_stretch_resize_and_contrast_stretching_numpy(
     coin_counting_rfdetr_nano_torch_cs_stretch_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -26,7 +26,7 @@ def test_torch_package_with_stretch_resize_and_contrast_stretching_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.8575,
@@ -41,7 +41,7 @@ def test_torch_package_with_stretch_resize_and_contrast_stretching_numpy(
                 0.5340,
                 0.5133,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     expected_xyxy = torch.tensor(
@@ -61,14 +61,14 @@ def test_torch_package_with_stretch_resize_and_contrast_stretching_numpy(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torch_package_with_stretch_resize_and_contrast_stretching_numpy_batch(
     coin_counting_rfdetr_nano_torch_cs_stretch_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -83,7 +83,7 @@ def test_torch_package_with_stretch_resize_and_contrast_stretching_numpy_batch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.8575,
@@ -98,11 +98,11 @@ def test_torch_package_with_stretch_resize_and_contrast_stretching_numpy_batch(
                 0.5340,
                 0.5133,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
+        predictions[1].confidence.cpu(),
         torch.tensor(
             [
                 0.8575,
@@ -117,7 +117,7 @@ def test_torch_package_with_stretch_resize_and_contrast_stretching_numpy_batch(
                 0.5340,
                 0.5133,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     expected_xyxy = torch.tensor(
@@ -137,19 +137,19 @@ def test_torch_package_with_stretch_resize_and_contrast_stretching_numpy_batch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torch_package_with_stretch_resize_and_contrast_stretching_torch(
     coin_counting_rfdetr_nano_torch_cs_stretch_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -164,7 +164,7 @@ def test_torch_package_with_stretch_resize_and_contrast_stretching_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.8575,
@@ -179,7 +179,7 @@ def test_torch_package_with_stretch_resize_and_contrast_stretching_torch(
                 0.5340,
                 0.5133,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     expected_xyxy = torch.tensor(
@@ -199,14 +199,14 @@ def test_torch_package_with_stretch_resize_and_contrast_stretching_torch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torch_package_with_stretch_resize_and_contrast_stretching_torch_batch(
     coin_counting_rfdetr_nano_torch_cs_stretch_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -223,7 +223,7 @@ def test_torch_package_with_stretch_resize_and_contrast_stretching_torch_batch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.8575,
@@ -238,11 +238,11 @@ def test_torch_package_with_stretch_resize_and_contrast_stretching_torch_batch(
                 0.5340,
                 0.5133,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
+        predictions[1].confidence.cpu(),
         torch.tensor(
             [
                 0.8575,
@@ -257,7 +257,7 @@ def test_torch_package_with_stretch_resize_and_contrast_stretching_torch_batch(
                 0.5340,
                 0.5133,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     expected_xyxy = torch.tensor(
@@ -277,19 +277,19 @@ def test_torch_package_with_stretch_resize_and_contrast_stretching_torch_batch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torch_package_with_stretch_resize_and_contrast_stretching_torch_list(
     coin_counting_rfdetr_nano_torch_cs_stretch_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -304,7 +304,7 @@ def test_torch_package_with_stretch_resize_and_contrast_stretching_torch_list(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.8575,
@@ -319,11 +319,11 @@ def test_torch_package_with_stretch_resize_and_contrast_stretching_torch_list(
                 0.5340,
                 0.5133,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
+        predictions[1].confidence.cpu(),
         torch.tensor(
             [
                 0.8575,
@@ -338,7 +338,7 @@ def test_torch_package_with_stretch_resize_and_contrast_stretching_torch_list(
                 0.5340,
                 0.5133,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     expected_xyxy = torch.tensor(
@@ -358,20 +358,19 @@ def test_torch_package_with_stretch_resize_and_contrast_stretching_torch_list(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_stretch_resize_and_contrast_stretching_numpy(
     coin_counting_rfdetr_nano_onnx_cs_stretch_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -387,10 +386,10 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [0.8575, 0.8568, 0.8105, 0.7940, 0.7364, 0.6872, 0.6419, 0.5810, 0.5425]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     expected_xyxy = torch.tensor(
@@ -408,15 +407,14 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_numpy(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_stretch_resize_and_contrast_stretching_batch_numpy(
     coin_counting_rfdetr_nano_onnx_cs_stretch_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -432,17 +430,17 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_batch_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [0.8575, 0.8568, 0.8105, 0.7940, 0.7364, 0.6872, 0.6419, 0.5810, 0.5425]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
+        predictions[1].confidence.cpu(),
         torch.tensor(
             [0.8575, 0.8568, 0.8105, 0.7940, 0.7364, 0.6872, 0.6419, 0.5810, 0.5425]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     expected_xyxy = torch.tensor(
@@ -460,20 +458,19 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_batch_numpy(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_stretch_resize_and_contrast_stretching_torch(
     coin_counting_rfdetr_nano_onnx_cs_stretch_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -489,10 +486,10 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [0.8575, 0.8568, 0.8105, 0.7940, 0.7364, 0.6872, 0.6419, 0.5810, 0.5425]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     expected_xyxy = torch.tensor(
@@ -510,15 +507,14 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_torch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_stretch_resize_and_contrast_stretching_torch_batch(
     coin_counting_rfdetr_nano_onnx_cs_stretch_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -534,17 +530,17 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_torch_batch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [0.8575, 0.8568, 0.8105, 0.7940, 0.7364, 0.6872, 0.6419, 0.5810, 0.5425]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
+        predictions[1].confidence.cpu(),
         torch.tensor(
             [0.8575, 0.8568, 0.8105, 0.7940, 0.7364, 0.6872, 0.6419, 0.5810, 0.5425]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     expected_xyxy = torch.tensor(
@@ -562,19 +558,19 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_torch_batch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torch_package_with_static_crop_letterbox_numpy(
     coin_counting_rfdetr_nano_torch_static_crop_letterbox_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -589,8 +585,10 @@ def test_torch_package_with_static_crop_letterbox_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]),
+        predictions[0].confidence.cpu(),
+        torch.tensor(
+            [0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]
+        ).cpu(),
         atol=0.01,
     )
     expected_xyxy = torch.tensor(
@@ -607,15 +605,14 @@ def test_torch_package_with_static_crop_letterbox_numpy(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_crop_letterbox_numpy(
     coin_counting_rfdetr_nano_onnx_static_crop_letterbox_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -631,8 +628,10 @@ def test_onnx_package_with_static_crop_letterbox_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]),
+        predictions[0].confidence.cpu(),
+        torch.tensor(
+            [0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]
+        ).cpu(),
         atol=0.01,
     )
     expected_xyxy = torch.tensor(
@@ -649,14 +648,14 @@ def test_onnx_package_with_static_crop_letterbox_numpy(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torch_package_with_static_crop_letterbox_numpy_batch(
     coin_counting_rfdetr_nano_torch_static_crop_letterbox_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -671,13 +670,17 @@ def test_torch_package_with_static_crop_letterbox_numpy_batch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]),
+        predictions[0].confidence.cpu(),
+        torch.tensor(
+            [0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]),
+        predictions[1].confidence.cpu(),
+        torch.tensor(
+            [0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]
+        ).cpu(),
         atol=0.01,
     )
     expected_xyxy = torch.tensor(
@@ -694,20 +697,19 @@ def test_torch_package_with_static_crop_letterbox_numpy_batch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_crop_letterbox_numpy_batch(
     coin_counting_rfdetr_nano_onnx_static_crop_letterbox_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -723,13 +725,17 @@ def test_onnx_package_with_static_crop_letterbox_numpy_batch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]),
+        predictions[0].confidence.cpu(),
+        torch.tensor(
+            [0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]),
+        predictions[1].confidence.cpu(),
+        torch.tensor(
+            [0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]
+        ).cpu(),
         atol=0.01,
     )
     expected_xyxy = torch.tensor(
@@ -746,19 +752,19 @@ def test_onnx_package_with_static_crop_letterbox_numpy_batch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torch_package_with_static_crop_letterbox_torch(
     coin_counting_rfdetr_nano_torch_static_crop_letterbox_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -773,8 +779,10 @@ def test_torch_package_with_static_crop_letterbox_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]),
+        predictions[0].confidence.cpu(),
+        torch.tensor(
+            [0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]
+        ).cpu(),
         atol=0.02,
     )
     assert torch.allclose(
@@ -795,15 +803,14 @@ def test_torch_package_with_static_crop_letterbox_torch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_crop_letterbox_torch(
     coin_counting_rfdetr_nano_onnx_static_crop_letterbox_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -819,8 +826,10 @@ def test_onnx_package_with_static_crop_letterbox_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]),
+        predictions[0].confidence.cpu(),
+        torch.tensor(
+            [0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]
+        ).cpu(),
         atol=0.02,
     )
     assert torch.allclose(
@@ -841,14 +850,14 @@ def test_onnx_package_with_static_crop_letterbox_torch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torch_package_with_static_crop_letterbox_torch_batch(
     coin_counting_rfdetr_nano_torch_static_crop_letterbox_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -863,13 +872,17 @@ def test_torch_package_with_static_crop_letterbox_torch_batch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]),
+        predictions[0].confidence.cpu(),
+        torch.tensor(
+            [0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]
+        ).cpu(),
         atol=0.02,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]),
+        predictions[1].confidence.cpu(),
+        torch.tensor(
+            [0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]
+        ).cpu(),
         atol=0.02,
     )
     assert torch.allclose(
@@ -894,20 +907,19 @@ def test_torch_package_with_static_crop_letterbox_torch_batch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_crop_letterbox_torch_batch(
     coin_counting_rfdetr_nano_onnx_static_crop_letterbox_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -923,13 +935,17 @@ def test_onnx_package_with_static_crop_letterbox_torch_batch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]),
+        predictions[0].confidence.cpu(),
+        torch.tensor(
+            [0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]
+        ).cpu(),
         atol=0.02,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]),
+        predictions[1].confidence.cpu(),
+        torch.tensor(
+            [0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]
+        ).cpu(),
         atol=0.02,
     )
     assert torch.allclose(
@@ -954,19 +970,19 @@ def test_onnx_package_with_static_crop_letterbox_torch_batch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torch_package_with_static_crop_letterbox_torch_list(
     coin_counting_rfdetr_nano_torch_static_crop_letterbox_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -981,13 +997,17 @@ def test_torch_package_with_static_crop_letterbox_torch_list(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]),
+        predictions[0].confidence.cpu(),
+        torch.tensor(
+            [0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]
+        ).cpu(),
         atol=0.02,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]),
+        predictions[1].confidence.cpu(),
+        torch.tensor(
+            [0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]
+        ).cpu(),
         atol=0.02,
     )
     assert torch.allclose(
@@ -1012,20 +1032,19 @@ def test_torch_package_with_static_crop_letterbox_torch_list(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_crop_letterbox_torch_list(
     coin_counting_rfdetr_nano_onnx_static_crop_letterbox_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -1041,13 +1060,17 @@ def test_onnx_package_with_static_crop_letterbox_torch_list(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]),
+        predictions[0].confidence.cpu(),
+        torch.tensor(
+            [0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]
+        ).cpu(),
         atol=0.02,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]),
+        predictions[1].confidence.cpu(),
+        torch.tensor(
+            [0.9481, 0.9406, 0.9182, 0.9177, 0.9111, 0.8997, 0.8429, 0.7885]
+        ).cpu(),
         atol=0.02,
     )
     assert torch.allclose(
@@ -1072,19 +1095,19 @@ def test_onnx_package_with_static_crop_letterbox_torch_list(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torch_package_with_center_crop_numpy(
     coin_counting_rfdetr_nano_torch_center_crop_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -1099,7 +1122,9 @@ def test_torch_package_with_center_crop_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence, torch.tensor([0.9746, 0.9664, 0.5048]), atol=0.01
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9746, 0.9664, 0.5048]),
+        atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id,
@@ -1110,15 +1135,14 @@ def test_torch_package_with_center_crop_numpy(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_center_crop_numpy(
     coin_counting_rfdetr_nano_onnx_center_crop_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -1134,7 +1158,9 @@ def test_onnx_package_with_center_crop_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence, torch.tensor([0.9746, 0.9664, 0.5048]), atol=0.01
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9746, 0.9664, 0.5048]),
+        atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id,
@@ -1145,14 +1171,14 @@ def test_onnx_package_with_center_crop_numpy(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torch_package_with_center_crop_batch_numpy(
     coin_counting_rfdetr_nano_torch_center_crop_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -1167,10 +1193,14 @@ def test_torch_package_with_center_crop_batch_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence, torch.tensor([0.9746, 0.9664, 0.5048]), atol=0.01
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9746, 0.9664, 0.5048]),
+        atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence, torch.tensor([0.9746, 0.9664, 0.5048]), atol=0.01
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.9746, 0.9664, 0.5048]),
+        atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id,
@@ -1185,20 +1215,19 @@ def test_torch_package_with_center_crop_batch_numpy(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_center_crop_batch_numpy(
     coin_counting_rfdetr_nano_onnx_center_crop_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -1214,10 +1243,14 @@ def test_onnx_package_with_center_crop_batch_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence, torch.tensor([0.9746, 0.9664, 0.5048]), atol=0.01
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9746, 0.9664, 0.5048]),
+        atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence, torch.tensor([0.9746, 0.9664, 0.5048]), atol=0.01
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.9746, 0.9664, 0.5048]),
+        atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id,
@@ -1232,19 +1265,19 @@ def test_onnx_package_with_center_crop_batch_numpy(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torch_package_with_center_crop_torch(
     coin_counting_rfdetr_nano_torch_center_crop_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -1259,7 +1292,9 @@ def test_torch_package_with_center_crop_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence, torch.tensor([0.9746, 0.9664, 0.5048]), atol=0.01
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9746, 0.9664, 0.5048]),
+        atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id,
@@ -1270,15 +1305,14 @@ def test_torch_package_with_center_crop_torch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_center_crop_torch(
     coin_counting_rfdetr_nano_onnx_center_crop_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -1294,7 +1328,9 @@ def test_onnx_package_with_center_crop_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence, torch.tensor([0.9746, 0.9664, 0.5048]), atol=0.01
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9746, 0.9664, 0.5048]),
+        atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id,
@@ -1305,14 +1341,14 @@ def test_onnx_package_with_center_crop_torch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torch_package_with_center_crop_batch_torch(
     coin_counting_rfdetr_nano_torch_center_crop_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -1329,10 +1365,14 @@ def test_torch_package_with_center_crop_batch_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence, torch.tensor([0.9746, 0.9664, 0.5048]), atol=0.01
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9746, 0.9664, 0.5048]),
+        atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence, torch.tensor([0.9746, 0.9664, 0.5048]), atol=0.01
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.9746, 0.9664, 0.5048]),
+        atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id,
@@ -1347,20 +1387,19 @@ def test_torch_package_with_center_crop_batch_torch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_center_crop_batch_torch(
     coin_counting_rfdetr_nano_onnx_center_crop_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -1378,10 +1417,14 @@ def test_onnx_package_with_center_crop_batch_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence, torch.tensor([0.9746, 0.9664, 0.5048]), atol=0.01
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9746, 0.9664, 0.5048]),
+        atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence, torch.tensor([0.9746, 0.9664, 0.5048]), atol=0.01
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.9746, 0.9664, 0.5048]),
+        atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id,
@@ -1396,19 +1439,19 @@ def test_onnx_package_with_center_crop_batch_torch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torch_package_with_center_crop_list_of_torch(
     coin_counting_rfdetr_nano_torch_center_crop_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -1423,10 +1466,14 @@ def test_torch_package_with_center_crop_list_of_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence, torch.tensor([0.9746, 0.9664, 0.5048]), atol=0.01
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9746, 0.9664, 0.5048]),
+        atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence, torch.tensor([0.9746, 0.9664, 0.5048]), atol=0.01
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.9746, 0.9664, 0.5048]),
+        atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id,
@@ -1441,20 +1488,19 @@ def test_torch_package_with_center_crop_list_of_torch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_center_crop_list_of_torch(
     coin_counting_rfdetr_nano_onnx_center_crop_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -1470,10 +1516,14 @@ def test_onnx_package_with_center_crop_list_of_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence, torch.tensor([0.9746, 0.9664, 0.5048]), atol=0.01
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9746, 0.9664, 0.5048]),
+        atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence, torch.tensor([0.9746, 0.9664, 0.5048]), atol=0.01
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.9746, 0.9664, 0.5048]),
+        atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id,
@@ -1488,19 +1538,19 @@ def test_onnx_package_with_center_crop_list_of_torch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torch_package_with_center_crop_numpy_custom_image_size(
     coin_counting_rfdetr_nano_torch_center_crop_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -1515,7 +1565,7 @@ def test_torch_package_with_center_crop_numpy_custom_image_size(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence, torch.tensor([0.9510, 0.9246]), atol=0.01
+        predictions[0].confidence.cpu(), torch.tensor([0.9510, 0.9246]), atol=0.01
     )
     assert torch.allclose(
         predictions[0].class_id,
@@ -1526,14 +1576,14 @@ def test_torch_package_with_center_crop_numpy_custom_image_size(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torch_package_with_center_crop_torch_custom_image_size(
     coin_counting_rfdetr_nano_torch_center_crop_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -1548,7 +1598,7 @@ def test_torch_package_with_center_crop_torch_custom_image_size(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence, torch.tensor([0.9510, 0.9246]), atol=0.01
+        predictions[0].confidence.cpu(), torch.tensor([0.9510, 0.9246]), atol=0.01
     )
     assert torch.allclose(
         predictions[0].class_id,
@@ -1559,14 +1609,14 @@ def test_torch_package_with_center_crop_torch_custom_image_size(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torch_package_with_static_crop_and_center_crop_numpy(
     coin_counting_rfdetr_nano_torch_static_crop_center_crop_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -1581,7 +1631,9 @@ def test_torch_package_with_static_crop_and_center_crop_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence, torch.tensor([0.9750122, 0.96309197]), atol=0.01
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9750122, 0.96309197]),
+        atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id,
@@ -1592,15 +1644,14 @@ def test_torch_package_with_static_crop_and_center_crop_numpy(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_crop_and_center_crop_numpy(
     coin_counting_rfdetr_nano_onnx_static_crop_center_crop_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -1616,7 +1667,9 @@ def test_onnx_package_with_static_crop_and_center_crop_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence, torch.tensor([0.9750122, 0.96309197]), atol=0.01
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9750122, 0.96309197]),
+        atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id,
@@ -1627,14 +1680,14 @@ def test_onnx_package_with_static_crop_and_center_crop_numpy(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torch_package_with_static_crop_and_center_crop_numpy_when_image_smaller_than_center_crop(
     coin_counting_rfdetr_nano_torch_static_crop_center_crop_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -1648,7 +1701,9 @@ def test_torch_package_with_static_crop_and_center_crop_numpy_when_image_smaller
     predictions = model(coins_counting_image_numpy[2000:2300, 1250:1450])
 
     # then
-    assert torch.allclose(predictions[0].confidence, torch.tensor([0.7778]), atol=0.01)
+    assert torch.allclose(
+        predictions[0].confidence.cpu(), torch.tensor([0.7778]), atol=0.01
+    )
     assert torch.allclose(
         predictions[0].class_id,
         torch.tensor([1], dtype=torch.int32),
@@ -1658,15 +1713,14 @@ def test_torch_package_with_static_crop_and_center_crop_numpy_when_image_smaller
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_crop_and_center_crop_numpy_when_image_smaller_than_center_crop(
     coin_counting_rfdetr_nano_onnx_static_crop_center_crop_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -1681,7 +1735,9 @@ def test_onnx_package_with_static_crop_and_center_crop_numpy_when_image_smaller_
     predictions = model(coins_counting_image_numpy[2000:2300, 1250:1450])
 
     # then
-    assert torch.allclose(predictions[0].confidence, torch.tensor([0.7778]), atol=0.01)
+    assert torch.allclose(
+        predictions[0].confidence.cpu(), torch.tensor([0.7778]), atol=0.01
+    )
     assert torch.allclose(
         predictions[0].class_id,
         torch.tensor([1], dtype=torch.int32),
@@ -1691,14 +1747,14 @@ def test_onnx_package_with_static_crop_and_center_crop_numpy_when_image_smaller_
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torch_package_with_static_crop_and_center_crop_batch_numpy(
     coin_counting_rfdetr_nano_torch_static_crop_center_crop_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -1713,10 +1769,14 @@ def test_torch_package_with_static_crop_and_center_crop_batch_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence, torch.tensor([0.9750122, 0.96309197]), atol=0.01
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9750122, 0.96309197]),
+        atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence, torch.tensor([0.9750122, 0.96309197]), atol=0.01
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.9750122, 0.96309197]),
+        atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id,
@@ -1731,20 +1791,19 @@ def test_torch_package_with_static_crop_and_center_crop_batch_numpy(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_crop_and_center_crop_batch_numpy(
     coin_counting_rfdetr_nano_onnx_static_crop_center_crop_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -1760,10 +1819,14 @@ def test_onnx_package_with_static_crop_and_center_crop_batch_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence, torch.tensor([0.9750122, 0.96309197]), atol=0.01
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9750122, 0.96309197]),
+        atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence, torch.tensor([0.9750122, 0.96309197]), atol=0.01
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.9750122, 0.96309197]),
+        atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id,
@@ -1778,19 +1841,19 @@ def test_onnx_package_with_static_crop_and_center_crop_batch_numpy(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torch_package_with_static_crop_and_center_crop_torch(
     coin_counting_rfdetr_nano_torch_static_crop_center_crop_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -1805,7 +1868,9 @@ def test_torch_package_with_static_crop_and_center_crop_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence, torch.tensor([0.9750122, 0.96309197]), atol=0.01
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9750122, 0.96309197]),
+        atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id,
@@ -1816,15 +1881,14 @@ def test_torch_package_with_static_crop_and_center_crop_torch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_crop_and_center_crop_torch(
     coin_counting_rfdetr_nano_onnx_static_crop_center_crop_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -1840,7 +1904,9 @@ def test_onnx_package_with_static_crop_and_center_crop_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence, torch.tensor([0.9750122, 0.96309197]), atol=0.01
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9750122, 0.96309197]),
+        atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id,
@@ -1851,14 +1917,14 @@ def test_onnx_package_with_static_crop_and_center_crop_torch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torch_package_with_static_crop_and_center_crop_batch_torch(
     coin_counting_rfdetr_nano_torch_static_crop_center_crop_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -1875,10 +1941,14 @@ def test_torch_package_with_static_crop_and_center_crop_batch_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence, torch.tensor([0.9750122, 0.96309197]), atol=0.01
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9750122, 0.96309197]),
+        atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence, torch.tensor([0.9750122, 0.96309197]), atol=0.01
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.9750122, 0.96309197]),
+        atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id,
@@ -1893,20 +1963,19 @@ def test_torch_package_with_static_crop_and_center_crop_batch_torch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_crop_and_center_crop_batch_torch(
     coin_counting_rfdetr_nano_onnx_static_crop_center_crop_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -1924,10 +1993,14 @@ def test_onnx_package_with_static_crop_and_center_crop_batch_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence, torch.tensor([0.9750122, 0.96309197]), atol=0.01
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9750122, 0.96309197]),
+        atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence, torch.tensor([0.9750122, 0.96309197]), atol=0.01
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.9750122, 0.96309197]),
+        atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id,
@@ -1942,19 +2015,19 @@ def test_onnx_package_with_static_crop_and_center_crop_batch_torch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_rfdetr_base_og_with_numpy(
     og_rfdetr_base_weights: str, dog_image_numpy: np.ndarray
 ) -> None:
@@ -1968,7 +2041,9 @@ def test_rfdetr_base_og_with_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence, torch.tensor([0.7783, 0.7684, 0.5685]), atol=0.01
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.7783, 0.7684, 0.5685]),
+        atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id,
@@ -1979,7 +2054,7 @@ def test_rfdetr_base_og_with_numpy(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )

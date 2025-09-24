@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 import torch
+from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.models.vit.vit_classification_huggingface import (
     VITForClassificationHF,
     VITForMultiLabelClassificationHF,
@@ -12,7 +13,7 @@ from inference_exp.models.vit.vit_classification_onnx import (
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_multi_label_hf_package_numpy(
     flowers_multi_label_vit_hf_package: str,
     flowers_image_numpy: np.ndarray,
@@ -20,7 +21,7 @@ def test_multi_label_hf_package_numpy(
     # given
     model = VITForMultiLabelClassificationHF.from_pretrained(
         model_name_or_path=flowers_multi_label_vit_hf_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -28,18 +29,18 @@ def test_multi_label_hf_package_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.0066, 0.0315, 0.9680]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.0066, 0.0315, 0.9680]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[0].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_multi_label_hf_package_numpy_custom_image_size(
     flowers_multi_label_vit_hf_package: str,
     flowers_image_numpy: np.ndarray,
@@ -47,7 +48,7 @@ def test_multi_label_hf_package_numpy_custom_image_size(
     # given
     model = VITForMultiLabelClassificationHF.from_pretrained(
         model_name_or_path=flowers_multi_label_vit_hf_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -55,18 +56,18 @@ def test_multi_label_hf_package_numpy_custom_image_size(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.0066, 0.0315, 0.9680]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.0066, 0.0315, 0.9680]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[0].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_multi_label_hf_package_batch_numpy(
     flowers_multi_label_vit_hf_package: str,
     flowers_image_numpy: np.ndarray,
@@ -74,7 +75,7 @@ def test_multi_label_hf_package_batch_numpy(
     # given
     model = VITForMultiLabelClassificationHF.from_pretrained(
         model_name_or_path=flowers_multi_label_vit_hf_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -82,27 +83,27 @@ def test_multi_label_hf_package_batch_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.0066, 0.0315, 0.9680]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.0066, 0.0315, 0.9680]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[0].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.0066, 0.0315, 0.9680]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.0066, 0.0315, 0.9680]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[1].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_multi_label_hf_package_torch(
     flowers_multi_label_vit_hf_package: str,
     flowers_image_torch: torch.Tensor,
@@ -110,7 +111,7 @@ def test_multi_label_hf_package_torch(
     # given
     model = VITForMultiLabelClassificationHF.from_pretrained(
         model_name_or_path=flowers_multi_label_vit_hf_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -118,18 +119,18 @@ def test_multi_label_hf_package_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.0066, 0.0315, 0.9680]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.0066, 0.0315, 0.9680]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[0].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_multi_label_hf_package_batch_torch(
     flowers_multi_label_vit_hf_package: str,
     flowers_image_torch: torch.Tensor,
@@ -137,7 +138,7 @@ def test_multi_label_hf_package_batch_torch(
     # given
     model = VITForMultiLabelClassificationHF.from_pretrained(
         model_name_or_path=flowers_multi_label_vit_hf_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -145,27 +146,27 @@ def test_multi_label_hf_package_batch_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.0066, 0.0315, 0.9680]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.0066, 0.0315, 0.9680]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[0].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.0066, 0.0315, 0.9680]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.0066, 0.0315, 0.9680]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[1].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_multi_label_hf_package_batch_torch_list(
     flowers_multi_label_vit_hf_package: str,
     flowers_image_torch: torch.Tensor,
@@ -173,7 +174,7 @@ def test_multi_label_hf_package_batch_torch_list(
     # given
     model = VITForMultiLabelClassificationHF.from_pretrained(
         model_name_or_path=flowers_multi_label_vit_hf_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -181,28 +182,27 @@ def test_multi_label_hf_package_batch_torch_list(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.0066, 0.0315, 0.9680]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.0066, 0.0315, 0.9680]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[0].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.0066, 0.0315, 0.9680]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.0066, 0.0315, 0.9680]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[1].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_label_onnx_dynamic_bs_package_numpy(
     flowers_multi_label_vit_onnx_dynamic_bs_package: str,
     flowers_image_numpy: np.ndarray,
@@ -210,7 +210,7 @@ def test_multi_label_onnx_dynamic_bs_package_numpy(
     # given
     model = VITForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=flowers_multi_label_vit_onnx_dynamic_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -218,19 +218,18 @@ def test_multi_label_onnx_dynamic_bs_package_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.0066, 0.0315, 0.9680]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.0066, 0.0315, 0.9680]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[0].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_label_onnx_dynamic_bs_package_numpy_custom_image_size(
     flowers_multi_label_vit_onnx_dynamic_bs_package: str,
     flowers_image_numpy: np.ndarray,
@@ -238,7 +237,7 @@ def test_multi_label_onnx_dynamic_bs_package_numpy_custom_image_size(
     # given
     model = VITForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=flowers_multi_label_vit_onnx_dynamic_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -246,19 +245,18 @@ def test_multi_label_onnx_dynamic_bs_package_numpy_custom_image_size(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.0066, 0.0315, 0.9680]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.0066, 0.0315, 0.9680]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[0].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_label_onnx_dynamic_bs_package_batch_numpy(
     flowers_multi_label_vit_onnx_dynamic_bs_package: str,
     flowers_image_numpy: np.ndarray,
@@ -266,7 +264,7 @@ def test_multi_label_onnx_dynamic_bs_package_batch_numpy(
     # given
     model = VITForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=flowers_multi_label_vit_onnx_dynamic_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -274,28 +272,27 @@ def test_multi_label_onnx_dynamic_bs_package_batch_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.0066, 0.0315, 0.9680]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.0066, 0.0315, 0.9680]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[0].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.0066, 0.0315, 0.9680]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.0066, 0.0315, 0.9680]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[1].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_label_onnx_dynamic_bs_package_torch(
     flowers_multi_label_vit_onnx_dynamic_bs_package: str,
     flowers_image_torch: torch.Tensor,
@@ -303,7 +300,7 @@ def test_multi_label_onnx_dynamic_bs_package_torch(
     # given
     model = VITForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=flowers_multi_label_vit_onnx_dynamic_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -311,19 +308,18 @@ def test_multi_label_onnx_dynamic_bs_package_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.0066, 0.0315, 0.9680]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.0066, 0.0315, 0.9680]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[0].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_label_onnx_dynamic_bs_package_batch_torch(
     flowers_multi_label_vit_onnx_dynamic_bs_package: str,
     flowers_image_torch: torch.Tensor,
@@ -331,7 +327,7 @@ def test_multi_label_onnx_dynamic_bs_package_batch_torch(
     # given
     model = VITForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=flowers_multi_label_vit_onnx_dynamic_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -339,27 +335,26 @@ def test_multi_label_onnx_dynamic_bs_package_batch_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.0066, 0.0315, 0.9680]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.0066, 0.0315, 0.9680]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[0].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.0066, 0.0315, 0.9680]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.0066, 0.0315, 0.9680]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[1].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
 def test_multi_label_onnx_dynamic_bs_package_batch_torch_list(
     flowers_multi_label_vit_hf_package: str,
     flowers_image_torch: torch.Tensor,
@@ -367,7 +362,7 @@ def test_multi_label_onnx_dynamic_bs_package_batch_torch_list(
     # given
     model = VITForMultiLabelClassificationHF.from_pretrained(
         model_name_or_path=flowers_multi_label_vit_hf_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -375,28 +370,27 @@ def test_multi_label_onnx_dynamic_bs_package_batch_torch_list(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.0066, 0.0315, 0.9680]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.0066, 0.0315, 0.9680]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[0].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.0066, 0.0315, 0.9680]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.0066, 0.0315, 0.9680]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[1].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_label_onnx_static_bs_package_numpy(
     flowers_multi_label_vit_onnx_static_bs_package: str,
     flowers_image_numpy: np.ndarray,
@@ -404,7 +398,7 @@ def test_multi_label_onnx_static_bs_package_numpy(
     # given
     model = VITForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=flowers_multi_label_vit_onnx_static_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -412,19 +406,18 @@ def test_multi_label_onnx_static_bs_package_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.0066, 0.0315, 0.9680]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.0066, 0.0315, 0.9680]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[0].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_label_onnx_static_bs_package_numpy_custom_image_size(
     flowers_multi_label_vit_onnx_static_bs_package: str,
     flowers_image_numpy: np.ndarray,
@@ -432,7 +425,7 @@ def test_multi_label_onnx_static_bs_package_numpy_custom_image_size(
     # given
     model = VITForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=flowers_multi_label_vit_onnx_static_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -440,19 +433,18 @@ def test_multi_label_onnx_static_bs_package_numpy_custom_image_size(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.0066, 0.0315, 0.9680]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.0066, 0.0315, 0.9680]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[0].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_label_onnx_static_bs_package_batch_numpy(
     flowers_multi_label_vit_onnx_static_bs_package: str,
     flowers_image_numpy: np.ndarray,
@@ -460,7 +452,7 @@ def test_multi_label_onnx_static_bs_package_batch_numpy(
     # given
     model = VITForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=flowers_multi_label_vit_onnx_static_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -468,28 +460,27 @@ def test_multi_label_onnx_static_bs_package_batch_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.0066, 0.0315, 0.9680]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.0066, 0.0315, 0.9680]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[0].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.0066, 0.0315, 0.9680]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.0066, 0.0315, 0.9680]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[1].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_label_onnx_static_bs_package_torch(
     flowers_multi_label_vit_onnx_static_bs_package: str,
     flowers_image_torch: torch.Tensor,
@@ -497,7 +488,7 @@ def test_multi_label_onnx_static_bs_package_torch(
     # given
     model = VITForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=flowers_multi_label_vit_onnx_static_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -505,19 +496,18 @@ def test_multi_label_onnx_static_bs_package_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.0066, 0.0315, 0.9680]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.0066, 0.0315, 0.9680]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[0].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_label_onnx_static_bs_package_batch_torch(
     flowers_multi_label_vit_onnx_static_bs_package: str,
     flowers_image_torch: torch.Tensor,
@@ -525,7 +515,7 @@ def test_multi_label_onnx_static_bs_package_batch_torch(
     # given
     model = VITForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=flowers_multi_label_vit_onnx_static_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -533,28 +523,27 @@ def test_multi_label_onnx_static_bs_package_batch_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.0066, 0.0315, 0.9680]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.0066, 0.0315, 0.9680]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[0].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.0066, 0.0315, 0.9680]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.0066, 0.0315, 0.9680]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[1].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_label_onnx_static_bs_package_batch_torch_list(
     flowers_multi_label_vit_onnx_static_bs_package: str,
     flowers_image_torch: torch.Tensor,
@@ -562,7 +551,7 @@ def test_multi_label_onnx_static_bs_package_batch_torch_list(
     # given
     model = VITForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=flowers_multi_label_vit_onnx_static_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -570,27 +559,27 @@ def test_multi_label_onnx_static_bs_package_batch_torch_list(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.0066, 0.0315, 0.9680]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.0066, 0.0315, 0.9680]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[0].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.0066, 0.0315, 0.9680]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.0066, 0.0315, 0.9680]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[1].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_multi_class_hf_package_numpy(
     vehicles_multi_class_vit_hf_package: str,
     bike_image_numpy: np.ndarray,
@@ -598,7 +587,7 @@ def test_multi_class_hf_package_numpy(
     # given
     model = VITForClassificationHF.from_pretrained(
         model_name_or_path=vehicles_multi_class_vit_hf_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -606,18 +595,18 @@ def test_multi_class_hf_package_numpy(
 
     # then
     assert torch.allclose(
-        predictions.confidence,
-        torch.tensor([[0.9974, 0.0013, 0.0012]]),
+        predictions.confidence.cpu(),
+        torch.tensor([[0.9974, 0.0013, 0.0012]]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
         predictions.class_id,
-        torch.tensor([0], dtype=torch.int64),
+        torch.tensor([0], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_multi_class_hf_package_numpy_custom_image_size(
     vehicles_multi_class_vit_hf_package: str,
     bike_image_numpy: np.ndarray,
@@ -625,7 +614,7 @@ def test_multi_class_hf_package_numpy_custom_image_size(
     # given
     model = VITForClassificationHF.from_pretrained(
         model_name_or_path=vehicles_multi_class_vit_hf_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -633,18 +622,18 @@ def test_multi_class_hf_package_numpy_custom_image_size(
 
     # then
     assert torch.allclose(
-        predictions.confidence,
-        torch.tensor([[0.9974, 0.0013, 0.0012]]),
+        predictions.confidence.cpu(),
+        torch.tensor([[0.9974, 0.0013, 0.0012]]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
         predictions.class_id,
-        torch.tensor([0], dtype=torch.int64),
+        torch.tensor([0], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_multi_class_hf_package_batch_numpy(
     vehicles_multi_class_vit_hf_package: str,
     bike_image_numpy: np.ndarray,
@@ -652,7 +641,7 @@ def test_multi_class_hf_package_batch_numpy(
     # given
     model = VITForClassificationHF.from_pretrained(
         model_name_or_path=vehicles_multi_class_vit_hf_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -660,18 +649,18 @@ def test_multi_class_hf_package_batch_numpy(
 
     # then
     assert torch.allclose(
-        predictions.confidence,
-        torch.tensor([[0.9974, 0.0013, 0.0012], [0.9974, 0.0013, 0.0012]]),
+        predictions.confidence.cpu(),
+        torch.tensor([[0.9974, 0.0013, 0.0012], [0.9974, 0.0013, 0.0012]]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
         predictions.class_id,
-        torch.tensor([0, 0], dtype=torch.int64),
+        torch.tensor([0, 0], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_multi_class_hf_package_torch(
     vehicles_multi_class_vit_hf_package: str,
     bike_image_torch: torch.Tensor,
@@ -679,7 +668,7 @@ def test_multi_class_hf_package_torch(
     # given
     model = VITForClassificationHF.from_pretrained(
         model_name_or_path=vehicles_multi_class_vit_hf_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -687,18 +676,18 @@ def test_multi_class_hf_package_torch(
 
     # then
     assert torch.allclose(
-        predictions.confidence,
-        torch.tensor([[0.9974, 0.0013, 0.0012]]),
+        predictions.confidence.cpu(),
+        torch.tensor([[0.9974, 0.0013, 0.0012]]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
         predictions.class_id,
-        torch.tensor([0], dtype=torch.int64),
+        torch.tensor([0], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_multi_class_hf_package_batch_torch(
     vehicles_multi_class_vit_hf_package: str,
     bike_image_torch: torch.Tensor,
@@ -706,7 +695,7 @@ def test_multi_class_hf_package_batch_torch(
     # given
     model = VITForClassificationHF.from_pretrained(
         model_name_or_path=vehicles_multi_class_vit_hf_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -714,18 +703,18 @@ def test_multi_class_hf_package_batch_torch(
 
     # then
     assert torch.allclose(
-        predictions.confidence,
-        torch.tensor([[0.9974, 0.0013, 0.0012], [0.9974, 0.0013, 0.0012]]),
+        predictions.confidence.cpu(),
+        torch.tensor([[0.9974, 0.0013, 0.0012], [0.9974, 0.0013, 0.0012]]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
         predictions.class_id,
-        torch.tensor([0, 0], dtype=torch.int64),
+        torch.tensor([0, 0], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_multi_class_hf_package_batch_torch_list(
     vehicles_multi_class_vit_hf_package: str,
     bike_image_torch: torch.Tensor,
@@ -733,7 +722,7 @@ def test_multi_class_hf_package_batch_torch_list(
     # given
     model = VITForClassificationHF.from_pretrained(
         model_name_or_path=vehicles_multi_class_vit_hf_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -741,19 +730,18 @@ def test_multi_class_hf_package_batch_torch_list(
 
     # then
     assert torch.allclose(
-        predictions.confidence,
-        torch.tensor([[0.9974, 0.0013, 0.0012], [0.9974, 0.0013, 0.0012]]),
+        predictions.confidence.cpu(),
+        torch.tensor([[0.9974, 0.0013, 0.0012], [0.9974, 0.0013, 0.0012]]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
         predictions.class_id,
-        torch.tensor([0, 0], dtype=torch.int64),
+        torch.tensor([0, 0], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_class_onnx_dynamic_bs_package_numpy(
     vehicles_multi_class_vit_onnx_dynamic_bs_package: str,
     bike_image_numpy: np.ndarray,
@@ -761,7 +749,7 @@ def test_multi_class_onnx_dynamic_bs_package_numpy(
     # given
     model = VITForClassificationOnnx.from_pretrained(
         model_name_or_path=vehicles_multi_class_vit_onnx_dynamic_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -769,19 +757,18 @@ def test_multi_class_onnx_dynamic_bs_package_numpy(
 
     # then
     assert torch.allclose(
-        predictions.confidence,
-        torch.tensor([[0.9974, 0.0013, 0.0012]]),
+        predictions.confidence.cpu(),
+        torch.tensor([[0.9974, 0.0013, 0.0012]]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
         predictions.class_id,
-        torch.tensor([0], dtype=torch.int64),
+        torch.tensor([0], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_class_onnx_dynamic_bs_package_numpy_custom_image_size(
     vehicles_multi_class_vit_onnx_dynamic_bs_package: str,
     bike_image_numpy: np.ndarray,
@@ -789,7 +776,7 @@ def test_multi_class_onnx_dynamic_bs_package_numpy_custom_image_size(
     # given
     model = VITForClassificationOnnx.from_pretrained(
         model_name_or_path=vehicles_multi_class_vit_onnx_dynamic_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -797,19 +784,18 @@ def test_multi_class_onnx_dynamic_bs_package_numpy_custom_image_size(
 
     # then
     assert torch.allclose(
-        predictions.confidence,
-        torch.tensor([[0.9974, 0.0013, 0.0012]]),
+        predictions.confidence.cpu(),
+        torch.tensor([[0.9974, 0.0013, 0.0012]]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
         predictions.class_id,
-        torch.tensor([0], dtype=torch.int64),
+        torch.tensor([0], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_class_onnx_dynamic_bs_package_batch_numpy(
     vehicles_multi_class_vit_onnx_dynamic_bs_package: str,
     bike_image_numpy: np.ndarray,
@@ -817,7 +803,7 @@ def test_multi_class_onnx_dynamic_bs_package_batch_numpy(
     # given
     model = VITForClassificationOnnx.from_pretrained(
         model_name_or_path=vehicles_multi_class_vit_onnx_dynamic_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -825,19 +811,18 @@ def test_multi_class_onnx_dynamic_bs_package_batch_numpy(
 
     # then
     assert torch.allclose(
-        predictions.confidence,
-        torch.tensor([[0.9974, 0.0013, 0.0012], [0.9974, 0.0013, 0.0012]]),
+        predictions.confidence.cpu(),
+        torch.tensor([[0.9974, 0.0013, 0.0012], [0.9974, 0.0013, 0.0012]]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
         predictions.class_id,
-        torch.tensor([0, 0], dtype=torch.int64),
+        torch.tensor([0, 0], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_class_onnx_dynamic_bs_package_torch(
     vehicles_multi_class_vit_onnx_dynamic_bs_package: str,
     bike_image_torch: torch.Tensor,
@@ -845,7 +830,7 @@ def test_multi_class_onnx_dynamic_bs_package_torch(
     # given
     model = VITForClassificationOnnx.from_pretrained(
         model_name_or_path=vehicles_multi_class_vit_onnx_dynamic_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -853,19 +838,18 @@ def test_multi_class_onnx_dynamic_bs_package_torch(
 
     # then
     assert torch.allclose(
-        predictions.confidence,
-        torch.tensor([[0.9974, 0.0013, 0.0012]]),
+        predictions.confidence.cpu(),
+        torch.tensor([[0.9974, 0.0013, 0.0012]]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
         predictions.class_id,
-        torch.tensor([0], dtype=torch.int64),
+        torch.tensor([0], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_class_onnx_dynamic_bs_package_batch_torch(
     vehicles_multi_class_vit_onnx_dynamic_bs_package: str,
     bike_image_torch: torch.Tensor,
@@ -873,7 +857,7 @@ def test_multi_class_onnx_dynamic_bs_package_batch_torch(
     # given
     model = VITForClassificationOnnx.from_pretrained(
         model_name_or_path=vehicles_multi_class_vit_onnx_dynamic_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -881,19 +865,18 @@ def test_multi_class_onnx_dynamic_bs_package_batch_torch(
 
     # then
     assert torch.allclose(
-        predictions.confidence,
-        torch.tensor([[0.9974, 0.0013, 0.0012], [0.9974, 0.0013, 0.0012]]),
+        predictions.confidence.cpu(),
+        torch.tensor([[0.9974, 0.0013, 0.0012], [0.9974, 0.0013, 0.0012]]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
         predictions.class_id,
-        torch.tensor([0, 0], dtype=torch.int64),
+        torch.tensor([0, 0], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_class_onnx_dynamic_bs_package_batch_torch_list(
     vehicles_multi_class_vit_onnx_dynamic_bs_package: str,
     bike_image_torch: torch.Tensor,
@@ -901,7 +884,7 @@ def test_multi_class_onnx_dynamic_bs_package_batch_torch_list(
     # given
     model = VITForClassificationOnnx.from_pretrained(
         model_name_or_path=vehicles_multi_class_vit_onnx_dynamic_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -909,19 +892,18 @@ def test_multi_class_onnx_dynamic_bs_package_batch_torch_list(
 
     # then
     assert torch.allclose(
-        predictions.confidence,
-        torch.tensor([[0.9974, 0.0013, 0.0012], [0.9974, 0.0013, 0.0012]]),
+        predictions.confidence.cpu(),
+        torch.tensor([[0.9974, 0.0013, 0.0012], [0.9974, 0.0013, 0.0012]]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
         predictions.class_id,
-        torch.tensor([0, 0], dtype=torch.int64),
+        torch.tensor([0, 0], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_class_onnx_static_bs_package_numpy(
     vehicles_multi_class_vit_onnx_static_bs_package: str,
     bike_image_numpy: np.ndarray,
@@ -929,7 +911,7 @@ def test_multi_class_onnx_static_bs_package_numpy(
     # given
     model = VITForClassificationOnnx.from_pretrained(
         model_name_or_path=vehicles_multi_class_vit_onnx_static_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -937,19 +919,18 @@ def test_multi_class_onnx_static_bs_package_numpy(
 
     # then
     assert torch.allclose(
-        predictions.confidence,
-        torch.tensor([[0.9974, 0.0013, 0.0012]]),
+        predictions.confidence.cpu(),
+        torch.tensor([[0.9974, 0.0013, 0.0012]]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
         predictions.class_id,
-        torch.tensor([0], dtype=torch.int64),
+        torch.tensor([0], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_class_onnx_static_bs_package_numpy_custom_image_size(
     vehicles_multi_class_vit_onnx_static_bs_package: str,
     bike_image_numpy: np.ndarray,
@@ -957,7 +938,7 @@ def test_multi_class_onnx_static_bs_package_numpy_custom_image_size(
     # given
     model = VITForClassificationOnnx.from_pretrained(
         model_name_or_path=vehicles_multi_class_vit_onnx_static_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -965,19 +946,18 @@ def test_multi_class_onnx_static_bs_package_numpy_custom_image_size(
 
     # then
     assert torch.allclose(
-        predictions.confidence,
-        torch.tensor([[0.9974, 0.0013, 0.0012]]),
+        predictions.confidence.cpu(),
+        torch.tensor([[0.9974, 0.0013, 0.0012]]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
         predictions.class_id,
-        torch.tensor([0], dtype=torch.int64),
+        torch.tensor([0], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_class_onnx_static_bs_package_batch_numpy(
     vehicles_multi_class_vit_onnx_static_bs_package: str,
     bike_image_numpy: np.ndarray,
@@ -985,7 +965,7 @@ def test_multi_class_onnx_static_bs_package_batch_numpy(
     # given
     model = VITForClassificationOnnx.from_pretrained(
         model_name_or_path=vehicles_multi_class_vit_onnx_static_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -993,19 +973,18 @@ def test_multi_class_onnx_static_bs_package_batch_numpy(
 
     # then
     assert torch.allclose(
-        predictions.confidence,
-        torch.tensor([[0.9974, 0.0013, 0.0012], [0.9974, 0.0013, 0.0012]]),
+        predictions.confidence.cpu(),
+        torch.tensor([[0.9974, 0.0013, 0.0012], [0.9974, 0.0013, 0.0012]]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
         predictions.class_id,
-        torch.tensor([0, 0], dtype=torch.int64),
+        torch.tensor([0, 0], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_class_onnx_static_bs_package_torch(
     vehicles_multi_class_vit_onnx_static_bs_package: str,
     bike_image_torch: torch.Tensor,
@@ -1013,7 +992,7 @@ def test_multi_class_onnx_static_bs_package_torch(
     # given
     model = VITForClassificationOnnx.from_pretrained(
         model_name_or_path=vehicles_multi_class_vit_onnx_static_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -1021,19 +1000,18 @@ def test_multi_class_onnx_static_bs_package_torch(
 
     # then
     assert torch.allclose(
-        predictions.confidence,
-        torch.tensor([[0.9974, 0.0013, 0.0012]]),
+        predictions.confidence.cpu(),
+        torch.tensor([[0.9974, 0.0013, 0.0012]]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
         predictions.class_id,
-        torch.tensor([0], dtype=torch.int64),
+        torch.tensor([0], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_class_onnx_static_bs_package_batch_torch(
     vehicles_multi_class_vit_onnx_static_bs_package: str,
     bike_image_torch: torch.Tensor,
@@ -1041,7 +1019,7 @@ def test_multi_class_onnx_static_bs_package_batch_torch(
     # given
     model = VITForClassificationOnnx.from_pretrained(
         model_name_or_path=vehicles_multi_class_vit_onnx_static_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -1049,19 +1027,18 @@ def test_multi_class_onnx_static_bs_package_batch_torch(
 
     # then
     assert torch.allclose(
-        predictions.confidence,
-        torch.tensor([[0.9974, 0.0013, 0.0012], [0.9974, 0.0013, 0.0012]]),
+        predictions.confidence.cpu(),
+        torch.tensor([[0.9974, 0.0013, 0.0012], [0.9974, 0.0013, 0.0012]]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
         predictions.class_id,
-        torch.tensor([0, 0], dtype=torch.int64),
+        torch.tensor([0, 0], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_class_onnx_static_bs_package_batch_torch_list(
     vehicles_multi_class_vit_onnx_static_bs_package: str,
     bike_image_torch: torch.Tensor,
@@ -1069,7 +1046,7 @@ def test_multi_class_onnx_static_bs_package_batch_torch_list(
     # given
     model = VITForClassificationOnnx.from_pretrained(
         model_name_or_path=vehicles_multi_class_vit_onnx_static_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -1077,11 +1054,11 @@ def test_multi_class_onnx_static_bs_package_batch_torch_list(
 
     # then
     assert torch.allclose(
-        predictions.confidence,
-        torch.tensor([[0.9974, 0.0013, 0.0012], [0.9974, 0.0013, 0.0012]]),
+        predictions.confidence.cpu(),
+        torch.tensor([[0.9974, 0.0013, 0.0012], [0.9974, 0.0013, 0.0012]]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
         predictions.class_id,
-        torch.tensor([0, 0], dtype=torch.int64),
+        torch.tensor([0, 0], dtype=torch.int64).cpu(),
     )

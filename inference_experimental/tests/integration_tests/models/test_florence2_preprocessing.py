@@ -16,28 +16,28 @@ def get_preprocessed_outputs(
 ):
     prompt = "<OD>"
     # Process single numpy image (BGR)
-    numpy_output, _ = florence2_model.pre_process_generation(
+    numpy_output, _, _ = florence2_model.pre_process_generation(
         images=dog_image_numpy, prompt=prompt
     )
 
     # Process single torch tensor (RGB)
-    tensor_output, _ = florence2_model.pre_process_generation(
+    tensor_output, _, _ = florence2_model.pre_process_generation(
         images=dog_image_torch, prompt=prompt
     )
 
     # Process list of numpy images
-    list_numpy_output, _ = florence2_model.pre_process_generation(
+    list_numpy_output, _, _ = florence2_model.pre_process_generation(
         images=[dog_image_numpy, dog_image_numpy], prompt=prompt
     )
 
     # Process list of torch tensors
-    list_tensor_output, _ = florence2_model.pre_process_generation(
+    list_tensor_output, _, _ = florence2_model.pre_process_generation(
         images=[dog_image_torch, dog_image_torch], prompt=prompt
     )
 
     # Process batched tensor
     batched_tensor = torch.stack([dog_image_torch, dog_image_torch])
-    batched_tensor_output, _ = florence2_model.pre_process_generation(
+    batched_tensor_output, _, _ = florence2_model.pre_process_generation(
         images=batched_tensor, prompt=prompt
     )
 
@@ -51,6 +51,7 @@ def get_preprocessed_outputs(
 
 
 @pytest.mark.slow
+@pytest.mark.hf_vlm_models
 def test_preprocessed_output_shapes(
     florence2_model: Florence2HF,
     dog_image_numpy: np.ndarray,
@@ -88,6 +89,7 @@ def test_preprocessed_output_shapes(
 
 
 @pytest.mark.slow
+@pytest.mark.hf_vlm_models
 def test_internal_consistency_of_preprocessed_inputs(
     florence2_model: Florence2HF,
     dog_image_numpy: np.ndarray,

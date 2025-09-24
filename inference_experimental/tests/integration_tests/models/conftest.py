@@ -179,7 +179,7 @@ def florence2_base_ft_path() -> str:
     zip_path = os.path.join(package_dir, "base-ft.zip")
     _download_if_not_exists(file_path=zip_path, url=FLORENCE2_BASE_FT_URL)
     lock_path = f"{unzipped_package_path}.lock"
-    with FileLock(lock_path, timeout=120):
+    with FileLock(lock_path, timeout=180):
         if not os.path.exists(unzipped_package_path):
             with zipfile.ZipFile(zip_path, "r") as zip_ref:
                 zip_ref.extractall(package_dir)
@@ -194,7 +194,7 @@ def florence2_large_ft_path() -> str:
     zip_path = os.path.join(package_dir, "large-ft.zip")
     _download_if_not_exists(file_path=zip_path, url=FLORENCE2_LARGE_FT_URL)
     lock_path = f"{unzipped_package_path}.lock"
-    with FileLock(lock_path, timeout=120):
+    with FileLock(lock_path, timeout=180):
         if not os.path.exists(unzipped_package_path):
             with zipfile.ZipFile(zip_path, "r") as zip_ref:
                 zip_ref.extractall(package_dir)
@@ -209,7 +209,7 @@ def qwen25vl_3b_path() -> str:
     zip_path = os.path.join(package_dir, "qwen25vl-3b.zip")
     _download_if_not_exists(file_path=zip_path, url=QWEN25VL_3B_FT_URL)
     lock_path = f"{unzipped_package_path}.lock"
-    with FileLock(lock_path, timeout=120):
+    with FileLock(lock_path, timeout=180):
         if not os.path.exists(unzipped_package_path):
             with zipfile.ZipFile(zip_path, "r") as zip_ref:
                 zip_ref.extractall(package_dir)
@@ -224,7 +224,7 @@ def paligemma_3b_224_path() -> str:
     zip_path = os.path.join(package_dir, "paligemma2-3b-pt-224.zip")
     _download_if_not_exists(file_path=zip_path, url=PALIGEMMA_BASE_FT_URL)
     lock_path = f"{unzipped_package_path}.lock"
-    with FileLock(lock_path, timeout=120):
+    with FileLock(lock_path, timeout=180):
         if not os.path.exists(unzipped_package_path):
             with zipfile.ZipFile(zip_path, "r") as zip_ref:
                 zip_ref.extractall(package_dir)
@@ -239,7 +239,7 @@ def smolvlm_256m_path() -> str:
     zip_path = os.path.join(package_dir, "smolvlm-256m.zip")
     _download_if_not_exists(file_path=zip_path, url=SMOLVLM_BASE_FT_URL)
     lock_path = f"{unzipped_package_path}.lock"
-    with FileLock(lock_path, timeout=120):
+    with FileLock(lock_path, timeout=180):
         if not os.path.exists(unzipped_package_path):
             with zipfile.ZipFile(zip_path, "r") as zip_ref:
                 zip_ref.extractall(package_dir)
@@ -254,7 +254,7 @@ def moondream2_path() -> str:
     zip_path = os.path.join(package_dir, "moondream2-2b.zip")
     _download_if_not_exists(file_path=zip_path, url=MOONDREAM2_BASE_FT_URL)
     lock_path = f"{unzipped_package_path}.lock"
-    with FileLock(lock_path, timeout=120):
+    with FileLock(lock_path, timeout=180):
         if not os.path.exists(unzipped_package_path):
             with zipfile.ZipFile(zip_path, "r") as zip_ref:
                 zip_ref.extractall(package_dir)
@@ -271,7 +271,7 @@ def download_model_package(
     zip_path = os.path.join(package_dir, "package.zip")
     _download_if_not_exists(file_path=zip_path, url=model_package_zip_url)
     lock_path = f"{unzipped_package_path}.lock"
-    with FileLock(lock_path, timeout=120):
+    with FileLock(lock_path, timeout=180):
         if not os.path.exists(unzipped_package_path):
             with zipfile.ZipFile(zip_path, "r") as zip_ref:
                 zip_ref.extractall(unzipped_package_path)

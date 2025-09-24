@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 import torch
+from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.models.resnet.resnet_classification_onnx import (
     ResNetForClassificationOnnx,
     ResNetForMultiLabelClassificationOnnx,
@@ -12,7 +13,7 @@ from inference_exp.models.resnet.resnet_classification_torch import (
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_multi_label_torch_package_numpy(
     flowers_multi_label_resnet_torch_package: str,
     flowers_image_numpy: np.ndarray,
@@ -20,7 +21,7 @@ def test_multi_label_torch_package_numpy(
     # given
     model = ResNetForMultiLabelClassificationTorch.from_pretrained(
         model_name_or_path=flowers_multi_label_resnet_torch_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -28,18 +29,18 @@ def test_multi_label_torch_package_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[0].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_multi_label_torch_package_numpy_custom_image_size(
     flowers_multi_label_resnet_torch_package: str,
     flowers_image_numpy: np.ndarray,
@@ -47,7 +48,7 @@ def test_multi_label_torch_package_numpy_custom_image_size(
     # given
     model = ResNetForMultiLabelClassificationTorch.from_pretrained(
         model_name_or_path=flowers_multi_label_resnet_torch_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -55,18 +56,18 @@ def test_multi_label_torch_package_numpy_custom_image_size(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([3.5349e-04, 9.9397e-01, 8.3731e-03]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([3.5349e-04, 9.9397e-01, 8.3731e-03]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_ids,
-        torch.tensor([1], dtype=torch.int64),
+        predictions[0].class_ids.cpu(),
+        torch.tensor([1], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_multi_label_torch_package_batch_numpy(
     flowers_multi_label_resnet_torch_package: str,
     flowers_image_numpy: np.ndarray,
@@ -74,7 +75,7 @@ def test_multi_label_torch_package_batch_numpy(
     # given
     model = ResNetForMultiLabelClassificationTorch.from_pretrained(
         model_name_or_path=flowers_multi_label_resnet_torch_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -82,27 +83,27 @@ def test_multi_label_torch_package_batch_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[0].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[1].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_multi_label_torch_package_torch(
     flowers_multi_label_resnet_torch_package: str,
     flowers_image_torch: torch.Tensor,
@@ -110,7 +111,7 @@ def test_multi_label_torch_package_torch(
     # given
     model = ResNetForMultiLabelClassificationTorch.from_pretrained(
         model_name_or_path=flowers_multi_label_resnet_torch_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -118,18 +119,18 @@ def test_multi_label_torch_package_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[0].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_multi_label_torch_package_batch_torch(
     flowers_multi_label_resnet_torch_package: str,
     flowers_image_torch: torch.Tensor,
@@ -137,7 +138,7 @@ def test_multi_label_torch_package_batch_torch(
     # given
     model = ResNetForMultiLabelClassificationTorch.from_pretrained(
         model_name_or_path=flowers_multi_label_resnet_torch_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -145,27 +146,27 @@ def test_multi_label_torch_package_batch_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[0].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[1].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_multi_label_torch_package_batch_torch_list(
     flowers_multi_label_resnet_torch_package: str,
     flowers_image_torch: torch.Tensor,
@@ -173,7 +174,7 @@ def test_multi_label_torch_package_batch_torch_list(
     # given
     model = ResNetForMultiLabelClassificationTorch.from_pretrained(
         model_name_or_path=flowers_multi_label_resnet_torch_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -181,28 +182,27 @@ def test_multi_label_torch_package_batch_torch_list(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[0].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[1].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_label_onnx_dynamic_bs_package_numpy(
     flowers_multi_label_resnet_onnx_dynamic_bs_package: str,
     flowers_image_numpy: np.ndarray,
@@ -210,7 +210,7 @@ def test_multi_label_onnx_dynamic_bs_package_numpy(
     # given
     model = ResNetForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=flowers_multi_label_resnet_onnx_dynamic_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -218,19 +218,18 @@ def test_multi_label_onnx_dynamic_bs_package_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[0].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_label_onnx_dynamic_bs_package_numpy_custom_image_size(
     flowers_multi_label_resnet_onnx_dynamic_bs_package: str,
     flowers_image_numpy: np.ndarray,
@@ -238,7 +237,7 @@ def test_multi_label_onnx_dynamic_bs_package_numpy_custom_image_size(
     # given
     model = ResNetForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=flowers_multi_label_resnet_onnx_dynamic_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -246,19 +245,18 @@ def test_multi_label_onnx_dynamic_bs_package_numpy_custom_image_size(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([3.5349e-04, 9.9397e-01, 8.3731e-03]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([3.5349e-04, 9.9397e-01, 8.3731e-03]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_ids,
-        torch.tensor([1], dtype=torch.int64),
+        predictions[0].class_ids.cpu(),
+        torch.tensor([1], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_label_onnx_dynamic_bs_package_batch_numpy(
     flowers_multi_label_resnet_onnx_dynamic_bs_package: str,
     flowers_image_numpy: np.ndarray,
@@ -266,7 +264,7 @@ def test_multi_label_onnx_dynamic_bs_package_batch_numpy(
     # given
     model = ResNetForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=flowers_multi_label_resnet_onnx_dynamic_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -274,28 +272,27 @@ def test_multi_label_onnx_dynamic_bs_package_batch_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[0].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[1].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_label_onnx_dynamic_bs_package_torch(
     flowers_multi_label_resnet_onnx_dynamic_bs_package: str,
     flowers_image_torch: torch.Tensor,
@@ -303,7 +300,7 @@ def test_multi_label_onnx_dynamic_bs_package_torch(
     # given
     model = ResNetForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=flowers_multi_label_resnet_onnx_dynamic_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -311,19 +308,18 @@ def test_multi_label_onnx_dynamic_bs_package_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[0].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_label_onnx_dynamic_bs_package_batch_torch(
     flowers_multi_label_resnet_onnx_dynamic_bs_package: str,
     flowers_image_torch: torch.Tensor,
@@ -331,7 +327,7 @@ def test_multi_label_onnx_dynamic_bs_package_batch_torch(
     # given
     model = ResNetForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=flowers_multi_label_resnet_onnx_dynamic_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -339,28 +335,27 @@ def test_multi_label_onnx_dynamic_bs_package_batch_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[0].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[1].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_label_onnx_dynamic_bs_package_batch_torch_list(
     flowers_multi_label_resnet_onnx_dynamic_bs_package: str,
     flowers_image_torch: torch.Tensor,
@@ -368,7 +363,7 @@ def test_multi_label_onnx_dynamic_bs_package_batch_torch_list(
     # given
     model = ResNetForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=flowers_multi_label_resnet_onnx_dynamic_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -376,28 +371,27 @@ def test_multi_label_onnx_dynamic_bs_package_batch_torch_list(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[0].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[1].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_label_onnx_static_bs_package_numpy(
     flowers_multi_label_resnet_onnx_static_bs_package: str,
     flowers_image_numpy: np.ndarray,
@@ -405,7 +399,7 @@ def test_multi_label_onnx_static_bs_package_numpy(
     # given
     model = ResNetForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=flowers_multi_label_resnet_onnx_static_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -413,19 +407,18 @@ def test_multi_label_onnx_static_bs_package_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[0].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_label_onnx_static_bs_package_numpy_custom_image_size(
     flowers_multi_label_resnet_onnx_static_bs_package: str,
     flowers_image_numpy: np.ndarray,
@@ -433,7 +426,7 @@ def test_multi_label_onnx_static_bs_package_numpy_custom_image_size(
     # given
     model = ResNetForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=flowers_multi_label_resnet_onnx_static_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -441,19 +434,18 @@ def test_multi_label_onnx_static_bs_package_numpy_custom_image_size(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[0].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_label_onnx_static_bs_package_batch_numpy(
     flowers_multi_label_resnet_onnx_static_bs_package: str,
     flowers_image_numpy: np.ndarray,
@@ -461,7 +453,7 @@ def test_multi_label_onnx_static_bs_package_batch_numpy(
     # given
     model = ResNetForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=flowers_multi_label_resnet_onnx_static_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -469,28 +461,27 @@ def test_multi_label_onnx_static_bs_package_batch_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[0].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[1].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_label_onnx_static_bs_package_torch(
     flowers_multi_label_resnet_onnx_static_bs_package: str,
     flowers_image_torch: torch.Tensor,
@@ -498,7 +489,7 @@ def test_multi_label_onnx_static_bs_package_torch(
     # given
     model = ResNetForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=flowers_multi_label_resnet_onnx_static_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -506,19 +497,18 @@ def test_multi_label_onnx_static_bs_package_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[0].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_label_onnx_static_bs_package_batch_torch(
     flowers_multi_label_resnet_onnx_static_bs_package: str,
     flowers_image_torch: torch.Tensor,
@@ -526,7 +516,7 @@ def test_multi_label_onnx_static_bs_package_batch_torch(
     # given
     model = ResNetForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=flowers_multi_label_resnet_onnx_static_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -534,28 +524,27 @@ def test_multi_label_onnx_static_bs_package_batch_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[0].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[1].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_label_onnx_static_bs_package_batch_torch_list(
     flowers_multi_label_resnet_onnx_static_bs_package: str,
     flowers_image_torch: torch.Tensor,
@@ -563,7 +552,7 @@ def test_multi_label_onnx_static_bs_package_batch_torch_list(
     # given
     model = ResNetForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=flowers_multi_label_resnet_onnx_static_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -571,27 +560,27 @@ def test_multi_label_onnx_static_bs_package_batch_torch_list(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([7.3851e-05, 2.3921e-01, 7.9376e-01]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[0].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_ids,
-        torch.tensor([2], dtype=torch.int64),
+        predictions[1].class_ids.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_multi_class_torch_package_numpy(
     vehicles_multi_class_resenet_torch_package: str,
     bike_image_numpy: np.ndarray,
@@ -599,7 +588,7 @@ def test_multi_class_torch_package_numpy(
     # given
     model = ResNetForClassificationTorch.from_pretrained(
         model_name_or_path=vehicles_multi_class_resenet_torch_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -607,18 +596,18 @@ def test_multi_class_torch_package_numpy(
 
     # then
     assert torch.allclose(
-        predictions.confidence,
-        torch.tensor([[0.0065, 0.2892, 0.7043]]),
+        predictions.confidence.cpu(),
+        torch.tensor([[0.0065, 0.2892, 0.7043]]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions.class_id,
-        torch.tensor([2], dtype=torch.int64),
+        predictions.class_id.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_multi_class_torch_package_numpy_custom_image_size(
     vehicles_multi_class_resenet_torch_package: str,
     bike_image_numpy: np.ndarray,
@@ -626,7 +615,7 @@ def test_multi_class_torch_package_numpy_custom_image_size(
     # given
     model = ResNetForClassificationTorch.from_pretrained(
         model_name_or_path=vehicles_multi_class_resenet_torch_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -634,18 +623,18 @@ def test_multi_class_torch_package_numpy_custom_image_size(
 
     # then
     assert torch.allclose(
-        predictions.confidence,
-        torch.tensor([[0.0341, 0.6881, 0.2777]]),
+        predictions.confidence.cpu(),
+        torch.tensor([[0.0341, 0.6881, 0.2777]]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions.class_id,
-        torch.tensor([1], dtype=torch.int64),
+        predictions.class_id.cpu(),
+        torch.tensor([1], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_multi_class_torch_package_batch_numpy(
     vehicles_multi_class_resenet_torch_package: str,
     bike_image_numpy: np.ndarray,
@@ -653,7 +642,7 @@ def test_multi_class_torch_package_batch_numpy(
     # given
     model = ResNetForClassificationTorch.from_pretrained(
         model_name_or_path=vehicles_multi_class_resenet_torch_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -661,18 +650,18 @@ def test_multi_class_torch_package_batch_numpy(
 
     # then
     assert torch.allclose(
-        predictions.confidence,
-        torch.tensor([[0.0065, 0.2892, 0.7043], [0.0065, 0.2892, 0.7043]]),
+        predictions.confidence.cpu(),
+        torch.tensor([[0.0065, 0.2892, 0.7043], [0.0065, 0.2892, 0.7043]]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions.class_id,
-        torch.tensor([2, 2], dtype=torch.int64),
+        predictions.class_id.cpu(),
+        torch.tensor([2, 2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_multi_class_torch_package_torch(
     vehicles_multi_class_resenet_torch_package: str,
     bike_image_torch: torch.Tensor,
@@ -680,7 +669,7 @@ def test_multi_class_torch_package_torch(
     # given
     model = ResNetForClassificationTorch.from_pretrained(
         model_name_or_path=vehicles_multi_class_resenet_torch_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -688,18 +677,18 @@ def test_multi_class_torch_package_torch(
 
     # then
     assert torch.allclose(
-        predictions.confidence,
-        torch.tensor([[0.0065, 0.2892, 0.7043]]),
+        predictions.confidence.cpu(),
+        torch.tensor([[0.0065, 0.2892, 0.7043]]).cpu(),
         atol=0.02,
     )
     assert torch.allclose(
-        predictions.class_id,
-        torch.tensor([2], dtype=torch.int64),
+        predictions.class_id.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_multi_class_torch_package_batch_torch(
     vehicles_multi_class_resenet_torch_package: str,
     bike_image_torch: torch.Tensor,
@@ -707,7 +696,7 @@ def test_multi_class_torch_package_batch_torch(
     # given
     model = ResNetForClassificationTorch.from_pretrained(
         model_name_or_path=vehicles_multi_class_resenet_torch_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -715,18 +704,18 @@ def test_multi_class_torch_package_batch_torch(
 
     # then
     assert torch.allclose(
-        predictions.confidence,
-        torch.tensor([[0.0065, 0.2892, 0.7043], [0.0065, 0.2892, 0.7043]]),
+        predictions.confidence.cpu(),
+        torch.tensor([[0.0065, 0.2892, 0.7043], [0.0065, 0.2892, 0.7043]]).cpu(),
         atol=0.02,
     )
     assert torch.allclose(
-        predictions.class_id,
-        torch.tensor([2, 2], dtype=torch.int64),
+        predictions.class_id.cpu(),
+        torch.tensor([2, 2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_multi_class_torch_package_batch_torch_list(
     vehicles_multi_class_resenet_torch_package: str,
     bike_image_torch: torch.Tensor,
@@ -734,7 +723,7 @@ def test_multi_class_torch_package_batch_torch_list(
     # given
     model = ResNetForClassificationTorch.from_pretrained(
         model_name_or_path=vehicles_multi_class_resenet_torch_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -742,19 +731,18 @@ def test_multi_class_torch_package_batch_torch_list(
 
     # then
     assert torch.allclose(
-        predictions.confidence,
-        torch.tensor([[0.0065, 0.2892, 0.7043], [0.0065, 0.2892, 0.7043]]),
+        predictions.confidence.cpu(),
+        torch.tensor([[0.0065, 0.2892, 0.7043], [0.0065, 0.2892, 0.7043]]).cpu(),
         atol=0.02,
     )
     assert torch.allclose(
-        predictions.class_id,
-        torch.tensor([2, 2], dtype=torch.int64),
+        predictions.class_id.cpu(),
+        torch.tensor([2, 2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_class_onnx_dynamic_bs_package_numpy(
     vehicles_multi_class_resenet_onnx_dynamic_bs_package: str,
     bike_image_numpy: np.ndarray,
@@ -762,7 +750,7 @@ def test_multi_class_onnx_dynamic_bs_package_numpy(
     # given
     model = ResNetForClassificationOnnx.from_pretrained(
         model_name_or_path=vehicles_multi_class_resenet_onnx_dynamic_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -770,19 +758,18 @@ def test_multi_class_onnx_dynamic_bs_package_numpy(
 
     # then
     assert torch.allclose(
-        predictions.confidence,
-        torch.tensor([[0.0065, 0.2892, 0.7043]]),
+        predictions.confidence.cpu(),
+        torch.tensor([[0.0065, 0.2892, 0.7043]]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions.class_id,
-        torch.tensor([2], dtype=torch.int64),
+        predictions.class_id.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_class_onnx_dynamic_bs_package_numpy_custom_image_size(
     vehicles_multi_class_resenet_onnx_dynamic_bs_package: str,
     bike_image_numpy: np.ndarray,
@@ -790,7 +777,7 @@ def test_multi_class_onnx_dynamic_bs_package_numpy_custom_image_size(
     # given
     model = ResNetForClassificationOnnx.from_pretrained(
         model_name_or_path=vehicles_multi_class_resenet_onnx_dynamic_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -798,19 +785,18 @@ def test_multi_class_onnx_dynamic_bs_package_numpy_custom_image_size(
 
     # then
     assert torch.allclose(
-        predictions.confidence,
-        torch.tensor([[0.0341, 0.6881, 0.2777]]),
+        predictions.confidence.cpu(),
+        torch.tensor([[0.0341, 0.6881, 0.2777]]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions.class_id,
-        torch.tensor([1], dtype=torch.int64),
+        predictions.class_id.cpu(),
+        torch.tensor([1], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_class_onnx_dynamic_bs_package_batch_numpy(
     vehicles_multi_class_resenet_onnx_dynamic_bs_package: str,
     bike_image_numpy: np.ndarray,
@@ -818,7 +804,7 @@ def test_multi_class_onnx_dynamic_bs_package_batch_numpy(
     # given
     model = ResNetForClassificationOnnx.from_pretrained(
         model_name_or_path=vehicles_multi_class_resenet_onnx_dynamic_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -826,19 +812,18 @@ def test_multi_class_onnx_dynamic_bs_package_batch_numpy(
 
     # then
     assert torch.allclose(
-        predictions.confidence,
-        torch.tensor([[0.0065, 0.2892, 0.7043], [0.0065, 0.2892, 0.7043]]),
+        predictions.confidence.cpu(),
+        torch.tensor([[0.0065, 0.2892, 0.7043], [0.0065, 0.2892, 0.7043]]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions.class_id,
-        torch.tensor([2, 2], dtype=torch.int64),
+        predictions.class_id.cpu(),
+        torch.tensor([2, 2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_class_onnx_dynamic_bs_package_torch(
     vehicles_multi_class_resenet_onnx_dynamic_bs_package: str,
     bike_image_torch: torch.Tensor,
@@ -846,7 +831,7 @@ def test_multi_class_onnx_dynamic_bs_package_torch(
     # given
     model = ResNetForClassificationOnnx.from_pretrained(
         model_name_or_path=vehicles_multi_class_resenet_onnx_dynamic_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -854,19 +839,18 @@ def test_multi_class_onnx_dynamic_bs_package_torch(
 
     # then
     assert torch.allclose(
-        predictions.confidence,
-        torch.tensor([[0.0065, 0.2892, 0.7043]]),
+        predictions.confidence.cpu(),
+        torch.tensor([[0.0065, 0.2892, 0.7043]]).cpu(),
         atol=0.02,
     )
     assert torch.allclose(
-        predictions.class_id,
-        torch.tensor([2], dtype=torch.int64),
+        predictions.class_id.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_class_onnx_dynamic_bs_package_batch_torch(
     vehicles_multi_class_resenet_onnx_dynamic_bs_package: str,
     bike_image_torch: torch.Tensor,
@@ -874,7 +858,7 @@ def test_multi_class_onnx_dynamic_bs_package_batch_torch(
     # given
     model = ResNetForClassificationOnnx.from_pretrained(
         model_name_or_path=vehicles_multi_class_resenet_onnx_dynamic_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -882,19 +866,18 @@ def test_multi_class_onnx_dynamic_bs_package_batch_torch(
 
     # then
     assert torch.allclose(
-        predictions.confidence,
-        torch.tensor([[0.0065, 0.2892, 0.7043], [0.0065, 0.2892, 0.7043]]),
+        predictions.confidence.cpu(),
+        torch.tensor([[0.0065, 0.2892, 0.7043], [0.0065, 0.2892, 0.7043]]).cpu(),
         atol=0.02,
     )
     assert torch.allclose(
-        predictions.class_id,
-        torch.tensor([2, 2], dtype=torch.int64),
+        predictions.class_id.cpu(),
+        torch.tensor([2, 2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_class_onnx_dynamic_bs_package_batch_torch_list(
     vehicles_multi_class_resenet_onnx_dynamic_bs_package: str,
     bike_image_torch: torch.Tensor,
@@ -902,7 +885,7 @@ def test_multi_class_onnx_dynamic_bs_package_batch_torch_list(
     # given
     model = ResNetForClassificationOnnx.from_pretrained(
         model_name_or_path=vehicles_multi_class_resenet_onnx_dynamic_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -910,19 +893,18 @@ def test_multi_class_onnx_dynamic_bs_package_batch_torch_list(
 
     # then
     assert torch.allclose(
-        predictions.confidence,
-        torch.tensor([[0.0065, 0.2892, 0.7043], [0.0065, 0.2892, 0.7043]]),
+        predictions.confidence.cpu(),
+        torch.tensor([[0.0065, 0.2892, 0.7043], [0.0065, 0.2892, 0.7043]]).cpu(),
         atol=0.02,
     )
     assert torch.allclose(
-        predictions.class_id,
-        torch.tensor([2, 2], dtype=torch.int64),
+        predictions.class_id.cpu(),
+        torch.tensor([2, 2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_class_onnx_static_bs_package_numpy(
     vehicles_multi_class_resenet_onnx_static_bs_package: str,
     bike_image_numpy: np.ndarray,
@@ -930,7 +912,7 @@ def test_multi_class_onnx_static_bs_package_numpy(
     # given
     model = ResNetForClassificationOnnx.from_pretrained(
         model_name_or_path=vehicles_multi_class_resenet_onnx_static_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -938,19 +920,18 @@ def test_multi_class_onnx_static_bs_package_numpy(
 
     # then
     assert torch.allclose(
-        predictions.confidence,
-        torch.tensor([[0.0065, 0.2892, 0.7043]]),
+        predictions.confidence.cpu(),
+        torch.tensor([[0.0065, 0.2892, 0.7043]]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions.class_id,
-        torch.tensor([2], dtype=torch.int64),
+        predictions.class_id.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_class_onnx_static_bs_package_numpy_custom_image_size(
     vehicles_multi_class_resenet_onnx_static_bs_package: str,
     bike_image_numpy: np.ndarray,
@@ -958,7 +939,7 @@ def test_multi_class_onnx_static_bs_package_numpy_custom_image_size(
     # given
     model = ResNetForClassificationOnnx.from_pretrained(
         model_name_or_path=vehicles_multi_class_resenet_onnx_static_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -966,19 +947,18 @@ def test_multi_class_onnx_static_bs_package_numpy_custom_image_size(
 
     # then
     assert torch.allclose(
-        predictions.confidence,
-        torch.tensor([[0.0065, 0.2892, 0.7043]]),
+        predictions.confidence.cpu(),
+        torch.tensor([[0.0065, 0.2892, 0.7043]]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions.class_id,
-        torch.tensor([2], dtype=torch.int64),
+        predictions.class_id.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_class_onnx_static_bs_package_batch_numpy(
     vehicles_multi_class_resenet_onnx_static_bs_package: str,
     bike_image_numpy: np.ndarray,
@@ -986,7 +966,7 @@ def test_multi_class_onnx_static_bs_package_batch_numpy(
     # given
     model = ResNetForClassificationOnnx.from_pretrained(
         model_name_or_path=vehicles_multi_class_resenet_onnx_static_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -994,19 +974,18 @@ def test_multi_class_onnx_static_bs_package_batch_numpy(
 
     # then
     assert torch.allclose(
-        predictions.confidence,
-        torch.tensor([[0.0065, 0.2892, 0.7043], [0.0065, 0.2892, 0.7043]]),
+        predictions.confidence.cpu(),
+        torch.tensor([[0.0065, 0.2892, 0.7043], [0.0065, 0.2892, 0.7043]]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions.class_id,
-        torch.tensor([2, 2], dtype=torch.int64),
+        predictions.class_id.cpu(),
+        torch.tensor([2, 2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_class_onnx_static_bs_package_torch(
     vehicles_multi_class_resenet_onnx_static_bs_package: str,
     bike_image_torch: torch.Tensor,
@@ -1014,7 +993,7 @@ def test_multi_class_onnx_static_bs_package_torch(
     # given
     model = ResNetForClassificationOnnx.from_pretrained(
         model_name_or_path=vehicles_multi_class_resenet_onnx_static_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -1022,19 +1001,18 @@ def test_multi_class_onnx_static_bs_package_torch(
 
     # then
     assert torch.allclose(
-        predictions.confidence,
-        torch.tensor([[0.0065, 0.2892, 0.7043]]),
+        predictions.confidence.cpu(),
+        torch.tensor([[0.0065, 0.2892, 0.7043]]).cpu(),
         atol=0.02,
     )
     assert torch.allclose(
-        predictions.class_id,
-        torch.tensor([2], dtype=torch.int64),
+        predictions.class_id.cpu(),
+        torch.tensor([2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_class_onnx_static_bs_package_batch_torch(
     vehicles_multi_class_resenet_onnx_static_bs_package: str,
     bike_image_torch: torch.Tensor,
@@ -1042,7 +1020,7 @@ def test_multi_class_onnx_static_bs_package_batch_torch(
     # given
     model = ResNetForClassificationOnnx.from_pretrained(
         model_name_or_path=vehicles_multi_class_resenet_onnx_static_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -1050,19 +1028,18 @@ def test_multi_class_onnx_static_bs_package_batch_torch(
 
     # then
     assert torch.allclose(
-        predictions.confidence,
-        torch.tensor([[0.0065, 0.2892, 0.7043], [0.0065, 0.2892, 0.7043]]),
+        predictions.confidence.cpu(),
+        torch.tensor([[0.0065, 0.2892, 0.7043], [0.0065, 0.2892, 0.7043]]).cpu(),
         atol=0.02,
     )
     assert torch.allclose(
-        predictions.class_id,
-        torch.tensor([2, 2], dtype=torch.int64),
+        predictions.class_id.cpu(),
+        torch.tensor([2, 2], dtype=torch.int64).cpu(),
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_multi_class_onnx_static_bs_package_batch_torch_list(
     vehicles_multi_class_resenet_onnx_static_bs_package: str,
     bike_image_torch: torch.Tensor,
@@ -1070,7 +1047,7 @@ def test_multi_class_onnx_static_bs_package_batch_torch_list(
     # given
     model = ResNetForClassificationOnnx.from_pretrained(
         model_name_or_path=vehicles_multi_class_resenet_onnx_static_bs_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -1078,11 +1055,11 @@ def test_multi_class_onnx_static_bs_package_batch_torch_list(
 
     # then
     assert torch.allclose(
-        predictions.confidence,
-        torch.tensor([[0.0065, 0.2892, 0.7043], [0.0065, 0.2892, 0.7043]]),
+        predictions.confidence.cpu(),
+        torch.tensor([[0.0065, 0.2892, 0.7043], [0.0065, 0.2892, 0.7043]]).cpu(),
         atol=0.02,
     )
     assert torch.allclose(
-        predictions.class_id,
-        torch.tensor([2, 2], dtype=torch.int64),
+        predictions.class_id.cpu(),
+        torch.tensor([2, 2], dtype=torch.int64).cpu(),
     )

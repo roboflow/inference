@@ -1059,6 +1059,7 @@ def reference_clip_model(
 
 
 @pytest.mark.slow
+@pytest.mark.torch_models
 def test_clip_torch_image_prediction_for_numpy(
     clip_rn50_pytorch_path: str,
     dog_image_numpy: np.ndarray,
@@ -1077,6 +1078,7 @@ def test_clip_torch_image_prediction_for_numpy(
 
 
 @pytest.mark.slow
+@pytest.mark.torch_models
 def test_clip_torch_image_prediction_for_torch_tensor(
     clip_rn50_pytorch_path: str,
     dog_image_torch: np.ndarray,
@@ -1095,6 +1097,7 @@ def test_clip_torch_image_prediction_for_torch_tensor(
 
 
 @pytest.mark.slow
+@pytest.mark.torch_models
 def test_clip_predictions_for_image_are_comparable_with_reference_implementation(
     clip_rn50_pytorch_path: str,
     dog_image_torch: np.ndarray,
@@ -1125,6 +1128,7 @@ def test_clip_predictions_for_image_are_comparable_with_reference_implementation
 
 
 @pytest.mark.slow
+@pytest.mark.torch_models
 def test_clip_torch_image_text_embeddings(
     clip_rn50_pytorch_path: str,
     dog_image_numpy: np.ndarray,
@@ -1142,6 +1146,7 @@ def test_clip_torch_image_text_embeddings(
 
 
 @pytest.mark.slow
+@pytest.mark.torch_models
 def test_clip_torch_image_text_embeddings_on_pair_with_reference_implementation(
     clip_rn50_pytorch_path: str,
     reference_clip_model: Tuple[nn.Module, callable],
