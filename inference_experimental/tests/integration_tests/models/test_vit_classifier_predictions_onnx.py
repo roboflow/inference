@@ -415,7 +415,7 @@ def test_multi_class_onnx_dynamic_bs_package_numpy(
         atol=0.01,
     )
     assert torch.allclose(
-        predictions.class_id,
+        predictions.class_id.cpu(),
         torch.tensor([0], dtype=torch.int64).cpu(),
     )
 
@@ -445,7 +445,7 @@ def test_multi_class_onnx_dynamic_bs_package_numpy_custom_image_size(
         atol=0.01,
     )
     assert torch.allclose(
-        predictions.class_id,
+        predictions.class_id.cpu(),
         torch.tensor([0], dtype=torch.int64).cpu(),
     )
 
@@ -475,7 +475,7 @@ def test_multi_class_onnx_dynamic_bs_package_batch_numpy(
         atol=0.01,
     )
     assert torch.allclose(
-        predictions.class_id,
+        predictions.class_id.cpu(),
         torch.tensor([0, 0], dtype=torch.int64).cpu(),
     )
 
@@ -505,7 +505,7 @@ def test_multi_class_onnx_dynamic_bs_package_torch(
         atol=0.01,
     )
     assert torch.allclose(
-        predictions.class_id,
+        predictions.class_id.cpu(),
         torch.tensor([0], dtype=torch.int64).cpu(),
     )
 
@@ -535,7 +535,7 @@ def test_multi_class_onnx_dynamic_bs_package_batch_torch(
         atol=0.01,
     )
     assert torch.allclose(
-        predictions.class_id,
+        predictions.class_id.cpu(),
         torch.tensor([0, 0], dtype=torch.int64).cpu(),
     )
 
@@ -565,7 +565,7 @@ def test_multi_class_onnx_dynamic_bs_package_batch_torch_list(
         atol=0.01,
     )
     assert torch.allclose(
-        predictions.class_id,
+        predictions.class_id.cpu(),
         torch.tensor([0, 0], dtype=torch.int64).cpu(),
     )
 
@@ -595,7 +595,7 @@ def test_multi_class_onnx_static_bs_package_numpy(
         atol=0.01,
     )
     assert torch.allclose(
-        predictions.class_id,
+        predictions.class_id.cpu(),
         torch.tensor([0], dtype=torch.int64).cpu(),
     )
 
@@ -625,7 +625,7 @@ def test_multi_class_onnx_static_bs_package_numpy_custom_image_size(
         atol=0.01,
     )
     assert torch.allclose(
-        predictions.class_id,
+        predictions.class_id.cpu(),
         torch.tensor([0], dtype=torch.int64).cpu(),
     )
 
@@ -655,7 +655,7 @@ def test_multi_class_onnx_static_bs_package_batch_numpy(
         atol=0.01,
     )
     assert torch.allclose(
-        predictions.class_id,
+        predictions.class_id.cpu(),
         torch.tensor([0, 0], dtype=torch.int64).cpu(),
     )
 
@@ -685,7 +685,7 @@ def test_multi_class_onnx_static_bs_package_torch(
         atol=0.01,
     )
     assert torch.allclose(
-        predictions.class_id,
+        predictions.class_id.cpu(),
         torch.tensor([0], dtype=torch.int64).cpu(),
     )
 
@@ -715,7 +715,7 @@ def test_multi_class_onnx_static_bs_package_batch_torch(
         atol=0.01,
     )
     assert torch.allclose(
-        predictions.class_id,
+        predictions.class_id.cpu(),
         torch.tensor([0, 0], dtype=torch.int64).cpu(),
     )
 
@@ -745,6 +745,6 @@ def test_multi_class_onnx_static_bs_package_batch_torch_list(
         atol=0.01,
     )
     assert torch.allclose(
-        predictions.class_id,
+        predictions.class_id.cpu(),
         torch.tensor([0, 0], dtype=torch.int64).cpu(),
     )
