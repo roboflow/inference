@@ -352,7 +352,7 @@ def test_yolov8n_pose_onnx_static_center_crop_package_torch(
                 ],
             ],
             dtype=torch.int32,
-        ),
+        ).cpu(),
         atol=2,
     )
     assert torch.allclose(
@@ -398,22 +398,22 @@ def test_yolov8n_pose_onnx_static_center_crop_package_torch(
                     0.7233,
                 ],
             ],
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1][0].xyxy,
+        predictions[1][0].xyxy.cpu(),
         torch.tensor(
             [[619, 124, 821, 747], [352, 136, 539, 744]],
             dtype=torch.int32,
-        ),
+        ).cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1][0].confidence,
+        predictions[1][0].confidence.cpu(),
         torch.tensor(
             [0.9245, 0.9082],
-        ),
+        ).cpu(),
         atol=0.01,
     )
 
@@ -2936,7 +2936,7 @@ def test_yolov8n_pose_onnx_dynamic_center_crop_package_numpy(
                 ],
             ],
             dtype=torch.int32,
-        ),
+        ).cpu(),
         atol=2,
     )
     assert torch.allclose(
@@ -2982,22 +2982,22 @@ def test_yolov8n_pose_onnx_dynamic_center_crop_package_numpy(
                     0.7233,
                 ],
             ],
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1][0].xyxy,
+        predictions[1][0].xyxy.cpu(),
         torch.tensor(
             [[619, 124, 821, 747], [352, 136, 539, 744]],
             dtype=torch.int32,
-        ),
+        ).cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1][0].confidence,
+        predictions[1][0].confidence.cpu(),
         torch.tensor(
             [0.9245, 0.9082],
-        ),
+        ).cpu(),
         atol=0.01,
     )
 
@@ -3065,7 +3065,7 @@ def test_yolov8n_pose_onnx_dynamic_center_crop_package_numpy_custom_size(
                 ],
             ],
             dtype=torch.int32,
-        ),
+        ).cpu(),
         atol=2,
     )
     assert torch.allclose(
@@ -3111,22 +3111,22 @@ def test_yolov8n_pose_onnx_dynamic_center_crop_package_numpy_custom_size(
                     0.0000,
                 ],
             ],
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1][0].xyxy,
+        predictions[1][0].xyxy.cpu(),
         torch.tensor(
             [[620, 267, 800, 587], [480, 267, 537, 587]],
             dtype=torch.int32,
-        ),
+        ).cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1][0].confidence,
+        predictions[1][0].confidence.cpu(),
         torch.tensor(
             [0.9436, 0.8497],
-        ),
+        ).cpu(),
         atol=0.01,
     )
 
@@ -3349,7 +3349,7 @@ def test_yolov8n_pose_onnx_dynamic_center_crop_package_torch(
                 ],
             ],
             dtype=torch.int32,
-        ),
+        ).cpu(),
         atol=2,
     )
     assert torch.allclose(
@@ -3395,22 +3395,22 @@ def test_yolov8n_pose_onnx_dynamic_center_crop_package_torch(
                     0.7233,
                 ],
             ],
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1][0].xyxy,
+        predictions[1][0].xyxy.cpu(),
         torch.tensor(
             [[619, 124, 821, 747], [352, 136, 539, 744]],
             dtype=torch.int32,
-        ),
+        ).cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1][0].confidence,
+        predictions[1][0].confidence.cpu(),
         torch.tensor(
             [0.9245, 0.9082],
-        ),
+        ).cpu(),
         atol=0.01,
     )
 
@@ -6020,7 +6020,7 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package_numpy(
                 ],
             ],
             dtype=torch.int32,
-        ),
+        ).cpu(),
         atol=2,
     )
     assert torch.allclose(
@@ -6066,22 +6066,22 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package_numpy(
                     0.7233,
                 ],
             ],
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1][0].xyxy,
+        predictions[1][0].xyxy.cpu(),
         torch.tensor(
             [[619, 124, 821, 747], [352, 136, 539, 744]],
             dtype=torch.int32,
-        ),
+        ).cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1][0].confidence,
+        predictions[1][0].confidence.cpu(),
         torch.tensor(
             [0.9245, 0.9082],
-        ),
+        ).cpu(),
         atol=0.01,
     )
 
@@ -6149,7 +6149,7 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package_numpy_custom_si
                 ],
             ],
             dtype=torch.int32,
-        ),
+        ).cpu(),
         atol=2,
     )
     assert torch.allclose(
@@ -6195,22 +6195,22 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package_numpy_custom_si
                     0.0000,
                 ],
             ],
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1][0].xyxy,
+        predictions[1][0].xyxy.cpu(),
         torch.tensor(
             [[620, 267, 800, 587], [480, 267, 537, 587]],
             dtype=torch.int32,
-        ),
+        ).cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1][0].confidence,
+        predictions[1][0].confidence.cpu(),
         torch.tensor(
             [0.9436, 0.8497],
-        ),
+        ).cpu(),
         atol=0.01,
     )
 
@@ -6433,7 +6433,7 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package_torch(
                 ],
             ],
             dtype=torch.int32,
-        ),
+        ).cpu(),
         atol=2,
     )
     assert torch.allclose(
@@ -6479,22 +6479,22 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package_torch(
                     0.7233,
                 ],
             ],
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1][0].xyxy,
+        predictions[1][0].xyxy.cpu(),
         torch.tensor(
             [[619, 124, 821, 747], [352, 136, 539, 744]],
             dtype=torch.int32,
-        ),
+        ).cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1][0].confidence,
+        predictions[1][0].confidence.cpu(),
         torch.tensor(
             [0.9245, 0.9082],
-        ),
+        ).cpu(),
         atol=0.01,
     )
 

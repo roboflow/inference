@@ -16,7 +16,7 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_numpy(
 
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_cs_stretch_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -64,7 +64,7 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_batch_numpy(
 
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_cs_stretch_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -124,7 +124,7 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_torch(
 
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_cs_stretch_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -172,7 +172,7 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_torch_batch(
 
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_cs_stretch_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -232,7 +232,7 @@ def test_onnx_package_with_static_crop_letterbox_numpy(
 
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_static_crop_letterbox_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -279,7 +279,7 @@ def test_onnx_package_with_static_crop_letterbox_numpy_batch(
 
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_static_crop_letterbox_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -338,7 +338,7 @@ def test_onnx_package_with_static_crop_letterbox_torch(
 
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_static_crop_letterbox_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -389,7 +389,7 @@ def test_onnx_package_with_static_crop_letterbox_torch_batch(
 
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_static_crop_letterbox_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -456,7 +456,7 @@ def test_onnx_package_with_static_crop_letterbox_torch_list(
 
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_static_crop_letterbox_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -523,7 +523,7 @@ def test_onnx_package_with_center_crop_numpy(
 
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_center_crop_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -563,7 +563,7 @@ def test_onnx_package_with_center_crop_batch_numpy(
 
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_center_crop_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -617,7 +617,7 @@ def test_onnx_package_with_center_crop_torch(
 
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_center_crop_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -657,7 +657,7 @@ def test_onnx_package_with_center_crop_batch_torch(
 
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_center_crop_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -713,7 +713,7 @@ def test_onnx_package_with_center_crop_list_of_torch(
 
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_center_crop_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -767,7 +767,7 @@ def test_onnx_package_with_static_crop_and_center_crop_numpy(
 
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_static_crop_center_crop_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -807,7 +807,7 @@ def test_onnx_package_with_static_crop_and_center_crop_numpy_when_image_smaller_
 
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_static_crop_center_crop_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -845,7 +845,7 @@ def test_onnx_package_with_static_crop_and_center_crop_batch_numpy(
 
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_static_crop_center_crop_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -899,7 +899,7 @@ def test_onnx_package_with_static_crop_and_center_crop_torch(
 
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_static_crop_center_crop_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -939,7 +939,7 @@ def test_onnx_package_with_static_crop_and_center_crop_batch_torch(
 
     model = RFDetrForObjectDetectionONNX.from_pretrained(
         model_name_or_path=coin_counting_rfdetr_nano_onnx_static_crop_center_crop_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when

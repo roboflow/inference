@@ -1,9 +1,6 @@
 import numpy as np
 import pytest
 import torch
-from inference_exp.models.yolonas.yolonas_object_detection_onnx import (
-    YOLONasForObjectDetectionOnnx,
-)
 
 
 @pytest.mark.slow
@@ -13,6 +10,10 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_numpy(
     coins_counting_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolonas.yolonas_object_detection_onnx import (
+        YOLONasForObjectDetectionOnnx,
+    )
+
     model = YOLONasForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolo_nas_onnx_dynamic_bs_letterbox_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -73,6 +74,10 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_torch(
     coins_counting_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolonas.yolonas_object_detection_onnx import (
+        YOLONasForObjectDetectionOnnx,
+    )
+
     model = YOLONasForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolo_nas_onnx_dynamic_bs_letterbox_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -133,6 +138,10 @@ def test_onnx_package_with_static_batch_size_and_letterbox_numpy(
     coins_counting_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolonas.yolonas_object_detection_onnx import (
+        YOLONasForObjectDetectionOnnx,
+    )
+
     model = YOLONasForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolo_nas_onnx_static_bs_letterbox_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -193,6 +202,10 @@ def test_onnx_package_with_static_batch_size_and_letterbox_batch_numpy(
     coins_counting_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolonas.yolonas_object_detection_onnx import (
+        YOLONasForObjectDetectionOnnx,
+    )
+
     model = YOLONasForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolo_nas_onnx_static_bs_letterbox_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -280,6 +293,10 @@ def test_onnx_package_with_static_batch_size_and_letterbox_torch(
     coins_counting_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolonas.yolonas_object_detection_onnx import (
+        YOLONasForObjectDetectionOnnx,
+    )
+
     model = YOLONasForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolo_nas_onnx_static_bs_letterbox_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -340,6 +357,10 @@ def test_onnx_package_with_static_batch_size_and_letterbox_batch_torch(
     coins_counting_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolonas.yolonas_object_detection_onnx import (
+        YOLONasForObjectDetectionOnnx,
+    )
+
     model = YOLONasForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolo_nas_onnx_static_bs_letterbox_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -429,6 +450,10 @@ def test_onnx_package_with_static_batch_size_and_letterbox_batch_torch_list(
     coins_counting_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolonas.yolonas_object_detection_onnx import (
+        YOLONasForObjectDetectionOnnx,
+    )
+
     model = YOLONasForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolo_nas_onnx_static_bs_letterbox_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -516,6 +541,10 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_numpy(
     coins_counting_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolonas.yolonas_object_detection_onnx import (
+        YOLONasForObjectDetectionOnnx,
+    )
+
     model = YOLONasForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolo_nas_onnx_static_bs_static_crop_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -555,6 +584,10 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_batch_n
     coins_counting_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolonas.yolonas_object_detection_onnx import (
+        YOLONasForObjectDetectionOnnx,
+    )
+
     model = YOLONasForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolo_nas_onnx_static_bs_static_crop_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -608,6 +641,10 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_torch(
     coins_counting_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolonas.yolonas_object_detection_onnx import (
+        YOLONasForObjectDetectionOnnx,
+    )
+
     model = YOLONasForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolo_nas_onnx_static_bs_static_crop_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -647,6 +684,10 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_torch_b
     coins_counting_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolonas.yolonas_object_detection_onnx import (
+        YOLONasForObjectDetectionOnnx,
+    )
+
     model = YOLONasForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolo_nas_onnx_static_bs_static_crop_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -702,6 +743,10 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_torch_l
     coins_counting_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolonas.yolonas_object_detection_onnx import (
+        YOLONasForObjectDetectionOnnx,
+    )
+
     model = YOLONasForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolo_nas_onnx_static_bs_static_crop_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -755,6 +800,10 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_numpy(
     coins_counting_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolonas.yolonas_object_detection_onnx import (
+        YOLONasForObjectDetectionOnnx,
+    )
+
     model = YOLONasForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolo_nas_onnx_static_bs_static_crop_stretch_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -819,6 +868,10 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_numpy
     coins_counting_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolonas.yolonas_object_detection_onnx import (
+        YOLONasForObjectDetectionOnnx,
+    )
+
     model = YOLONasForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolo_nas_onnx_static_bs_static_crop_stretch_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -912,6 +965,10 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_torch(
     coins_counting_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolonas.yolonas_object_detection_onnx import (
+        YOLONasForObjectDetectionOnnx,
+    )
+
     model = YOLONasForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolo_nas_onnx_static_bs_static_crop_stretch_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -975,6 +1032,10 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_torch
     coins_counting_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolonas.yolonas_object_detection_onnx import (
+        YOLONasForObjectDetectionOnnx,
+    )
+
     model = YOLONasForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolo_nas_onnx_static_bs_static_crop_stretch_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1064,6 +1125,10 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_list_of_tor
     coins_counting_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolonas.yolonas_object_detection_onnx import (
+        YOLONasForObjectDetectionOnnx,
+    )
+
     model = YOLONasForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolo_nas_onnx_static_bs_static_crop_stretch_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1151,6 +1216,10 @@ def test_onnx_package_with_static_batch_size_and_static_crop_letterbox_numpy(
     coins_counting_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolonas.yolonas_object_detection_onnx import (
+        YOLONasForObjectDetectionOnnx,
+    )
+
     model = YOLONasForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolo_nas_onnx_static_bs_static_crop_letterbox_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1211,6 +1280,10 @@ def test_onnx_package_with_static_batch_size_and_static_crop_letterbox_batch_num
     coins_counting_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolonas.yolonas_object_detection_onnx import (
+        YOLONasForObjectDetectionOnnx,
+    )
+
     model = YOLONasForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolo_nas_onnx_static_bs_static_crop_letterbox_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1298,6 +1371,10 @@ def test_onnx_package_with_static_batch_size_and_static_crop_letterbox_torch(
     coins_counting_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolonas.yolonas_object_detection_onnx import (
+        YOLONasForObjectDetectionOnnx,
+    )
+
     model = YOLONasForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolo_nas_onnx_static_bs_static_crop_letterbox_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1358,6 +1435,10 @@ def test_onnx_package_with_static_batch_size_and_static_crop_letterbox_batch_tor
     coins_counting_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolonas.yolonas_object_detection_onnx import (
+        YOLONasForObjectDetectionOnnx,
+    )
+
     model = YOLONasForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolo_nas_onnx_static_bs_static_crop_letterbox_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1420,6 +1501,10 @@ def test_onnx_package_with_static_batch_size_and_static_crop_letterbox_list_torc
     coins_counting_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolonas.yolonas_object_detection_onnx import (
+        YOLONasForObjectDetectionOnnx,
+    )
+
     model = YOLONasForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolo_nas_onnx_static_bs_static_crop_letterbox_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1480,6 +1565,10 @@ def test_onnx_package_with_static_batch_size_and_center_crop_numpy(
     coins_counting_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolonas.yolonas_object_detection_onnx import (
+        YOLONasForObjectDetectionOnnx,
+    )
+
     model = YOLONasForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolo_nas_onnx_static_bs_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1522,6 +1611,10 @@ def test_onnx_package_with_static_batch_size_and_center_crop_batch_numpy(
     coins_counting_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.yolonas.yolonas_object_detection_onnx import (
+        YOLONasForObjectDetectionOnnx,
+    )
+
     model = YOLONasForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolo_nas_onnx_static_bs_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1578,6 +1671,10 @@ def test_onnx_package_with_static_batch_size_and_center_crop_torch(
     coins_counting_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolonas.yolonas_object_detection_onnx import (
+        YOLONasForObjectDetectionOnnx,
+    )
+
     model = YOLONasForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolo_nas_onnx_static_bs_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1620,6 +1717,10 @@ def test_onnx_package_with_static_batch_size_and_center_crop_batch_torch(
     coins_counting_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolonas.yolonas_object_detection_onnx import (
+        YOLONasForObjectDetectionOnnx,
+    )
+
     model = YOLONasForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolo_nas_onnx_static_bs_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -1678,6 +1779,10 @@ def test_onnx_package_with_static_batch_size_and_center_crop_list_torch(
     coins_counting_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.yolonas.yolonas_object_detection_onnx import (
+        YOLONasForObjectDetectionOnnx,
+    )
+
     model = YOLONasForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolo_nas_onnx_static_bs_center_crop_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],

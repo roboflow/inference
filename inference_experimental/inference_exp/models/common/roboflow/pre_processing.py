@@ -634,6 +634,8 @@ def handle_tensor_list_input_preparation_with_stretch(
         )
         if input_color_mode != network_input.color_mode:
             img = img[:, [2, 1, 0], :, :]
+        if img.device.type == "cuda":
+            img = img.float()
         img = torch.nn.functional.interpolate(
             img,
             size=[target_size.height, target_size.width],
@@ -705,6 +707,8 @@ def handle_tensor_list_input_preparation_with_letterbox(
         if input_color_mode != network_input.color_mode:
             img = img[:, [2, 1, 0], :, :]
         new_h_i, new_w_i = new_hs[i].item(), new_ws[i].item()
+        if img.device.type == "cuda":
+            img = img.float()
         img = torch.nn.functional.interpolate(
             img,
             size=[new_h_i, new_w_i],
