@@ -4,10 +4,10 @@
 # before importing heavy-weight modules.
 import multiprocessing
 if __name__ == "__main__":
-    multiprocessing.freeze_support()   
+    multiprocessing.freeze_support()
 
 
-print("=== Inference Launcher ===") 
+print("=== Inference Launcher ===")
 
 print("importing system libraries")
 import os
@@ -55,7 +55,7 @@ if getattr(sys, 'frozen', False):
     print("Running from PyInstaller bundle")
 
     app_dir = os.path.dirname(sys.executable)
-    
+
     bundled_site_packages = os.path.join(os.path.dirname(sys.executable), 'site-packages')
     sys.path.insert(0, bundled_site_packages)
 
@@ -97,7 +97,7 @@ os.environ.setdefault("ENABLE_PROMETHEUS", "True")
 os.environ.setdefault("ENABLE_BUILDER", "True")
 
 
-# # Force all foundational model imports 
+# # Force all foundational model imports
 # can uncomment this to to debug missing dependencies or hidden
 # modules needed for pyinstaller (the improt errors otherewise get
 # swallowed in inference )

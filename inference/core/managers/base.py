@@ -81,8 +81,6 @@ class ModelManager:
             f"ModelManager - Adding model with model_id={model_id}, model_id_alias={model_id_alias}"
         )
 
-        print("===STEP2===")
-
         resolved_identifier = model_id if model_id_alias is None else model_id_alias
         if resolved_identifier in self._models:
             logger.debug(
@@ -94,16 +92,12 @@ class ModelManager:
 
         try:
 
-            print("===resolved_identifier===", resolved_identifier, self.model_registry)
-
             model_class = self.model_registry.get_model(
                 resolved_identifier,
                 api_key,
                 countinference=countinference,
                 service_secret=service_secret,
             )
-
-            print("===model_class===", model_class)
 
             model = model_class(
                 model_id=model_id,
