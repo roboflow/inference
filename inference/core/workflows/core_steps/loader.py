@@ -329,6 +329,9 @@ from inference.core.workflows.core_steps.transformations.detections_filter.v1 im
 from inference.core.workflows.core_steps.transformations.detections_merge.v1 import (
     DetectionsMergeBlockV1,
 )
+from inference.core.workflows.core_steps.transformations.detections_combine.v1 import (
+    DetectionsCombineBlockV1,
+)
 from inference.core.workflows.core_steps.transformations.detections_transformation.v1 import (
     DetectionsTransformationBlockV1,
 )
@@ -679,6 +682,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ONVIFSinkBlockV1,
         EasyOCRBlockV1,
         QRCodeGeneratorBlockV1,
+        DetectionsCombineBlockV1
     ]
 
 
