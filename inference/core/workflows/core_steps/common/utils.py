@@ -432,7 +432,7 @@ def remove_unexpected_keys_from_dictionary(
 def ocr_result_to_detections(
     image: WorkflowImageData, response_dict: Dict
 ) -> sv.Detections:
-    ''' Convert OCRInferenceResponse dictionary to sv.Detections instance '''
+    """Convert OCRInferenceResponse dictionary to sv.Detections instance"""
 
     # Prepare lists for bounding boxes, confidences, class IDs, and labels
     objects = response_dict.get("objects", [])
@@ -449,7 +449,9 @@ def ocr_result_to_detections(
         data={CLASS_NAME_DATA_FIELD: np.array(class_names)},
     )
 
-    detections[DETECTION_ID_KEY] = np.array([uuid.uuid4() for _ in range(len(detections))])
+    detections[DETECTION_ID_KEY] = np.array(
+        [uuid.uuid4() for _ in range(len(detections))]
+    )
     detections[PREDICTION_TYPE_KEY] = np.array(["easy-ocr"] * len(detections))
     img_height, img_width = image.numpy_image.shape[:2]
     detections[IMAGE_DIMENSIONS_KEY] = np.array(
@@ -460,24 +462,28 @@ def ocr_result_to_detections(
         image=image,
     )
 
+
 def post_process_ocr_result(
     images: Batch[WorkflowImageData],
     predictions: List[dict],
-    expected_output_keys: Set[str]
+    expected_output_keys: Set[str],
 ) -> BlockResult:
     for prediction, image in zip(predictions, images):
-        objects = prediction.get("objects",[])
-        prediction["predictions"] = sv.Detections.empty() if not objects else ocr_result_to_detections(image, prediction)
+        objects = prediction.get("objects", [])
+        prediction["predictions"] = (
+            sv.Detections.empty()
+            if not objects
+            else ocr_result_to_detections(image, prediction)
+        )
         prediction[PREDICTION_TYPE_KEY] = "ocr"
         prediction[PARENT_ID_KEY] = image.parent_metadata.parent_id
-        prediction[ROOT_PARENT_ID_KEY] = (
-            image.workflow_root_ancestor_metadata.parent_id
-        )
+        prediction[ROOT_PARENT_ID_KEY] = image.workflow_root_ancestor_metadata.parent_id
         _ = remove_unexpected_keys_from_dictionary(
             dictionary=prediction,
             expected_keys=expected_output_keys,
         )
     return predictions
+
 
 def run_in_parallel(tasks: List[Callable[[], T]], max_workers: int = 1) -> List[T]:
     with ThreadPoolExecutor(max_workers=max_workers) as executor:

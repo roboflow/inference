@@ -25,7 +25,6 @@ class ModelRegistry:
         model_id: str,
         **kwargs,
     ) -> Model:
-
         """Returns the model class based on the given model type.
 
         Args:

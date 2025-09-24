@@ -23,7 +23,8 @@ if DEVICE is None:
     else:
         DEVICE = "cpu"
 
-def _geometry_to_bbox(page_dimensions:Tuple[int,int], geometry: dict) -> list[int]:
+
+def _geometry_to_bbox(page_dimensions: Tuple[int, int], geometry: dict) -> list[int]:
     """Convert a geometry dictionary to a bounding box.
 
     Args:
@@ -37,6 +38,7 @@ def _geometry_to_bbox(page_dimensions:Tuple[int,int], geometry: dict) -> list[in
     x_max = int(page_dimensions[1] * geometry[1][0])
     y_max = int(page_dimensions[0] * geometry[1][1])
     return [x_min, y_min, x_max, y_max]
+
 
 class DocTR(RoboflowCoreModel):
     def __init__(self, *args, model_id: str = "doctr_rec/crnn_vgg16_bn", **kwargs):
@@ -57,22 +59,30 @@ class DocTR(RoboflowCoreModel):
 
         os.makedirs(f"{MODEL_CACHE_DIR}/doctr/models/", exist_ok=True)
 
-        detector_weights_path = f"{MODEL_CACHE_DIR}/doctr/models/{self.det_model.version_id}.pt"
+        detector_weights_path = (
+            f"{MODEL_CACHE_DIR}/doctr/models/{self.det_model.version_id}.pt"
+        )
         shutil.copyfile(
             f"{MODEL_CACHE_DIR}/doctr_det/{self.det_model.version_id}/model.pt",
             detector_weights_path,
         )
-        recognizer_weights_path = f"{MODEL_CACHE_DIR}/doctr/models/{self.rec_model.version_id}.pt"
+        recognizer_weights_path = (
+            f"{MODEL_CACHE_DIR}/doctr/models/{self.rec_model.version_id}.pt"
+        )
         shutil.copyfile(
             f"{MODEL_CACHE_DIR}/doctr_rec/{self.rec_model.version_id}/model.pt",
             recognizer_weights_path,
         )
 
         det_model = db_resnet50(pretrained=False, pretrained_backbone=False)
-        det_model.load_state_dict(torch.load(detector_weights_path, map_location=DEVICE, weights_only=True))
+        det_model.load_state_dict(
+            torch.load(detector_weights_path, map_location=DEVICE, weights_only=True)
+        )
 
         reco_model = crnn_vgg16_bn(pretrained=False, pretrained_backbone=False)
-        reco_model.load_state_dict(torch.load(recognizer_weights_path, map_location=DEVICE, weights_only=True))
+        reco_model.load_state_dict(
+            torch.load(recognizer_weights_path, map_location=DEVICE, weights_only=True)
+        )
 
         self.model = ocr_predictor(
             det_arch=det_model,
@@ -140,7 +150,9 @@ class DocTR(RoboflowCoreModel):
             result = " ".join([word["value"] for word in words])
             objects = [
                 {
-                    "bounding_box": _geometry_to_bbox(page_dimensions, word["geometry"]),
+                    "bounding_box": _geometry_to_bbox(
+                        page_dimensions, word["geometry"]
+                    ),
                     "confidence": float(word["objectness_score"]),
                     "string": word["value"],
                 }
