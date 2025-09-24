@@ -16,22 +16,123 @@ def test_yolov8n_pose_onnx_static_center_crop_package_numpy(
     yolov8n_pose_onnx_static_center_crop_package: str,
     people_walking_image_numpy: np.ndarray,
 ) -> None:
+    # given
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_static_center_crop_package,
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    # when
+    predictions = model(people_walking_image_numpy)
 
-@pytest.mark.slow
-@pytest.mark.onnx_extras
-@pytest.mark.cpu_only
-def test_yolov8n_pose_onnx_static_center_crop_package_numpy_custom_size(
-    yolov8n_pose_onnx_static_center_crop_package: str,
-    people_walking_image_numpy: np.ndarray,
-) -> None:
-    model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
-        model_name_or_path=yolov8n_pose_onnx_static_center_crop_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+    # then
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        torch.tensor(
+            [
+                [
+                    [741, 192],
+                    [0, 0],
+                    [0, 0],
+                    [698, 178],
+                    [749, 180],
+                    [661, 251],
+                    [770, 255],
+                    [633, 372],
+                    [801, 365],
+                    [636, 467],
+                    [809, 448],
+                    [680, 436],
+                    [748, 438],
+                    [692, 578],
+                    [735, 585],
+                    [715, 716],
+                    [714, 726],
+                ],
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [433, 192],
+                    [483, 192],
+                    [398, 257],
+                    [491, 258],
+                    [368, 365],
+                    [511, 360],
+                    [368, 448],
+                    [522, 446],
+                    [415, 429],
+                    [475, 430],
+                    [417, 584],
+                    [473, 578],
+                    [436, 712],
+                    [466, 700],
+                ],
+            ],
+            dtype=torch.int32,
+        ),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        torch.tensor(
+            [
+                [
+                    0.3142,
+                    0.0000,
+                    0.0000,
+                    0.8722,
+                    0.9678,
+                    0.9978,
+                    0.9983,
+                    0.9788,
+                    0.9849,
+                    0.9391,
+                    0.9490,
+                    0.9994,
+                    0.9995,
+                    0.9971,
+                    0.9974,
+                    0.9213,
+                    0.9227,
+                ],
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.5982,
+                    0.9159,
+                    0.9904,
+                    0.9942,
+                    0.9521,
+                    0.9705,
+                    0.8870,
+                    0.9113,
+                    0.9973,
+                    0.9977,
+                    0.9870,
+                    0.9877,
+                    0.7204,
+                    0.7233,
+                ],
+            ],
+        ),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy,
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence,
+        torch.tensor(
+            [0.9245, 0.9082],
+        ),
+        atol=0.01,
     )
 
 
@@ -47,6 +148,146 @@ def test_yolov8n_pose_onnx_static_center_crop_package_batch_numpy(
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    # when
+    predictions = model([people_walking_image_numpy, people_walking_image_numpy])
+
+    # then
+    expected_kp_xy = torch.tensor(
+        [
+            [
+                [741, 192],
+                [0, 0],
+                [0, 0],
+                [698, 178],
+                [749, 180],
+                [661, 251],
+                [770, 255],
+                [633, 372],
+                [801, 365],
+                [636, 467],
+                [809, 448],
+                [680, 436],
+                [748, 438],
+                [692, 578],
+                [735, 585],
+                [715, 716],
+                [714, 726],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [433, 192],
+                [483, 192],
+                [398, 257],
+                [491, 258],
+                [368, 365],
+                [511, 360],
+                [368, 448],
+                [522, 446],
+                [415, 429],
+                [475, 430],
+                [417, 584],
+                [473, 578],
+                [436, 712],
+                [466, 700],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.3142,
+                0.0000,
+                0.0000,
+                0.8722,
+                0.9678,
+                0.9978,
+                0.9983,
+                0.9788,
+                0.9849,
+                0.9391,
+                0.9490,
+                0.9994,
+                0.9995,
+                0.9971,
+                0.9974,
+                0.9213,
+                0.9227,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.5982,
+                0.9159,
+                0.9904,
+                0.9942,
+                0.9521,
+                0.9705,
+                0.8870,
+                0.9113,
+                0.9973,
+                0.9977,
+                0.9870,
+                0.9877,
+                0.7204,
+                0.7233,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0][1].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor(
+            [0.9245, 0.9082],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor(
+            [0.9245, 0.9082],
+        ).cpu(),
+        atol=0.01,
+    )
+
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
@@ -60,17 +301,117 @@ def test_yolov8n_pose_onnx_static_center_crop_package_torch(
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    # when
+    predictions = model(people_walking_image_torch)
 
-@pytest.mark.slow
-@pytest.mark.onnx_extras
-@pytest.mark.cpu_only
-def test_yolov8n_pose_onnx_static_center_crop_package_torch_custom_size(
-    yolov8n_pose_onnx_static_center_crop_package: str,
-    people_walking_image_torch: torch.Tensor,
-) -> None:
-    model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
-        model_name_or_path=yolov8n_pose_onnx_static_center_crop_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+    # then
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        torch.tensor(
+            [
+                [
+                    [741, 192],
+                    [0, 0],
+                    [0, 0],
+                    [698, 178],
+                    [749, 180],
+                    [661, 251],
+                    [770, 255],
+                    [633, 372],
+                    [801, 365],
+                    [636, 467],
+                    [809, 448],
+                    [680, 436],
+                    [748, 438],
+                    [692, 578],
+                    [735, 585],
+                    [715, 716],
+                    [714, 726],
+                ],
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [433, 192],
+                    [483, 192],
+                    [398, 257],
+                    [491, 258],
+                    [368, 365],
+                    [511, 360],
+                    [368, 448],
+                    [522, 446],
+                    [415, 429],
+                    [475, 430],
+                    [417, 584],
+                    [473, 578],
+                    [436, 712],
+                    [466, 700],
+                ],
+            ],
+            dtype=torch.int32,
+        ),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        torch.tensor(
+            [
+                [
+                    0.3142,
+                    0.0000,
+                    0.0000,
+                    0.8722,
+                    0.9678,
+                    0.9978,
+                    0.9983,
+                    0.9788,
+                    0.9849,
+                    0.9391,
+                    0.9490,
+                    0.9994,
+                    0.9995,
+                    0.9971,
+                    0.9974,
+                    0.9213,
+                    0.9227,
+                ],
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.5982,
+                    0.9159,
+                    0.9904,
+                    0.9942,
+                    0.9521,
+                    0.9705,
+                    0.8870,
+                    0.9113,
+                    0.9973,
+                    0.9977,
+                    0.9870,
+                    0.9877,
+                    0.7204,
+                    0.7233,
+                ],
+            ],
+        ),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy,
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence,
+        torch.tensor(
+            [0.9245, 0.9082],
+        ),
+        atol=0.01,
     )
 
 
@@ -86,6 +427,148 @@ def test_yolov8n_pose_onnx_static_center_crop_package_batch_torch(
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    # when
+    predictions = model(
+        torch.stack([people_walking_image_torch, people_walking_image_torch], dim=0)
+    )
+
+    # then
+    expected_xy = torch.tensor(
+        [
+            [
+                [741, 192],
+                [0, 0],
+                [0, 0],
+                [698, 178],
+                [749, 180],
+                [661, 251],
+                [770, 255],
+                [633, 372],
+                [801, 365],
+                [636, 467],
+                [809, 448],
+                [680, 436],
+                [748, 438],
+                [692, 578],
+                [735, 585],
+                [715, 716],
+                [714, 726],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [433, 192],
+                [483, 192],
+                [398, 257],
+                [491, 258],
+                [368, 365],
+                [511, 360],
+                [368, 448],
+                [522, 446],
+                [415, 429],
+                [475, 430],
+                [417, 584],
+                [473, 578],
+                [436, 712],
+                [466, 700],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.3142,
+                0.0000,
+                0.0000,
+                0.8722,
+                0.9678,
+                0.9978,
+                0.9983,
+                0.9788,
+                0.9849,
+                0.9391,
+                0.9490,
+                0.9994,
+                0.9995,
+                0.9971,
+                0.9974,
+                0.9213,
+                0.9227,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.5982,
+                0.9159,
+                0.9904,
+                0.9942,
+                0.9521,
+                0.9705,
+                0.8870,
+                0.9113,
+                0.9973,
+                0.9977,
+                0.9870,
+                0.9877,
+                0.7204,
+                0.7233,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0][1].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][1].xyxy.cpu(),
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor(
+            [0.9245, 0.9082],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor(
+            [0.9245, 0.9082],
+        ).cpu(),
+        atol=0.01,
+    )
+
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
@@ -97,6 +580,145 @@ def test_yolov8n_pose_onnx_static_center_crop_package_list_torch(
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_static_center_crop_package,
         onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    predictions = model([people_walking_image_torch, people_walking_image_torch])
+
+    # then
+    expected_xy = torch.tensor(
+        [
+            [
+                [741, 192],
+                [0, 0],
+                [0, 0],
+                [698, 178],
+                [749, 180],
+                [661, 251],
+                [770, 255],
+                [633, 372],
+                [801, 365],
+                [636, 467],
+                [809, 448],
+                [680, 436],
+                [748, 438],
+                [692, 578],
+                [735, 585],
+                [715, 716],
+                [714, 726],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [433, 192],
+                [483, 192],
+                [398, 257],
+                [491, 258],
+                [368, 365],
+                [511, 360],
+                [368, 448],
+                [522, 446],
+                [415, 429],
+                [475, 430],
+                [417, 584],
+                [473, 578],
+                [436, 712],
+                [466, 700],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.3142,
+                0.0000,
+                0.0000,
+                0.8722,
+                0.9678,
+                0.9978,
+                0.9983,
+                0.9788,
+                0.9849,
+                0.9391,
+                0.9490,
+                0.9994,
+                0.9995,
+                0.9971,
+                0.9974,
+                0.9213,
+                0.9227,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.5982,
+                0.9159,
+                0.9904,
+                0.9942,
+                0.9521,
+                0.9705,
+                0.8870,
+                0.9113,
+                0.9973,
+                0.9977,
+                0.9870,
+                0.9877,
+                0.7204,
+                0.7233,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0][1].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][1].xyxy.cpu(),
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor(
+            [0.9245, 0.9082],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor(
+            [0.9245, 0.9082],
+        ).cpu(),
+        atol=0.01,
     )
 
 
@@ -112,17 +734,115 @@ def test_yolov8n_pose_onnx_static_static_crop_center_crop_package_numpy(
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    # when
+    predictions = model(people_walking_image_numpy)
 
-@pytest.mark.slow
-@pytest.mark.onnx_extras
-@pytest.mark.cpu_only
-def test_yolov8n_pose_onnx_static_static_crop_center_crop_package_numpy_custom_size(
-    yolov8n_pose_onnx_static_static_crop_center_crop_package: str,
-    people_walking_image_numpy: np.ndarray,
-) -> None:
-    model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
-        model_name_or_path=yolov8n_pose_onnx_static_static_crop_center_crop_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+    # then
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        torch.tensor(
+            [
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [697, 190],
+                    [747, 188],
+                    [672, 258],
+                    [765, 255],
+                    [638, 374],
+                    [793, 356],
+                    [640, 450],
+                    [791, 407],
+                    [689, 441],
+                    [747, 440],
+                    [700, 576],
+                    [735, 578],
+                    [716, 686],
+                    [722, 692],
+                ],
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [418, 203],
+                    [470, 205],
+                    [391, 264],
+                    [488, 265],
+                    [371, 368],
+                    [512, 360],
+                    [370, 448],
+                    [525, 445],
+                    [414, 420],
+                    [476, 422],
+                    [416, 557],
+                    [479, 563],
+                    [422, 675],
+                    [464, 684],
+                ],
+            ],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        torch.tensor(
+            [
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.7607,
+                    0.3590,
+                    0.9806,
+                    0.9198,
+                    0.9519,
+                    0.7508,
+                    0.8595,
+                    0.6070,
+                    0.9949,
+                    0.9904,
+                    0.9740,
+                    0.9554,
+                    0.6294,
+                    0.5400,
+                ],
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.4374,
+                    0.7757,
+                    0.9780,
+                    0.9896,
+                    0.9354,
+                    0.9757,
+                    0.8797,
+                    0.9364,
+                    0.9964,
+                    0.9976,
+                    0.9830,
+                    0.9885,
+                    0.6630,
+                    0.7122,
+                ],
+            ],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
     )
 
 
@@ -138,6 +858,141 @@ def test_yolov8n_pose_onnx_static_static_crop_center_crop_package_batch_numpy(
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    predictions = model([people_walking_image_numpy, people_walking_image_numpy])
+
+    # then
+    expected_kp_xy = torch.tensor(
+        [
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [697, 190],
+                [747, 188],
+                [672, 258],
+                [765, 255],
+                [638, 374],
+                [793, 356],
+                [640, 450],
+                [791, 407],
+                [689, 441],
+                [747, 440],
+                [700, 576],
+                [735, 578],
+                [716, 686],
+                [722, 692],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [418, 203],
+                [470, 205],
+                [391, 264],
+                [488, 265],
+                [371, 368],
+                [512, 360],
+                [370, 448],
+                [525, 445],
+                [414, 420],
+                [476, 422],
+                [416, 557],
+                [479, 563],
+                [422, 675],
+                [464, 684],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.7607,
+                0.3590,
+                0.9806,
+                0.9198,
+                0.9519,
+                0.7508,
+                0.8595,
+                0.6070,
+                0.9949,
+                0.9904,
+                0.9740,
+                0.9554,
+                0.6294,
+                0.5400,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.4374,
+                0.7757,
+                0.9780,
+                0.9896,
+                0.9354,
+                0.9757,
+                0.8797,
+                0.9364,
+                0.9964,
+                0.9976,
+                0.9830,
+                0.9885,
+                0.6630,
+                0.7122,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0][1].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][1].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
+    )
+
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
@@ -151,17 +1006,114 @@ def test_yolov8n_pose_onnx_static_static_crop_center_crop_package_torch(
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    predictions = model(people_walking_image_torch)
 
-@pytest.mark.slow
-@pytest.mark.onnx_extras
-@pytest.mark.cpu_only
-def test_yolov8n_pose_onnx_static_static_crop_center_crop_package_torch_custom_size(
-    yolov8n_pose_onnx_static_static_crop_center_crop_package: str,
-    people_walking_image_torch: torch.Tensor,
-) -> None:
-    model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
-        model_name_or_path=yolov8n_pose_onnx_static_static_crop_center_crop_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+    # then
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        torch.tensor(
+            [
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [697, 190],
+                    [747, 188],
+                    [672, 258],
+                    [765, 255],
+                    [638, 374],
+                    [793, 356],
+                    [640, 450],
+                    [791, 407],
+                    [689, 441],
+                    [747, 440],
+                    [700, 576],
+                    [735, 578],
+                    [716, 686],
+                    [722, 692],
+                ],
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [418, 203],
+                    [470, 205],
+                    [391, 264],
+                    [488, 265],
+                    [371, 368],
+                    [512, 360],
+                    [370, 448],
+                    [525, 445],
+                    [414, 420],
+                    [476, 422],
+                    [416, 557],
+                    [479, 563],
+                    [422, 675],
+                    [464, 684],
+                ],
+            ],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        torch.tensor(
+            [
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.7607,
+                    0.3590,
+                    0.9806,
+                    0.9198,
+                    0.9519,
+                    0.7508,
+                    0.8595,
+                    0.6070,
+                    0.9949,
+                    0.9904,
+                    0.9740,
+                    0.9554,
+                    0.6294,
+                    0.5400,
+                ],
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.4374,
+                    0.7757,
+                    0.9780,
+                    0.9896,
+                    0.9354,
+                    0.9757,
+                    0.8797,
+                    0.9364,
+                    0.9964,
+                    0.9976,
+                    0.9830,
+                    0.9885,
+                    0.6630,
+                    0.7122,
+                ],
+            ],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
     )
 
 
@@ -177,6 +1129,143 @@ def test_yolov8n_pose_onnx_static_static_crop_center_crop_package_batch_torch(
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    predictions = model(
+        torch.stack([people_walking_image_torch, people_walking_image_torch], dim=0)
+    )
+
+    # then
+    expected_kp_xy = torch.tensor(
+        [
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [697, 190],
+                [747, 188],
+                [672, 258],
+                [765, 255],
+                [638, 374],
+                [793, 356],
+                [640, 450],
+                [791, 407],
+                [689, 441],
+                [747, 440],
+                [700, 576],
+                [735, 578],
+                [716, 686],
+                [722, 692],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [418, 203],
+                [470, 205],
+                [391, 264],
+                [488, 265],
+                [371, 368],
+                [512, 360],
+                [370, 448],
+                [525, 445],
+                [414, 420],
+                [476, 422],
+                [416, 557],
+                [479, 563],
+                [422, 675],
+                [464, 684],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.7607,
+                0.3590,
+                0.9806,
+                0.9198,
+                0.9519,
+                0.7508,
+                0.8595,
+                0.6070,
+                0.9949,
+                0.9904,
+                0.9740,
+                0.9554,
+                0.6294,
+                0.5400,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.4374,
+                0.7757,
+                0.9780,
+                0.9896,
+                0.9354,
+                0.9757,
+                0.8797,
+                0.9364,
+                0.9964,
+                0.9976,
+                0.9830,
+                0.9885,
+                0.6630,
+                0.7122,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0][1].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][1].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
+    )
+
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
@@ -188,6 +1277,141 @@ def test_yolov8n_pose_onnx_static_static_crop_center_crop_package_list_torch(
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_static_static_crop_center_crop_package,
         onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    predictions = model([people_walking_image_torch, people_walking_image_torch])
+
+    # then
+    expected_kp_xy = torch.tensor(
+        [
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [697, 190],
+                [747, 188],
+                [672, 258],
+                [765, 255],
+                [638, 374],
+                [793, 356],
+                [640, 450],
+                [791, 407],
+                [689, 441],
+                [747, 440],
+                [700, 576],
+                [735, 578],
+                [716, 686],
+                [722, 692],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [418, 203],
+                [470, 205],
+                [391, 264],
+                [488, 265],
+                [371, 368],
+                [512, 360],
+                [370, 448],
+                [525, 445],
+                [414, 420],
+                [476, 422],
+                [416, 557],
+                [479, 563],
+                [422, 675],
+                [464, 684],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.7607,
+                0.3590,
+                0.9806,
+                0.9198,
+                0.9519,
+                0.7508,
+                0.8595,
+                0.6070,
+                0.9949,
+                0.9904,
+                0.9740,
+                0.9554,
+                0.6294,
+                0.5400,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.4374,
+                0.7757,
+                0.9780,
+                0.9896,
+                0.9354,
+                0.9757,
+                0.8797,
+                0.9364,
+                0.9964,
+                0.9976,
+                0.9830,
+                0.9885,
+                0.6630,
+                0.7122,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0][1].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][1].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
     )
 
 
@@ -203,17 +1427,116 @@ def test_yolov8n_pose_onnx_static_static_crop_letterbox_package_numpy(
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    predictions = model(people_walking_image_numpy)
 
-@pytest.mark.slow
-@pytest.mark.onnx_extras
-@pytest.mark.cpu_only
-def test_yolov8n_pose_onnx_static_static_crop_letterbox_package_numpy_custom_size(
-    yolov8n_pose_onnx_static_static_crop_letterbox_package: str,
-    people_walking_image_numpy: np.ndarray,
-) -> None:
-    model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
-        model_name_or_path=yolov8n_pose_onnx_static_static_crop_letterbox_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+    # then
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        torch.tensor(
+            [
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [695, 192],
+                    [747, 193],
+                    [669, 258],
+                    [769, 259],
+                    [634, 367],
+                    [801, 363],
+                    [633, 448],
+                    [810, 446],
+                    [686, 439],
+                    [747, 440],
+                    [700, 571],
+                    [742, 579],
+                    [711, 678],
+                    [718, 695],
+                ],
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [421, 200],
+                    [483, 202],
+                    [397, 258],
+                    [493, 260],
+                    [374, 366],
+                    [510, 362],
+                    [370, 446],
+                    [525, 446],
+                    [413, 424],
+                    [476, 426],
+                    [418, 563],
+                    [480, 571],
+                    [426, 675],
+                    [462, 687],
+                ],
+            ],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        torch.tensor(
+            [
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.6567,
+                    0.7295,
+                    0.9855,
+                    0.9899,
+                    0.9535,
+                    0.9741,
+                    0.8981,
+                    0.9329,
+                    0.9969,
+                    0.9977,
+                    0.9785,
+                    0.9852,
+                    0.6794,
+                    0.7282,
+                ],
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.3024,
+                    0.5514,
+                    0.9627,
+                    0.9788,
+                    0.9360,
+                    0.9680,
+                    0.8823,
+                    0.9227,
+                    0.9957,
+                    0.9968,
+                    0.9794,
+                    0.9845,
+                    0.6798,
+                    0.7136,
+                ],
+            ],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 194, 821, 691], [353, 188, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor(
+            [0.9204, 0.9172],
+        ).cpu(),
+        atol=0.01,
     )
 
 
@@ -229,6 +1552,140 @@ def test_yolov8n_pose_onnx_static_static_crop_letterbox_package_batch_numpy(
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    predictions = model([people_walking_image_numpy, people_walking_image_numpy])
+
+    # then
+    expected_kp_xy = torch.tensor(
+        [
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [695, 192],
+                [747, 193],
+                [669, 258],
+                [769, 259],
+                [634, 367],
+                [801, 363],
+                [633, 448],
+                [810, 446],
+                [686, 439],
+                [747, 440],
+                [700, 571],
+                [742, 579],
+                [711, 678],
+                [718, 695],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [421, 200],
+                [483, 202],
+                [397, 258],
+                [493, 260],
+                [374, 366],
+                [510, 362],
+                [370, 446],
+                [525, 446],
+                [413, 424],
+                [476, 426],
+                [418, 563],
+                [480, 571],
+                [426, 675],
+                [462, 687],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.6567,
+                0.7295,
+                0.9855,
+                0.9899,
+                0.9535,
+                0.9741,
+                0.8981,
+                0.9329,
+                0.9969,
+                0.9977,
+                0.9785,
+                0.9852,
+                0.6794,
+                0.7282,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.3024,
+                0.5514,
+                0.9627,
+                0.9788,
+                0.9360,
+                0.9680,
+                0.8823,
+                0.9227,
+                0.9957,
+                0.9968,
+                0.9794,
+                0.9845,
+                0.6798,
+                0.7136,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 194, 821, 691], [353, 188, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][1].xyxy.cpu(),
+        torch.tensor(
+            [[620, 194, 821, 691], [353, 188, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor(
+            [0.9204, 0.9172],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor(
+            [0.9204, 0.9172],
+        ).cpu(),
+        atol=0.01,
+    )
+
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
@@ -242,17 +1699,117 @@ def test_yolov8n_pose_onnx_static_static_crop_letterbox_package_torch(
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    # when
+    predictions = model(people_walking_image_torch)
 
-@pytest.mark.slow
-@pytest.mark.onnx_extras
-@pytest.mark.cpu_only
-def test_yolov8n_pose_onnx_static_static_crop_letterbox_package_torch_custom_size(
-    yolov8n_pose_onnx_static_static_crop_letterbox_package: str,
-    people_walking_image_torch: torch.Tensor,
-) -> None:
-    model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
-        model_name_or_path=yolov8n_pose_onnx_static_static_crop_letterbox_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+    # then
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        torch.tensor(
+            [
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [695, 192],
+                    [747, 193],
+                    [669, 258],
+                    [769, 259],
+                    [634, 367],
+                    [801, 363],
+                    [633, 448],
+                    [810, 446],
+                    [686, 439],
+                    [747, 440],
+                    [700, 571],
+                    [742, 579],
+                    [711, 678],
+                    [718, 695],
+                ],
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [421, 200],
+                    [483, 202],
+                    [397, 258],
+                    [493, 260],
+                    [374, 366],
+                    [510, 362],
+                    [370, 446],
+                    [525, 446],
+                    [413, 424],
+                    [476, 426],
+                    [418, 563],
+                    [480, 571],
+                    [426, 675],
+                    [462, 687],
+                ],
+            ],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        torch.tensor(
+            [
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.6567,
+                    0.7295,
+                    0.9855,
+                    0.9899,
+                    0.9535,
+                    0.9741,
+                    0.8981,
+                    0.9329,
+                    0.9969,
+                    0.9977,
+                    0.9785,
+                    0.9852,
+                    0.6794,
+                    0.7282,
+                ],
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.3024,
+                    0.5514,
+                    0.9627,
+                    0.9788,
+                    0.9360,
+                    0.9680,
+                    0.8823,
+                    0.9227,
+                    0.9957,
+                    0.9968,
+                    0.9794,
+                    0.9845,
+                    0.6798,
+                    0.7136,
+                ],
+            ],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 194, 821, 691], [353, 188, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor(
+            [0.9204, 0.9172],
+        ).cpu(),
+        atol=0.01,
     )
 
 
@@ -268,6 +1825,142 @@ def test_yolov8n_pose_onnx_static_static_crop_letterbox_package_batch_torch(
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    predictions = model(
+        torch.stack([people_walking_image_torch, people_walking_image_torch], dim=0)
+    )
+
+    # then
+    expected_kp_xy = torch.tensor(
+        [
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [695, 192],
+                [747, 193],
+                [669, 258],
+                [769, 259],
+                [634, 367],
+                [801, 363],
+                [633, 448],
+                [810, 446],
+                [686, 439],
+                [747, 440],
+                [700, 571],
+                [742, 579],
+                [711, 678],
+                [718, 695],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [421, 200],
+                [483, 202],
+                [397, 258],
+                [493, 260],
+                [374, 366],
+                [510, 362],
+                [370, 446],
+                [525, 446],
+                [413, 424],
+                [476, 426],
+                [418, 563],
+                [480, 571],
+                [426, 675],
+                [462, 687],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.6567,
+                0.7295,
+                0.9855,
+                0.9899,
+                0.9535,
+                0.9741,
+                0.8981,
+                0.9329,
+                0.9969,
+                0.9977,
+                0.9785,
+                0.9852,
+                0.6794,
+                0.7282,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.3024,
+                0.5514,
+                0.9627,
+                0.9788,
+                0.9360,
+                0.9680,
+                0.8823,
+                0.9227,
+                0.9957,
+                0.9968,
+                0.9794,
+                0.9845,
+                0.6798,
+                0.7136,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 194, 821, 691], [353, 188, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][1].xyxy.cpu(),
+        torch.tensor(
+            [[620, 194, 821, 691], [353, 188, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor(
+            [0.9204, 0.9172],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor(
+            [0.9204, 0.9172],
+        ).cpu(),
+        atol=0.01,
+    )
+
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
@@ -279,6 +1972,140 @@ def test_yolov8n_pose_onnx_static_static_crop_letterbox_package_list_torch(
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_static_static_crop_letterbox_package,
         onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    predictions = model([people_walking_image_torch, people_walking_image_torch])
+
+    # then
+    expected_kp_xy = torch.tensor(
+        [
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [695, 192],
+                [747, 193],
+                [669, 258],
+                [769, 259],
+                [634, 367],
+                [801, 363],
+                [633, 448],
+                [810, 446],
+                [686, 439],
+                [747, 440],
+                [700, 571],
+                [742, 579],
+                [711, 678],
+                [718, 695],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [421, 200],
+                [483, 202],
+                [397, 258],
+                [493, 260],
+                [374, 366],
+                [510, 362],
+                [370, 446],
+                [525, 446],
+                [413, 424],
+                [476, 426],
+                [418, 563],
+                [480, 571],
+                [426, 675],
+                [462, 687],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.6567,
+                0.7295,
+                0.9855,
+                0.9899,
+                0.9535,
+                0.9741,
+                0.8981,
+                0.9329,
+                0.9969,
+                0.9977,
+                0.9785,
+                0.9852,
+                0.6794,
+                0.7282,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.3024,
+                0.5514,
+                0.9627,
+                0.9788,
+                0.9360,
+                0.9680,
+                0.8823,
+                0.9227,
+                0.9957,
+                0.9968,
+                0.9794,
+                0.9845,
+                0.6798,
+                0.7136,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 194, 821, 691], [353, 188, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][1].xyxy.cpu(),
+        torch.tensor(
+            [[620, 194, 821, 691], [353, 188, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor(
+            [0.9204, 0.9172],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor(
+            [0.9204, 0.9172],
+        ).cpu(),
+        atol=0.01,
     )
 
 
@@ -385,6 +2212,118 @@ def test_yolov8n_pose_onnx_dynamic_center_crop_package_numpy(
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    predictions = model(people_walking_image_numpy)
+
+    # then
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        torch.tensor(
+            [
+                [
+                    [741, 192],
+                    [0, 0],
+                    [0, 0],
+                    [698, 178],
+                    [749, 180],
+                    [661, 251],
+                    [770, 255],
+                    [633, 372],
+                    [801, 365],
+                    [636, 467],
+                    [809, 448],
+                    [680, 436],
+                    [748, 438],
+                    [692, 578],
+                    [735, 585],
+                    [715, 716],
+                    [714, 726],
+                ],
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [433, 192],
+                    [483, 192],
+                    [398, 257],
+                    [491, 258],
+                    [368, 365],
+                    [511, 360],
+                    [368, 448],
+                    [522, 446],
+                    [415, 429],
+                    [475, 430],
+                    [417, 584],
+                    [473, 578],
+                    [436, 712],
+                    [466, 700],
+                ],
+            ],
+            dtype=torch.int32,
+        ),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        torch.tensor(
+            [
+                [
+                    0.3142,
+                    0.0000,
+                    0.0000,
+                    0.8722,
+                    0.9678,
+                    0.9978,
+                    0.9983,
+                    0.9788,
+                    0.9849,
+                    0.9391,
+                    0.9490,
+                    0.9994,
+                    0.9995,
+                    0.9971,
+                    0.9974,
+                    0.9213,
+                    0.9227,
+                ],
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.5982,
+                    0.9159,
+                    0.9904,
+                    0.9942,
+                    0.9521,
+                    0.9705,
+                    0.8870,
+                    0.9113,
+                    0.9973,
+                    0.9977,
+                    0.9870,
+                    0.9877,
+                    0.7204,
+                    0.7233,
+                ],
+            ],
+        ),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy,
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence,
+        torch.tensor(
+            [0.9245, 0.9082],
+        ),
+        atol=0.01,
+    )
+
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
@@ -396,6 +2335,119 @@ def test_yolov8n_pose_onnx_dynamic_center_crop_package_numpy_custom_size(
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_center_crop_package,
         onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(people_walking_image_numpy, image_size=(300, 300))
+
+    # then
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        torch.tensor(
+            [
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [663, 268],
+                    [776, 268],
+                    [635, 366],
+                    [801, 359],
+                    [630, 452],
+                    [790, 423],
+                    [678, 440],
+                    [747, 441],
+                    [689, 566],
+                    [736, 578],
+                    [0, 0],
+                    [0, 0],
+                ],
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [507, 366],
+                    [0, 0],
+                    [526, 449],
+                    [492, 443],
+                    [490, 444],
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                ],
+            ],
+            dtype=torch.int32,
+        ),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        torch.tensor(
+            [
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.6722,
+                    0.5439,
+                    0.9176,
+                    0.8078,
+                    0.7998,
+                    0.6743,
+                    0.9850,
+                    0.9799,
+                    0.6256,
+                    0.5610,
+                    0.0000,
+                    0.0000,
+                ],
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.7330,
+                    0.0000,
+                    0.6914,
+                    0.3633,
+                    0.6258,
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                ],
+            ],
+        ),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy,
+        torch.tensor(
+            [[620, 267, 800, 587], [480, 267, 537, 587]],
+            dtype=torch.int32,
+        ),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence,
+        torch.tensor(
+            [0.9436, 0.8497],
+        ),
+        atol=0.01,
     )
 
 
@@ -411,6 +2463,146 @@ def test_yolov8n_pose_onnx_dynamic_center_crop_package_batch_numpy(
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    # when
+    predictions = model([people_walking_image_numpy, people_walking_image_numpy])
+
+    # then
+    expected_kp_xy = torch.tensor(
+        [
+            [
+                [741, 192],
+                [0, 0],
+                [0, 0],
+                [698, 178],
+                [749, 180],
+                [661, 251],
+                [770, 255],
+                [633, 372],
+                [801, 365],
+                [636, 467],
+                [809, 448],
+                [680, 436],
+                [748, 438],
+                [692, 578],
+                [735, 585],
+                [715, 716],
+                [714, 726],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [433, 192],
+                [483, 192],
+                [398, 257],
+                [491, 258],
+                [368, 365],
+                [511, 360],
+                [368, 448],
+                [522, 446],
+                [415, 429],
+                [475, 430],
+                [417, 584],
+                [473, 578],
+                [436, 712],
+                [466, 700],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.3142,
+                0.0000,
+                0.0000,
+                0.8722,
+                0.9678,
+                0.9978,
+                0.9983,
+                0.9788,
+                0.9849,
+                0.9391,
+                0.9490,
+                0.9994,
+                0.9995,
+                0.9971,
+                0.9974,
+                0.9213,
+                0.9227,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.5982,
+                0.9159,
+                0.9904,
+                0.9942,
+                0.9521,
+                0.9705,
+                0.8870,
+                0.9113,
+                0.9973,
+                0.9977,
+                0.9870,
+                0.9877,
+                0.7204,
+                0.7233,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0][1].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor(
+            [0.9245, 0.9082],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor(
+            [0.9245, 0.9082],
+        ).cpu(),
+        atol=0.01,
+    )
+
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
@@ -422,6 +2614,118 @@ def test_yolov8n_pose_onnx_dynamic_center_crop_package_torch(
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_center_crop_package,
         onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    predictions = model(people_walking_image_torch)
+
+    # then
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        torch.tensor(
+            [
+                [
+                    [741, 192],
+                    [0, 0],
+                    [0, 0],
+                    [698, 178],
+                    [749, 180],
+                    [661, 251],
+                    [770, 255],
+                    [633, 372],
+                    [801, 365],
+                    [636, 467],
+                    [809, 448],
+                    [680, 436],
+                    [748, 438],
+                    [692, 578],
+                    [735, 585],
+                    [715, 716],
+                    [714, 726],
+                ],
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [433, 192],
+                    [483, 192],
+                    [398, 257],
+                    [491, 258],
+                    [368, 365],
+                    [511, 360],
+                    [368, 448],
+                    [522, 446],
+                    [415, 429],
+                    [475, 430],
+                    [417, 584],
+                    [473, 578],
+                    [436, 712],
+                    [466, 700],
+                ],
+            ],
+            dtype=torch.int32,
+        ),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        torch.tensor(
+            [
+                [
+                    0.3142,
+                    0.0000,
+                    0.0000,
+                    0.8722,
+                    0.9678,
+                    0.9978,
+                    0.9983,
+                    0.9788,
+                    0.9849,
+                    0.9391,
+                    0.9490,
+                    0.9994,
+                    0.9995,
+                    0.9971,
+                    0.9974,
+                    0.9213,
+                    0.9227,
+                ],
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.5982,
+                    0.9159,
+                    0.9904,
+                    0.9942,
+                    0.9521,
+                    0.9705,
+                    0.8870,
+                    0.9113,
+                    0.9973,
+                    0.9977,
+                    0.9870,
+                    0.9877,
+                    0.7204,
+                    0.7233,
+                ],
+            ],
+        ),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy,
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence,
+        torch.tensor(
+            [0.9245, 0.9082],
+        ),
+        atol=0.01,
     )
 
 
@@ -450,6 +2754,147 @@ def test_yolov8n_pose_onnx_dynamic_center_crop_package_batch_torch(
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    predictions = model(
+        torch.stack([people_walking_image_torch, people_walking_image_torch], dim=0)
+    )
+
+    # then
+    expected_xy = torch.tensor(
+        [
+            [
+                [741, 192],
+                [0, 0],
+                [0, 0],
+                [698, 178],
+                [749, 180],
+                [661, 251],
+                [770, 255],
+                [633, 372],
+                [801, 365],
+                [636, 467],
+                [809, 448],
+                [680, 436],
+                [748, 438],
+                [692, 578],
+                [735, 585],
+                [715, 716],
+                [714, 726],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [433, 192],
+                [483, 192],
+                [398, 257],
+                [491, 258],
+                [368, 365],
+                [511, 360],
+                [368, 448],
+                [522, 446],
+                [415, 429],
+                [475, 430],
+                [417, 584],
+                [473, 578],
+                [436, 712],
+                [466, 700],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.3142,
+                0.0000,
+                0.0000,
+                0.8722,
+                0.9678,
+                0.9978,
+                0.9983,
+                0.9788,
+                0.9849,
+                0.9391,
+                0.9490,
+                0.9994,
+                0.9995,
+                0.9971,
+                0.9974,
+                0.9213,
+                0.9227,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.5982,
+                0.9159,
+                0.9904,
+                0.9942,
+                0.9521,
+                0.9705,
+                0.8870,
+                0.9113,
+                0.9973,
+                0.9977,
+                0.9870,
+                0.9877,
+                0.7204,
+                0.7233,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0][1].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][1].xyxy.cpu(),
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor(
+            [0.9245, 0.9082],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor(
+            [0.9245, 0.9082],
+        ).cpu(),
+        atol=0.01,
+    )
+
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
@@ -461,6 +2906,145 @@ def test_yolov8n_pose_onnx_dynamic_center_crop_package_list_torch(
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_center_crop_package,
         onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    predictions = model([people_walking_image_torch, people_walking_image_torch])
+
+    # then
+    expected_xy = torch.tensor(
+        [
+            [
+                [741, 192],
+                [0, 0],
+                [0, 0],
+                [698, 178],
+                [749, 180],
+                [661, 251],
+                [770, 255],
+                [633, 372],
+                [801, 365],
+                [636, 467],
+                [809, 448],
+                [680, 436],
+                [748, 438],
+                [692, 578],
+                [735, 585],
+                [715, 716],
+                [714, 726],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [433, 192],
+                [483, 192],
+                [398, 257],
+                [491, 258],
+                [368, 365],
+                [511, 360],
+                [368, 448],
+                [522, 446],
+                [415, 429],
+                [475, 430],
+                [417, 584],
+                [473, 578],
+                [436, 712],
+                [466, 700],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.3142,
+                0.0000,
+                0.0000,
+                0.8722,
+                0.9678,
+                0.9978,
+                0.9983,
+                0.9788,
+                0.9849,
+                0.9391,
+                0.9490,
+                0.9994,
+                0.9995,
+                0.9971,
+                0.9974,
+                0.9213,
+                0.9227,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.5982,
+                0.9159,
+                0.9904,
+                0.9942,
+                0.9521,
+                0.9705,
+                0.8870,
+                0.9113,
+                0.9973,
+                0.9977,
+                0.9870,
+                0.9877,
+                0.7204,
+                0.7233,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0][1].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][1].xyxy.cpu(),
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor(
+            [0.9245, 0.9082],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor(
+            [0.9245, 0.9082],
+        ).cpu(),
+        atol=0.01,
     )
 
 
@@ -476,6 +3060,117 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_center_crop_package_numpy(
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    # when
+    predictions = model(people_walking_image_numpy)
+
+    # then
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        torch.tensor(
+            [
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [697, 190],
+                    [747, 188],
+                    [672, 258],
+                    [765, 255],
+                    [638, 374],
+                    [793, 356],
+                    [640, 450],
+                    [791, 407],
+                    [689, 441],
+                    [747, 440],
+                    [700, 576],
+                    [735, 578],
+                    [716, 686],
+                    [722, 692],
+                ],
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [418, 203],
+                    [470, 205],
+                    [391, 264],
+                    [488, 265],
+                    [371, 368],
+                    [512, 360],
+                    [370, 448],
+                    [525, 445],
+                    [414, 420],
+                    [476, 422],
+                    [416, 557],
+                    [479, 563],
+                    [422, 675],
+                    [464, 684],
+                ],
+            ],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        torch.tensor(
+            [
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.7607,
+                    0.3590,
+                    0.9806,
+                    0.9198,
+                    0.9519,
+                    0.7508,
+                    0.8595,
+                    0.6070,
+                    0.9949,
+                    0.9904,
+                    0.9740,
+                    0.9554,
+                    0.6294,
+                    0.5400,
+                ],
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.4374,
+                    0.7757,
+                    0.9780,
+                    0.9896,
+                    0.9354,
+                    0.9757,
+                    0.8797,
+                    0.9364,
+                    0.9964,
+                    0.9976,
+                    0.9830,
+                    0.9885,
+                    0.6630,
+                    0.7122,
+                ],
+            ],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
+    )
+
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
@@ -487,6 +3182,79 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_center_crop_package_numpy_custom_
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_static_crop_center_crop_package,
         onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(people_walking_image_numpy, image_size=(300, 300))
+
+    # then
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        torch.tensor(
+            [
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [372, 364],
+                    [509, 355],
+                    [365, 448],
+                    [527, 446],
+                    [418, 423],
+                    [480, 423],
+                    [405, 559],
+                    [489, 566],
+                    [0, 0],
+                    [0, 0],
+                ]
+            ],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        torch.tensor(
+            [
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.7477,
+                    0.8287,
+                    0.6849,
+                    0.7378,
+                    0.9691,
+                    0.9759,
+                    0.6365,
+                    0.7026,
+                    0.0000,
+                    0.0000,
+                ]
+            ],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[353, 288, 538, 607]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor([0.9358]).cpu(),
+        atol=0.01,
     )
 
 
@@ -502,6 +3270,141 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_center_crop_package_batch_numpy(
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    predictions = model([people_walking_image_numpy, people_walking_image_numpy])
+
+    # then
+    expected_kp_xy = torch.tensor(
+        [
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [697, 190],
+                [747, 188],
+                [672, 258],
+                [765, 255],
+                [638, 374],
+                [793, 356],
+                [640, 450],
+                [791, 407],
+                [689, 441],
+                [747, 440],
+                [700, 576],
+                [735, 578],
+                [716, 686],
+                [722, 692],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [418, 203],
+                [470, 205],
+                [391, 264],
+                [488, 265],
+                [371, 368],
+                [512, 360],
+                [370, 448],
+                [525, 445],
+                [414, 420],
+                [476, 422],
+                [416, 557],
+                [479, 563],
+                [422, 675],
+                [464, 684],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.7607,
+                0.3590,
+                0.9806,
+                0.9198,
+                0.9519,
+                0.7508,
+                0.8595,
+                0.6070,
+                0.9949,
+                0.9904,
+                0.9740,
+                0.9554,
+                0.6294,
+                0.5400,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.4374,
+                0.7757,
+                0.9780,
+                0.9896,
+                0.9354,
+                0.9757,
+                0.8797,
+                0.9364,
+                0.9964,
+                0.9976,
+                0.9830,
+                0.9885,
+                0.6630,
+                0.7122,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0][1].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][1].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
+    )
+
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
@@ -513,6 +3416,116 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_center_crop_package_torch(
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_static_crop_center_crop_package,
         onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    predictions = model(people_walking_image_torch)
+
+    # then
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        torch.tensor(
+            [
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [697, 190],
+                    [747, 188],
+                    [672, 258],
+                    [765, 255],
+                    [638, 374],
+                    [793, 356],
+                    [640, 450],
+                    [791, 407],
+                    [689, 441],
+                    [747, 440],
+                    [700, 576],
+                    [735, 578],
+                    [716, 686],
+                    [722, 692],
+                ],
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [418, 203],
+                    [470, 205],
+                    [391, 264],
+                    [488, 265],
+                    [371, 368],
+                    [512, 360],
+                    [370, 448],
+                    [525, 445],
+                    [414, 420],
+                    [476, 422],
+                    [416, 557],
+                    [479, 563],
+                    [422, 675],
+                    [464, 684],
+                ],
+            ],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        torch.tensor(
+            [
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.7607,
+                    0.3590,
+                    0.9806,
+                    0.9198,
+                    0.9519,
+                    0.7508,
+                    0.8595,
+                    0.6070,
+                    0.9949,
+                    0.9904,
+                    0.9740,
+                    0.9554,
+                    0.6294,
+                    0.5400,
+                ],
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.4374,
+                    0.7757,
+                    0.9780,
+                    0.9896,
+                    0.9354,
+                    0.9757,
+                    0.8797,
+                    0.9364,
+                    0.9964,
+                    0.9976,
+                    0.9830,
+                    0.9885,
+                    0.6630,
+                    0.7122,
+                ],
+            ],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
     )
 
 
@@ -541,6 +3554,143 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_center_crop_package_batch_torch(
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    predictions = model(
+        torch.stack([people_walking_image_torch, people_walking_image_torch], dim=0)
+    )
+
+    # then
+    expected_kp_xy = torch.tensor(
+        [
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [697, 190],
+                [747, 188],
+                [672, 258],
+                [765, 255],
+                [638, 374],
+                [793, 356],
+                [640, 450],
+                [791, 407],
+                [689, 441],
+                [747, 440],
+                [700, 576],
+                [735, 578],
+                [716, 686],
+                [722, 692],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [418, 203],
+                [470, 205],
+                [391, 264],
+                [488, 265],
+                [371, 368],
+                [512, 360],
+                [370, 448],
+                [525, 445],
+                [414, 420],
+                [476, 422],
+                [416, 557],
+                [479, 563],
+                [422, 675],
+                [464, 684],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.7607,
+                0.3590,
+                0.9806,
+                0.9198,
+                0.9519,
+                0.7508,
+                0.8595,
+                0.6070,
+                0.9949,
+                0.9904,
+                0.9740,
+                0.9554,
+                0.6294,
+                0.5400,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.4374,
+                0.7757,
+                0.9780,
+                0.9896,
+                0.9354,
+                0.9757,
+                0.8797,
+                0.9364,
+                0.9964,
+                0.9976,
+                0.9830,
+                0.9885,
+                0.6630,
+                0.7122,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0][1].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][1].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
+    )
+
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
@@ -554,6 +3704,141 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_center_crop_package_list_torch(
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    predictions = model([people_walking_image_torch, people_walking_image_torch])
+
+    # then
+    expected_kp_xy = torch.tensor(
+        [
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [697, 190],
+                [747, 188],
+                [672, 258],
+                [765, 255],
+                [638, 374],
+                [793, 356],
+                [640, 450],
+                [791, 407],
+                [689, 441],
+                [747, 440],
+                [700, 576],
+                [735, 578],
+                [716, 686],
+                [722, 692],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [418, 203],
+                [470, 205],
+                [391, 264],
+                [488, 265],
+                [371, 368],
+                [512, 360],
+                [370, 448],
+                [525, 445],
+                [414, 420],
+                [476, 422],
+                [416, 557],
+                [479, 563],
+                [422, 675],
+                [464, 684],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.7607,
+                0.3590,
+                0.9806,
+                0.9198,
+                0.9519,
+                0.7508,
+                0.8595,
+                0.6070,
+                0.9949,
+                0.9904,
+                0.9740,
+                0.9554,
+                0.6294,
+                0.5400,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.4374,
+                0.7757,
+                0.9780,
+                0.9896,
+                0.9354,
+                0.9757,
+                0.8797,
+                0.9364,
+                0.9964,
+                0.9976,
+                0.9830,
+                0.9885,
+                0.6630,
+                0.7122,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0][1].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][1].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
+    )
+
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
@@ -565,6 +3850,118 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_letterbox_package_numpy(
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_static_crop_letterbox_package,
         onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    predictions = model(people_walking_image_numpy)
+
+    # then
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        torch.tensor(
+            [
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [695, 192],
+                    [747, 193],
+                    [669, 258],
+                    [769, 259],
+                    [634, 367],
+                    [801, 363],
+                    [633, 448],
+                    [810, 446],
+                    [686, 439],
+                    [747, 440],
+                    [700, 571],
+                    [742, 579],
+                    [711, 678],
+                    [718, 695],
+                ],
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [421, 200],
+                    [483, 202],
+                    [397, 258],
+                    [493, 260],
+                    [374, 366],
+                    [510, 362],
+                    [370, 446],
+                    [525, 446],
+                    [413, 424],
+                    [476, 426],
+                    [418, 563],
+                    [480, 571],
+                    [426, 675],
+                    [462, 687],
+                ],
+            ],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        torch.tensor(
+            [
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.6567,
+                    0.7295,
+                    0.9855,
+                    0.9899,
+                    0.9535,
+                    0.9741,
+                    0.8981,
+                    0.9329,
+                    0.9969,
+                    0.9977,
+                    0.9785,
+                    0.9852,
+                    0.6794,
+                    0.7282,
+                ],
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.3024,
+                    0.5514,
+                    0.9627,
+                    0.9788,
+                    0.9360,
+                    0.9680,
+                    0.8823,
+                    0.9227,
+                    0.9957,
+                    0.9968,
+                    0.9794,
+                    0.9845,
+                    0.6798,
+                    0.7136,
+                ],
+            ],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 194, 821, 691], [353, 188, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor(
+            [0.9204, 0.9172],
+        ).cpu(),
+        atol=0.01,
     )
 
 
@@ -593,6 +3990,140 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_letterbox_package_batch_numpy(
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    predictions = model([people_walking_image_numpy, people_walking_image_numpy])
+
+    # then
+    expected_kp_xy = torch.tensor(
+        [
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [695, 192],
+                [747, 193],
+                [669, 258],
+                [769, 259],
+                [634, 367],
+                [801, 363],
+                [633, 448],
+                [810, 446],
+                [686, 439],
+                [747, 440],
+                [700, 571],
+                [742, 579],
+                [711, 678],
+                [718, 695],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [421, 200],
+                [483, 202],
+                [397, 258],
+                [493, 260],
+                [374, 366],
+                [510, 362],
+                [370, 446],
+                [525, 446],
+                [413, 424],
+                [476, 426],
+                [418, 563],
+                [480, 571],
+                [426, 675],
+                [462, 687],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.6567,
+                0.7295,
+                0.9855,
+                0.9899,
+                0.9535,
+                0.9741,
+                0.8981,
+                0.9329,
+                0.9969,
+                0.9977,
+                0.9785,
+                0.9852,
+                0.6794,
+                0.7282,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.3024,
+                0.5514,
+                0.9627,
+                0.9788,
+                0.9360,
+                0.9680,
+                0.8823,
+                0.9227,
+                0.9957,
+                0.9968,
+                0.9794,
+                0.9845,
+                0.6798,
+                0.7136,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 194, 821, 691], [353, 188, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][1].xyxy.cpu(),
+        torch.tensor(
+            [[620, 194, 821, 691], [353, 188, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor(
+            [0.9204, 0.9172],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor(
+            [0.9204, 0.9172],
+        ).cpu(),
+        atol=0.01,
+    )
+
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
@@ -604,6 +4135,118 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_letterbox_package_torch(
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_static_crop_letterbox_package,
         onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    predictions = model(people_walking_image_torch)
+
+    # then
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        torch.tensor(
+            [
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [695, 192],
+                    [747, 193],
+                    [669, 258],
+                    [769, 259],
+                    [634, 367],
+                    [801, 363],
+                    [633, 448],
+                    [810, 446],
+                    [686, 439],
+                    [747, 440],
+                    [700, 571],
+                    [742, 579],
+                    [711, 678],
+                    [718, 695],
+                ],
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [421, 200],
+                    [483, 202],
+                    [397, 258],
+                    [493, 260],
+                    [374, 366],
+                    [510, 362],
+                    [370, 446],
+                    [525, 446],
+                    [413, 424],
+                    [476, 426],
+                    [418, 563],
+                    [480, 571],
+                    [426, 675],
+                    [462, 687],
+                ],
+            ],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        torch.tensor(
+            [
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.6567,
+                    0.7295,
+                    0.9855,
+                    0.9899,
+                    0.9535,
+                    0.9741,
+                    0.8981,
+                    0.9329,
+                    0.9969,
+                    0.9977,
+                    0.9785,
+                    0.9852,
+                    0.6794,
+                    0.7282,
+                ],
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.3024,
+                    0.5514,
+                    0.9627,
+                    0.9788,
+                    0.9360,
+                    0.9680,
+                    0.8823,
+                    0.9227,
+                    0.9957,
+                    0.9968,
+                    0.9794,
+                    0.9845,
+                    0.6798,
+                    0.7136,
+                ],
+            ],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 194, 821, 691], [353, 188, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor(
+            [0.9204, 0.9172],
+        ).cpu(),
+        atol=0.01,
     )
 
 
@@ -632,6 +4275,142 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_letterbox_package_batch_torch(
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    predictions = model(
+        torch.stack([people_walking_image_torch, people_walking_image_torch], dim=0)
+    )
+
+    # then
+    expected_kp_xy = torch.tensor(
+        [
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [695, 192],
+                [747, 193],
+                [669, 258],
+                [769, 259],
+                [634, 367],
+                [801, 363],
+                [633, 448],
+                [810, 446],
+                [686, 439],
+                [747, 440],
+                [700, 571],
+                [742, 579],
+                [711, 678],
+                [718, 695],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [421, 200],
+                [483, 202],
+                [397, 258],
+                [493, 260],
+                [374, 366],
+                [510, 362],
+                [370, 446],
+                [525, 446],
+                [413, 424],
+                [476, 426],
+                [418, 563],
+                [480, 571],
+                [426, 675],
+                [462, 687],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.6567,
+                0.7295,
+                0.9855,
+                0.9899,
+                0.9535,
+                0.9741,
+                0.8981,
+                0.9329,
+                0.9969,
+                0.9977,
+                0.9785,
+                0.9852,
+                0.6794,
+                0.7282,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.3024,
+                0.5514,
+                0.9627,
+                0.9788,
+                0.9360,
+                0.9680,
+                0.8823,
+                0.9227,
+                0.9957,
+                0.9968,
+                0.9794,
+                0.9845,
+                0.6798,
+                0.7136,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 194, 821, 691], [353, 188, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][1].xyxy.cpu(),
+        torch.tensor(
+            [[620, 194, 821, 691], [353, 188, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor(
+            [0.9204, 0.9172],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor(
+            [0.9204, 0.9172],
+        ).cpu(),
+        atol=0.01,
+    )
+
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
@@ -643,6 +4422,140 @@ def test_yolov8n_pose_onnx_dynamic_static_crop_letterbox_package_list_torch(
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_static_crop_letterbox_package,
         onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    predictions = model([people_walking_image_torch, people_walking_image_torch])
+
+    # then
+    expected_kp_xy = torch.tensor(
+        [
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [695, 192],
+                [747, 193],
+                [669, 258],
+                [769, 259],
+                [634, 367],
+                [801, 363],
+                [633, 448],
+                [810, 446],
+                [686, 439],
+                [747, 440],
+                [700, 571],
+                [742, 579],
+                [711, 678],
+                [718, 695],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [421, 200],
+                [483, 202],
+                [397, 258],
+                [493, 260],
+                [374, 366],
+                [510, 362],
+                [370, 446],
+                [525, 446],
+                [413, 424],
+                [476, 426],
+                [418, 563],
+                [480, 571],
+                [426, 675],
+                [462, 687],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.6567,
+                0.7295,
+                0.9855,
+                0.9899,
+                0.9535,
+                0.9741,
+                0.8981,
+                0.9329,
+                0.9969,
+                0.9977,
+                0.9785,
+                0.9852,
+                0.6794,
+                0.7282,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.3024,
+                0.5514,
+                0.9627,
+                0.9788,
+                0.9360,
+                0.9680,
+                0.8823,
+                0.9227,
+                0.9957,
+                0.9968,
+                0.9794,
+                0.9845,
+                0.6798,
+                0.7136,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 194, 821, 691], [353, 188, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][1].xyxy.cpu(),
+        torch.tensor(
+            [[620, 194, 821, 691], [353, 188, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor(
+            [0.9204, 0.9172],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor(
+            [0.9204, 0.9172],
+        ).cpu(),
+        atol=0.01,
     )
 
 
@@ -749,6 +4662,118 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package_numpy(
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    predictions = model(people_walking_image_numpy)
+
+    # then
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        torch.tensor(
+            [
+                [
+                    [741, 192],
+                    [0, 0],
+                    [0, 0],
+                    [698, 178],
+                    [749, 180],
+                    [661, 251],
+                    [770, 255],
+                    [633, 372],
+                    [801, 365],
+                    [636, 467],
+                    [809, 448],
+                    [680, 436],
+                    [748, 438],
+                    [692, 578],
+                    [735, 585],
+                    [715, 716],
+                    [714, 726],
+                ],
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [433, 192],
+                    [483, 192],
+                    [398, 257],
+                    [491, 258],
+                    [368, 365],
+                    [511, 360],
+                    [368, 448],
+                    [522, 446],
+                    [415, 429],
+                    [475, 430],
+                    [417, 584],
+                    [473, 578],
+                    [436, 712],
+                    [466, 700],
+                ],
+            ],
+            dtype=torch.int32,
+        ),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        torch.tensor(
+            [
+                [
+                    0.3142,
+                    0.0000,
+                    0.0000,
+                    0.8722,
+                    0.9678,
+                    0.9978,
+                    0.9983,
+                    0.9788,
+                    0.9849,
+                    0.9391,
+                    0.9490,
+                    0.9994,
+                    0.9995,
+                    0.9971,
+                    0.9974,
+                    0.9213,
+                    0.9227,
+                ],
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.5982,
+                    0.9159,
+                    0.9904,
+                    0.9942,
+                    0.9521,
+                    0.9705,
+                    0.8870,
+                    0.9113,
+                    0.9973,
+                    0.9977,
+                    0.9870,
+                    0.9877,
+                    0.7204,
+                    0.7233,
+                ],
+            ],
+        ),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy,
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence,
+        torch.tensor(
+            [0.9245, 0.9082],
+        ),
+        atol=0.01,
+    )
+
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
@@ -760,6 +4785,119 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package_numpy_custom_si
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package,
         onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(people_walking_image_numpy, image_size=(300, 300))
+
+    # then
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        torch.tensor(
+            [
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [663, 268],
+                    [776, 268],
+                    [635, 366],
+                    [801, 359],
+                    [630, 452],
+                    [790, 423],
+                    [678, 440],
+                    [747, 441],
+                    [689, 566],
+                    [736, 578],
+                    [0, 0],
+                    [0, 0],
+                ],
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [507, 366],
+                    [0, 0],
+                    [526, 449],
+                    [492, 443],
+                    [490, 444],
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                ],
+            ],
+            dtype=torch.int32,
+        ),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        torch.tensor(
+            [
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.6722,
+                    0.5439,
+                    0.9176,
+                    0.8078,
+                    0.7998,
+                    0.6743,
+                    0.9850,
+                    0.9799,
+                    0.6256,
+                    0.5610,
+                    0.0000,
+                    0.0000,
+                ],
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.7330,
+                    0.0000,
+                    0.6914,
+                    0.3633,
+                    0.6258,
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                ],
+            ],
+        ),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy,
+        torch.tensor(
+            [[620, 267, 800, 587], [480, 267, 537, 587]],
+            dtype=torch.int32,
+        ),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence,
+        torch.tensor(
+            [0.9436, 0.8497],
+        ),
+        atol=0.01,
     )
 
 
@@ -775,6 +4913,146 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package_batch_numpy(
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    # when
+    predictions = model([people_walking_image_numpy, people_walking_image_numpy])
+
+    # then
+    expected_kp_xy = torch.tensor(
+        [
+            [
+                [741, 192],
+                [0, 0],
+                [0, 0],
+                [698, 178],
+                [749, 180],
+                [661, 251],
+                [770, 255],
+                [633, 372],
+                [801, 365],
+                [636, 467],
+                [809, 448],
+                [680, 436],
+                [748, 438],
+                [692, 578],
+                [735, 585],
+                [715, 716],
+                [714, 726],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [433, 192],
+                [483, 192],
+                [398, 257],
+                [491, 258],
+                [368, 365],
+                [511, 360],
+                [368, 448],
+                [522, 446],
+                [415, 429],
+                [475, 430],
+                [417, 584],
+                [473, 578],
+                [436, 712],
+                [466, 700],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.3142,
+                0.0000,
+                0.0000,
+                0.8722,
+                0.9678,
+                0.9978,
+                0.9983,
+                0.9788,
+                0.9849,
+                0.9391,
+                0.9490,
+                0.9994,
+                0.9995,
+                0.9971,
+                0.9974,
+                0.9213,
+                0.9227,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.5982,
+                0.9159,
+                0.9904,
+                0.9942,
+                0.9521,
+                0.9705,
+                0.8870,
+                0.9113,
+                0.9973,
+                0.9977,
+                0.9870,
+                0.9877,
+                0.7204,
+                0.7233,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0][1].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor(
+            [0.9245, 0.9082],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor(
+            [0.9245, 0.9082],
+        ).cpu(),
+        atol=0.01,
+    )
+
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
@@ -786,6 +5064,118 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package_torch(
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package,
         onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    predictions = model(people_walking_image_torch)
+
+    # then
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        torch.tensor(
+            [
+                [
+                    [741, 192],
+                    [0, 0],
+                    [0, 0],
+                    [698, 178],
+                    [749, 180],
+                    [661, 251],
+                    [770, 255],
+                    [633, 372],
+                    [801, 365],
+                    [636, 467],
+                    [809, 448],
+                    [680, 436],
+                    [748, 438],
+                    [692, 578],
+                    [735, 585],
+                    [715, 716],
+                    [714, 726],
+                ],
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [433, 192],
+                    [483, 192],
+                    [398, 257],
+                    [491, 258],
+                    [368, 365],
+                    [511, 360],
+                    [368, 448],
+                    [522, 446],
+                    [415, 429],
+                    [475, 430],
+                    [417, 584],
+                    [473, 578],
+                    [436, 712],
+                    [466, 700],
+                ],
+            ],
+            dtype=torch.int32,
+        ),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        torch.tensor(
+            [
+                [
+                    0.3142,
+                    0.0000,
+                    0.0000,
+                    0.8722,
+                    0.9678,
+                    0.9978,
+                    0.9983,
+                    0.9788,
+                    0.9849,
+                    0.9391,
+                    0.9490,
+                    0.9994,
+                    0.9995,
+                    0.9971,
+                    0.9974,
+                    0.9213,
+                    0.9227,
+                ],
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.5982,
+                    0.9159,
+                    0.9904,
+                    0.9942,
+                    0.9521,
+                    0.9705,
+                    0.8870,
+                    0.9113,
+                    0.9973,
+                    0.9977,
+                    0.9870,
+                    0.9877,
+                    0.7204,
+                    0.7233,
+                ],
+            ],
+        ),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy,
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence,
+        torch.tensor(
+            [0.9245, 0.9082],
+        ),
+        atol=0.01,
     )
 
 
@@ -814,6 +5204,148 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package_batch_torch(
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    # when
+    predictions = model(
+        torch.stack([people_walking_image_torch, people_walking_image_torch], dim=0)
+    )
+
+    # then
+    expected_xy = torch.tensor(
+        [
+            [
+                [741, 192],
+                [0, 0],
+                [0, 0],
+                [698, 178],
+                [749, 180],
+                [661, 251],
+                [770, 255],
+                [633, 372],
+                [801, 365],
+                [636, 467],
+                [809, 448],
+                [680, 436],
+                [748, 438],
+                [692, 578],
+                [735, 585],
+                [715, 716],
+                [714, 726],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [433, 192],
+                [483, 192],
+                [398, 257],
+                [491, 258],
+                [368, 365],
+                [511, 360],
+                [368, 448],
+                [522, 446],
+                [415, 429],
+                [475, 430],
+                [417, 584],
+                [473, 578],
+                [436, 712],
+                [466, 700],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.3142,
+                0.0000,
+                0.0000,
+                0.8722,
+                0.9678,
+                0.9978,
+                0.9983,
+                0.9788,
+                0.9849,
+                0.9391,
+                0.9490,
+                0.9994,
+                0.9995,
+                0.9971,
+                0.9974,
+                0.9213,
+                0.9227,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.5982,
+                0.9159,
+                0.9904,
+                0.9942,
+                0.9521,
+                0.9705,
+                0.8870,
+                0.9113,
+                0.9973,
+                0.9977,
+                0.9870,
+                0.9877,
+                0.7204,
+                0.7233,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0][1].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][1].xyxy.cpu(),
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor(
+            [0.9245, 0.9082],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor(
+            [0.9245, 0.9082],
+        ).cpu(),
+        atol=0.01,
+    )
+
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
@@ -827,6 +5359,145 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_center_crop_package_list_torch(
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    predictions = model([people_walking_image_torch, people_walking_image_torch])
+
+    # then
+    expected_xy = torch.tensor(
+        [
+            [
+                [741, 192],
+                [0, 0],
+                [0, 0],
+                [698, 178],
+                [749, 180],
+                [661, 251],
+                [770, 255],
+                [633, 372],
+                [801, 365],
+                [636, 467],
+                [809, 448],
+                [680, 436],
+                [748, 438],
+                [692, 578],
+                [735, 585],
+                [715, 716],
+                [714, 726],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [433, 192],
+                [483, 192],
+                [398, 257],
+                [491, 258],
+                [368, 365],
+                [511, 360],
+                [368, 448],
+                [522, 446],
+                [415, 429],
+                [475, 430],
+                [417, 584],
+                [473, 578],
+                [436, 712],
+                [466, 700],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.3142,
+                0.0000,
+                0.0000,
+                0.8722,
+                0.9678,
+                0.9978,
+                0.9983,
+                0.9788,
+                0.9849,
+                0.9391,
+                0.9490,
+                0.9994,
+                0.9995,
+                0.9971,
+                0.9974,
+                0.9213,
+                0.9227,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.5982,
+                0.9159,
+                0.9904,
+                0.9942,
+                0.9521,
+                0.9705,
+                0.8870,
+                0.9113,
+                0.9973,
+                0.9977,
+                0.9870,
+                0.9877,
+                0.7204,
+                0.7233,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0][1].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][1].xyxy.cpu(),
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor(
+            [0.9245, 0.9082],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor(
+            [0.9245, 0.9082],
+        ).cpu(),
+        atol=0.01,
+    )
+
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
@@ -838,6 +5509,117 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_static_crop_center_crop_package_num
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_nms_fused_static_crop_center_crop_package,
         onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(people_walking_image_numpy)
+
+    # then
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        torch.tensor(
+            [
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [697, 190],
+                    [747, 188],
+                    [672, 258],
+                    [765, 255],
+                    [638, 374],
+                    [793, 356],
+                    [640, 450],
+                    [791, 407],
+                    [689, 441],
+                    [747, 440],
+                    [700, 576],
+                    [735, 578],
+                    [716, 686],
+                    [722, 692],
+                ],
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [418, 203],
+                    [470, 205],
+                    [391, 264],
+                    [488, 265],
+                    [371, 368],
+                    [512, 360],
+                    [370, 448],
+                    [525, 445],
+                    [414, 420],
+                    [476, 422],
+                    [416, 557],
+                    [479, 563],
+                    [422, 675],
+                    [464, 684],
+                ],
+            ],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        torch.tensor(
+            [
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.7607,
+                    0.3590,
+                    0.9806,
+                    0.9198,
+                    0.9519,
+                    0.7508,
+                    0.8595,
+                    0.6070,
+                    0.9949,
+                    0.9904,
+                    0.9740,
+                    0.9554,
+                    0.6294,
+                    0.5400,
+                ],
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.4374,
+                    0.7757,
+                    0.9780,
+                    0.9896,
+                    0.9354,
+                    0.9757,
+                    0.8797,
+                    0.9364,
+                    0.9964,
+                    0.9976,
+                    0.9830,
+                    0.9885,
+                    0.6630,
+                    0.7122,
+                ],
+            ],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
     )
 
 
@@ -866,6 +5648,141 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_static_crop_center_crop_package_bat
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    predictions = model([people_walking_image_numpy, people_walking_image_numpy])
+
+    # then
+    expected_kp_xy = torch.tensor(
+        [
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [697, 190],
+                [747, 188],
+                [672, 258],
+                [765, 255],
+                [638, 374],
+                [793, 356],
+                [640, 450],
+                [791, 407],
+                [689, 441],
+                [747, 440],
+                [700, 576],
+                [735, 578],
+                [716, 686],
+                [722, 692],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [418, 203],
+                [470, 205],
+                [391, 264],
+                [488, 265],
+                [371, 368],
+                [512, 360],
+                [370, 448],
+                [525, 445],
+                [414, 420],
+                [476, 422],
+                [416, 557],
+                [479, 563],
+                [422, 675],
+                [464, 684],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.7607,
+                0.3590,
+                0.9806,
+                0.9198,
+                0.9519,
+                0.7508,
+                0.8595,
+                0.6070,
+                0.9949,
+                0.9904,
+                0.9740,
+                0.9554,
+                0.6294,
+                0.5400,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.4374,
+                0.7757,
+                0.9780,
+                0.9896,
+                0.9354,
+                0.9757,
+                0.8797,
+                0.9364,
+                0.9964,
+                0.9976,
+                0.9830,
+                0.9885,
+                0.6630,
+                0.7122,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0][1].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][1].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
+    )
+
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
@@ -877,6 +5794,116 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_static_crop_center_crop_package_tor
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_nms_fused_static_crop_center_crop_package,
         onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    predictions = model(people_walking_image_torch)
+
+    # then
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        torch.tensor(
+            [
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [697, 190],
+                    [747, 188],
+                    [672, 258],
+                    [765, 255],
+                    [638, 374],
+                    [793, 356],
+                    [640, 450],
+                    [791, 407],
+                    [689, 441],
+                    [747, 440],
+                    [700, 576],
+                    [735, 578],
+                    [716, 686],
+                    [722, 692],
+                ],
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [418, 203],
+                    [470, 205],
+                    [391, 264],
+                    [488, 265],
+                    [371, 368],
+                    [512, 360],
+                    [370, 448],
+                    [525, 445],
+                    [414, 420],
+                    [476, 422],
+                    [416, 557],
+                    [479, 563],
+                    [422, 675],
+                    [464, 684],
+                ],
+            ],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        torch.tensor(
+            [
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.7607,
+                    0.3590,
+                    0.9806,
+                    0.9198,
+                    0.9519,
+                    0.7508,
+                    0.8595,
+                    0.6070,
+                    0.9949,
+                    0.9904,
+                    0.9740,
+                    0.9554,
+                    0.6294,
+                    0.5400,
+                ],
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.4374,
+                    0.7757,
+                    0.9780,
+                    0.9896,
+                    0.9354,
+                    0.9757,
+                    0.8797,
+                    0.9364,
+                    0.9964,
+                    0.9976,
+                    0.9830,
+                    0.9885,
+                    0.6630,
+                    0.7122,
+                ],
+            ],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
     )
 
 
@@ -905,6 +5932,143 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_static_crop_center_crop_package_bat
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    predictions = model(
+        torch.stack([people_walking_image_torch, people_walking_image_torch], dim=0)
+    )
+
+    # then
+    expected_kp_xy = torch.tensor(
+        [
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [697, 190],
+                [747, 188],
+                [672, 258],
+                [765, 255],
+                [638, 374],
+                [793, 356],
+                [640, 450],
+                [791, 407],
+                [689, 441],
+                [747, 440],
+                [700, 576],
+                [735, 578],
+                [716, 686],
+                [722, 692],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [418, 203],
+                [470, 205],
+                [391, 264],
+                [488, 265],
+                [371, 368],
+                [512, 360],
+                [370, 448],
+                [525, 445],
+                [414, 420],
+                [476, 422],
+                [416, 557],
+                [479, 563],
+                [422, 675],
+                [464, 684],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.7607,
+                0.3590,
+                0.9806,
+                0.9198,
+                0.9519,
+                0.7508,
+                0.8595,
+                0.6070,
+                0.9949,
+                0.9904,
+                0.9740,
+                0.9554,
+                0.6294,
+                0.5400,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.4374,
+                0.7757,
+                0.9780,
+                0.9896,
+                0.9354,
+                0.9757,
+                0.8797,
+                0.9364,
+                0.9964,
+                0.9976,
+                0.9830,
+                0.9885,
+                0.6630,
+                0.7122,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0][1].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][1].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
+    )
+
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
@@ -916,6 +6080,141 @@ def test_yolov8n_pose_onnx_dynamic_nms_fused_static_crop_center_crop_package_lis
     model = YOLOv8ForKeyPointsDetectionOnnx.from_pretrained(
         model_name_or_path=yolov8n_pose_onnx_dynamic_nms_fused_static_crop_center_crop_package,
         onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    predictions = model([people_walking_image_torch, people_walking_image_torch])
+
+    # then
+    expected_kp_xy = torch.tensor(
+        [
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [697, 190],
+                [747, 188],
+                [672, 258],
+                [765, 255],
+                [638, 374],
+                [793, 356],
+                [640, 450],
+                [791, 407],
+                [689, 441],
+                [747, 440],
+                [700, 576],
+                [735, 578],
+                [716, 686],
+                [722, 692],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [418, 203],
+                [470, 205],
+                [391, 264],
+                [488, 265],
+                [371, 368],
+                [512, 360],
+                [370, 448],
+                [525, 445],
+                [414, 420],
+                [476, 422],
+                [416, 557],
+                [479, 563],
+                [422, 675],
+                [464, 684],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.7607,
+                0.3590,
+                0.9806,
+                0.9198,
+                0.9519,
+                0.7508,
+                0.8595,
+                0.6070,
+                0.9949,
+                0.9904,
+                0.9740,
+                0.9554,
+                0.6294,
+                0.5400,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.4374,
+                0.7757,
+                0.9780,
+                0.9896,
+                0.9354,
+                0.9757,
+                0.8797,
+                0.9364,
+                0.9964,
+                0.9976,
+                0.9830,
+                0.9885,
+                0.6630,
+                0.7122,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0][1].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][1].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
     )
 
 
@@ -930,16 +6229,116 @@ def test_yolov8n_pose_torchscript_static_center_crop_package_numpy(
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    predictions = model(people_walking_image_numpy)
 
-@pytest.mark.slow
-@pytest.mark.cpu_only
-def test_yolov8n_pose_torchscript_static_center_crop_package_numpy_custom_size(
-    yolov8n_pose_torchscript_static_center_crop_package: str,
-    people_walking_image_numpy: np.ndarray,
-) -> None:
-    model = YOLOv8ForKeyPointsDetectionTorchScript.from_pretrained(
-        model_name_or_path=yolov8n_pose_torchscript_static_center_crop_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+    # then
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        torch.tensor(
+            [
+                [
+                    [741, 192],
+                    [0, 0],
+                    [0, 0],
+                    [698, 178],
+                    [749, 180],
+                    [661, 251],
+                    [770, 255],
+                    [633, 372],
+                    [801, 365],
+                    [636, 467],
+                    [809, 448],
+                    [680, 436],
+                    [748, 438],
+                    [692, 578],
+                    [735, 585],
+                    [715, 716],
+                    [714, 726],
+                ],
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [433, 192],
+                    [483, 192],
+                    [398, 257],
+                    [491, 258],
+                    [368, 365],
+                    [511, 360],
+                    [368, 448],
+                    [522, 446],
+                    [415, 429],
+                    [475, 430],
+                    [417, 584],
+                    [473, 578],
+                    [436, 712],
+                    [466, 700],
+                ],
+            ],
+            dtype=torch.int32,
+        ),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        torch.tensor(
+            [
+                [
+                    0.3142,
+                    0.0000,
+                    0.0000,
+                    0.8722,
+                    0.9678,
+                    0.9978,
+                    0.9983,
+                    0.9788,
+                    0.9849,
+                    0.9391,
+                    0.9490,
+                    0.9994,
+                    0.9995,
+                    0.9971,
+                    0.9974,
+                    0.9213,
+                    0.9227,
+                ],
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.5982,
+                    0.9159,
+                    0.9904,
+                    0.9942,
+                    0.9521,
+                    0.9705,
+                    0.8870,
+                    0.9113,
+                    0.9973,
+                    0.9977,
+                    0.9870,
+                    0.9877,
+                    0.7204,
+                    0.7233,
+                ],
+            ],
+        ),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy,
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence,
+        torch.tensor(
+            [0.9245, 0.9082],
+        ),
+        atol=0.01,
     )
 
 
@@ -954,6 +6353,146 @@ def test_yolov8n_pose_torchscript_static_center_crop_package_batch_numpy(
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    # when
+    predictions = model([people_walking_image_numpy, people_walking_image_numpy])
+
+    # then
+    expected_kp_xy = torch.tensor(
+        [
+            [
+                [741, 192],
+                [0, 0],
+                [0, 0],
+                [698, 178],
+                [749, 180],
+                [661, 251],
+                [770, 255],
+                [633, 372],
+                [801, 365],
+                [636, 467],
+                [809, 448],
+                [680, 436],
+                [748, 438],
+                [692, 578],
+                [735, 585],
+                [715, 716],
+                [714, 726],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [433, 192],
+                [483, 192],
+                [398, 257],
+                [491, 258],
+                [368, 365],
+                [511, 360],
+                [368, 448],
+                [522, 446],
+                [415, 429],
+                [475, 430],
+                [417, 584],
+                [473, 578],
+                [436, 712],
+                [466, 700],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.3142,
+                0.0000,
+                0.0000,
+                0.8722,
+                0.9678,
+                0.9978,
+                0.9983,
+                0.9788,
+                0.9849,
+                0.9391,
+                0.9490,
+                0.9994,
+                0.9995,
+                0.9971,
+                0.9974,
+                0.9213,
+                0.9227,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.5982,
+                0.9159,
+                0.9904,
+                0.9942,
+                0.9521,
+                0.9705,
+                0.8870,
+                0.9113,
+                0.9973,
+                0.9977,
+                0.9870,
+                0.9877,
+                0.7204,
+                0.7233,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0][1].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor(
+            [0.9245, 0.9082],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor(
+            [0.9245, 0.9082],
+        ).cpu(),
+        atol=0.01,
+    )
+
 
 @pytest.mark.slow
 @pytest.mark.cpu_only
@@ -966,16 +6505,116 @@ def test_yolov8n_pose_torchscript_static_center_crop_package_torch(
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    predictions = model(people_walking_image_torch)
 
-@pytest.mark.slow
-@pytest.mark.cpu_only
-def test_yolov8n_pose_torchscript_static_center_crop_package_torch_custom_size(
-    yolov8n_pose_torchscript_static_center_crop_package: str,
-    people_walking_image_torch: torch.Tensor,
-) -> None:
-    model = YOLOv8ForKeyPointsDetectionTorchScript.from_pretrained(
-        model_name_or_path=yolov8n_pose_torchscript_static_center_crop_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+    # then
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        torch.tensor(
+            [
+                [
+                    [741, 192],
+                    [0, 0],
+                    [0, 0],
+                    [698, 178],
+                    [749, 180],
+                    [661, 251],
+                    [770, 255],
+                    [633, 372],
+                    [801, 365],
+                    [636, 467],
+                    [809, 448],
+                    [680, 436],
+                    [748, 438],
+                    [692, 578],
+                    [735, 585],
+                    [715, 716],
+                    [714, 726],
+                ],
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [433, 192],
+                    [483, 192],
+                    [398, 257],
+                    [491, 258],
+                    [368, 365],
+                    [511, 360],
+                    [368, 448],
+                    [522, 446],
+                    [415, 429],
+                    [475, 430],
+                    [417, 584],
+                    [473, 578],
+                    [436, 712],
+                    [466, 700],
+                ],
+            ],
+            dtype=torch.int32,
+        ),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        torch.tensor(
+            [
+                [
+                    0.3142,
+                    0.0000,
+                    0.0000,
+                    0.8722,
+                    0.9678,
+                    0.9978,
+                    0.9983,
+                    0.9788,
+                    0.9849,
+                    0.9391,
+                    0.9490,
+                    0.9994,
+                    0.9995,
+                    0.9971,
+                    0.9974,
+                    0.9213,
+                    0.9227,
+                ],
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.5982,
+                    0.9159,
+                    0.9904,
+                    0.9942,
+                    0.9521,
+                    0.9705,
+                    0.8870,
+                    0.9113,
+                    0.9973,
+                    0.9977,
+                    0.9870,
+                    0.9877,
+                    0.7204,
+                    0.7233,
+                ],
+            ],
+        ),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy,
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence,
+        torch.tensor(
+            [0.9245, 0.9082],
+        ),
+        atol=0.01,
     )
 
 
@@ -990,6 +6629,147 @@ def test_yolov8n_pose_torchscript_static_center_crop_package_batch_torch(
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    predictions = model(
+        torch.stack([people_walking_image_torch, people_walking_image_torch], dim=0)
+    )
+
+    # then
+    expected_xy = torch.tensor(
+        [
+            [
+                [741, 192],
+                [0, 0],
+                [0, 0],
+                [698, 178],
+                [749, 180],
+                [661, 251],
+                [770, 255],
+                [633, 372],
+                [801, 365],
+                [636, 467],
+                [809, 448],
+                [680, 436],
+                [748, 438],
+                [692, 578],
+                [735, 585],
+                [715, 716],
+                [714, 726],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [433, 192],
+                [483, 192],
+                [398, 257],
+                [491, 258],
+                [368, 365],
+                [511, 360],
+                [368, 448],
+                [522, 446],
+                [415, 429],
+                [475, 430],
+                [417, 584],
+                [473, 578],
+                [436, 712],
+                [466, 700],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.3142,
+                0.0000,
+                0.0000,
+                0.8722,
+                0.9678,
+                0.9978,
+                0.9983,
+                0.9788,
+                0.9849,
+                0.9391,
+                0.9490,
+                0.9994,
+                0.9995,
+                0.9971,
+                0.9974,
+                0.9213,
+                0.9227,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.5982,
+                0.9159,
+                0.9904,
+                0.9942,
+                0.9521,
+                0.9705,
+                0.8870,
+                0.9113,
+                0.9973,
+                0.9977,
+                0.9870,
+                0.9877,
+                0.7204,
+                0.7233,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0][1].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][1].xyxy.cpu(),
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor(
+            [0.9245, 0.9082],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor(
+            [0.9245, 0.9082],
+        ).cpu(),
+        atol=0.01,
+    )
+
 
 @pytest.mark.slow
 @pytest.mark.cpu_only
@@ -1000,6 +6780,145 @@ def test_yolov8n_pose_torchscript_static_center_crop_package_list_torch(
     model = YOLOv8ForKeyPointsDetectionTorchScript.from_pretrained(
         model_name_or_path=yolov8n_pose_torchscript_static_center_crop_package,
         onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    predictions = model([people_walking_image_torch, people_walking_image_torch])
+
+    # then
+    expected_xy = torch.tensor(
+        [
+            [
+                [741, 192],
+                [0, 0],
+                [0, 0],
+                [698, 178],
+                [749, 180],
+                [661, 251],
+                [770, 255],
+                [633, 372],
+                [801, 365],
+                [636, 467],
+                [809, 448],
+                [680, 436],
+                [748, 438],
+                [692, 578],
+                [735, 585],
+                [715, 716],
+                [714, 726],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [433, 192],
+                [483, 192],
+                [398, 257],
+                [491, 258],
+                [368, 365],
+                [511, 360],
+                [368, 448],
+                [522, 446],
+                [415, 429],
+                [475, 430],
+                [417, 584],
+                [473, 578],
+                [436, 712],
+                [466, 700],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.3142,
+                0.0000,
+                0.0000,
+                0.8722,
+                0.9678,
+                0.9978,
+                0.9983,
+                0.9788,
+                0.9849,
+                0.9391,
+                0.9490,
+                0.9994,
+                0.9995,
+                0.9971,
+                0.9974,
+                0.9213,
+                0.9227,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.5982,
+                0.9159,
+                0.9904,
+                0.9942,
+                0.9521,
+                0.9705,
+                0.8870,
+                0.9113,
+                0.9973,
+                0.9977,
+                0.9870,
+                0.9877,
+                0.7204,
+                0.7233,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0][1].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][1].xyxy.cpu(),
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor(
+            [0.9245, 0.9082],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor(
+            [0.9245, 0.9082],
+        ).cpu(),
+        atol=0.01,
     )
 
 
@@ -1014,16 +6933,115 @@ def test_yolov8n_pose_torchscript_static_static_crop_center_crop_package_numpy(
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    # when
+    predictions = model(people_walking_image_numpy)
 
-@pytest.mark.slow
-@pytest.mark.cpu_only
-def test_yolov8n_pose_torchscript_static_static_crop_center_crop_package_numpy_custom_size(
-    yolov8n_pose_torchscript_static_static_crop_center_crop_package: str,
-    people_walking_image_numpy: np.ndarray,
-) -> None:
-    model = YOLOv8ForKeyPointsDetectionTorchScript.from_pretrained(
-        model_name_or_path=yolov8n_pose_torchscript_static_static_crop_center_crop_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+    # then
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        torch.tensor(
+            [
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [697, 190],
+                    [747, 188],
+                    [672, 258],
+                    [765, 255],
+                    [638, 374],
+                    [793, 356],
+                    [640, 450],
+                    [791, 407],
+                    [689, 441],
+                    [747, 440],
+                    [700, 576],
+                    [735, 578],
+                    [716, 686],
+                    [722, 692],
+                ],
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [418, 203],
+                    [470, 205],
+                    [391, 264],
+                    [488, 265],
+                    [371, 368],
+                    [512, 360],
+                    [370, 448],
+                    [525, 445],
+                    [414, 420],
+                    [476, 422],
+                    [416, 557],
+                    [479, 563],
+                    [422, 675],
+                    [464, 684],
+                ],
+            ],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        torch.tensor(
+            [
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.7607,
+                    0.3590,
+                    0.9806,
+                    0.9198,
+                    0.9519,
+                    0.7508,
+                    0.8595,
+                    0.6070,
+                    0.9949,
+                    0.9904,
+                    0.9740,
+                    0.9554,
+                    0.6294,
+                    0.5400,
+                ],
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.4374,
+                    0.7757,
+                    0.9780,
+                    0.9896,
+                    0.9354,
+                    0.9757,
+                    0.8797,
+                    0.9364,
+                    0.9964,
+                    0.9976,
+                    0.9830,
+                    0.9885,
+                    0.6630,
+                    0.7122,
+                ],
+            ],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
     )
 
 
@@ -1038,6 +7056,141 @@ def test_yolov8n_pose_torchscript_static_static_crop_center_crop_package_batch_n
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    predictions = model([people_walking_image_numpy, people_walking_image_numpy])
+
+    # then
+    expected_kp_xy = torch.tensor(
+        [
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [697, 190],
+                [747, 188],
+                [672, 258],
+                [765, 255],
+                [638, 374],
+                [793, 356],
+                [640, 450],
+                [791, 407],
+                [689, 441],
+                [747, 440],
+                [700, 576],
+                [735, 578],
+                [716, 686],
+                [722, 692],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [418, 203],
+                [470, 205],
+                [391, 264],
+                [488, 265],
+                [371, 368],
+                [512, 360],
+                [370, 448],
+                [525, 445],
+                [414, 420],
+                [476, 422],
+                [416, 557],
+                [479, 563],
+                [422, 675],
+                [464, 684],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.7607,
+                0.3590,
+                0.9806,
+                0.9198,
+                0.9519,
+                0.7508,
+                0.8595,
+                0.6070,
+                0.9949,
+                0.9904,
+                0.9740,
+                0.9554,
+                0.6294,
+                0.5400,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.4374,
+                0.7757,
+                0.9780,
+                0.9896,
+                0.9354,
+                0.9757,
+                0.8797,
+                0.9364,
+                0.9964,
+                0.9976,
+                0.9830,
+                0.9885,
+                0.6630,
+                0.7122,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0][1].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][1].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
+    )
+
 
 @pytest.mark.slow
 @pytest.mark.cpu_only
@@ -1050,16 +7203,114 @@ def test_yolov8n_pose_torchscript_static_static_crop_center_crop_package_torch(
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    predictions = model(people_walking_image_torch)
 
-@pytest.mark.slow
-@pytest.mark.cpu_only
-def test_yolov8n_pose_torchscript_static_static_crop_center_crop_package_torch_custom_size(
-    yolov8n_pose_torchscript_static_static_crop_center_crop_package: str,
-    people_walking_image_torch: torch.Tensor,
-) -> None:
-    model = YOLOv8ForKeyPointsDetectionTorchScript.from_pretrained(
-        model_name_or_path=yolov8n_pose_torchscript_static_static_crop_center_crop_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+    # then
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        torch.tensor(
+            [
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [697, 190],
+                    [747, 188],
+                    [672, 258],
+                    [765, 255],
+                    [638, 374],
+                    [793, 356],
+                    [640, 450],
+                    [791, 407],
+                    [689, 441],
+                    [747, 440],
+                    [700, 576],
+                    [735, 578],
+                    [716, 686],
+                    [722, 692],
+                ],
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [418, 203],
+                    [470, 205],
+                    [391, 264],
+                    [488, 265],
+                    [371, 368],
+                    [512, 360],
+                    [370, 448],
+                    [525, 445],
+                    [414, 420],
+                    [476, 422],
+                    [416, 557],
+                    [479, 563],
+                    [422, 675],
+                    [464, 684],
+                ],
+            ],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        torch.tensor(
+            [
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.7607,
+                    0.3590,
+                    0.9806,
+                    0.9198,
+                    0.9519,
+                    0.7508,
+                    0.8595,
+                    0.6070,
+                    0.9949,
+                    0.9904,
+                    0.9740,
+                    0.9554,
+                    0.6294,
+                    0.5400,
+                ],
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.4374,
+                    0.7757,
+                    0.9780,
+                    0.9896,
+                    0.9354,
+                    0.9757,
+                    0.8797,
+                    0.9364,
+                    0.9964,
+                    0.9976,
+                    0.9830,
+                    0.9885,
+                    0.6630,
+                    0.7122,
+                ],
+            ],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
     )
 
 
@@ -1074,6 +7325,143 @@ def test_yolov8n_pose_torchscript_static_static_crop_center_crop_package_batch_t
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    predictions = model(
+        torch.stack([people_walking_image_torch, people_walking_image_torch], dim=0)
+    )
+
+    # then
+    expected_kp_xy = torch.tensor(
+        [
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [697, 190],
+                [747, 188],
+                [672, 258],
+                [765, 255],
+                [638, 374],
+                [793, 356],
+                [640, 450],
+                [791, 407],
+                [689, 441],
+                [747, 440],
+                [700, 576],
+                [735, 578],
+                [716, 686],
+                [722, 692],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [418, 203],
+                [470, 205],
+                [391, 264],
+                [488, 265],
+                [371, 368],
+                [512, 360],
+                [370, 448],
+                [525, 445],
+                [414, 420],
+                [476, 422],
+                [416, 557],
+                [479, 563],
+                [422, 675],
+                [464, 684],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.7607,
+                0.3590,
+                0.9806,
+                0.9198,
+                0.9519,
+                0.7508,
+                0.8595,
+                0.6070,
+                0.9949,
+                0.9904,
+                0.9740,
+                0.9554,
+                0.6294,
+                0.5400,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.4374,
+                0.7757,
+                0.9780,
+                0.9896,
+                0.9354,
+                0.9757,
+                0.8797,
+                0.9364,
+                0.9964,
+                0.9976,
+                0.9830,
+                0.9885,
+                0.6630,
+                0.7122,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0][1].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][1].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
+    )
+
 
 @pytest.mark.slow
 @pytest.mark.cpu_only
@@ -1084,6 +7472,141 @@ def test_yolov8n_pose_torchscript_static_static_crop_center_crop_package_list_to
     model = YOLOv8ForKeyPointsDetectionTorchScript.from_pretrained(
         model_name_or_path=yolov8n_pose_torchscript_static_static_crop_center_crop_package,
         onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    predictions = model([people_walking_image_torch, people_walking_image_torch])
+
+    # then
+    expected_kp_xy = torch.tensor(
+        [
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [697, 190],
+                [747, 188],
+                [672, 258],
+                [765, 255],
+                [638, 374],
+                [793, 356],
+                [640, 450],
+                [791, 407],
+                [689, 441],
+                [747, 440],
+                [700, 576],
+                [735, 578],
+                [716, 686],
+                [722, 692],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [418, 203],
+                [470, 205],
+                [391, 264],
+                [488, 265],
+                [371, 368],
+                [512, 360],
+                [370, 448],
+                [525, 445],
+                [414, 420],
+                [476, 422],
+                [416, 557],
+                [479, 563],
+                [422, 675],
+                [464, 684],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.7607,
+                0.3590,
+                0.9806,
+                0.9198,
+                0.9519,
+                0.7508,
+                0.8595,
+                0.6070,
+                0.9949,
+                0.9904,
+                0.9740,
+                0.9554,
+                0.6294,
+                0.5400,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.4374,
+                0.7757,
+                0.9780,
+                0.9896,
+                0.9354,
+                0.9757,
+                0.8797,
+                0.9364,
+                0.9964,
+                0.9976,
+                0.9830,
+                0.9885,
+                0.6630,
+                0.7122,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0][1].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][1].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
     )
 
 
@@ -1098,16 +7621,116 @@ def test_yolov8n_pose_torchscript_static_static_crop_letterbox_package_numpy(
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    predictions = model(people_walking_image_numpy)
 
-@pytest.mark.slow
-@pytest.mark.cpu_only
-def test_yolov8n_pose_torchscript_static_static_crop_letterbox_package_numpy_custom_size(
-    yolov8n_pose_torchscript_static_static_crop_letterbox_package: str,
-    people_walking_image_numpy: np.ndarray,
-) -> None:
-    model = YOLOv8ForKeyPointsDetectionTorchScript.from_pretrained(
-        model_name_or_path=yolov8n_pose_torchscript_static_static_crop_letterbox_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+    # then
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        torch.tensor(
+            [
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [695, 192],
+                    [747, 193],
+                    [669, 258],
+                    [769, 259],
+                    [634, 367],
+                    [801, 363],
+                    [633, 448],
+                    [810, 446],
+                    [686, 439],
+                    [747, 440],
+                    [700, 571],
+                    [742, 579],
+                    [711, 678],
+                    [718, 695],
+                ],
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [421, 200],
+                    [483, 202],
+                    [397, 258],
+                    [493, 260],
+                    [374, 366],
+                    [510, 362],
+                    [370, 446],
+                    [525, 446],
+                    [413, 424],
+                    [476, 426],
+                    [418, 563],
+                    [480, 571],
+                    [426, 675],
+                    [462, 687],
+                ],
+            ],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        torch.tensor(
+            [
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.6567,
+                    0.7295,
+                    0.9855,
+                    0.9899,
+                    0.9535,
+                    0.9741,
+                    0.8981,
+                    0.9329,
+                    0.9969,
+                    0.9977,
+                    0.9785,
+                    0.9852,
+                    0.6794,
+                    0.7282,
+                ],
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.3024,
+                    0.5514,
+                    0.9627,
+                    0.9788,
+                    0.9360,
+                    0.9680,
+                    0.8823,
+                    0.9227,
+                    0.9957,
+                    0.9968,
+                    0.9794,
+                    0.9845,
+                    0.6798,
+                    0.7136,
+                ],
+            ],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 194, 821, 691], [353, 188, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor(
+            [0.9204, 0.9172],
+        ).cpu(),
+        atol=0.01,
     )
 
 
@@ -1122,6 +7745,140 @@ def test_yolov8n_pose_torchscript_static_static_crop_letterbox_package_batch_num
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    predictions = model([people_walking_image_numpy, people_walking_image_numpy])
+
+    # then
+    expected_kp_xy = torch.tensor(
+        [
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [695, 192],
+                [747, 193],
+                [669, 258],
+                [769, 259],
+                [634, 367],
+                [801, 363],
+                [633, 448],
+                [810, 446],
+                [686, 439],
+                [747, 440],
+                [700, 571],
+                [742, 579],
+                [711, 678],
+                [718, 695],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [421, 200],
+                [483, 202],
+                [397, 258],
+                [493, 260],
+                [374, 366],
+                [510, 362],
+                [370, 446],
+                [525, 446],
+                [413, 424],
+                [476, 426],
+                [418, 563],
+                [480, 571],
+                [426, 675],
+                [462, 687],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.6567,
+                0.7295,
+                0.9855,
+                0.9899,
+                0.9535,
+                0.9741,
+                0.8981,
+                0.9329,
+                0.9969,
+                0.9977,
+                0.9785,
+                0.9852,
+                0.6794,
+                0.7282,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.3024,
+                0.5514,
+                0.9627,
+                0.9788,
+                0.9360,
+                0.9680,
+                0.8823,
+                0.9227,
+                0.9957,
+                0.9968,
+                0.9794,
+                0.9845,
+                0.6798,
+                0.7136,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 194, 821, 691], [353, 188, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][1].xyxy.cpu(),
+        torch.tensor(
+            [[620, 194, 821, 691], [353, 188, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor(
+            [0.9204, 0.9172],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor(
+            [0.9204, 0.9172],
+        ).cpu(),
+        atol=0.01,
+    )
+
 
 @pytest.mark.slow
 @pytest.mark.cpu_only
@@ -1132,6 +7889,118 @@ def test_yolov8n_pose_torchscript_static_static_crop_letterbox_package_torch(
     model = YOLOv8ForKeyPointsDetectionTorchScript.from_pretrained(
         model_name_or_path=yolov8n_pose_torchscript_static_static_crop_letterbox_package,
         onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    predictions = model(people_walking_image_torch)
+
+    # then
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        torch.tensor(
+            [
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [695, 192],
+                    [747, 193],
+                    [669, 258],
+                    [769, 259],
+                    [634, 367],
+                    [801, 363],
+                    [633, 448],
+                    [810, 446],
+                    [686, 439],
+                    [747, 440],
+                    [700, 571],
+                    [742, 579],
+                    [711, 678],
+                    [718, 695],
+                ],
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [421, 200],
+                    [483, 202],
+                    [397, 258],
+                    [493, 260],
+                    [374, 366],
+                    [510, 362],
+                    [370, 446],
+                    [525, 446],
+                    [413, 424],
+                    [476, 426],
+                    [418, 563],
+                    [480, 571],
+                    [426, 675],
+                    [462, 687],
+                ],
+            ],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        torch.tensor(
+            [
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.6567,
+                    0.7295,
+                    0.9855,
+                    0.9899,
+                    0.9535,
+                    0.9741,
+                    0.8981,
+                    0.9329,
+                    0.9969,
+                    0.9977,
+                    0.9785,
+                    0.9852,
+                    0.6794,
+                    0.7282,
+                ],
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.3024,
+                    0.5514,
+                    0.9627,
+                    0.9788,
+                    0.9360,
+                    0.9680,
+                    0.8823,
+                    0.9227,
+                    0.9957,
+                    0.9968,
+                    0.9794,
+                    0.9845,
+                    0.6798,
+                    0.7136,
+                ],
+            ],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 194, 821, 691], [353, 188, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor(
+            [0.9204, 0.9172],
+        ).cpu(),
+        atol=0.01,
     )
 
 
@@ -1158,6 +8027,142 @@ def test_yolov8n_pose_torchscript_static_static_crop_letterbox_package_batch_tor
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    predictions = model(
+        torch.stack([people_walking_image_torch, people_walking_image_torch], dim=0)
+    )
+
+    # then
+    expected_kp_xy = torch.tensor(
+        [
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [695, 192],
+                [747, 193],
+                [669, 258],
+                [769, 259],
+                [634, 367],
+                [801, 363],
+                [633, 448],
+                [810, 446],
+                [686, 439],
+                [747, 440],
+                [700, 571],
+                [742, 579],
+                [711, 678],
+                [718, 695],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [421, 200],
+                [483, 202],
+                [397, 258],
+                [493, 260],
+                [374, 366],
+                [510, 362],
+                [370, 446],
+                [525, 446],
+                [413, 424],
+                [476, 426],
+                [418, 563],
+                [480, 571],
+                [426, 675],
+                [462, 687],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.6567,
+                0.7295,
+                0.9855,
+                0.9899,
+                0.9535,
+                0.9741,
+                0.8981,
+                0.9329,
+                0.9969,
+                0.9977,
+                0.9785,
+                0.9852,
+                0.6794,
+                0.7282,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.3024,
+                0.5514,
+                0.9627,
+                0.9788,
+                0.9360,
+                0.9680,
+                0.8823,
+                0.9227,
+                0.9957,
+                0.9968,
+                0.9794,
+                0.9845,
+                0.6798,
+                0.7136,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 194, 821, 691], [353, 188, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][1].xyxy.cpu(),
+        torch.tensor(
+            [[620, 194, 821, 691], [353, 188, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor(
+            [0.9204, 0.9172],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor(
+            [0.9204, 0.9172],
+        ).cpu(),
+        atol=0.01,
+    )
+
 
 @pytest.mark.slow
 @pytest.mark.cpu_only
@@ -1168,6 +8173,140 @@ def test_yolov8n_pose_torchscript_static_static_crop_letterbox_package_list_torc
     model = YOLOv8ForKeyPointsDetectionTorchScript.from_pretrained(
         model_name_or_path=yolov8n_pose_torchscript_static_static_crop_letterbox_package,
         onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    predictions = model([people_walking_image_torch, people_walking_image_torch])
+
+    # then
+    expected_kp_xy = torch.tensor(
+        [
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [695, 192],
+                [747, 193],
+                [669, 258],
+                [769, 259],
+                [634, 367],
+                [801, 363],
+                [633, 448],
+                [810, 446],
+                [686, 439],
+                [747, 440],
+                [700, 571],
+                [742, 579],
+                [711, 678],
+                [718, 695],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [421, 200],
+                [483, 202],
+                [397, 258],
+                [493, 260],
+                [374, 366],
+                [510, 362],
+                [370, 446],
+                [525, 446],
+                [413, 424],
+                [476, 426],
+                [418, 563],
+                [480, 571],
+                [426, 675],
+                [462, 687],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.6567,
+                0.7295,
+                0.9855,
+                0.9899,
+                0.9535,
+                0.9741,
+                0.8981,
+                0.9329,
+                0.9969,
+                0.9977,
+                0.9785,
+                0.9852,
+                0.6794,
+                0.7282,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.3024,
+                0.5514,
+                0.9627,
+                0.9788,
+                0.9360,
+                0.9680,
+                0.8823,
+                0.9227,
+                0.9957,
+                0.9968,
+                0.9794,
+                0.9845,
+                0.6798,
+                0.7136,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 194, 821, 691], [353, 188, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][1].xyxy.cpu(),
+        torch.tensor(
+            [[620, 194, 821, 691], [353, 188, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor(
+            [0.9204, 0.9172],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor(
+            [0.9204, 0.9172],
+        ).cpu(),
+        atol=0.01,
     )
 
 
@@ -1266,16 +8405,116 @@ def test_yolov8n_pose_torchscript_static_nms_fused_center_crop_package_numpy(
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    predictions = model(people_walking_image_numpy)
 
-@pytest.mark.slow
-@pytest.mark.cpu_only
-def test_yolov8n_pose_torchscript_static_nms_fused_center_crop_package_numpy_custom_size(
-    yolov8n_pose_torchscript_static_nms_fused_center_crop_package: str,
-    people_walking_image_numpy: np.ndarray,
-) -> None:
-    model = YOLOv8ForKeyPointsDetectionTorchScript.from_pretrained(
-        model_name_or_path=yolov8n_pose_torchscript_static_nms_fused_center_crop_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+    # then
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        torch.tensor(
+            [
+                [
+                    [741, 192],
+                    [0, 0],
+                    [0, 0],
+                    [698, 178],
+                    [749, 180],
+                    [661, 251],
+                    [770, 255],
+                    [633, 372],
+                    [801, 365],
+                    [636, 467],
+                    [809, 448],
+                    [680, 436],
+                    [748, 438],
+                    [692, 578],
+                    [735, 585],
+                    [715, 716],
+                    [714, 726],
+                ],
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [433, 192],
+                    [483, 192],
+                    [398, 257],
+                    [491, 258],
+                    [368, 365],
+                    [511, 360],
+                    [368, 448],
+                    [522, 446],
+                    [415, 429],
+                    [475, 430],
+                    [417, 584],
+                    [473, 578],
+                    [436, 712],
+                    [466, 700],
+                ],
+            ],
+            dtype=torch.int32,
+        ),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        torch.tensor(
+            [
+                [
+                    0.3142,
+                    0.0000,
+                    0.0000,
+                    0.8722,
+                    0.9678,
+                    0.9978,
+                    0.9983,
+                    0.9788,
+                    0.9849,
+                    0.9391,
+                    0.9490,
+                    0.9994,
+                    0.9995,
+                    0.9971,
+                    0.9974,
+                    0.9213,
+                    0.9227,
+                ],
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.5982,
+                    0.9159,
+                    0.9904,
+                    0.9942,
+                    0.9521,
+                    0.9705,
+                    0.8870,
+                    0.9113,
+                    0.9973,
+                    0.9977,
+                    0.9870,
+                    0.9877,
+                    0.7204,
+                    0.7233,
+                ],
+            ],
+        ),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy,
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence,
+        torch.tensor(
+            [0.9245, 0.9082],
+        ),
+        atol=0.01,
     )
 
 
@@ -1290,6 +8529,146 @@ def test_yolov8n_pose_torchscript_static_nms_fused_center_crop_package_batch_num
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    # when
+    predictions = model([people_walking_image_numpy, people_walking_image_numpy])
+
+    # then
+    expected_kp_xy = torch.tensor(
+        [
+            [
+                [741, 192],
+                [0, 0],
+                [0, 0],
+                [698, 178],
+                [749, 180],
+                [661, 251],
+                [770, 255],
+                [633, 372],
+                [801, 365],
+                [636, 467],
+                [809, 448],
+                [680, 436],
+                [748, 438],
+                [692, 578],
+                [735, 585],
+                [715, 716],
+                [714, 726],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [433, 192],
+                [483, 192],
+                [398, 257],
+                [491, 258],
+                [368, 365],
+                [511, 360],
+                [368, 448],
+                [522, 446],
+                [415, 429],
+                [475, 430],
+                [417, 584],
+                [473, 578],
+                [436, 712],
+                [466, 700],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.3142,
+                0.0000,
+                0.0000,
+                0.8722,
+                0.9678,
+                0.9978,
+                0.9983,
+                0.9788,
+                0.9849,
+                0.9391,
+                0.9490,
+                0.9994,
+                0.9995,
+                0.9971,
+                0.9974,
+                0.9213,
+                0.9227,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.5982,
+                0.9159,
+                0.9904,
+                0.9942,
+                0.9521,
+                0.9705,
+                0.8870,
+                0.9113,
+                0.9973,
+                0.9977,
+                0.9870,
+                0.9877,
+                0.7204,
+                0.7233,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0][1].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor(
+            [0.9245, 0.9082],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor(
+            [0.9245, 0.9082],
+        ).cpu(),
+        atol=0.01,
+    )
+
 
 @pytest.mark.slow
 @pytest.mark.cpu_only
@@ -1300,6 +8679,118 @@ def test_yolov8n_pose_torchscript_static_nms_fused_center_crop_package_torch(
     model = YOLOv8ForKeyPointsDetectionTorchScript.from_pretrained(
         model_name_or_path=yolov8n_pose_torchscript_static_nms_fused_center_crop_package,
         onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    predictions = model(people_walking_image_torch)
+
+    # then
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        torch.tensor(
+            [
+                [
+                    [741, 192],
+                    [0, 0],
+                    [0, 0],
+                    [698, 178],
+                    [749, 180],
+                    [661, 251],
+                    [770, 255],
+                    [633, 372],
+                    [801, 365],
+                    [636, 467],
+                    [809, 448],
+                    [680, 436],
+                    [748, 438],
+                    [692, 578],
+                    [735, 585],
+                    [715, 716],
+                    [714, 726],
+                ],
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [433, 192],
+                    [483, 192],
+                    [398, 257],
+                    [491, 258],
+                    [368, 365],
+                    [511, 360],
+                    [368, 448],
+                    [522, 446],
+                    [415, 429],
+                    [475, 430],
+                    [417, 584],
+                    [473, 578],
+                    [436, 712],
+                    [466, 700],
+                ],
+            ],
+            dtype=torch.int32,
+        ),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        torch.tensor(
+            [
+                [
+                    0.3142,
+                    0.0000,
+                    0.0000,
+                    0.8722,
+                    0.9678,
+                    0.9978,
+                    0.9983,
+                    0.9788,
+                    0.9849,
+                    0.9391,
+                    0.9490,
+                    0.9994,
+                    0.9995,
+                    0.9971,
+                    0.9974,
+                    0.9213,
+                    0.9227,
+                ],
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.5982,
+                    0.9159,
+                    0.9904,
+                    0.9942,
+                    0.9521,
+                    0.9705,
+                    0.8870,
+                    0.9113,
+                    0.9973,
+                    0.9977,
+                    0.9870,
+                    0.9877,
+                    0.7204,
+                    0.7233,
+                ],
+            ],
+        ),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy,
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence,
+        torch.tensor(
+            [0.9245, 0.9082],
+        ),
+        atol=0.01,
     )
 
 
@@ -1326,6 +8817,148 @@ def test_yolov8n_pose_torchscript_static_nms_fused_center_crop_package_batch_tor
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    # when
+    predictions = model(
+        torch.stack([people_walking_image_torch, people_walking_image_torch], dim=0)
+    )
+
+    # then
+    expected_xy = torch.tensor(
+        [
+            [
+                [741, 192],
+                [0, 0],
+                [0, 0],
+                [698, 178],
+                [749, 180],
+                [661, 251],
+                [770, 255],
+                [633, 372],
+                [801, 365],
+                [636, 467],
+                [809, 448],
+                [680, 436],
+                [748, 438],
+                [692, 578],
+                [735, 585],
+                [715, 716],
+                [714, 726],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [433, 192],
+                [483, 192],
+                [398, 257],
+                [491, 258],
+                [368, 365],
+                [511, 360],
+                [368, 448],
+                [522, 446],
+                [415, 429],
+                [475, 430],
+                [417, 584],
+                [473, 578],
+                [436, 712],
+                [466, 700],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.3142,
+                0.0000,
+                0.0000,
+                0.8722,
+                0.9678,
+                0.9978,
+                0.9983,
+                0.9788,
+                0.9849,
+                0.9391,
+                0.9490,
+                0.9994,
+                0.9995,
+                0.9971,
+                0.9974,
+                0.9213,
+                0.9227,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.5982,
+                0.9159,
+                0.9904,
+                0.9942,
+                0.9521,
+                0.9705,
+                0.8870,
+                0.9113,
+                0.9973,
+                0.9977,
+                0.9870,
+                0.9877,
+                0.7204,
+                0.7233,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0][1].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][1].xyxy.cpu(),
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor(
+            [0.9245, 0.9082],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor(
+            [0.9245, 0.9082],
+        ).cpu(),
+        atol=0.01,
+    )
+
 
 @pytest.mark.slow
 @pytest.mark.cpu_only
@@ -1338,6 +8971,145 @@ def test_yolov8n_pose_torchscript_static_nms_fused_center_crop_package_list_torc
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    predictions = model([people_walking_image_torch, people_walking_image_torch])
+
+    # then
+    expected_xy = torch.tensor(
+        [
+            [
+                [741, 192],
+                [0, 0],
+                [0, 0],
+                [698, 178],
+                [749, 180],
+                [661, 251],
+                [770, 255],
+                [633, 372],
+                [801, 365],
+                [636, 467],
+                [809, 448],
+                [680, 436],
+                [748, 438],
+                [692, 578],
+                [735, 585],
+                [715, 716],
+                [714, 726],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [433, 192],
+                [483, 192],
+                [398, 257],
+                [491, 258],
+                [368, 365],
+                [511, 360],
+                [368, 448],
+                [522, 446],
+                [415, 429],
+                [475, 430],
+                [417, 584],
+                [473, 578],
+                [436, 712],
+                [466, 700],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.3142,
+                0.0000,
+                0.0000,
+                0.8722,
+                0.9678,
+                0.9978,
+                0.9983,
+                0.9788,
+                0.9849,
+                0.9391,
+                0.9490,
+                0.9994,
+                0.9995,
+                0.9971,
+                0.9974,
+                0.9213,
+                0.9227,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.5982,
+                0.9159,
+                0.9904,
+                0.9942,
+                0.9521,
+                0.9705,
+                0.8870,
+                0.9113,
+                0.9973,
+                0.9977,
+                0.9870,
+                0.9877,
+                0.7204,
+                0.7233,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0][1].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][1].xyxy.cpu(),
+        torch.tensor(
+            [[619, 124, 821, 747], [352, 136, 539, 744]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor(
+            [0.9245, 0.9082],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor(
+            [0.9245, 0.9082],
+        ).cpu(),
+        atol=0.01,
+    )
+
 
 @pytest.mark.slow
 @pytest.mark.cpu_only
@@ -1348,6 +9120,117 @@ def test_yolov8n_pose_torchscript_static_nms_fused_static_crop_center_crop_packa
     model = YOLOv8ForKeyPointsDetectionTorchScript.from_pretrained(
         model_name_or_path=yolov8n_pose_torchscript_static_nms_fused_static_crop_center_crop_package,
         onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    # when
+    predictions = model(people_walking_image_numpy)
+
+    # then
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        torch.tensor(
+            [
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [697, 190],
+                    [747, 188],
+                    [672, 258],
+                    [765, 255],
+                    [638, 374],
+                    [793, 356],
+                    [640, 450],
+                    [791, 407],
+                    [689, 441],
+                    [747, 440],
+                    [700, 576],
+                    [735, 578],
+                    [716, 686],
+                    [722, 692],
+                ],
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [418, 203],
+                    [470, 205],
+                    [391, 264],
+                    [488, 265],
+                    [371, 368],
+                    [512, 360],
+                    [370, 448],
+                    [525, 445],
+                    [414, 420],
+                    [476, 422],
+                    [416, 557],
+                    [479, 563],
+                    [422, 675],
+                    [464, 684],
+                ],
+            ],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        torch.tensor(
+            [
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.7607,
+                    0.3590,
+                    0.9806,
+                    0.9198,
+                    0.9519,
+                    0.7508,
+                    0.8595,
+                    0.6070,
+                    0.9949,
+                    0.9904,
+                    0.9740,
+                    0.9554,
+                    0.6294,
+                    0.5400,
+                ],
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.4374,
+                    0.7757,
+                    0.9780,
+                    0.9896,
+                    0.9354,
+                    0.9757,
+                    0.8797,
+                    0.9364,
+                    0.9964,
+                    0.9976,
+                    0.9830,
+                    0.9885,
+                    0.6630,
+                    0.7122,
+                ],
+            ],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
     )
 
 
@@ -1374,6 +9257,141 @@ def test_yolov8n_pose_torchscript_static_nms_fused_static_crop_center_crop_packa
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    predictions = model([people_walking_image_numpy, people_walking_image_numpy])
+
+    # then
+    expected_kp_xy = torch.tensor(
+        [
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [697, 190],
+                [747, 188],
+                [672, 258],
+                [765, 255],
+                [638, 374],
+                [793, 356],
+                [640, 450],
+                [791, 407],
+                [689, 441],
+                [747, 440],
+                [700, 576],
+                [735, 578],
+                [716, 686],
+                [722, 692],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [418, 203],
+                [470, 205],
+                [391, 264],
+                [488, 265],
+                [371, 368],
+                [512, 360],
+                [370, 448],
+                [525, 445],
+                [414, 420],
+                [476, 422],
+                [416, 557],
+                [479, 563],
+                [422, 675],
+                [464, 684],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.7607,
+                0.3590,
+                0.9806,
+                0.9198,
+                0.9519,
+                0.7508,
+                0.8595,
+                0.6070,
+                0.9949,
+                0.9904,
+                0.9740,
+                0.9554,
+                0.6294,
+                0.5400,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.4374,
+                0.7757,
+                0.9780,
+                0.9896,
+                0.9354,
+                0.9757,
+                0.8797,
+                0.9364,
+                0.9964,
+                0.9976,
+                0.9830,
+                0.9885,
+                0.6630,
+                0.7122,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0][1].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][1].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
+    )
+
 
 @pytest.mark.slow
 @pytest.mark.cpu_only
@@ -1386,16 +9404,114 @@ def test_yolov8n_pose_torchscript_static_nms_fused_static_crop_center_crop_packa
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    predictions = model(people_walking_image_torch)
 
-@pytest.mark.slow
-@pytest.mark.cpu_only
-def test_yolov8n_pose_torchscript_static_nms_fused_static_crop_center_crop_package_torch_custom_size(
-    yolov8n_pose_torchscript_static_nms_fused_static_crop_center_crop_package: str,
-    people_walking_image_torch: torch.Tensor,
-) -> None:
-    model = YOLOv8ForKeyPointsDetectionTorchScript.from_pretrained(
-        model_name_or_path=yolov8n_pose_torchscript_static_nms_fused_static_crop_center_crop_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+    # then
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        torch.tensor(
+            [
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [697, 190],
+                    [747, 188],
+                    [672, 258],
+                    [765, 255],
+                    [638, 374],
+                    [793, 356],
+                    [640, 450],
+                    [791, 407],
+                    [689, 441],
+                    [747, 440],
+                    [700, 576],
+                    [735, 578],
+                    [716, 686],
+                    [722, 692],
+                ],
+                [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                    [418, 203],
+                    [470, 205],
+                    [391, 264],
+                    [488, 265],
+                    [371, 368],
+                    [512, 360],
+                    [370, 448],
+                    [525, 445],
+                    [414, 420],
+                    [476, 422],
+                    [416, 557],
+                    [479, 563],
+                    [422, 675],
+                    [464, 684],
+                ],
+            ],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        torch.tensor(
+            [
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.7607,
+                    0.3590,
+                    0.9806,
+                    0.9198,
+                    0.9519,
+                    0.7508,
+                    0.8595,
+                    0.6070,
+                    0.9949,
+                    0.9904,
+                    0.9740,
+                    0.9554,
+                    0.6294,
+                    0.5400,
+                ],
+                [
+                    0.0000,
+                    0.0000,
+                    0.0000,
+                    0.4374,
+                    0.7757,
+                    0.9780,
+                    0.9896,
+                    0.9354,
+                    0.9757,
+                    0.8797,
+                    0.9364,
+                    0.9964,
+                    0.9976,
+                    0.9830,
+                    0.9885,
+                    0.6630,
+                    0.7122,
+                ],
+            ],
+        ).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
     )
 
 
@@ -1410,6 +9526,143 @@ def test_yolov8n_pose_torchscript_static_nms_fused_static_crop_center_crop_packa
         onnx_execution_providers=["CPUExecutionProvider"],
     )
 
+    predictions = model(
+        torch.stack([people_walking_image_torch, people_walking_image_torch], dim=0)
+    )
+
+    # then
+    expected_kp_xy = torch.tensor(
+        [
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [697, 190],
+                [747, 188],
+                [672, 258],
+                [765, 255],
+                [638, 374],
+                [793, 356],
+                [640, 450],
+                [791, 407],
+                [689, 441],
+                [747, 440],
+                [700, 576],
+                [735, 578],
+                [716, 686],
+                [722, 692],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [418, 203],
+                [470, 205],
+                [391, 264],
+                [488, 265],
+                [371, 368],
+                [512, 360],
+                [370, 448],
+                [525, 445],
+                [414, 420],
+                [476, 422],
+                [416, 557],
+                [479, 563],
+                [422, 675],
+                [464, 684],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.7607,
+                0.3590,
+                0.9806,
+                0.9198,
+                0.9519,
+                0.7508,
+                0.8595,
+                0.6070,
+                0.9949,
+                0.9904,
+                0.9740,
+                0.9554,
+                0.6294,
+                0.5400,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.4374,
+                0.7757,
+                0.9780,
+                0.9896,
+                0.9354,
+                0.9757,
+                0.8797,
+                0.9364,
+                0.9964,
+                0.9976,
+                0.9830,
+                0.9885,
+                0.6630,
+                0.7122,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0][1].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][1].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
+    )
+
 
 @pytest.mark.slow
 @pytest.mark.cpu_only
@@ -1420,4 +9673,139 @@ def test_yolov8n_pose_torchscript_static_nms_fused_static_crop_center_crop_packa
     model = YOLOv8ForKeyPointsDetectionTorchScript.from_pretrained(
         model_name_or_path=yolov8n_pose_torchscript_static_nms_fused_static_crop_center_crop_package,
         onnx_execution_providers=["CPUExecutionProvider"],
+    )
+
+    predictions = model([people_walking_image_torch, people_walking_image_torch])
+
+    # then
+    expected_kp_xy = torch.tensor(
+        [
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [697, 190],
+                [747, 188],
+                [672, 258],
+                [765, 255],
+                [638, 374],
+                [793, 356],
+                [640, 450],
+                [791, 407],
+                [689, 441],
+                [747, 440],
+                [700, 576],
+                [735, 578],
+                [716, 686],
+                [722, 692],
+            ],
+            [
+                [0, 0],
+                [0, 0],
+                [0, 0],
+                [418, 203],
+                [470, 205],
+                [391, 264],
+                [488, 265],
+                [371, 368],
+                [512, 360],
+                [370, 448],
+                [525, 445],
+                [414, 420],
+                [476, 422],
+                [416, 557],
+                [479, 563],
+                [422, 675],
+                [464, 684],
+            ],
+        ],
+        dtype=torch.int32,
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[0][1].xy.cpu(),
+        expected_kp_xy,
+        atol=2,
+    )
+    expected_kp_confidence = torch.tensor(
+        [
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.7607,
+                0.3590,
+                0.9806,
+                0.9198,
+                0.9519,
+                0.7508,
+                0.8595,
+                0.6070,
+                0.9949,
+                0.9904,
+                0.9740,
+                0.9554,
+                0.6294,
+                0.5400,
+            ],
+            [
+                0.0000,
+                0.0000,
+                0.0000,
+                0.4374,
+                0.7757,
+                0.9780,
+                0.9896,
+                0.9354,
+                0.9757,
+                0.8797,
+                0.9364,
+                0.9964,
+                0.9976,
+                0.9830,
+                0.9885,
+                0.6630,
+                0.7122,
+            ],
+        ],
+    ).cpu()
+    assert torch.allclose(
+        predictions[0][0].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[0][1].confidence.cpu(),
+        expected_kp_confidence,
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][0].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][1].xyxy.cpu(),
+        torch.tensor(
+            [[620, 190, 793, 691], [351, 191, 538, 695]],
+            dtype=torch.int32,
+        ).cpu(),
+        atol=2,
+    )
+    assert torch.allclose(
+        predictions[1][0].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
+    )
+    assert torch.allclose(
+        predictions[1][1].confidence.cpu(),
+        torch.tensor([0.9362, 0.9064]).cpu(),
+        atol=0.01,
     )
