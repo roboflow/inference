@@ -610,10 +610,12 @@ class RoboflowCoreModel(RoboflowInferenceModel):
             model_id (str): The identifier for the specific model.
             api_key ([type], optional): The API key for authentication. Defaults to None.
         """
+        print("===init1===", model_id)
         super().__init__(model_id, api_key=api_key)
         self.download_weights()
 
     def download_weights(self) -> None:
+        print("===init2===", self.endpoint)
         """Downloads the model weights from the configured source.
 
         This method includes handling for AWS access keys and error handling.

@@ -198,6 +198,7 @@ def get_model_type(
         )
         return project_task_type, model_type
 
+    print("====version_id====", version_id)
     if version_id is not None:
         api_data = get_roboflow_model_data(
             api_key=api_key,

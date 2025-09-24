@@ -43,36 +43,49 @@ class EasyOCR(RoboflowCoreModel):
         super().__init__(model_id=model_id.lower(), *args, **kwargs)
         self.device = device
 
-        self.model_id = model_id
-        self.version = model_id.split("/")[1]
-        self.languages = kwargs.get("languages", ["en"])
-
         shutil.copyfile(
             f"{MODEL_CACHE_DIR}/{model_id}/weights.pt",
-            f"{MODEL_CACHE_DIR}/{model_id}/{self.version}.pth",
+            f"{MODEL_CACHE_DIR}/{model_id}/english_g2.pth",
         )
 
-        self.reader = easyocr.Reader(
-            self.languages,
-            download_enabled=False,
-            user_network_directory=f'/tmp/cache/{self.model_id}/',
-            model_storage_directory=f'/tmp/cache/{self.model_id}/',
-            detect_network='craft',
-            recog_network=self.version,
-            detector=True,
-            recognizer=True,
-            gpu=True
-            )
+        self.log("Creating EasyOCR model")
 
     def predict(self, image_in: Image.Image, prompt="", history=None, **kwargs):
         try:
 
+            print("=== EasyOCR predict ===", f"{MODEL_CACHE_DIR}/easy_ocr/weights.pt")
+
+            '''
+            reader = easyocr.Reader(['en'], #recog_network='easy_ocr_english_g2.pt',
+                download_enabled=False,
+                #recognizer=f"{MODEL_CACHE_DIR}/easy_ocr/weights.pt",
+                detector=f"{MODEL_CACHE_DIR}/easy_ocr/english_g2/craft_mlt_25k.pt",
+                recognizer=f"{MODEL_CACHE_DIR}/easy_ocr/english_g2/weights.pt",
+                #model_storage_directory=f'.{MODEL_CACHE_DIR}/easy_ocr'
+                #gpu=True # use GPU if available (will ignore if no GPU)
+                )
+            '''
+
+
+            reader = easyocr.Reader(['en'], #recog_network='easy_ocr_english_g2.pt',
+                                        download_enabled=False,
+                                        user_network_directory='/tmp/cache/easy_ocr/english_g2/',
+                                        model_storage_directory='/tmp/cache/easy_ocr/english_g2/',
+                                        detect_network='craft',
+                                        recog_network='english_g2',
+                                        detector=True,
+                                        recognizer=True,
+                                        gpu=True
+                                        )
+                                        #user_config_path='path/to/your/model_config.yaml')
+
+
             img = np.array(image_in[0]["value"])
 
-            results = self.reader.readtext(img)
+            results = reader.readtext(img)
 
-            # convert native EasyOCR results from numpy arrays to standard python types
-            results = [([[int(x) for x in c] for c in res[0]], res[1], float(res[2])) for res in results]
+            # convert native EasyOCR results from numpy to standard python types
+            results = [([[x.item() for x in c] for c in res[0]], res[1], res[2].item()) for res in results]
 
             return (results,)
         except Exception as e:
@@ -104,10 +117,12 @@ class EasyOCR(RoboflowCoreModel):
     def make_response(
         self, *args, **kwargs
     ) -> Union[InferenceResponse, List[InferenceResponse]]:
-        return EasyOCRInferenceResponse(
-                    result=result,
-                    time=perf_counter() - t1,
-                )
+        """Constructs an object detection response.
+
+        Raises:
+            NotImplementedError: This method must be implemented by a subclass.
+        """
+        raise NotImplementedError
 
     def get_infer_bucket_file_list(self) -> List[str]:
-        return ["weights.pt", "craft_mlt_25k.pth"]
+        return ["weights.pt", "craft_mlt_25k.pt"]
