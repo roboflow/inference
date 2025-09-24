@@ -21,6 +21,10 @@ class EasyOCRInferenceRequest(BaseRequest):
     easy_ocr_version_id: Optional[str] = EASYOCR_VERSION_ID
     model_id: Optional[str] = Field(None)
     language_codes: List[str] = Field(default_factory=lambda: ['en'])
+    quantize: Optional[bool] = Field(
+        default=False,
+        description="Quantized models are smaller and faster, but may be less accurate and won't work correctly on all hardware.",
+    )
 
     # TODO[pydantic]: We couldn't refactor the `validator`, please replace it by `field_validator` manually.
     # Check https://docs.pydantic.dev/dev-v2/migration/#changes-to-validators for more information.

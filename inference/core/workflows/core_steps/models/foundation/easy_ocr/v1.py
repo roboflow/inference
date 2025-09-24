@@ -77,6 +77,8 @@ You can then use a DynamicCropBlock to crop the region of interest before runnin
 
 Using a detections model then cropping detections allows you to isolate your analysis
 on particular regions of an image.
+
+Note that EasyOCR has limitations running within containers on Apple Silicon.
 """
 
 EXPECTED_OUTPUT_KEYS = {"result", "parent_id", "root_parent_id", "prediction_type", "predictions"}
@@ -107,6 +109,11 @@ class BlockManifest(WorkflowBlockManifest):
         title="Language",
         description="Language model to use for OCR",
         default="English",
+    )
+    quantize: bool = Field(
+        title="Use Quantized Model",
+        description="Quantized models are smaller and faster, but may be less accurate and won't work correctly on all hardware.",
+        default=False,
     )
 
     @classmethod
@@ -151,6 +158,7 @@ class EasyOCRBlockV1(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         language: LANGUAGES = "English",
+        quantize: bool = False,
     ) -> BlockResult:
 
         if language not in MODELS:
@@ -158,9 +166,9 @@ class EasyOCRBlockV1(WorkflowBlock):
 
         version, language_codes = MODELS.get(language, "english_g2")
         if self._step_execution_mode is StepExecutionMode.LOCAL:
-            return self.run_locally(images=images, version=version, language_codes=language_codes)
+            return self.run_locally(images=images, version=version, language_codes=language_codes, quantize=quantize)
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
-            return self.run_remotely(images=images, version=version, language_codes=language_codes)
+            return self.run_remotely(images=images, version=version, language_codes=language_codes, quantize=quantize)
         else:
             raise ValueError(
                 f"Unknown step execution mode: {self._step_execution_mode}"
@@ -171,6 +179,7 @@ class EasyOCRBlockV1(WorkflowBlock):
         images: Batch[WorkflowImageData],
         version: str = "english_g2",
         language_codes: List[str] = ['en'],
+        quantize: bool = False,
     ) -> BlockResult:
 
         predictions = []
@@ -180,7 +189,8 @@ class EasyOCRBlockV1(WorkflowBlock):
                 easy_ocr_version_id=version,
                 image=[single_image.to_inference_format(numpy_preferred=True)],
                 api_key=self._api_key,
-                language_codes=language_codes
+                language_codes=language_codes,
+                quantize=quantize
             )
             model_id = load_core_model(
                 model_manager=self._model_manager,
@@ -203,6 +213,7 @@ class EasyOCRBlockV1(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         version: str = "english_g2",
+        quantize: bool = False,
     ) -> BlockResult:
         api_url = (
             LOCAL_INFERENCE_API_URL
@@ -223,7 +234,7 @@ class EasyOCRBlockV1(WorkflowBlock):
         non_empty_inference_images = [i.base64_image for i in images]
         predictions = client.ocr_image(
             inference_input=non_empty_inference_images,
-            model="easy_ocr", version=version
+            model="easy_ocr", version=version, quantize=quantize
         )
         if len(images) == 1:
             predictions = [predictions]

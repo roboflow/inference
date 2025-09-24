@@ -3,6 +3,7 @@ import shutil
 from time import perf_counter
 from typing import Any, List, Tuple, Union
 
+import cv2
 import easyocr
 import numpy as np
 import torch
@@ -15,7 +16,6 @@ from inference.core.models.roboflow import RoboflowCoreModel
 from PIL import Image
 
 from inference.core.models.types import PreprocessReturnMetadata
-from inference.core.utils.image_utils import load_image
 
 if DEVICE is None:
     if torch.cuda.is_available():
@@ -66,12 +66,11 @@ class EasyOCR(RoboflowCoreModel):
             f"{MODEL_CACHE_DIR}/{model_id}/{self.recognizer}.pth",
         )
 
-        self.log("Creating EasyOCR model")
-
     def predict(self, image_in: Image.Image, prompt="", history=None, **kwargs):
         try:
 
             language_codes = kwargs.get("language_codes", ['en'])
+            quantize = kwargs.get("quantize", False)
 
             reader = easyocr.Reader(
                 language_codes,
@@ -82,8 +81,9 @@ class EasyOCR(RoboflowCoreModel):
                 recog_network=self.recognizer,
                 detector=True,
                 recognizer=True,
-                gpu=True
-                )
+                gpu=True,
+                quantize=quantize
+            )
 
             img = np.array(image_in[0]["value"])
 

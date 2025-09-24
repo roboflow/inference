@@ -90,7 +90,7 @@ REGISTERED_ALIASES = {
 OCR_ENDPOINTS = {
     "doctr": "/doctr/ocr",
     "trocr": "/ocr/trocr",
-    "easyocr": "/ocr/easyocr",
+    "easyocr": "/easy_ocr/ocr",
 }
 
 def resolve_roboflow_model_alias(model_id: str) -> str:
