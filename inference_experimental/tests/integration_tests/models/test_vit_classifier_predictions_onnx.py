@@ -1,10 +1,6 @@
 import numpy as np
 import pytest
 import torch
-from inference_exp.models.vit.vit_classification_onnx import (
-    VITForClassificationOnnx,
-    VITForMultiLabelClassificationOnnx,
-)
 
 
 @pytest.mark.slow
@@ -14,6 +10,10 @@ def test_multi_label_onnx_dynamic_bs_package_numpy(
     flowers_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.vit.vit_classification_onnx import (
+        VITForMultiLabelClassificationOnnx,
+    )
+
     model = VITForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=flowers_multi_label_vit_onnx_dynamic_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -41,6 +41,10 @@ def test_multi_label_onnx_dynamic_bs_package_numpy_custom_image_size(
     flowers_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.vit.vit_classification_onnx import (
+        VITForMultiLabelClassificationOnnx,
+    )
+
     model = VITForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=flowers_multi_label_vit_onnx_dynamic_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -68,6 +72,10 @@ def test_multi_label_onnx_dynamic_bs_package_batch_numpy(
     flowers_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.vit.vit_classification_onnx import (
+        VITForMultiLabelClassificationOnnx,
+    )
+
     model = VITForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=flowers_multi_label_vit_onnx_dynamic_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -104,6 +112,10 @@ def test_multi_label_onnx_dynamic_bs_package_torch(
     flowers_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.vit.vit_classification_onnx import (
+        VITForMultiLabelClassificationOnnx,
+    )
+
     model = VITForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=flowers_multi_label_vit_onnx_dynamic_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -131,6 +143,10 @@ def test_multi_label_onnx_dynamic_bs_package_batch_torch(
     flowers_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.vit.vit_classification_onnx import (
+        VITForMultiLabelClassificationOnnx,
+    )
+
     model = VITForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=flowers_multi_label_vit_onnx_dynamic_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -167,6 +183,10 @@ def test_multi_label_onnx_static_bs_package_numpy(
     flowers_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.vit.vit_classification_onnx import (
+        VITForMultiLabelClassificationOnnx,
+    )
+
     model = VITForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=flowers_multi_label_vit_onnx_static_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -194,6 +214,10 @@ def test_multi_label_onnx_static_bs_package_numpy_custom_image_size(
     flowers_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.vit.vit_classification_onnx import (
+        VITForMultiLabelClassificationOnnx,
+    )
+
     model = VITForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=flowers_multi_label_vit_onnx_static_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -221,6 +245,10 @@ def test_multi_label_onnx_static_bs_package_batch_numpy(
     flowers_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.vit.vit_classification_onnx import (
+        VITForMultiLabelClassificationOnnx,
+    )
+
     model = VITForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=flowers_multi_label_vit_onnx_static_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -257,6 +285,10 @@ def test_multi_label_onnx_static_bs_package_torch(
     flowers_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.vit.vit_classification_onnx import (
+        VITForMultiLabelClassificationOnnx,
+    )
+
     model = VITForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=flowers_multi_label_vit_onnx_static_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -284,6 +316,10 @@ def test_multi_label_onnx_static_bs_package_batch_torch(
     flowers_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.vit.vit_classification_onnx import (
+        VITForMultiLabelClassificationOnnx,
+    )
+
     model = VITForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=flowers_multi_label_vit_onnx_static_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -320,6 +356,10 @@ def test_multi_label_onnx_static_bs_package_batch_torch_list(
     flowers_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_exp.models.vit.vit_classification_onnx import (
+        VITForMultiLabelClassificationOnnx,
+    )
+
     model = VITForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=flowers_multi_label_vit_onnx_static_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -356,6 +396,10 @@ def test_multi_class_onnx_dynamic_bs_package_numpy(
     bike_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_exp.models.vit.vit_classification_onnx import (
+        VITForClassificationOnnx,
+    )
+
     model = VITForClassificationOnnx.from_pretrained(
         model_name_or_path=vehicles_multi_class_vit_onnx_dynamic_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -382,7 +426,10 @@ def test_multi_class_onnx_dynamic_bs_package_numpy_custom_image_size(
     vehicles_multi_class_vit_onnx_dynamic_bs_package: str,
     bike_image_numpy: np.ndarray,
 ) -> None:
-    # given
+    from inference_exp.models.vit.vit_classification_onnx import (
+        VITForClassificationOnnx,
+    )
+
     model = VITForClassificationOnnx.from_pretrained(
         model_name_or_path=vehicles_multi_class_vit_onnx_dynamic_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -409,7 +456,10 @@ def test_multi_class_onnx_dynamic_bs_package_batch_numpy(
     vehicles_multi_class_vit_onnx_dynamic_bs_package: str,
     bike_image_numpy: np.ndarray,
 ) -> None:
-    # given
+    from inference_exp.models.vit.vit_classification_onnx import (
+        VITForClassificationOnnx,
+    )
+
     model = VITForClassificationOnnx.from_pretrained(
         model_name_or_path=vehicles_multi_class_vit_onnx_dynamic_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -436,7 +486,10 @@ def test_multi_class_onnx_dynamic_bs_package_torch(
     vehicles_multi_class_vit_onnx_dynamic_bs_package: str,
     bike_image_torch: torch.Tensor,
 ) -> None:
-    # given
+    from inference_exp.models.vit.vit_classification_onnx import (
+        VITForClassificationOnnx,
+    )
+
     model = VITForClassificationOnnx.from_pretrained(
         model_name_or_path=vehicles_multi_class_vit_onnx_dynamic_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -463,7 +516,10 @@ def test_multi_class_onnx_dynamic_bs_package_batch_torch(
     vehicles_multi_class_vit_onnx_dynamic_bs_package: str,
     bike_image_torch: torch.Tensor,
 ) -> None:
-    # given
+    from inference_exp.models.vit.vit_classification_onnx import (
+        VITForClassificationOnnx,
+    )
+
     model = VITForClassificationOnnx.from_pretrained(
         model_name_or_path=vehicles_multi_class_vit_onnx_dynamic_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -490,7 +546,10 @@ def test_multi_class_onnx_dynamic_bs_package_batch_torch_list(
     vehicles_multi_class_vit_onnx_dynamic_bs_package: str,
     bike_image_torch: torch.Tensor,
 ) -> None:
-    # given
+    from inference_exp.models.vit.vit_classification_onnx import (
+        VITForClassificationOnnx,
+    )
+
     model = VITForClassificationOnnx.from_pretrained(
         model_name_or_path=vehicles_multi_class_vit_onnx_dynamic_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -517,7 +576,10 @@ def test_multi_class_onnx_static_bs_package_numpy(
     vehicles_multi_class_vit_onnx_static_bs_package: str,
     bike_image_numpy: np.ndarray,
 ) -> None:
-    # given
+    from inference_exp.models.vit.vit_classification_onnx import (
+        VITForClassificationOnnx,
+    )
+
     model = VITForClassificationOnnx.from_pretrained(
         model_name_or_path=vehicles_multi_class_vit_onnx_static_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -544,7 +606,10 @@ def test_multi_class_onnx_static_bs_package_numpy_custom_image_size(
     vehicles_multi_class_vit_onnx_static_bs_package: str,
     bike_image_numpy: np.ndarray,
 ) -> None:
-    # given
+    from inference_exp.models.vit.vit_classification_onnx import (
+        VITForClassificationOnnx,
+    )
+
     model = VITForClassificationOnnx.from_pretrained(
         model_name_or_path=vehicles_multi_class_vit_onnx_static_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -571,7 +636,10 @@ def test_multi_class_onnx_static_bs_package_batch_numpy(
     vehicles_multi_class_vit_onnx_static_bs_package: str,
     bike_image_numpy: np.ndarray,
 ) -> None:
-    # given
+    from inference_exp.models.vit.vit_classification_onnx import (
+        VITForClassificationOnnx,
+    )
+
     model = VITForClassificationOnnx.from_pretrained(
         model_name_or_path=vehicles_multi_class_vit_onnx_static_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -598,7 +666,10 @@ def test_multi_class_onnx_static_bs_package_torch(
     vehicles_multi_class_vit_onnx_static_bs_package: str,
     bike_image_torch: torch.Tensor,
 ) -> None:
-    # given
+    from inference_exp.models.vit.vit_classification_onnx import (
+        VITForClassificationOnnx,
+    )
+
     model = VITForClassificationOnnx.from_pretrained(
         model_name_or_path=vehicles_multi_class_vit_onnx_static_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -625,7 +696,10 @@ def test_multi_class_onnx_static_bs_package_batch_torch(
     vehicles_multi_class_vit_onnx_static_bs_package: str,
     bike_image_torch: torch.Tensor,
 ) -> None:
-    # given
+    from inference_exp.models.vit.vit_classification_onnx import (
+        VITForClassificationOnnx,
+    )
+
     model = VITForClassificationOnnx.from_pretrained(
         model_name_or_path=vehicles_multi_class_vit_onnx_static_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -652,7 +726,10 @@ def test_multi_class_onnx_static_bs_package_batch_torch_list(
     vehicles_multi_class_vit_onnx_static_bs_package: str,
     bike_image_torch: torch.Tensor,
 ) -> None:
-    # given
+    from inference_exp.models.vit.vit_classification_onnx import (
+        VITForClassificationOnnx,
+    )
+
     model = VITForClassificationOnnx.from_pretrained(
         model_name_or_path=vehicles_multi_class_vit_onnx_static_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
