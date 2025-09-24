@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 import torch
+from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.models.yolov8.yolov8_object_detection_onnx import (
     YOLOv8ForObjectDetectionOnnx,
 )
@@ -11,7 +12,6 @@ from inference_exp.models.yolov8.yolov8_object_detection_torch_script import (
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_letterbox_numpy(
     coin_counting_yolov8n_onnx_dynamic_bs_letterbox_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -19,7 +19,7 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_numpy(
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_letterbox_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -27,7 +27,7 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -41,12 +41,12 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_numpy(
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -64,15 +64,14 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_numpy(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_letterbox_batch_numpy(
     coin_counting_yolov8n_onnx_dynamic_bs_letterbox_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -80,7 +79,7 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_batch_numpy(
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_letterbox_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -88,7 +87,7 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_batch_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -102,11 +101,11 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_batch_numpy(
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
+        predictions[1].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -120,16 +119,16 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_batch_numpy(
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -147,20 +146,19 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_batch_numpy(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_letterbox_torch(
     coin_counting_yolov8n_onnx_dynamic_bs_letterbox_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -168,7 +166,7 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_torch(
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_letterbox_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -176,7 +174,7 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -190,12 +188,12 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_torch(
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -213,15 +211,14 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_torch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_letterbox_batch_torch(
     coin_counting_yolov8n_onnx_dynamic_bs_letterbox_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -229,7 +226,7 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_batch_torch(
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_letterbox_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -239,7 +236,7 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_batch_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -253,11 +250,11 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_batch_torch(
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
+        predictions[1].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -271,16 +268,16 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_batch_torch(
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -298,20 +295,19 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_batch_torch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_letterbox_batch_torch_list(
     coin_counting_yolov8n_onnx_dynamic_bs_letterbox_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -319,7 +315,7 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_batch_torch_list(
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_letterbox_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -327,7 +323,7 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_batch_torch_list(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -341,11 +337,11 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_batch_torch_list(
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
+        predictions[1].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -359,16 +355,16 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_batch_torch_list(
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -386,20 +382,19 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_batch_torch_list(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_letterbox_numpy_with_custom_image_size(
     coin_counting_yolov8n_onnx_dynamic_bs_letterbox_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -407,7 +402,7 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_numpy_with_custom_im
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_letterbox_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -415,28 +410,27 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_numpy_with_custom_im
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.7296, 0.3472, 0.2850]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.7296, 0.3472, 0.2850]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([4, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([4, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [[1307, 532, 2999, 2140], [1479, 1860, 1731, 2099], [1676, 2566, 1895, 2742]],
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_letterbox_torch_with_custom_image_size(
     coin_counting_yolov8n_onnx_dynamic_bs_letterbox_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -444,7 +438,7 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_torch_with_custom_im
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_letterbox_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -452,28 +446,27 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_torch_with_custom_im
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.7296, 0.3472, 0.2850]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.7296, 0.3472, 0.2850]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([4, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([4, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [[1307, 532, 2999, 2140], [1479, 1860, 1731, 2099], [1676, 2566, 1895, 2742]],
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_letterbox_fused_nms_numpy(
     coin_counting_yolov8n_onnx_dynamic_bs_letterbox_fused_nms_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -481,7 +474,7 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_fused_nms_numpy(
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_letterbox_fused_nms_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -489,7 +482,7 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_fused_nms_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -503,12 +496,12 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_fused_nms_numpy(
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -526,15 +519,14 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_fused_nms_numpy(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_letterbox_fused_nms_batch_numpy(
     coin_counting_yolov8n_onnx_dynamic_bs_letterbox_fused_nms_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -542,7 +534,7 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_fused_nms_batch_nump
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_letterbox_fused_nms_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -550,7 +542,7 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_fused_nms_batch_nump
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -564,11 +556,11 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_fused_nms_batch_nump
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
+        predictions[1].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -582,16 +574,16 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_fused_nms_batch_nump
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -609,20 +601,19 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_fused_nms_batch_nump
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_letterbox_fused_nms_torch(
     coin_counting_yolov8n_onnx_dynamic_bs_letterbox_fused_nms_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -630,7 +621,7 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_fused_nms_torch(
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_letterbox_fused_nms_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -638,7 +629,7 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_fused_nms_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -652,12 +643,12 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_fused_nms_torch(
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -675,15 +666,14 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_fused_nms_torch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_letterbox_fused_nms_torch(
     coin_counting_yolov8n_onnx_dynamic_bs_letterbox_fused_nms_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -691,7 +681,7 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_fused_nms_torch(
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_letterbox_fused_nms_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -699,7 +689,7 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_fused_nms_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -713,12 +703,12 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_fused_nms_torch(
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -736,15 +726,14 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_fused_nms_torch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_letterbox_batch_fused_nms_torch(
     coin_counting_yolov8n_onnx_dynamic_bs_letterbox_fused_nms_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -752,7 +741,7 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_batch_fused_nms_torc
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_letterbox_fused_nms_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -762,7 +751,7 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_batch_fused_nms_torc
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -776,11 +765,11 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_batch_fused_nms_torc
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
+        predictions[1].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -794,16 +783,16 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_batch_fused_nms_torc
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -821,20 +810,19 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_batch_fused_nms_torc
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_letterbox_batch_fused_nms_torch_list(
     coin_counting_yolov8n_onnx_dynamic_bs_letterbox_fused_nms_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -842,7 +830,7 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_batch_fused_nms_torc
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_letterbox_fused_nms_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -850,7 +838,7 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_batch_fused_nms_torc
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -864,11 +852,11 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_batch_fused_nms_torc
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
+        predictions[1].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -882,16 +870,16 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_batch_fused_nms_torc
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -909,20 +897,19 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_batch_fused_nms_torc
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_letterbox_fused_nms_numpy_with_custom_image_size(
     coin_counting_yolov8n_onnx_dynamic_bs_letterbox_fused_nms_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -930,7 +917,7 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_fused_nms_numpy_with
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_letterbox_fused_nms_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -938,28 +925,27 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_fused_nms_numpy_with
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.7296, 0.3472, 0.2850]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.7296, 0.3472, 0.2850]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([4, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([4, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [[1307, 532, 2999, 2140], [1479, 1860, 1731, 2099], [1676, 2566, 1895, 2742]],
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_letterbox_fused_nms_torch_with_custom_image_size(
     coin_counting_yolov8n_onnx_dynamic_bs_letterbox_fused_nms_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -967,7 +953,7 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_fused_nms_torch_with
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_letterbox_fused_nms_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -975,28 +961,27 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_fused_nms_torch_with
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.7296, 0.3472, 0.2850]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.7296, 0.3472, 0.2850]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([4, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([4, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [[1307, 532, 2999, 2140], [1479, 1860, 1731, 2099], [1676, 2566, 1895, 2742]],
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_letterbox_numpy(
     coin_counting_yolov8n_onnx_static_bs_letterbox_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -1004,7 +989,7 @@ def test_onnx_package_with_static_batch_size_and_letterbox_numpy(
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_static_bs_letterbox_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -1012,7 +997,7 @@ def test_onnx_package_with_static_batch_size_and_letterbox_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -1026,12 +1011,12 @@ def test_onnx_package_with_static_batch_size_and_letterbox_numpy(
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -1049,15 +1034,14 @@ def test_onnx_package_with_static_batch_size_and_letterbox_numpy(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_letterbox_batch_numpy(
     coin_counting_yolov8n_onnx_static_bs_letterbox_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -1065,7 +1049,7 @@ def test_onnx_package_with_static_batch_size_and_letterbox_batch_numpy(
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_static_bs_letterbox_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -1073,7 +1057,7 @@ def test_onnx_package_with_static_batch_size_and_letterbox_batch_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -1087,11 +1071,11 @@ def test_onnx_package_with_static_batch_size_and_letterbox_batch_numpy(
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
+        predictions[1].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -1105,16 +1089,16 @@ def test_onnx_package_with_static_batch_size_and_letterbox_batch_numpy(
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -1132,20 +1116,19 @@ def test_onnx_package_with_static_batch_size_and_letterbox_batch_numpy(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_letterbox_torch(
     coin_counting_yolov8n_onnx_static_bs_letterbox_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -1153,7 +1136,7 @@ def test_onnx_package_with_static_batch_size_and_letterbox_torch(
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_static_bs_letterbox_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -1161,7 +1144,7 @@ def test_onnx_package_with_static_batch_size_and_letterbox_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -1175,12 +1158,12 @@ def test_onnx_package_with_static_batch_size_and_letterbox_torch(
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -1198,15 +1181,14 @@ def test_onnx_package_with_static_batch_size_and_letterbox_torch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_letterbox_batch_torch(
     coin_counting_yolov8n_onnx_static_bs_letterbox_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -1214,7 +1196,7 @@ def test_onnx_package_with_static_batch_size_and_letterbox_batch_torch(
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_static_bs_letterbox_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -1224,7 +1206,7 @@ def test_onnx_package_with_static_batch_size_and_letterbox_batch_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -1238,11 +1220,11 @@ def test_onnx_package_with_static_batch_size_and_letterbox_batch_torch(
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
+        predictions[1].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -1256,16 +1238,16 @@ def test_onnx_package_with_static_batch_size_and_letterbox_batch_torch(
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -1283,20 +1265,19 @@ def test_onnx_package_with_static_batch_size_and_letterbox_batch_torch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_letterbox_batch_torch_list(
     coin_counting_yolov8n_onnx_static_bs_letterbox_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -1304,7 +1285,7 @@ def test_onnx_package_with_static_batch_size_and_letterbox_batch_torch_list(
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_static_bs_letterbox_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -1312,7 +1293,7 @@ def test_onnx_package_with_static_batch_size_and_letterbox_batch_torch_list(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -1326,11 +1307,11 @@ def test_onnx_package_with_static_batch_size_and_letterbox_batch_torch_list(
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
+        predictions[1].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -1344,16 +1325,16 @@ def test_onnx_package_with_static_batch_size_and_letterbox_batch_torch_list(
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -1371,19 +1352,18 @@ def test_onnx_package_with_static_batch_size_and_letterbox_batch_torch_list(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
 def test_torch_script_package_with_static_batch_size_and_letterbox_numpy(
     coin_counting_yolov8n_torch_script_static_bs_letterbox_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -1391,7 +1371,7 @@ def test_torch_script_package_with_static_batch_size_and_letterbox_numpy(
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_torch_script_static_bs_letterbox_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -1399,7 +1379,7 @@ def test_torch_script_package_with_static_batch_size_and_letterbox_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -1413,12 +1393,12 @@ def test_torch_script_package_with_static_batch_size_and_letterbox_numpy(
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -1436,14 +1416,14 @@ def test_torch_script_package_with_static_batch_size_and_letterbox_numpy(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_letterbox_batch_numpy(
     coin_counting_yolov8n_torch_script_static_bs_letterbox_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -1451,7 +1431,7 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_batch_numpy(
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_torch_script_static_bs_letterbox_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -1459,7 +1439,7 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_batch_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -1473,11 +1453,11 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_batch_numpy(
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
+        predictions[1].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -1491,16 +1471,16 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_batch_numpy(
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -1518,19 +1498,19 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_batch_numpy(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_letterbox_torch(
     coin_counting_yolov8n_torch_script_static_bs_letterbox_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -1538,7 +1518,7 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_torch(
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_torch_script_static_bs_letterbox_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -1546,7 +1526,7 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -1560,12 +1540,12 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_torch(
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -1583,14 +1563,14 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_torch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_letterbox_batch_torch(
     coin_counting_yolov8n_torch_script_static_bs_letterbox_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -1598,7 +1578,7 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_batch_torch(
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_torch_script_static_bs_letterbox_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -1608,7 +1588,7 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_batch_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -1622,11 +1602,11 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_batch_torch(
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
+        predictions[1].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -1640,16 +1620,16 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_batch_torch(
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -1667,19 +1647,19 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_batch_torch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_letterbox_batch_torch_list(
     coin_counting_yolov8n_torch_script_static_bs_letterbox_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -1687,7 +1667,7 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_batch_torch_li
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_torch_script_static_bs_letterbox_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -1695,7 +1675,7 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_batch_torch_li
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -1709,11 +1689,11 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_batch_torch_li
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
+        predictions[1].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -1727,16 +1707,16 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_batch_torch_li
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -1754,19 +1734,18 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_batch_torch_li
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
 def test_torch_script_package_with_static_batch_size_and_letterbox__fused_nms_numpy(
     coin_counting_yolov8n_torch_script_static_bs_letterbox_fused_nms_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -1774,7 +1753,7 @@ def test_torch_script_package_with_static_batch_size_and_letterbox__fused_nms_nu
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_torch_script_static_bs_letterbox_fused_nms_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -1782,7 +1761,7 @@ def test_torch_script_package_with_static_batch_size_and_letterbox__fused_nms_nu
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -1796,12 +1775,12 @@ def test_torch_script_package_with_static_batch_size_and_letterbox__fused_nms_nu
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -1819,14 +1798,14 @@ def test_torch_script_package_with_static_batch_size_and_letterbox__fused_nms_nu
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_letterbox_fused_nms_batch_numpy(
     coin_counting_yolov8n_torch_script_static_bs_letterbox_fused_nms_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -1834,7 +1813,7 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_fused_nms_batc
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_torch_script_static_bs_letterbox_fused_nms_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -1842,7 +1821,7 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_fused_nms_batc
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -1856,11 +1835,11 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_fused_nms_batc
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
+        predictions[1].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -1874,16 +1853,16 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_fused_nms_batc
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -1901,19 +1880,19 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_fused_nms_batc
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_letterbox_fused_nms_torch(
     coin_counting_yolov8n_torch_script_static_bs_letterbox_fused_nms_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -1921,7 +1900,7 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_fused_nms_torc
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_torch_script_static_bs_letterbox_fused_nms_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -1929,7 +1908,7 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_fused_nms_torc
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -1943,12 +1922,12 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_fused_nms_torc
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -1966,14 +1945,14 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_fused_nms_torc
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_letterbox_fused_nms_batch_torch(
     coin_counting_yolov8n_torch_script_static_bs_letterbox_fused_nms_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -1981,7 +1960,7 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_fused_nms_batc
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_torch_script_static_bs_letterbox_fused_nms_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -1991,7 +1970,7 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_fused_nms_batc
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -2005,11 +1984,11 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_fused_nms_batc
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
+        predictions[1].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -2023,16 +2002,16 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_fused_nms_batc
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -2050,19 +2029,19 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_fused_nms_batc
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_letterbox_fused_nms_batch_torch_list(
     coin_counting_yolov8n_torch_script_static_bs_letterbox_fused_nms_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -2070,7 +2049,7 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_fused_nms_batc
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_torch_script_static_bs_letterbox_fused_nms_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -2078,7 +2057,7 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_fused_nms_batc
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -2092,11 +2071,11 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_fused_nms_batc
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
+        predictions[1].confidence.cpu(),
         torch.tensor(
             [
                 0.9608,
@@ -2110,16 +2089,16 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_fused_nms_batc
                 0.8508,
                 0.8202,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([4, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -2137,20 +2116,19 @@ def test_torchscript_package_with_static_batch_size_and_letterbox_fused_nms_batc
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_numpy(
     coin_counting_yolov8n_onnx_dynamic_bs_static_crop_stretch_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -2158,7 +2136,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_numpy(
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_static_crop_stretch_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -2166,7 +2144,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -2180,12 +2158,12 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_numpy(
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -2203,15 +2181,14 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_numpy(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_batch_numpy(
     coin_counting_yolov8n_onnx_dynamic_bs_static_crop_stretch_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -2219,7 +2196,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_batch_nump
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_static_crop_stretch_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -2227,7 +2204,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_batch_nump
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -2241,11 +2218,11 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_batch_nump
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
+        predictions[1].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -2259,16 +2236,16 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_batch_nump
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -2286,20 +2263,19 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_batch_nump
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_torch(
     coin_counting_yolov8n_onnx_dynamic_bs_static_crop_stretch_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -2307,7 +2283,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_torch(
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_static_crop_stretch_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -2315,7 +2291,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -2329,12 +2305,12 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_torch(
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -2352,15 +2328,14 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_torch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_batch_torch(
     coin_counting_yolov8n_onnx_dynamic_bs_static_crop_stretch_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -2368,7 +2343,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_batch_torc
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_static_crop_stretch_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -2378,7 +2353,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_batch_torc
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -2392,11 +2367,11 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_batch_torc
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
+        predictions[1].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -2410,16 +2385,16 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_batch_torc
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -2437,20 +2412,19 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_batch_torc
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_list_torch(
     coin_counting_yolov8n_onnx_dynamic_bs_static_crop_stretch_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -2458,7 +2432,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_list_torch
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_static_crop_stretch_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -2466,7 +2440,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_list_torch
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -2480,11 +2454,11 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_list_torch
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
+        predictions[1].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -2498,16 +2472,16 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_list_torch
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -2525,20 +2499,19 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_list_torch
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_nms_fused_numpy(
     coin_counting_yolov8n_onnx_dynamic_bs_static_crop_stretch_nms_fused_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -2546,7 +2519,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_nms_fused_
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_static_crop_stretch_nms_fused_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -2554,7 +2527,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_nms_fused_
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -2568,12 +2541,12 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_nms_fused_
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -2591,15 +2564,14 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_nms_fused_
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_nms_fused_batch_numpy(
     coin_counting_yolov8n_onnx_dynamic_bs_static_crop_stretch_nms_fused_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -2607,7 +2579,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_nms_fused_
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_static_crop_stretch_nms_fused_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -2615,7 +2587,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_nms_fused_
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -2629,11 +2601,11 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_nms_fused_
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
+        predictions[1].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -2647,16 +2619,16 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_nms_fused_
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -2674,20 +2646,19 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_nms_fused_
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_nms_fused_torch(
     coin_counting_yolov8n_onnx_dynamic_bs_static_crop_stretch_nms_fused_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -2695,7 +2666,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_nms_fused_
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_static_crop_stretch_nms_fused_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -2703,7 +2674,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_nms_fused_
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -2717,12 +2688,12 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_nms_fused_
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -2740,15 +2711,14 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_nms_fused_
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_nms_fused_batch_torch(
     coin_counting_yolov8n_onnx_dynamic_bs_static_crop_stretch_nms_fused_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -2756,7 +2726,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_nms_fused_
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_static_crop_stretch_nms_fused_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -2766,7 +2736,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_nms_fused_
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -2780,11 +2750,11 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_nms_fused_
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
+        predictions[1].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -2798,16 +2768,16 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_nms_fused_
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -2825,20 +2795,19 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_nms_fused_
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_nms_fused_list_torch(
     coin_counting_yolov8n_onnx_dynamic_bs_static_crop_stretch_nms_fused_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -2846,7 +2815,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_nms_fused_
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_static_crop_stretch_nms_fused_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -2854,7 +2823,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_nms_fused_
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -2868,11 +2837,11 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_nms_fused_
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
+        predictions[1].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -2886,16 +2855,16 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_nms_fused_
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -2913,20 +2882,19 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_nms_fused_
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_static_crop_stretch_numpy(
     coin_counting_yolov8n_onnx_static_bs_static_crop_stretch_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -2934,7 +2902,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_numpy(
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_static_bs_static_crop_stretch_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -2942,7 +2910,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -2956,12 +2924,12 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_numpy(
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -2979,15 +2947,14 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_numpy(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_numpy(
     coin_counting_yolov8n_onnx_static_bs_static_crop_stretch_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -2995,7 +2962,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_numpy
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_static_bs_static_crop_stretch_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -3003,7 +2970,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_numpy
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -3017,11 +2984,11 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_numpy
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
+        predictions[1].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -3035,16 +3002,16 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_numpy
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -3062,20 +3029,19 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_numpy
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_static_crop_stretch_torch(
     coin_counting_yolov8n_onnx_static_bs_static_crop_stretch_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -3083,7 +3049,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_torch(
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_static_bs_static_crop_stretch_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -3091,7 +3057,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -3105,12 +3071,12 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_torch(
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -3128,15 +3094,14 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_torch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_torch(
     coin_counting_yolov8n_onnx_static_bs_static_crop_stretch_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -3144,7 +3109,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_torch
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_static_bs_static_crop_stretch_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -3154,7 +3119,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_torch
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -3168,11 +3133,11 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_torch
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
+        predictions[1].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -3186,16 +3151,16 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_torch
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -3213,20 +3178,19 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_torch
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_static_crop_stretch_list_torch(
     coin_counting_yolov8n_onnx_static_bs_static_crop_stretch_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -3234,7 +3198,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_list_torch(
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_static_bs_static_crop_stretch_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -3242,7 +3206,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_list_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -3256,11 +3220,11 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_list_torch(
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
+        predictions[1].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -3274,16 +3238,16 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_list_torch(
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -3301,19 +3265,19 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_list_torch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_numpy(
     coin_counting_yolov8n_torch_script_dynamic_bs_static_crop_stretch_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -3321,7 +3285,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nump
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_torch_script_dynamic_bs_static_crop_stretch_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -3329,7 +3293,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nump
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -3343,12 +3307,12 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nump
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -3366,14 +3330,14 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nump
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_torch(
     coin_counting_yolov8n_torch_script_dynamic_bs_static_crop_stretch_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -3381,7 +3345,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_torc
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_torch_script_dynamic_bs_static_crop_stretch_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -3389,7 +3353,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_torc
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -3403,12 +3367,12 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_torc
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -3426,14 +3390,14 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_torc
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_batch_numpy(
     coin_counting_yolov8n_torch_script_dynamic_bs_static_crop_stretch_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -3441,7 +3405,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_batc
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_torch_script_dynamic_bs_static_crop_stretch_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -3449,7 +3413,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_batc
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -3463,11 +3427,11 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_batc
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
+        predictions[1].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -3481,16 +3445,16 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_batc
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -3508,19 +3472,19 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_batc
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_torch(
     coin_counting_yolov8n_torch_script_dynamic_bs_static_crop_stretch_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -3528,7 +3492,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_torc
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_torch_script_dynamic_bs_static_crop_stretch_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -3536,7 +3500,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_torc
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -3550,12 +3514,12 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_torc
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -3573,14 +3537,14 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_torc
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_batch_torch(
     coin_counting_yolov8n_torch_script_dynamic_bs_static_crop_stretch_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -3588,7 +3552,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_batc
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_torch_script_dynamic_bs_static_crop_stretch_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -3598,7 +3562,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_batc
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -3612,11 +3576,11 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_batc
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
+        predictions[1].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -3630,16 +3594,16 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_batc
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -3657,19 +3621,19 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_batc
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_torch_list(
     coin_counting_yolov8n_torch_script_dynamic_bs_static_crop_stretch_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -3677,7 +3641,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_torc
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_torch_script_dynamic_bs_static_crop_stretch_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -3685,7 +3649,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_torc
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -3699,11 +3663,11 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_torc
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
+        predictions[1].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -3717,16 +3681,16 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_torc
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -3744,18 +3708,18 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_torc
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_fused_numpy(
     coin_counting_yolov8n_torch_script_static_bs_static_crop_stretch_fused_nms_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -3763,7 +3727,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_torch_script_static_bs_static_crop_stretch_fused_nms_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -3771,7 +3735,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -3785,12 +3749,12 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -3808,14 +3772,14 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_fused_batch_numpy(
     coin_counting_yolov8n_torch_script_static_bs_static_crop_stretch_fused_nms_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -3823,7 +3787,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_torch_script_static_bs_static_crop_stretch_fused_nms_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -3831,7 +3795,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -3845,11 +3809,11 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
+        predictions[1].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -3863,16 +3827,16 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -3890,19 +3854,19 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_fused_torch(
     coin_counting_yolov8n_torch_script_static_bs_static_crop_stretch_fused_nms_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -3910,7 +3874,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_torch_script_static_bs_static_crop_stretch_fused_nms_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -3918,7 +3882,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -3932,12 +3896,12 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -3955,14 +3919,14 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_fused_batch_torch(
     coin_counting_yolov8n_torch_script_static_bs_static_crop_stretch_fused_nms_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -3970,7 +3934,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_torch_script_static_bs_static_crop_stretch_fused_nms_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -3980,7 +3944,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -3994,11 +3958,11 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
+        predictions[1].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -4012,16 +3976,16 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -4039,19 +4003,19 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_fused_torch_list(
     coin_counting_yolov8n_torch_script_static_bs_static_crop_stretch_fused_nms_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -4059,7 +4023,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_torch_script_static_bs_static_crop_stretch_fused_nms_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -4067,7 +4031,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
+        predictions[0].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -4081,11 +4045,11 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
+        predictions[1].confidence.cpu(),
         torch.tensor(
             [
                 0.96573,
@@ -4099,16 +4063,16 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_
                 0.54311,
                 0.42117,
             ]
-        ),
+        ).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([1, 1, 1, 1, 1, 1, 1, 1, 4, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -4126,20 +4090,19 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nms_
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_center_crop_numpy(
     coin_counting_yolov8n_onnx_dynamic_bs_center_crop_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -4147,7 +4110,7 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_numpy(
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_center_crop_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -4155,13 +4118,13 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -4173,15 +4136,14 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_numpy(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_center_crop_batch_numpy(
     coin_counting_yolov8n_onnx_dynamic_bs_center_crop_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -4189,7 +4151,7 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_batch_numpy(
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_center_crop_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -4197,22 +4159,22 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_batch_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -4224,20 +4186,19 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_batch_numpy(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_center_torch(
     coin_counting_yolov8n_onnx_dynamic_bs_center_crop_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -4245,7 +4206,7 @@ def test_onnx_package_with_dynamic_batch_size_and_center_torch(
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_center_crop_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -4253,13 +4214,13 @@ def test_onnx_package_with_dynamic_batch_size_and_center_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -4271,15 +4232,14 @@ def test_onnx_package_with_dynamic_batch_size_and_center_torch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_center_batch_torch(
     coin_counting_yolov8n_onnx_dynamic_bs_center_crop_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -4287,7 +4247,7 @@ def test_onnx_package_with_dynamic_batch_size_and_center_batch_torch(
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_center_crop_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -4297,22 +4257,22 @@ def test_onnx_package_with_dynamic_batch_size_and_center_batch_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -4324,20 +4284,19 @@ def test_onnx_package_with_dynamic_batch_size_and_center_batch_torch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_center_torch_list(
     coin_counting_yolov8n_onnx_dynamic_bs_center_crop_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -4345,7 +4304,7 @@ def test_onnx_package_with_dynamic_batch_size_and_center_torch_list(
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_center_crop_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -4353,22 +4312,22 @@ def test_onnx_package_with_dynamic_batch_size_and_center_torch_list(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -4380,20 +4339,19 @@ def test_onnx_package_with_dynamic_batch_size_and_center_torch_list(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_center_crop_fused_nms_numpy(
     coin_counting_yolov8n_onnx_dynamic_bs_center_crop_fused_nms_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -4401,7 +4359,7 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_fused_nms_numpy(
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_center_crop_fused_nms_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -4409,13 +4367,13 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_fused_nms_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -4428,15 +4386,14 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_fused_nms_numpy(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_center_crop_fused_nms_batch_numpy(
     coin_counting_yolov8n_onnx_dynamic_bs_center_crop_fused_nms_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -4444,7 +4401,7 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_fused_nms_batch_nu
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_center_crop_fused_nms_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -4452,22 +4409,22 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_fused_nms_batch_nu
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -4480,20 +4437,19 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_fused_nms_batch_nu
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_center_fused_nms_torch(
     coin_counting_yolov8n_onnx_dynamic_bs_center_crop_fused_nms_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -4501,7 +4457,7 @@ def test_onnx_package_with_dynamic_batch_size_and_center_fused_nms_torch(
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_center_crop_fused_nms_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -4509,13 +4465,13 @@ def test_onnx_package_with_dynamic_batch_size_and_center_fused_nms_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -4528,15 +4484,14 @@ def test_onnx_package_with_dynamic_batch_size_and_center_fused_nms_torch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_center_fused_nms_batch_torch(
     coin_counting_yolov8n_onnx_dynamic_bs_center_crop_fused_nms_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -4544,7 +4499,7 @@ def test_onnx_package_with_dynamic_batch_size_and_center_fused_nms_batch_torch(
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_center_crop_fused_nms_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -4554,22 +4509,22 @@ def test_onnx_package_with_dynamic_batch_size_and_center_fused_nms_batch_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -4582,20 +4537,19 @@ def test_onnx_package_with_dynamic_batch_size_and_center_fused_nms_batch_torch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_center_fused_nms_torch_list(
     coin_counting_yolov8n_onnx_dynamic_bs_center_crop_fused_nms_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -4603,7 +4557,7 @@ def test_onnx_package_with_dynamic_batch_size_and_center_fused_nms_torch_list(
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_dynamic_bs_center_crop_fused_nms_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -4611,22 +4565,22 @@ def test_onnx_package_with_dynamic_batch_size_and_center_fused_nms_torch_list(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -4639,20 +4593,19 @@ def test_onnx_package_with_dynamic_batch_size_and_center_fused_nms_torch_list(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_center_crop_numpy(
     coin_counting_yolov8n_onnx_static_bs_center_crop_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -4660,7 +4613,7 @@ def test_onnx_package_with_static_batch_size_and_center_crop_numpy(
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_static_bs_center_crop_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -4668,13 +4621,13 @@ def test_onnx_package_with_static_batch_size_and_center_crop_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -4686,15 +4639,14 @@ def test_onnx_package_with_static_batch_size_and_center_crop_numpy(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_center_crop_batch_numpy(
     coin_counting_yolov8n_onnx_static_bs_center_crop_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -4702,7 +4654,7 @@ def test_onnx_package_with_static_batch_size_and_center_crop_batch_numpy(
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_static_bs_center_crop_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -4710,22 +4662,22 @@ def test_onnx_package_with_static_batch_size_and_center_crop_batch_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -4737,20 +4689,19 @@ def test_onnx_package_with_static_batch_size_and_center_crop_batch_numpy(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_center_torch(
     coin_counting_yolov8n_onnx_static_bs_center_crop_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -4758,7 +4709,7 @@ def test_onnx_package_with_static_batch_size_and_center_torch(
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_static_bs_center_crop_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -4766,13 +4717,13 @@ def test_onnx_package_with_static_batch_size_and_center_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -4784,15 +4735,14 @@ def test_onnx_package_with_static_batch_size_and_center_torch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_center_batch_torch(
     coin_counting_yolov8n_onnx_static_bs_center_crop_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -4800,7 +4750,7 @@ def test_onnx_package_with_static_batch_size_and_center_batch_torch(
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_static_bs_center_crop_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -4810,22 +4760,22 @@ def test_onnx_package_with_static_batch_size_and_center_batch_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -4837,20 +4787,19 @@ def test_onnx_package_with_static_batch_size_and_center_batch_torch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_center_torch_list(
     coin_counting_yolov8n_onnx_static_bs_center_crop_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -4858,7 +4807,7 @@ def test_onnx_package_with_static_batch_size_and_center_torch_list(
     # given
     model = YOLOv8ForObjectDetectionOnnx.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_onnx_static_bs_center_crop_package,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -4866,22 +4815,22 @@ def test_onnx_package_with_static_batch_size_and_center_torch_list(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -4893,19 +4842,19 @@ def test_onnx_package_with_static_batch_size_and_center_torch_list(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_center_crop_numpy(
     coin_counting_yolov8n_toch_script_static_bs_center_crop_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -4913,7 +4862,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_numpy(
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_toch_script_static_bs_center_crop_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -4921,13 +4870,13 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -4939,14 +4888,14 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_numpy(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_center_crop_torch(
     coin_counting_yolov8n_toch_script_static_bs_center_crop_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -4954,7 +4903,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_torch(
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_toch_script_static_bs_center_crop_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -4962,13 +4911,13 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -4980,14 +4929,14 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_torch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_center_crop_batch_numpy(
     coin_counting_yolov8n_toch_script_static_bs_center_crop_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -4995,7 +4944,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_batch_numpy(
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_toch_script_static_bs_center_crop_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -5003,22 +4952,22 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_batch_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -5030,19 +4979,19 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_batch_numpy(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_center_crop_torch(
     coin_counting_yolov8n_toch_script_static_bs_center_crop_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -5050,7 +4999,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_torch(
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_toch_script_static_bs_center_crop_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -5058,13 +5007,13 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -5076,14 +5025,14 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_torch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_center_crop_batch_torch(
     coin_counting_yolov8n_toch_script_static_bs_center_crop_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -5091,7 +5040,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_batch_torch(
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_toch_script_static_bs_center_crop_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -5101,22 +5050,22 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_batch_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -5128,19 +5077,19 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_batch_torch(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_center_crop_torch_list(
     coin_counting_yolov8n_toch_script_static_bs_center_crop_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -5148,7 +5097,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_torch_list(
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_toch_script_static_bs_center_crop_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -5156,22 +5105,22 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_torch_list(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([1, 0, 1, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -5183,19 +5132,19 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_torch_list(
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_numpy(
     coin_counting_yolov8n_toch_script_static_bs_center_crop_fused_nms_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -5203,7 +5152,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_nu
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_toch_script_static_bs_center_crop_fused_nms_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -5211,13 +5160,13 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_nu
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -5230,14 +5179,14 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_nu
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_torch(
     coin_counting_yolov8n_toch_script_static_bs_center_crop_fused_nms_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -5245,7 +5194,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_to
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_toch_script_static_bs_center_crop_fused_nms_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -5253,13 +5202,13 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_to
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -5272,14 +5221,14 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_to
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_batch_numpy(
     coin_counting_yolov8n_toch_script_static_bs_center_crop_fused_nms_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -5287,7 +5236,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_ba
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_toch_script_static_bs_center_crop_fused_nms_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -5295,22 +5244,22 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_ba
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -5323,19 +5272,19 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_ba
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_torch(
     coin_counting_yolov8n_toch_script_static_bs_center_crop_fused_nms_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -5343,7 +5292,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_to
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_toch_script_static_bs_center_crop_fused_nms_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -5351,13 +5300,13 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_to
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -5370,14 +5319,14 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_to
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_batch_torch(
     coin_counting_yolov8n_toch_script_static_bs_center_crop_fused_nms_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -5385,7 +5334,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_ba
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_toch_script_static_bs_center_crop_fused_nms_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -5395,22 +5344,22 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_ba
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -5423,19 +5372,19 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_ba
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_torch_list(
     coin_counting_yolov8n_toch_script_static_bs_center_crop_fused_nms_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -5443,7 +5392,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_to
     # given
     model = YOLOv8ForObjectDetectionTorchScript.from_pretrained(
         model_name_or_path=coin_counting_yolov8n_toch_script_static_bs_center_crop_fused_nms_package,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -5451,22 +5400,22 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_to
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.6618964, 0.4666715, 0.43694144, 0.3340491, 0.32732123]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([1, 0, 1, 1, 1], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [
@@ -5479,12 +5428,12 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_nms_fused_to
         dtype=torch.int32,
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )

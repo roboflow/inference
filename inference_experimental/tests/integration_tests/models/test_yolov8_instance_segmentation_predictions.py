@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 import torch
+from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
     YOLOv8ForInstanceSegmentationOnnx,
 )
@@ -11,7 +12,6 @@ from inference_exp.models.yolov8.yolov8_instance_segmentation_torch_script impor
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_stretch_numpy(
     asl_yolov8n_onnx_seg_dynamic_bs_stretch: str,
     asl_image_numpy: np.ndarray,
@@ -19,7 +19,7 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_numpy(
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_stretch,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -27,18 +27,18 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.98464]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 174, 187, 371]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -48,7 +48,6 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_numpy(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_stretch_numpy_custom_size(
     asl_yolov8n_onnx_seg_dynamic_bs_stretch: str,
     asl_image_numpy: np.ndarray,
@@ -56,7 +55,7 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_numpy_custom_size(
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_stretch,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -64,18 +63,18 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_numpy_custom_size(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.8392724]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.8392724]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([17], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([17], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[60, 170, 185, 380]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -85,7 +84,6 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_numpy_custom_size(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_stretch_torch_custom_size(
     asl_yolov8n_onnx_seg_dynamic_bs_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -93,7 +91,7 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_torch_custom_size(
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_stretch,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -101,18 +99,18 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_torch_custom_size(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.8392724]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.8392724]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([17], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([17], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[60, 170, 185, 380]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -122,7 +120,6 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_torch_custom_size(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_stretch_batch_numpy(
     asl_yolov8n_onnx_seg_dynamic_bs_stretch: str,
     asl_image_numpy: np.ndarray,
@@ -130,7 +127,7 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_batch_numpy(
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_stretch,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -138,32 +135,32 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_batch_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.98464]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.98464]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 174, 187, 371]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -176,7 +173,6 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_batch_numpy(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_stretch_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -184,7 +180,7 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_torch(
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_stretch,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -192,18 +188,18 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.98464]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 174, 187, 371]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -213,7 +209,6 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_torch(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_stretch_batch_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -221,7 +216,7 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_batch_torch(
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_stretch,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -229,32 +224,32 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_batch_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.98464]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.98464]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 174, 187, 371]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -267,7 +262,6 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_batch_torch(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_stretch_list_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -275,7 +269,7 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_list_torch(
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_stretch,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -283,32 +277,32 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_list_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.98464]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.98464]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 174, 187, 371]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -321,7 +315,6 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_list_torch(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_numpy(
     asl_yolov8n_onnx_seg_dynamic_bs_stretch_fused_nms: str,
     asl_image_numpy: np.ndarray,
@@ -329,7 +322,7 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_numpy(
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_stretch_fused_nms,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -337,18 +330,18 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.98464]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 174, 187, 371]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -358,7 +351,6 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_numpy(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_batch_numpy(
     asl_yolov8n_onnx_seg_dynamic_bs_stretch_fused_nms: str,
     asl_image_numpy: np.ndarray,
@@ -366,7 +358,7 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_batch_numpy(
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_stretch_fused_nms,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -374,32 +366,32 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_batch_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.98464]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.98464]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 174, 187, 371]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -412,7 +404,6 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_batch_numpy(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_stretch_fused_nms: str,
     asl_image_torch: torch.Tensor,
@@ -420,7 +411,7 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_torch(
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_stretch_fused_nms,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -428,18 +419,18 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.98464]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 174, 187, 371]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -449,7 +440,6 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_torch(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_batch_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_stretch_fused_nms: str,
     asl_image_torch: torch.Tensor,
@@ -457,7 +447,7 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_batch_torch(
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_stretch_fused_nms,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -465,32 +455,32 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_batch_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.98464]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.98464]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 174, 187, 371]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -503,7 +493,6 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_batch_torch(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_list_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_stretch_fused_nms: str,
     asl_image_torch: torch.Tensor,
@@ -511,7 +500,7 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_list_torch(
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_stretch_fused_nms,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -519,32 +508,32 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_list_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.98464]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.98464]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 174, 187, 371]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -557,7 +546,6 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_list_torch(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_stretch_numpy(
     asl_yolov8n_onnx_seg_static_bs_stretch: str,
     asl_image_numpy: np.ndarray,
@@ -565,7 +553,7 @@ def test_onnx_package_with_static_batch_size_and_stretch_numpy(
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_static_bs_stretch,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -573,18 +561,18 @@ def test_onnx_package_with_static_batch_size_and_stretch_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.98464]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 174, 187, 371]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -594,7 +582,6 @@ def test_onnx_package_with_static_batch_size_and_stretch_numpy(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_stretch_batch_numpy(
     asl_yolov8n_onnx_seg_static_bs_stretch: str,
     asl_image_numpy: np.ndarray,
@@ -602,7 +589,7 @@ def test_onnx_package_with_static_batch_size_and_stretch_batch_numpy(
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_static_bs_stretch,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -610,32 +597,32 @@ def test_onnx_package_with_static_batch_size_and_stretch_batch_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.98464]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.98464]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 174, 187, 371]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -648,7 +635,6 @@ def test_onnx_package_with_static_batch_size_and_stretch_batch_numpy(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_stretch_torch(
     asl_yolov8n_onnx_seg_static_bs_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -656,7 +642,7 @@ def test_onnx_package_with_static_batch_size_and_stretch_torch(
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_static_bs_stretch,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -664,18 +650,18 @@ def test_onnx_package_with_static_batch_size_and_stretch_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.98464]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 174, 187, 371]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -685,7 +671,6 @@ def test_onnx_package_with_static_batch_size_and_stretch_torch(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_stretch_batch_torch(
     asl_yolov8n_onnx_seg_static_bs_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -693,7 +678,7 @@ def test_onnx_package_with_static_batch_size_and_stretch_batch_torch(
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_static_bs_stretch,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -701,32 +686,32 @@ def test_onnx_package_with_static_batch_size_and_stretch_batch_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.98464]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.98464]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 174, 187, 371]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -739,7 +724,6 @@ def test_onnx_package_with_static_batch_size_and_stretch_batch_torch(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_stretch_list_torch(
     asl_yolov8n_onnx_seg_static_bs_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -747,7 +731,7 @@ def test_onnx_package_with_static_batch_size_and_stretch_list_torch(
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_static_bs_stretch,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -755,32 +739,32 @@ def test_onnx_package_with_static_batch_size_and_stretch_list_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.98464]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.98464]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 174, 187, 371]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -792,7 +776,7 @@ def test_onnx_package_with_static_batch_size_and_stretch_list_torch(
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_stretch_numpy(
     asl_yolov8n_torchscript_seg_static_bs_stretch: str,
     asl_image_numpy: np.ndarray,
@@ -800,7 +784,7 @@ def test_torchscript_package_with_static_batch_size_and_stretch_numpy(
     # given
     model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
         model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_stretch,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -808,18 +792,18 @@ def test_torchscript_package_with_static_batch_size_and_stretch_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.98464]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 174, 187, 371]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -828,7 +812,7 @@ def test_torchscript_package_with_static_batch_size_and_stretch_numpy(
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_stretch_batch_numpy(
     asl_yolov8n_torchscript_seg_static_bs_stretch: str,
     asl_image_numpy: np.ndarray,
@@ -836,7 +820,7 @@ def test_torchscript_package_with_static_batch_size_and_stretch_batch_numpy(
     # given
     model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
         model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_stretch,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -844,32 +828,32 @@ def test_torchscript_package_with_static_batch_size_and_stretch_batch_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.98464]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.98464]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 174, 187, 371]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -881,7 +865,7 @@ def test_torchscript_package_with_static_batch_size_and_stretch_batch_numpy(
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_stretch_torch(
     asl_yolov8n_torchscript_seg_static_bs_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -889,7 +873,7 @@ def test_torchscript_package_with_static_batch_size_and_stretch_torch(
     # given
     model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
         model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_stretch,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -897,18 +881,18 @@ def test_torchscript_package_with_static_batch_size_and_stretch_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.98464]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 174, 187, 371]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -917,7 +901,7 @@ def test_torchscript_package_with_static_batch_size_and_stretch_torch(
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_stretch_batch_torch(
     asl_yolov8n_torchscript_seg_static_bs_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -925,7 +909,7 @@ def test_torchscript_package_with_static_batch_size_and_stretch_batch_torch(
     # given
     model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
         model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_stretch,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -933,32 +917,32 @@ def test_torchscript_package_with_static_batch_size_and_stretch_batch_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.98464]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.98464]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 174, 187, 371]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -970,7 +954,7 @@ def test_torchscript_package_with_static_batch_size_and_stretch_batch_torch(
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_stretch_list_torch(
     asl_yolov8n_torchscript_seg_static_bs_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -978,7 +962,7 @@ def test_torchscript_package_with_static_batch_size_and_stretch_list_torch(
     # given
     model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
         model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_stretch,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -986,32 +970,32 @@ def test_torchscript_package_with_static_batch_size_and_stretch_list_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.98464]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.98464]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 174, 187, 371]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -1023,7 +1007,7 @@ def test_torchscript_package_with_static_batch_size_and_stretch_list_torch(
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_numpy(
     asl_yolov8n_torchscript_seg_static_bs_stretch_fused_nms: str,
     asl_image_numpy: np.ndarray,
@@ -1031,7 +1015,7 @@ def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_numpy(
     # given
     model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
         model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_stretch_fused_nms,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -1039,18 +1023,18 @@ def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.98464]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 174, 187, 371]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -1059,7 +1043,7 @@ def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_numpy(
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_batch_numpy(
     asl_yolov8n_torchscript_seg_static_bs_stretch_fused_nms: str,
     asl_image_numpy: np.ndarray,
@@ -1067,7 +1051,7 @@ def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_batch_
     # given
     model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
         model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_stretch_fused_nms,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -1075,32 +1059,32 @@ def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_batch_
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.98464]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.98464]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 174, 187, 371]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -1112,7 +1096,7 @@ def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_batch_
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_torch(
     asl_yolov8n_torchscript_seg_static_bs_stretch_fused_nms: str,
     asl_image_torch: torch.Tensor,
@@ -1120,7 +1104,7 @@ def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_torch(
     # given
     model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
         model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_stretch_fused_nms,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -1128,18 +1112,18 @@ def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.98464]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 174, 187, 371]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -1148,7 +1132,7 @@ def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_torch(
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_batch_torch(
     asl_yolov8n_torchscript_seg_static_bs_stretch_fused_nms: str,
     asl_image_torch: torch.Tensor,
@@ -1156,7 +1140,7 @@ def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_batch_
     # given
     model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
         model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_stretch_fused_nms,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -1164,32 +1148,32 @@ def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_batch_
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.98464]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.98464]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 174, 187, 371]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -1201,7 +1185,7 @@ def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_batch_
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_list_torch(
     asl_yolov8n_torchscript_seg_static_bs_stretch_fused_nms: str,
     asl_image_torch: torch.Tensor,
@@ -1209,7 +1193,7 @@ def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_list_t
     # given
     model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
         model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_stretch_fused_nms,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -1217,32 +1201,32 @@ def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_list_t
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.98464]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.98464]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.98464]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 174, 187, 371]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -1255,7 +1239,6 @@ def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_list_t
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_numpy(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch: str,
     asl_image_numpy: np.ndarray,
@@ -1263,7 +1246,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_numpy(
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -1271,18 +1254,18 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9735]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 171, 186, 343]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -1292,7 +1275,6 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_numpy(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_numpy_custom_size(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch: str,
     asl_image_numpy: np.ndarray,
@@ -1300,7 +1282,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_numpy_cust
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -1308,18 +1290,18 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_numpy_cust
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.4323]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.4323]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([21], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([21], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[61, 169, 186, 339]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -1329,7 +1311,6 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_numpy_cust
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_torch_custom_size(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -1337,7 +1318,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_torch_cust
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -1345,18 +1326,18 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_torch_cust
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.4323]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.4323]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([21], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([21], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[61, 169, 186, 339]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -1366,7 +1347,6 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_torch_cust
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_batch_numpy(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch: str,
     asl_image_numpy: np.ndarray,
@@ -1374,7 +1354,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_batch_nump
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -1382,32 +1362,32 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_batch_nump
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9735]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.9735]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 171, 186, 343]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -1420,7 +1400,6 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_batch_nump
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -1428,7 +1407,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_torch(
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -1436,18 +1415,18 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9735]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 171, 186, 343]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -1457,7 +1436,6 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_torch(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_batch_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -1465,7 +1443,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_batch_torc
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -1473,32 +1451,32 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_batch_torc
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9735]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.9735]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 171, 186, 343]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -1511,7 +1489,6 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_batch_torc
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_list_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -1519,7 +1496,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_list_torch
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -1527,32 +1504,32 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_list_torch
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9735]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.9735]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 171, 186, 343]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -1565,7 +1542,6 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_list_torch
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_numpy(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch_fused_nms: str,
     asl_image_numpy: np.ndarray,
@@ -1573,7 +1549,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch_fused_nms,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -1581,18 +1557,18 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9735]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 171, 186, 343]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -1602,7 +1578,6 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_numpy_custom_size(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch_fused_nms: str,
     asl_image_numpy: np.ndarray,
@@ -1610,7 +1585,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch_fused_nms,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -1618,18 +1593,18 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.4323]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.4323]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([21], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([21], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[61, 169, 186, 339]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -1639,7 +1614,6 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_torch_custom_size(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch_fused_nms: str,
     asl_image_torch: torch.Tensor,
@@ -1647,7 +1621,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch_fused_nms,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -1655,18 +1629,18 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.4323]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.4323]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([21], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([21], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[61, 169, 186, 339]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -1676,7 +1650,6 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_batch_numpy(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch_fused_nms: str,
     asl_image_numpy: np.ndarray,
@@ -1684,7 +1657,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch_fused_nms,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -1692,32 +1665,32 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9735]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.9735]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 171, 186, 343]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -1730,7 +1703,6 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch_fused_nms: str,
     asl_image_torch: torch.Tensor,
@@ -1738,7 +1710,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch_fused_nms,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -1746,18 +1718,18 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9735]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 171, 186, 343]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -1767,7 +1739,6 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_batch_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch_fused_nms: str,
     asl_image_torch: torch.Tensor,
@@ -1775,7 +1746,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch_fused_nms,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -1783,32 +1754,32 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9735]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.9735]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 171, 186, 343]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -1821,7 +1792,6 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_list_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch_fused_nms: str,
     asl_image_torch: torch.Tensor,
@@ -1829,7 +1799,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch_fused_nms,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -1837,32 +1807,32 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9735]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.9735]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 171, 186, 343]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -1875,7 +1845,6 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_static_crop_stretch_numpy(
     asl_yolov8n_onnx_seg_static_bs_static_crop_stretch: str,
     asl_image_numpy: np.ndarray,
@@ -1883,7 +1852,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_numpy(
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_static_bs_static_crop_stretch,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -1891,18 +1860,18 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9735]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 171, 186, 343]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -1912,7 +1881,6 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_numpy(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_numpy(
     asl_yolov8n_onnx_seg_static_bs_static_crop_stretch: str,
     asl_image_numpy: np.ndarray,
@@ -1920,7 +1888,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_numpy
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_static_bs_static_crop_stretch,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -1928,32 +1896,32 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_numpy
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9735]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.9735]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 171, 186, 343]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -1966,7 +1934,6 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_numpy
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_static_crop_stretch_torch(
     asl_yolov8n_onnx_seg_static_bs_static_crop_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -1974,7 +1941,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_torch(
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_static_bs_static_crop_stretch,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -1982,18 +1949,18 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9735]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 171, 186, 343]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -2003,7 +1970,6 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_torch(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_torch(
     asl_yolov8n_onnx_seg_static_bs_static_crop_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -2011,7 +1977,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_torch
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_static_bs_static_crop_stretch,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -2019,32 +1985,32 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_torch
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9735]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.9735]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 171, 186, 343]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -2057,7 +2023,6 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_torch
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_static_crop_stretch_list_torch(
     asl_yolov8n_onnx_seg_static_bs_static_crop_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -2065,7 +2030,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_list_torch(
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_static_bs_static_crop_stretch,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -2073,32 +2038,32 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_list_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9735]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.9735]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 171, 186, 343]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -2110,7 +2075,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_list_torch(
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_numpy(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_stretch: str,
     asl_image_numpy: np.ndarray,
@@ -2118,7 +2083,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nump
     # given
     model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
         model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_static_crop_stretch,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -2126,18 +2091,18 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nump
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9735]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 171, 186, 343]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -2146,7 +2111,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nump
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_batch_numpy(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_stretch: str,
     asl_image_numpy: np.ndarray,
@@ -2154,7 +2119,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_batc
     # given
     model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
         model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_static_crop_stretch,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -2162,32 +2127,32 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_batc
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9735]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.9735]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 171, 186, 343]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -2199,7 +2164,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_batc
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_torch(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -2207,7 +2172,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_torc
     # given
     model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
         model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_static_crop_stretch,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -2215,18 +2180,18 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_torc
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9735]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 171, 186, 343]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -2235,7 +2200,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_torc
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_batch_torch(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -2243,7 +2208,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_batc
     # given
     model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
         model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_static_crop_stretch,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -2251,32 +2216,32 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_batc
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9735]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.9735]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 171, 186, 343]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -2288,7 +2253,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_batc
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_list_torch(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -2296,7 +2261,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_list
     # given
     model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
         model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_static_crop_stretch,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -2304,32 +2269,32 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_list
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9735]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.9735]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 171, 186, 343]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -2341,7 +2306,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_list
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_fused_nms_numpy(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_stretch_fused_nms: str,
     asl_image_numpy: np.ndarray,
@@ -2349,7 +2314,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_fuse
     # given
     model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
         model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_static_crop_stretch_fused_nms,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -2357,18 +2322,18 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_fuse
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9735]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 171, 186, 343]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -2377,7 +2342,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_fuse
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_fused_nms_batch_numpy(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_stretch_fused_nms: str,
     asl_image_numpy: np.ndarray,
@@ -2385,7 +2350,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_fuse
     # given
     model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
         model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_static_crop_stretch_fused_nms,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -2393,32 +2358,32 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_fuse
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9735]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.9735]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 171, 186, 343]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -2430,7 +2395,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_fuse
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_fused_nms_torch(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_stretch_fused_nms: str,
     asl_image_torch: torch.Tensor,
@@ -2438,7 +2403,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_fuse
     # given
     model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
         model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_static_crop_stretch_fused_nms,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -2446,18 +2411,18 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_fuse
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9735]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 171, 186, 343]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -2466,7 +2431,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_fuse
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_fused_nms_batch_torch(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_stretch_fused_nms: str,
     asl_image_torch: torch.Tensor,
@@ -2474,7 +2439,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_fuse
     # given
     model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
         model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_static_crop_stretch_fused_nms,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -2482,32 +2447,32 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_fuse
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9735]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.9735]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 171, 186, 343]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -2519,7 +2484,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_fuse
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_fused_nms_list_torch(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_stretch_fused_nms: str,
     asl_image_torch: torch.Tensor,
@@ -2527,7 +2492,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_fuse
     # given
     model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
         model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_static_crop_stretch_fused_nms,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -2535,32 +2500,32 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_fuse
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9735]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.9735]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.9735]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 171, 186, 343]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -2573,7 +2538,6 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_fuse
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_numpy(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop: str,
     asl_image_numpy: np.ndarray,
@@ -2581,7 +2545,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_numpy(
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -2589,18 +2553,18 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.8159524]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.8159524]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[64, 175, 188, 341]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -2610,7 +2574,6 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_numpy(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_numpy_custom_size(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop: str,
     asl_image_numpy: np.ndarray,
@@ -2618,7 +2581,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_numpy_
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -2626,18 +2589,18 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_numpy_
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.47219265]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.47219265]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 173, 187, 329]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -2647,7 +2610,6 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_numpy_
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_torch_custom_size(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop: str,
     asl_image_torch: torch.Tensor,
@@ -2655,7 +2617,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_torch_
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -2663,18 +2625,18 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_torch_
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.47219265]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.47219265]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 173, 187, 329]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -2684,7 +2646,6 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_torch_
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_tatic_crop_center_crop_batch_numpy(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop: str,
     asl_image_numpy: np.ndarray,
@@ -2692,7 +2653,7 @@ def test_onnx_package_with_dynamic_batch_size_and_tatic_crop_center_crop_batch_n
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -2700,32 +2661,32 @@ def test_onnx_package_with_dynamic_batch_size_and_tatic_crop_center_crop_batch_n
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.8159524]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.8159524]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.8159524]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.8159524]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[64, 175, 188, 341]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -2738,7 +2699,6 @@ def test_onnx_package_with_dynamic_batch_size_and_tatic_crop_center_crop_batch_n
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop: str,
     asl_image_torch: torch.Tensor,
@@ -2746,7 +2706,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_torch(
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -2754,18 +2714,18 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.8159524]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.8159524]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[64, 175, 188, 341]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -2775,7 +2735,6 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_torch(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_batch_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop: str,
     asl_image_torch: torch.Tensor,
@@ -2783,7 +2742,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_batch_
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -2791,32 +2750,32 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_batch_
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.8159524]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.8159524]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.8159524]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.8159524]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[64, 175, 188, 341]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -2829,7 +2788,6 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_batch_
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_list_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop: str,
     asl_image_torch: torch.Tensor,
@@ -2837,7 +2795,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_list_t
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -2845,32 +2803,32 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_list_t
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.8159524]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.8159524]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.8159524]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.8159524]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[64, 175, 188, 341]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -2883,7 +2841,6 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_list_t
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_nms_numpy(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop_fused_nms: str,
     asl_image_numpy: np.ndarray,
@@ -2891,7 +2848,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop_fused_nms,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -2899,18 +2856,18 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.8159524]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.8159524]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[64, 175, 188, 341]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -2920,7 +2877,6 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_nms_numpy_custom_size(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop_fused_nms: str,
     asl_image_numpy: np.ndarray,
@@ -2928,7 +2884,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop_fused_nms,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -2936,18 +2892,18 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.47219265]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.47219265]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 173, 187, 329]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -2957,7 +2913,6 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_nms_torch_custom_size(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop_fused_nms: str,
     asl_image_torch: torch.Tensor,
@@ -2965,7 +2920,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop_fused_nms,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -2973,18 +2928,18 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.47219265]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.47219265]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[63, 173, 187, 329]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -2994,7 +2949,6 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_tatic_crop_center_crop_fused_nms_batch_numpy(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop_fused_nms: str,
     asl_image_numpy: np.ndarray,
@@ -3002,7 +2956,7 @@ def test_onnx_package_with_dynamic_batch_size_and_tatic_crop_center_crop_fused_n
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop_fused_nms,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -3010,32 +2964,32 @@ def test_onnx_package_with_dynamic_batch_size_and_tatic_crop_center_crop_fused_n
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.8159524]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.8159524]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.8159524]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.8159524]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[64, 175, 188, 341]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -3048,7 +3002,6 @@ def test_onnx_package_with_dynamic_batch_size_and_tatic_crop_center_crop_fused_n
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_nms_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop_fused_nms: str,
     asl_image_torch: torch.Tensor,
@@ -3056,7 +3009,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop_fused_nms,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -3064,18 +3017,18 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.8159524]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.8159524]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[64, 175, 188, 341]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -3085,7 +3038,6 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_nms_batch_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop_fused_nms: str,
     asl_image_torch: torch.Tensor,
@@ -3093,7 +3045,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop_fused_nms,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -3101,32 +3053,32 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.8159524]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.8159524]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.8159524]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.8159524]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[64, 175, 188, 341]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -3139,7 +3091,6 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_nms_list_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop_fused_nms: str,
     asl_image_torch: torch.Tensor,
@@ -3147,7 +3098,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop_fused_nms,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -3155,32 +3106,32 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.8159524]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.8159524]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.8159524]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.8159524]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[64, 175, 188, 341]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -3193,7 +3144,6 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_numpy(
     asl_yolov8n_onnx_seg_static_bs_static_crop_center_crop: str,
     asl_image_numpy: np.ndarray,
@@ -3201,7 +3151,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_numpy(
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_static_bs_static_crop_center_crop,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -3209,18 +3159,18 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.8159524]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.8159524]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[64, 175, 188, 341]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -3230,7 +3180,6 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_numpy(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_batch_numpy(
     asl_yolov8n_onnx_seg_static_bs_static_crop_center_crop: str,
     asl_image_numpy: np.ndarray,
@@ -3238,7 +3187,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_batch_n
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_static_bs_static_crop_center_crop,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -3246,32 +3195,32 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_batch_n
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.8159524]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.8159524]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.8159524]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.8159524]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[64, 175, 188, 341]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -3284,7 +3233,6 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_batch_n
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_torch(
     asl_yolov8n_onnx_seg_static_bs_static_crop_center_crop: str,
     asl_image_torch: torch.Tensor,
@@ -3292,7 +3240,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_torch(
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_static_bs_static_crop_center_crop,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -3300,18 +3248,18 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.8159524]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.8159524]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[64, 175, 188, 341]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -3321,7 +3269,6 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_torch(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_batch_torch(
     asl_yolov8n_onnx_seg_static_bs_static_crop_center_crop: str,
     asl_image_torch: torch.Tensor,
@@ -3329,7 +3276,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_batch_t
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_static_bs_static_crop_center_crop,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -3337,32 +3284,32 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_batch_t
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.8159524]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.8159524]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.8159524]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.8159524]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[64, 175, 188, 341]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -3375,7 +3322,6 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_batch_t
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_list_torch(
     asl_yolov8n_onnx_seg_static_bs_static_crop_center_crop: str,
     asl_image_torch: torch.Tensor,
@@ -3383,7 +3329,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_list_to
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_static_bs_static_crop_center_crop,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -3391,32 +3337,32 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_list_to
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.8159524]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.8159524]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.8159524]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.8159524]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[64, 175, 188, 341]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -3428,7 +3374,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_list_to
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_numpy(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_center_crop: str,
     asl_image_numpy: np.ndarray,
@@ -3436,7 +3382,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_
     # given
     model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
         model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_static_crop_center_crop,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -3444,18 +3390,18 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.8159524]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.8159524]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[64, 175, 188, 341]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -3464,7 +3410,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_batch_numpy(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_center_crop: str,
     asl_image_numpy: np.ndarray,
@@ -3472,7 +3418,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_
     # given
     model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
         model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_static_crop_center_crop,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -3480,32 +3426,32 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.8159524]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.8159524]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.8159524]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.8159524]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[64, 175, 188, 341]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -3517,7 +3463,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_torch(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_center_crop: str,
     asl_image_torch: torch.Tensor,
@@ -3525,7 +3471,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_
     # given
     model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
         model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_static_crop_center_crop,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -3533,18 +3479,18 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.8159524]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.8159524]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[64, 175, 188, 341]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -3553,7 +3499,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_batch_torch(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_center_crop: str,
     asl_image_torch: torch.Tensor,
@@ -3561,7 +3507,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_
     # given
     model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
         model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_static_crop_center_crop,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -3569,32 +3515,32 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.8159524]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.8159524]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.8159524]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.8159524]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[64, 175, 188, 341]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -3606,7 +3552,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_list_torch(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_center_crop: str,
     asl_image_torch: torch.Tensor,
@@ -3614,7 +3560,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_
     # given
     model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
         model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_static_crop_center_crop,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -3622,32 +3568,32 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.8159524]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.8159524]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.8159524]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.8159524]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[64, 175, 188, 341]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -3660,7 +3606,6 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_center_crop_numpy(
     asl_yolov8n_onnx_seg_dynamic_bs_center_crop: str,
     asl_image_numpy: np.ndarray,
@@ -3668,7 +3613,7 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_numpy(
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_center_crop,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -3676,18 +3621,18 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9711]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9711]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[61, 172, 187, 367]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -3697,7 +3642,6 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_numpy(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_center_crop_batch_numpy(
     asl_yolov8n_onnx_seg_dynamic_bs_center_crop: str,
     asl_image_numpy: np.ndarray,
@@ -3705,7 +3649,7 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_batch_numpy(
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_center_crop,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -3713,32 +3657,32 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_batch_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9711]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9711]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.9711]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.9711]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[61, 172, 187, 367]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -3751,7 +3695,6 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_batch_numpy(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_center_crop_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_center_crop: str,
     asl_image_torch: torch.Tensor,
@@ -3759,7 +3702,7 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_torch(
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_center_crop,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -3767,18 +3710,18 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9711]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9711]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[61, 172, 187, 367]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -3788,7 +3731,6 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_torch(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_center_crop_batch_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_center_crop: str,
     asl_image_torch: torch.Tensor,
@@ -3796,7 +3738,7 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_batch_torch(
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_center_crop,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -3804,32 +3746,32 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_batch_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9711]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9711]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.9711]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.9711]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[61, 172, 187, 367]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -3842,7 +3784,6 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_batch_torch(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_center_crop_list_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_center_crop: str,
     asl_image_torch: torch.Tensor,
@@ -3850,7 +3791,7 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_list_torch(
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_center_crop,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -3859,32 +3800,32 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_list_torch(
     # then
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9711]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9711]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.9711]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.9711]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[61, 172, 187, 367]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -3896,7 +3837,7 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_list_torch(
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_center_crop_numpy(
     asl_yolov8n_torchscript_seg_static_bs_center_crop: str,
     asl_image_numpy: np.ndarray,
@@ -3904,7 +3845,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_numpy(
     # given
     model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
         model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_center_crop,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -3912,18 +3853,18 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9711]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9711]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[61, 172, 187, 367]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -3932,7 +3873,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_numpy(
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_center_crop_batch_numpy(
     asl_yolov8n_torchscript_seg_static_bs_center_crop: str,
     asl_image_numpy: np.ndarray,
@@ -3940,7 +3881,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_batch_numpy(
     # given
     model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
         model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_center_crop,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -3948,32 +3889,32 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_batch_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9711]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9711]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.9711]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.9711]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[61, 172, 187, 367]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -3985,7 +3926,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_batch_numpy(
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_center_crop_torch(
     asl_yolov8n_torchscript_seg_static_bs_center_crop: str,
     asl_image_torch: torch.Tensor,
@@ -3993,7 +3934,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_torch(
     # given
     model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
         model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_center_crop,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -4001,18 +3942,18 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9711]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9711]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[61, 172, 187, 367]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -4021,7 +3962,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_torch(
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_center_crop_batch_torch(
     asl_yolov8n_torchscript_seg_static_bs_center_crop: str,
     asl_image_torch: torch.Tensor,
@@ -4029,7 +3970,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_batch_torch(
     # given
     model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
         model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_center_crop,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -4037,32 +3978,32 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_batch_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9711]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9711]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.9711]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.9711]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[61, 172, 187, 367]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -4074,7 +4015,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_batch_torch(
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_center_crop_list_torch(
     asl_yolov8n_torchscript_seg_static_bs_center_crop: str,
     asl_image_torch: torch.Tensor,
@@ -4082,7 +4023,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_list_torch(
     # given
     model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
         model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_center_crop,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -4090,32 +4031,32 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_list_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.9711]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.9711]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.9711]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.9711]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor([[61, 172, 187, 367]], dtype=torch.int32)
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -4127,7 +4068,7 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_list_torch(
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_crop_numpy(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_letterbox: str,
     asl_image_numpy: np.ndarray,
@@ -4135,7 +4076,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_cr
     # given
     model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
         model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_static_crop_letterbox,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -4143,20 +4084,20 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_cr
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.6637, 0.5337]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.6637, 0.5337]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20, 17], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20, 17], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [[63, 173, 187, 341], [61, 175, 187, 342]], dtype=torch.int32
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -4165,7 +4106,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_cr
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_batch_numpy(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_letterbox: str,
     asl_image_numpy: np.ndarray,
@@ -4173,7 +4114,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_ba
     # given
     model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
         model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_static_crop_letterbox,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -4181,34 +4122,34 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_ba
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.6637, 0.5337]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.6637, 0.5337]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.6637, 0.5337]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.6637, 0.5337]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20, 17], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20, 17], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20, 17], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20, 17], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [[63, 173, 187, 341], [61, 175, 187, 342]], dtype=torch.int32
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -4220,7 +4161,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_ba
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_crop_torch(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_letterbox: str,
     asl_image_torch: torch.Tensor,
@@ -4228,7 +4169,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_cr
     # given
     model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
         model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_static_crop_letterbox,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -4236,20 +4177,20 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_cr
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.6599, 0.5505]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.6599, 0.5505]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20, 17], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20, 17], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [[63, 173, 187, 341], [61, 175, 187, 342]], dtype=torch.int32
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -4258,7 +4199,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_cr
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_batch_torch(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_letterbox: str,
     asl_image_torch: torch.Tensor,
@@ -4266,7 +4207,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_ba
     # given
     model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
         model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_static_crop_letterbox,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -4274,34 +4215,34 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_ba
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.65991, 0.55051]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.65991, 0.55051]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.65991, 0.55051]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.65991, 0.55051]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20, 17], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20, 17], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20, 17], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20, 17], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [[63, 173, 187, 341], [61, 175, 187, 342]], dtype=torch.int32
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -4313,7 +4254,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_ba
 
 
 @pytest.mark.slow
-@pytest.mark.cpu_only
+@pytest.mark.torch_models
 def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_list_torch(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_letterbox: str,
     asl_image_torch: torch.Tensor,
@@ -4321,7 +4262,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_li
     # given
     model = YOLOv8ForInstanceSegmentationTorchScript.from_pretrained(
         model_name_or_path=asl_yolov8n_torchscript_seg_static_bs_static_crop_letterbox,
-        device=torch.device("cpu"),
+        device=DEFAULT_DEVICE,
     )
 
     # when
@@ -4329,34 +4270,34 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_li
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.65991, 0.55051]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.65991, 0.55051]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.65991, 0.55051]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.65991, 0.55051]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20, 17], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20, 17], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20, 17], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20, 17], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [[63, 173, 187, 341], [61, 175, 187, 342]], dtype=torch.int32
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -4369,7 +4310,6 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_li
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_numpy(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_letterbox: str,
     asl_image_numpy: np.ndarray,
@@ -4377,7 +4317,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_numpy(
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_letterbox,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -4385,20 +4325,20 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_numpy(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.6637, 0.5337]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.6637, 0.5337]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20, 17], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20, 17], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [[63, 173, 187, 341], [61, 175, 187, 342]], dtype=torch.int32
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -4408,7 +4348,6 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_numpy(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_batch_numpy(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_letterbox: str,
     asl_image_numpy: np.ndarray,
@@ -4416,7 +4355,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_batch_nu
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_letterbox,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -4424,34 +4363,34 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_batch_nu
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.6637, 0.5337]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.6637, 0.5337]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.6637, 0.5337]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.6637, 0.5337]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20, 17], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20, 17], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20, 17], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20, 17], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [[63, 173, 187, 341], [61, 175, 187, 342]], dtype=torch.int32
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -4464,7 +4403,6 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_batch_nu
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_letterbox: str,
     asl_image_torch: torch.Tensor,
@@ -4472,7 +4410,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_torch(
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_letterbox,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -4480,20 +4418,20 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_torch(
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.6599, 0.5505]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.6599, 0.5505]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20, 17], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20, 17], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [[63, 173, 187, 341], [61, 175, 187, 342]], dtype=torch.int32
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -4503,7 +4441,6 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_torch(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_batch_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_letterbox: str,
     asl_image_torch: torch.Tensor,
@@ -4511,7 +4448,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_batch_to
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_letterbox,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -4519,34 +4456,34 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_batch_to
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.65991, 0.55051]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.65991, 0.55051]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.65991, 0.55051]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.65991, 0.55051]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20, 17], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20, 17], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20, 17], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20, 17], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [[63, 173, 187, 341], [61, 175, 187, 342]], dtype=torch.int32
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
@@ -4559,7 +4496,6 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_batch_to
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
-@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_list_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_letterbox: str,
     asl_image_torch: torch.Tensor,
@@ -4567,7 +4503,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_list_tor
     # given
     model = YOLOv8ForInstanceSegmentationOnnx.from_pretrained(
         model_name_or_path=asl_yolov8n_onnx_seg_dynamic_bs_static_crop_letterbox,
-        onnx_execution_providers=["CPUExecutionProvider"],
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
     # when
@@ -4575,34 +4511,34 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_list_tor
 
     # then
     assert torch.allclose(
-        predictions[0].confidence,
-        torch.tensor([0.65991, 0.55051]),
+        predictions[0].confidence.cpu(),
+        torch.tensor([0.65991, 0.55051]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[1].confidence,
-        torch.tensor([0.65991, 0.55051]),
+        predictions[1].confidence.cpu(),
+        torch.tensor([0.65991, 0.55051]).cpu(),
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
-        torch.tensor([20, 17], dtype=torch.int32),
+        predictions[0].class_id.cpu(),
+        torch.tensor([20, 17], dtype=torch.int32).cpu(),
     )
     assert torch.allclose(
-        predictions[1].class_id,
-        torch.tensor([20, 17], dtype=torch.int32),
+        predictions[1].class_id.cpu(),
+        torch.tensor([20, 17], dtype=torch.int32).cpu(),
     )
     expected_xyxy = torch.tensor(
         [[63, 173, 187, 341], [61, 175, 187, 342]], dtype=torch.int32
     )
     assert torch.allclose(
-        predictions[0].xyxy,
-        expected_xyxy,
+        predictions[0].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert torch.allclose(
-        predictions[1].xyxy,
-        expected_xyxy,
+        predictions[1].xyxy.cpu(),
+        expected_xyxy.cpu(),
         atol=2,
     )
     assert (
