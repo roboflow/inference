@@ -2,7 +2,7 @@ import os
 import shutil
 import tempfile
 from time import perf_counter
-from typing import Any
+from typing import Any, Tuple
 
 import torch
 
@@ -24,6 +24,21 @@ if DEVICE is None:
         DEVICE = "mps"
     else:
         DEVICE = "cpu"
+
+def _geometry_to_bbox(page_dimensions:Tuple[int,int], geometry: dict) -> list[int]:
+    """Convert a geometry dictionary to a bounding box.
+
+    Args:
+        geometry (dict): A dictionary containing the geometry of the detected text.
+
+    Returns:
+        list[int]: A list representing the bounding box in the format [x_min, y_min, x_max, y_max].
+    """
+    x_min = int(page_dimensions[1] * geometry[0][0])
+    y_min = int(page_dimensions[0] * geometry[0][1])
+    x_max = int(page_dimensions[1] * geometry[1][0])
+    y_max = int(page_dimensions[0] * geometry[1][1])
+    return [x_min, y_min, x_max, y_max]
 
 class DocTR(RoboflowCoreModel):
     def __init__(self, *args, model_id: str = "doctr_rec/crnn_vgg16_bn", **kwargs):
@@ -84,9 +99,14 @@ class DocTR(RoboflowCoreModel):
         self, request: DoctrOCRInferenceRequest
     ) -> OCRInferenceResponse:
         t1 = perf_counter()
-        result = self.infer(**request.dict())
+        args = request.dict()
+        args["extended"] = True  # ensure we get bounding boxes, confidences, etc
+        result = self.infer(**args)
         return OCRInferenceResponse(
-            result=result,
+            result=result[0],
+            strings=result[1],
+            bounding_boxes=result[2],
+            confidences=result[3],
             time=perf_counter() - t1,
         )
 
@@ -113,19 +133,26 @@ class DocTR(RoboflowCoreModel):
 
             result = self.model(doc).export()
 
-            print(result)
+            blocks = result["pages"][0]["blocks"]
+            page_dimensions = result["pages"][0]["dimensions"]
 
-            result = result["pages"][0]["blocks"]
-
-            result = [
-                " ".join([word["value"] for word in line["words"]])
-                for block in result
+            words = [
+                word
+                for block in blocks
                 for line in block["lines"]
+                for word in line["words"]
             ]
 
-            result = " ".join(result)
+            result = " ".join([word["value"] for word in words])
+            strings = [word["value"] for word in words]
+            bounding_boxes = [_geometry_to_bbox(page_dimensions, word["geometry"]) for word in words]
+            confidences = [float(word["objectness_score"]) for word in words]
 
-            return result
+            # previous implementation only returned result, so using "extended" option to maintain backwards compatibility
+            if kwargs.get("extended") is not None:
+                return result, strings, bounding_boxes, confidences
+            else:
+                return result
 
     def get_infer_bucket_file_list(self) -> list:
         """Get the list of required files for inference.

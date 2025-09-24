@@ -1,8 +1,15 @@
-from typing import List, Literal, Optional, Type
+import json
+from typing import Dict, List, Literal, Optional, Type
+from urllib import response
+from uuid import uuid4
+
+import numpy as np
+import supervision as sv
 
 from pydantic import ConfigDict, Field
 
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
+from inference.core.entities.responses.ocr import OCRInferenceResponse
 from inference.core.env import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
@@ -13,14 +20,21 @@ from inference.core.env import (
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
+    attach_parents_coordinates_to_sv_detections,
     load_core_model,
     remove_unexpected_keys_from_dictionary,
 )
+
 from inference.core.workflows.execution_engine.constants import (
+    DETECTION_ID_KEY,
+    IMAGE_DIMENSIONS_KEY,
     PARENT_ID_KEY,
     PREDICTION_TYPE_KEY,
     ROOT_PARENT_ID_KEY,
 )
+
+from supervision.config import CLASS_NAME_DATA_FIELD
+
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -28,6 +42,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
+    OBJECT_DETECTION_PREDICTION_KIND,
     PARENT_ID_KIND,
     PREDICTION_TYPE_KIND,
     STRING_KIND,
@@ -46,17 +61,44 @@ LONG_DESCRIPTION = """
 
 This block returns the text within an image.
 
-You may want to use this block in combination with a detections-based block (i.e. 
-ObjectDetectionBlock). An object detection model could isolate specific regions from an 
-image (i.e. a shipping container ID in a logistics use case) for further processing. 
+You may want to use this block in combination with a detections-based block (i.e.
+ObjectDetectionBlock). An object detection model could isolate specific regions from an
+image (i.e. a shipping container ID in a logistics use case) for further processing.
 You can then use a DynamicCropBlock to crop the region of interest before running OCR.
 
-Using a detections model then cropping detections allows you to isolate your analysis 
+Using a detections model then cropping detections allows you to isolate your analysis
 on particular regions of an image.
 """
 
-EXPECTED_OUTPUT_KEYS = {"result", "parent_id", "root_parent_id", "prediction_type"}
+EXPECTED_OUTPUT_KEYS = {"result", "parent_id", "root_parent_id", "prediction_type", "predictions"}
 
+def _ocr_result_to_detections(
+    image: WorkflowImageData, response_dict: Dict
+) -> sv.Detections:
+    # Prepare lists for bounding boxes, confidences, class IDs, and labels
+    class_names = response_dict.get("strings", [])
+    xyxy = response_dict.get("bounding_boxes", [])
+    confidences = response_dict.get("confidences", [])
+    class_ids = [0] * len(class_names)
+
+    # Convert to NumPy arrays
+    detections = sv.Detections(
+        xyxy=np.array(xyxy),
+        confidence=np.array(confidences),
+        class_id=np.array(class_ids),
+        data={CLASS_NAME_DATA_FIELD: np.array(class_names)},
+    )
+
+    detections[DETECTION_ID_KEY] = np.array([uuid4() for _ in range(len(detections))])
+    detections[PREDICTION_TYPE_KEY] = np.array(["easy-ocr"] * len(detections))
+    img_height, img_width = image.numpy_image.shape[:2]
+    detections[IMAGE_DIMENSIONS_KEY] = np.array(
+        [[img_height, img_width]] * len(detections)
+    )
+    return attach_parents_coordinates_to_sv_detections(
+        detections=detections,
+        image=image,
+    )
 
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
@@ -88,6 +130,7 @@ class BlockManifest(WorkflowBlockManifest):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="result", kind=[STRING_KIND]),
+            OutputDefinition(name="predictions", kind=[OBJECT_DETECTION_PREDICTION_KIND]),
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
             OutputDefinition(name="root_parent_id", kind=[PARENT_ID_KIND]),
             OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),
@@ -193,6 +236,7 @@ class OCRModelBlockV1(WorkflowBlock):
         predictions: List[dict],
     ) -> BlockResult:
         for prediction, image in zip(predictions, images):
+            prediction["predictions"] = sv.Detections.empty() if len(prediction["strings"])==0 else _ocr_result_to_detections(image, prediction)
             prediction[PREDICTION_TYPE_KEY] = "ocr"
             prediction[PARENT_ID_KEY] = image.parent_metadata.parent_id
             prediction[ROOT_PARENT_ID_KEY] = (

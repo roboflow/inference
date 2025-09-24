@@ -8,7 +8,7 @@ import numpy as np
 import torch
 
 from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
-from inference.core.entities.responses.easy_ocr import EasyOCRInferenceResponse
+from inference.core.entities.responses.ocr import OCRInferenceResponse
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import DEVICE, MODEL_CACHE_DIR
 from inference.core.models.roboflow import RoboflowCoreModel
@@ -24,6 +24,26 @@ if DEVICE is None:
         DEVICE = "mps"
     else:
         DEVICE = "cpu"
+
+def _to_bounding_boxes(boxes: List[List[List[int]]]) -> List[List[int]]:
+    """Converts bounding boxes from corner points to [x_min, y_min, x_max, y_max] format.
+
+    Args:
+        boxes (List[List[List[int]]]): List of bounding boxes in corner points format.
+
+    Returns:
+        List[List[int]]: List of bounding boxes in [x_min, y_min, x_max, y_max] format.
+    """
+
+    converted_boxes = []
+    for bbox in boxes:
+        x_min = bbox[0][0]
+        y_min = bbox[0][1]
+        x_max = bbox[2][0]
+        y_max = bbox[2][1]
+        converted_boxes.append([x_min, y_min, x_max, y_max])
+    return converted_boxes
+
 class EasyOCR(RoboflowCoreModel):
     """Roboflow EasyOCR model implementation.
 
@@ -93,11 +113,17 @@ class EasyOCR(RoboflowCoreModel):
 
     def infer_from_request(
         self, request: EasyOCRInferenceRequest
-    ) -> EasyOCRInferenceResponse:
+    ) -> OCRInferenceResponse:
         t1 = perf_counter()
         result = self.infer(**request.dict())
-        return EasyOCRInferenceResponse(
-            result=result,
+
+        strings = [res[1] for res in result]
+
+        return OCRInferenceResponse(
+            result=" ".join(strings),
+            strings=strings,
+            bounding_boxes=_to_bounding_boxes([res[0] for res in result]),
+            confidences=[res[2] for res in result],
             time=perf_counter() - t1,
         )
 

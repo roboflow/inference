@@ -9,6 +9,7 @@ import supervision as sv
 
 from inference.core.cache.lru_cache import LRUCache
 from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
+from inference.core.entities.responses.ocr import OCRInferenceResponse
 from inference.core.env import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
@@ -18,12 +19,14 @@ from supervision.config import CLASS_NAME_DATA_FIELD
 from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
     IMAGE_DIMENSIONS_KEY,
+    PARENT_ID_KEY,
     PREDICTION_TYPE_KEY,
+    ROOT_PARENT_ID_KEY,
 )
 
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.utils import attach_parents_coordinates_to_sv_detections, load_core_model
+from inference.core.workflows.core_steps.common.utils import attach_parents_coordinates_to_sv_detections, load_core_model, remove_unexpected_keys_from_dictionary
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
@@ -32,6 +35,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     EMBEDDING_KIND,
     IMAGE_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    PARENT_ID_KIND,
+    PREDICTION_TYPE_KIND,
     STRING_KIND,
     Selector,
 )
@@ -100,9 +105,11 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(
-                name="predictions", kind=[OBJECT_DETECTION_PREDICTION_KIND]
-            ),
+            OutputDefinition(name="result", kind=[STRING_KIND]),
+            OutputDefinition(name="predictions", kind=[OBJECT_DETECTION_PREDICTION_KIND]),
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+            OutputDefinition(name="root_parent_id", kind=[PARENT_ID_KIND]),
+            OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),
         ]
 
     @classmethod
@@ -110,24 +117,19 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
 
-def ocr_result_to_detections(
-    image: WorkflowImageData, result: List[Tuple[List[List[int]], str, float]]
+def _ocr_result_to_detections(
+    image: WorkflowImageData, response: OCRInferenceResponse
 ) -> sv.Detections:
     # Prepare lists for bounding boxes, confidences, class IDs, and labels
     xyxy, confidences, class_ids, class_names = [], [], [], []
 
     # Extract data from OCR result
-    for detection in result:
-        bbox, text, confidence = detection[0], detection[1], detection[2]
-
-        # Convert bounding box format
-        x_min = bbox[0][0]
-        y_min = bbox[0][1]
-        x_max = bbox[2][0]
-        y_max = bbox[2][1]
+    for i, text in enumerate(response.strings):
+        bbox = response.bounding_boxes[i]
+        confidence = response.confidences[i]
 
         # Append data to lists
-        xyxy.append([x_min, y_min, x_max, y_max])
+        xyxy.append(bbox)
         confidences.append(confidence)
         class_ids.append(0)
         class_names.append(text)
@@ -206,6 +208,17 @@ class EasyOCRBlockV1(WorkflowBlock):
             model_id, inference_request
         )
 
-        detections = sv.Detections.empty() if len(predictions.result)==0 else ocr_result_to_detections(data, predictions.result)
+        object_detections = sv.Detections.empty() if len(predictions.strings)==0 else _ocr_result_to_detections(data, predictions)
 
-        return {"predictions": detections}
+        prediction = {
+            "result":predictions.result,
+            "predictions": object_detections,
+        }
+
+        prediction[PREDICTION_TYPE_KEY] = "ocr"
+        prediction[PARENT_ID_KEY] = data.parent_metadata.parent_id
+        prediction[ROOT_PARENT_ID_KEY] = (
+            data.workflow_root_ancestor_metadata.parent_id
+        )
+
+        return prediction
