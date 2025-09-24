@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import torch
 from inference_exp.models.vit.vit_classification_huggingface import (
     VITForClassificationHF,
@@ -10,6 +11,8 @@ from inference_exp.models.vit.vit_classification_onnx import (
 )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_multi_label_hf_package_numpy(
     flowers_multi_label_vit_hf_package: str,
     flowers_image_numpy: np.ndarray,
@@ -35,6 +38,8 @@ def test_multi_label_hf_package_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_multi_label_hf_package_numpy_custom_image_size(
     flowers_multi_label_vit_hf_package: str,
     flowers_image_numpy: np.ndarray,
@@ -60,6 +65,8 @@ def test_multi_label_hf_package_numpy_custom_image_size(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_multi_label_hf_package_batch_numpy(
     flowers_multi_label_vit_hf_package: str,
     flowers_image_numpy: np.ndarray,
@@ -94,6 +101,8 @@ def test_multi_label_hf_package_batch_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_multi_label_hf_package_torch(
     flowers_multi_label_vit_hf_package: str,
     flowers_image_torch: torch.Tensor,
@@ -119,6 +128,8 @@ def test_multi_label_hf_package_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_multi_label_hf_package_batch_torch(
     flowers_multi_label_vit_hf_package: str,
     flowers_image_torch: torch.Tensor,
@@ -153,6 +164,8 @@ def test_multi_label_hf_package_batch_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_multi_label_hf_package_batch_torch_list(
     flowers_multi_label_vit_hf_package: str,
     flowers_image_torch: torch.Tensor,
@@ -187,6 +200,9 @@ def test_multi_label_hf_package_batch_torch_list(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_multi_label_onnx_dynamic_bs_package_numpy(
     flowers_multi_label_vit_onnx_dynamic_bs_package: str,
     flowers_image_numpy: np.ndarray,
@@ -212,6 +228,9 @@ def test_multi_label_onnx_dynamic_bs_package_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_multi_label_onnx_dynamic_bs_package_numpy_custom_image_size(
     flowers_multi_label_vit_onnx_dynamic_bs_package: str,
     flowers_image_numpy: np.ndarray,
@@ -237,6 +256,9 @@ def test_multi_label_onnx_dynamic_bs_package_numpy_custom_image_size(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_multi_label_onnx_dynamic_bs_package_batch_numpy(
     flowers_multi_label_vit_onnx_dynamic_bs_package: str,
     flowers_image_numpy: np.ndarray,
@@ -271,6 +293,9 @@ def test_multi_label_onnx_dynamic_bs_package_batch_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_multi_label_onnx_dynamic_bs_package_torch(
     flowers_multi_label_vit_onnx_dynamic_bs_package: str,
     flowers_image_torch: torch.Tensor,
@@ -296,6 +321,9 @@ def test_multi_label_onnx_dynamic_bs_package_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_multi_label_onnx_dynamic_bs_package_batch_torch(
     flowers_multi_label_vit_onnx_dynamic_bs_package: str,
     flowers_image_torch: torch.Tensor,
@@ -330,6 +358,8 @@ def test_multi_label_onnx_dynamic_bs_package_batch_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_multi_label_onnx_dynamic_bs_package_batch_torch_list(
     flowers_multi_label_vit_hf_package: str,
     flowers_image_torch: torch.Tensor,
@@ -364,6 +394,9 @@ def test_multi_label_onnx_dynamic_bs_package_batch_torch_list(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_multi_label_onnx_static_bs_package_numpy(
     flowers_multi_label_vit_onnx_static_bs_package: str,
     flowers_image_numpy: np.ndarray,
@@ -389,6 +422,9 @@ def test_multi_label_onnx_static_bs_package_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_multi_label_onnx_static_bs_package_numpy_custom_image_size(
     flowers_multi_label_vit_onnx_static_bs_package: str,
     flowers_image_numpy: np.ndarray,
@@ -414,6 +450,9 @@ def test_multi_label_onnx_static_bs_package_numpy_custom_image_size(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_multi_label_onnx_static_bs_package_batch_numpy(
     flowers_multi_label_vit_onnx_static_bs_package: str,
     flowers_image_numpy: np.ndarray,
@@ -448,6 +487,9 @@ def test_multi_label_onnx_static_bs_package_batch_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_multi_label_onnx_static_bs_package_torch(
     flowers_multi_label_vit_onnx_static_bs_package: str,
     flowers_image_torch: torch.Tensor,
@@ -473,6 +515,9 @@ def test_multi_label_onnx_static_bs_package_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_multi_label_onnx_static_bs_package_batch_torch(
     flowers_multi_label_vit_onnx_static_bs_package: str,
     flowers_image_torch: torch.Tensor,
@@ -507,6 +552,9 @@ def test_multi_label_onnx_static_bs_package_batch_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_multi_label_onnx_static_bs_package_batch_torch_list(
     flowers_multi_label_vit_onnx_static_bs_package: str,
     flowers_image_torch: torch.Tensor,
@@ -541,9 +589,8 @@ def test_multi_label_onnx_static_bs_package_batch_torch_list(
     )
 
 
-#####
-
-
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_multi_class_hf_package_numpy(
     vehicles_multi_class_vit_hf_package: str,
     bike_image_numpy: np.ndarray,
@@ -569,6 +616,8 @@ def test_multi_class_hf_package_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_multi_class_hf_package_numpy_custom_image_size(
     vehicles_multi_class_vit_hf_package: str,
     bike_image_numpy: np.ndarray,
@@ -594,6 +643,8 @@ def test_multi_class_hf_package_numpy_custom_image_size(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_multi_class_hf_package_batch_numpy(
     vehicles_multi_class_vit_hf_package: str,
     bike_image_numpy: np.ndarray,
@@ -619,6 +670,8 @@ def test_multi_class_hf_package_batch_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_multi_class_hf_package_torch(
     vehicles_multi_class_vit_hf_package: str,
     bike_image_torch: torch.Tensor,
@@ -644,6 +697,8 @@ def test_multi_class_hf_package_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_multi_class_hf_package_batch_torch(
     vehicles_multi_class_vit_hf_package: str,
     bike_image_torch: torch.Tensor,
@@ -669,6 +724,8 @@ def test_multi_class_hf_package_batch_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_multi_class_hf_package_batch_torch_list(
     vehicles_multi_class_vit_hf_package: str,
     bike_image_torch: torch.Tensor,
@@ -694,6 +751,9 @@ def test_multi_class_hf_package_batch_torch_list(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_multi_class_onnx_dynamic_bs_package_numpy(
     vehicles_multi_class_vit_onnx_dynamic_bs_package: str,
     bike_image_numpy: np.ndarray,
@@ -719,6 +779,9 @@ def test_multi_class_onnx_dynamic_bs_package_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_multi_class_onnx_dynamic_bs_package_numpy_custom_image_size(
     vehicles_multi_class_vit_onnx_dynamic_bs_package: str,
     bike_image_numpy: np.ndarray,
@@ -744,6 +807,9 @@ def test_multi_class_onnx_dynamic_bs_package_numpy_custom_image_size(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_multi_class_onnx_dynamic_bs_package_batch_numpy(
     vehicles_multi_class_vit_onnx_dynamic_bs_package: str,
     bike_image_numpy: np.ndarray,
@@ -769,6 +835,9 @@ def test_multi_class_onnx_dynamic_bs_package_batch_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_multi_class_onnx_dynamic_bs_package_torch(
     vehicles_multi_class_vit_onnx_dynamic_bs_package: str,
     bike_image_torch: torch.Tensor,
@@ -794,6 +863,9 @@ def test_multi_class_onnx_dynamic_bs_package_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_multi_class_onnx_dynamic_bs_package_batch_torch(
     vehicles_multi_class_vit_onnx_dynamic_bs_package: str,
     bike_image_torch: torch.Tensor,
@@ -819,6 +891,9 @@ def test_multi_class_onnx_dynamic_bs_package_batch_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_multi_class_onnx_dynamic_bs_package_batch_torch_list(
     vehicles_multi_class_vit_onnx_dynamic_bs_package: str,
     bike_image_torch: torch.Tensor,
@@ -844,6 +919,9 @@ def test_multi_class_onnx_dynamic_bs_package_batch_torch_list(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_multi_class_onnx_static_bs_package_numpy(
     vehicles_multi_class_vit_onnx_static_bs_package: str,
     bike_image_numpy: np.ndarray,
@@ -869,6 +947,9 @@ def test_multi_class_onnx_static_bs_package_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_multi_class_onnx_static_bs_package_numpy_custom_image_size(
     vehicles_multi_class_vit_onnx_static_bs_package: str,
     bike_image_numpy: np.ndarray,
@@ -894,6 +975,9 @@ def test_multi_class_onnx_static_bs_package_numpy_custom_image_size(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_multi_class_onnx_static_bs_package_batch_numpy(
     vehicles_multi_class_vit_onnx_static_bs_package: str,
     bike_image_numpy: np.ndarray,
@@ -919,6 +1003,9 @@ def test_multi_class_onnx_static_bs_package_batch_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_multi_class_onnx_static_bs_package_torch(
     vehicles_multi_class_vit_onnx_static_bs_package: str,
     bike_image_torch: torch.Tensor,
@@ -944,6 +1031,9 @@ def test_multi_class_onnx_static_bs_package_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_multi_class_onnx_static_bs_package_batch_torch(
     vehicles_multi_class_vit_onnx_static_bs_package: str,
     bike_image_torch: torch.Tensor,
@@ -969,6 +1059,9 @@ def test_multi_class_onnx_static_bs_package_batch_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_multi_class_onnx_static_bs_package_batch_torch_list(
     vehicles_multi_class_vit_onnx_static_bs_package: str,
     bike_image_torch: torch.Tensor,

@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import torch
 from inference_exp.models.deep_lab_v3_plus.deep_lab_v3_plus_segmentation_onnx import (
     DeepLabV3PlusForSemanticSegmentationOnnx,
@@ -8,6 +9,9 @@ from inference_exp.models.deep_lab_v3_plus.deep_lab_v3_plus_segmentation_torch i
 )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_stretch_numpy(
     balloons_deep_lab_v3_onnx_stretch_package: str,
     balloons_image_numpy: np.ndarray,
@@ -30,6 +34,9 @@ def test_onnx_package_with_stretch_numpy(
     assert 16600 <= torch.sum(predictions[0].segmentation_map == 3).item() <= 16700
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_stretch_batch_numpy(
     balloons_deep_lab_v3_onnx_stretch_package: str,
     balloons_image_numpy: np.ndarray,
@@ -58,6 +65,9 @@ def test_onnx_package_with_stretch_batch_numpy(
     assert 16600 <= torch.sum(predictions[1].segmentation_map == 3).item() <= 16700
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_stretch_torch(
     balloons_deep_lab_v3_onnx_stretch_package: str,
     balloons_image_torch: torch.Tensor,
@@ -80,6 +90,9 @@ def test_onnx_package_with_stretch_torch(
     assert 16600 <= torch.sum(predictions[0].segmentation_map == 3).item() <= 16700
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_stretch_batch_torch(
     balloons_deep_lab_v3_onnx_stretch_package: str,
     balloons_image_torch: torch.Tensor,
@@ -110,6 +123,9 @@ def test_onnx_package_with_stretch_batch_torch(
     assert 16600 <= torch.sum(predictions[1].segmentation_map == 3).item() <= 16700
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_stretch_batch_torch_list(
     balloons_deep_lab_v3_onnx_stretch_package: str,
     balloons_image_torch: torch.Tensor,
@@ -138,6 +154,8 @@ def test_onnx_package_with_stretch_batch_torch_list(
     assert 16600 <= torch.sum(predictions[1].segmentation_map == 3).item() <= 16700
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_stretch_numpy(
     balloons_deep_lab_v3_torch_stretch_package: str,
     balloons_image_numpy: np.ndarray,
@@ -160,6 +178,8 @@ def test_torch_package_with_stretch_numpy(
     assert 16600 <= torch.sum(predictions[0].segmentation_map == 3).item() <= 16700
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_stretch_batch_numpy(
     balloons_deep_lab_v3_torch_stretch_package: str,
     balloons_image_numpy: np.ndarray,
@@ -188,6 +208,8 @@ def test_torch_package_with_stretch_batch_numpy(
     assert 16600 <= torch.sum(predictions[1].segmentation_map == 3).item() <= 16700
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_stretch_torch(
     balloons_deep_lab_v3_torch_stretch_package: str,
     balloons_image_torch: torch.Tensor,
@@ -210,6 +232,8 @@ def test_torch_package_with_stretch_torch(
     assert 16600 <= torch.sum(predictions[0].segmentation_map == 3).item() <= 16700
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_stretch_batch_torch(
     balloons_deep_lab_v3_torch_stretch_package: str,
     balloons_image_torch: torch.Tensor,
@@ -240,6 +264,8 @@ def test_torch_package_with_stretch_batch_torch(
     assert 16600 <= torch.sum(predictions[1].segmentation_map == 3).item() <= 16700
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_stretch_batch_torch_list(
     balloons_deep_lab_v3_torch_stretch_package: str,
     balloons_image_torch: torch.Tensor,
@@ -268,6 +294,9 @@ def test_torch_package_with_stretch_batch_torch_list(
     assert 16600 <= torch.sum(predictions[1].segmentation_map == 3).item() <= 16700
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_crop_letterbox_numpy(
     balloons_deep_lab_v3_onnx_static_crop_letterbox_package: str,
     balloons_image_numpy: np.ndarray,
@@ -290,6 +319,9 @@ def test_onnx_package_with_static_crop_letterbox_numpy(
     assert 14800 <= torch.sum(predictions[0].segmentation_map == 3).item() <= 15000
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_crop_letterbox_batch_numpy(
     balloons_deep_lab_v3_onnx_static_crop_letterbox_package: str,
     balloons_image_numpy: np.ndarray,
@@ -318,6 +350,9 @@ def test_onnx_package_with_static_crop_letterbox_batch_numpy(
     assert 14800 <= torch.sum(predictions[1].segmentation_map == 3).item() <= 15000
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_crop_letterbox_torch(
     balloons_deep_lab_v3_onnx_static_crop_letterbox_package: str,
     balloons_image_torch: torch.Tensor,
@@ -340,6 +375,9 @@ def test_onnx_package_with_static_crop_letterbox_torch(
     assert 14800 <= torch.sum(predictions[0].segmentation_map == 3).item() <= 15000
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_crop_letterbox_batch_torch(
     balloons_deep_lab_v3_onnx_static_crop_letterbox_package: str,
     balloons_image_torch: torch.Tensor,
@@ -370,6 +408,9 @@ def test_onnx_package_with_static_crop_letterbox_batch_torch(
     assert 14800 <= torch.sum(predictions[1].segmentation_map == 3).item() <= 15000
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_crop_letterbox_batch_torch_list(
     balloons_deep_lab_v3_onnx_static_crop_letterbox_package: str,
     balloons_image_torch: torch.Tensor,
@@ -398,6 +439,8 @@ def test_onnx_package_with_static_crop_letterbox_batch_torch_list(
     assert 14800 <= torch.sum(predictions[1].segmentation_map == 3).item() <= 15000
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_static_crop_letterbox_numpy(
     balloons_deep_lab_v3_torch_static_crop_letterbox_package: str,
     balloons_image_numpy: np.ndarray,
@@ -420,6 +463,8 @@ def test_torch_package_with_static_crop_letterbox_numpy(
     assert 14800 <= torch.sum(predictions[0].segmentation_map == 3).item() <= 15000
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_static_crop_letterbox_batch_numpy(
     balloons_deep_lab_v3_torch_static_crop_letterbox_package: str,
     balloons_image_numpy: np.ndarray,
@@ -447,6 +492,8 @@ def test_torch_package_with_static_crop_letterbox_batch_numpy(
     assert 14800 <= torch.sum(predictions[1].segmentation_map == 3).item() <= 15000
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_static_crop_letterbox_torch(
     balloons_deep_lab_v3_torch_static_crop_letterbox_package: str,
     balloons_image_torch: torch.Tensor,
@@ -469,6 +516,8 @@ def test_torch_package_with_static_crop_letterbox_torch(
     assert 14800 <= torch.sum(predictions[0].segmentation_map == 3).item() <= 15000
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_static_crop_letterbox_batch_torch(
     balloons_deep_lab_v3_torch_static_crop_letterbox_package: str,
     balloons_image_torch: torch.Tensor,
@@ -499,6 +548,8 @@ def test_torch_package_with_static_crop_letterbox_batch_torch(
     assert 14800 <= torch.sum(predictions[1].segmentation_map == 3).item() <= 15000
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_static_crop_letterbox_batch_torch_list(
     balloons_deep_lab_v3_torch_static_crop_letterbox_package: str,
     balloons_image_torch: torch.Tensor,
@@ -527,6 +578,9 @@ def test_torch_package_with_static_crop_letterbox_batch_torch_list(
     assert 14800 <= torch.sum(predictions[1].segmentation_map == 3).item() <= 15000
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_crop_center_crop_numpy(
     balloons_deep_lab_v3_onnx_static_crop_center_crop_package: str,
     balloons_image_numpy: np.ndarray,
@@ -549,6 +603,9 @@ def test_onnx_package_with_static_crop_center_crop_numpy(
     assert 13700 <= torch.sum(predictions[0].segmentation_map == 3).item() <= 13900
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_crop_center_crop_batch_numpy(
     balloons_deep_lab_v3_onnx_static_crop_center_crop_package: str,
     balloons_image_numpy: np.ndarray,
@@ -577,6 +634,9 @@ def test_onnx_package_with_static_crop_center_crop_batch_numpy(
     assert 13700 <= torch.sum(predictions[1].segmentation_map == 3).item() <= 13900
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_crop_center_crop_torch(
     balloons_deep_lab_v3_onnx_static_crop_center_crop_package: str,
     balloons_image_torch: torch.Tensor,
@@ -599,6 +659,9 @@ def test_onnx_package_with_static_crop_center_crop_torch(
     assert 13700 <= torch.sum(predictions[0].segmentation_map == 3).item() <= 13900
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_crop_center_crop_batch_torch(
     balloons_deep_lab_v3_onnx_static_crop_center_crop_package: str,
     balloons_image_torch: torch.Tensor,
@@ -629,6 +692,9 @@ def test_onnx_package_with_static_crop_center_crop_batch_torch(
     assert 13700 <= torch.sum(predictions[1].segmentation_map == 3).item() <= 13900
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_crop_center_crop_batch_torch_list(
     balloons_deep_lab_v3_onnx_static_crop_center_crop_package: str,
     balloons_image_torch: torch.Tensor,
@@ -657,6 +723,8 @@ def test_onnx_package_with_static_crop_center_crop_batch_torch_list(
     assert 13700 <= torch.sum(predictions[1].segmentation_map == 3).item() <= 13900
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_static_crop_center_crop_numpy(
     balloons_deep_lab_v3_torch_static_crop_center_crop_package: str,
     balloons_image_numpy: np.ndarray,
@@ -679,6 +747,8 @@ def test_torch_package_with_static_crop_center_crop_numpy(
     assert 13700 <= torch.sum(predictions[0].segmentation_map == 3).item() <= 13900
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_static_crop_center_crop_batch_numpy(
     balloons_deep_lab_v3_torch_static_crop_center_crop_package: str,
     balloons_image_numpy: np.ndarray,
@@ -707,6 +777,8 @@ def test_torch_package_with_static_crop_center_crop_batch_numpy(
     assert 13700 <= torch.sum(predictions[1].segmentation_map == 3).item() <= 13900
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_static_crop_center_crop_torch(
     balloons_deep_lab_v3_torch_static_crop_center_crop_package: str,
     balloons_image_torch: torch.Tensor,
@@ -729,6 +801,8 @@ def test_torch_package_with_static_crop_center_crop_torch(
     assert 13700 <= torch.sum(predictions[0].segmentation_map == 3).item() <= 13900
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_static_crop_center_crop_batch_torch(
     balloons_deep_lab_v3_torch_static_crop_center_crop_package: str,
     balloons_image_torch: torch.Tensor,
@@ -759,6 +833,8 @@ def test_torch_package_with_static_crop_center_crop_batch_torch(
     assert 13700 <= torch.sum(predictions[1].segmentation_map == 3).item() <= 13900
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_static_crop_center_crop_batch_torch_list(
     balloons_deep_lab_v3_torch_static_crop_center_crop_package: str,
     balloons_image_torch: torch.Tensor,

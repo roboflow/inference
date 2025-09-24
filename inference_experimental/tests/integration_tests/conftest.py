@@ -39,7 +39,7 @@ COIN_COUNTING_IMAGE_URL = (
 COIN_COUNTING_IMAGE_PATH = os.path.join(ASSETS_DIR, "image-coin-counting.jpg")
 
 
-def _download_if_not_exists(file_path: str, url: str, lock_timeout: int = 120) -> None:
+def _download_if_not_exists(file_path: str, url: str, lock_timeout: int = 180) -> None:
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
     lock_path = f"{file_path}.lock"
     with FileLock(lock_file=lock_path, timeout=lock_timeout):
@@ -137,7 +137,7 @@ def dog_image_numpy() -> np.ndarray:
 
 @pytest.fixture(scope="function")
 def dog_image_torch() -> torch.Tensor:
-    _download_if_not_exists(file_path=FLOWERS_IMAGE_PATH, url=DOG_IMAGE_URL)
+    _download_if_not_exists(file_path=DOG_IMAGE_PATH, url=DOG_IMAGE_URL)
     return torchvision.io.read_image(DOG_IMAGE_PATH)
 
 

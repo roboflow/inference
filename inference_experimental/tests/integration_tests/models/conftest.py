@@ -140,7 +140,7 @@ def perception_encoder_path() -> str:
     return package_path
 
 
-def _download_if_not_exists(file_path: str, url: str, lock_timeout: int = 120) -> None:
+def _download_if_not_exists(file_path: str, url: str, lock_timeout: int = 180) -> None:
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
     lock_path = f"{file_path}.lock"
     with FileLock(lock_file=lock_path, timeout=lock_timeout):

@@ -1,6 +1,5 @@
-import matplotlib.pyplot as plt
 import numpy as np
-import supervision
+import pytest
 import torch
 from inference_exp import AutoModel
 from inference_exp.models.rfdetr.rfdetr_object_detection_onnx import (
@@ -11,6 +10,8 @@ from inference_exp.models.rfdetr.rfdetr_object_detection_pytorch import (
 )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_stretch_resize_and_contrast_stretching_numpy(
     coin_counting_rfdetr_nano_torch_cs_stretch_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -66,6 +67,8 @@ def test_torch_package_with_stretch_resize_and_contrast_stretching_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_stretch_resize_and_contrast_stretching_numpy_batch(
     coin_counting_rfdetr_nano_torch_cs_stretch_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -145,6 +148,8 @@ def test_torch_package_with_stretch_resize_and_contrast_stretching_numpy_batch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_stretch_resize_and_contrast_stretching_torch(
     coin_counting_rfdetr_nano_torch_cs_stretch_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -200,6 +205,8 @@ def test_torch_package_with_stretch_resize_and_contrast_stretching_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_stretch_resize_and_contrast_stretching_torch_batch(
     coin_counting_rfdetr_nano_torch_cs_stretch_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -281,6 +288,8 @@ def test_torch_package_with_stretch_resize_and_contrast_stretching_torch_batch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_stretch_resize_and_contrast_stretching_torch_list(
     coin_counting_rfdetr_nano_torch_cs_stretch_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -360,6 +369,9 @@ def test_torch_package_with_stretch_resize_and_contrast_stretching_torch_list(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_stretch_resize_and_contrast_stretching_numpy(
     coin_counting_rfdetr_nano_onnx_cs_stretch_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -402,6 +414,9 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_stretch_resize_and_contrast_stretching_batch_numpy(
     coin_counting_rfdetr_nano_onnx_cs_stretch_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -456,6 +471,9 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_batch_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_stretch_resize_and_contrast_stretching_torch(
     coin_counting_rfdetr_nano_onnx_cs_stretch_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -498,6 +516,9 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_stretch_resize_and_contrast_stretching_torch_batch(
     coin_counting_rfdetr_nano_onnx_cs_stretch_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -552,6 +573,8 @@ def test_onnx_package_with_stretch_resize_and_contrast_stretching_torch_batch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_static_crop_letterbox_numpy(
     coin_counting_rfdetr_nano_torch_static_crop_letterbox_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -590,6 +613,9 @@ def test_torch_package_with_static_crop_letterbox_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_crop_letterbox_numpy(
     coin_counting_rfdetr_nano_onnx_static_crop_letterbox_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -629,6 +655,8 @@ def test_onnx_package_with_static_crop_letterbox_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_static_crop_letterbox_numpy_batch(
     coin_counting_rfdetr_nano_torch_static_crop_letterbox_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -677,6 +705,9 @@ def test_torch_package_with_static_crop_letterbox_numpy_batch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_crop_letterbox_numpy_batch(
     coin_counting_rfdetr_nano_onnx_static_crop_letterbox_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -726,6 +757,8 @@ def test_onnx_package_with_static_crop_letterbox_numpy_batch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_static_crop_letterbox_torch(
     coin_counting_rfdetr_nano_torch_static_crop_letterbox_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -768,6 +801,9 @@ def test_torch_package_with_static_crop_letterbox_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_crop_letterbox_torch(
     coin_counting_rfdetr_nano_onnx_static_crop_letterbox_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -811,6 +847,8 @@ def test_onnx_package_with_static_crop_letterbox_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_static_crop_letterbox_torch_batch(
     coin_counting_rfdetr_nano_torch_static_crop_letterbox_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -867,6 +905,9 @@ def test_torch_package_with_static_crop_letterbox_torch_batch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_crop_letterbox_torch_batch(
     coin_counting_rfdetr_nano_onnx_static_crop_letterbox_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -924,6 +965,8 @@ def test_onnx_package_with_static_crop_letterbox_torch_batch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_static_crop_letterbox_torch_list(
     coin_counting_rfdetr_nano_torch_static_crop_letterbox_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -980,6 +1023,9 @@ def test_torch_package_with_static_crop_letterbox_torch_list(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_crop_letterbox_torch_list(
     coin_counting_rfdetr_nano_onnx_static_crop_letterbox_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -1037,6 +1083,8 @@ def test_onnx_package_with_static_crop_letterbox_torch_list(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_center_crop_numpy(
     coin_counting_rfdetr_nano_torch_center_crop_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -1068,6 +1116,9 @@ def test_torch_package_with_center_crop_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_center_crop_numpy(
     coin_counting_rfdetr_nano_onnx_center_crop_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -1100,6 +1151,8 @@ def test_onnx_package_with_center_crop_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_center_crop_batch_numpy(
     coin_counting_rfdetr_nano_torch_center_crop_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -1143,6 +1196,9 @@ def test_torch_package_with_center_crop_batch_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_center_crop_batch_numpy(
     coin_counting_rfdetr_nano_onnx_center_crop_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -1187,6 +1243,8 @@ def test_onnx_package_with_center_crop_batch_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_center_crop_torch(
     coin_counting_rfdetr_nano_torch_center_crop_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -1218,6 +1276,9 @@ def test_torch_package_with_center_crop_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_center_crop_torch(
     coin_counting_rfdetr_nano_onnx_center_crop_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -1250,6 +1311,8 @@ def test_onnx_package_with_center_crop_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_center_crop_batch_torch(
     coin_counting_rfdetr_nano_torch_center_crop_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -1295,6 +1358,9 @@ def test_torch_package_with_center_crop_batch_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_center_crop_batch_torch(
     coin_counting_rfdetr_nano_onnx_center_crop_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -1341,6 +1407,8 @@ def test_onnx_package_with_center_crop_batch_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_center_crop_list_of_torch(
     coin_counting_rfdetr_nano_torch_center_crop_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -1384,6 +1452,9 @@ def test_torch_package_with_center_crop_list_of_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_center_crop_list_of_torch(
     coin_counting_rfdetr_nano_onnx_center_crop_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -1428,6 +1499,8 @@ def test_onnx_package_with_center_crop_list_of_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_center_crop_numpy_custom_image_size(
     coin_counting_rfdetr_nano_torch_center_crop_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -1459,6 +1532,8 @@ def test_torch_package_with_center_crop_numpy_custom_image_size(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_center_crop_torch_custom_image_size(
     coin_counting_rfdetr_nano_torch_center_crop_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -1490,6 +1565,8 @@ def test_torch_package_with_center_crop_torch_custom_image_size(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_static_crop_and_center_crop_numpy(
     coin_counting_rfdetr_nano_torch_static_crop_center_crop_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -1521,6 +1598,9 @@ def test_torch_package_with_static_crop_and_center_crop_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_crop_and_center_crop_numpy(
     coin_counting_rfdetr_nano_onnx_static_crop_center_crop_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -1553,6 +1633,8 @@ def test_onnx_package_with_static_crop_and_center_crop_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_static_crop_and_center_crop_numpy_when_image_smaller_than_center_crop(
     coin_counting_rfdetr_nano_torch_static_crop_center_crop_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -1582,6 +1664,9 @@ def test_torch_package_with_static_crop_and_center_crop_numpy_when_image_smaller
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_crop_and_center_crop_numpy_when_image_smaller_than_center_crop(
     coin_counting_rfdetr_nano_onnx_static_crop_center_crop_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -1612,6 +1697,8 @@ def test_onnx_package_with_static_crop_and_center_crop_numpy_when_image_smaller_
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_static_crop_and_center_crop_batch_numpy(
     coin_counting_rfdetr_nano_torch_static_crop_center_crop_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -1655,6 +1742,9 @@ def test_torch_package_with_static_crop_and_center_crop_batch_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_crop_and_center_crop_batch_numpy(
     coin_counting_rfdetr_nano_onnx_static_crop_center_crop_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -1699,6 +1789,8 @@ def test_onnx_package_with_static_crop_and_center_crop_batch_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_static_crop_and_center_crop_torch(
     coin_counting_rfdetr_nano_torch_static_crop_center_crop_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -1730,6 +1822,9 @@ def test_torch_package_with_static_crop_and_center_crop_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_crop_and_center_crop_torch(
     coin_counting_rfdetr_nano_onnx_static_crop_center_crop_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -1762,6 +1857,8 @@ def test_onnx_package_with_static_crop_and_center_crop_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torch_package_with_static_crop_and_center_crop_batch_torch(
     coin_counting_rfdetr_nano_torch_static_crop_center_crop_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -1807,6 +1904,9 @@ def test_torch_package_with_static_crop_and_center_crop_batch_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_crop_and_center_crop_batch_torch(
     coin_counting_rfdetr_nano_onnx_static_crop_center_crop_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -1853,6 +1953,8 @@ def test_onnx_package_with_static_crop_and_center_crop_batch_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_rfdetr_base_og_with_numpy(
     og_rfdetr_base_weights: str, dog_image_numpy: np.ndarray
 ) -> None:

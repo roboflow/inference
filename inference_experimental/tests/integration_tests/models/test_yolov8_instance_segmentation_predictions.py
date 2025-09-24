@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import torch
 from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
     YOLOv8ForInstanceSegmentationOnnx,
@@ -8,6 +9,9 @@ from inference_exp.models.yolov8.yolov8_instance_segmentation_torch_script impor
 )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_stretch_numpy(
     asl_yolov8n_onnx_seg_dynamic_bs_stretch: str,
     asl_image_numpy: np.ndarray,
@@ -42,6 +46,9 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_stretch_numpy_custom_size(
     asl_yolov8n_onnx_seg_dynamic_bs_stretch: str,
     asl_image_numpy: np.ndarray,
@@ -76,6 +83,9 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_numpy_custom_size(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_stretch_torch_custom_size(
     asl_yolov8n_onnx_seg_dynamic_bs_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -110,6 +120,9 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_torch_custom_size(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_stretch_batch_numpy(
     asl_yolov8n_onnx_seg_dynamic_bs_stretch: str,
     asl_image_numpy: np.ndarray,
@@ -161,6 +174,9 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_batch_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_stretch_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -195,6 +211,9 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_stretch_batch_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -246,6 +265,9 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_batch_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_stretch_list_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -297,6 +319,9 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_list_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_numpy(
     asl_yolov8n_onnx_seg_dynamic_bs_stretch_fused_nms: str,
     asl_image_numpy: np.ndarray,
@@ -331,6 +356,9 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_batch_numpy(
     asl_yolov8n_onnx_seg_dynamic_bs_stretch_fused_nms: str,
     asl_image_numpy: np.ndarray,
@@ -382,6 +410,9 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_batch_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_stretch_fused_nms: str,
     asl_image_torch: torch.Tensor,
@@ -416,6 +447,9 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_batch_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_stretch_fused_nms: str,
     asl_image_torch: torch.Tensor,
@@ -467,6 +501,9 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_batch_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_list_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_stretch_fused_nms: str,
     asl_image_torch: torch.Tensor,
@@ -518,6 +555,9 @@ def test_onnx_package_with_dynamic_batch_size_and_stretch_fused_nms_list_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_stretch_numpy(
     asl_yolov8n_onnx_seg_static_bs_stretch: str,
     asl_image_numpy: np.ndarray,
@@ -552,6 +592,9 @@ def test_onnx_package_with_static_batch_size_and_stretch_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_stretch_batch_numpy(
     asl_yolov8n_onnx_seg_static_bs_stretch: str,
     asl_image_numpy: np.ndarray,
@@ -603,6 +646,9 @@ def test_onnx_package_with_static_batch_size_and_stretch_batch_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_stretch_torch(
     asl_yolov8n_onnx_seg_static_bs_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -637,6 +683,9 @@ def test_onnx_package_with_static_batch_size_and_stretch_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_stretch_batch_torch(
     asl_yolov8n_onnx_seg_static_bs_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -688,6 +737,9 @@ def test_onnx_package_with_static_batch_size_and_stretch_batch_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_stretch_list_torch(
     asl_yolov8n_onnx_seg_static_bs_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -739,6 +791,8 @@ def test_onnx_package_with_static_batch_size_and_stretch_list_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torchscript_package_with_static_batch_size_and_stretch_numpy(
     asl_yolov8n_torchscript_seg_static_bs_stretch: str,
     asl_image_numpy: np.ndarray,
@@ -773,6 +827,8 @@ def test_torchscript_package_with_static_batch_size_and_stretch_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torchscript_package_with_static_batch_size_and_stretch_batch_numpy(
     asl_yolov8n_torchscript_seg_static_bs_stretch: str,
     asl_image_numpy: np.ndarray,
@@ -824,6 +880,8 @@ def test_torchscript_package_with_static_batch_size_and_stretch_batch_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torchscript_package_with_static_batch_size_and_stretch_torch(
     asl_yolov8n_torchscript_seg_static_bs_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -858,6 +916,8 @@ def test_torchscript_package_with_static_batch_size_and_stretch_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torchscript_package_with_static_batch_size_and_stretch_batch_torch(
     asl_yolov8n_torchscript_seg_static_bs_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -909,6 +969,8 @@ def test_torchscript_package_with_static_batch_size_and_stretch_batch_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torchscript_package_with_static_batch_size_and_stretch_list_torch(
     asl_yolov8n_torchscript_seg_static_bs_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -960,6 +1022,8 @@ def test_torchscript_package_with_static_batch_size_and_stretch_list_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_numpy(
     asl_yolov8n_torchscript_seg_static_bs_stretch_fused_nms: str,
     asl_image_numpy: np.ndarray,
@@ -994,6 +1058,8 @@ def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_batch_numpy(
     asl_yolov8n_torchscript_seg_static_bs_stretch_fused_nms: str,
     asl_image_numpy: np.ndarray,
@@ -1045,6 +1111,8 @@ def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_batch_
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_torch(
     asl_yolov8n_torchscript_seg_static_bs_stretch_fused_nms: str,
     asl_image_torch: torch.Tensor,
@@ -1079,6 +1147,8 @@ def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_batch_torch(
     asl_yolov8n_torchscript_seg_static_bs_stretch_fused_nms: str,
     asl_image_torch: torch.Tensor,
@@ -1130,6 +1200,8 @@ def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_batch_
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_list_torch(
     asl_yolov8n_torchscript_seg_static_bs_stretch_fused_nms: str,
     asl_image_torch: torch.Tensor,
@@ -1181,6 +1253,9 @@ def test_torchscript_package_with_static_batch_size_and_stretch_fused_nms_list_t
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_numpy(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch: str,
     asl_image_numpy: np.ndarray,
@@ -1215,6 +1290,9 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_numpy_custom_size(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch: str,
     asl_image_numpy: np.ndarray,
@@ -1249,6 +1327,9 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_numpy_cust
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_torch_custom_size(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -1283,6 +1364,9 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_torch_cust
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_batch_numpy(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch: str,
     asl_image_numpy: np.ndarray,
@@ -1334,6 +1418,9 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_batch_nump
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -1368,6 +1455,9 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_batch_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -1419,6 +1509,9 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_batch_torc
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_list_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -1470,6 +1563,9 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_list_torch
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_numpy(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch_fused_nms: str,
     asl_image_numpy: np.ndarray,
@@ -1504,6 +1600,9 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_numpy_custom_size(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch_fused_nms: str,
     asl_image_numpy: np.ndarray,
@@ -1538,6 +1637,9 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_torch_custom_size(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch_fused_nms: str,
     asl_image_torch: torch.Tensor,
@@ -1572,6 +1674,9 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_batch_numpy(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch_fused_nms: str,
     asl_image_numpy: np.ndarray,
@@ -1623,6 +1728,9 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch_fused_nms: str,
     asl_image_torch: torch.Tensor,
@@ -1657,6 +1765,9 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_batch_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch_fused_nms: str,
     asl_image_torch: torch.Tensor,
@@ -1708,6 +1819,9 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_list_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_stretch_fused_nms: str,
     asl_image_torch: torch.Tensor,
@@ -1759,6 +1873,9 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_stretch_fused_nms_
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_static_crop_stretch_numpy(
     asl_yolov8n_onnx_seg_static_bs_static_crop_stretch: str,
     asl_image_numpy: np.ndarray,
@@ -1793,6 +1910,9 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_numpy(
     asl_yolov8n_onnx_seg_static_bs_static_crop_stretch: str,
     asl_image_numpy: np.ndarray,
@@ -1844,6 +1964,9 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_numpy
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_static_crop_stretch_torch(
     asl_yolov8n_onnx_seg_static_bs_static_crop_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -1878,6 +2001,9 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_torch(
     asl_yolov8n_onnx_seg_static_bs_static_crop_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -1929,6 +2055,9 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_torch
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_static_crop_stretch_list_torch(
     asl_yolov8n_onnx_seg_static_bs_static_crop_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -1980,6 +2109,8 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_list_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_numpy(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_stretch: str,
     asl_image_numpy: np.ndarray,
@@ -2014,6 +2145,8 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_nump
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_batch_numpy(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_stretch: str,
     asl_image_numpy: np.ndarray,
@@ -2065,6 +2198,8 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_batc
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_torch(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -2099,6 +2234,8 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_torc
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_batch_torch(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -2150,6 +2287,8 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_batc
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_list_torch(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_stretch: str,
     asl_image_torch: torch.Tensor,
@@ -2201,6 +2340,8 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_list
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_fused_nms_numpy(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_stretch_fused_nms: str,
     asl_image_numpy: np.ndarray,
@@ -2235,6 +2376,8 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_fuse
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_fused_nms_batch_numpy(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_stretch_fused_nms: str,
     asl_image_numpy: np.ndarray,
@@ -2286,6 +2429,8 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_stretch_fuse
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_fused_nms_torch(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_stretch_fused_nms: str,
     asl_image_torch: torch.Tensor,
@@ -2320,6 +2465,8 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_fuse
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_fused_nms_batch_torch(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_stretch_fused_nms: str,
     asl_image_torch: torch.Tensor,
@@ -2371,6 +2518,8 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_fuse
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_fused_nms_list_torch(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_stretch_fused_nms: str,
     asl_image_torch: torch.Tensor,
@@ -2422,6 +2571,9 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_stretch_fuse
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_numpy(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop: str,
     asl_image_numpy: np.ndarray,
@@ -2456,6 +2608,9 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_numpy_custom_size(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop: str,
     asl_image_numpy: np.ndarray,
@@ -2490,6 +2645,9 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_numpy_
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_torch_custom_size(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop: str,
     asl_image_torch: torch.Tensor,
@@ -2524,6 +2682,9 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_torch_
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_tatic_crop_center_crop_batch_numpy(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop: str,
     asl_image_numpy: np.ndarray,
@@ -2575,6 +2736,9 @@ def test_onnx_package_with_dynamic_batch_size_and_tatic_crop_center_crop_batch_n
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop: str,
     asl_image_torch: torch.Tensor,
@@ -2609,6 +2773,9 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_batch_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop: str,
     asl_image_torch: torch.Tensor,
@@ -2660,6 +2827,9 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_batch_
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_list_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop: str,
     asl_image_torch: torch.Tensor,
@@ -2711,6 +2881,9 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_list_t
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_nms_numpy(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop_fused_nms: str,
     asl_image_numpy: np.ndarray,
@@ -2745,6 +2918,9 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_nms_numpy_custom_size(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop_fused_nms: str,
     asl_image_numpy: np.ndarray,
@@ -2779,6 +2955,9 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_nms_torch_custom_size(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop_fused_nms: str,
     asl_image_torch: torch.Tensor,
@@ -2813,6 +2992,9 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_tatic_crop_center_crop_fused_nms_batch_numpy(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop_fused_nms: str,
     asl_image_numpy: np.ndarray,
@@ -2864,6 +3046,9 @@ def test_onnx_package_with_dynamic_batch_size_and_tatic_crop_center_crop_fused_n
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_nms_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop_fused_nms: str,
     asl_image_torch: torch.Tensor,
@@ -2898,6 +3083,9 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_nms_batch_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop_fused_nms: str,
     asl_image_torch: torch.Tensor,
@@ -2949,6 +3137,9 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_nms_list_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_center_crop_fused_nms: str,
     asl_image_torch: torch.Tensor,
@@ -3000,6 +3191,9 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_center_crop_fused_
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_numpy(
     asl_yolov8n_onnx_seg_static_bs_static_crop_center_crop: str,
     asl_image_numpy: np.ndarray,
@@ -3034,6 +3228,9 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_batch_numpy(
     asl_yolov8n_onnx_seg_static_bs_static_crop_center_crop: str,
     asl_image_numpy: np.ndarray,
@@ -3085,6 +3282,9 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_batch_n
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_torch(
     asl_yolov8n_onnx_seg_static_bs_static_crop_center_crop: str,
     asl_image_torch: torch.Tensor,
@@ -3119,6 +3319,9 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_batch_torch(
     asl_yolov8n_onnx_seg_static_bs_static_crop_center_crop: str,
     asl_image_torch: torch.Tensor,
@@ -3170,6 +3373,9 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_batch_t
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_list_torch(
     asl_yolov8n_onnx_seg_static_bs_static_crop_center_crop: str,
     asl_image_torch: torch.Tensor,
@@ -3221,6 +3427,8 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_list_to
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_numpy(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_center_crop: str,
     asl_image_numpy: np.ndarray,
@@ -3255,6 +3463,8 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_batch_numpy(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_center_crop: str,
     asl_image_numpy: np.ndarray,
@@ -3306,6 +3516,8 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_torch(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_center_crop: str,
     asl_image_torch: torch.Tensor,
@@ -3340,6 +3552,8 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_batch_torch(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_center_crop: str,
     asl_image_torch: torch.Tensor,
@@ -3391,6 +3605,8 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_list_torch(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_center_crop: str,
     asl_image_torch: torch.Tensor,
@@ -3442,6 +3658,9 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_center_crop_
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_center_crop_numpy(
     asl_yolov8n_onnx_seg_dynamic_bs_center_crop: str,
     asl_image_numpy: np.ndarray,
@@ -3476,6 +3695,9 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_center_crop_batch_numpy(
     asl_yolov8n_onnx_seg_dynamic_bs_center_crop: str,
     asl_image_numpy: np.ndarray,
@@ -3527,6 +3749,9 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_batch_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_center_crop_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_center_crop: str,
     asl_image_torch: torch.Tensor,
@@ -3561,6 +3786,9 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_center_crop_batch_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_center_crop: str,
     asl_image_torch: torch.Tensor,
@@ -3612,6 +3840,9 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_batch_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_center_crop_list_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_center_crop: str,
     asl_image_torch: torch.Tensor,
@@ -3664,6 +3895,8 @@ def test_onnx_package_with_dynamic_batch_size_and_center_crop_list_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torchscript_package_with_static_batch_size_and_center_crop_numpy(
     asl_yolov8n_torchscript_seg_static_bs_center_crop: str,
     asl_image_numpy: np.ndarray,
@@ -3698,6 +3931,8 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torchscript_package_with_static_batch_size_and_center_crop_batch_numpy(
     asl_yolov8n_torchscript_seg_static_bs_center_crop: str,
     asl_image_numpy: np.ndarray,
@@ -3749,6 +3984,8 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_batch_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torchscript_package_with_static_batch_size_and_center_crop_torch(
     asl_yolov8n_torchscript_seg_static_bs_center_crop: str,
     asl_image_torch: torch.Tensor,
@@ -3783,6 +4020,8 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torchscript_package_with_static_batch_size_and_center_crop_batch_torch(
     asl_yolov8n_torchscript_seg_static_bs_center_crop: str,
     asl_image_torch: torch.Tensor,
@@ -3834,6 +4073,8 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_batch_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torchscript_package_with_static_batch_size_and_center_crop_list_torch(
     asl_yolov8n_torchscript_seg_static_bs_center_crop: str,
     asl_image_torch: torch.Tensor,
@@ -3885,6 +4126,8 @@ def test_torchscript_package_with_static_batch_size_and_center_crop_list_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_crop_numpy(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_letterbox: str,
     asl_image_numpy: np.ndarray,
@@ -3921,6 +4164,8 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_cr
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_batch_numpy(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_letterbox: str,
     asl_image_numpy: np.ndarray,
@@ -3974,6 +4219,8 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_ba
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_crop_torch(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_letterbox: str,
     asl_image_torch: torch.Tensor,
@@ -4010,6 +4257,8 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_cr
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_batch_torch(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_letterbox: str,
     asl_image_torch: torch.Tensor,
@@ -4063,6 +4312,8 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_ba
     )
 
 
+@pytest.mark.slow
+@pytest.mark.cpu_only
 def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_list_torch(
     asl_yolov8n_torchscript_seg_static_bs_static_crop_letterbox: str,
     asl_image_torch: torch.Tensor,
@@ -4116,6 +4367,9 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_li
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_numpy(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_letterbox: str,
     asl_image_numpy: np.ndarray,
@@ -4152,6 +4406,9 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_numpy(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_batch_numpy(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_letterbox: str,
     asl_image_numpy: np.ndarray,
@@ -4205,6 +4462,9 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_batch_nu
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_letterbox: str,
     asl_image_torch: torch.Tensor,
@@ -4241,6 +4501,9 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_torch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_batch_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_letterbox: str,
     asl_image_torch: torch.Tensor,
@@ -4294,6 +4557,9 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_batch_to
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_list_torch(
     asl_yolov8n_onnx_seg_dynamic_bs_static_crop_letterbox: str,
     asl_image_torch: torch.Tensor,
