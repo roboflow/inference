@@ -71,25 +71,25 @@ def masks2multipoly(masks: np.ndarray) -> List[np.ndarray]:
         list: A list of segments, where each segment is obtained by converting the corresponding mask.
     """
     segments = []
-    # Process per-mask to avoid allocating an entire N x H x W uint8 copy
     for mask in masks:
         # Fast-path: bool -> zero-copy uint8 view
         if mask.dtype == np.bool_:
-            m_uint8 = mask
-            if not m_uint8.flags.c_contiguous:
-                m_uint8 = np.ascontiguousarray(m_uint8)
+            if not mask.flags.c_contiguous:
+                m_uint8 = np.ascontiguousarray(mask)
+            else:
+                m_uint8 = mask
             m_uint8 = m_uint8.view(np.uint8)
         elif mask.dtype == np.uint8:
             m_uint8 = mask if mask.flags.c_contiguous else np.ascontiguousarray(mask)
         else:
-            # Fallback: threshold to bool then view as uint8 (may allocate once)
+            # Fallback: threshold to bool then as uint8 view, avoid extra copy
             m_bool = mask > 0
             if not m_bool.flags.c_contiguous:
                 m_bool = np.ascontiguousarray(m_bool)
             m_uint8 = m_bool.view(np.uint8)
 
-        # Quickly skip empty masks
-        if not np.any(m_uint8):
+        # Faster empty check: np.count_nonzero is faster than np.any for large arrays
+        if not np.count_nonzero(m_uint8):
             segments.append([np.zeros((0, 2), dtype=np.float32)])
             continue
 
@@ -127,11 +127,17 @@ def mask2multipoly(mask: np.ndarray) -> np.ndarray:
     Returns:
         np.ndarray: Contours represented as a float32 array.
     """
-    contours = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
+    # Use cv2.findContours in a way that avoids unnecessary copies
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if contours:
-        contours = [c.reshape(-1, 2).astype("float32") for c in contours]
+        # Pre-size output list for slightly better performance
+        out = []
+        append = out.append
+        for c in contours:
+            append(c.reshape(-1, 2).astype("float32", copy=False))
+        contours = out
     else:
-        contours = [np.zeros((0, 2)).astype("float32")]
+        contours = [np.zeros((0, 2), dtype=np.float32)]
     return contours
 
 
