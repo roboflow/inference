@@ -4,16 +4,26 @@ import tempfile
 from time import perf_counter
 from typing import Any
 
+import torch
+
 from doctr.io import DocumentFile
-from doctr.models import ocr_predictor
+from doctr.models import ocr_predictor, db_resnet50, crnn_vgg16_bn
+
 from PIL import Image
 
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.responses.ocr import OCRInferenceResponse
-from inference.core.env import MODEL_CACHE_DIR
+from inference.core.env import DEVICE, MODEL_CACHE_DIR
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image
 
+if DEVICE is None:
+    if torch.cuda.is_available():
+        DEVICE = "cuda:0"
+    elif torch.backends.mps.is_available():
+        DEVICE = "mps"
+    else:
+        DEVICE = "cpu"
 
 class DocTR(RoboflowCoreModel):
     def __init__(self, *args, model_id: str = "doctr_rec/crnn_vgg16_bn", **kwargs):
@@ -29,28 +39,44 @@ class DocTR(RoboflowCoreModel):
         self.endpoint = model_id
         model_id = model_id.lower()
 
-        os.environ["DOCTR_CACHE_DIR"] = os.path.join(MODEL_CACHE_DIR, "doctr_rec")
+        os.environ["DOCTR_CACHE_DIR"] = os.path.join(MODEL_CACHE_DIR, "doctr")
 
         self.det_model = DocTRDet(api_key=kwargs.get("api_key"))
         self.rec_model = DocTRRec(api_key=kwargs.get("api_key"))
 
-        os.makedirs(f"{MODEL_CACHE_DIR}/doctr_rec/models/", exist_ok=True)
-        os.makedirs(f"{MODEL_CACHE_DIR}/doctr_det/models/", exist_ok=True)
+        print("===det_model===", self.det_model.version_id)
+        print("===rec_model===", self.rec_model.version_id)
 
+        os.makedirs(f"{MODEL_CACHE_DIR}/doctr/models/", exist_ok=True)
+
+        detector_weights_path = f"{MODEL_CACHE_DIR}/doctr/models/{self.det_model.version_id}.pt"
         shutil.copyfile(
-            f"{MODEL_CACHE_DIR}/doctr_det/db_resnet50/model.pt",
-            f"{MODEL_CACHE_DIR}/doctr_det/models/db_resnet50-ac60cadc.pt",
+            f"{MODEL_CACHE_DIR}/doctr_det/{self.det_model.version_id}/model.pt",
+            detector_weights_path,
         )
+        recognizer_weights_path = f"{MODEL_CACHE_DIR}/doctr/models/{self.rec_model.version_id}.pt"
         shutil.copyfile(
-            f"{MODEL_CACHE_DIR}/doctr_rec/crnn_vgg16_bn/model.pt",
-            f"{MODEL_CACHE_DIR}/doctr_rec/models/crnn_vgg16_bn-9762b0b0.pt",
+            f"{MODEL_CACHE_DIR}/doctr_rec/{self.rec_model.version_id}/model.pt",
+            recognizer_weights_path,
         )
+
+        det_model = db_resnet50(pretrained=False, pretrained_backbone=False)
+        det_model.load_state_dict(torch.load(detector_weights_path, map_location=DEVICE, weights_only=True))
+        #detector.from_pretrained(detector_weights_path, map_location=DEVICE)
+
+        reco_model = crnn_vgg16_bn(pretrained=False, pretrained_backbone=False)
+        #recognizer.from_pretrained(recognizer_weights_path, map_location=DEVICE)
+        reco_model.load_state_dict(torch.load(recognizer_weights_path, map_location=DEVICE, weights_only=True))
+
+        #print("===detector===", detector)
+        #print("===recognizer===", recognizer)
 
         self.model = ocr_predictor(
-            det_arch=self.det_model.version_id,
-            reco_arch=self.rec_model.version_id,
-            pretrained=True,
+            det_arch=det_model,
+            reco_arch=reco_model,
+            pretrained=False,
         )
+        #self.model = ocr_predictor(det_arch=detector, reco_arch=recognizer)
         self.task_type = "ocr"
 
     def clear_cache(self, delete_from_disk: bool = True) -> None:
@@ -97,6 +123,8 @@ class DocTR(RoboflowCoreModel):
             doc = DocumentFile.from_images([f.name])
 
             result = self.model(doc).export()
+
+            print(result)
 
             result = result["pages"][0]["blocks"]
 
