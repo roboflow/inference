@@ -195,7 +195,7 @@ class YoloWorldModelBlockV1(WorkflowBlock):
                 core_model="yolo_world",
             )
             prediction = self._model_manager.infer_from_request_sync(
-                yolo_world_model_id, inference_request
+                yolo_world_model_id, inference_request, workflow_execution_id=self._workflow_execution_id
             )
             predictions.append(prediction.model_dump(by_alias=True, exclude_none=True))
         return self._post_process_result(

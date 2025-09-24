@@ -48,7 +48,7 @@ class BaseInference:
         raise NotImplementedError
 
     def infer_from_request(
-        self, request: InferenceRequest
+        self, request: InferenceRequest, **kwargs
     ) -> Union[InferenceResponse, List[InferenceResponse]]:
         """Runs inference on a request
 
@@ -103,6 +103,7 @@ class Model(BaseInference):
     def infer_from_request(
         self,
         request: InferenceRequest,
+        **kwargs,
     ) -> Union[List[InferenceResponse], InferenceResponse]:
         """
         Perform inference based on the details provided in the request, and return the associated responses.
@@ -131,7 +132,7 @@ class Model(BaseInference):
               is also included in the response.
         """
         t1 = perf_counter()
-        responses = self.infer(**request.dict(), return_image_dims=False)
+        responses = self.infer(**request.dict(), return_image_dims=False, **kwargs)
         for response in responses:
             response.time = perf_counter() - t1
             if request.id:

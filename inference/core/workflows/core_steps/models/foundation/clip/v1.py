@@ -161,7 +161,7 @@ class ClipModelBlockV1(WorkflowBlock):
                 core_model="clip",
             )
             predictions = self._model_manager.infer_from_request_sync(
-                clip_model_id, inference_request
+                clip_model_id, inference_request, workflow_execution_id=self._workflow_execution_id
             )
 
             text_cache.set(hash_key, predictions.embeddings[0])
@@ -179,7 +179,7 @@ class ClipModelBlockV1(WorkflowBlock):
                 core_model="clip",
             )
             predictions = self._model_manager.infer_from_request_sync(
-                clip_model_id, inference_request
+                clip_model_id, inference_request, workflow_execution_id=self._workflow_execution_id
             )
             return {"embedding": predictions.embeddings[0]}
 

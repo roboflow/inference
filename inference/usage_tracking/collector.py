@@ -221,7 +221,7 @@ class UsageCollector:
         return sha256_hash(json.dumps(resource_details, sort_keys=True))
 
     def _enqueue_payload(self, payload: UsagePayload):
-        logger.debug("Enqueuing usage payload")
+        logger.debug("Enqueuing usage payload", payload)
         if not payload:
             return
         with self._queue_lock:

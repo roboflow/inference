@@ -322,13 +322,13 @@ class ModelManager:
 
     async def model_infer(self, model_id: str, request: InferenceRequest, **kwargs):
         model = self._get_model_reference(model_id=model_id)
-        return model.infer_from_request(request)
+        return model.infer_from_request(request, **kwargs)
 
     def model_infer_sync(
         self, model_id: str, request: InferenceRequest, **kwargs
     ) -> Union[List[InferenceResponse], InferenceResponse]:
         model = self._get_model_reference(model_id=model_id)
-        return model.infer_from_request(request)
+        return model.infer_from_request(request, **kwargs)
 
     def make_response(
         self, model_id: str, predictions: List[List[float]], *args, **kwargs

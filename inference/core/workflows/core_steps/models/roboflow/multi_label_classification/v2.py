@@ -193,7 +193,7 @@ class RoboflowMultiLabelClassificationModelBlockV2(WorkflowBlock):
             api_key=self._api_key,
         )
         predictions = self._model_manager.infer_from_request_sync(
-            model_id=model_id, request=request, confidence=confidence
+            model_id=model_id, request=request, confidence=confidence, workflow_execution_id=self._workflow_execution_id
         )
         if isinstance(predictions, list):
             predictions = [

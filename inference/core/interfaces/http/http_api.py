@@ -2592,6 +2592,10 @@ class HttpInterface(BaseInterface):
                     "external",
                     description="The detailed source information of the inference request",
                 ),
+                workflow_execution_id: Optional[str] = Query(
+                    None,
+                    description="ID of the workflow execution that triggered this inference",
+                ),
             ):
                 """
                 Legacy inference endpoint for object detection, instance segmentation, and classification.
@@ -2724,6 +2728,7 @@ class HttpInterface(BaseInterface):
                     inference_request,
                     active_learning_eligible=True,
                     background_tasks=background_tasks,
+                    workflow_execution_id=workflow_execution_id,
                 )
                 logger.debug("Response ready.")
                 if format == "image":
