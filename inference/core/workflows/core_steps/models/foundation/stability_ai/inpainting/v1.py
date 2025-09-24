@@ -2,6 +2,7 @@
 Credits to: https://github.com/Fafruch for origin idea
 """
 
+from enum import Enum
 from typing import List, Literal, Optional, Type, Union
 
 import cv2
@@ -16,8 +17,10 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    BOOLEAN_KIND,
     IMAGE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    INTEGER_KIND,
     SECRET_KIND,
     STRING_KIND,
     Selector,
@@ -38,6 +41,26 @@ SHORT_DESCRIPTION = "Use segmentation masks to inpaint objects within an image."
 
 API_HOST = "https://api.stability.ai"
 ENDPOINT = "/v2beta/stable-image/edit/inpaint"
+
+
+class StabilityAIPresets(Enum):
+    THREE_D_MODEL = "3d-model"
+    ANALOG_FILM = "analog-film"
+    ANIME = "anime"
+    CINEMATIC = "cinematic"
+    COMIC_BOOK = "comic-book"
+    DIGITAL_ART = "digital-art"
+    ENHANCE = "enhance"
+    FANTASY_ART = "fantasy-art"
+    ISOMETRIC = "isometric"
+    LINE_ART = "line-art"
+    LOW_POLY = "low-poly"
+    MODELING_COMPOUND = "modeling-compound"
+    NEON_PUNK = "neon-punk"
+    ORIGAMI = "origami"
+    PHOTOGRAPHIC = "photographic"
+    PIXEL_ART = "pixel-art"
+    TILE_TEXTURE = "tile-texture"
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -74,7 +97,6 @@ class BlockManifest(WorkflowBlockManifest):
     )
     prompt: Union[
         Selector(kind=[STRING_KIND]),
-        Selector(kind=[STRING_KIND]),
         str,
     ] = Field(
         description="Prompt to inpainting model (what you wish to see).",
@@ -85,7 +107,6 @@ class BlockManifest(WorkflowBlockManifest):
     )
     negative_prompt: Optional[
         Union[
-            Selector(kind=[STRING_KIND]),
             Selector(kind=[STRING_KIND]),
             str,
         ]
@@ -98,6 +119,32 @@ class BlockManifest(WorkflowBlockManifest):
         description="Your Stability AI API key.",
         examples=["xxx-xxx", "$inputs.stability_ai_api_key"],
         private=True,
+    )
+    invert_segmentation_mask: Union[
+        Selector(kind=[BOOLEAN_KIND]),
+        bool,
+    ] = Field(
+        default=False,
+        description="Invert segmentation mask to inpaint background instead of foreground.",
+    )
+    preset: Optional[StabilityAIPresets] = Field(
+        default=None,
+        description="Optional preset to apply when outpainting the image (what you wish to see)."
+        " If not provided, the image will be outpainted without any preset."
+        f" Avaliable presets: {', '.join(m.value for m in StabilityAIPresets)}",
+        examples=[StabilityAIPresets.THREE_D_MODEL],
+    )
+    seed: Optional[
+        Union[
+            Selector(kind=[INTEGER_KIND]),
+            int,
+        ]
+    ] = Field(
+        default=None,
+        description="A specific value that is used to guide the 'randomness' of the generation."
+        " If not provided, a random seed is used."
+        " Must be a number between 0 and 4294967294",
+        examples=[200],
     )
 
     @classmethod
@@ -124,17 +171,30 @@ class StabilityAIInpaintingBlockV1(WorkflowBlock):
         prompt: str,
         negative_prompt: str,
         api_key: str,
+        invert_segmentation_mask: bool,
+        preset: Optional[StabilityAIPresets] = None,
+        seed: Optional[int] = None,
     ) -> BlockResult:
         black_image = np.zeros_like(image.numpy_image)
         mask_annotator = sv.MaskAnnotator(color=Color.WHITE, opacity=1.0)
         mask = mask_annotator.annotate(black_image, segmentation_mask)
         mask = cv2.GaussianBlur(mask, (15, 15), 0)
         encoded_image = numpy_array_to_jpeg_bytes(image=image.numpy_image)
+        if invert_segmentation_mask:
+            mask = cv2.bitwise_not(mask)
         encoded_mask = numpy_array_to_jpeg_bytes(image=mask)
         request_data = {
             "prompt": prompt,
             "output_format": "jpeg",
         }
+        preset = (
+            preset.value if preset in set(e.value for e in StabilityAIPresets) else None
+        )
+        if preset:
+            request_data["preset"] = preset
+        seed = max(0, min(4294967294, seed)) if seed else None
+        if seed:
+            request_data["seed"] = seed
         response = requests.post(
             f"{API_HOST}{ENDPOINT}",
             headers={"authorization": f"Bearer {api_key}", "accept": "image/*"},

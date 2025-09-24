@@ -110,6 +110,7 @@ nav:
           - L2CS-Net (Gaze Detection): foundation/gaze.md
           - Moondream2: foundation/moondream2.md
           - PaliGemma: foundation/paligemma.md
+          - Perception Encoder: foundation/perception_encoder.md
           - Segment Anything (Segmentation): foundation/sam.md
           - Segment Anything 2 (Segmentation): foundation/sam2.md
           - SmolVLM2: foundation/smolvlm.md
@@ -233,6 +234,7 @@ plugins:
       implicit_index: True
   - macros:
       include_dir: docs/include
+      module_name: docs/scripts/macros
 
 
 markdown_extensions:

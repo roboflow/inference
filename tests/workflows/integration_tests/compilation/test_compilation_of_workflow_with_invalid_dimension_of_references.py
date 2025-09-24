@@ -221,8 +221,9 @@ def test_compilation_of_workflow_where_step_attempts_decreasing_dimensionality_t
     }
 
     # when
-    with pytest.raises(StepOutputLineageError):
-        _ = compile_workflow(
-            workflow_definition=WORKFLOW_ATTEMPTING_TO_REDUCE_DIM_TO_ZERO,
-            init_parameters=workflow_init_parameters,
-        )
+    _ = compile_workflow(
+        workflow_definition=WORKFLOW_ATTEMPTING_TO_REDUCE_DIM_TO_ZERO,
+        init_parameters=workflow_init_parameters,
+    )
+
+    # then - no error

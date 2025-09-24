@@ -1,0 +1,4 @@
+{
+  "project_task_type": "object-detection",
+  "model_type": "yolov8"
+}

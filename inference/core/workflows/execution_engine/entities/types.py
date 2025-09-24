@@ -178,13 +178,27 @@ ROBOFLOW_PROJECT_KIND = Kind(
 
 ROBOFLOW_API_KEY_KIND_DOCS = """
 This kind represents API key that grants access to Roboflow platform.
-To learn more about Roboflow API keys visit [this](https://docs.roboflow.com/api-reference/authentication) 
+To learn more about Roboflow API keys visit [this](https://docs.roboflow.com/api-reference/authentication)
 page.
 """
 ROBOFLOW_API_KEY_KIND = Kind(
     name="roboflow_api_key",
     description="Roboflow API key",
     docs=ROBOFLOW_API_KEY_KIND_DOCS,
+    serialised_data_type="str",
+    internal_data_type="str",
+)
+
+ROBOFLOW_MANAGED_KEY_DOCS = """
+This kind represents a key or credential managed by Roboflow or stored in your Roboflow account.
+It can be used for for third party APIs that Roboflow can proxy requests on behalf of the user.
+
+If set to ``rf_key:account`` third party api calls will use Roboflow owned API key and proxied requests will be charged corosponding credits.  You can set the value to ``rf_key:user:<key_id>`` where key_id references a third party key you have stored in your Roboflow settigns.
+"""
+ROBOFLOW_MANAGED_KEY = Kind(
+    name="ROBOFLOW_MANAGED_KEY",
+    description="Roboflow-managed key or credential",
+    docs=ROBOFLOW_MANAGED_KEY_DOCS,
     serialised_data_type="str",
     internal_data_type="str",
 )

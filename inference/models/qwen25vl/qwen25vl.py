@@ -80,13 +80,13 @@ class Qwen25VL(TransformerModel):
         self.dtype = dtype
         if self.dtype is None:
             self.dtype = self.default_dtype
-        self.cache_model_artefacts()
+        self.cache_model_artefacts(**kwargs)
 
         self.cache_dir = os.path.join(MODEL_CACHE_DIR, self.endpoint + "/")
         self.use_quantization = use_quantization
-        self.initialize_model()
+        self.initialize_model(**kwargs)
 
-    def initialize_model(self):
+    def initialize_model(self, **kwargs):
         config_file = os.path.join(self.cache_dir, "adapter_config.json")
 
         with open(config_file, "r") as file:
@@ -231,7 +231,7 @@ class LoRAQwen25VL(LoRATransformerModel):
         cache_dir = super().get_lora_base_from_roboflow(model_id, revision)
         return cache_dir
 
-    def initialize_model(self):
+    def initialize_model(self, **kwargs):
         config_file = os.path.join(self.cache_dir, "adapter_config.json")
 
         with open(config_file, "r") as file:
@@ -264,11 +264,11 @@ class LoRAQwen25VL(LoRATransformerModel):
             revision = None
             token = None
 
-        os.remove(
-            os.path.join(
-                MODEL_CACHE_DIR, "lora-bases/qwen/qwen25vl-7b/main/weights.tar.gz"
-            )
+        rm_weights = os.path.join(
+            MODEL_CACHE_DIR, "lora-bases/qwen/qwen25vl-7b/main/weights.tar.gz"
         )
+        if os.path.exists(rm_weights):
+            os.remove(rm_weights)
 
         files_folder = MODEL_CACHE_DIR + "lora-bases/qwen/qwen25vl-7b/main/"
         _patch_preprocessor_config(files_folder)

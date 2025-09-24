@@ -56,6 +56,8 @@ class ModelManagerDecorator(ModelManager):
         api_key: str,
         model_id_alias: Optional[str] = None,
         endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
+        countinference: Optional[bool] = None,
+        service_secret: Optional[str] = None,
     ):
         """Adds a model to the manager.
 
@@ -71,6 +73,8 @@ class ModelManagerDecorator(ModelManager):
             api_key,
             model_id_alias=model_id_alias,
             endpoint_type=endpoint_type,
+            countinference=countinference,
+            service_secret=service_secret,
         )
 
     async def infer_from_request(

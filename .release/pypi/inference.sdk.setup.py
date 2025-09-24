@@ -15,7 +15,7 @@ shutil.copyfile(
 
 from inference.core.version import __version__
 
-with open("README.md", "r") as fh:
+with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 
@@ -52,6 +52,8 @@ setuptools.setup(
             "inference_cli.*",
             "development",
             "development.*",
+            "inference_experimental",
+            "inference_experimental.*"
         ),
     ),
     install_requires=read_requirements(["requirements/requirements.sdk.http.txt"]),

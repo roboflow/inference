@@ -1,33 +1,99 @@
 import asyncio
-import concurrent.futures
+import datetime
+import json
+import logging
 import time
-from threading import Event
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
+import cv2 as cv
 import numpy as np
 from aiortc import (
     RTCConfiguration,
+    RTCDataChannel,
     RTCIceServer,
     RTCPeerConnection,
     RTCSessionDescription,
     VideoStreamTrack,
 )
-from aiortc.contrib.media import MediaRelay
-from aiortc.mediastreams import MediaStreamError
-from aiortc.rtcrtpreceiver import RemoteStreamTrack
+from aiortc.contrib.media import MediaRelay, MediaStreamError
+from aiortc.rtcrtpreceiver import RemoteStreamTrack, RTCRtpReceiver
 from av import VideoFrame
+from av import logging as av_logging
 
 from inference.core import logger
+from inference.core.env import DEBUG_AIORTC_QUEUES, DEBUG_WEBRTC_PROCESSING_LATENCY
 from inference.core.interfaces.camera.entities import (
     SourceProperties,
+    StatusUpdate,
+    UpdateSeverity,
     VideoFrameProducer,
 )
+from inference.core.interfaces.stream.inference_pipeline import (
+    INFERENCE_THREAD_FINISHED_EVENT,
+)
+from inference.core.interfaces.stream.watchdog import BasePipelineWatchDog
 from inference.core.interfaces.stream_manager.manager_app.entities import (
+    WebRTCData,
     WebRTCOffer,
     WebRTCTURNConfig,
 )
 from inference.core.utils.async_utils import Queue as SyncAsyncQueue
 from inference.core.utils.function import experimental
+from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
+
+logging.getLogger("aiortc").setLevel(logging.WARNING)
+
+
+def overlay_text_on_np_frame(frame: np.ndarray, text: List[str]):
+    for i, l in enumerate(text):
+        frame = cv.putText(
+            frame,
+            l,
+            (10, 20 + 30 * i),
+            cv.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (0, 255, 0),
+            2,
+        )
+    return frame
+
+
+def get_frame_from_workflow_output(
+    workflow_output: Dict[str, Union[WorkflowImageData, Any]], frame_output_key: str
+) -> Optional[np.ndarray]:
+    latency: Optional[datetime.timedelta] = None
+    np_image: Optional[np.ndarray] = None
+
+    step_output = workflow_output.get(frame_output_key)
+    if isinstance(step_output, WorkflowImageData):
+        if (
+            DEBUG_WEBRTC_PROCESSING_LATENCY
+            and step_output.video_metadata
+            and step_output.video_metadata.frame_timestamp is not None
+        ):
+            latency = (
+                datetime.datetime.now() - step_output.video_metadata.frame_timestamp
+            )
+        np_image = step_output.numpy_image
+    elif isinstance(step_output, dict):
+        for frame_output in step_output.values():
+            if isinstance(frame_output, WorkflowImageData):
+                if (
+                    DEBUG_WEBRTC_PROCESSING_LATENCY
+                    and frame_output.video_metadata
+                    and frame_output.video_metadata.frame_timestamp is not None
+                ):
+                    latency = (
+                        datetime.datetime.now()
+                        - frame_output.video_metadata.frame_timestamp
+                    )
+                np_image = frame_output.numpy_image
+
+    # logger.warning since inference pipeline is noisy on INFO level
+    if DEBUG_WEBRTC_PROCESSING_LATENCY and latency is not None:
+        logger.warning("Processing latency: %ss", latency.total_seconds())
+
+    return np_image
 
 
 class VideoTransformTrack(VideoStreamTrack):
@@ -36,99 +102,177 @@ class VideoTransformTrack(VideoStreamTrack):
         to_inference_queue: "SyncAsyncQueue[VideoFrame]",
         from_inference_queue: "SyncAsyncQueue[np.ndarray]",
         asyncio_loop: asyncio.AbstractEventLoop,
-        webrtc_peer_timeout: float = 1,
-        fps_probe_frames: int = 10,
+        fps_probe_frames: int,
         webcam_fps: Optional[float] = None,
+        media_relay: Optional[MediaRelay] = None,
+        drain_remote_stream_track: bool = True,
         *args,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
-        if not webrtc_peer_timeout:
-            webrtc_peer_timeout = 1
-        self.webrtc_peer_timeout: float = webrtc_peer_timeout
+        self._loop = asyncio_loop
+
+        self._reader_task: Optional[asyncio.Task] = None
 
         self.track: Optional[RemoteStreamTrack] = None
+        self._track_active: bool = False
+
         self._id = time.time_ns()
         self._processed = 0
+
         self.to_inference_queue: "SyncAsyncQueue[VideoFrame]" = to_inference_queue
         self.from_inference_queue: "SyncAsyncQueue[np.ndarray]" = from_inference_queue
-        self._asyncio_loop = asyncio_loop
-        self._pool = concurrent.futures.ThreadPoolExecutor()
-        self._track_active: bool = True
+
         self._fps_probe_frames = fps_probe_frames
+        self._probe_count: int = 0
+        self._fps_probe_t1: Optional[float] = None
+        self._fps_probe_t2: Optional[float] = None
         self.incoming_stream_fps: Optional[float] = webcam_fps
 
-    def set_track(self, track: RemoteStreamTrack):
+        self._last_processed_frame: Optional[VideoFrame] = None
+
+        self._av_logging_set: bool = False
+
+        self._last_queue_log_time: float = 0.0
+
+        # Synthetic PTS generation to prevent quality drops
+        self._output_frame_count: int = 0
+        self._first_input_pts: Optional[int] = None
+        self._pts_offset: int = 0
+
+        self._drain_remote_stream_track = drain_remote_stream_track
+
+    def set_track(
+        self,
+        track: RemoteStreamTrack,
+        relay_track: Optional[RemoteStreamTrack] = None,
+        rtp_receiver: Optional[RTCRtpReceiver] = None,
+    ):
         if not self.track:
             self.track = track
+        self._relay_track = relay_track
+        self._rtp_receiver = rtp_receiver
+
+    def start(self):
+        self._track_active = True
+        self._reader_task = self._loop.create_task(
+            self._raw_frames_reader_loop(), name="raw_frames_reader"
+        )
+
+    def stop(self):
+        self._track_active = False
+        self._reader_task.cancel()
 
     def close(self):
+        self.stop()
         self._track_active = False
 
+    async def _raw_frames_reader_loop(self):
+        try:
+            while self._track_active:
+                frame: VideoFrame = await self.track.recv()
+                if self._drain_remote_stream_track:
+                    # Prevent spam in log, only inform about major drains
+                    if self.track._queue.qsize() > 10:
+                        logger.warning(
+                            "Draining RemoteStreamTrack._queue: %s (UNBOUNDED)",
+                            self.track._queue.qsize(),
+                        )
+                    while self.track._queue.qsize() > 0:
+                        frame: VideoFrame = await self.track.recv()
+
+                if self.incoming_stream_fps is None:
+                    self._probe_count += 1
+                    now = time.time()
+                    if self._probe_count == 1:
+                        self._fps_probe_t1 = now
+                    elif self._probe_count == self._fps_probe_frames:
+                        self._fps_probe_t2 = now
+                        dt = max(1e-6, (self._fps_probe_t2 - self._fps_probe_t1))
+                        self.incoming_stream_fps = (self._fps_probe_frames - 1) / dt
+                        logger.info("Incoming stream fps: %s", self.incoming_stream_fps)
+
+                await self.to_inference_queue.async_put(frame)
+            logger.info("WebRTC reader loop finished")
+
+        except asyncio.CancelledError:
+            logger.info("WebRTC reader loop cancelled")
+        except MediaStreamError:
+            if not self.complete:
+                logger.error("WebRTC reader loop finished due to MediaStreamError")
+        except Exception as exc:
+            logger.error("Error in WebRTC reader loop: %s", exc)
+
     async def recv(self):
-        if not self.incoming_stream_fps:
-            logger.debug("Probing incoming stream FPS")
-            t1 = 0
-            t2 = 0
-            for i in range(self._fps_probe_frames):
-                try:
-                    frame: VideoFrame = await asyncio.wait_for(
-                        self.track.recv(), self.webrtc_peer_timeout
-                    )
-                except (asyncio.TimeoutError, MediaStreamError):
-                    logger.info(
-                        "Timeout while waiting to receive frames sent through webrtc peer connection; assuming peer disconnected."
-                    )
-                    self.close()
-                    raise MediaStreamError
-                # drop first frame
-                if i == 1:
-                    t1 = time.time()
-            t2 = time.time()
-            if t1 == t2:
-                logger.info(
-                    "All frames probed in the same time - could not calculate fps."
-                )
-                raise MediaStreamError
-            self.incoming_stream_fps = (self._fps_probe_frames - 1) / (t2 - t1)
-            logger.debug("Incoming stream fps: %s", self.incoming_stream_fps)
-
-        while self._track_active:
-            try:
-                frame: VideoFrame = await asyncio.wait_for(
-                    self.track.recv(), self.webrtc_peer_timeout
-                )
-            except (asyncio.TimeoutError, MediaStreamError):
-                logger.info(
-                    "Timeout while waiting to receive frames sent through webrtc peer connection; assuming peer disconnected."
-                )
-                self.close()
-                raise MediaStreamError
-
-            await self.to_inference_queue.async_put(frame)
-
-            from_inference_queue_empty = await self.from_inference_queue.async_empty()
-            if not from_inference_queue_empty:
-                break
-
-        while self._track_active:
-            try:
-                res: np.ndarray = await asyncio.wait_for(
-                    self.from_inference_queue.async_get(), self.webrtc_peer_timeout
-                )
-                break
-            except asyncio.TimeoutError:
-                continue
-        if not self._track_active:
-            logger.info(
-                "Received close request while waiting to receive frames from inference pipeline; assuming termination."
-            )
-            raise MediaStreamError
-
-        new_frame = VideoFrame.from_ndarray(res, format="bgr24")
-        new_frame.pts = frame.pts
-        new_frame.time_base = frame.time_base
+        # Silencing swscaler warnings in multi-threading environment
+        if not self._av_logging_set:
+            av_logging.set_libav_level(av_logging.ERROR)
+            self._av_logging_set = True
         self._processed += 1
+
+        current_time = time.time()
+        # logger.warning since inference pipeline is noisy on INFO level
+        if DEBUG_AIORTC_QUEUES and current_time - self._last_queue_log_time >= 5.0:
+            logger.warning("=== AIORTC QUEUE SIZES ===")
+
+            if self.track and hasattr(self.track, "_queue"):
+                logger.warning(
+                    f"RemoteStreamTrack._queue: {self.track._queue.qsize()} (UNBOUNDED!)"
+                )
+
+            if (
+                self._relay_track
+                and hasattr(self._relay_track, "_queue")
+                and self._relay_track._queue
+            ):
+                logger.warning(
+                    f"RelayStreamTrack._queue: {self._relay_track._queue.qsize()} (UNBOUNDED!)"
+                )
+
+            if self._rtp_receiver:
+                if hasattr(self._rtp_receiver, "_RTCRtpReceiver__decoder_queue"):
+                    decoder_queue_size = (
+                        self._rtp_receiver._RTCRtpReceiver__decoder_queue.qsize()
+                    )
+                    logger.warning(
+                        f"RTCRtpReceiver.__decoder_queue: {decoder_queue_size} (UNBOUNDED!)"
+                    )
+
+                if hasattr(self._rtp_receiver, "_RTCRtpReceiver__jitter_buffer"):
+                    jb = self._rtp_receiver._RTCRtpReceiver__jitter_buffer
+                    if hasattr(jb, "_packets"):
+                        filled = sum(1 for p in jb._packets if p is not None)
+                        logger.warning(
+                            f"RTCRtpReceiver.JitterBuffer: {filled}/{jb._capacity} (bounded)"
+                        )
+
+            logger.warning("========================")
+            self._last_queue_log_time = current_time
+
+        np_frame: Optional[np.ndarray] = None
+        try:
+            np_frame = await self.from_inference_queue.async_get_nowait()
+        except asyncio.QueueEmpty:
+            pass
+
+        if np_frame is None:
+            if self._last_processed_frame:
+                new_frame = self._last_processed_frame
+            else:
+                np_frame = overlay_text_on_np_frame(
+                    np.zeros((720, 1280, 3), dtype=np.uint8),
+                    ["Inference pipeline is starting..."],
+                )
+                new_frame = VideoFrame.from_ndarray(np_frame, format="bgr24")
+        else:
+            new_frame = VideoFrame.from_ndarray(np_frame, format="bgr24")
+            self._last_processed_frame = new_frame
+
+        # below method call may sleep
+        pts, time_base = await self.next_timestamp()
+        new_frame.pts = pts
+        new_frame.time_base = time_base
+
         return new_frame
 
 
@@ -140,49 +284,25 @@ class WebRTCVideoFrameProducer(VideoFrameProducer):
     def __init__(
         self,
         to_inference_queue: "SyncAsyncQueue[VideoFrame]",
-        stop_event: Event,
         webrtc_video_transform_track: VideoTransformTrack,
-        webrtc_peer_timeout: float,
     ):
         self.to_inference_queue: "SyncAsyncQueue[VideoFrame]" = to_inference_queue
-        self._stop_event = stop_event
         self._w: Optional[int] = None
         self._h: Optional[int] = None
         self._video_transform_track = webrtc_video_transform_track
         self._is_opened = True
-        self.webrtc_peer_timeout = webrtc_peer_timeout
 
     def grab(self) -> bool:
-        if self._stop_event.is_set():
-            logger.info("Received termination signal, closing.")
-            self._is_opened = False
-            return False
-
-        try:
-            res = self.to_inference_queue.sync_get(timeout=self.webrtc_peer_timeout)
-            if res is None:
-                self._stop_event.set()
-                return False
-        except asyncio.TimeoutError:
-            logger.error("Timeout while grabbing frame, considering source depleted.")
+        res = self.to_inference_queue.sync_get()
+        if res is None:
+            logger.debug("Received termination signal")
             return False
         return True
 
     def retrieve(self) -> Tuple[bool, Optional[np.ndarray]]:
-        if self._stop_event.is_set():
-            logger.info("Received termination signal, closing.")
-            self._is_opened = False
-            return False, None
-
-        try:
-            frame: VideoFrame = self.to_inference_queue.sync_get(
-                timeout=self.webrtc_peer_timeout
-            )
-            if frame is None:
-                self._stop_event.set()
-                return False, None
-        except asyncio.TimeoutError:
-            logger.error("Timeout while retrieving frame, considering source depleted.")
+        frame: VideoFrame = self.to_inference_queue.sync_get()
+        if frame is None:
+            logger.debug("Received termination signal")
             return False, None
         img = frame.to_ndarray(format="bgr24")
 
@@ -211,27 +331,68 @@ class WebRTCVideoFrameProducer(VideoFrameProducer):
 
 
 class RTCPeerConnectionWithFPS(RTCPeerConnection):
-    def __init__(self, video_transform_track: VideoTransformTrack, *args, **kwargs):
+    def __init__(
+        self,
+        video_transform_track: VideoTransformTrack,
+        asyncio_loop: asyncio.AbstractEventLoop,
+        stream_output: Optional[str] = None,
+        data_output: Optional[str] = None,
+        *args,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
+        self._loop = asyncio_loop
         self.video_transform_track: VideoTransformTrack = video_transform_track
+        self._consumers_signalled: bool = False
+        self.stream_output: Optional[str] = stream_output
+        self.data_output: Optional[str] = data_output
+        self.data_channel: Optional[RTCDataChannel] = None
+
+
+class WebRTCPipelineWatchDog(BasePipelineWatchDog):
+    def __init__(
+        self,
+        webrtc_peer_connection: RTCPeerConnectionWithFPS,
+        asyncio_loop: asyncio.AbstractEventLoop,
+    ):
+        super().__init__()
+        self._webrtc_peer_connection = webrtc_peer_connection
+        self._asyncio_loop = asyncio_loop
+
+    def on_status_update(self, status_update: StatusUpdate) -> None:
+        if status_update.event_type == INFERENCE_THREAD_FINISHED_EVENT:
+            logger.debug(
+                "InferencePipeline thread finished, closing WebRTC peer connection"
+            )
+            asyncio.run_coroutine_threadsafe(
+                self._webrtc_peer_connection.close(), self._asyncio_loop
+            )
+        if status_update.severity.value <= UpdateSeverity.DEBUG.value:
+            return None
+        self._stream_updates.append(status_update)
 
 
 async def init_rtc_peer_connection(
     webrtc_offer: WebRTCOffer,
-    webrtc_turn_config: WebRTCTURNConfig,
     to_inference_queue: "SyncAsyncQueue[VideoFrame]",
     from_inference_queue: "SyncAsyncQueue[np.ndarray]",
-    webrtc_peer_timeout: float,
-    feedback_stop_event: Event,
     asyncio_loop: asyncio.AbstractEventLoop,
+    fps_probe_frames: int,
+    webrtc_turn_config: Optional[WebRTCTURNConfig] = None,
+    webrtc_realtime_processing: bool = True,
     webcam_fps: Optional[float] = None,
+    stream_output: Optional[str] = None,
+    data_output: Optional[str] = None,
 ) -> RTCPeerConnectionWithFPS:
+    relay = MediaRelay()
     video_transform_track = VideoTransformTrack(
         to_inference_queue=to_inference_queue,
         from_inference_queue=from_inference_queue,
         asyncio_loop=asyncio_loop,
-        webrtc_peer_timeout=webrtc_peer_timeout,
         webcam_fps=webcam_fps,
+        fps_probe_frames=fps_probe_frames,
+        media_relay=relay,
+        drain_remote_stream_track=webrtc_realtime_processing,
     )
 
     if webrtc_turn_config:
@@ -243,29 +404,69 @@ async def init_rtc_peer_connection(
         peer_connection = RTCPeerConnectionWithFPS(
             video_transform_track=video_transform_track,
             configuration=RTCConfiguration(iceServers=[turn_server]),
+            asyncio_loop=asyncio_loop,
+            stream_output=stream_output,
+            data_output=data_output,
         )
     else:
         peer_connection = RTCPeerConnectionWithFPS(
             video_transform_track=video_transform_track,
+            asyncio_loop=asyncio_loop,
+            stream_output=stream_output,
+            data_output=data_output,
         )
-    relay = MediaRelay()
 
     @peer_connection.on("track")
     def on_track(track: RemoteStreamTrack):
-        logger.debug("Track %s received", track.kind)
-        video_transform_track.set_track(track=relay.subscribe(track))
+        logger.info("track received")
+        relay_track = relay.subscribe(track)
+
+        # Find the RTCRtpReceiver for this track
+        rtp_receiver = None
+        for transceiver in peer_connection.getTransceivers():
+            if transceiver.receiver.track == track:
+                rtp_receiver = transceiver.receiver
+                break
+
+        video_transform_track.set_track(
+            track=track, relay_track=relay_track, rtp_receiver=rtp_receiver
+        )
+        video_transform_track.start()
         peer_connection.addTrack(video_transform_track)
+
+    @peer_connection.on("datachannel")
+    def on_datachannel(channel: RTCDataChannel):
+        logger.info("Data channel %s received", channel.label)
+
+        @channel.on("message")
+        def on_message(message):
+            logger.info("Data channel message received: %s", message)
+            try:
+                message = WebRTCData(**json.loads(message))
+            except json.JSONDecodeError:
+                logger.error("Failed to decode webrtc data payload: %s", message)
+                return
+            if message.stream_output is not None:
+                peer_connection.stream_output = message.stream_output or None
+            if message.data_output is not None:
+                peer_connection.data_output = message.data_output or None
+
+        peer_connection.data_channel = channel
 
     @peer_connection.on("connectionstatechange")
     async def on_connectionstatechange():
-        logger.debug("Connection state is %s", peer_connection.connectionState)
+        logger.info("Connection state is %s", peer_connection.connectionState)
         if peer_connection.connectionState in {"failed", "closed"}:
             logger.info("Stopping WebRTC peer")
-            video_transform_track.close()
-            logger.info("Signalling WebRTC termination to the caller")
-            feedback_stop_event.set()
-            await to_inference_queue.async_put(None)
             await peer_connection.close()
+            logger.debug("Signalling WebRTC termination to frames consumer")
+            try:
+                await to_inference_queue.async_put_nowait(None)
+            except asyncio.QueueFull:
+                await to_inference_queue.async_get_nowait()
+                await to_inference_queue.async_put_nowait(None)
+            peer_connection._consumers_signalled = True
+            logger.info("'connectionstatechange' event handler finished")
 
     await peer_connection.setRemoteDescription(
         RTCSessionDescription(sdp=webrtc_offer.sdp, type=webrtc_offer.type)

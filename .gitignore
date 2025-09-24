@@ -1,3 +1,6 @@
+watch-dev.sh
+cpu_http.py
+
 # IDE
 .idea/
 .vscode/
@@ -44,6 +47,7 @@ docs/static/
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
+
 
 # Installer logs
 pip-log.txt
@@ -196,3 +200,10 @@ tests/inference_sdk/unit_tests/http/inference_profiling
 # System files
 .DS_Store
 *.pem
+
+
+
+!app_bundles/**/*.spec
+!app_bundles/**/*.png
+inference_experimental/tests/integration_tests/models/assets/
+inference_experimental/tests/integration_tests/e2e/assets/

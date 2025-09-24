@@ -253,8 +253,13 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
             )
             with PROCESSES_TABLE_LOCK:
                 # termination ended
-                pipeline = self._processes_table[pipeline_id]
-                pipeline.is_terminating = False
+                if pipeline_id not in self._processes_table:
+                    logger.warning(
+                        f"Pipeline {pipeline_id} already removed from processes table."
+                    )
+                else:
+                    pipeline = self._processes_table[pipeline_id]
+                    pipeline.is_terminating = False
         serialised_response = prepare_response(
             request_id=request_id, response=response, pipeline_id=pipeline_id
         )
@@ -405,6 +410,7 @@ def check_process_health() -> None:
                         == INFERENCE_THREAD_FINISHED_EVENT
                     ):
                         # pipeline was already terminated
+                        process.terminate()
                         process.join()
                         del PROCESSES_TABLE[pipeline_id]
                         continue
@@ -537,7 +543,10 @@ def spawn_managed_pipeline_process(
 
 
 def _get_process_memory_usage_mb(process: Process) -> int:
-    return psutil.Process(process.pid).memory_info().rss / (1024 * 1024)
+    try:
+        return psutil.Process(process.pid).memory_info().rss / (1024 * 1024)
+    except psutil.NoSuchProcess:
+        return 0
 
 
 def start(expected_warmed_up_pipelines: int = 0) -> None:

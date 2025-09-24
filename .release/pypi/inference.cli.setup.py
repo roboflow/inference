@@ -19,7 +19,7 @@ shutil.copyfile(
 
 from inference.core.version import __version__
 
-with open("inference_cli/README.md", "r") as fh:
+with open("inference_cli/README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 
@@ -54,6 +54,8 @@ setuptools.setup(
             "inference.*",
             "development",
             "development.*",
+            "inference_experimental",
+            "inference_experimental.*"
         ),
     ),
     entry_points={

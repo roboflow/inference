@@ -24,6 +24,8 @@ def test_classes_replacement_when_object_detection_object_is_none() -> None:
     result = step.run(
         object_detection_predictions=None,
         classification_predictions=None,
+        fallback_class_name=None,
+        fallback_class_id=None,
     )
 
     # then
@@ -43,6 +45,8 @@ def test_classes_replacement_when_there_are_no_predictions_is_none() -> None:
     result = step.run(
         object_detection_predictions=detections,
         classification_predictions=None,
+        fallback_class_name=None,
+        fallback_class_id=None,
     )
 
     # then
@@ -100,6 +104,8 @@ def test_classes_replacement_when_replacement_to_happen_without_filtering_for_mu
     result = step.run(
         object_detection_predictions=detections,
         classification_predictions=classification_predictions,
+        fallback_class_name=None,
+        fallback_class_id=None,
     )
 
     # then
@@ -183,6 +189,8 @@ def test_classes_replacement_when_replacement_to_happen_without_filtering_for_mu
     result = step.run(
         object_detection_predictions=detections,
         classification_predictions=classification_predictions,
+        fallback_class_name=None,
+        fallback_class_id=None,
     )
 
     # then
@@ -245,6 +253,8 @@ def test_classes_replacement_when_replacement_to_happen_and_one_result_to_be_fil
     result = step.run(
         object_detection_predictions=detections,
         classification_predictions=classification_predictions,
+        fallback_class_name=None,
+        fallback_class_id=None,
     )
 
     # then
@@ -271,7 +281,7 @@ def test_classes_replacement_when_replacement_to_happen_and_one_result_to_be_fil
     ], "Expected to generate new detection id"
 
 
-def test_classes_replacement_when_empty_classification_predictions():
+def test_classes_replacement_when_empty_classification_predictions_no_fallback_class():
     # given
     step = DetectionsClassesReplacementBlockV1()
     detections = sv.Detections(
@@ -305,12 +315,86 @@ def test_classes_replacement_when_empty_classification_predictions():
     result = step.run(
         object_detection_predictions=detections,
         classification_predictions=classification_predictions,
+        fallback_class_name=None,
+        fallback_class_id=None,
     )
 
     # then
     assert (
         len(result["predictions"]) == 0
     ), "Expected sv.Detections.empty(), as empty classification was passed"
+
+
+def test_classes_replacement_when_empty_classification_predictions_fallback_class_provided():
+    # given
+    step = DetectionsClassesReplacementBlockV1()
+    detections = sv.Detections(
+        xyxy=np.array(
+            [
+                [10, 20, 30, 40],
+                [11, 21, 31, 41],
+            ]
+        ),
+        class_id=np.array([7, 7]),
+        confidence=np.array([0.36, 0.91]),
+        data={
+            "class_name": np.array(["animal", "animal"]),
+            "detection_id": np.array(["zero", "one"]),
+        },
+    )
+    first_cls_prediction = ClassificationInferenceResponse(
+        image=InferenceResponseImage(width=128, height=256),
+        predictions=[
+            ClassificationPrediction(
+                **{"class": "cat", "class_id": 0, "confidence": 0.6}
+            ),
+            ClassificationPrediction(
+                **{"class": "dog", "class_id": 1, "confidence": 0.4}
+            ),
+        ],
+        top="cat",
+        confidence=0.6,
+        parent_id="some",
+    ).dict(by_alias=True, exclude_none=True)
+    first_cls_prediction["parent_id"] = "zero"
+    second_cls_prediction = ClassificationInferenceResponse(
+        image=InferenceResponseImage(width=128, height=256),
+        predictions=[],
+        top="cat",
+        confidence=0.6,
+        parent_id="some",
+    ).dict(by_alias=True, exclude_none=True)
+    second_cls_prediction["parent_id"] = "one"
+    classification_predictions = Batch(
+        content=[
+            first_cls_prediction,
+            second_cls_prediction,
+        ],
+        indices=[(0, 0), (0, 1)],
+    )
+
+    # when
+    result = step.run(
+        object_detection_predictions=detections,
+        classification_predictions=classification_predictions,
+        fallback_class_name="unknown",
+        fallback_class_id=123,
+    )
+
+    # then
+    assert (
+        len(result["predictions"]) == 2
+    ), "Expected sv.Detections.empty(), as empty classification was passed"
+    detections = result["predictions"]
+    assert (
+        detections.confidence[1] == 0
+    ), "Fallback class confidence expected to be set to 0"
+    assert (
+        detections.class_id[1] == 123
+    ), "class id expected to be set to value passed with fallback_class_id parameter"
+    assert (
+        detections.data["class_name"][1] == "unknown"
+    ), "class name expected to be set to value passed with fallback_class_name parameter"
 
 
 def test_extract_leading_class_from_prediction_when_prediction_is_multi_label() -> None:

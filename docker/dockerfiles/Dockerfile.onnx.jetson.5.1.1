@@ -1,4 +1,5 @@
 FROM nvcr.io/nvidia/l4t-ml:r35.2.1-py3
+#installs python 3.9
 
 ARG DEBIAN_FRONTEND=noninteractive
 ENV LANG en_US.UTF-8 
@@ -57,6 +58,18 @@ RUN python3.9 -m pip install --upgrade pip  && python3.9 -m pip install \
     --upgrade \
     && rm -rf ~/.cache/pip
 
+WORKDIR /app/
+COPY inference inference
+COPY inference_cli inference_cli
+COPY inference_sdk inference_sdk
+COPY docker/config/gpu_http.py gpu_http.py
+COPY .release .release
+COPY requirements requirements
+COPY Makefile Makefile
+
+RUN make create_inference_cli_whl PYTHON=python3.9
+RUN python3.9 -m pip install dist/inference_cli*.whl
+
 # BE CAREFUL, WE ENFORCE numpy 1.x for the sake of compatibility with onnxruntime
 RUN python3.9 -m pip uninstall --yes onnxruntime numpy
 RUN wget https://nvidia.box.com/shared/static/67zek28z497hs9aev7xg2c1wngdeyv4h.whl -O onnxruntime_gpu-1.16.0-cp39-cp39-linux_aarch64.whl
@@ -64,29 +77,25 @@ RUN python3.9 -m pip install "numpy<=1.26.4" onnxruntime_gpu-1.16.0-cp39-cp39-li
     && rm -rf ~/.cache/pip \
     && rm onnxruntime_gpu-1.16.0-cp39-cp39-linux_aarch64.whl
 
-WORKDIR /app/
-COPY inference inference
-COPY inference_sdk inference_sdk
-COPY docker/config/gpu_http.py gpu_http.py
-
-ENV VERSION_CHECK_MODE=continuous
-ENV PROJECT=roboflow-platform
-ENV ORT_TENSORRT_FP16_ENABLE=1
-ENV ORT_TENSORRT_ENGINE_CACHE_ENABLE=1
-ENV CORE_MODEL_SAM_ENABLED=False
-ENV PROJECT=roboflow-platform
-ENV NUM_WORKERS=1
-ENV HOST=0.0.0.0
-ENV PORT=9001
-ENV OPENBLAS_CORETYPE=ARMV8 
-ENV LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libgomp.so.1
-ENV WORKFLOWS_STEP_EXECUTION_MODE=local
-ENV WORKFLOWS_MAX_CONCURRENT_STEPS=2
-ENV API_LOGGING_ENABLED=True
-ENV CORE_MODEL_TROCR_ENABLED=false
-ENV RUNS_ON_JETSON=True
-ENV ENABLE_PROMETHEUS=True
-ENV ENABLE_STREAM_API=True
-ENV STREAM_API_PRELOADED_PROCESSES=2
+ENV VERSION_CHECK_MODE=continuous \
+    PROJECT=roboflow-platform \
+    ORT_TENSORRT_FP16_ENABLE=1 \
+    ORT_TENSORRT_ENGINE_CACHE_ENABLE=1 \
+    CORE_MODEL_SAM_ENABLED=False \
+    PROJECT=roboflow-platform \
+    NUM_WORKERS=1 \
+    HOST=0.0.0.0 \
+    PORT=9001 \
+    OPENBLAS_CORETYPE=ARMV8 \
+    LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libgomp.so.1 \
+    WORKFLOWS_STEP_EXECUTION_MODE=local \
+    WORKFLOWS_MAX_CONCURRENT_STEPS=2 \
+    API_LOGGING_ENABLED=True \
+    CORE_MODEL_TROCR_ENABLED=false \
+    RUNS_ON_JETSON=True \
+    ENABLE_PROMETHEUS=True \
+    ENABLE_STREAM_API=True \
+    STREAM_API_PRELOADED_PROCESSES=2 \
+    PYTHONPATH=/app:$PYTHONPATH
 
 ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT

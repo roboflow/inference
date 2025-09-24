@@ -1,10 +1,9 @@
-import asyncio
-from asyncio import BoundedSemaphore
+from threading import BoundedSemaphore, Event
 from time import perf_counter, time
 from typing import Any, Dict, List, Optional
 
 import orjson
-from redis.asyncio import Redis
+from redis import Redis
 
 from inference.core.entities.requests.inference import (
     InferenceRequest,
@@ -27,21 +26,21 @@ class ResultsChecker:
     """
 
     def __init__(self, redis: Redis):
-        self.tasks: Dict[str, asyncio.Event] = {}
+        self.tasks: Dict[str, Event] = {}
         self.dones = dict()
         self.errors = dict()
         self.running = True
         self.redis = redis
         self.semaphore: BoundedSemaphore = BoundedSemaphore(NUM_PARALLEL_TASKS)
 
-    async def add_task(self, task_id: str, request: InferenceRequest):
+    def add_task(self, task_id: str, request: InferenceRequest):
         """
         Wait until there's available cylce to queue a task.
         When there are cycles, add the task's id to a list to keep track of its results,
         launch the preprocess celeryt task, set the task's status to in progress in redis.
         """
-        await self.semaphore.acquire()
-        self.tasks[task_id] = asyncio.Event()
+        self.semaphore.acquire()
+        self.tasks[task_id] = Event()
         preprocess.s(request.dict()).delay()
 
     def get_result(self, task_id: str) -> Any:
@@ -58,14 +57,14 @@ class ResultsChecker:
                 "Task result not found in either success or error dict. Unreachable"
             )
 
-    async def loop(self):
+    def loop(self):
         """
         Main loop. Check all in progress tasks for their status, and if their status is final,
         (either failure or success) then add their results to the appropriate results dictionary.
         """
-        async with self.redis.pubsub() as pubsub:
-            await pubsub.subscribe("results")
-            async for message in pubsub.listen():
+        with self.redis.pubsub() as pubsub:
+            pubsub.subscribe("results")
+            for message in pubsub.listen():
                 if message["type"] != "message":
                     continue
                 message = orjson.loads(message["data"])
@@ -83,11 +82,10 @@ class ResultsChecker:
                         "Task result not found in possible states. Unreachable"
                     )
                 self.tasks[task_id].set()
-                await asyncio.sleep(0)
 
-    async def wait_for_response(self, key: str):
+    def wait_for_response(self, key: str):
         event = self.tasks[key]
-        await event.wait()
+        event.wait()
         del self.tasks[key]
         return self.get_result(key)
 
@@ -103,6 +101,9 @@ class DispatchModelManager(ModelManager):
         self.checker = checker
 
     async def model_infer(self, model_id: str, request: InferenceRequest, **kwargs):
+        raise NotImplementedError("Async dispatch manager not implemented!")
+
+    def model_infer_sync(self, model_id: str, request: InferenceRequest, **kwargs):
         if request.visualize_predictions:
             raise NotImplementedError("Visualisation of prediction is not supported")
         request.start = time()
@@ -122,14 +123,11 @@ class DispatchModelManager(ModelManager):
         else:
             requests = [request]
 
-        start_task_awaitables = []
-        results_awaitables = []
         for r in requests:
-            start_task_awaitables.append(self.checker.add_task(r.id, r))
-            results_awaitables.append(self.checker.wait_for_response(r.id))
-
-        await asyncio.gather(*start_task_awaitables)
-        response_jsons = await asyncio.gather(*results_awaitables)
+            self.checker.add_task(r.id, r)
+        response_jsons = []
+        for r in requests:
+            response_jsons.append(self.checker.wait_for_response(r.id))
         responses = []
         for response_json in response_jsons:
             response = response_from_type(task_type, response_json)
@@ -146,6 +144,8 @@ class DispatchModelManager(ModelManager):
         api_key: str,
         model_id_alias: str = None,
         endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
+        countinference: Optional[bool] = None,
+        service_secret: Optional[str] = None,
     ) -> None:
         pass
 

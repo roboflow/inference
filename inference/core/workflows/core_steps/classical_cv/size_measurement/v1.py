@@ -85,12 +85,16 @@ class SizeMeasurementManifest(WorkflowBlockManifest):
         examples=["$segmentation.object_predictions"],
     )
 
-    reference_predictions: Selector(
-        kind=[
-            INSTANCE_SEGMENTATION_PREDICTION_KIND,
-            OBJECT_DETECTION_PREDICTION_KIND,
-        ]
-    ) = Field(
+    reference_predictions: Union[
+        list,
+        Selector(
+            kind=[
+                INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                OBJECT_DETECTION_PREDICTION_KIND,
+                LIST_OF_VALUES_KIND,
+            ]
+        ),
+    ] = Field(
         description="Reference object used to calculate the dimensions of the specified objects. If multiple objects are provided, the highest confidence prediction will be used.",
         examples=["$segmentation.reference_predictions"],
     )
@@ -176,7 +180,7 @@ def compute_aligned_dimensions(contour: np.ndarray) -> Tuple[float, float]:
 
 def get_detection_dimensions(
     detection: sv.Detections, index: int
-) -> Tuple[float, float]:
+) -> Tuple[Optional[float], Optional[float]]:
     """
     Retrieve the width and height dimensions of a detected object in pixels.
 
@@ -212,6 +216,15 @@ def get_detection_dimensions(
         h = bbox[3] - bbox[1]
         return float(w), float(h)
 
+    return None, None
+
+
+def get_polygon_dimensions(polygon: list) -> Tuple[Optional[float], Optional[float]]:
+    polygon = np.array(polygon)
+    if len(polygon) >= 3 and cv.contourArea(polygon) > 0:
+        return compute_aligned_dimensions(polygon)
+    return None, None
+
 
 def parse_reference_dimensions(
     reference_dimensions: Union[str, Tuple[float, float], List[float]],
@@ -241,7 +254,7 @@ class SizeMeasurementBlockV1(WorkflowBlock):
 
     def run(
         self,
-        reference_predictions: sv.Detections,
+        reference_predictions: Union[list, sv.Detections],
         object_predictions: sv.Detections,
         reference_dimensions: Union[str, Tuple[float, float], List[float]],
     ) -> BlockResult:
@@ -249,18 +262,23 @@ class SizeMeasurementBlockV1(WorkflowBlock):
             reference_dimensions
         )
 
-        if (
-            reference_predictions.confidence is None
-            or len(reference_predictions.confidence) == 0
-        ):
-            return {OUTPUT_KEY: None}
+        if hasattr(reference_predictions, "confidence"):
+            if len(reference_predictions.confidence) == 0:
+                return {OUTPUT_KEY: None}
 
-        ref_index = int(np.argmax(reference_predictions.confidence))
-        ref_width_pixels, ref_height_pixels = get_detection_dimensions(
-            reference_predictions, ref_index
-        )
+            ref_index = int(np.argmax(reference_predictions.confidence))
+            ref_width_pixels, ref_height_pixels = get_detection_dimensions(
+                reference_predictions, ref_index
+            )
+        elif isinstance(reference_predictions, list):
+            if len(reference_predictions) < 2:
+                return {OUTPUT_KEY: None}
 
-        if ref_width_pixels <= 0 or ref_height_pixels <= 0:
+            ref_width_pixels, ref_height_pixels = get_polygon_dimensions(
+                reference_predictions
+            )
+
+        if not ref_width_pixels or not ref_height_pixels:
             return {OUTPUT_KEY: None}
 
         width_scale = ref_width_actual / ref_width_pixels

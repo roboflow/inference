@@ -35,6 +35,11 @@ setuptools.setup(
             "development.*",
         ),
     ),
+    package_data={
+        "inference.models.perception_encoder.vision_encoder": [
+            "bpe_simple_vocab_16e6.txt.gz"
+        ],
+    },
     entry_points={
         "console_scripts": [
             "inference=inference_cli.main:app",
@@ -51,7 +56,7 @@ setuptools.setup(
             "requirements/requirements.gaze.txt",
             "requirements/requirements.groundingdino.txt",
             "requirements/requirements.hosted.txt",
-            "requirements/requirements.waf.txt",
+            "requirements/requirements.modal.txt",
             "requirements/requirements.yolo_world.txt",
             "requirements/requirements.code_analysis.txt",
             "requirements/requirements.test.unit.txt",

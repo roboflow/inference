@@ -713,6 +713,9 @@ registered) - since `v0.9.18`
 - `max_batch_size` - max number of elements that can be injected into single request (in `v0` mode - API only 
 support a single image in payload for the majority of endpoints - hence in this case, value will be overriden with `1`
 to prevent errors)
+- `workflow_run_retries_enabled` - flag that decides if transient errors in Workflows executions should be retried. 
+Defaults to `true` and the default can be altered with environment variable called `WORKFLOW_RUN_RETRIES_ENABLED`
+
 
 !!! warning
 

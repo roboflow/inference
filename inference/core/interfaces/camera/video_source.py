@@ -85,7 +85,7 @@ RESTART_ELIGIBLE_STATES = {
 }
 
 
-class BufferFillingStrategy(Enum):
+class BufferFillingStrategy(str, Enum):
     WAIT = "WAIT"
     DROP_OLDEST = "DROP_OLDEST"
     ADAPTIVE_DROP_OLDEST = "ADAPTIVE_DROP_OLDEST"
@@ -103,7 +103,7 @@ DROP_OLDEST_STRATEGIES = {
 }
 
 
-class BufferConsumptionStrategy(Enum):
+class BufferConsumptionStrategy(str, Enum):
     LAZY = "LAZY"
     EAGER = "EAGER"
 
@@ -362,6 +362,9 @@ class VideoSource:
         self._state_change_lock = Lock()
         self._video_source_properties = video_source_properties or {}
         self._source_id = source_id
+        self._last_frame_timestamp: int = time.time_ns()
+        self._fps: Optional[float] = None
+        self._is_file: Optional[bool] = None
 
     @property
     def source_id(self) -> Optional[int]:
@@ -541,6 +544,12 @@ class VideoSource:
         Throws:
             * EndOfStreamError: when trying to get the frame from closed source.
         """
+        if self._is_file is None:
+            source_metadata: SourceMetadata = self.describe_source()
+            self._is_file = source_metadata.source_properties.is_file
+            self._fps = source_metadata.source_properties.fps
+            if not self._fps or self._fps <= 0 or self._fps > 1000:
+                self._fps = 30  # sane default
         video_frame: Optional[Union[VideoFrame, str]] = get_from_queue(
             queue=self._frames_buffer,
             on_successful_read=self._video_consumer.notify_frame_consumed,
@@ -551,7 +560,7 @@ class VideoSource:
             raise EndOfStreamError(
                 "Attempted to retrieve frame from stream that already ended."
             )
-        if video_frame is not None:
+        if video_frame is not None and self._status_update_handlers:
             send_video_source_status_update(
                 severity=UpdateSeverity.DEBUG,
                 event_type=FRAME_CONSUMED_EVENT,
@@ -871,16 +880,17 @@ class VideoConsumer:
         if not success:
             return False
         self._frame_counter += 1
-        send_video_source_status_update(
-            severity=UpdateSeverity.DEBUG,
-            event_type=FRAME_CAPTURED_EVENT,
-            payload={
-                "frame_timestamp": frame_timestamp,
-                "frame_id": self._frame_counter,
-                "source_id": source_id,
-            },
-            status_update_handlers=self._status_update_handlers,
-        )
+        if self._status_update_handlers:
+            send_video_source_status_update(
+                severity=UpdateSeverity.DEBUG,
+                event_type=FRAME_CAPTURED_EVENT,
+                payload={
+                    "frame_timestamp": frame_timestamp,
+                    "frame_id": self._frame_counter,
+                    "source_id": source_id,
+                },
+                status_update_handlers=self._status_update_handlers,
+            )
         measured_source_fps = declared_source_fps
         if not is_source_video_file:
             if hasattr(self._stream_consumption_pace_monitor, "fps"):

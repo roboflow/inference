@@ -1,0 +1,5 @@
+{
+  "dynamic_batch_size_min": 9,
+  "dynamic_batch_size_opt": 2,
+  "dynamic_batch_size_max": 8
+}

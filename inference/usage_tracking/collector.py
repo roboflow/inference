@@ -28,6 +28,7 @@ from typing_extensions import ParamSpec
 from inference.core.env import (
     API_KEY,
     DEDICATED_DEPLOYMENT_ID,
+    DEVICE_ID,
     GCP_SERVERLESS,
     LAMBDA,
     REDIS_HOST,
@@ -569,6 +570,7 @@ class UsageCollector:
         execution_duration: float,
         func: Callable[[Any], Any],
         category: Literal["model", "workflows", "request"],
+        exc: Optional[str],
         args: List[Any],
         kwargs: Dict[str, Any],
     ) -> Dict[str, Any]:
@@ -578,6 +580,10 @@ class UsageCollector:
         }
         if DEDICATED_DEPLOYMENT_ID:
             resource_details["dedicated_deployment_id"] = DEDICATED_DEPLOYMENT_ID
+        if DEVICE_ID:
+            resource_details["device_id"] = DEVICE_ID
+        if exc is not None:
+            resource_details["error"] = exc
         resource_id = ""
         # TODO: add requires_api_key, True if workflow definition comes from platform or model comes from workspace
         if category == "workflows":
@@ -686,28 +692,51 @@ class UsageCollector:
                 usage_billable: bool = True,
                 **kwargs: P.kwargs,
             ) -> T:
-                t1 = time.time()
-                res = func(*args, **kwargs)
-                t2 = time.time()
-                if GCP_SERVERLESS is True:
-                    execution_duration = max(t2 - t1, 0.1)
-                else:
-                    execution_duration = t2 - t1
-                self.record_usage(
-                    **self._extract_usage_params_from_func_kwargs(
-                        usage_fps=usage_fps,
-                        usage_api_key=usage_api_key,
-                        usage_workflow_id=usage_workflow_id,
-                        usage_workflow_preview=usage_workflow_preview,
-                        usage_inference_test_run=usage_inference_test_run,
-                        usage_billable=usage_billable,
-                        execution_duration=execution_duration,
-                        func=func,
-                        category=category,
-                        args=args,
-                        kwargs=kwargs,
+                try:
+                    t1 = time.time()
+                    res = func(*args, **kwargs)
+                    t2 = time.time()
+                    if GCP_SERVERLESS is True:
+                        execution_duration = max(t2 - t1, 0.1)
+                    else:
+                        execution_duration = t2 - t1
+                    self.record_usage(
+                        **self._extract_usage_params_from_func_kwargs(
+                            usage_fps=usage_fps,
+                            usage_api_key=usage_api_key,
+                            usage_workflow_id=usage_workflow_id,
+                            usage_workflow_preview=usage_workflow_preview,
+                            usage_inference_test_run=usage_inference_test_run,
+                            usage_billable=usage_billable,
+                            execution_duration=execution_duration,
+                            func=func,
+                            category=category,
+                            exc=None,
+                            args=args,
+                            kwargs=kwargs,
+                        )
                     )
-                )
+                except Exception as exc:
+                    if GCP_SERVERLESS is True:
+                        t2 = time.time()
+                        execution_duration = max(t2 - t1, 0.1)
+                        self.record_usage(
+                            **self._extract_usage_params_from_func_kwargs(
+                                usage_fps=usage_fps,
+                                usage_api_key=usage_api_key,
+                                usage_workflow_id=usage_workflow_id,
+                                usage_workflow_preview=usage_workflow_preview,
+                                usage_inference_test_run=usage_inference_test_run,
+                                usage_billable=usage_billable,
+                                execution_duration=execution_duration,
+                                func=func,
+                                category=category,
+                                exc=str(exc),
+                                args=args,
+                                kwargs=kwargs,
+                            )
+                        )
+                    raise
                 return res
 
             @wraps(func)
@@ -721,28 +750,51 @@ class UsageCollector:
                 usage_billable: bool = True,
                 **kwargs: P.kwargs,
             ) -> T:
-                t1 = time.time()
-                res = await func(*args, **kwargs)
-                t2 = time.time()
-                if GCP_SERVERLESS is True:
-                    execution_duration = max(t2 - t1, 0.1)
-                else:
-                    execution_duration = t2 - t1
-                await self.async_record_usage(
-                    **self._extract_usage_params_from_func_kwargs(
-                        usage_fps=usage_fps,
-                        usage_api_key=usage_api_key,
-                        usage_workflow_id=usage_workflow_id,
-                        usage_workflow_preview=usage_workflow_preview,
-                        usage_inference_test_run=usage_inference_test_run,
-                        usage_billable=usage_billable,
-                        execution_duration=execution_duration,
-                        func=func,
-                        category=category,
-                        args=args,
-                        kwargs=kwargs,
+                try:
+                    t1 = time.time()
+                    res = await func(*args, **kwargs)
+                    t2 = time.time()
+                    if GCP_SERVERLESS is True:
+                        execution_duration = max(t2 - t1, 0.1)
+                    else:
+                        execution_duration = t2 - t1
+                    await self.async_record_usage(
+                        **self._extract_usage_params_from_func_kwargs(
+                            usage_fps=usage_fps,
+                            usage_api_key=usage_api_key,
+                            usage_workflow_id=usage_workflow_id,
+                            usage_workflow_preview=usage_workflow_preview,
+                            usage_inference_test_run=usage_inference_test_run,
+                            usage_billable=usage_billable,
+                            execution_duration=execution_duration,
+                            func=func,
+                            category=category,
+                            exc=None,
+                            args=args,
+                            kwargs=kwargs,
+                        )
                     )
-                )
+                except Exception as exc:
+                    if GCP_SERVERLESS is True:
+                        t2 = time.time()
+                        execution_duration = max(t2 - t1, 0.1)
+                        await self.async_record_usage(
+                            **self._extract_usage_params_from_func_kwargs(
+                                usage_fps=usage_fps,
+                                usage_api_key=usage_api_key,
+                                usage_workflow_id=usage_workflow_id,
+                                usage_workflow_preview=usage_workflow_preview,
+                                usage_inference_test_run=usage_inference_test_run,
+                                usage_billable=usage_billable,
+                                execution_duration=execution_duration,
+                                func=func,
+                                category=category,
+                                exc=str(exc),
+                                args=args,
+                                kwargs=kwargs,
+                            )
+                        )
+                    raise
                 return res
 
             if asyncio.iscoroutinefunction(func):

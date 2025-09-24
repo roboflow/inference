@@ -5,6 +5,7 @@ import random
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
+from threading import Lock
 from time import perf_counter
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -118,6 +119,7 @@ class RoboflowInferenceModel(Model):
         cache_dir_root=MODEL_CACHE_DIR,
         api_key=None,
         load_weights=True,
+        **kwargs,
     ):
         """
         Initialize the RoboflowInferenceModel object.
@@ -226,7 +228,12 @@ class RoboflowInferenceModel(Model):
     def has_model_metadata(self):
         return self.model_metadata_from_memcache() is not None
 
-    def get_model_artifacts(self) -> None:
+    def get_model_artifacts(
+        self,
+        countinference: Optional[bool] = None,
+        service_secret: Optional[str] = None,
+        **kwargs,
+    ) -> None:
         """Fetch or load the model artifacts.
 
         Downloads the model artifacts from S3 or the Roboflow API if they are not already cached.
@@ -236,14 +243,25 @@ class RoboflowInferenceModel(Model):
                 api_key=self.api_key,
                 model_id=self.endpoint,
                 endpoint_type=ModelEndpointType.ORT,
+                countinference=countinference,
+                service_secret=service_secret,
             ):
                 raise RoboflowAPINotAuthorizedError(
                     f"API key {self.api_key} does not have access to model {self.endpoint}"
                 )
-        self.cache_model_artefacts()
+        self.cache_model_artefacts(
+            countinference=countinference,
+            service_secret=service_secret,
+            **kwargs,
+        )
         self.load_model_artifacts_from_cache()
 
-    def cache_model_artefacts(self) -> None:
+    def cache_model_artefacts(
+        self,
+        countinference: Optional[bool] = None,
+        service_secret: Optional[str] = None,
+        **kwargs,
+    ) -> None:
         infer_bucket_files = self.get_all_required_infer_bucket_file()
 
         if are_all_files_cached(files=infer_bucket_files, model_id=self.endpoint):
@@ -251,7 +269,11 @@ class RoboflowInferenceModel(Model):
         if is_model_artefacts_bucket_available():
             self.download_model_artefacts_from_s3()
             return None
-        self.download_model_artifacts_from_roboflow_api()
+        self.download_model_artifacts_from_roboflow_api(
+            countinference=countinference,
+            service_secret=service_secret,
+            **kwargs,
+        )
 
     def get_all_required_infer_bucket_file(self) -> List[str]:
         infer_bucket_files = self.get_infer_bucket_file_list()
@@ -280,7 +302,12 @@ class RoboflowInferenceModel(Model):
     def model_artifact_bucket(self):
         return INFER_BUCKET
 
-    def download_model_artifacts_from_roboflow_api(self) -> None:
+    def download_model_artifacts_from_roboflow_api(
+        self,
+        countinference: Optional[bool] = None,
+        service_secret: Optional[str] = None,
+        **kwargs,
+    ) -> None:
         logger.debug("Downloading model artifacts from Roboflow API")
 
         # Use the same lock file pattern as in clear_cache
@@ -296,6 +323,8 @@ class RoboflowInferenceModel(Model):
                         model_id=self.endpoint,
                         endpoint_type=ModelEndpointType.ORT,
                         device_id=self.device_id,
+                        countinference=countinference,
+                        service_secret=service_secret,
                     )
                     if "ort" not in api_data.keys():
                         raise ModelArtefactError(
@@ -316,14 +345,20 @@ class RoboflowInferenceModel(Model):
                         raise ModelArtefactError(
                             "Could not find `environment` key in roboflow API model description response."
                         )
-                    environment = get_from_url(api_data["environment"])
+                    environment = get_from_url(
+                        api_data["environment"], verify_content_length=True
+                    )
                     model_weights_response = get_from_url(
-                        api_data["model"], json_response=False
+                        api_data["model"],
+                        json_response=False,
+                        verify_content_length=True,
                     )
                 else:
                     api_data = get_roboflow_instant_model_data(
                         api_key=self.api_key,
                         model_id=self.endpoint,
+                        countinference=countinference,
+                        service_secret=service_secret,
                     )
                     if (
                         "modelFiles" not in api_data
@@ -338,7 +373,9 @@ class RoboflowInferenceModel(Model):
                             "Could not find `environment` key in roboflow API model description response."
                         )
                     model_weights_response = get_from_url(
-                        api_data["modelFiles"]["ort"]["model"], json_response=False
+                        api_data["modelFiles"]["ort"]["model"],
+                        json_response=False,
+                        verify_content_length=True,
                     )
                     environment = api_data["environment"]
                     if "classes" in api_data:
@@ -432,7 +469,7 @@ class RoboflowInferenceModel(Model):
         logger.debug(f"Resize method is '{self.resize_method}'")
         self.multiclass = self.environment.get("MULTICLASS", False)
 
-    def initialize_model(self) -> None:
+    def initialize_model(self, **kwargs) -> None:
         """Initialize the model.
 
         Raises:
@@ -589,6 +626,7 @@ class RoboflowCoreModel(RoboflowInferenceModel):
         self,
         model_id: str,
         api_key=None,
+        **kwargs,
     ):
         """Initializes the RoboflowCoreModel instance.
 
@@ -596,7 +634,7 @@ class RoboflowCoreModel(RoboflowInferenceModel):
             model_id (str): The identifier for the specific model.
             api_key ([type], optional): The API key for authentication. Defaults to None.
         """
-        super().__init__(model_id, api_key=api_key)
+        super().__init__(model_id, api_key=api_key, **kwargs)
         self.download_weights()
 
     def download_weights(self) -> None:
@@ -734,9 +772,10 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                 expanded_execution_providers.append(ep)
             self.onnxruntime_execution_providers = expanded_execution_providers
 
-        self.initialize_model()
         self.image_loader_threadpool = ThreadPoolExecutor(max_workers=None)
+        self._session_lock = Lock()
         try:
+            self.initialize_model(**kwargs)
             self.validate_model()
         except ModelArtefactError as e:
             logger.error(f"Unable to validate model artifacts, clearing cache: {e}")
@@ -816,7 +855,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                 f"Unable to validate model classes. Cause: {e}"
             ) from e
         logger.debug(f"Model validation finished for {self.endpoint}")
-        cache.set(self.endpoint + "_validate_model_error_count", 0)
+        cache.set(self.endpoint + "_validate_model_error_count", 0, expire=3600)
 
     def run_test_inference(self) -> None:
         test_image = (np.random.rand(1024, 1024, 3) * 255).astype(np.uint8)
@@ -844,10 +883,10 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
         """
         return ["environment.json", "class_names.txt"]
 
-    def initialize_model(self) -> None:
+    def initialize_model(self, **kwargs) -> None:
         """Initializes the ONNX model, setting up the inference session and other necessary properties."""
         logger.debug("Getting model artefacts")
-        self.get_model_artifacts()
+        self.get_model_artifacts(**kwargs)
         logger.debug("Creating inference session")
         if self.load_weights or not self.has_model_metadata:
             t1_session = perf_counter()

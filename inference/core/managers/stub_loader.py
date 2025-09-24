@@ -1,3 +1,5 @@
+from typing import Optional
+
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import ModelEndpointType
 
@@ -9,6 +11,8 @@ class StubLoaderManager(ModelManager):
         api_key: str,
         model_id_alias=None,
         endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
+        countinference: Optional[bool] = None,
+        service_secret: Optional[str] = None,
     ) -> None:
         """Adds a new model to the manager.
 

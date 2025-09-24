@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import signal
 import threading
@@ -12,6 +13,8 @@ from types import FrameType
 from typing import Dict, Optional, Tuple
 
 import cv2 as cv
+import numpy as np
+import supervision as sv
 from pydantic import ValidationError
 
 from inference.core import logger
@@ -45,10 +48,15 @@ from inference.core.interfaces.stream_manager.manager_app.serialisation import (
 )
 from inference.core.interfaces.stream_manager.manager_app.webrtc import (
     RTCPeerConnectionWithFPS,
+    WebRTCPipelineWatchDog,
     WebRTCVideoFrameProducer,
+    get_frame_from_workflow_output,
     init_rtc_peer_connection,
 )
 from inference.core.utils.async_utils import Queue as SyncAsyncQueue
+from inference.core.workflows.core_steps.common.serializers import (
+    serialise_sv_detections,
+)
 from inference.core.workflows.errors import WorkflowSyntaxError
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 
@@ -240,7 +248,6 @@ class InferencePipelineManager(Process):
 
     def _start_webrtc(self, request_id: str, payload: dict):
         try:
-            self._watchdog = BasePipelineWatchDog()
             parsed_payload = InitialiseWebRTCPipelinePayload.model_validate(payload)
 
             def start_loop(loop: asyncio.AbstractEventLoop):
@@ -254,51 +261,143 @@ class InferencePipelineManager(Process):
             webrtc_offer = parsed_payload.webrtc_offer
             webrtc_turn_config = parsed_payload.webrtc_turn_config
             webcam_fps = parsed_payload.webcam_fps
-            to_inference_queue = SyncAsyncQueue(loop=loop)
-            from_inference_queue = SyncAsyncQueue(loop=loop)
+            to_inference_queue = SyncAsyncQueue(loop=loop, maxsize=10)
+            from_inference_queue = SyncAsyncQueue(loop=loop, maxsize=10)
 
-            stop_event = Event()
+            stream_output = None
+            if parsed_payload.stream_output:
+                # TODO: UI sends None as stream_output for wildcard outputs
+                stream_output = parsed_payload.stream_output[0] or ""
+            data_output = None
+            if parsed_payload.data_output:
+                data_output = parsed_payload.data_output[0]
 
             future = asyncio.run_coroutine_threadsafe(
                 init_rtc_peer_connection(
                     webrtc_offer=webrtc_offer,
                     webrtc_turn_config=webrtc_turn_config,
+                    webrtc_realtime_processing=parsed_payload.webrtc_realtime_processing,
                     to_inference_queue=to_inference_queue,
                     from_inference_queue=from_inference_queue,
-                    webrtc_peer_timeout=parsed_payload.webrtc_peer_timeout,
-                    feedback_stop_event=stop_event,
                     asyncio_loop=loop,
                     webcam_fps=webcam_fps,
+                    fps_probe_frames=parsed_payload.fps_probe_frames,
+                    data_output=data_output,
+                    stream_output=stream_output,
                 ),
                 loop,
             )
             peer_connection: RTCPeerConnectionWithFPS = future.result()
 
+            self._responses_queue.put(
+                (
+                    request_id,
+                    {
+                        STATUS_KEY: OperationStatus.SUCCESS,
+                        "sdp": peer_connection.localDescription.sdp,
+                        "type": peer_connection.localDescription.type,
+                    },
+                )
+            )
+
             webrtc_producer = partial(
                 WebRTCVideoFrameProducer,
                 to_inference_queue=to_inference_queue,
-                stop_event=stop_event,
                 webrtc_video_transform_track=peer_connection.video_transform_track,
-                webrtc_peer_timeout=parsed_payload.webrtc_peer_timeout,
             )
+
+            self._watchdog = WebRTCPipelineWatchDog(
+                webrtc_peer_connection=peer_connection, asyncio_loop=loop
+            )
+
+            def close_peer_connection():
+                asyncio.run_coroutine_threadsafe(peer_connection.close(), loop)
+                while not peer_connection._consumers_signalled:
+                    time.sleep(0.1)
+                self._stop = True
+                logger.debug(
+                    "peer_connection closed and associated async loop terminated"
+                )
 
             def webrtc_sink(
                 prediction: Dict[str, WorkflowImageData], video_frame: VideoFrame
             ) -> None:
+                try:
+                    asyncio.get_event_loop()
+                except RuntimeError:
+                    asyncio.set_event_loop(loop)
+
                 errors = []
-                if not any(
-                    isinstance(v, WorkflowImageData) for v in prediction.values()
+
+                if (
+                    peer_connection.data_output is not None
+                    and peer_connection.data_channel
+                    and peer_connection.data_channel.readyState == "open"
                 ):
-                    errors.append("Visualisation blocks were not executed")
-                    errors.append("or workflow was not configured to output visuals.")
-                    errors.append(
-                        "Please try to adjust the scene so models detect objects"
+                    if peer_connection.data_output in prediction:
+                        workflow_output = prediction[peer_connection.data_output]
+                        serialized_data = None
+                        if isinstance(workflow_output, WorkflowImageData):
+                            errors.append(
+                                f"Selected data output '{peer_connection.data_output}' contains image, please use video output instead"
+                            )
+                        elif isinstance(workflow_output, sv.Detections):
+                            try:
+                                parsed_detections = serialise_sv_detections(
+                                    workflow_output
+                                )
+                                serialized_data = json.dumps(parsed_detections)
+                            except Exception as error:
+                                errors.append(
+                                    f"Failed to serialise output: {peer_connection.data_output}"
+                                )
+                        elif isinstance(workflow_output, dict):
+                            try:
+                                serialized_data = json.dumps(workflow_output)
+                            except Exception as error:
+                                errors.append(
+                                    f"Failed to serialise output: {peer_connection.data_output}"
+                                )
+                        else:
+                            serialized_data = str(workflow_output)
+                        if serialized_data is not None:
+                            peer_connection.data_channel.send(serialized_data)
+                    else:
+                        errors.append(
+                            f"Selected data output '{peer_connection.data_output}' not found in workflow outputs"
+                        )
+
+                if peer_connection.stream_output is not None:
+                    frame: Optional[np.ndarray] = get_frame_from_workflow_output(
+                        workflow_output=prediction,
+                        frame_output_key=peer_connection.stream_output,
                     )
-                    errors.append("or stop preview, update workflow and try again.")
-                    result_frame = video_frame.image.copy()
+                    if frame is None:
+                        for k in prediction.keys():
+                            frame = get_frame_from_workflow_output(
+                                workflow_output=prediction,
+                                frame_output_key=k,
+                            )
+                            if frame is not None:
+                                errors.append(
+                                    f"'{peer_connection.stream_output}' not found in workflow outputs, using '{k}' instead"
+                                )
+                                frame = frame.copy()
+                                break
+                    if frame is None:
+                        errors.append("Visualisation blocks were not executed")
+                        errors.append(
+                            "or workflow was not configured to output visuals."
+                        )
+                        errors.append(
+                            "Please try to adjust the scene so models detect objects"
+                        )
+                        errors.append("or stop preview, update workflow and try again.")
+                        frame = video_frame.image.copy()
+
                     for row, error in enumerate(errors):
-                        result_frame = cv.putText(
-                            result_frame,
+                        frame = cv.putText(
+                            frame,
                             error,
                             (10, 20 + 30 * row),
                             cv.FONT_HERSHEY_SIMPLEX,
@@ -306,18 +405,7 @@ class InferencePipelineManager(Process):
                             (0, 255, 0),
                             2,
                         )
-                    from_inference_queue.sync_put(result_frame)
-                    return
-                if parsed_payload.stream_output[0] not in prediction or not isinstance(
-                    prediction[parsed_payload.stream_output[0]], WorkflowImageData
-                ):
-                    for output in prediction.values():
-                        if isinstance(output, WorkflowImageData):
-                            from_inference_queue.sync_put(output.numpy_image)
-                            return
-                from_inference_queue.sync_put(
-                    prediction[parsed_payload.stream_output[0]].numpy_image
-                )
+                    from_inference_queue.sync_put(frame)
 
             buffer_sink = InMemoryBufferSink.init(
                 queue_size=parsed_payload.sink_configuration.results_buffer_size,
@@ -349,16 +437,6 @@ class InferencePipelineManager(Process):
                 decoding_buffer_size=parsed_payload.decoding_buffer_size,
             )
             self._inference_pipeline.start(use_main_thread=False)
-            self._responses_queue.put(
-                (
-                    request_id,
-                    {
-                        STATUS_KEY: OperationStatus.SUCCESS,
-                        "sdp": peer_connection.localDescription.sdp,
-                        "type": peer_connection.localDescription.type,
-                    },
-                )
-            )
             logger.info(f"WebRTC pipeline initialised. request_id={request_id}...")
         except (
             ValidationError,
@@ -366,6 +444,7 @@ class InferencePipelineManager(Process):
             KeyError,
             NotImplementedError,
         ) as error:
+            close_peer_connection()
             self._handle_error(
                 request_id=request_id,
                 error=error,
@@ -373,22 +452,23 @@ class InferencePipelineManager(Process):
                 error_type=ErrorType.INVALID_PAYLOAD,
             )
         except RoboflowAPINotAuthorizedError as error:
+            close_peer_connection()
             self._handle_error(
                 request_id=request_id,
                 error=error,
-                public_error_message="Invalid API key used or API key is missing. "
-                "Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key",
+                public_error_message="Invalid API key used or API key is missing. Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key",
                 error_type=ErrorType.AUTHORISATION_ERROR,
             )
         except RoboflowAPINotNotFoundError as error:
+            close_peer_connection()
             self._handle_error(
                 request_id=request_id,
                 error=error,
-                public_error_message="Requested Roboflow resources (models / workflows etc.) not available or "
-                "wrong API key used.",
+                public_error_message="Requested Roboflow resources (models / workflows etc.) not available or wrong API key used.",
                 error_type=ErrorType.NOT_FOUND,
             )
         except WorkflowSyntaxError as error:
+            close_peer_connection()
             self._handle_error(
                 request_id=request_id,
                 error=error,

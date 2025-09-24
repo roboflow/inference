@@ -10,4 +10,4 @@ pytest-timeout>=2.2.0
 httpx~=0.28.1
 uvicorn<=0.22.0
 aioresponses>=0.7.6
-supervision>=0.25.1,<=0.30.0
+supervision>=0.26

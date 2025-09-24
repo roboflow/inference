@@ -1,11 +1,13 @@
 import hashlib
-from typing import Dict, List, Literal, Optional, Tuple, Type, Union
+from collections import OrderedDict
+from typing import List, Literal, Optional, Tuple, Type, Union
 
 import cv2 as cv
 import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
 
+from inference.core.cache.lru_cache import LRUCache
 from inference.core.workflows.core_steps.visualizations.common.base import (
     OUTPUT_IMAGE_KEY,
     VisualizationBlock,
@@ -58,7 +60,9 @@ class PolygonZoneVisualizationManifest(VisualizationManifest):
             },
         }
     )
-    zone: Union[list, Selector(kind=[LIST_OF_VALUES_KIND]), Selector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
+    zone: Union[
+        list, Selector(kind=[LIST_OF_VALUES_KIND]), Selector(kind=[LIST_OF_VALUES_KIND])
+    ] = Field(  # type: ignore
         description="Polygon zones (one for each batch) in a format [[(x1, y1), (x2, y2), (x3, y3), ...], ...];"
         " each zone must consist of more than 2 points",
         examples=["$inputs.zones"],
@@ -66,7 +70,7 @@ class PolygonZoneVisualizationManifest(VisualizationManifest):
     color: Union[str, Selector(kind=[STRING_KIND])] = Field(  # type: ignore
         description="Color of the zone.",
         default="#5bb573",
-        examples=["WHITE", "#FFFFFF", "rgb(255, 255, 255)" "$inputs.background_color"],
+        examples=["WHITE", "#FFFFFF", "rgb(255, 255, 255)", "$inputs.background_color"],
     )
     opacity: Union[FloatZeroToOne, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
         description="Transparency of the Mask overlay.",
@@ -82,7 +86,7 @@ class PolygonZoneVisualizationManifest(VisualizationManifest):
 class PolygonZoneVisualizationBlockV1(VisualizationBlock):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._cache: Dict[str, np.ndarray] = {}
+        self._cache: LRUCache[str, np.ndarray] = LRUCache()
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -102,25 +106,38 @@ class PolygonZoneVisualizationBlockV1(VisualizationBlock):
         color: str,
         opacity: float,
     ) -> BlockResult:
-        h, w, *_ = image.numpy_image.shape
-        zone_fingerprint = hashlib.md5(str(zone).encode()).hexdigest()
-        key = f"{zone_fingerprint}_{color}_{opacity}_{w}_{h}"
-        if key not in self._cache:
-            mask = np.zeros(
-                shape=image.numpy_image.shape,
-                dtype=image.numpy_image.dtype,
-            )
-            mask = cv.fillPoly(
-                img=mask,
-                pts=[np.array(zone)],
-                color=str_to_color(color).as_bgr(),
-            )
-            self._cache[key] = mask
-        mask = self._cache[key]
-
         np_image = image.numpy_image
         if copy_image:
             np_image = np_image.copy()
+
+        if not zone or len(zone) == 0:
+            return {
+                OUTPUT_IMAGE_KEY: WorkflowImageData.copy_and_replace(
+                    origin_image_data=image, numpy_image=np_image
+                )
+            }
+
+        h, w, *_ = np_image.shape
+        zone_fingerprint = hashlib.md5(str(zone).encode()).hexdigest()
+        key = f"{zone_fingerprint}_{color}_{opacity}_{w}_{h}"
+        mask = self._cache.get(key)
+        if mask is None:
+            mask = np.zeros(
+                shape=np_image.shape,
+                dtype=np_image.dtype,
+            )
+            pts = []
+            if zone and zone[0] and isinstance(zone[0][0], (int, float, np.int32)):
+                pts = [np.array(zone, dtype=np.int32)]
+            else:
+                pts = [np.array(z, dtype=np.int32) for z in zone]
+            mask = cv.fillPoly(
+                img=mask,
+                pts=pts,
+                color=str_to_color(color).as_bgr(),
+            )
+            self._cache.set(key, mask)
+
         annotated_image = cv.addWeighted(
             src1=mask,
             alpha=opacity,

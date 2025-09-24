@@ -1,3 +1,41 @@
+# Installation
+
+You can install `inference` in a [Python>=3.9,<3.13](https://www.python.org/) environment.
+
+!!! example "Installation Command"
+
+    === "CPU"
+        ```bash
+        pip install inference
+        ```
+
+    === "Nvidia GPU"
+        ```bash
+        pip install inference-gpu
+        ```
+
+# Quickstart
+
+With the following code snippet, we can load a model and then we used that model's `infer(...)` method to run an image through it.
+
+```python
+# import a utility function for loading Roboflow models
+from inference import get_model
+
+# define the image url to use for inference
+image = "https://media.roboflow.com/inference/people-walking.jpg"
+
+# load a pre-trained yolov8n model
+model = get_model(model_id="yolov8n-640")
+
+# run inference on our chosen image, image can be a url, a numpy array, a PIL image, etc.
+results = model.infer(image)
+```
+
+!!! note
+	
+	For a more detailed example, please refer to the tutorial on [running a model](../quickstart/run_a_model).
+
 # Choosing a Deployment Method
 
 There are three primary ways to deploy Inference:

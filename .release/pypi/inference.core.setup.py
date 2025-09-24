@@ -8,7 +8,7 @@ root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.append(root)
 from inference.core.version import __version__
 
-with open("README.md", "r") as fh:
+with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 
@@ -41,8 +41,15 @@ setuptools.setup(
             "tests.*",
             "development",
             "development.*",
+            "inference_experimental",
+            "inference_experimental.*"
         ),
     ),
+    package_data={
+        "inference.models.perception_encoder.vision_encoder": [
+            "bpe_simple_vocab_16e6.txt.gz"
+        ],
+    },
     entry_points={
         "console_scripts": [
             "inference=inference_cli.main:app",
@@ -66,7 +73,6 @@ setuptools.setup(
         "hosted": read_requirements("requirements/requirements.hosted.txt"),
         "http": read_requirements("requirements/requirements.http.txt"),
         "sam": read_requirements("requirements/requirements.sam.txt"),
-        "waf": read_requirements("requirements/requirements.waf.txt"),
         "yolo-world": read_requirements("requirements/requirements.yolo_world.txt"),
         "transformers": read_requirements("requirements/requirements.transformers.txt"),
     },

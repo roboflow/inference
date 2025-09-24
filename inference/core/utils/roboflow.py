@@ -7,7 +7,10 @@ from inference.core.exceptions import InvalidModelIDError
 def get_model_id_chunks(
     model_id: str,
 ) -> Tuple[Union[DatasetID, ModelID], Optional[VersionID]]:
-    model_id_chunks = model_id.split("/")
+    if "/" not in model_id:
+        model_id_chunks = model_id, None
+    else:
+        model_id_chunks = model_id.split("/")
     if len(model_id_chunks) != 2:
         raise InvalidModelIDError(f"Model ID: `{model_id}` is invalid.")
 
@@ -28,6 +31,7 @@ def get_model_id_chunks(
         "smolvlm2",
         "moondream2",
         "depth-anything-v2",
+        "perception_encoder",
     }:
         return dataset_id, version_id
 
