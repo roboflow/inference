@@ -3,9 +3,8 @@ from typing import Dict, List, Literal, Optional, Tuple, Type, Union
 from uuid import uuid4
 
 import numpy as np
-from pydantic import ConfigDict, Field
-
 import supervision as sv
+from pydantic import ConfigDict, Field
 
 from inference.core.cache.lru_cache import LRUCache
 from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
@@ -16,10 +15,12 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
-
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.utils import load_core_model, post_process_ocr_result
+from inference.core.workflows.core_steps.common.utils import (
+    load_core_model,
+    post_process_ocr_result,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -56,13 +57,13 @@ LANGUAGES = Literal[
 # Dictionary of displayed_language: (model, language_code)
 # This is not an extensive list of supported languages, more codes can be added
 MODELS: Dict[str, str] = {
-    "English": ("english_g2",['en']),
-    "Japanese": ("japanese_g2", ['en', 'ja']),
-    "Kannada": ("kannada_g2", ['en', 'kn']),
-    "Korean": ("korean_g2", ['en', 'ko']),
-    "Latin": ("latin_g2", ['en', 'la', 'es','fr','it','pt','de','pl','nl']),
-    "Telugu": ("telugu_g2", ['en', 'te']),
-    "Simplified Chinese": ("zh_sim_g2", ['en', 'ch_sim']),
+    "English": ("english_g2", ["en"]),
+    "Japanese": ("japanese_g2", ["en", "ja"]),
+    "Kannada": ("kannada_g2", ["en", "kn"]),
+    "Korean": ("korean_g2", ["en", "ko"]),
+    "Latin": ("latin_g2", ["en", "la", "es", "fr", "it", "pt", "de", "pl", "nl"]),
+    "Telugu": ("telugu_g2", ["en", "te"]),
+    "Simplified Chinese": ("zh_sim_g2", ["en", "ch_sim"]),
 }
 
 LONG_DESCRIPTION = """
@@ -81,7 +82,14 @@ on particular regions of an image.
 Note that EasyOCR has limitations running within containers on Apple Silicon.
 """
 
-EXPECTED_OUTPUT_KEYS = {"result", "parent_id", "root_parent_id", "prediction_type", "predictions"}
+EXPECTED_OUTPUT_KEYS = {
+    "result",
+    "parent_id",
+    "root_parent_id",
+    "prediction_type",
+    "predictions",
+}
+
 
 class BlockManifest(WorkflowBlockManifest):
 
@@ -124,7 +132,9 @@ class BlockManifest(WorkflowBlockManifest):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="result", kind=[STRING_KIND]),
-            OutputDefinition(name="predictions", kind=[OBJECT_DETECTION_PREDICTION_KIND]),
+            OutputDefinition(
+                name="predictions", kind=[OBJECT_DETECTION_PREDICTION_KIND]
+            ),
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
             OutputDefinition(name="root_parent_id", kind=[PARENT_ID_KIND]),
             OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),
@@ -166,9 +176,19 @@ class EasyOCRBlockV1(WorkflowBlock):
 
         version, language_codes = MODELS.get(language, "english_g2")
         if self._step_execution_mode is StepExecutionMode.LOCAL:
-            return self.run_locally(images=images, version=version, language_codes=language_codes, quantize=quantize)
+            return self.run_locally(
+                images=images,
+                version=version,
+                language_codes=language_codes,
+                quantize=quantize,
+            )
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
-            return self.run_remotely(images=images, version=version, language_codes=language_codes, quantize=quantize)
+            return self.run_remotely(
+                images=images,
+                version=version,
+                language_codes=language_codes,
+                quantize=quantize,
+            )
         else:
             raise ValueError(
                 f"Unknown step execution mode: {self._step_execution_mode}"
@@ -178,7 +198,7 @@ class EasyOCRBlockV1(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         version: str = "english_g2",
-        language_codes: List[str] = ['en'],
+        language_codes: List[str] = ["en"],
         quantize: bool = False,
     ) -> BlockResult:
 
@@ -190,7 +210,7 @@ class EasyOCRBlockV1(WorkflowBlock):
                 image=[single_image.to_inference_format(numpy_preferred=True)],
                 api_key=self._api_key,
                 language_codes=language_codes,
-                quantize=quantize
+                quantize=quantize,
             )
             model_id = load_core_model(
                 model_manager=self._model_manager,
@@ -206,7 +226,7 @@ class EasyOCRBlockV1(WorkflowBlock):
         return post_process_ocr_result(
             predictions=predictions,
             images=images,
-            expected_output_keys=EXPECTED_OUTPUT_KEYS
+            expected_output_keys=EXPECTED_OUTPUT_KEYS,
         )
 
     def run_remotely(
@@ -234,7 +254,9 @@ class EasyOCRBlockV1(WorkflowBlock):
         non_empty_inference_images = [i.base64_image for i in images]
         predictions = client.ocr_image(
             inference_input=non_empty_inference_images,
-            model="easy_ocr", version=version, quantize=quantize
+            model="easy_ocr",
+            version=version,
+            quantize=quantize,
         )
         if len(images) == 1:
             predictions = [predictions]

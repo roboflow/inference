@@ -20,7 +20,7 @@ class EasyOCRInferenceRequest(BaseRequest):
     image: Union[List[InferenceRequestImage], InferenceRequestImage]
     easy_ocr_version_id: Optional[str] = EASYOCR_VERSION_ID
     model_id: Optional[str] = Field(None)
-    language_codes: List[str] = Field(default_factory=lambda: ['en'])
+    language_codes: List[str] = Field(default_factory=lambda: ["en"])
     quantize: Optional[bool] = Field(
         default=False,
         description="Quantized models are smaller and faster, but may be less accurate and won't work correctly on all hardware.",

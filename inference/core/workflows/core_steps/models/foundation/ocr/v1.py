@@ -5,7 +5,6 @@ from uuid import uuid4
 
 import numpy as np
 import supervision as sv
-
 from pydantic import ConfigDict, Field
 
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
@@ -22,7 +21,6 @@ from inference.core.workflows.core_steps.common.utils import (
     load_core_model,
     post_process_ocr_result,
 )
-
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -58,7 +56,13 @@ Using a detections model then cropping detections allows you to isolate your ana
 on particular regions of an image.
 """
 
-EXPECTED_OUTPUT_KEYS = {"result", "parent_id", "root_parent_id", "prediction_type", "predictions"}
+EXPECTED_OUTPUT_KEYS = {
+    "result",
+    "parent_id",
+    "root_parent_id",
+    "prediction_type",
+    "predictions",
+}
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -91,7 +95,9 @@ class BlockManifest(WorkflowBlockManifest):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="result", kind=[STRING_KIND]),
-            OutputDefinition(name="predictions", kind=[OBJECT_DETECTION_PREDICTION_KIND]),
+            OutputDefinition(
+                name="predictions", kind=[OBJECT_DETECTION_PREDICTION_KIND]
+            ),
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
             OutputDefinition(name="root_parent_id", kind=[PARENT_ID_KIND]),
             OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),
@@ -159,7 +165,7 @@ class OCRModelBlockV1(WorkflowBlock):
         return post_process_ocr_result(
             predictions=predictions,
             images=images,
-            expected_output_keys=EXPECTED_OUTPUT_KEYS
+            expected_output_keys=EXPECTED_OUTPUT_KEYS,
         )
 
     def run_remotely(
@@ -191,5 +197,5 @@ class OCRModelBlockV1(WorkflowBlock):
         return post_process_ocr_result(
             predictions=predictions,
             images=images,
-            expected_output_keys=EXPECTED_OUTPUT_KEYS
+            expected_output_keys=EXPECTED_OUTPUT_KEYS,
         )

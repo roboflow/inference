@@ -5,10 +5,8 @@ from time import perf_counter
 from typing import Any, Tuple
 
 import torch
-
 from doctr.io import DocumentFile
-from doctr.models import ocr_predictor, db_resnet50, crnn_vgg16_bn
-
+from doctr.models import crnn_vgg16_bn, db_resnet50, ocr_predictor
 from PIL import Image
 
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest

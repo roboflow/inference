@@ -7,14 +7,13 @@ import cv2
 import easyocr
 import numpy as np
 import torch
-
-from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
-from inference.core.entities.responses.ocr import OCRInferenceResponse
-from inference.core.entities.responses.inference import InferenceResponse
-from inference.core.env import DEVICE, MODEL_CACHE_DIR
-from inference.core.models.roboflow import RoboflowCoreModel
 from PIL import Image
 
+from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
+from inference.core.entities.responses.inference import InferenceResponse
+from inference.core.entities.responses.ocr import OCRInferenceResponse
+from inference.core.env import DEVICE, MODEL_CACHE_DIR
+from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.models.types import PreprocessReturnMetadata
 
 if DEVICE is None:
@@ -24,6 +23,7 @@ if DEVICE is None:
         DEVICE = "mps"
     else:
         DEVICE = "cpu"
+
 
 def _to_bounding_box(bbox: List[List[int]]) -> List[int]:
     """Converts bounding boxes from corner points to [x_min, y_min, x_max, y_max] format.
@@ -40,6 +40,8 @@ def _to_bounding_box(bbox: List[List[int]]) -> List[int]:
     x_max = bbox[2][0]
     y_max = bbox[2][1]
     return [x_min, y_min, x_max, y_max]
+
+
 class EasyOCR(RoboflowCoreModel):
     """Roboflow EasyOCR model implementation.
 
@@ -69,20 +71,20 @@ class EasyOCR(RoboflowCoreModel):
     def predict(self, image_in: Image.Image, prompt="", history=None, **kwargs):
         try:
 
-            language_codes = kwargs.get("language_codes", ['en'])
+            language_codes = kwargs.get("language_codes", ["en"])
             quantize = kwargs.get("quantize", False)
 
             reader = easyocr.Reader(
                 language_codes,
                 download_enabled=False,
-                user_network_directory=f'/tmp/cache/easy_ocr/{self.recognizer}/',
-                model_storage_directory=f'/tmp/cache/easy_ocr/{self.recognizer}/',
-                detect_network='craft',
+                user_network_directory=f"/tmp/cache/easy_ocr/{self.recognizer}/",
+                model_storage_directory=f"/tmp/cache/easy_ocr/{self.recognizer}/",
+                detect_network="craft",
                 recog_network=self.recognizer,
                 detector=True,
                 recognizer=True,
                 gpu=True,
-                quantize=quantize
+                quantize=quantize,
             )
 
             img = np.array(image_in[0]["value"])
@@ -90,7 +92,10 @@ class EasyOCR(RoboflowCoreModel):
             results = reader.readtext(img)
 
             # convert native EasyOCR results from numpy to standard python types
-            results = [([[x.item() for x in c] for c in res[0]], res[1], res[2].item()) for res in results]
+            results = [
+                ([[x.item() for x in c] for c in res[0]], res[1], res[2].item())
+                for res in results
+            ]
 
             return (results,)
         except Exception as e:
