@@ -98,14 +98,14 @@ class Owlv2Singleton:
 
     def __new__(cls, huggingface_id: str):
         if huggingface_id in PRELOADED_HF_MODELS:
-            logger.info(f"Using preloaded OWLv2 instance for {huggingface_id}")
+            logger.info("Using preloaded OWLv2 instance for %s", huggingface_id)
             return PRELOADED_HF_MODELS[huggingface_id]
         if huggingface_id not in cls._instances:
-            logger.info(f"Creating new OWLv2 instance for {huggingface_id}")
+            logger.info("Creating new OWLv2 instance for %s", huggingface_id)
             instance = super().__new__(cls)
             instance.huggingface_id = huggingface_id
             # Load model directly in the instance
-            logger.info(f"Loading OWLv2 model from {huggingface_id}")
+            logger.info("Loading OWLv2 model from %s", huggingface_id)
             # TODO: to further reduce GPU memory usage we could use torch.float16
             # torch_dtype = torch.float16 if str(DEVICE).startswith("cuda") else torch.float32
             model = (
@@ -382,7 +382,7 @@ class OwlV2(RoboflowInferenceModel):
         if self.version_id is None:
             owlv2_model_id_chunks = model_id.split("/")
             if len(owlv2_model_id_chunks) != 2:
-                raise InvalidModelIDError(f"Model ID: `{model_id}` is invalid.")
+                raise InvalidModelIDError("Model ID: `%s` is invalid.", model_id)
             self.dataset_id = owlv2_model_id_chunks[0]
             self.version_id = owlv2_model_id_chunks[1]
         hf_id = os.path.join("google", self.version_id)
@@ -902,7 +902,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
         service_secret: Optional[str] = None,
         **kwargs,
     ):
-        logger.info(f"Downloading OWLv2 model artifacts")
+        logger.info("Downloading OWLv2 model artifacts")
 
         # Use the same lock file pattern as in clear_cache
         lock_dir = MODEL_CACHE_DIR + "/_file_locks"  # Dedicated lock directory
@@ -925,14 +925,12 @@ class SerializedOwlV2(RoboflowInferenceModel):
                         raise ModelArtefactError(
                             "Could not find `model` key in roboflow API model description response."
                         )
-                    logger.info(
-                        f"Downloading OWLv2 model weights from {api_data['model']}"
-                    )
+                    logger.info("Downloading OWLv2 model weights for %s", self.endpoint)
                     model_weights_response = get_from_url(
                         api_data["model"], json_response=False
                     )
                 else:
-                    logger.info(f"Getting OWLv2 model data for")
+                    logger.info("Getting OWLv2 model data for")
                     api_data = get_roboflow_instant_model_data(
                         api_key=self.api_key,
                         model_id=self.endpoint,
@@ -947,9 +945,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
                         raise ModelArtefactError(
                             "Could not find `modelFiles` key or `modelFiles`.`owlv2` or `modelFiles`.`owlv2`.`model` key in roboflow API model description response."
                         )
-                    logger.info(
-                        f"Downloading OWLv2 model weights from {api_data['modelFiles']['owlv2']['model']}"
-                    )
+                    logger.info("Downloading OWLv2 model weights for %s", self.endpoint)
                     model_weights_response = get_from_url(
                         api_data["modelFiles"]["owlv2"]["model"], json_response=False
                     )
@@ -958,9 +954,9 @@ class SerializedOwlV2(RoboflowInferenceModel):
                     file=self.weights_file,
                     model_id=self.endpoint,
                 )
-                logger.info(f"OWLv2 model weights saved to cache")
+                logger.info("OWLv2 model weights saved to cache")
         except Exception as e:
-            logger.error(f"Error downloading OWLv2 model artifacts: {e}")
+            logger.error("Error downloading OWLv2 model artifacts: %s", e)
             raise
         finally:
             try:
@@ -1002,7 +998,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
         max_detections: int = MAX_DETECTIONS,
         **kwargs,
     ):
-        logger.info(f"Inferring OWLv2 model")
+        logger.info("Inferring OWLv2 model")
         result = self.owlv2.infer_from_embedding_dict(
             image,
             self.train_data_dict,
@@ -1011,7 +1007,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
             max_detections=max_detections,
             **kwargs,
         )
-        logger.info(f"OWLv2 model inference complete")
+        logger.info("OWLv2 model inference complete")
         return result
 
     def draw_predictions(
