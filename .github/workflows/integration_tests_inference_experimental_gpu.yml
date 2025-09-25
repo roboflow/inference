@@ -18,14 +18,11 @@ on:
           - torch_models
           - hf_vlm_models
       python_version:
-        description: 'Python version to test. Available options: 3.10, 3.11, 3.12. Leave empty to run all.'
+        description: 'Python version to test. Available options: 3.12. Leave empty to run all.'
         required: false
-        default: ''
+        default: '3.12'
         type: choice
         options:
-          - ''
-          - '3.10'
-          - '3.11'
           - '3.12'
 
 jobs:
@@ -35,7 +32,7 @@ jobs:
     timeout-minutes: 20
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.12"]
         extras:
           - { install: "onnx-cu12", marker: "onnx_extras", workers: "auto" }
           - { install: "trt10", marker: "trt_extras", workers: "auto" }
