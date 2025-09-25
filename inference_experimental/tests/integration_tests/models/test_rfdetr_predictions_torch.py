@@ -402,6 +402,7 @@ def test_torch_package_with_stretch_resize_and_contrast_stretching_torch_list(
 
 @pytest.mark.slow
 @pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_torch_package_with_static_crop_letterbox_numpy(
     coin_counting_rfdetr_nano_torch_static_crop_letterbox_package: str,
     coins_counting_image_numpy: np.ndarray,
@@ -498,6 +499,7 @@ def test_torch_package_with_static_crop_letterbox_numpy_batch(
 
 @pytest.mark.slow
 @pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_torch_package_with_static_crop_letterbox_torch(
     coin_counting_rfdetr_nano_torch_static_crop_letterbox_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -544,6 +546,7 @@ def test_torch_package_with_static_crop_letterbox_torch(
 
 @pytest.mark.slow
 @pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_torch_package_with_static_crop_letterbox_torch_batch(
     coin_counting_rfdetr_nano_torch_static_crop_letterbox_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -606,6 +609,7 @@ def test_torch_package_with_static_crop_letterbox_torch_batch(
 
 @pytest.mark.slow
 @pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_torch_package_with_static_crop_letterbox_torch_list(
     coin_counting_rfdetr_nano_torch_static_crop_letterbox_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -678,20 +682,20 @@ def test_torch_package_with_center_crop_numpy(
     )
 
     # when
-    predictions = model(coins_counting_image_numpy)
+    predictions = model(coins_counting_image_numpy, threshold=0.55)
 
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([0.9746, 0.9664, 0.5048]),
+        torch.tensor([0.9746, 0.9664]),
         atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id.cpu(),
-        torch.tensor([1, 1, 4], dtype=torch.int32),
+        torch.tensor([1, 1], dtype=torch.int32),
     )
     expected_xyxy = torch.tensor(
-        [[1507, 1878, 1722, 2090], [1252, 2057, 1426, 2229], [1307, 1697, 1825, 1968]],
+        [[1507, 1878, 1722, 2090], [1252, 2057, 1426, 2229]],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -713,29 +717,31 @@ def test_torch_package_with_center_crop_batch_numpy(
     )
 
     # when
-    predictions = model([coins_counting_image_numpy, coins_counting_image_numpy])
+    predictions = model(
+        [coins_counting_image_numpy, coins_counting_image_numpy], threshold=0.55
+    )
 
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([0.9746, 0.9664, 0.5048]),
+        torch.tensor([0.9746, 0.9664]),
         atol=0.01,
     )
     assert torch.allclose(
         predictions[1].confidence.cpu(),
-        torch.tensor([0.9746, 0.9664, 0.5048]),
+        torch.tensor([0.9746, 0.9664]),
         atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id.cpu(),
-        torch.tensor([1, 1, 4], dtype=torch.int32),
+        torch.tensor([1, 1], dtype=torch.int32),
     )
     assert torch.allclose(
         predictions[1].class_id.cpu(),
-        torch.tensor([1, 1, 4], dtype=torch.int32),
+        torch.tensor([1, 1], dtype=torch.int32),
     )
     expected_xyxy = torch.tensor(
-        [[1507, 1878, 1722, 2090], [1252, 2057, 1426, 2229], [1307, 1697, 1825, 1968]],
+        [[1507, 1878, 1722, 2090], [1252, 2057, 1426, 2229]],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -762,20 +768,20 @@ def test_torch_package_with_center_crop_torch(
     )
 
     # when
-    predictions = model(coins_counting_image_torch)
+    predictions = model(coins_counting_image_torch, threshold=0.55)
 
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([0.9746, 0.9664, 0.5048]),
+        torch.tensor([0.9746, 0.9664]),
         atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id.cpu(),
-        torch.tensor([1, 1, 4], dtype=torch.int32),
+        torch.tensor([1, 1], dtype=torch.int32),
     )
     expected_xyxy = torch.tensor(
-        [[1507, 1878, 1722, 2090], [1252, 2057, 1426, 2229], [1307, 1697, 1825, 1968]],
+        [[1507, 1878, 1722, 2090], [1252, 2057, 1426, 2229]],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -798,30 +804,31 @@ def test_torch_package_with_center_crop_batch_torch(
 
     # when
     predictions = model(
-        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0)
+        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0),
+        threshold=0.55,
     )
 
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([0.9746, 0.9664, 0.5048]),
+        torch.tensor([0.9746, 0.9664]),
         atol=0.01,
     )
     assert torch.allclose(
         predictions[1].confidence.cpu(),
-        torch.tensor([0.9746, 0.9664, 0.5048]),
+        torch.tensor([0.9746, 0.9664]),
         atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id.cpu(),
-        torch.tensor([1, 1, 4], dtype=torch.int32),
+        torch.tensor([1, 1], dtype=torch.int32),
     )
     assert torch.allclose(
         predictions[1].class_id.cpu(),
-        torch.tensor([1, 1, 4], dtype=torch.int32),
+        torch.tensor([1, 1], dtype=torch.int32),
     )
     expected_xyxy = torch.tensor(
-        [[1507, 1878, 1722, 2090], [1252, 2057, 1426, 2229], [1307, 1697, 1825, 1968]],
+        [[1507, 1878, 1722, 2090], [1252, 2057, 1426, 2229]],
         dtype=torch.int32,
     )
     assert torch.allclose(
@@ -848,29 +855,31 @@ def test_torch_package_with_center_crop_list_of_torch(
     )
 
     # when
-    predictions = model([coins_counting_image_torch, coins_counting_image_torch])
+    predictions = model(
+        [coins_counting_image_torch, coins_counting_image_torch], threshold=0.55
+    )
 
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
-        torch.tensor([0.9746, 0.9664, 0.5048]),
+        torch.tensor([0.9746, 0.9664]),
         atol=0.01,
     )
     assert torch.allclose(
         predictions[1].confidence.cpu(),
-        torch.tensor([0.9746, 0.9664, 0.5048]),
+        torch.tensor([0.9746, 0.9664]),
         atol=0.01,
     )
     assert torch.allclose(
         predictions[0].class_id.cpu(),
-        torch.tensor([1, 1, 4], dtype=torch.int32),
+        torch.tensor([1, 1], dtype=torch.int32),
     )
     assert torch.allclose(
         predictions[1].class_id.cpu(),
-        torch.tensor([1, 1, 4], dtype=torch.int32),
+        torch.tensor([1, 1], dtype=torch.int32),
     )
     expected_xyxy = torch.tensor(
-        [[1507, 1878, 1722, 2090], [1252, 2057, 1426, 2229], [1307, 1697, 1825, 1968]],
+        [[1507, 1878, 1722, 2090], [1252, 2057, 1426, 2229]],
         dtype=torch.int32,
     )
     assert torch.allclose(

@@ -1074,7 +1074,9 @@ def test_clip_torch_image_prediction_for_numpy(
 
     # then
     assert tuple(embeddings.shape) == (1, 1024)
-    assert torch.allclose(embeddings, EXPECTED_DOG_IMAGE_EMBEDDING.to(embeddings.dtype), atol=5e-3)
+    assert torch.allclose(
+        embeddings, EXPECTED_DOG_IMAGE_EMBEDDING.to(embeddings.dtype), atol=5e-3
+    )
 
 
 @pytest.mark.slow
@@ -1093,7 +1095,9 @@ def test_clip_torch_image_prediction_for_torch_tensor(
 
     # then
     assert tuple(embeddings.shape) == (1, 1024)
-    assert torch.allclose(embeddings, EXPECTED_DOG_IMAGE_EMBEDDING.to(embeddings.dtype), atol=5e-3)
+    assert torch.allclose(
+        embeddings, EXPECTED_DOG_IMAGE_EMBEDDING.to(embeddings.dtype), atol=5e-3
+    )
 
 
 @pytest.mark.slow
@@ -1121,7 +1125,9 @@ def test_clip_predictions_for_image_are_comparable_with_reference_implementation
     inference_image_features = inference_model.embed_images(dog_image_torch)
 
     # then
-    similarity = F.cosine_similarity(original_image_features.cpu(), inference_image_features.cpu())
+    similarity = F.cosine_similarity(
+        original_image_features.cpu(), inference_image_features.cpu()
+    )
     assert (
         similarity >= 0.9985
     ), "We get different results due different input scaling PIL vs Torch"
