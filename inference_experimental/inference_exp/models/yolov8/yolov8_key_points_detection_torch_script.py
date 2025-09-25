@@ -148,7 +148,7 @@ class YOLOv8ForKeyPointsDetectionTorchScript(
                 if padding_size > 0:
                     result_for_chunk = result_for_chunk[:-padding_size]
                 results.append(result_for_chunk)
-            return torch.cat(results, dim=0)
+            return torch.cat(results, dim=0).to(self._device)
 
     def post_process(
         self,

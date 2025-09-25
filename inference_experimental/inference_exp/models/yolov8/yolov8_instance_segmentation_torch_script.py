@@ -133,7 +133,9 @@ class YOLOv8ForInstanceSegmentationTorchScript(
                     protos_for_chunk = protos_for_chunk[:-padding_size]
                 instances.append(instances_for_chunk)
                 protos.append(protos_for_chunk)
-            return torch.cat(instances, dim=0), torch.cat(protos, dim=0)
+            return torch.cat(instances, dim=0).to(self._device), torch.cat(
+                protos, dim=0
+            ).to(self._device)
 
     def post_process(
         self,
