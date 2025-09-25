@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import fractions
 import json
 import logging
 import time
@@ -136,9 +137,11 @@ class VideoTransformTrack(VideoStreamTrack):
         self._last_queue_log_time: float = 0.0
 
         # Synthetic PTS generation to prevent quality drops
-        self._output_frame_count: int = 0
-        self._first_input_pts: Optional[int] = None
-        self._pts_offset: int = 0
+        # 90000 Hz (90 kHz) clock rate defined by rfc3551 https://datatracker.ietf.org/doc/html/rfc3551
+        self._time_base = fractions.Fraction(1, 90000)
+        self._scale = self._time_base.denominator / self._time_base.numerator
+        self._t0 = time.monotonic()
+        self._last_pts = -1
 
         self._drain_remote_stream_track = drain_remote_stream_track
 
@@ -280,10 +283,12 @@ class VideoTransformTrack(VideoStreamTrack):
             new_frame = VideoFrame.from_ndarray(np_frame, format="bgr24")
             self._last_processed_frame = new_frame
 
-        # below method call may sleep
-        pts, time_base = await self.next_timestamp()
-        new_frame.pts = pts
-        new_frame.time_base = time_base
+        pts = int((time.monotonic() - self._t0) * self._scale)
+
+        # ensure strictly increasing PTS (no duplicates)
+        if pts <= self._last_pts:
+            pts = self._last_pts + 1
+        self._last_pts = pts
 
         return new_frame
 
