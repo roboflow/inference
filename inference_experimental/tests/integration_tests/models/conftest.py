@@ -257,7 +257,7 @@ def moondream2_path() -> str:
     with FileLock(lock_path, timeout=180):
         if not os.path.exists(unzipped_package_path):
             with zipfile.ZipFile(zip_path, "r") as zip_ref:
-                zip_ref.extractall(package_dir)
+                zip_ref.extractall(unzipped_package_path)
     return unzipped_package_path
 
 
