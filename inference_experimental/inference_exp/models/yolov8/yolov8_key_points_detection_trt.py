@@ -261,7 +261,7 @@ class YOLOv8ForKeyPointsDetectionTRT(
             confidence = key_points_reshaped[:, :, 2]
             key_points_classes_for_instance_class = (
                 self._key_points_classes_for_instances[class_id]
-            ).unsqueeze(1)
+            ).unsqueeze(1).to(device=result.device)
             instances_class_mask = (
                 torch.arange(self._key_points_slots_in_prediction, device=result.device)
                 .unsqueeze(0)
