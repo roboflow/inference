@@ -1121,7 +1121,7 @@ def test_clip_predictions_for_image_are_comparable_with_reference_implementation
     inference_image_features = inference_model.embed_images(dog_image_torch)
 
     # then
-    similarity = F.cosine_similarity(original_image_features, inference_image_features)
+    similarity = F.cosine_similarity(original_image_features.cpu(), inference_image_features.cpu())
     assert (
         similarity >= 0.9985
     ), "We get different results due different input scaling PIL vs Torch"
@@ -1164,7 +1164,7 @@ def test_clip_torch_image_text_embeddings_on_pair_with_reference_implementation(
     inference_text_features = inference_model.embed_text("This is example text")
 
     # then
-    assert torch.allclose(original_text_features, inference_text_features)
+    assert torch.allclose(original_text_features.cpu(), inference_text_features.cpu())
 
 
 @pytest.mark.slow
