@@ -960,6 +960,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_numpy
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_static_crop_stretch_torch(
     coin_counting_yolo_nas_onnx_static_bs_static_crop_stretch_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -1027,6 +1028,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_torch(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_torch(
     coin_counting_yolo_nas_onnx_static_bs_static_crop_stretch_package: str,
     coins_counting_image_torch: torch.Tensor,
@@ -1120,6 +1122,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_torch
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
+@pytest.mark.cpu_only
 def test_onnx_package_with_static_batch_size_and_static_crop_stretch_list_of_torch(
     coin_counting_yolo_nas_onnx_static_bs_static_crop_stretch_package: str,
     coins_counting_image_torch: torch.Tensor,
