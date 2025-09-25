@@ -1052,7 +1052,7 @@ def reference_clip_model(
     with FileLock(lock_file=lock_file, timeout=120):
         original_model, preprocess = clip.load(
             "RN50",
-            device=torch.device("cpu"),
+            device=DEFAULT_DEVICE,
             download_root=original_clip_download_dir,
         )
         yield original_model, preprocess
