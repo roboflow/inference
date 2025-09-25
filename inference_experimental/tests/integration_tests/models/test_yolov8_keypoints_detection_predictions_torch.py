@@ -1671,6 +1671,7 @@ def test_yolov8n_pose_torchscript_static_static_crop_letterbox_package_batch_num
 
 @pytest.mark.slow
 @pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_yolov8n_pose_torchscript_static_static_crop_letterbox_package_torch(
     yolov8n_pose_torchscript_static_static_crop_letterbox_package: str,
     people_walking_image_torch: torch.Tensor,
@@ -1795,6 +1796,7 @@ def test_yolov8n_pose_torchscript_static_static_crop_letterbox_package_torch(
 
 @pytest.mark.slow
 @pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_yolov8n_pose_torchscript_static_static_crop_letterbox_package_batch_torch(
     yolov8n_pose_torchscript_static_static_crop_letterbox_package: str,
     people_walking_image_torch: torch.Tensor,
@@ -1943,6 +1945,7 @@ def test_yolov8n_pose_torchscript_static_static_crop_letterbox_package_batch_tor
 
 @pytest.mark.slow
 @pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_yolov8n_pose_torchscript_static_static_crop_letterbox_package_list_torch(
     yolov8n_pose_torchscript_static_static_crop_letterbox_package: str,
     people_walking_image_torch: torch.Tensor,
