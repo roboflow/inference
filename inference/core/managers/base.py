@@ -70,7 +70,6 @@ class ModelManager:
             model (Model): The model instance.
             endpoint_type (ModelEndpointType, optional): The endpoint type to use for the model.
         """
-
         if MODELS_CACHE_AUTH_ENABLED:
             if not _check_if_api_key_has_access_to_model(
                 api_key=api_key,
