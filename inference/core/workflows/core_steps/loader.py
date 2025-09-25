@@ -45,6 +45,9 @@ from inference.core.workflows.core_steps.classical_cv.contours.v1 import (
 from inference.core.workflows.core_steps.classical_cv.contrast_equalization.v1 import (
     ContrastEqualizationBlockV1,
 )
+from inference.core.workflows.core_steps.classical_cv.morphological_transformation.v1 import (
+    MorphologicalTransformationBlockV1,
+)
 from inference.core.workflows.core_steps.classical_cv.convert_grayscale.v1 import (
     ConvertGrayscaleBlockV1,
 )
@@ -617,6 +620,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         LineCounterZoneVisualizationBlockV1,
         MaskVisualizationBlockV1,
         ModelComparisonVisualizationBlockV1,
+        MorphologicalTransformationBlockV1,
         OCRModelBlockV1,
         OpenAIBlockV1,
         OpenAIBlockV2,

@@ -1,11 +1,11 @@
-from ast import List
-from copy import copy
 import os
 import shutil
 import tempfile
+import uuid
+from ast import List
+from copy import copy
 from time import perf_counter
 from typing import Any, Tuple, Union
-import uuid
 
 import torch
 from doctr.io import DocumentFile
@@ -108,7 +108,7 @@ class DocTR(RoboflowCoreModel):
 
     def infer_from_request(
         self, request: DoctrOCRInferenceRequest
-    ) -> Union[OCRInferenceResponse,List]:
+    ) -> Union[OCRInferenceResponse, List]:
         if type(request.image) is list:
             response = []
             request_copy = copy.copy(request)
@@ -118,9 +118,7 @@ class DocTR(RoboflowCoreModel):
             return response
         return self.single_request(request)
 
-    def single_request(
-        self, request: DoctrOCRInferenceRequest
-    ) -> OCRInferenceResponse:
+    def single_request(self, request: DoctrOCRInferenceRequest) -> OCRInferenceResponse:
         t1 = perf_counter()
         result = self.infer(**request.dict())
         # maintaining backwards compatibility with previous implementation
@@ -172,16 +170,15 @@ class DocTR(RoboflowCoreModel):
 
             result = " ".join([word["value"] for word in words])
             bounding_boxes = [
-                _geometry_to_bbox(page_dimensions, word["geometry"])
-                for word in words
+                _geometry_to_bbox(page_dimensions, word["geometry"]) for word in words
             ]
 
             objects = [
                 {
-                    "x": bbox[0]+(bbox[2]-bbox[0])//2,
-                    "y": bbox[1]+(bbox[3]-bbox[1])//2,
-                    "width": bbox[2]-bbox[0],
-                    "height": bbox[3]-bbox[1],
+                    "x": bbox[0] + (bbox[2] - bbox[0]) // 2,
+                    "y": bbox[1] + (bbox[3] - bbox[1]) // 2,
+                    "width": bbox[2] - bbox[0],
+                    "height": bbox[3] - bbox[1],
                     "confidence": float(word["objectness_score"]),
                     "class": word["value"],
                     "class_id": 0,
