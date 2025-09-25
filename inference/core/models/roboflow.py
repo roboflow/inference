@@ -457,14 +457,31 @@ class RoboflowInferenceModel(Model):
             self.preproc = json.loads(self.environment["PREPROCESSING"])
         if self.preproc.get("resize"):
             self.resize_method = self.preproc["resize"].get("format", "Stretch to")
+            if self.resize_method in [
+                "Fit (reflect edges) in",
+                "Fit within",
+                "Fill (with center crop) in",
+            ]:
+                logger.error(
+                    "Unsupported resize method '%s', defaulting to 'Fit (grey edges) in' - this may result in degraded model performance.",
+                    self.resize_method,
+                )
+                self.resize_method = "Fit (black edges) in"
             if self.resize_method not in [
                 "Stretch to",
                 "Fit (black edges) in",
-                "Fit (white edges) in",
                 "Fit (grey edges) in",
+                "Fit (white edges) in",
             ]:
+                logger.error(
+                    "Unsupported resize method '%s', defaulting to 'Stretch to' - this may result in degraded model performance.",
+                    self.resize_method,
+                )
                 self.resize_method = "Stretch to"
         else:
+            logger.error(
+                "Unknown resize method, defaulting to 'Stretch to' - this may result in degraded model performance."
+            )
             self.resize_method = "Stretch to"
         logger.debug(f"Resize method is '{self.resize_method}'")
         self.multiclass = self.environment.get("MULTICLASS", False)
@@ -520,7 +537,6 @@ class RoboflowInferenceModel(Model):
             preprocessed_image = (
                 preprocessed_image.permute(2, 0, 1).unsqueeze(0).contiguous().float()
             )
-
         if self.resize_method == "Stretch to":
             if isinstance(preprocessed_image, np.ndarray):
                 preprocessed_image = preprocessed_image.astype(np.float32)
