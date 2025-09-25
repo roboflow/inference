@@ -177,11 +177,11 @@ class LoRAFlorence2(Florence2Processing, LoRATransformerModel):
         except ImportError:
             cache_dir = super().get_lora_base_from_roboflow(model_id, revision)
             self.transformers_class = import_class_from_file(
-                os.path.join(self.cache_dir, "modeling_florence2.py"),
+                os.path.join(cache_dir, "modeling_florence2.py"),
                 "Florence2ForConditionalGeneration",
             )
             self.processor_class = import_class_from_file(
-                os.path.join(self.cache_dir, "processing_florence2.py"),
+                os.path.join(cache_dir, "processing_florence2.py"),
                 "Florence2Processor",
             )
 
