@@ -42,8 +42,7 @@ class ContrastEqualizationManifest(WorkflowBlockManifest):
             "ui_manifest": {
                 "section": "classical_cv",
                 "icon": "far fa-image",
-                "blockPriority": 5,
-                "opencv": True,
+                "blockPriority": 5
             },
         }
     )
