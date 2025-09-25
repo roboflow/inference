@@ -16,9 +16,7 @@ class OCRInferenceResponse(BaseModel):
 
     Attributes:
         result (str): The combined OCR recognition result.
-        strings (Optional[List[str]]): List of strings detected by OCR.
-        bounding_boxes (Optional[List[List[int]]]): List of bounding boxes detected by OCR.
-        confidences (Optional[List[float]]): List of confidence scores for each OCR detection
+        objects (Optional[List[Object]]): List of objects detected by OCR.
         time: The time in seconds it took to produce the inference including preprocessing.
     """
 
