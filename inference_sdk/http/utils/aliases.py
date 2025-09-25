@@ -96,6 +96,7 @@ OCR_ENDPOINTS = {
     "easyocr": "/easy_ocr/ocr",
 }
 
+
 def resolve_roboflow_model_alias(model_id: str) -> str:
     """Resolve a Roboflow model alias to a registered model ID.
 
