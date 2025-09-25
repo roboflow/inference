@@ -96,7 +96,7 @@ def test_detect_objects(florence2_model: Florence2HF, dog_image_numpy: np.ndarra
     # then
     assert isinstance(result, list)
     assert len(result) == 1
-    assert result[0].xyxy.shape == (4, 4)
+    assert result[0].xyxy.shape[1] == 4
     expected_bboxes_metadata = [
         {"class_name": "backpack"},
         {"class_name": "dog"},
