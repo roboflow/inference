@@ -2026,6 +2026,7 @@ class HttpInterface(BaseInterface):
                     return response
 
             if CORE_MODEL_EASYOCR_ENABLED:
+
                 @app.post(
                     "/easy_ocr/ocr",
                     response_model=OCRInferenceResponse | List[OCRInferenceResponse],

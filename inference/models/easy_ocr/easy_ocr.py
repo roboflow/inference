@@ -1,9 +1,9 @@
 import copy
 import shutil
+import uuid
 from time import perf_counter
 from typing import Any, List, Tuple, Union
 from unittest import result
-import uuid
 
 import easyocr
 import numpy as np
@@ -11,7 +11,10 @@ import torch
 from PIL import Image
 
 from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
-from inference.core.entities.responses.inference import InferenceResponse, ObjectDetectionPrediction
+from inference.core.entities.responses.inference import (
+    InferenceResponse,
+    ObjectDetectionPrediction,
+)
 from inference.core.entities.responses.ocr import OCRInferenceResponse
 from inference.core.env import DEVICE, MODEL_CACHE_DIR
 from inference.core.models.roboflow import RoboflowCoreModel
@@ -25,6 +28,7 @@ if DEVICE is None:
         DEVICE = "mps"
     else:
         DEVICE = "cpu"
+
 
 class EasyOCR(RoboflowCoreModel):
     """Roboflow EasyOCR model implementation.
@@ -93,7 +97,7 @@ class EasyOCR(RoboflowCoreModel):
 
     def infer_from_request(
         self, request: EasyOCRInferenceRequest
-    ) -> Union[OCRInferenceResponse,List]:
+    ) -> Union[OCRInferenceResponse, List]:
         if type(request.image) is list:
             response = []
             request_copy = copy.copy(request)
@@ -111,15 +115,16 @@ class EasyOCR(RoboflowCoreModel):
             result=" ".join(strings),
             predictions=[
                 {
-                    "x": box[0][0]+(box[2][0]-box[0][0])//2,
-                    "y": box[0][1]+(box[2][1]-box[0][1])//2,
-                    "width": box[2][0]-box[0][0],
-                    "height": box[2][1]-box[0][1],
+                    "x": box[0][0] + (box[2][0] - box[0][0]) // 2,
+                    "y": box[0][1] + (box[2][1] - box[0][1]) // 2,
+                    "width": box[2][0] - box[0][0],
+                    "height": box[2][1] - box[0][1],
                     "confidence": float(confidence),
                     "class": string,
                     "class_id": 0,
                     "detection_id": str(uuid.uuid4()),
-                } for box, string, confidence in prediction_result
+                }
+                for box, string, confidence in prediction_result
             ],
             time=perf_counter() - t1,
         )

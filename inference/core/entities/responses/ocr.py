@@ -1,7 +1,7 @@
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
 import supervision as sv
+from pydantic import BaseModel, Field
 
 from inference.core.interfaces.stream.entities import ObjectDetectionPrediction
 
