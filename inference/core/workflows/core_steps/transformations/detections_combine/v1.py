@@ -30,7 +30,6 @@ class BlockManifest(WorkflowBlockManifest):
             "short_description": "Combines two sets of predictions into a single prediction.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
-            "block_type": "fusion",
             "block_type": "transformation",
             "ui_manifest": {
                 "section": "transformation",

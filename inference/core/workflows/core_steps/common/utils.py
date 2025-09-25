@@ -452,7 +452,7 @@ def ocr_result_to_detections(
     detections[DETECTION_ID_KEY] = np.array(
         [uuid.uuid4() for _ in range(len(detections))]
     )
-    detections[PREDICTION_TYPE_KEY] = np.array(["easy-ocr"] * len(detections))
+    detections[PREDICTION_TYPE_KEY] = np.array(["ocr"] * len(detections))
     img_height, img_width = image.numpy_image.shape[:2]
     detections[IMAGE_DIMENSIONS_KEY] = np.array(
         [[img_height, img_width]] * len(detections)
