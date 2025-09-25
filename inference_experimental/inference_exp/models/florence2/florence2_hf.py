@@ -153,9 +153,9 @@ class Florence2HF:
                 )
             if quantization_config is None:
                 model.merge_and_unload()
-        # Ensure global dtype consistency (handles CPU bfloat16 vs fp32 mismatches)
-        model = model.to(dtype=torch_dtype)
-        model = model.to(device)
+            # Ensure global dtype consistency (handles CPU bfloat16 vs fp32 mismatches)
+            model = model.to(dtype=torch_dtype)
+            model = model.to(device)
 
         processor = Florence2Processor.from_pretrained(  # type: ignore[arg-type]
             pretrained_model_name_or_path=base_model_path,
