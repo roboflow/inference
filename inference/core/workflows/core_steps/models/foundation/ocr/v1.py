@@ -70,7 +70,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "OCR Model",
             "version": "v1",
-            "short_description": "Extract text from an image using optical character recognition.",
+            "short_description": "Extract text from an image using DocTR optical character recognition.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
@@ -78,7 +78,6 @@ class BlockManifest(WorkflowBlockManifest):
                 "section": "model",
                 "icon": "far fa-text",
                 "blockPriority": 11,
-                "inDevelopment": True,
                 "inference": True,
             },
         }

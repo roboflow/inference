@@ -1,8 +1,10 @@
+from ast import List
+from copy import copy
 import os
 import shutil
 import tempfile
 from time import perf_counter
-from typing import Any, Tuple
+from typing import Any, Tuple, Union
 import uuid
 
 import torch
@@ -105,6 +107,18 @@ class DocTR(RoboflowCoreModel):
         pass
 
     def infer_from_request(
+        self, request: DoctrOCRInferenceRequest
+    ) -> Union[OCRInferenceResponse,List]:
+        if type(request.image) is list:
+            response = []
+            request_copy = copy.copy(request)
+            for image in request.image:
+                request_copy.image = image
+                response.append(self.single_request(request=request_copy))
+            return response
+        return self.single_request(request)
+
+    def single_request(
         self, request: DoctrOCRInferenceRequest
     ) -> OCRInferenceResponse:
         t1 = perf_counter()

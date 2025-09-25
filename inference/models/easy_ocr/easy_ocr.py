@@ -1,13 +1,11 @@
-import os
+import copy
 import shutil
 from time import perf_counter
 from typing import Any, List, Tuple, Union
 import uuid
 
-import cv2
 import easyocr
 import numpy as np
-from pydantic import ValidationError
 import torch
 from PIL import Image
 
@@ -87,7 +85,7 @@ class EasyOCR(RoboflowCoreModel):
             quantize=quantize,
         )
 
-        img = np.array(image_in[0]["value"])
+        img = np.array(image_in["value"])
 
         results = reader.readtext(img)
 
@@ -114,12 +112,20 @@ class EasyOCR(RoboflowCoreModel):
 
     def infer_from_request(
         self, request: EasyOCRInferenceRequest
-    ) -> OCRInferenceResponse:
+    ) -> Union[OCRInferenceResponse,List]:
+        if type(request.image) is list:
+            response = []
+            request_copy = copy.copy(request)
+            for image in request.image:
+                request_copy.image = image
+                response.append(self.single_request(request=request_copy))
+            return response
+        return self.single_request(request)
+
+    def single_request(self, request: EasyOCRInferenceRequest) -> OCRInferenceResponse:
         t1 = perf_counter()
         result = self.infer(**request.dict())
-
         strings = [res[1] for res in result]
-
         return OCRInferenceResponse(
             result=" ".join(strings),
             predictions=[

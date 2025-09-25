@@ -97,7 +97,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "EasyOCR",
             "version": "v1",
-            "short_description": "Extract text from an image using EasyOCR.",
+            "short_description": "Extract text from an image using EasyOCR optical character recognition.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
@@ -207,7 +207,7 @@ class EasyOCRBlockV1(WorkflowBlock):
 
             inference_request = EasyOCRInferenceRequest(
                 easy_ocr_version_id=version,
-                image=[single_image.to_inference_format(numpy_preferred=True)],
+                image=single_image.to_inference_format(numpy_preferred=True),
                 api_key=self._api_key,
                 language_codes=language_codes,
                 quantize=quantize,
