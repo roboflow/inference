@@ -29,7 +29,7 @@ def test_florence_lora_inference(server_url: str, clean_loaded_models_fixture) -
             "value": "https://media.roboflow.com/dog.jpeg",
         },
         "prompt": "<CAPTION>",
-        "model_id": "melee/40",
+        "model_id": "qwen_playground/80",
     }
 
     # when
