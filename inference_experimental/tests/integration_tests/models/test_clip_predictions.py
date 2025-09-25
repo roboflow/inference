@@ -1110,7 +1110,7 @@ def test_clip_predictions_for_image_are_comparable_with_reference_implementation
     inference_model = ClipTorch.from_pretrained(clip_rn50_pytorch_path)
     original_model, preprocess = reference_clip_model
     dog_image_original_preprocessing = (
-        preprocess(dog_image_pil).unsqueeze(0).to(torch.device("cpu"))
+        preprocess(dog_image_pil).unsqueeze(0).to(DEFAULT_DEVICE)
     )
 
     # when
@@ -1156,7 +1156,7 @@ def test_clip_torch_image_text_embeddings_on_pair_with_reference_implementation(
 
     inference_model = ClipTorch.from_pretrained(clip_rn50_pytorch_path)
     original_model, _ = reference_clip_model
-    text = clip.tokenize(["This is example text"]).to(torch.device("cpu"))
+    text = clip.tokenize(["This is example text"]).to(DEFAULT_DEVICE)
 
     # when
     with torch.no_grad():
