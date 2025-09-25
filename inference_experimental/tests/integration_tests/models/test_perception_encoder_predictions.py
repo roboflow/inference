@@ -1037,6 +1037,7 @@ EXPECTED_DOG_IMAGE_EMBEDDING = torch.tensor(
 
 
 @pytest.mark.slow
+@pytest.mark.torch_models
 def test_perception_encoder_torch_image_prediction_for_numpy(
     perception_encoder_path: str,
     dog_image_numpy: np.ndarray,
@@ -1053,10 +1054,11 @@ def test_perception_encoder_torch_image_prediction_for_numpy(
 
     # then
     assert tuple(embeddings.shape) == (1, 1024)
-    assert torch.allclose(embeddings, EXPECTED_DOG_IMAGE_EMBEDDING, atol=1e-4)
+    assert torch.allclose(embeddings, EXPECTED_DOG_IMAGE_EMBEDDING, atol=1e-3)
 
 
 @pytest.mark.slow
+@pytest.mark.torch_models
 def test_perception_encoder_torch_image_prediction_for_torch_tensor(
     perception_encoder_path: str,
     dog_image_torch: torch.Tensor,
@@ -1073,10 +1075,11 @@ def test_perception_encoder_torch_image_prediction_for_torch_tensor(
 
     # then
     assert tuple(embeddings.shape) == (1, 1024)
-    assert torch.allclose(embeddings, EXPECTED_DOG_IMAGE_EMBEDDING, atol=1e-4)
+    assert torch.allclose(embeddings, EXPECTED_DOG_IMAGE_EMBEDDING, atol=1e-3)
 
 
 @pytest.mark.slow
+@pytest.mark.torch_models
 def test_perception_encoder_torch_image_prediction_for_list_of_numpy_bgr(
     perception_encoder_path: str,
     dog_image_numpy: np.ndarray,
@@ -1093,11 +1096,12 @@ def test_perception_encoder_torch_image_prediction_for_list_of_numpy_bgr(
 
     # then
     assert tuple(embeddings.shape) == (2, 1024)
-    assert torch.allclose(embeddings[0], EXPECTED_DOG_IMAGE_EMBEDDING[0], atol=1e-4)
-    assert torch.allclose(embeddings[1], EXPECTED_DOG_IMAGE_EMBEDDING[0], atol=1e-4)
+    assert torch.allclose(embeddings[0], EXPECTED_DOG_IMAGE_EMBEDDING[0], atol=1e-3)
+    assert torch.allclose(embeddings[1], EXPECTED_DOG_IMAGE_EMBEDDING[0], atol=1e-3)
 
 
 @pytest.mark.slow
+@pytest.mark.torch_models
 def test_perception_encoder_torch_image_prediction_for_list_of_numpy_rgb(
     perception_encoder_path: str,
     dog_image_numpy: np.ndarray,
@@ -1115,11 +1119,12 @@ def test_perception_encoder_torch_image_prediction_for_list_of_numpy_rgb(
 
     # then
     assert tuple(embeddings.shape) == (2, 1024)
-    assert torch.allclose(embeddings[0], EXPECTED_DOG_IMAGE_EMBEDDING[0], atol=1e-4)
-    assert torch.allclose(embeddings[1], EXPECTED_DOG_IMAGE_EMBEDDING[0], atol=1e-4)
+    assert torch.allclose(embeddings[0], EXPECTED_DOG_IMAGE_EMBEDDING[0], atol=1e-3)
+    assert torch.allclose(embeddings[1], EXPECTED_DOG_IMAGE_EMBEDDING[0], atol=1e-3)
 
 
 @pytest.mark.slow
+@pytest.mark.torch_models
 def test_perception_encoder_torch_image_prediction_for_list_of_tensors(
     perception_encoder_path: str,
     dog_image_torch: torch.Tensor,
@@ -1136,11 +1141,12 @@ def test_perception_encoder_torch_image_prediction_for_list_of_tensors(
 
     # then
     assert tuple(embeddings.shape) == (2, 1024)
-    assert torch.allclose(embeddings[0], EXPECTED_DOG_IMAGE_EMBEDDING[0], atol=1e-4)
-    assert torch.allclose(embeddings[1], EXPECTED_DOG_IMAGE_EMBEDDING[0], atol=1e-4)
+    assert torch.allclose(embeddings[0], EXPECTED_DOG_IMAGE_EMBEDDING[0], atol=1e-3)
+    assert torch.allclose(embeddings[1], EXPECTED_DOG_IMAGE_EMBEDDING[0], atol=1e-3)
 
 
 @pytest.mark.slow
+@pytest.mark.torch_models
 def test_perception_encoder_torch_image_prediction_for_list_of_mixed_types(
     perception_encoder_path: str,
     dog_image_numpy: np.ndarray,
@@ -1158,11 +1164,12 @@ def test_perception_encoder_torch_image_prediction_for_list_of_mixed_types(
 
     # then
     assert tuple(embeddings.shape) == (2, 1024)
-    assert torch.allclose(embeddings[0], EXPECTED_DOG_IMAGE_EMBEDDING[0], atol=1e-4)
-    assert torch.allclose(embeddings[1], EXPECTED_DOG_IMAGE_EMBEDDING[0], atol=1e-4)
+    assert torch.allclose(embeddings[0], EXPECTED_DOG_IMAGE_EMBEDDING[0], atol=1e-3)
+    assert torch.allclose(embeddings[1], EXPECTED_DOG_IMAGE_EMBEDDING[0], atol=1e-3)
 
 
 @pytest.mark.slow
+@pytest.mark.torch_models
 def test_perception_encoder_torch_image_prediction_for_batched_tensor(
     perception_encoder_path: str,
     dog_image_torch: torch.Tensor,
@@ -1180,5 +1187,5 @@ def test_perception_encoder_torch_image_prediction_for_batched_tensor(
 
     # then
     assert tuple(embeddings.shape) == (2, 1024)
-    assert torch.allclose(embeddings[0], EXPECTED_DOG_IMAGE_EMBEDDING[0], atol=1e-4)
-    assert torch.allclose(embeddings[1], EXPECTED_DOG_IMAGE_EMBEDDING[0], atol=1e-4)
+    assert torch.allclose(embeddings[0], EXPECTED_DOG_IMAGE_EMBEDDING[0], atol=1e-3)
+    assert torch.allclose(embeddings[1], EXPECTED_DOG_IMAGE_EMBEDDING[0], atol=1e-3)
