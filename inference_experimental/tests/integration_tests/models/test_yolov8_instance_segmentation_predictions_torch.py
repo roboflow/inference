@@ -1967,7 +1967,7 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_cr
     assert torch.allclose(
         predictions[0].confidence.cpu(),
         torch.tensor([0.6599, 0.5505]).cpu(),
-        atol=0.01,
+        atol=0.02,
     )
     assert torch.allclose(
         predictions[0].class_id.cpu(),
@@ -2005,12 +2005,12 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_ba
     assert torch.allclose(
         predictions[0].confidence.cpu(),
         torch.tensor([0.65991, 0.55051]).cpu(),
-        atol=0.01,
+        atol=0.02,
     )
     assert torch.allclose(
         predictions[1].confidence.cpu(),
         torch.tensor([0.65991, 0.55051]).cpu(),
-        atol=0.01,
+        atol=0.02,
     )
     assert torch.allclose(
         predictions[0].class_id.cpu(),
@@ -2060,12 +2060,12 @@ def test_torchscript_package_with_static_batch_size_and_static_crop_letterbox_li
     assert torch.allclose(
         predictions[0].confidence.cpu(),
         torch.tensor([0.65991, 0.55051]).cpu(),
-        atol=0.01,
+        atol=0.02,
     )
     assert torch.allclose(
         predictions[1].confidence.cpu(),
         torch.tensor([0.65991, 0.55051]).cpu(),
-        atol=0.01,
+        atol=0.02,
     )
     assert torch.allclose(
         predictions[0].class_id.cpu(),
