@@ -2,6 +2,7 @@ import copy
 import shutil
 from time import perf_counter
 from typing import Any, List, Tuple, Union
+from unittest import result
 import uuid
 
 import easyocr
@@ -15,6 +16,7 @@ from inference.core.entities.responses.ocr import OCRInferenceResponse
 from inference.core.env import DEVICE, MODEL_CACHE_DIR
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.models.types import PreprocessReturnMetadata
+from inference.core.utils.image_utils import load_image, load_image_with_inferred_type
 
 if DEVICE is None:
     if torch.cuda.is_available():
@@ -23,24 +25,6 @@ if DEVICE is None:
         DEVICE = "mps"
     else:
         DEVICE = "cpu"
-
-
-def _to_bounding_box(bbox: List[List[int]]) -> List[int]:
-    """Converts bounding boxes from corner points to [x_min, y_min, x_max, y_max] format.
-
-    Args:
-        boxes ([List[List[int]]): Bounding boxes in corner points format.
-
-    Returns:
-        [List[int]: List of bounding boxes in [x_min, y_min, x_max, y_max] format.
-    """
-
-    x = bbox[0][0]
-    y = bbox[0][1]
-    width = bbox[2][0]-x
-    height = bbox[2][1]-y
-    return [x, y, width, height]
-
 
 class EasyOCR(RoboflowCoreModel):
     """Roboflow EasyOCR model implementation.
@@ -68,7 +52,7 @@ class EasyOCR(RoboflowCoreModel):
             f"{MODEL_CACHE_DIR}/{model_id}/{self.recognizer}.pth",
         )
 
-    def predict(self, image_in: Image.Image, prompt="", history=None, **kwargs):
+    def predict(self, image_in: np.ndarray, prompt="", history=None, **kwargs):
         language_codes = kwargs.get("language_codes", ["en"])
         quantize = kwargs.get("quantize", False)
 
@@ -84,10 +68,7 @@ class EasyOCR(RoboflowCoreModel):
             gpu=True,
             quantize=quantize,
         )
-
-        img = np.array(image_in["value"])
-
-        results = reader.readtext(img)
+        results = reader.readtext(image_in)
 
         # convert native EasyOCR results from numpy to standard python types
         results = [
@@ -95,7 +76,7 @@ class EasyOCR(RoboflowCoreModel):
             for res in results
         ]
 
-        return (results,)
+        return results
 
     def postprocess(
         self,
@@ -103,12 +84,12 @@ class EasyOCR(RoboflowCoreModel):
         preprocess_return_metadata: PreprocessReturnMetadata,
         **kwargs,
     ) -> Any:
-        return predictions[0]
+        return predictions
 
     def preprocess(
         self, image: Any, **kwargs
     ) -> Tuple[np.ndarray, PreprocessReturnMetadata]:
-        return image, kwargs
+        return load_image(image)[0], kwargs
 
     def infer_from_request(
         self, request: EasyOCRInferenceRequest
@@ -124,8 +105,8 @@ class EasyOCR(RoboflowCoreModel):
 
     def single_request(self, request: EasyOCRInferenceRequest) -> OCRInferenceResponse:
         t1 = perf_counter()
-        result = self.infer(**request.dict())
-        strings = [res[1] for res in result]
+        prediction_result = self.infer(**request.dict())
+        strings = [res[1] for res in prediction_result]
         return OCRInferenceResponse(
             result=" ".join(strings),
             predictions=[
@@ -138,10 +119,12 @@ class EasyOCR(RoboflowCoreModel):
                     "class": string,
                     "class_id": 0,
                     "detection_id": str(uuid.uuid4()),
-                } for box, string, confidence in result],
+                } for box, string, confidence in prediction_result
+            ],
             time=perf_counter() - t1,
         )
 
+    '''
     def make_response(
         self, *args, **kwargs
     ) -> Union[InferenceResponse, List[InferenceResponse]]:
@@ -151,6 +134,7 @@ class EasyOCR(RoboflowCoreModel):
             NotImplementedError: This method must be implemented by a subclass.
         """
         raise NotImplementedError
+    '''
 
     def get_infer_bucket_file_list(self) -> List[str]:
         return ["weights.pt", "craft_mlt_25k.pt"]

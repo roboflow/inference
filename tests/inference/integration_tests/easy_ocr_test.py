@@ -22,7 +22,7 @@ TESTS = [
             }
         },
         "expected_response": {
-            "result": "was thinking earlier today that have gone through, to use the lingo, eras Of listening to each of Swift's Eras. Meta indeed: started listening to Ms. Swift's music after hearing the Midnights album: few weeks after hearing the album for the first time, found myself playing various songs on repeat. listened to the album in order multiple times:",
+            "result": "was thinking earlier today that have gone through, to use the lingo, eras of listening to each of Swift's Eras: Meta indeed: started listening to Ms. Swift's music after hearing the Midnights album. A few weeks after hearing the album for the first time, found myself playing various songs on repeat. listened to the album in order multiple times:",
             "time": 2.61976716702338,
         },
     }

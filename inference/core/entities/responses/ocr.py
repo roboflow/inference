@@ -12,8 +12,8 @@ class OCRInferenceResponse(BaseModel):
 
     Attributes:
         result (str): The combined OCR recognition result.
-        objects (List[Object]) = Field(description="List of objects detected by OCR", default_factory=list)
-        time: float = Field(description="The time in seconds it took to produce the inference including preprocessing.")
+        predictions (List[ObjectDetectionPrediction]): List of objects detected by OCR
+        time (float): The time in seconds it took to produce the inference including preprocessing
     """
 
     result: str = Field(description="The combined OCR recognition result.")

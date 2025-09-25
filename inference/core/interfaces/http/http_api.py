@@ -1981,7 +1981,7 @@ class HttpInterface(BaseInterface):
 
                 @app.post(
                     "/doctr/ocr",
-                    response_model=OCRInferenceResponse,
+                    response_model=OCRInferenceResponse | List[OCRInferenceResponse],
                     summary="DocTR OCR response",
                     description="Run the DocTR OCR model to retrieve text in an image.",
                 )
@@ -2006,7 +2006,7 @@ class HttpInterface(BaseInterface):
                         request (Request, default Body()): The HTTP request.
 
                     Returns:
-                        M.OCRInferenceResponse: The response containing the embedded image.
+                        OCRInferenceResponse: The response containing the embedded image.
                     """
                     logger.debug(f"Reached /doctr/ocr")
                     doctr_model_id = load_doctr_model(
@@ -2026,16 +2026,15 @@ class HttpInterface(BaseInterface):
                     return response
 
             if CORE_MODEL_EASYOCR_ENABLED:
-
                 @app.post(
                     "/easy_ocr/ocr",
-                    response_model=OCRInferenceResponse,
+                    response_model=OCRInferenceResponse | List[OCRInferenceResponse],
                     summary="EasyOCR OCR response",
                     description="Run the EasyOCR model to retrieve text in an image.",
                 )
                 @with_route_exceptions
                 @usage_collector("request")
-                async def easy_ocr_retrieve_text(
+                def easy_ocr_retrieve_text(
                     inference_request: EasyOCRInferenceRequest,
                     request: Request,
                     api_key: Optional[str] = Query(
@@ -2054,7 +2053,7 @@ class HttpInterface(BaseInterface):
                         request (Request, default Body()): The HTTP request.
 
                     Returns:
-                        M.OCRInferenceResponse: The response containing the embedded image.
+                        OCRInferenceResponse: The response containing the embedded image.
                     """
                     logger.debug(f"Reached /easy_ocr/ocr")
                     easy_ocr_model_id = load_easy_ocr_model(
@@ -2063,7 +2062,7 @@ class HttpInterface(BaseInterface):
                         countinference=countinference,
                         service_secret=service_secret,
                     )
-                    response = await self.model_manager.infer_from_request(
+                    response = self.model_manager.infer_from_request_sync(
                         easy_ocr_model_id, inference_request
                     )
                     if LAMBDA:

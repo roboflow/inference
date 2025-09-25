@@ -133,7 +133,7 @@ class DocTR(RoboflowCoreModel):
         else:
             return OCRInferenceResponse(
                 result=result,
-                predictions=None,
+                predictions=[],
                 time=perf_counter() - t1,
             )
 
