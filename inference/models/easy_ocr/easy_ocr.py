@@ -124,17 +124,5 @@ class EasyOCR(RoboflowCoreModel):
             time=perf_counter() - t1,
         )
 
-    '''
-    def make_response(
-        self, *args, **kwargs
-    ) -> Union[InferenceResponse, List[InferenceResponse]]:
-        """Constructs an object detection response.
-
-        Raises:
-            NotImplementedError: This method must be implemented by a subclass.
-        """
-        raise NotImplementedError
-    '''
-
     def get_infer_bucket_file_list(self) -> List[str]:
         return ["weights.pt", "craft_mlt_25k.pt"]
