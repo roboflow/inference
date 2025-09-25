@@ -29,7 +29,7 @@ def _to_bounding_box(bbox: List[List[int]]) -> List[int]:
     """Converts bounding boxes from corner points to [x_min, y_min, x_max, y_max] format.
 
     Args:
-        boxes ([List[List[int]]): Bounding boxe in corner points format.
+        boxes ([List[List[int]]): Bounding boxes in corner points format.
 
     Returns:
         [List[int]: List of bounding boxes in [x_min, y_min, x_max, y_max] format.
