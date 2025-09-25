@@ -428,6 +428,7 @@ def remove_unexpected_keys_from_dictionary(
         del dictionary[unexpected_key]
     return dictionary
 
+
 def post_process_ocr_result(
     images: Batch[WorkflowImageData],
     predictions: List[dict],
