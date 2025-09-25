@@ -16,18 +16,37 @@ TESTS = [
         "description": "EasyOCR",
         "type": "ocr",
         "payload": {
+            "image": [{
+                "type": "url",
+                "value": "https://media.roboflow.com/swift.png",
+            },{
+                "type": "url",
+                "value": "https://media.roboflow.com/swift.png",
+            }]
+        },
+        "expected_response": {
+            "result": [
+                "was thinking earlier today that have gone through, to use the lingo, eras Of listening to each of Swift's Eras. Meta indeed: started listening to Ms. Swift's music after hearing the Midnights album: few weeks after hearing the album for the first time, found myself playing various songs on repeat. listened to the album in order multiple times:, expected was thinking earlier today that have gone through, to use the lingo, eras of listening to each of Swift's Eras: Meta indeed: started listening to Ms. Swift's music after hearing the Midnights album. A few weeks after hearing the album for the first time, found myself playing various songs on repeat. listened to the album in order multiple times:",
+                "was thinking earlier today that have gone through, to use the lingo, eras Of listening to each of Swift's Eras. Meta indeed: started listening to Ms. Swift's music after hearing the Midnights album: few weeks after hearing the album for the first time, found myself playing various songs on repeat. listened to the album in order multiple times:, expected was thinking earlier today that have gone through, to use the lingo, eras of listening to each of Swift's Eras: Meta indeed: started listening to Ms. Swift's music after hearing the Midnights album. A few weeks after hearing the album for the first time, found myself playing various songs on repeat. listened to the album in order multiple times:"
+            ],
+            "time": 2.61976716702338,
+        },
+    },
+    {
+        "description": "EasyOCR",
+        "type": "ocr",
+        "payload": {
             "image": {
                 "type": "url",
                 "value": "https://media.roboflow.com/swift.png",
             }
         },
         "expected_response": {
-            "result": "was thinking earlier today that have gone through, to use the lingo, eras of listening to each of Swift's Eras: Meta indeed: started listening to Ms. Swift's music after hearing the Midnights album. A few weeks after hearing the album for the first time, found myself playing various songs on repeat. listened to the album in order multiple times:",
+            "result": "was thinking earlier today that have gone through, to use the lingo, eras Of listening to each of Swift's Eras. Meta indeed: started listening to Ms. Swift's music after hearing the Midnights album: few weeks after hearing the album for the first time, found myself playing various songs on repeat. listened to the album in order multiple times:, expected was thinking earlier today that have gone through, to use the lingo, eras of listening to each of Swift's Eras: Meta indeed: started listening to Ms. Swift's music after hearing the Midnights album. A few weeks after hearing the album for the first time, found myself playing various songs on repeat. listened to the album in order multiple times:",
             "time": 2.61976716702338,
         },
-    }
+    },
 ]
-
 
 def bool_env(val):
     if isinstance(val, bool):
@@ -55,18 +74,35 @@ def test_easy_ocr(test, clean_loaded_models_fixture):
             print(f"Invalid response: {data}, expected 'result' in data")
 
         try:
-            assert isinstance(data["result"], str) and len(data["result"]) > 0
+            assert "predictions" in data
         except:
-            print(f"Invalid response: {data['result']}, expected a non-empty string")
+            print(f"Invalid response: {data}, expected 'predictions' in data")
 
-        try:
-            assert data["result"] == test["expected_response"]["result"]
-        except:
-            print(
-                f"Invalid response: {data['result']}, expected {test['expected_response']['result']}"
-            )
+        if type(test["payload"]["image"]) is not list:
+            try:
+                assert isinstance(data["result"], str) and len(data["result"]) > 0
+            except:
+                print(f"Invalid response: {data['result']}, expected a non-empty string")
+
+        if type(test["payload"]["image"]) is not list:
+            try:
+                assert data["result"] == test["expected_response"]["result"]
+            except:
+                print(
+                    f"Invalid response: {data['result']}, expected {test['expected_response']['result']}"
+                )
+        else:
+            result = [d['result'] for d in data]
+            try:
+                assert result == test["expected_response"]["result"]
+            except:
+                print(
+                    f"Invalid response: {result}, expected {test['expected_response']['result']}"
+                )
+
     except Exception as e:
         raise e
+
 
 
 @pytest.fixture(scope="session", autouse=True)
