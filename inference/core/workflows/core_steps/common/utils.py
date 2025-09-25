@@ -423,10 +423,9 @@ def remove_unexpected_keys_from_dictionary(
     expected_keys: set,
 ) -> dict:
     """This function mutates input `dictionary`"""
-    # Avoid creating an intermediate set
-    for key in tuple(dictionary.keys()):
-        if key not in expected_keys:
-            del dictionary[key]
+    unexpected_keys = set(dictionary.keys()).difference(expected_keys)
+    for unexpected_key in unexpected_keys:
+        del dictionary[unexpected_key]
     return dictionary
 
 
@@ -435,32 +434,29 @@ def ocr_result_to_detections(
 ) -> sv.Detections:
     """Convert OCRInferenceResponse dictionary to sv.Detections instance"""
 
+    # Prepare lists for bounding boxes, confidences, class IDs, and labels
     objects = response_dict.get("objects", [])
-    n = len(objects)
-    # Preallocate NumPy arrays for best performance
-    xyxy = np.empty((n, 4), dtype=float) if n > 0 else np.empty((0, 4), dtype=float)
-    confidences = np.empty(n, dtype=float) if n > 0 else np.empty((0,), dtype=float)
-    class_names = np.empty(n, dtype=object) if n > 0 else np.empty((0,), dtype=object)
+    class_names = [obj.get("string", "") for obj in objects]
+    xyxy = [obj.get("bounding_box", []) for obj in objects]
+    confidences = [obj.get("confidence", 0.0) for obj in objects]
+    class_ids = [0] * len(class_names)
 
-    for i, obj in enumerate(objects):
-        bb = obj.get("bounding_box", [0.0, 0.0, 0.0, 0.0])
-        xyxy[i] = bb
-        confidences[i] = obj.get("confidence", 0.0)
-        class_names[i] = obj.get("string", "")
-
-    class_ids = np.zeros(n, dtype=int)
-
+    # Convert to NumPy arrays
     detections = sv.Detections(
-        xyxy=xyxy,
-        confidence=confidences,
-        class_id=class_ids,
-        data={CLASS_NAME_DATA_FIELD: class_names},
+        xyxy=np.array(xyxy),
+        confidence=np.array(confidences),
+        class_id=np.array(class_ids),
+        data={CLASS_NAME_DATA_FIELD: np.array(class_names)},
     )
 
-      detections[DETECTION_ID_KEY] = np.array([uuid.uuid4() for _ in range(n)])
-    detections[PREDICTION_TYPE_KEY] = np.full(n, "ocr", dtype=object)
+    detections[DETECTION_ID_KEY] = np.array(
+        [uuid.uuid4() for _ in range(len(detections))]
+    )
+    detections[PREDICTION_TYPE_KEY] = np.array(["ocr"] * len(detections))
     img_height, img_width = image.numpy_image.shape[:2]
-    detections[IMAGE_DIMENSIONS_KEY] = np.tile([img_height, img_width], (n, 1))
+    detections[IMAGE_DIMENSIONS_KEY] = np.array(
+        [[img_height, img_width]] * len(detections)
+    )
     return attach_parents_coordinates_to_sv_detections(
         detections=detections,
         image=image,
@@ -472,18 +468,17 @@ def post_process_ocr_result(
     predictions: List[dict],
     expected_output_keys: Set[str],
 ) -> BlockResult:
-    # Hoist sv.Detections.empty() to avoid repeated instantiation and useless computation in loop
-    empty_detection = sv.Detections.empty()
     for prediction, image in zip(predictions, images):
         objects = prediction.get("objects", [])
-        if not objects:
-            prediction["predictions"] = empty_detection
-        else:
-            prediction["predictions"] = ocr_result_to_detections(image, prediction)
+        prediction["predictions"] = (
+            sv.Detections.empty()
+            if not objects
+            else ocr_result_to_detections(image, prediction)
+        )
         prediction[PREDICTION_TYPE_KEY] = "ocr"
         prediction[PARENT_ID_KEY] = image.parent_metadata.parent_id
         prediction[ROOT_PARENT_ID_KEY] = image.workflow_root_ancestor_metadata.parent_id
-        remove_unexpected_keys_from_dictionary(
+        _ = remove_unexpected_keys_from_dictionary(
             dictionary=prediction,
             expected_keys=expected_output_keys,
         )
