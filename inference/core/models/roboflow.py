@@ -466,7 +466,7 @@ class RoboflowInferenceModel(Model):
                     "Unsupported resize method '%s', defaulting to 'Fit (grey edges) in' - this may result in degraded model performance.",
                     self.resize_method,
                 )
-                self.resize_method = "Fit (grey edges) in"
+                self.resize_method = "Fit (black edges) in"
             if self.resize_method not in [
                 "Stretch to",
                 "Fit (black edges) in",
