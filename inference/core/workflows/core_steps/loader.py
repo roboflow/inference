@@ -54,6 +54,9 @@ from inference.core.workflows.core_steps.classical_cv.dominant_color.v1 import (
 from inference.core.workflows.core_steps.classical_cv.image_blur.v1 import (
     ImageBlurBlockV1,
 )
+from inference.core.workflows.core_steps.classical_cv.contrast_equalization.v1 import (
+    ContrastEqualizationBlockV1,
+)
 from inference.core.workflows.core_steps.classical_cv.image_preprocessing.v1 import (
     ImagePreprocessingBlockV1,
 )
@@ -583,6 +586,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         CogVLMBlockV1,
         ColorVisualizationBlockV1,
         ConvertGrayscaleBlockV1,
+        ContrastEqualizationBlockV1,
         CornerVisualizationBlockV1,
         CropVisualizationBlockV1,
         DetectionsConsensusBlockV1,
