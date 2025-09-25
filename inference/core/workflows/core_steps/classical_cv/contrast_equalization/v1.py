@@ -1,8 +1,8 @@
 from typing import List, Literal, Optional, Type, Union
 
-from skimage import exposure
 import numpy as np
 from pydantic import AliasChoices, ConfigDict, Field
+from skimage import exposure
 
 from inference.core.workflows.core_steps.visualizations.common.base import (
     OUTPUT_IMAGE_KEY,
@@ -57,13 +57,14 @@ class ContrastEqualizationManifest(WorkflowBlockManifest):
 
     equalization_type: Union[
         Selector(kind=[STRING_KIND]),
-        Literal["Contrast Stretching", "Histogram Equalization", "Adaptive Equalization"],
+        Literal[
+            "Contrast Stretching", "Histogram Equalization", "Adaptive Equalization"
+        ],
     ] = Field(
         default="gaussian",
         description="Type of contrast equalization to use.",
         examples=["Equalization", "$inputs.type"],
     )
-
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -103,7 +104,7 @@ class ContrastEqualizationBlockV1(WorkflowBlock):
         return {OUTPUT_IMAGE_KEY: output}
 
 
-def update_image(img:np.ndarray, how:str):
+def update_image(img: np.ndarray, how: str):
 
     if how == "Contrast Stretching":
         # grab 2nd and 98 percentile

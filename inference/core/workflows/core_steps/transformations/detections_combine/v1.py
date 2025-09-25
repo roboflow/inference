@@ -5,10 +5,7 @@ import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
 
-
-from inference.core.workflows.execution_engine.entities.base import (
-    OutputDefinition,
-)
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
@@ -23,6 +20,7 @@ from inference.core.workflows.prototypes.block import (
 LONG_DESCRIPTION = """
 This block combines two sets of predictions into a single set of predictions.
 """
+
 
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
@@ -90,4 +88,3 @@ class DetectionsCombineBlockV1(WorkflowBlock):
         prediction_two: sv.Detections,
     ) -> BlockResult:
         return {"predictions": sv.Detections.merge([prediction_one, prediction_two])}
-

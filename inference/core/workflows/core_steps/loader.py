@@ -42,6 +42,9 @@ from inference.core.workflows.core_steps.classical_cv.camera_focus.v1 import (
 from inference.core.workflows.core_steps.classical_cv.contours.v1 import (
     ImageContoursDetectionBlockV1,
 )
+from inference.core.workflows.core_steps.classical_cv.contrast_equalization.v1 import (
+    ContrastEqualizationBlockV1,
+)
 from inference.core.workflows.core_steps.classical_cv.convert_grayscale.v1 import (
     ConvertGrayscaleBlockV1,
 )
@@ -53,9 +56,6 @@ from inference.core.workflows.core_steps.classical_cv.dominant_color.v1 import (
 )
 from inference.core.workflows.core_steps.classical_cv.image_blur.v1 import (
     ImageBlurBlockV1,
-)
-from inference.core.workflows.core_steps.classical_cv.contrast_equalization.v1 import (
-    ContrastEqualizationBlockV1,
 )
 from inference.core.workflows.core_steps.classical_cv.image_preprocessing.v1 import (
     ImagePreprocessingBlockV1,
@@ -326,14 +326,14 @@ from inference.core.workflows.core_steps.transformations.camera_calibration.v1 i
 from inference.core.workflows.core_steps.transformations.detection_offset.v1 import (
     DetectionOffsetBlockV1,
 )
+from inference.core.workflows.core_steps.transformations.detections_combine.v1 import (
+    DetectionsCombineBlockV1,
+)
 from inference.core.workflows.core_steps.transformations.detections_filter.v1 import (
     DetectionsFilterBlockV1,
 )
 from inference.core.workflows.core_steps.transformations.detections_merge.v1 import (
     DetectionsMergeBlockV1,
-)
-from inference.core.workflows.core_steps.transformations.detections_combine.v1 import (
-    DetectionsCombineBlockV1,
 )
 from inference.core.workflows.core_steps.transformations.detections_transformation.v1 import (
     DetectionsTransformationBlockV1,
@@ -686,7 +686,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ONVIFSinkBlockV1,
         EasyOCRBlockV1,
         QRCodeGeneratorBlockV1,
-        DetectionsCombineBlockV1
+        DetectionsCombineBlockV1,
     ]
 
 
