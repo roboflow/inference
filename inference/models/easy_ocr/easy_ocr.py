@@ -2,15 +2,17 @@ import os
 import shutil
 from time import perf_counter
 from typing import Any, List, Tuple, Union
+import uuid
 
 import cv2
 import easyocr
 import numpy as np
+from pydantic import ValidationError
 import torch
 from PIL import Image
 
 from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
-from inference.core.entities.responses.inference import InferenceResponse
+from inference.core.entities.responses.inference import InferenceResponse, ObjectDetectionPrediction
 from inference.core.entities.responses.ocr import OCRInferenceResponse
 from inference.core.env import DEVICE, MODEL_CACHE_DIR
 from inference.core.models.roboflow import RoboflowCoreModel
@@ -35,11 +37,11 @@ def _to_bounding_box(bbox: List[List[int]]) -> List[int]:
         [List[int]: List of bounding boxes in [x_min, y_min, x_max, y_max] format.
     """
 
-    x_min = bbox[0][0]
-    y_min = bbox[0][1]
-    x_max = bbox[2][0]
-    y_max = bbox[2][1]
-    return [x_min, y_min, x_max, y_max]
+    x = bbox[0][0]
+    y = bbox[0][1]
+    width = bbox[2][0]-x
+    height = bbox[2][1]-y
+    return [x, y, width, height]
 
 
 class EasyOCR(RoboflowCoreModel):
@@ -124,14 +126,17 @@ class EasyOCR(RoboflowCoreModel):
 
         return OCRInferenceResponse(
             result=" ".join(strings),
-            objects=[
+            predictions=[
                 {
-                    "bounding_box": _to_bounding_box(box),
+                    "x": box[0][0]+(box[2][0]-box[0][0])//2,
+                    "y": box[0][1]+(box[2][1]-box[0][1])//2,
+                    "width": box[2][0]-box[0][0],
+                    "height": box[2][1]-box[0][1],
                     "confidence": float(confidence),
-                    "string": string,
-                }
-                for box, string, confidence in result
-            ],
+                    "class": string,
+                    "class_id": 0,
+                    "detection_id": str(uuid.uuid4()),
+                } for box, string, confidence in result],
             time=perf_counter() - t1,
         )
 

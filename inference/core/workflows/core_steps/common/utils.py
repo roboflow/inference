@@ -428,53 +428,20 @@ def remove_unexpected_keys_from_dictionary(
         del dictionary[unexpected_key]
     return dictionary
 
-
-def ocr_result_to_detections(
-    image: WorkflowImageData, response_dict: Dict
-) -> sv.Detections:
-    """Convert OCRInferenceResponse dictionary to sv.Detections instance"""
-
-    # Prepare lists for bounding boxes, confidences, class IDs, and labels
-    objects = response_dict.get("objects", [])
-    class_names = [obj.get("string", "") for obj in objects]
-    xyxy = [obj.get("bounding_box", []) for obj in objects]
-    confidences = [obj.get("confidence", 0.0) for obj in objects]
-    class_ids = [0] * len(class_names)
-
-    # Convert to NumPy arrays
-    detections = sv.Detections(
-        xyxy=np.array(xyxy),
-        confidence=np.array(confidences),
-        class_id=np.array(class_ids),
-        data={CLASS_NAME_DATA_FIELD: np.array(class_names)},
-    )
-
-    detections[DETECTION_ID_KEY] = np.array(
-        [uuid.uuid4() for _ in range(len(detections))]
-    )
-    detections[PREDICTION_TYPE_KEY] = np.array(["ocr"] * len(detections))
-    img_height, img_width = image.numpy_image.shape[:2]
-    detections[IMAGE_DIMENSIONS_KEY] = np.array(
-        [[img_height, img_width]] * len(detections)
-    )
-    return attach_parents_coordinates_to_sv_detections(
-        detections=detections,
-        image=image,
-    )
-
-
 def post_process_ocr_result(
     images: Batch[WorkflowImageData],
     predictions: List[dict],
     expected_output_keys: Set[str],
 ) -> BlockResult:
     for prediction, image in zip(predictions, images):
-        objects = prediction.get("objects", [])
-        prediction["predictions"] = (
-            sv.Detections.empty()
-            if not objects
-            else ocr_result_to_detections(image, prediction)
-        )
+        prediction["image"] = {
+            WIDTH_KEY: image.numpy_image.shape[1],
+            HEIGHT_KEY: image.numpy_image.shape[0],
+        }
+        # sv.Detections does not have detection_id, but workflow serialization requires it
+        detection_ids = [p["detection_id"] for p in prediction.get("predictions", [])]
+        prediction["predictions"] = sv.Detections.from_inference(prediction)
+        prediction["predictions"]["detection_id"] = detection_ids
         prediction[PREDICTION_TYPE_KEY] = "ocr"
         prediction[PARENT_ID_KEY] = image.parent_metadata.parent_id
         prediction[ROOT_PARENT_ID_KEY] = image.workflow_root_ancestor_metadata.parent_id

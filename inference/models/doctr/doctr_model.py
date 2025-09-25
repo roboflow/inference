@@ -3,6 +3,7 @@ import shutil
 import tempfile
 from time import perf_counter
 from typing import Any, Tuple
+import uuid
 
 import torch
 from doctr.io import DocumentFile
@@ -108,11 +109,19 @@ class DocTR(RoboflowCoreModel):
     ) -> OCRInferenceResponse:
         t1 = perf_counter()
         result = self.infer(**request.dict())
-        return OCRInferenceResponse(
-            result=result[0],
-            objects=result[1],
-            time=perf_counter() - t1,
-        )
+        # maintaining backwards compatibility with previous implementation
+        if request.generate_bounding_boxes:
+            return OCRInferenceResponse(
+                result=result[0],
+                predictions=result[1],
+                time=perf_counter() - t1,
+            )
+        else:
+            return OCRInferenceResponse(
+                result=result,
+                predictions=None,
+                time=perf_counter() - t1,
+            )
 
     def infer(self, image: Any, **kwargs):
         """
@@ -148,18 +157,26 @@ class DocTR(RoboflowCoreModel):
             ]
 
             result = " ".join([word["value"] for word in words])
-            objects = [
-                {
-                    "bounding_box": _geometry_to_bbox(
-                        page_dimensions, word["geometry"]
-                    ),
-                    "confidence": float(word["objectness_score"]),
-                    "string": word["value"],
-                }
+            bounding_boxes = [
+                _geometry_to_bbox(page_dimensions, word["geometry"])
                 for word in words
             ]
 
-            # previous implementation only returned result, so using "extended" option to maintain backwards compatibility
+            objects = [
+                {
+                    "x": bbox[0]+(bbox[2]-bbox[0])//2,
+                    "y": bbox[1]+(bbox[3]-bbox[1])//2,
+                    "width": bbox[2]-bbox[0],
+                    "height": bbox[3]-bbox[1],
+                    "confidence": float(word["objectness_score"]),
+                    "class": word["value"],
+                    "class_id": 0,
+                    "detection_id": str(uuid.uuid4()),
+                }
+                for word, bbox in zip(words, bounding_boxes)
+            ]
+
+            # maintaining backwards compatibility with previous implementation
             if kwargs.get("generate_bounding_boxes", False):
                 return result, objects
             else:
