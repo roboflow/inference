@@ -54,7 +54,7 @@ class BlockManifest(WorkflowBlockManifest):
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
         ]
     ) = Field(
-        description="First set of predictions.",
+        description="Second set of predictions.",
         examples=["$steps.my_object_detection_model.predictions"],
     )
 

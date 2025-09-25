@@ -61,7 +61,7 @@ class ContrastEqualizationManifest(WorkflowBlockManifest):
             "Contrast Stretching", "Histogram Equalization", "Adaptive Equalization"
         ],
     ] = Field(
-        default="gaussian",
+        default="Histogram Equalization",
         description="Type of contrast equalization to use.",
         examples=["Equalization", "$inputs.type"],
     )
