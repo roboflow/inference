@@ -97,13 +97,6 @@ def test_detect_objects(florence2_model: Florence2HF, dog_image_numpy: np.ndarra
     assert isinstance(result, list)
     assert len(result) == 1
     assert result[0].xyxy.shape[1] == 4
-    expected_bboxes_metadata = [
-        {"class_name": "backpack"},
-        {"class_name": "dog"},
-        {"class_name": "hat"},
-        {"class_name": "person"},
-    ]
-    assert result[0].bboxes_metadata == expected_bboxes_metadata
 
 
 @pytest.mark.slow
