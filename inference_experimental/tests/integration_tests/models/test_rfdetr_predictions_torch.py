@@ -27,7 +27,7 @@ def test_rfdetr_base_og_with_numpy(
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
+        predictions[0].class_id.cpu(),
         torch.tensor([3, 18, 27], dtype=torch.int32),
     )
     expected_xyxy = torch.tensor(
@@ -519,7 +519,7 @@ def test_torch_package_with_static_crop_letterbox_torch(
         atol=0.02,
     )
     assert torch.allclose(
-        predictions[0].class_id,
+        predictions[0].class_id.cpu(),
         torch.tensor([1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
     )
     expected_xyxy = torch.tensor(
@@ -572,11 +572,11 @@ def test_torch_package_with_static_crop_letterbox_torch_batch(
         atol=0.02,
     )
     assert torch.allclose(
-        predictions[0].class_id,
+        predictions[0].class_id.cpu(),
         torch.tensor([1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
     )
     assert torch.allclose(
-        predictions[1].class_id,
+        predictions[1].class_id.cpu(),
         torch.tensor([1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
     )
     expected_xyxy = torch.tensor(
@@ -634,11 +634,11 @@ def test_torch_package_with_static_crop_letterbox_torch_list(
         atol=0.02,
     )
     assert torch.allclose(
-        predictions[0].class_id,
+        predictions[0].class_id.cpu(),
         torch.tensor([1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
     )
     assert torch.allclose(
-        predictions[1].class_id,
+        predictions[1].class_id.cpu(),
         torch.tensor([1, 1, 1, 1, 1, 1, 1, 1], dtype=torch.int32),
     )
     expected_xyxy = torch.tensor(
@@ -687,7 +687,7 @@ def test_torch_package_with_center_crop_numpy(
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
+        predictions[0].class_id.cpu(),
         torch.tensor([1, 1, 4], dtype=torch.int32),
     )
     expected_xyxy = torch.tensor(
@@ -727,11 +727,11 @@ def test_torch_package_with_center_crop_batch_numpy(
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
+        predictions[0].class_id.cpu(),
         torch.tensor([1, 1, 4], dtype=torch.int32),
     )
     assert torch.allclose(
-        predictions[1].class_id,
+        predictions[1].class_id.cpu(),
         torch.tensor([1, 1, 4], dtype=torch.int32),
     )
     expected_xyxy = torch.tensor(
@@ -771,7 +771,7 @@ def test_torch_package_with_center_crop_torch(
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
+        predictions[0].class_id.cpu(),
         torch.tensor([1, 1, 4], dtype=torch.int32),
     )
     expected_xyxy = torch.tensor(
@@ -813,11 +813,11 @@ def test_torch_package_with_center_crop_batch_torch(
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
+        predictions[0].class_id.cpu(),
         torch.tensor([1, 1, 4], dtype=torch.int32),
     )
     assert torch.allclose(
-        predictions[1].class_id,
+        predictions[1].class_id.cpu(),
         torch.tensor([1, 1, 4], dtype=torch.int32),
     )
     expected_xyxy = torch.tensor(
@@ -862,11 +862,11 @@ def test_torch_package_with_center_crop_list_of_torch(
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
+        predictions[0].class_id.cpu(),
         torch.tensor([1, 1, 4], dtype=torch.int32),
     )
     assert torch.allclose(
-        predictions[1].class_id,
+        predictions[1].class_id.cpu(),
         torch.tensor([1, 1, 4], dtype=torch.int32),
     )
     expected_xyxy = torch.tensor(
@@ -904,7 +904,7 @@ def test_torch_package_with_center_crop_numpy_custom_image_size(
         predictions[0].confidence.cpu(), torch.tensor([0.9510, 0.9246]), atol=0.01
     )
     assert torch.allclose(
-        predictions[0].class_id,
+        predictions[0].class_id.cpu(),
         torch.tensor([1, 1], dtype=torch.int32),
     )
     expected_xyxy = torch.tensor(
@@ -937,7 +937,7 @@ def test_torch_package_with_center_crop_torch_custom_image_size(
         predictions[0].confidence.cpu(), torch.tensor([0.9510, 0.9246]), atol=0.01
     )
     assert torch.allclose(
-        predictions[0].class_id,
+        predictions[0].class_id.cpu(),
         torch.tensor([1, 1], dtype=torch.int32),
     )
     expected_xyxy = torch.tensor(
@@ -972,7 +972,7 @@ def test_torch_package_with_static_crop_and_center_crop_numpy(
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
+        predictions[0].class_id.cpu(),
         torch.tensor([1, 1], dtype=torch.int32),
     )
     expected_xyxy = torch.tensor(
@@ -1005,7 +1005,7 @@ def test_torch_package_with_static_crop_and_center_crop_numpy_when_image_smaller
         predictions[0].confidence.cpu(), torch.tensor([0.7778]), atol=0.01
     )
     assert torch.allclose(
-        predictions[0].class_id,
+        predictions[0].class_id.cpu(),
         torch.tensor([1], dtype=torch.int32),
     )
     expected_xyxy = torch.tensor(
@@ -1045,11 +1045,11 @@ def test_torch_package_with_static_crop_and_center_crop_batch_numpy(
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
+        predictions[0].class_id.cpu(),
         torch.tensor([1, 1], dtype=torch.int32),
     )
     assert torch.allclose(
-        predictions[1].class_id,
+        predictions[1].class_id.cpu(),
         torch.tensor([1, 1], dtype=torch.int32),
     )
     expected_xyxy = torch.tensor(
@@ -1089,7 +1089,7 @@ def test_torch_package_with_static_crop_and_center_crop_torch(
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
+        predictions[0].class_id.cpu(),
         torch.tensor([1, 1], dtype=torch.int32),
     )
     expected_xyxy = torch.tensor(
@@ -1131,11 +1131,11 @@ def test_torch_package_with_static_crop_and_center_crop_batch_torch(
         atol=0.01,
     )
     assert torch.allclose(
-        predictions[0].class_id,
+        predictions[0].class_id.cpu(),
         torch.tensor([1, 1], dtype=torch.int32),
     )
     assert torch.allclose(
-        predictions[1].class_id,
+        predictions[1].class_id.cpu(),
         torch.tensor([1, 1], dtype=torch.int32),
     )
     expected_xyxy = torch.tensor(
