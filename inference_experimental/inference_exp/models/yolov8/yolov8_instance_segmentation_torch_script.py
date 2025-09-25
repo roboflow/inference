@@ -121,7 +121,8 @@ class YOLOv8ForInstanceSegmentationTorchScript(
                 pre_processed_images.shape[0]
                 == self._inference_config.forward_pass.static_batch_size
             ):
-                return self._model(pre_processed_images)
+                instances, protos = self._model(pre_processed_images)
+                return instances.to(self._device), protos.to(self._device)
             instances, protos = [], []
             for input_tensor, padding_size in generate_batch_chunks(
                 input_batch=pre_processed_images,

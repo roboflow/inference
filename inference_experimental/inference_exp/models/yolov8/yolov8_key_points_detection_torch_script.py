@@ -138,7 +138,7 @@ class YOLOv8ForKeyPointsDetectionTorchScript(
                 pre_processed_images.shape[0]
                 == self._inference_config.forward_pass.static_batch_size
             ):
-                return self._model(pre_processed_images)
+                return self._model(pre_processed_images).to(self._device)
             results = []
             for input_tensor, padding_size in generate_batch_chunks(
                 input_batch=pre_processed_images,
