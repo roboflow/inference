@@ -1,7 +1,6 @@
 import numpy as np
 import pytest
 import torch
-
 from inference_exp.models.paligemma.paligemma_hf import PaliGemmaHF
 
 
@@ -52,6 +51,7 @@ def get_preprocessed_outputs(
 
 
 @pytest.mark.slow
+@pytest.mark.hf_vlm_models
 def test_preprocessed_output_shapes(
     paligemma_model: PaliGemmaHF,
     dog_image_numpy: np.ndarray,
@@ -89,6 +89,7 @@ def test_preprocessed_output_shapes(
 
 
 @pytest.mark.slow
+@pytest.mark.hf_vlm_models
 def test_internal_consistency_of_preprocessed_inputs(
     paligemma_model: PaliGemmaHF,
     dog_image_numpy: np.ndarray,

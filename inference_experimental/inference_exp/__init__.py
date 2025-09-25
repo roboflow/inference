@@ -27,3 +27,4 @@ from inference_exp.models.base.object_detection import (
     ObjectDetectionModel,
     OpenVocabularyObjectDetectionModel,
 )
+from inference_exp.models.base.semantic_segmentation import SemanticSegmentationModel

@@ -20,7 +20,10 @@
           "13": "left_knee",
           "15": "left_ankle",
           "16": "right_ankle"
-      }
+      },
+      "edges": [
+        {"from": 0, "to":  2}
+      ]
   },
   {
     "object_class": "person-2",
@@ -29,6 +32,9 @@
           "2": "neck",
           "1": "shoulder-left",
           "0": "shoulder-right"
-      }
+      },
+      "edges": [
+        {"from": 0, "to":  2}
+      ]
   }
 ]

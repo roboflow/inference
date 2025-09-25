@@ -77,7 +77,7 @@ def test_attempt_loading_model_from_local_storage_when_valid_model_package_provi
 ) -> None:
     # when
     my_model = attempt_loading_model_from_local_storage(
-        model_dir=example_model_package_dir,
+        model_dir_or_weights_path=example_model_package_dir,
         allow_local_code_packages=True,
         model_init_kwargs={"some": "value"},
     )
@@ -94,7 +94,7 @@ def test_attempt_loading_model_from_local_storage_when_local_packages_forbidden(
     # when
     with pytest.raises(ModelLoadingError):
         _ = attempt_loading_model_from_local_storage(
-            model_dir=example_model_package_dir,
+            model_dir_or_weights_path=example_model_package_dir,
             allow_local_code_packages=False,
             model_init_kwargs={"some": "value"},
         )
