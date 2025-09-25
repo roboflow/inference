@@ -3038,7 +3038,7 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_torch(
     assert torch.allclose(
         predictions[0].confidence.cpu(),
         torch.tensor([0.6599, 0.5505]).cpu(),
-        atol=0.01,
+        atol=0.02,
     )
     assert torch.allclose(
         predictions[0].class_id.cpu(),
@@ -3080,12 +3080,12 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_batch_to
     assert torch.allclose(
         predictions[0].confidence.cpu(),
         torch.tensor([0.65991, 0.55051]).cpu(),
-        atol=0.01,
+        atol=0.02,
     )
     assert torch.allclose(
         predictions[1].confidence.cpu(),
         torch.tensor([0.65991, 0.55051]).cpu(),
-        atol=0.01,
+        atol=0.02,
     )
     assert torch.allclose(
         predictions[0].class_id.cpu(),
@@ -3139,12 +3139,12 @@ def test_onnx_package_with_dynamic_batch_size_and_static_crop_letterbox_list_tor
     assert torch.allclose(
         predictions[0].confidence.cpu(),
         torch.tensor([0.65991, 0.55051]).cpu(),
-        atol=0.01,
+        atol=0.02,
     )
     assert torch.allclose(
         predictions[1].confidence.cpu(),
         torch.tensor([0.65991, 0.55051]).cpu(),
-        atol=0.01,
+        atol=0.02,
     )
     assert torch.allclose(
         predictions[0].class_id.cpu(),

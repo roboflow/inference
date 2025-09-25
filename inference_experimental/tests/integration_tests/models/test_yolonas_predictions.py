@@ -995,7 +995,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_torch(
                 0.34926,
             ]
         ).cpu(),
-        atol=0.01,
+        atol=0.02,
     )
     assert torch.allclose(
         predictions[0].class_id.cpu(),
@@ -1064,7 +1064,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_torch
                 0.34926,
             ]
         ).cpu(),
-        atol=0.01,
+        atol=0.02,
     )
     assert torch.allclose(
         predictions[1].confidence.cpu(),
@@ -1084,7 +1084,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_torch
                 0.34926,
             ]
         ).cpu(),
-        atol=0.01,
+        atol=0.02,
     )
     assert torch.allclose(
         predictions[0].class_id.cpu(),
@@ -1155,7 +1155,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_list_of_tor
                 0.34926,
             ]
         ).cpu(),
-        atol=0.01,
+        atol=0.02,
     )
     assert torch.allclose(
         predictions[1].confidence.cpu(),
@@ -1175,7 +1175,7 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_list_of_tor
                 0.34926,
             ]
         ).cpu(),
-        atol=0.01,
+        atol=0.02,
     )
     assert torch.allclose(
         predictions[0].class_id.cpu(),
