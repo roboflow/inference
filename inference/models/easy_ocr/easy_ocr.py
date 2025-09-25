@@ -71,37 +71,33 @@ class EasyOCR(RoboflowCoreModel):
         )
 
     def predict(self, image_in: Image.Image, prompt="", history=None, **kwargs):
-        try:
+        language_codes = kwargs.get("language_codes", ["en"])
+        quantize = kwargs.get("quantize", False)
 
-            language_codes = kwargs.get("language_codes", ["en"])
-            quantize = kwargs.get("quantize", False)
+        reader = easyocr.Reader(
+            language_codes,
+            download_enabled=False,
+            user_network_directory=f"/tmp/cache/easy_ocr/{self.recognizer}/",
+            model_storage_directory=f"/tmp/cache/easy_ocr/{self.recognizer}/",
+            detect_network="craft",
+            recog_network=self.recognizer,
+            detector=True,
+            recognizer=True,
+            gpu=True,
+            quantize=quantize,
+        )
 
-            reader = easyocr.Reader(
-                language_codes,
-                download_enabled=False,
-                user_network_directory=f"/tmp/cache/easy_ocr/{self.recognizer}/",
-                model_storage_directory=f"/tmp/cache/easy_ocr/{self.recognizer}/",
-                detect_network="craft",
-                recog_network=self.recognizer,
-                detector=True,
-                recognizer=True,
-                gpu=True,
-                quantize=quantize,
-            )
+        img = np.array(image_in[0]["value"])
 
-            img = np.array(image_in[0]["value"])
+        results = reader.readtext(img)
 
-            results = reader.readtext(img)
+        # convert native EasyOCR results from numpy to standard python types
+        results = [
+            ([[x.item() for x in c] for c in res[0]], res[1], res[2].item())
+            for res in results
+        ]
 
-            # convert native EasyOCR results from numpy to standard python types
-            results = [
-                ([[x.item() for x in c] for c in res[0]], res[1], res[2].item())
-                for res in results
-            ]
-
-            return (results,)
-        except Exception as e:
-            raise
+        return (results,)
 
     def postprocess(
         self,
