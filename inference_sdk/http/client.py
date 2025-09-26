@@ -1028,6 +1028,7 @@ class InferenceHTTPClient:
         version: Optional[str] = None,
         quantize: Optional[bool] = None,
         generate_bounding_boxes: Optional[bool] = None,
+        language_codes: Optional[List[str]] = None,
     ) -> Union[dict, List[dict]]:
         """Run OCR on input image(s).
 
@@ -1041,6 +1042,8 @@ class InferenceHTTPClient:
                 with sv.Detections(...) compatible bounding boxes should be returned (due to historical reasons, some
                 old implementations were flattening detected OCR structure into text and were only returning that as
                 results).
+            language_codes: (Optional[List[str]]): Parameter of EasyOCR that dictates the code of languages that
+                model should recognise (leave blank for default for given OCR model version).
         Returns:
             Union[dict, List[dict]]: OCR results for the input image(s).
 
@@ -1059,6 +1062,8 @@ class InferenceHTTPClient:
             payload["quantize"] = quantize
         if generate_bounding_boxes is not None:
             payload["generate_bounding_boxes"] = generate_bounding_boxes
+        if language_codes is not None:
+            payload["language_codes"] = language_codes
         model_path = resolve_ocr_path(model_name=model)
         url = self.__wrap_url_with_api_key(f"{self.__api_url}{model_path}")
         requests_data = prepare_requests_data(
@@ -1086,6 +1091,7 @@ class InferenceHTTPClient:
         version: Optional[str] = None,
         quantize: Optional[bool] = None,
         generate_bounding_boxes: Optional[bool] = None,
+        language_codes: Optional[List[str]] = None,
     ) -> Union[dict, List[dict]]:
         """Run OCR on input image(s) asynchronously.
 
@@ -1099,6 +1105,8 @@ class InferenceHTTPClient:
                 with sv.Detections(...) compatible bounding boxes should be returned (due to historical reasons, some
                 old implementations were flattening detected OCR structure into text and were only returning that as
                 results).
+            language_codes: (Optional[List[str]]): Parameter of EasyOCR that dictates the code of languages that
+                model should recognise (leave blank for default for given OCR model version).
         Returns:
             Union[dict, List[dict]]: OCR results for the input image(s).
 
@@ -1117,6 +1125,8 @@ class InferenceHTTPClient:
             payload["quantize"] = quantize
         if generate_bounding_boxes is not None:
             payload["generate_bounding_boxes"] = generate_bounding_boxes
+        if language_codes is not None:
+            payload["language_codes"] = language_codes
         model_path = resolve_ocr_path(model_name=model)
         url = self.__wrap_url_with_api_key(f"{self.__api_url}{model_path}")
         requests_data = prepare_requests_data(

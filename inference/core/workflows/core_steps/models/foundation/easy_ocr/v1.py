@@ -178,15 +178,15 @@ class EasyOCRBlockV1(WorkflowBlock):
         if self._step_execution_mode is StepExecutionMode.LOCAL:
             return self.run_locally(
                 images=images,
-                version=version,
                 language_codes=language_codes,
+                version=version,
                 quantize=quantize,
             )
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
             return self.run_remotely(
                 images=images,
-                version=version,
                 language_codes=language_codes,
+                version=version,
                 quantize=quantize,
             )
         else:
@@ -197,8 +197,8 @@ class EasyOCRBlockV1(WorkflowBlock):
     def run_locally(
         self,
         images: Batch[WorkflowImageData],
+        language_codes: List[str],
         version: str = "english_g2",
-        language_codes: List[str] = ["en"],
         quantize: bool = False,
     ) -> BlockResult:
 
@@ -232,6 +232,7 @@ class EasyOCRBlockV1(WorkflowBlock):
     def run_remotely(
         self,
         images: Batch[WorkflowImageData],
+        language_codes: List[str],
         version: str = "english_g2",
         quantize: bool = False,
     ) -> BlockResult:
@@ -257,6 +258,7 @@ class EasyOCRBlockV1(WorkflowBlock):
             model="easy_ocr",
             version=version,
             quantize=quantize,
+            language_codes=language_codes,
         )
         if len(images) == 1:
             predictions = [predictions]
