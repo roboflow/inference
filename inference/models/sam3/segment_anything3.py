@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import torch
 import threading
+from pycocotools import mask as mask_utils
 
 from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.entities.requests.sam3 import (
@@ -218,6 +219,10 @@ class SegmentAnything3(RoboflowCoreModel):
                     return self._results_to_response(
                         masks=masks, scores=scores, start_ts=t1
                     )
+                elif request.format == "mask":
+                    return self._results_to_mask_response(
+                        masks=masks, scores=scores, start_ts=t1
+                    )
                 elif request.format == "binary":
                     binary_vector = BytesIO()
                     np.savez_compressed(binary_vector, masks=masks)
@@ -282,6 +287,31 @@ class SegmentAnything3(RoboflowCoreModel):
                     format="polygon"
                 )
             )
+        return Sam3SegmentationResponse(
+            time=perf_counter() - start_ts, predictions=predictions
+        )
+
+    def _results_to_mask_response(
+        self, masks: np.ndarray, scores: np.ndarray, start_ts: float
+    ) -> Sam3SegmentationResponse:
+        predictions: List[Sam3SegmentationPrediction] = []
+
+        for mask, score in zip(masks, scores):
+            # Apply same threshold as polygon format
+            mask_binary = (mask >= 0.5).astype(np.uint8)
+
+            # Encode mask to RLE format
+            rle = mask_utils.encode(np.asfortranarray(mask_binary))
+            rle['counts'] = rle['counts'].decode('utf-8')
+
+            predictions.append(
+                Sam3SegmentationPrediction(
+                    masks=rle,
+                    confidence=float(score),
+                    format="mask"
+                )
+            )
+
         return Sam3SegmentationResponse(
             time=perf_counter() - start_ts, predictions=predictions
         )
