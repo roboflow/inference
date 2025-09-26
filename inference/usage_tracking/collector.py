@@ -399,7 +399,7 @@ class UsageCollector:
             if execution_id is not None:
                 exec_session_id = execution_id.get()
             if exec_session_id:
-                source_usage["exec_session_id"] = execution_id
+                source_usage["exec_session_id"] = exec_session_id
 
     def record_usage(
         self,
