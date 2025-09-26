@@ -115,6 +115,9 @@ class MorphologicalTransformationBlockV1(WorkflowBlock):
     ) -> BlockResult:
         # Apply morphological closing to the image
         updated_image = update_image(image.numpy_image, kernel_size, operation)
+        # needs needs the channel dimension, which gets stripped by cv2.COLOR_BGR2GRAY
+        updated_image = updated_image.reshape(updated_image.shape + (1,))
+
         output = WorkflowImageData.copy_and_replace(
             origin_image_data=image,
             numpy_image=updated_image,
