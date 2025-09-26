@@ -31,7 +31,6 @@ from inference.core.registries.roboflow import get_model_type
 from inference.core.warnings import ModelDependencyMissing
 from inference.models import (
     YOLACT,
-    EasyOCR,
     ResNetClassification,
     RFDETRObjectDetection,
     VitClassification,
