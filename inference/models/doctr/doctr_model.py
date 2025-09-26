@@ -169,6 +169,11 @@ class DocTR(RoboflowCoreModel):
             ]
 
             result = " ".join([word["value"] for word in words])
+
+            # maintaining backwards compatibility with previous implementation
+            if not kwargs.get("generate_bounding_boxes", False):
+                return result
+
             bounding_boxes = [
                 _geometry_to_bbox(page_dimensions, word["geometry"]) for word in words
             ]
@@ -187,11 +192,8 @@ class DocTR(RoboflowCoreModel):
                 for word, bbox in zip(words, bounding_boxes)
             ]
 
-            # maintaining backwards compatibility with previous implementation
             if kwargs.get("generate_bounding_boxes", False):
                 return result, objects
-            else:
-                return result
 
     def get_infer_bucket_file_list(self) -> list:
         """Get the list of required files for inference.
