@@ -1,6 +1,5 @@
 import base64
 import concurrent
-import contextvars
 import os
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from functools import partial
