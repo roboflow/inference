@@ -40,7 +40,7 @@ from inference.core.roboflow_api import build_roboflow_api_headers
 from inference.core.version import __version__ as inference_version
 
 try:
-    from inference_sdk import execution_id
+    from inference_sdk.config import execution_id
 except ImportError:
     execution_id = None
 

@@ -3,7 +3,7 @@ import concurrent
 import os
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from functools import partial
-from threading import Lock, Semaphore, Thread
+from threading import Lock, Thread
 from time import sleep
 from typing import Annotated, Any, Dict, List, Optional, Tuple, Union
 from uuid import uuid4
@@ -240,8 +240,7 @@ from inference.core.roboflow_api import ModelEndpointType
 from inference.core.version import __version__
 
 try:
-    from inference_sdk import execution_id
-    from inference_sdk.config import EXECUTION_ID_HEADER
+    from inference_sdk.config import EXECUTION_ID_HEADER, execution_id
 except ImportError:
     execution_id = None
     EXECUTION_ID_HEADER = None

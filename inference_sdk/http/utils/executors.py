@@ -16,8 +16,7 @@ from aiohttp import (
 )
 from requests import Response, Timeout
 
-from inference_sdk import execution_id
-from inference_sdk.config import EXECUTION_ID_HEADER
+from inference_sdk.config import EXECUTION_ID_HEADER, execution_id
 from inference_sdk.http.errors import RetryError
 from inference_sdk.http.utils.iterables import make_batches
 from inference_sdk.http.utils.request_building import RequestData

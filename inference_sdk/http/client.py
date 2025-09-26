@@ -7,8 +7,7 @@ import requests
 from aiohttp import ClientConnectionError, ClientResponseError
 from requests import HTTPError
 
-from inference_sdk import execution_id
-from inference_sdk.config import EXECUTION_ID_HEADER
+from inference_sdk.config import EXECUTION_ID_HEADER, execution_id
 from inference_sdk.http.entities import (
     ALL_ROBOFLOW_API_URLS,
     CLASSIFICATION_TASK,
