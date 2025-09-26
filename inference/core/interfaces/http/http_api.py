@@ -2023,7 +2023,7 @@ class HttpInterface(BaseInterface):
                             "authorizer"
                         ]["lambda"]["actor"]
                         trackUsage(doctr_model_id, actor)
-                    return response
+                    return orjson_response(response)
 
             if CORE_MODEL_EASYOCR_ENABLED:
 
@@ -2071,7 +2071,7 @@ class HttpInterface(BaseInterface):
                             "authorizer"
                         ]["lambda"]["actor"]
                         trackUsage(easy_ocr_model_id, actor)
-                    return response
+                    return orjson_response(response)
 
             if CORE_MODEL_SAM_ENABLED:
 
@@ -2459,7 +2459,7 @@ class HttpInterface(BaseInterface):
                             "authorizer"
                         ]["lambda"]["actor"]
                         trackUsage(trocr_model_id, actor)
-                    return response
+                    return orjson_response(response)
 
         if not (LAMBDA or GCP_SERVERLESS):
 

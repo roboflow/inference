@@ -56,7 +56,7 @@ LANGUAGES = Literal[
 
 # Dictionary of displayed_language: (model, language_code)
 # This is not an extensive list of supported languages, more codes can be added
-MODELS: Dict[str, str] = {
+MODELS: Dict[str, Tuple[str, List[str]]] = {
     "English": ("english_g2", ["en"]),
     "Japanese": ("japanese_g2", ["en", "ja"]),
     "Kannada": ("kannada_g2", ["en", "kn"]),
@@ -221,7 +221,7 @@ class EasyOCRBlockV1(WorkflowBlock):
                 model_id, inference_request
             )
 
-            predictions.append(result.model_dump())
+            predictions.append(result.model_dump(by_alias=True, exclude_none=True))
 
         return post_process_ocr_result(
             predictions=predictions,

@@ -435,11 +435,6 @@ def post_process_ocr_result(
     expected_output_keys: Set[str],
 ) -> BlockResult:
     for prediction, image in zip(predictions, images):
-        prediction["image"] = {
-            WIDTH_KEY: image.numpy_image.shape[1],
-            HEIGHT_KEY: image.numpy_image.shape[0],
-        }
-        # sv.Detections does not have detection_id, but workflow serialization requires it
         detection_ids = [p["detection_id"] for p in prediction.get("predictions", [])]
         prediction["predictions"] = sv.Detections.from_inference(prediction)
         prediction["predictions"]["detection_id"] = detection_ids
