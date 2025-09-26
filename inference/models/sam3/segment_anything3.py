@@ -277,7 +277,9 @@ class SegmentAnything3(RoboflowCoreModel):
         for poly, score in zip(polygons, scores):
             predictions.append(
                 Sam3SegmentationPrediction(
-                    masks=[p.tolist() for p in poly], confidence=float(score)
+                    masks=[p.tolist() for p in poly],
+                    confidence=float(score),
+                    format="polygon"
                 )
             )
         return Sam3SegmentationResponse(

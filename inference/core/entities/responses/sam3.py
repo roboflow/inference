@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -15,6 +15,10 @@ class Sam3SegmentationPrediction(BaseModel):
         description="The set of points for output mask as polygon. Each element of list represents single point."
     )
     confidence: float = Field(description="Masks confidence")
+    format: Optional[str] = Field(
+        default="polygon",
+        description="Format of the mask data: 'polygon' or 'mask'"
+    )
 
 
 class Sam3SegmentationResponse(BaseModel):
