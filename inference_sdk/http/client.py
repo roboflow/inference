@@ -491,10 +491,17 @@ class InferenceHTTPClient:
             "api_key": self.__api_key,
         }
         params.update(self.__inference_configuration.to_legacy_call_parameters())
+
+        execution_id_value = execution_id.get()
+        headers = DEFAULT_HEADERS
+        if execution_id_value:
+            headers = headers.copy()
+            headers[EXECUTION_ID_HEADER] = execution_id_value
+
         requests_data = prepare_requests_data(
             url=f"{self.__api_url}/{model_id_chunks[0]}/{model_id_chunks[1]}",
             encoded_inference_inputs=encoded_inference_inputs,
-            headers=DEFAULT_HEADERS,
+            headers=headers,
             parameters=params,
             payload=None,
             max_batch_size=1,
@@ -569,10 +576,17 @@ class InferenceHTTPClient:
             "api_key": self.__api_key,
         }
         params.update(self.__inference_configuration.to_legacy_call_parameters())
+
+        execution_id_value = execution_id.get()
+        headers = DEFAULT_HEADERS
+        if execution_id_value:
+            headers = headers.copy()
+            headers[EXECUTION_ID_HEADER] = execution_id_value
+
         requests_data = prepare_requests_data(
             url=f"{self.__api_url}/{model_id_chunks[0]}/{model_id_chunks[1]}",
             encoded_inference_inputs=encoded_inference_inputs,
-            headers=DEFAULT_HEADERS,
+            headers=headers,
             parameters=params,
             payload=None,
             max_batch_size=1,
