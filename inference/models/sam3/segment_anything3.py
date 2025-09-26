@@ -215,7 +215,8 @@ class SegmentAnything3(RoboflowCoreModel):
                 return self.embed_image(**request.dict())
             elif isinstance(request, Sam3SegmentationRequest):
                 masks, scores = self.segment_image(**request.dict())
-                if request.format == "polygon":
+                # `json` is legacy default
+                if request.format in ["polygon", "json"]:
                     return self._results_to_response(
                         masks=masks, scores=scores, start_ts=t1
                     )
