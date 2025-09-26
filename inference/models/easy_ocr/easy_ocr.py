@@ -145,4 +145,4 @@ class EasyOCR(RoboflowCoreModel):
         )
 
     def get_infer_bucket_file_list(self) -> List[str]:
-        return ["weights.pt", "craft_mlt_25k.pt"]
+        return ["weights.pt", "craft_mlt_25k.pth"]
