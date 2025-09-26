@@ -230,7 +230,7 @@ class GazeBlockV1(WorkflowBlock):
                 core_model="gaze",
             )
             prediction = self._model_manager.infer_from_request_sync(
-                gaze_model_id, inference_request
+                gaze_model_id, inference_request, workflow_execution_id=self._workflow_execution_id
             )
             predictions.append(prediction)
 

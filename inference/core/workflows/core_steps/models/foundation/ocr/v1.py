@@ -115,14 +115,21 @@ class OCRModelBlockV1(WorkflowBlock):
         model_manager: ModelManager,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
+        workflow_execution_id: Optional[str] = None,
     ):
         self._model_manager = model_manager
         self._api_key = api_key
         self._step_execution_mode = step_execution_mode
+        self._workflow_execution_id = workflow_execution_id
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key", "step_execution_mode"]
+        return [
+            "model_manager",
+            "api_key",
+            "step_execution_mode",
+            "workflow_execution_id",
+        ]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -158,7 +165,7 @@ class OCRModelBlockV1(WorkflowBlock):
                 core_model="doctr",
             )
             result = self._model_manager.infer_from_request_sync(
-                doctr_model_id, inference_request
+                doctr_model_id, inference_request, workflow_execution_id=self._workflow_execution_id
             )
             predictions.append(result.model_dump(by_alias=True, exclude_none=True))
         return post_process_ocr_result(
@@ -185,6 +192,7 @@ class OCRModelBlockV1(WorkflowBlock):
         configuration = InferenceConfiguration(
             max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
             max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+            workflow_execution_id=self._workflow_execution_id,
         )
         client.configure(configuration)
         non_empty_inference_images = [i.base64_image for i in images]

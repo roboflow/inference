@@ -625,10 +625,13 @@ class HttpInterface(BaseInterface):
             profiler: WorkflowsProfiler,
         ) -> WorkflowInferenceResponse:
 
+            # Generate unique workflow execution ID for tracking across distributed servers
+            workflow_execution_id = f"{workflow_request.workflow_id or 'unknown'}_{uuid4().hex[:8]}_{int(time.time() * 1000)}"
             workflow_init_parameters = {
                 "workflows_core.model_manager": model_manager,
                 "workflows_core.api_key": workflow_request.api_key,
                 "workflows_core.background_tasks": background_tasks,
+                "workflows_core.workflow_execution_id": workflow_execution_id,
             }
             execution_engine = ExecutionEngine.init(
                 workflow_definition=workflow_specification,
@@ -2663,6 +2666,10 @@ class HttpInterface(BaseInterface):
                     "external",
                     description="The detailed source information of the inference request",
                 ),
+                workflow_execution_id: Optional[str] = Query(
+                    None,
+                    description="ID of the workflow execution that triggered this inference",
+                ),
             ):
                 """
                 Legacy inference endpoint for object detection, instance segmentation, and classification.
@@ -2795,6 +2802,7 @@ class HttpInterface(BaseInterface):
                     inference_request,
                     active_learning_eligible=True,
                     background_tasks=background_tasks,
+                    workflow_execution_id=workflow_execution_id,
                 )
                 logger.debug("Response ready.")
                 if format == "image":

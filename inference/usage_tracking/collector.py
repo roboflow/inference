@@ -226,7 +226,7 @@ class UsageCollector:
         return sha256_hash(json.dumps(resource_details, sort_keys=True))
 
     def _enqueue_payload(self, payload: UsagePayload):
-        logger.debug("Enqueuing usage payload")
+        logger.debug("Enqueuing usage payload", payload)
         if not payload:
             return
         with self._queue_lock:
@@ -674,6 +674,11 @@ class UsageCollector:
 
         roboflow_service_name = func_kwargs.get("source_info")
         roboflow_internal_secret = func_kwargs.get("service_secret")
+        workflow_execution_id = func_kwargs.get("workflow_execution_id")
+
+        # Add workflow_execution_id to resource_details for aggregation
+        if workflow_execution_id:
+            resource_details["workflow_execution_id"] = workflow_execution_id
 
         return {
             "source": source,

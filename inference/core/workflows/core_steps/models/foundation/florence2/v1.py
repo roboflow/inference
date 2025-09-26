@@ -419,7 +419,7 @@ class Florence2BlockV1(WorkflowBlock):
                 prompt=prompt,
             )
             prediction = self._model_manager.infer_from_request_sync(
-                model_id=model_version, request=request
+                model_id=model_version, request=request, workflow_execution_id=self._workflow_execution_id
             )
             if is_not_florence_task:
                 prediction_data = prediction.response[

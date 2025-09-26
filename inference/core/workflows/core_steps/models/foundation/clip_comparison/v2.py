@@ -131,14 +131,21 @@ class ClipComparisonBlockV2(WorkflowBlock):
         model_manager: ModelManager,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
+        workflow_execution_id: Optional[str] = None,
     ):
         self._model_manager = model_manager
         self._api_key = api_key
         self._step_execution_mode = step_execution_mode
+        self._workflow_execution_id = workflow_execution_id
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key", "step_execution_mode"]
+        return [
+            "model_manager",
+            "api_key",
+            "step_execution_mode",
+            "workflow_execution_id",
+        ]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -181,7 +188,7 @@ class ClipComparisonBlockV2(WorkflowBlock):
                 core_model="clip",
             )
             prediction = self._model_manager.infer_from_request_sync(
-                clip_model_id, inference_request
+                clip_model_id, inference_request, workflow_execution_id=self._workflow_execution_id
             )
             predictions.append(prediction.model_dump())
         return self._post_process_result(

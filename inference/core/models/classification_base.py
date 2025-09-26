@@ -263,6 +263,7 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
     def infer_from_request(
         self,
         request: ClassificationInferenceRequest,
+        **kwargs,
     ) -> Union[List[InferenceResponse], InferenceResponse]:
         """
         Handle an inference request to produce an appropriate response.
@@ -281,7 +282,7 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             - If visualization is requested, the predictions are drawn on the image.
         """
         t1 = perf_counter()
-        responses = self.infer(**request.dict(), return_image_dims=True)
+        responses = self.infer(**request.dict(), return_image_dims=True, **kwargs)
         for response in responses:
             response.time = perf_counter() - t1
             response.inference_id = getattr(request, "id", None)

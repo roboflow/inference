@@ -238,7 +238,7 @@ class SegmentAnything2BlockV1(WorkflowBlock):
             )
 
             sam2_segmentation_response = self._model_manager.infer_from_request_sync(
-                sam_model_id, inference_request
+                sam_model_id, inference_request, workflow_execution_id=self._workflow_execution_id
             )
 
             prediction = convert_sam2_segmentation_response_to_inference_instances_seg_response(

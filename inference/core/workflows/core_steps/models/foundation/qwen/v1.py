@@ -177,7 +177,7 @@ class Qwen25VLBlockV1(WorkflowBlock):
             )
             # Run inference.
             prediction = self._model_manager.infer_from_request_sync(
-                model_id=model_version, request=request
+                model_id=model_version, request=request, workflow_execution_id=self._workflow_execution_id
             )
             response_text = prediction.response
             predictions.append(

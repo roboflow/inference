@@ -95,14 +95,21 @@ class PerceptionEncoderModelBlockV1(WorkflowBlock):
         model_manager: ModelManager,
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
+        workflow_execution_id: Optional[str] = None,
     ):
         self._model_manager = model_manager
         self._api_key = api_key
         self._step_execution_mode = step_execution_mode
+        self._workflow_execution_id = workflow_execution_id
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key", "step_execution_mode"]
+        return [
+            "model_manager",
+            "api_key",
+            "step_execution_mode",
+            "workflow_execution_id",
+        ]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -143,7 +150,7 @@ class PerceptionEncoderModelBlockV1(WorkflowBlock):
                 core_model="perception_encoder",
             )
             predictions = self._model_manager.infer_from_request_sync(
-                pe_model_id, inference_request
+                pe_model_id, inference_request, workflow_execution_id=self._workflow_execution_id
             )
             text_cache.set(hash_key, predictions.embeddings[0])
             return {"embedding": predictions.embeddings[0]}
@@ -159,7 +166,7 @@ class PerceptionEncoderModelBlockV1(WorkflowBlock):
                 core_model="perception_encoder",
             )
             predictions = self._model_manager.infer_from_request_sync(
-                pe_model_id, inference_request
+                pe_model_id, inference_request, workflow_execution_id=self._workflow_execution_id
             )
             return {"embedding": predictions.embeddings[0]}
 

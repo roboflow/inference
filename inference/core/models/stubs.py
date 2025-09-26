@@ -23,10 +23,10 @@ class ModelStub(Model):
         initialise_cache(model_id=model_id)
 
     def infer_from_request(
-        self, request: InferenceRequest
+        self, request: InferenceRequest, **kwargs
     ) -> Union[InferenceResponse, List[InferenceResponse]]:
         t1 = perf_counter()
-        stub_prediction = self.infer(**request.dict())
+        stub_prediction = self.infer(**request.dict(), **kwargs)
         response = self.make_response(request=request, prediction=stub_prediction)
         response.time = perf_counter() - t1
         return response
