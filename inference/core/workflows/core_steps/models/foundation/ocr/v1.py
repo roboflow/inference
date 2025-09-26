@@ -190,6 +190,7 @@ class OCRModelBlockV1(WorkflowBlock):
         non_empty_inference_images = [i.base64_image for i in images]
         predictions = client.ocr_image(
             inference_input=non_empty_inference_images,
+            generate_bounding_boxes=True,
         )
         if len(images) == 1:
             predictions = [predictions]

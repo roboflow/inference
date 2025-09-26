@@ -30,6 +30,8 @@ if DEVICE is None:
     else:
         DEVICE = "cpu"
 
+np.float32
+
 
 class EasyOCR(RoboflowCoreModel):
     """Roboflow EasyOCR model implementation.
@@ -74,10 +76,16 @@ class EasyOCR(RoboflowCoreModel):
         )
 
         results = reader.readtext(image_in)
-
         # convert native EasyOCR results from numpy to standard python types
         results = [
-            ([[x.item() for x in c] for c in res[0]], res[1], res[2].item())
+            (
+                [
+                    [x.item() if not isinstance(x, (int, float)) else x for x in c]
+                    for c in res[0]
+                ],
+                res[1],
+                res[2].item() if not isinstance(res[2], (int, float)) else res[2],
+            )
             for res in results
         ]
 

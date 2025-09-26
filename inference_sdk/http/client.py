@@ -1011,7 +1011,8 @@ class InferenceHTTPClient:
         inference_input: Union[ImagesReference, List[ImagesReference]],
         model: str = "doctr",
         version: Optional[str] = None,
-        quantize: Optional[bool] = False,
+        quantize: Optional[bool] = None,
+        generate_bounding_boxes: Optional[bool] = None,
     ) -> Union[dict, List[dict]]:
         """Run OCR on input image(s).
 
@@ -1020,7 +1021,11 @@ class InferenceHTTPClient:
             model (str, optional): OCR model to use ('doctr' or 'trocr'). Defaults to "doctr".
             version (Optional[str], optional): Model version to use. Defaults to None.
                 For trocr, supported versions are: 'trocr-small-printed', 'trocr-base-printed', 'trocr-large-printed'.
-
+            quantize: (Optional[bool]): flag of EasyOCR to decide which version of model to load
+            generate_bounding_boxes: (Optional[bool]): flag of some models (like DocTR) to decide if output variant
+                with sv.Detections(...) compatible bounding boxes should be returned (due to historical reasons, some
+                old implementations were flattening detected OCR structure into text and were only returning that as
+                results).
         Returns:
             Union[dict, List[dict]]: OCR results for the input image(s).
 
@@ -1035,8 +1040,10 @@ class InferenceHTTPClient:
         if version:
             key = f"{model.lower()}_version_id"
             payload[key] = version
-        if quantize:
+        if quantize is not None:
             payload["quantize"] = quantize
+        if generate_bounding_boxes is not None:
+            payload["generate_bounding_boxes"] = generate_bounding_boxes
         model_path = resolve_ocr_path(model_name=model)
         url = self.__wrap_url_with_api_key(f"{self.__api_url}{model_path}")
         requests_data = prepare_requests_data(
@@ -1062,6 +1069,8 @@ class InferenceHTTPClient:
         inference_input: Union[ImagesReference, List[ImagesReference]],
         model: str = "doctr",
         version: Optional[str] = None,
+        quantize: Optional[bool] = None,
+        generate_bounding_boxes: Optional[bool] = None,
     ) -> Union[dict, List[dict]]:
         """Run OCR on input image(s) asynchronously.
 
@@ -1070,7 +1079,11 @@ class InferenceHTTPClient:
             model (str, optional): OCR model to use ('doctr' or 'trocr'). Defaults to "doctr".
             version (Optional[str], optional): Model version to use. Defaults to None.
                 For trocr, supported versions are: 'trocr-small-printed', 'trocr-base-printed', 'trocr-large-printed'.
-
+            quantize: (Optional[bool]): flag of EasyOCR to decide which version of model to load
+            generate_bounding_boxes: (Optional[bool]): flag of some models (like DocTR) to decide if output variant
+                with sv.Detections(...) compatible bounding boxes should be returned (due to historical reasons, some
+                old implementations were flattening detected OCR structure into text and were only returning that as
+                results).
         Returns:
             Union[dict, List[dict]]: OCR results for the input image(s).
 
@@ -1085,6 +1098,10 @@ class InferenceHTTPClient:
         if version:
             key = f"{model.lower()}_version_id"
             payload[key] = version
+        if quantize is not None:
+            payload["quantize"] = quantize
+        if generate_bounding_boxes is not None:
+            payload["generate_bounding_boxes"] = generate_bounding_boxes
         model_path = resolve_ocr_path(model_name=model)
         url = self.__wrap_url_with_api_key(f"{self.__api_url}{model_path}")
         requests_data = prepare_requests_data(
