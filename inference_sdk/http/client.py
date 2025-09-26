@@ -1011,6 +1011,7 @@ class InferenceHTTPClient:
         inference_input: Union[ImagesReference, List[ImagesReference]],
         model: str = "doctr",
         version: Optional[str] = None,
+        quantize: Optional[bool] = False,
     ) -> Union[dict, List[dict]]:
         """Run OCR on input image(s).
 
@@ -1034,6 +1035,8 @@ class InferenceHTTPClient:
         if version:
             key = f"{model.lower()}_version_id"
             payload[key] = version
+        if quantize:
+            payload["quantize"] = quantize
         model_path = resolve_ocr_path(model_name=model)
         url = self.__wrap_url_with_api_key(f"{self.__api_url}{model_path}")
         requests_data = prepare_requests_data(

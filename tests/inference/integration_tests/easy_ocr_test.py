@@ -29,14 +29,14 @@ TESTS = [
         },
         "expected_response": {
             "result": [
-                "- was thinking earlier today that I have gone through, to use the lingo, eras of listening to each of Swift's Eras. Meta indeed. I started listening to Ms. Swift's music after hearing the Midnights album. A few weeks after hearing the album for the first time, - found myself playing various songs on repeat. I listened to the album in order multiple times.",
-                "- was thinking earlier today that I have gone through, to use the lingo, eras of listening to each of Swift's Eras. Meta indeed. I started listening to Ms. Swift's music after hearing the Midnights album. A few weeks after hearing the album for the first time, - found myself playing various songs on repeat. I listened to the album in order multiple times.",
+                "was thinking earlier today that have gone through, to use the lingo, eras Of listening to each of Swift's Eras. Meta indeed: started listening to Ms. Swift's music after hearing the Midnights album: few weeks after hearing the album for the first time, found myself playing various songs on repeat. listened to the album in order multiple times:, expected was thinking earlier today that have gone through, to use the lingo, eras of listening to each of Swift's Eras: Meta indeed: started listening to Ms. Swift's music after hearing the Midnights album. A few weeks after hearing the album for the first time, found myself playing various songs on repeat. listened to the album in order multiple times:",
+                "was thinking earlier today that have gone through, to use the lingo, eras Of listening to each of Swift's Eras. Meta indeed: started listening to Ms. Swift's music after hearing the Midnights album: few weeks after hearing the album for the first time, found myself playing various songs on repeat. listened to the album in order multiple times:, expected was thinking earlier today that have gone through, to use the lingo, eras of listening to each of Swift's Eras: Meta indeed: started listening to Ms. Swift's music after hearing the Midnights album. A few weeks after hearing the album for the first time, found myself playing various songs on repeat. listened to the album in order multiple times:",
             ],
             "time": 2.61976716702338,
         },
     },
     {
-        "description": "DocTR",
+        "description": "EasyOCR",
         "type": "ocr",
         "payload": {
             "image": {
@@ -45,7 +45,7 @@ TESTS = [
             }
         },
         "expected_response": {
-            "result": "- was thinking earlier today that I have gone through, to use the lingo, eras of listening to each of Swift's Eras. Meta indeed. I started listening to Ms. Swift's music after hearing the Midnights album. A few weeks after hearing the album for the first time, - found myself playing various songs on repeat. I listened to the album in order multiple times.",
+            "result": "was thinking earlier today that have gone through, to use the lingo, eras Of listening to each of Swift's Eras. Meta indeed: started listening to Ms. Swift's music after hearing the Midnights album: few weeks after hearing the album for the first time, found myself playing various songs on repeat. listened to the album in order multiple times:, expected was thinking earlier today that have gone through, to use the lingo, eras of listening to each of Swift's Eras: Meta indeed: started listening to Ms. Swift's music after hearing the Midnights album. A few weeks after hearing the album for the first time, found myself playing various songs on repeat. listened to the album in order multiple times:",
             "time": 2.61976716702338,
         },
     },
@@ -59,10 +59,10 @@ def bool_env(val):
 
 
 @pytest.mark.skipif(
-    bool_env(os.getenv("SKIP_DOCTR_TEST", False)), reason="Skipping DocTR test"
+    bool_env(os.getenv("SKIP_EASY_OCR_TEST", False)), reason="Skipping EasyOCR test"
 )
 @pytest.mark.parametrize("test", TESTS)
-def test_doctr(test, clean_loaded_models_fixture):
+def test_easy_ocr(test, clean_loaded_models_fixture):
     payload = deepcopy(test["payload"])
     payload["api_key"] = api_key
     response = requests.post(
@@ -135,4 +135,4 @@ def setup():
 
 
 if __name__ == "__main__":
-    test_doctr()
+    test_easy_ocr()

@@ -6,21 +6,25 @@ from inference.core.entities.requests.inference import (
     BaseRequest,
     InferenceRequestImage,
 )
+from inference.core.env import EASYOCR_VERSION_ID
 
 
-class DoctrOCRInferenceRequest(BaseRequest):
+class EasyOCRInferenceRequest(BaseRequest):
     """
-    DocTR inference request.
+    EasyOCR inference request.
 
     Attributes:
         api_key (Optional[str]): Roboflow API Key.
     """
 
     image: Union[List[InferenceRequestImage], InferenceRequestImage]
-    doctr_version_id: Optional[str] = "default"
+    easy_ocr_version_id: Optional[str] = EASYOCR_VERSION_ID
     model_id: Optional[str] = Field(None)
-    # flag to generate bounding box data rather than just a string, set to False for backwards compatibility
-    generate_bounding_boxes: Optional[bool] = False
+    language_codes: Optional[List[str]] = Field(default=["en"])
+    quantize: Optional[bool] = Field(
+        default=False,
+        description="Quantized models are smaller and faster, but may be less accurate and won't work correctly on all hardware.",
+    )
 
     # TODO[pydantic]: We couldn't refactor the `validator`, please replace it by `field_validator` manually.
     # Check https://docs.pydantic.dev/dev-v2/migration/#changes-to-validators for more information.
@@ -28,6 +32,6 @@ class DoctrOCRInferenceRequest(BaseRequest):
     def validate_model_id(cls, value, values):
         if value is not None:
             return value
-        if values.get("doctr_version_id") is None:
+        if values.get("easy_ocr_version_id") is None:
             return None
-        return f"doctr/{values['doctr_version_id']}"
+        return f"easy_ocr/{values['easy_ocr_version_id']}"

@@ -1,13 +1,13 @@
-import json
-from typing import Dict, List, Literal, Optional, Type
-from urllib import response
+import hashlib
+from typing import Dict, List, Literal, Optional, Tuple, Type, Union
 from uuid import uuid4
 
 import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
 
-from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
+from inference.core.cache.lru_cache import LRUCache
+from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
 from inference.core.env import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
@@ -40,10 +40,34 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-from inference_sdk import InferenceConfiguration, InferenceHTTPClient
+from inference_sdk import InferenceHTTPClient
+from inference_sdk.http.entities import InferenceConfiguration
+
+# These are the displayed languages in the UI dropdown
+LANGUAGES = Literal[
+    "English",
+    "Japanese",
+    "Kannada",
+    "Korean",
+    "Latin",
+    "Telugu",
+    "Simplified Chinese",
+]
+
+# Dictionary of displayed_language: (model, language_code)
+# This is not an extensive list of supported languages, more codes can be added
+MODELS: Dict[str, str] = {
+    "English": ("english_g2", ["en"]),
+    "Japanese": ("japanese_g2", ["en", "ja"]),
+    "Kannada": ("kannada_g2", ["en", "kn"]),
+    "Korean": ("korean_g2", ["en", "ko"]),
+    "Latin": ("latin_g2", ["en", "la", "es", "fr", "it", "pt", "de", "pl", "nl"]),
+    "Telugu": ("telugu_g2", ["en", "te"]),
+    "Simplified Chinese": ("zh_sim_g2", ["en", "ch_sim"]),
+}
 
 LONG_DESCRIPTION = """
- Retrieve the characters in an image using DocTR Optical Character Recognition (OCR).
+ Retrieve the characters in an image using EasyOCR Optical Character Recognition (OCR).
 
 This block returns the text within an image.
 
@@ -54,6 +78,8 @@ You can then use a DynamicCropBlock to crop the region of interest before runnin
 
 Using a detections model then cropping detections allows you to isolate your analysis
 on particular regions of an image.
+
+Note that EasyOCR has limitations running within containers on Apple Silicon.
 """
 
 EXPECTED_OUTPUT_KEYS = {
@@ -66,11 +92,12 @@ EXPECTED_OUTPUT_KEYS = {
 
 
 class BlockManifest(WorkflowBlockManifest):
+
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "OCR Model",
+            "name": "EasyOCR",
             "version": "v1",
-            "short_description": "Extract text from an image using DocTR optical character recognition.",
+            "short_description": "Extract text from an image using EasyOCR optical character recognition.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
@@ -78,13 +105,24 @@ class BlockManifest(WorkflowBlockManifest):
                 "section": "model",
                 "icon": "far fa-text",
                 "blockPriority": 11,
+                "inDevelopment": False,
                 "inference": True,
             },
         }
     )
-    type: Literal["roboflow_core/ocr_model@v1", "OCRModel"]
+    type: Literal["roboflow_core/easy_ocr@v1", "EasyOCR"]
     name: str = Field(description="Unique name of step in workflows")
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
+    language: LANGUAGES = Field(
+        title="Language",
+        description="Language model to use for OCR",
+        default="English",
+    )
+    quantize: bool = Field(
+        title="Use Quantized Model",
+        description="Quantized models are smaller and faster, but may be less accurate and won't work correctly on all hardware.",
+        default=False,
+    )
 
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
@@ -107,9 +145,7 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
 
-class OCRModelBlockV1(WorkflowBlock):
-    # TODO: we need data model for OCR predictions
-
+class EasyOCRBlockV1(WorkflowBlock):
     def __init__(
         self,
         model_manager: ModelManager,
@@ -131,11 +167,28 @@ class OCRModelBlockV1(WorkflowBlock):
     def run(
         self,
         images: Batch[WorkflowImageData],
+        language: LANGUAGES = "English",
+        quantize: bool = False,
     ) -> BlockResult:
+
+        if language not in MODELS:
+            raise ValueError(f"Unsupported language: {language}")
+
+        version, language_codes = MODELS.get(language, "english_g2")
         if self._step_execution_mode is StepExecutionMode.LOCAL:
-            return self.run_locally(images=images)
+            return self.run_locally(
+                images=images,
+                version=version,
+                language_codes=language_codes,
+                quantize=quantize,
+            )
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
-            return self.run_remotely(images=images)
+            return self.run_remotely(
+                images=images,
+                version=version,
+                language_codes=language_codes,
+                quantize=quantize,
+            )
         else:
             raise ValueError(
                 f"Unknown step execution mode: {self._step_execution_mode}"
@@ -144,23 +197,32 @@ class OCRModelBlockV1(WorkflowBlock):
     def run_locally(
         self,
         images: Batch[WorkflowImageData],
+        version: str = "english_g2",
+        language_codes: List[str] = ["en"],
+        quantize: bool = False,
     ) -> BlockResult:
+
         predictions = []
         for single_image in images:
-            inference_request = DoctrOCRInferenceRequest(
+
+            inference_request = EasyOCRInferenceRequest(
+                easy_ocr_version_id=version,
                 image=single_image.to_inference_format(numpy_preferred=True),
                 api_key=self._api_key,
-                generate_bounding_boxes=True,
+                language_codes=language_codes,
+                quantize=quantize,
             )
-            doctr_model_id = load_core_model(
+            model_id = load_core_model(
                 model_manager=self._model_manager,
                 inference_request=inference_request,
-                core_model="doctr",
+                core_model="easy_ocr",
             )
             result = self._model_manager.infer_from_request_sync(
-                doctr_model_id, inference_request
+                model_id, inference_request
             )
+
             predictions.append(result.model_dump())
+
         return post_process_ocr_result(
             predictions=predictions,
             images=images,
@@ -170,6 +232,8 @@ class OCRModelBlockV1(WorkflowBlock):
     def run_remotely(
         self,
         images: Batch[WorkflowImageData],
+        version: str = "english_g2",
+        quantize: bool = False,
     ) -> BlockResult:
         api_url = (
             LOCAL_INFERENCE_API_URL
@@ -190,6 +254,9 @@ class OCRModelBlockV1(WorkflowBlock):
         non_empty_inference_images = [i.base64_image for i in images]
         predictions = client.ocr_image(
             inference_input=non_empty_inference_images,
+            model="easy_ocr",
+            version=version,
+            quantize=quantize,
         )
         if len(images) == 1:
             predictions = [predictions]

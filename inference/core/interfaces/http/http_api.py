@@ -34,6 +34,7 @@ from inference.core.entities.requests.clip import (
     ClipTextEmbeddingRequest,
 )
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
+from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
 from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
 from inference.core.entities.requests.groundingdino import GroundingDINOInferenceRequest
 from inference.core.entities.requests.inference import (
@@ -123,6 +124,7 @@ from inference.core.env import (
     BUILDER_ORIGIN,
     CORE_MODEL_CLIP_ENABLED,
     CORE_MODEL_DOCTR_ENABLED,
+    CORE_MODEL_EASYOCR_ENABLED,
     CORE_MODEL_GAZE_ENABLED,
     CORE_MODEL_GROUNDINGDINO_ENABLED,
     CORE_MODEL_OWLV2_ENABLED,
@@ -738,6 +740,17 @@ class HttpInterface(BaseInterface):
         Returns:
         The DocTR model ID.
         """
+
+        load_easy_ocr_model = partial(load_core_model, core_model="easy_ocr")
+        """Loads the EasyOCR model into the model manager.
+
+        Args:
+        Same as `load_core_model`.
+
+        Returns:
+        The EasyOCR model ID.
+        """
+
         load_paligemma_model = partial(load_core_model, core_model="paligemma")
 
         load_grounding_dino_model = partial(
@@ -1968,7 +1981,7 @@ class HttpInterface(BaseInterface):
 
                 @app.post(
                     "/doctr/ocr",
-                    response_model=OCRInferenceResponse,
+                    response_model=OCRInferenceResponse | List[OCRInferenceResponse],
                     summary="DocTR OCR response",
                     description="Run the DocTR OCR model to retrieve text in an image.",
                 )
@@ -1993,7 +2006,7 @@ class HttpInterface(BaseInterface):
                         request (Request, default Body()): The HTTP request.
 
                     Returns:
-                        M.OCRInferenceResponse: The response containing the embedded image.
+                        OCRInferenceResponse: The response containing the embedded image.
                     """
                     logger.debug(f"Reached /doctr/ocr")
                     doctr_model_id = load_doctr_model(
@@ -2010,6 +2023,54 @@ class HttpInterface(BaseInterface):
                             "authorizer"
                         ]["lambda"]["actor"]
                         trackUsage(doctr_model_id, actor)
+                    return response
+
+            if CORE_MODEL_EASYOCR_ENABLED:
+
+                @app.post(
+                    "/easy_ocr/ocr",
+                    response_model=OCRInferenceResponse | List[OCRInferenceResponse],
+                    summary="EasyOCR OCR response",
+                    description="Run the EasyOCR model to retrieve text in an image.",
+                )
+                @with_route_exceptions
+                @usage_collector("request")
+                def easy_ocr_retrieve_text(
+                    inference_request: EasyOCRInferenceRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
+                ):
+                    """
+                    Embeds image data using the EasyOCR model.
+
+                    Args:
+                        inference_request (EasyOCRInferenceRequest): The request containing the image from which to retrieve text.
+                        api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
+                        request (Request, default Body()): The HTTP request.
+
+                    Returns:
+                        OCRInferenceResponse: The response containing the embedded image.
+                    """
+                    logger.debug(f"Reached /easy_ocr/ocr")
+                    easy_ocr_model_id = load_easy_ocr_model(
+                        inference_request,
+                        api_key=api_key,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
+                    response = self.model_manager.infer_from_request_sync(
+                        easy_ocr_model_id, inference_request
+                    )
+                    if LAMBDA:
+                        actor = request.scope["aws.event"]["requestContext"][
+                            "authorizer"
+                        ]["lambda"]["actor"]
+                        trackUsage(easy_ocr_model_id, actor)
                     return response
 
             if CORE_MODEL_SAM_ENABLED:
