@@ -1,3 +1,4 @@
+import contextvars
 import os
 import warnings
 
@@ -8,6 +9,9 @@ from inference_sdk.http.entities import (
     VisualisationResponseFormat,
 )
 from inference_sdk.utils.environment import str2bool
+
+execution_id = contextvars.ContextVar("execution_id", default=None)
+
 
 # Environment variable to control whether SDK warnings are disabled.
 # Set to "true" to disable all SDK-specific warnings, "false" to enable them.

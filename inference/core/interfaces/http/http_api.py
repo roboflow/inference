@@ -1,5 +1,6 @@
 import base64
 import concurrent
+import contextvars
 import os
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from functools import partial
@@ -239,6 +240,13 @@ import time
 from inference.core.roboflow_api import ModelEndpointType
 from inference.core.version import __version__
 
+try:
+    from inference_sdk import execution_id
+    from inference_sdk.config import EXECUTION_ID_HEADER
+except ImportError:
+    execution_id = None
+    EXECUTION_ID_HEADER = None
+
 
 class LambdaMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
@@ -250,10 +258,17 @@ class LambdaMiddleware(BaseHTTPMiddleware):
 
 class GCPServerlessMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
+        if execution_id is not None:
+            execution_id_value = request.headers.get(EXECUTION_ID_HEADER)
+            if not execution_id_value:
+                execution_id_value = f"{time.time_ns()}_{uuid4().hex[:4]}"
+            execution_id.set(execution_id_value)
         t1 = time.time()
         response = await call_next(request)
         t2 = time.time()
         response.headers[PROCESSING_TIME_HEADER] = str(t2 - t1)
+        if execution_id is not None:
+            response.headers[EXECUTION_ID_HEADER] = execution_id_value
         return response
 
 

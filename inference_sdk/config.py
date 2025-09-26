@@ -5,6 +5,7 @@ from inference_sdk.utils.environment import str2bool
 WORKFLOW_RUN_RETRIES_ENABLED = str2bool(
     os.getenv("WORKFLOW_RUN_RETRIES_ENABLED", "True")
 )
+EXECUTION_ID_HEADER = os.getenv("EXECUTION_ID_HEADER", "execution_id")
 
 
 class InferenceSDKDeprecationWarning(Warning):
