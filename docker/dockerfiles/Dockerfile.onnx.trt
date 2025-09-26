@@ -35,7 +35,7 @@ RUN pip install --upgrade pip setuptools && pip install \
     -r requirements.doctr.txt \
     -r requirements.groundingdino.txt \
     -r requirements.sdk.http.txt \
-    -r requirements/requirements.easyocr.txt \
+    -r requirements.easyocr.txt \
     "scikit-image==0.25.2" \
     "mediapipe==0.10.14" \
     "onnxruntime-gpu==1.21.0" \
