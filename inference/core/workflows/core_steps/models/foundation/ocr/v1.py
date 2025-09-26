@@ -160,7 +160,7 @@ class OCRModelBlockV1(WorkflowBlock):
             result = self._model_manager.infer_from_request_sync(
                 doctr_model_id, inference_request
             )
-            predictions.append(result.model_dump())
+            predictions.append(result.model_dump(by_alias=True, exclude_none=True))
         return post_process_ocr_result(
             predictions=predictions,
             images=images,

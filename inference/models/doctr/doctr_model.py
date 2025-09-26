@@ -2,10 +2,9 @@ import os
 import shutil
 import tempfile
 import uuid
-from ast import List
 from copy import copy
 from time import perf_counter
-from typing import Any, Tuple, Union
+from typing import Any, List, Tuple, Union
 
 import torch
 from doctr.io import DocumentFile
@@ -13,6 +12,10 @@ from doctr.models import crnn_vgg16_bn, db_resnet50, ocr_predictor
 from PIL import Image
 
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
+from inference.core.entities.responses.inference import (
+    InferenceResponseImage,
+    ObjectDetectionPrediction,
+)
 from inference.core.entities.responses.ocr import OCRInferenceResponse
 from inference.core.env import DEVICE, MODEL_CACHE_DIR
 from inference.core.models.roboflow import RoboflowCoreModel
@@ -121,21 +124,27 @@ class DocTR(RoboflowCoreModel):
     def single_request(self, request: DoctrOCRInferenceRequest) -> OCRInferenceResponse:
         t1 = perf_counter()
         result = self.infer(**request.dict())
+        if not isinstance(result, tuple):
+            result = (result, None, None)
         # maintaining backwards compatibility with previous implementation
         if request.generate_bounding_boxes:
             return OCRInferenceResponse(
                 result=result[0],
-                predictions=result[1],
+                image=result[1],
+                predictions=result[2],
                 time=perf_counter() - t1,
             )
         else:
             return OCRInferenceResponse(
-                result=result,
-                predictions=[],
+                result=result[0],
                 time=perf_counter() - t1,
             )
 
-    def infer(self, image: Any, **kwargs):
+    def infer(
+        self, image: Any, **kwargs
+    ) -> Union[
+        str, Tuple[str, InferenceResponseImage, List[ObjectDetectionPrediction]]
+    ]:
         """
         Run inference on a provided image.
             - image: can be a BGR numpy array, filepath, InferenceRequestImage, PIL Image, byte-string, etc.
@@ -169,7 +178,6 @@ class DocTR(RoboflowCoreModel):
             ]
 
             result = " ".join([word["value"] for word in words])
-
             # maintaining backwards compatibility with previous implementation
             if not kwargs.get("generate_bounding_boxes", False):
                 return result
@@ -177,23 +185,27 @@ class DocTR(RoboflowCoreModel):
             bounding_boxes = [
                 _geometry_to_bbox(page_dimensions, word["geometry"]) for word in words
             ]
-
             objects = [
-                {
-                    "x": bbox[0] + (bbox[2] - bbox[0]) // 2,
-                    "y": bbox[1] + (bbox[3] - bbox[1]) // 2,
-                    "width": bbox[2] - bbox[0],
-                    "height": bbox[3] - bbox[1],
-                    "confidence": float(word["objectness_score"]),
-                    "class": word["value"],
-                    "class_id": 0,
-                    "detection_id": str(uuid.uuid4()),
-                }
+                ObjectDetectionPrediction(
+                    **{
+                        "x": bbox[0] + (bbox[2] - bbox[0]) // 2,
+                        "y": bbox[1] + (bbox[3] - bbox[1]) // 2,
+                        "width": bbox[2] - bbox[0],
+                        "height": bbox[3] - bbox[1],
+                        "confidence": float(word["objectness_score"]),
+                        "class": word["value"],
+                        "class_id": 0,
+                        "detection_id": str(uuid.uuid4()),
+                    }
+                )
                 for word, bbox in zip(words, bounding_boxes)
             ]
-
-            if kwargs.get("generate_bounding_boxes", False):
-                return result, objects
+            image_height, image_width = img[0].shape[:2]
+            return (
+                result,
+                InferenceResponseImage(width=image_width, height=image_height),
+                objects,
+            )
 
     def get_infer_bucket_file_list(self) -> list:
         """Get the list of required files for inference.

@@ -13,6 +13,7 @@ from PIL import Image
 from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
 from inference.core.entities.responses.inference import (
     InferenceResponse,
+    InferenceResponseImage,
     ObjectDetectionPrediction,
 )
 from inference.core.entities.responses.ocr import OCRInferenceResponse
@@ -59,7 +60,6 @@ class EasyOCR(RoboflowCoreModel):
     def predict(self, image_in: np.ndarray, prompt="", history=None, **kwargs):
         language_codes = kwargs.get("language_codes", ["en"])
         quantize = kwargs.get("quantize", False)
-
         reader = easyocr.Reader(
             language_codes,
             download_enabled=False,
@@ -72,6 +72,7 @@ class EasyOCR(RoboflowCoreModel):
             gpu=True,
             quantize=quantize,
         )
+
         results = reader.readtext(image_in)
 
         # convert native EasyOCR results from numpy to standard python types
@@ -88,12 +89,15 @@ class EasyOCR(RoboflowCoreModel):
         preprocess_return_metadata: PreprocessReturnMetadata,
         **kwargs,
     ) -> Any:
-        return predictions
+        return predictions, preprocess_return_metadata
 
     def preprocess(
         self, image: Any, **kwargs
     ) -> Tuple[np.ndarray, PreprocessReturnMetadata]:
-        return load_image(image)[0], kwargs
+        image = load_image(image)[0]
+        return image, InferenceResponseImage(
+            width=image.shape[1], height=image.shape[0]
+        )
 
     def infer_from_request(
         self, request: EasyOCRInferenceRequest
@@ -109,21 +113,24 @@ class EasyOCR(RoboflowCoreModel):
 
     def single_request(self, request: EasyOCRInferenceRequest) -> OCRInferenceResponse:
         t1 = perf_counter()
-        prediction_result = self.infer(**request.dict())
+        prediction_result, image_metadata = self.infer(**request.dict())
         strings = [res[1] for res in prediction_result]
         return OCRInferenceResponse(
             result=" ".join(strings),
+            image=image_metadata,
             predictions=[
-                {
-                    "x": box[0][0] + (box[2][0] - box[0][0]) // 2,
-                    "y": box[0][1] + (box[2][1] - box[0][1]) // 2,
-                    "width": box[2][0] - box[0][0],
-                    "height": box[2][1] - box[0][1],
-                    "confidence": float(confidence),
-                    "class": string,
-                    "class_id": 0,
-                    "detection_id": str(uuid.uuid4()),
-                }
+                ObjectDetectionPrediction(
+                    **{
+                        "x": box[0][0] + (box[2][0] - box[0][0]) // 2,
+                        "y": box[0][1] + (box[2][1] - box[0][1]) // 2,
+                        "width": box[2][0] - box[0][0],
+                        "height": box[2][1] - box[0][1],
+                        "confidence": float(confidence),
+                        "class": string,
+                        "class_id": 0,
+                        "detection_id": str(uuid.uuid4()),
+                    }
+                )
                 for box, string, confidence in prediction_result
             ],
             time=perf_counter() - t1,

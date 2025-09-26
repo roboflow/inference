@@ -1,9 +1,11 @@
 from typing import List, Optional
 
-import supervision as sv
 from pydantic import BaseModel, Field
 
-from inference.core.interfaces.stream.entities import ObjectDetectionPrediction
+from inference.core.entities.responses.inference import (
+    InferenceResponseImage,
+    ObjectDetectionPrediction,
+)
 
 
 class OCRInferenceResponse(BaseModel):
@@ -17,8 +19,11 @@ class OCRInferenceResponse(BaseModel):
     """
 
     result: str = Field(description="The combined OCR recognition result.")
-    predictions: List[ObjectDetectionPrediction] = (
-        Field(description="List of objects detected by OCR", default=[]),
+    image: Optional[InferenceResponseImage] = Field(
+        description="Metadata about input image dimensions", default=None
+    )
+    predictions: Optional[List[ObjectDetectionPrediction]] = Field(
+        description="List of objects detected by OCR", default=None
     )
     time: float = Field(
         description="The time in seconds it took to produce the inference including preprocessing."
