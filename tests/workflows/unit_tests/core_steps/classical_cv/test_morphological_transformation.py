@@ -70,6 +70,6 @@ def test_morphological_transformation_block() -> None:
     assert hasattr(output.get("image"), "numpy_image")
 
     # dimensions of output match input
-    assert output.get("image").numpy_image.shape == (1000, 1000)
+    assert output.get("image").numpy_image.shape == (1000, 1000, 1)
     # check if the image is modified
     assert not np.array_equal(output.get("image").numpy_image, start_image)
