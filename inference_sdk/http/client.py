@@ -7,6 +7,7 @@ import requests
 from aiohttp import ClientConnectionError, ClientResponseError
 from requests import HTTPError
 
+from inference_sdk.config import EXECUTION_ID_HEADER, execution_id
 from inference_sdk.http.entities import (
     ALL_ROBOFLOW_API_URLS,
     CLASSIFICATION_TASK,
@@ -490,10 +491,17 @@ class InferenceHTTPClient:
             "api_key": self.__api_key,
         }
         params.update(self.__inference_configuration.to_legacy_call_parameters())
+
+        execution_id_value = execution_id.get()
+        headers = DEFAULT_HEADERS
+        if execution_id_value:
+            headers = headers.copy()
+            headers[EXECUTION_ID_HEADER] = execution_id_value
+
         requests_data = prepare_requests_data(
             url=f"{self.__api_url}/{model_id_chunks[0]}/{model_id_chunks[1]}",
             encoded_inference_inputs=encoded_inference_inputs,
-            headers=DEFAULT_HEADERS,
+            headers=headers,
             parameters=params,
             payload=None,
             max_batch_size=1,
@@ -568,10 +576,17 @@ class InferenceHTTPClient:
             "api_key": self.__api_key,
         }
         params.update(self.__inference_configuration.to_legacy_call_parameters())
+
+        execution_id_value = execution_id.get()
+        headers = DEFAULT_HEADERS
+        if execution_id_value:
+            headers = headers.copy()
+            headers[EXECUTION_ID_HEADER] = execution_id_value
+
         requests_data = prepare_requests_data(
             url=f"{self.__api_url}/{model_id_chunks[0]}/{model_id_chunks[1]}",
             encoded_inference_inputs=encoded_inference_inputs,
-            headers=DEFAULT_HEADERS,
+            headers=headers,
             parameters=params,
             payload=None,
             max_batch_size=1,
@@ -1261,10 +1276,15 @@ class InferenceHTTPClient:
         payload["text"] = text
         if clip_version is not None:
             payload["clip_version_id"] = clip_version
+        headers = DEFAULT_HEADERS.copy()
+        execution_id_value = execution_id.get()
+        if execution_id_value is not None:
+            headers[EXECUTION_ID_HEADER] = execution_id_value
+
         response = requests.post(
             self.__wrap_url_with_api_key(f"{self.__api_url}/clip/embed_text"),
             json=payload,
-            headers=DEFAULT_HEADERS,
+            headers=headers,
         )
         api_key_safe_raise_for_status(response=response)
         return unwrap_single_element_list(sequence=response.json())
@@ -1358,10 +1378,16 @@ class InferenceHTTPClient:
             )
         else:
             payload["prompt"] = prompt
+
+        headers = DEFAULT_HEADERS.copy()
+        execution_id_value = execution_id.get()
+        if execution_id_value is not None:
+            headers[EXECUTION_ID_HEADER] = execution_id_value
+
         response = requests.post(
             self.__wrap_url_with_api_key(f"{self.__api_url}/clip/compare"),
             json=payload,
-            headers=DEFAULT_HEADERS,
+            headers=headers,
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
@@ -1460,12 +1486,18 @@ class InferenceHTTPClient:
         payload["text"] = text
         if perception_encoder_version is not None:
             payload["perception_encoder_version_id"] = perception_encoder_version
+
+        headers = DEFAULT_HEADERS.copy()
+        execution_id_value = execution_id.get()
+        if execution_id_value is not None:
+            headers[EXECUTION_ID_HEADER] = execution_id_value
+
         response = requests.post(
             self.__wrap_url_with_api_key(
                 f"{self.__api_url}/perception_encoder/embed_text"
             ),
             json=payload,
-            headers=DEFAULT_HEADERS,
+            headers=headers,
         )
         api_key_safe_raise_for_status(response=response)
         return unwrap_single_element_list(sequence=response.json())
