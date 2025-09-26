@@ -17,7 +17,7 @@ class Sam3SegmentationPrediction(BaseModel):
     confidence: float = Field(description="Masks confidence")
     format: Optional[str] = Field(
         default="polygon",
-        description="Format of the mask data: 'polygon' or 'mask'"
+        description="Format of the mask data: 'polygon' or 'rle'"
     )
 
 

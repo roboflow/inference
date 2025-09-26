@@ -219,8 +219,8 @@ class SegmentAnything3(RoboflowCoreModel):
                     return self._results_to_response(
                         masks=masks, scores=scores, start_ts=t1
                     )
-                elif request.format == "mask":
-                    return self._results_to_mask_response(
+                elif request.format == "rle":
+                    return self._results_to_rle_response(
                         masks=masks, scores=scores, start_ts=t1
                     )
                 elif request.format == "binary":
@@ -291,7 +291,7 @@ class SegmentAnything3(RoboflowCoreModel):
             time=perf_counter() - start_ts, predictions=predictions
         )
 
-    def _results_to_mask_response(
+    def _results_to_rle_response(
         self, masks: np.ndarray, scores: np.ndarray, start_ts: float
     ) -> Sam3SegmentationResponse:
         predictions: List[Sam3SegmentationPrediction] = []
@@ -308,7 +308,7 @@ class SegmentAnything3(RoboflowCoreModel):
                 Sam3SegmentationPrediction(
                     masks=rle,
                     confidence=float(score),
-                    format="mask"
+                    format="rle"
                 )
             )
 

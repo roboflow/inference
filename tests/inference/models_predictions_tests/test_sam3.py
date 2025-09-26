@@ -61,7 +61,7 @@ def test_sam3_segment_with_box_prompt(monkeypatch):
 
 
 @pytest.mark.skipif(SegmentAnything3 is None, reason="SAM3 not installed")
-def test_sam3_segment_with_mask_format(monkeypatch):
+def test_sam3_segment_with_rle_format(monkeypatch):
     import os
 
     # if os.getenv("SAM3_CHECKPOINT_PATH") is None:
@@ -73,7 +73,7 @@ def test_sam3_segment_with_mask_format(monkeypatch):
     req = Sam3SegmentationRequest(
         image={"type": "numpy", "value": img},
         text="object",
-        format="mask",
+        format="rle",
         output_prob_thresh=0.0,
     )
     resp = model.infer_from_request(req)
@@ -84,7 +84,7 @@ def test_sam3_segment_with_mask_format(monkeypatch):
     # If there are predictions, verify RLE structure
     if resp.predictions:
         pred = resp.predictions[0]  # Check first prediction
-        assert pred.format == "mask"
+        assert pred.format == "rle"
         assert isinstance(pred.masks, dict)
         assert "size" in pred.masks
         assert "counts" in pred.masks
