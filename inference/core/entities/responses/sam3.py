@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional, Union, Dict, Any
 
 from pydantic import BaseModel, Field
 
@@ -11,10 +11,14 @@ class Sam3EmbeddingResponse(BaseModel):
 
 
 class Sam3SegmentationPrediction(BaseModel):
-    masks: List[List[List[int]]] = Field(
-        description="The set of points for output mask as polygon. Each element of list represents single point."
+    masks: Union[List[List[List[int]]], Dict[str, Any]] = Field(
+        description="Mask data - either polygon coordinates or RLE encoding"
     )
     confidence: float = Field(description="Masks confidence")
+    format: Optional[str] = Field(
+        default="polygon",
+        description="Format of the mask data: 'polygon' or 'rle'"
+    )
 
 
 class Sam3SegmentationResponse(BaseModel):

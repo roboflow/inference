@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import torch
 import threading
+from pycocotools import mask as mask_utils
 
 from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.entities.requests.sam3 import (
@@ -214,8 +215,13 @@ class SegmentAnything3(RoboflowCoreModel):
                 return self.embed_image(**request.dict())
             elif isinstance(request, Sam3SegmentationRequest):
                 masks, scores = self.segment_image(**request.dict())
-                if request.format == "json":
+                # `json` is legacy default
+                if request.format in ["polygon", "json"]:
                     return self._results_to_response(
+                        masks=masks, scores=scores, start_ts=t1
+                    )
+                elif request.format == "rle":
+                    return self._results_to_rle_response(
                         masks=masks, scores=scores, start_ts=t1
                     )
                 elif request.format == "binary":
@@ -277,9 +283,36 @@ class SegmentAnything3(RoboflowCoreModel):
         for poly, score in zip(polygons, scores):
             predictions.append(
                 Sam3SegmentationPrediction(
-                    masks=[p.tolist() for p in poly], confidence=float(score)
+                    masks=[p.tolist() for p in poly],
+                    confidence=float(score),
+                    format="polygon"
                 )
             )
+        return Sam3SegmentationResponse(
+            time=perf_counter() - start_ts, predictions=predictions
+        )
+
+    def _results_to_rle_response(
+        self, masks: np.ndarray, scores: np.ndarray, start_ts: float
+    ) -> Sam3SegmentationResponse:
+        predictions: List[Sam3SegmentationPrediction] = []
+
+        for mask, score in zip(masks, scores):
+            # Apply same threshold as polygon format
+            mask_binary = (mask >= 0.5).astype(np.uint8)
+
+            # Encode mask to RLE format
+            rle = mask_utils.encode(np.asfortranarray(mask_binary))
+            rle['counts'] = rle['counts'].decode('utf-8')
+
+            predictions.append(
+                Sam3SegmentationPrediction(
+                    masks=rle,
+                    confidence=float(score),
+                    format="rle"
+                )
+            )
+
         return Sam3SegmentationResponse(
             time=perf_counter() - start_ts, predictions=predictions
         )
