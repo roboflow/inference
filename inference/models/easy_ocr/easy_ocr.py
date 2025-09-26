@@ -65,8 +65,8 @@ class EasyOCR(RoboflowCoreModel):
         reader = easyocr.Reader(
             language_codes,
             download_enabled=False,
-            user_network_directory=f"/tmp/cache/easy_ocr/{self.recognizer}/",
-            model_storage_directory=f"/tmp/cache/easy_ocr/{self.recognizer}/",
+            user_network_directory=f"{MODEL_CACHE_DIR}/easy_ocr/{self.recognizer}/",
+            model_storage_directory=f"{MODEL_CACHE_DIR}/easy_ocr/{self.recognizer}/",
             detect_network="craft",
             recog_network=self.recognizer,
             detector=True,

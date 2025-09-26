@@ -91,13 +91,14 @@ Alternatively, you can take advantage of some advanced execution providers using
 
 Some functionality requires extra dependencies. These can be installed by specifying the desired extras during installation of Roboflow Inference. e.x. `pip install inference[extra]`
 
-| extra | description |
-|:-------|:-------------------------------------------------|
-| `clip` | Ability to use the core `CLIP` model (by OpenAI) |
-| `gaze` | Ability to use the core `Gaze` model |
-| `http` | Ability to run the http interface |
-| `sam`  | Ability to run the core `Segment Anything` model (by Meta AI) |
-| `doctr` | Ability to use the core `doctr` model (by <a href="https://github.com/mindee/doctr" target="_blank">Mindee</a>) |
+| extra | description                                                                                                                                                                                                                         |
+|:-------|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `clip` | Ability to use the core `CLIP` model (by OpenAI)                                                                                                                                                                                    |
+| `gaze` | Ability to use the core `Gaze` model                                                                                                                                                                                                |
+| `http` | Ability to run the http interface                                                                                                                                                                                                   |
+| `sam`  | Ability to run the core `Segment Anything` model (by Meta AI)                                                                                                                                                                       |
+| `doctr` | Ability to use the core `doctr` model (by <a href="https://github.com/mindee/doctr" target="_blank">Mindee</a>)                                                                                                                     |
+| `easy-ocr` | Ability to use the core `easy-ocr` model (by <a href="https://github.com/JaidedAI/EasyOCRr" target="_blank">JaidedAI</a>)                                                                                                                  |
 | `transformers` | Ability to use transformers based multi-modal models such as `Florence2` and `PaliGemma`. To use Florence2 you will need to manually install <a href="https://github.com/Dao-AILab/flash-attention/" target="_blank">flash_attn</a> |
 
 **_Note:_** Both CLIP and Segment Anything require PyTorch to run. These are included in their respective dependencies however PyTorch installs can be highly environment dependent. See the <a href="https://pytorch.org/get-started/locally/" target="_blank">official PyTorch install page</a> for instructions specific to your enviornment.
