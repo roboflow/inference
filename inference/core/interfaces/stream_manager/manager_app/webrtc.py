@@ -283,12 +283,10 @@ class VideoTransformTrack(VideoStreamTrack):
             new_frame = VideoFrame.from_ndarray(np_frame, format="bgr24")
             self._last_processed_frame = new_frame
 
-        pts = int((time.monotonic() - self._t0) * self._scale)
-
-        # ensure strictly increasing PTS (no duplicates)
-        if pts <= self._last_pts:
-            pts = self._last_pts + 1
-        self._last_pts = pts
+        # below method call may sleep
+        pts, time_base = await self.next_timestamp()
+        new_frame.pts = pts
+        new_frame.time_base = time_base
 
         return new_frame
 
