@@ -44,6 +44,7 @@ RUN python3 -m pip install --upgrade pip && \
     -r requirements/requirements.jetson.txt \
     -r requirements/requirements.transformers.txt \
     -r requirements/requirements.gpu.txt \
+    -r requirements/requirements.easyocr.txt \
     "setuptools<=75.5.0" \
     --extra-index-url https://pypi.jetson-ai-lab.dev/jp6/cu126
 RUN python3 -m pip install "numpy<=1.26.4"
