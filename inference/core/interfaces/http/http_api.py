@@ -184,7 +184,10 @@ from inference.core.interfaces.http.handlers.workflows import (
 )
 from inference.core.interfaces.http.middlewares.cors import PathAwareCORSMiddleware
 from inference.core.interfaces.http.middlewares.gzip import gzip_response_if_requested
-from inference.core.interfaces.http.orjson_utils import orjson_response
+from inference.core.interfaces.http.orjson_utils import (
+    orjson_response,
+    orjson_response_keeping_parent_id,
+)
 from inference.core.interfaces.stream_manager.api.entities import (
     CommandResponse,
     ConsumePipelineResponse,
@@ -1994,7 +1997,9 @@ class HttpInterface(BaseInterface):
 
                 @app.post(
                     "/doctr/ocr",
-                    response_model=OCRInferenceResponse | List[OCRInferenceResponse],
+                    response_model=Union[
+                        OCRInferenceResponse, List[OCRInferenceResponse]
+                    ],
                     summary="DocTR OCR response",
                     description="Run the DocTR OCR model to retrieve text in an image.",
                 )
@@ -2036,13 +2041,15 @@ class HttpInterface(BaseInterface):
                             "authorizer"
                         ]["lambda"]["actor"]
                         trackUsage(doctr_model_id, actor)
-                    return orjson_response(response)
+                    return orjson_response_keeping_parent_id(response)
 
             if CORE_MODEL_EASYOCR_ENABLED:
 
                 @app.post(
                     "/easy_ocr/ocr",
-                    response_model=OCRInferenceResponse | List[OCRInferenceResponse],
+                    response_model=Union[
+                        OCRInferenceResponse, List[OCRInferenceResponse]
+                    ],
                     summary="EasyOCR OCR response",
                     description="Run the EasyOCR model to retrieve text in an image.",
                 )
@@ -2084,7 +2091,7 @@ class HttpInterface(BaseInterface):
                             "authorizer"
                         ]["lambda"]["actor"]
                         trackUsage(easy_ocr_model_id, actor)
-                    return orjson_response(response)
+                    return orjson_response_keeping_parent_id(response)
 
             if CORE_MODEL_SAM_ENABLED:
 
@@ -2472,7 +2479,7 @@ class HttpInterface(BaseInterface):
                             "authorizer"
                         ]["lambda"]["actor"]
                         trackUsage(trocr_model_id, actor)
-                    return orjson_response(response)
+                    return orjson_response_keeping_parent_id(response)
 
         if not (LAMBDA or GCP_SERVERLESS):
 

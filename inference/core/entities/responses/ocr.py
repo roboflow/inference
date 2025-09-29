@@ -23,7 +23,8 @@ class OCRInferenceResponse(BaseModel):
         description="Metadata about input image dimensions", default=None
     )
     predictions: Optional[List[ObjectDetectionPrediction]] = Field(
-        description="List of objects detected by OCR", default=None
+        description="List of objects detected by OCR",
+        default=None,
     )
     time: float = Field(
         description="The time in seconds it took to produce the inference including preprocessing."
