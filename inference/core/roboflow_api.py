@@ -339,8 +339,8 @@ def get_roboflow_model_data(
     model_id: str,
     endpoint_type: ModelEndpointType,
     device_id: str,
-    countinference: bool = None,
-    service_secret: str = None,
+    countinference: Optional[bool] = None,
+    service_secret: Optional[str] = None,
 ) -> dict:
     api_data_cache_key = f"roboflow_api_data:{endpoint_type.value}:{model_id}"
     api_data = None

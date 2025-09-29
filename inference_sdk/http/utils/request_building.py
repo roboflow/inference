@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+from inference_sdk.config import EXECUTION_ID_HEADER, execution_id
 from inference_sdk.http.utils.iterables import make_batches
 from inference_sdk.http.utils.requests import inject_images_into_payload
 
@@ -117,6 +118,12 @@ def assembly_request_data(
             f"Not implemented request building method for {image_placement}"
         )
     scaling_factors = [e[1] for e in batch_inference_inputs]
+
+    execution_id_value = execution_id.get()
+    if execution_id_value:
+        headers = headers.copy()
+        headers[EXECUTION_ID_HEADER] = execution_id_value
+
     return RequestData(
         url=url,
         request_elements=len(batch_inference_inputs),
