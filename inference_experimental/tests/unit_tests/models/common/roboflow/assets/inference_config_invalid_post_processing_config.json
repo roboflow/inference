@@ -1,0 +1,33 @@
+{
+  "image_pre_processing": {
+    "auto-orient": {
+      "enabled": true
+    },
+    "static-crop": {
+      "enabled": true,
+      "x_min": 9,
+      "y_min": 9,
+      "x_max": 94,
+      "y_max": 75
+    }
+  },
+  "network_input": {
+    "training_input_size": {
+      "height": "412",
+      "width": "412"
+    },
+    "dynamic_spatial_size_supported": true,
+    "dynamic_spatial_size_mode": {
+      "type": "any-size"
+    },
+    "color_mode": "rgb",
+    "resize_mode": "stretch",
+    "padding_value": null,
+    "input_channels": 3,
+    "scaling_factor": null,
+    "normalization": null
+  },
+  "post_processing": {
+    "some": "dummy"
+  }
+}

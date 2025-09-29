@@ -2,7 +2,7 @@ import logging
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
-from typing import Any, Callable, Dict, Iterable, List, Optional, TypeVar, Union
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, TypeVar, Union
 
 import numpy as np
 import supervision as sv
@@ -10,6 +10,7 @@ from supervision.config import CLASS_NAME_DATA_FIELD
 
 from inference.core.entities.requests.clip import ClipCompareRequest
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
+from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
 from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
 from inference.core.entities.requests.sam2 import Sam2InferenceRequest
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
@@ -48,6 +49,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     OriginCoordinatesSystem,
     WorkflowImageData,
 )
+from inference.core.workflows.prototypes.block import BlockResult
 
 T = TypeVar("T")
 
@@ -56,6 +58,7 @@ def load_core_model(
     model_manager: ModelManager,
     inference_request: Union[
         DoctrOCRInferenceRequest,
+        EasyOCRInferenceRequest,
         ClipCompareRequest,
         YOLOWorldInferenceRequest,
         Sam2InferenceRequest,
@@ -424,6 +427,25 @@ def remove_unexpected_keys_from_dictionary(
     for unexpected_key in unexpected_keys:
         del dictionary[unexpected_key]
     return dictionary
+
+
+def post_process_ocr_result(
+    images: Batch[WorkflowImageData],
+    predictions: List[dict],
+    expected_output_keys: Set[str],
+) -> BlockResult:
+    for prediction, image in zip(predictions, images):
+        detection_ids = [p["detection_id"] for p in prediction.get("predictions", [])]
+        prediction["predictions"] = sv.Detections.from_inference(prediction)
+        prediction["predictions"]["detection_id"] = detection_ids
+        prediction[PREDICTION_TYPE_KEY] = "ocr"
+        prediction[PARENT_ID_KEY] = image.parent_metadata.parent_id
+        prediction[ROOT_PARENT_ID_KEY] = image.workflow_root_ancestor_metadata.parent_id
+        _ = remove_unexpected_keys_from_dictionary(
+            dictionary=prediction,
+            expected_keys=expected_output_keys,
+        )
+    return predictions
 
 
 def run_in_parallel(tasks: List[Callable[[], T]], max_workers: int = 1) -> List[T]:
