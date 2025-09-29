@@ -30,8 +30,6 @@ if DEVICE is None:
     else:
         DEVICE = "cpu"
 
-np.float32
-
 
 class EasyOCR(RoboflowCoreModel):
     """Roboflow EasyOCR model implementation.
@@ -51,7 +49,7 @@ class EasyOCR(RoboflowCoreModel):
 
         super().__init__(model_id=model_id.lower(), *args, **kwargs)
         self.device = device
-
+        self.task_type = "ocr"
         self.recognizer = model_id.split("/")[1]
 
         shutil.copyfile(
