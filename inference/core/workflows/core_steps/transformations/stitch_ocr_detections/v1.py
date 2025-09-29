@@ -1,9 +1,9 @@
 from enum import Enum
-from typing import Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Dict, List, Literal, Optional, Type, Union
 
 import numpy as np
 import supervision as sv
-from pydantic import AliasChoices, ConfigDict, Field, field_validator
+from pydantic import ConfigDict, Field, field_validator
 
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -22,7 +22,7 @@ from inference.core.workflows.prototypes.block import (
 )
 
 LONG_DESCRIPTION = """
-Combines OCR detection results into a coherent text string by organizing detections spatially. 
+Combines OCR detection results into a coherent text string by organizing detections spatially.
 This transformation is perfect for turning individual OCR results into structured, readable text!
 
 #### How It Works
@@ -37,17 +37,17 @@ This transformation reconstructs the original text from OCR detection results by
 
 #### Parameters
 
-- **`tolerance`**: Controls how close detections need to be vertically to be considered part of the same line of text. 
+- **`tolerance`**: Controls how close detections need to be vertically to be considered part of the same line of text.
 A higher tolerance will group detections that are further apart vertically.
 
 - **`reading_direction`**: Determines the order in which text is read. Available options:
-  
+
     * **"left_to_right"**: Standard left-to-right reading (e.g., English) ➡️
-  
+
     * **"right_to_left"**: Right-to-left reading (e.g., Arabic) ⬅️
-  
+
     * **"vertical_top_to_bottom"**: Vertical reading from top to bottom ⬇️
-  
+
     * **"vertical_bottom_to_top"**: Vertical reading from bottom to top ⬆️
 
     * **"auto"**: Automatically detects the reading direction based on the spatial arrangement of text elements.
@@ -66,7 +66,7 @@ This is especially useful for:
 
 #### Example Usage
 
-Use this transformation after an OCR model that outputs individual words or characters, so you can reconstruct the 
+Use this transformation after an OCR model that outputs individual words or characters, so you can reconstruct the
 original text layout in its intended format.
 """
 
@@ -147,6 +147,12 @@ class BlockManifest(WorkflowBlockManifest):
         default=10,
         examples=[10, "$inputs.tolerance"],
     )
+    delimiter: Union[str, Selector(kind=[STRING_KIND])] = Field(
+        title="Delimiter",
+        description="The delimiter to use for stitching text.",
+        default="",
+        examples=["", "$inputs.delimiter"],
+    )
 
     @field_validator("tolerance")
     @classmethod
@@ -155,7 +161,7 @@ class BlockManifest(WorkflowBlockManifest):
     ) -> Union[int, str]:
         if isinstance(value, int) and value <= 0:
             raise ValueError(
-                "Stitch OCR detections block expects `tollerance` to be greater than zero."
+                "Stitch OCR detections block expects `tolerance` to be greater than zero."
             )
         return value
 
@@ -201,6 +207,7 @@ class StitchOCRDetectionsBlockV1(WorkflowBlock):
         predictions: Batch[sv.Detections],
         reading_direction: str,
         tolerance: int,
+        delimiter: str = "",
     ) -> BlockResult:
         if reading_direction == "auto":
             reading_direction = detect_reading_direction(predictions[0])
@@ -209,6 +216,7 @@ class StitchOCRDetectionsBlockV1(WorkflowBlock):
                 detections=detections,
                 reading_direction=reading_direction,
                 tolerance=tolerance,
+                delimiter=delimiter,
             )
             for detections in predictions
         ]
@@ -218,6 +226,7 @@ def stitch_ocr_detections(
     detections: sv.Detections,
     reading_direction: str = "left_to_right",
     tolerance: int = 10,
+    delimiter: str = "",
 ) -> Dict[str, str]:
     """
     Stitch OCR detections into coherent text based on spatial arrangement.
@@ -264,7 +273,7 @@ def stitch_ocr_detections(
         if i < len(lines) - 1:
             ordered_class_names.append(get_line_separator(reading_direction))
 
-    return {"ocr_text": "".join(ordered_class_names)}
+    return {"ocr_text": delimiter.join(ordered_class_names)}
 
 
 def prepare_coordinates(
