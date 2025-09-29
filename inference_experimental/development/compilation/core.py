@@ -87,6 +87,8 @@ def select_matching_model_packages(
         api_key=roboflow_api_key,
     )
     matching_model_packages = negotiate_model_packages(
+        model_architecture=model_metadata.model_architecture,
+        task_type=model_metadata.task_type,
         model_packages=model_metadata.model_packages,
         requested_backends=BackendType.ONNX,
         requested_quantization=Quantization.FP32,
