@@ -136,13 +136,6 @@ class VideoTransformTrack(VideoStreamTrack):
 
         self._last_queue_log_time: float = 0.0
 
-        # Synthetic PTS generation to prevent quality drops
-        # 90000 Hz (90 kHz) clock rate defined by rfc3551 https://datatracker.ietf.org/doc/html/rfc3551
-        self._time_base = fractions.Fraction(1, 90000)
-        self._scale = self._time_base.denominator / self._time_base.numerator
-        self._t0 = time.monotonic()
-        self._last_pts = -1
-
         self._drain_remote_stream_track = drain_remote_stream_track
 
     def set_track(
