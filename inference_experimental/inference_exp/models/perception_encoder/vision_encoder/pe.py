@@ -11,6 +11,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from einops import rearrange
+from inference_exp.logger import LOGGER
 from inference_exp.models.perception_encoder.vision_encoder.config import (
     PE_TEXT_CONFIG,
     PE_VISION_CONFIG,
@@ -417,10 +418,8 @@ class VisionTransformer(nn.Module):
             _sd = {k.replace("visual.", ""): v for k, v in _sd.items() if "visual" in k}
 
         m, u = self.load_state_dict(_sd, strict=False)
-        logger.info(f"Missing keys for loading vision encoder: {m}")
-        logger.info(f"Unexpected keys for loading vision encoder: {u}")
-        print(f"Missing keys for loading vision encoder: {m}")
-        print(f"Unexpected keys for loading vision encoder: {u}")
+        LOGGER.warning(f"Missing keys for loading vision encoder: {m}")
+        LOGGER.info(f"Unexpected keys for loading vision encoder: {u}")
 
     def truncate(self, layer_idx: int):
         """Delete layers so the last layer is the given layer index."""
@@ -625,10 +624,10 @@ class TextTransformer(nn.Module):
 
         m, u = self.load_state_dict(_sd, strict=False)
 
-        logger.info(f"Missing keys for loading model: {m}")
-        logger.info(f"Unexpected keys for loading model: {u}")
-        print(f"Missing keys for loading model: {m}")
-        print(f"Unexpected keys for loading model: {u}")
+        if m:
+            LOGGER.warning(f"Missing keys for loading model: {m}")
+        if u:
+            LOGGER.warning(f"Unexpected keys for loading model: {u}")
 
     def build_cls_mask(self, text):
         cls_mask = (text != self.pad_id).unsqueeze(1)

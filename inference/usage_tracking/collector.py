@@ -39,6 +39,11 @@ from inference.core.logger import logger
 from inference.core.roboflow_api import build_roboflow_api_headers
 from inference.core.version import __version__ as inference_version
 
+try:
+    from inference_sdk.config import execution_id
+except ImportError:
+    execution_id = None
+
 from .config import TelemetrySettings, get_telemetry_settings
 from .decorator_helpers import (
     get_model_id_from_kwargs,
@@ -389,6 +394,12 @@ class UsageCollector:
             ):
                 source_usage["roboflow_service_name"] = roboflow_service_name
                 source_usage["roboflow_internal_secret"] = roboflow_internal_secret
+
+            exec_session_id = None
+            if execution_id is not None:
+                exec_session_id = execution_id.get()
+            if exec_session_id:
+                source_usage["exec_session_id"] = exec_session_id
 
     def record_usage(
         self,
