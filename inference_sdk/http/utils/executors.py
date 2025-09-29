@@ -16,6 +16,7 @@ from aiohttp import (
 )
 from requests import Response, Timeout
 
+from inference_sdk.config import EXECUTION_ID_HEADER, execution_id
 from inference_sdk.http.errors import RetryError
 from inference_sdk.http.utils.iterables import make_batches
 from inference_sdk.http.utils.request_building import RequestData
@@ -280,6 +281,10 @@ def send_post_request(
     enable_retries: bool,
 ) -> Response:
     try:
+        execution_id_value = execution_id.get()
+        if execution_id_value:
+            headers = headers.copy()
+            headers[EXECUTION_ID_HEADER] = execution_id_value
         response = requests.post(url, json=payload, headers=headers)
     except (ConnectionError, Timeout, requests.exceptions.ConnectionError) as error:
         if enable_retries:

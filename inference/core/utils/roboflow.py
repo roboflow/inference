@@ -18,6 +18,7 @@ def get_model_id_chunks(
 
     if dataset_id.lower() in {
         "clip",
+        "easy_ocr",
         "doctr",
         "doctr_rec",
         "doctr_det",

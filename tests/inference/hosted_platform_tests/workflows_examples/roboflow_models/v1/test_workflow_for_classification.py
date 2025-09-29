@@ -137,8 +137,8 @@ MULTI_LABEL_CLASSIFICATION_WORKFLOW = {
 
 MULTI_LABEL_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT = {
     PlatformEnvironment.ROBOFLOW_STAGING_LAMBDA: [
-        {"dog"},
         {"cat", "dog"},
+        {"dog"},
     ],
     PlatformEnvironment.ROBOFLOW_PLATFORM_LAMBDA: [{"dog"}, set()],
 }

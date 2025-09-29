@@ -167,6 +167,9 @@ CORE_MODEL_GAZE_ENABLED = str2bool(os.getenv("CORE_MODEL_GAZE_ENABLED", True))
 # Flag to enable DocTR core model, default is True
 CORE_MODEL_DOCTR_ENABLED = str2bool(os.getenv("CORE_MODEL_DOCTR_ENABLED", True))
 
+# Flag to enable EasyOCR core model, default is True
+CORE_MODEL_EASYOCR_ENABLED = str2bool(os.getenv("CORE_MODEL_EASYOCR_ENABLED", True))
+
 # Flag to enable TrOCR core model, default is True
 CORE_MODEL_TROCR_ENABLED = str2bool(os.getenv("CORE_MODEL_TROCR_ENABLED", True))
 
@@ -404,6 +407,8 @@ SAM3_IMAGE_SIZE = int(os.getenv("SAM3_IMAGE_SIZE", 1008))
 # SAM3_REPO_PATH = os.getenv("SAM3_REPO_PATH", "/home/hansent/sam3")
 SAM3_EMBEDDING_CACHE_SIZE = int(os.getenv("SAM3_EMBEDDING_CACHE_SIZE", 8))
 
+# EasyOCR version ID, default is "english_g2"
+EASYOCR_VERSION_ID = os.getenv("EASYOCR_VERSION_ID", "english_g2")
 
 # Device ID, default is "sample-device-id"
 INFERENCE_SERVER_ID = os.getenv("INFERENCE_SERVER_ID", None)

@@ -4,6 +4,7 @@ from typing import Any
 from inference.core.env import (
     CORE_MODEL_CLIP_ENABLED,
     CORE_MODEL_DOCTR_ENABLED,
+    CORE_MODEL_EASYOCR_ENABLED,
     CORE_MODEL_GAZE_ENABLED,
     CORE_MODEL_GROUNDINGDINO_ENABLED,
     CORE_MODEL_SAM3_ENABLED,
@@ -23,6 +24,7 @@ CORE_MODELS = {
     "SegmentAnything2": ("inference.models.sam2", CORE_MODEL_SAM2_ENABLED),
     "SegmentAnything3": ("inference.models.sam3", CORE_MODEL_SAM3_ENABLED),
     "DocTR": ("inference.models.doctr", CORE_MODEL_DOCTR_ENABLED),
+    "EasyOCR": ("inference.models.easy_ocr", CORE_MODEL_EASYOCR_ENABLED),
     "GroundingDINO": (
         "inference.models.grounding_dino",
         CORE_MODEL_GROUNDINGDINO_ENABLED,
@@ -46,6 +48,7 @@ OPTIONAL_MODELS = {
     "LoRASmolVLM": "inference.models.smolvlm",
     "Moondream2": "inference.models.moondream2",
     "PerceptionEncoder": "inference.models.perception_encoder",
+    "EasyOCR": "inference.models.easy_ocr",
 }
 
 STANDARD_MODELS = {

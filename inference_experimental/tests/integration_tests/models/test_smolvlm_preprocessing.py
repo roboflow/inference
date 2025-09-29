@@ -1,7 +1,6 @@
 import numpy as np
 import pytest
 import torch
-
 from inference_exp.models.smolvlm.smolvlm_hf import SmolVLMHF
 
 
@@ -56,6 +55,7 @@ def get_preprocessed_outputs(
 
 
 @pytest.mark.slow
+@pytest.mark.hf_vlm_models
 def test_preprocessed_output_shapes(
     smolvlm_model: SmolVLMHF,
     dog_image_numpy: np.ndarray,
@@ -93,6 +93,7 @@ def test_preprocessed_output_shapes(
 
 
 @pytest.mark.slow
+@pytest.mark.hf_vlm_models
 def test_internal_consistency_of_preprocessed_inputs(
     smolvlm_model: SmolVLMHF,
     dog_image_numpy: np.ndarray,

@@ -16,6 +16,7 @@ on:
         options:
           - ''
           - onnx_extras
+          - torch_models
       python_version:
         description: 'Python version to test. Available options: 3.10, 3.11, 3.12. Leave empty to run all.'
         required: false
@@ -38,7 +39,8 @@ jobs:
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
         extras:
-          - { install: "onnx-cpu", marker: "onnx_extras" }
+          - { install: "onnx-cpu", marker: "onnx_extras", workers: "auto" }
+          - { install: "torch-cpu", marker: "torch_models", workers: "2" }
     steps:
       - name: 🛎️ Checkout
         if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
@@ -71,4 +73,4 @@ jobs:
         timeout-minutes: 30
         run: |
           source .venv/bin/activate
-          python -m pytest -n auto -m ${{ matrix.extras.marker }} tests/integration_tests
+          python -m pytest -n ${{ matrix.extras.workers }} -m "${{ matrix.extras.marker }} and not gpu_only" tests/integration_tests

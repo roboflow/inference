@@ -4,6 +4,7 @@ from inference.core.env import (
     API_KEY,
     CORE_MODEL_CLIP_ENABLED,
     CORE_MODEL_DOCTR_ENABLED,
+    CORE_MODEL_EASYOCR_ENABLED,
     CORE_MODEL_GAZE_ENABLED,
     CORE_MODEL_GROUNDINGDINO_ENABLED,
     CORE_MODEL_SAM3_ENABLED,
@@ -489,6 +490,14 @@ try:
         from inference.models import DocTR
 
         ROBOFLOW_MODEL_TYPES[("ocr", "doctr")] = DocTR
+except:
+    pass
+
+try:
+    if CORE_MODEL_EASYOCR_ENABLED:
+        from inference.models import EasyOCR
+
+        ROBOFLOW_MODEL_TYPES[("ocr", "easy_ocr")] = EasyOCR
 except:
     pass
 
