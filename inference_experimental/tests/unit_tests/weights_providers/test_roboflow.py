@@ -3,7 +3,11 @@ import urllib.parse
 from typing import Optional
 
 import pytest
-from inference_exp.configuration import API_CALLS_MAX_TRIES, ROBOFLOW_API_HOST
+from inference_exp.configuration import (
+    API_CALLS_MAX_TRIES,
+    ROBOFLOW_API_HOST,
+    ROBOFLOW_API_MODEL_REGISTRY_ENDPOINT,
+)
 from inference_exp.errors import (
     ModelMetadataConsistencyError,
     ModelRetrievalError,
@@ -1042,7 +1046,7 @@ def test_get_one_page_of_model_metadata_when_retry_not_needed_and_parsable_respo
     requests_mock: Mocker,
 ) -> None:
     requests_mock.get(
-        f"{ROBOFLOW_API_HOST}/models/v1/external/weights",
+        f"{ROBOFLOW_API_HOST}{ROBOFLOW_API_MODEL_REGISTRY_ENDPOINT}",
         json={
             "modelMetadata": {
                 "type": "external-model-metadata-v1",
@@ -1111,7 +1115,8 @@ def test_get_one_page_of_model_metadata_when_retry_not_needed_and_not_parsable_r
     requests_mock: Mocker,
 ) -> None:
     requests_mock.get(
-        f"{ROBOFLOW_API_HOST}/models/v1/external/weights", json={"status": "ok"}
+        f"{ROBOFLOW_API_HOST}{ROBOFLOW_API_MODEL_REGISTRY_ENDPOINT}",
+        json={"status": "ok"},
     )
 
     # when
@@ -1123,7 +1128,7 @@ def test_get_one_page_of_model_metadata_when_retry_needed_and_parsable_response(
     requests_mock: Mocker,
 ) -> None:
     requests_mock.get(
-        f"{ROBOFLOW_API_HOST}/models/v1/external/weights",
+        f"{ROBOFLOW_API_HOST}{ROBOFLOW_API_MODEL_REGISTRY_ENDPOINT}",
         [
             {"status_code": 429},
             {
@@ -1194,7 +1199,7 @@ def test_get_one_page_of_model_metadata_when_retries_exceeded(
 ) -> None:
     # given
     requests_mock.get(
-        f"{ROBOFLOW_API_HOST}/models/v1/external/weights",
+        f"{ROBOFLOW_API_HOST}{ROBOFLOW_API_MODEL_REGISTRY_ENDPOINT}",
         [
             {"status_code": 429},
         ]
@@ -1213,7 +1218,7 @@ def test_get_one_page_of_model_metadata_when_retries_exceeded(
 
 def test_get_model_metadata_with_pagination(requests_mock: Mocker) -> None:
     requests_mock.get(
-        f"{ROBOFLOW_API_HOST}/models/v1/external/weights",
+        f"{ROBOFLOW_API_HOST}{ROBOFLOW_API_MODEL_REGISTRY_ENDPOINT}",
         [
             {
                 "status_code": 200,
@@ -1308,7 +1313,7 @@ def test_get_model_metadata_with_pagination(requests_mock: Mocker) -> None:
 
 def test_get_roboflow_model(requests_mock: Mocker) -> None:
     requests_mock.get(
-        f"{ROBOFLOW_API_HOST}/models/v1/external/weights",
+        f"{ROBOFLOW_API_HOST}{ROBOFLOW_API_MODEL_REGISTRY_ENDPOINT}",
         [
             {
                 "status_code": 200,

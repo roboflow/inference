@@ -9,6 +9,8 @@ from inference_exp.configuration import (
     IDEMPOTENT_API_REQUEST_CODES_TO_RETRY,
     ROBOFLOW_API_HOST,
     ROBOFLOW_API_KEY,
+    ROBOFLOW_API_MODEL_REGISTRY_ENDPOINT,
+    ROBOFLOW_API_EXTRA_HEADERS,
 )
 from inference_exp.errors import (
     BaseInferenceError,
@@ -49,7 +51,7 @@ class RoboflowModelPackageFile(BaseModel):
 
 
 class RoboflowModelPackageV1(BaseModel):
-    type: Literal["external-model-package-v1"]
+    type: Literal["external-model-package-v1", "internal-model-package-v1"]
     package_id: str = Field(alias="packageId")
     package_manifest: dict = Field(alias="packageManifest")
     model_features: Optional[dict] = Field(alias="modelFeatures", default=None)
@@ -58,7 +60,7 @@ class RoboflowModelPackageV1(BaseModel):
 
 
 class RoboflowModelMetadata(BaseModel):
-    type: Literal["external-model-metadata-v1"]
+    type: Literal["external-model-metadata-v1", "internal-model-metadata-v1"]
     model_id: str = Field(alias="modelId")
     model_architecture: str = Field(alias="modelArchitecture")
     task_type: Optional[str] = Field(alias="taskType", default=None)
@@ -114,6 +116,21 @@ def get_model_metadata(
     return fetched_pages[-1]
 
 
+def build_roboflow_api_headers(
+    explicit_headers: Optional[Dict[str, Union[str, List[str]]]] = None,
+) -> Optional[Dict[str, Union[List[str]]]]:
+    if not ROBOFLOW_API_EXTRA_HEADERS:
+        return explicit_headers
+    try:
+        extra_headers: dict = json.loads(ROBOFLOW_API_EXTRA_HEADERS)
+        if explicit_headers:
+            extra_headers.update(explicit_headers)
+        return extra_headers
+    except ValueError:
+        LOGGER.warning("Could not decode ROBOFLOW_API_EXTRA_HEADERS")
+        return explicit_headers
+
+
 @backoff.on_exception(
     backoff.expo,
     exception=RetryError,
@@ -135,9 +152,11 @@ def get_one_page_of_model_metadata(
     if start_after:
         query["startAfter"] = start_after
     try:
+        headers = build_roboflow_api_headers()
         response = requests.get(
-            f"{ROBOFLOW_API_HOST}/models/v1/external/weights",
+            f"{ROBOFLOW_API_HOST}{ROBOFLOW_API_MODEL_REGISTRY_ENDPOINT}",
             params=query,
+            headers=headers,
             timeout=API_CALLS_TIMEOUT,
         )
     except (OSError, Timeout, requests.exceptions.ConnectionError):

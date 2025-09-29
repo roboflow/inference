@@ -34,6 +34,12 @@ ROBOFLOW_API_HOST = os.getenv(
         else "https://api.roboflow.one"
     ),
 )
+# extra headers expected to be serialised json
+ROBOFLOW_API_EXTRA_HEADERS = os.getenv("ROBOFLOW_API_EXTRA_HEADERS")
+ROBOFLOW_API_MODEL_REGISTRY_ENDPOINT = os.getenv(
+    "ROBOFLOW_API_MODEL_REGISTRY_ENDPOINT", "/models/v1/external/weights"
+)
+
 RUNNING_ON_JETSON = os.getenv("RUNNING_ON_JETSON")
 L4T_VERSION = os.getenv("L4T_VERSION")
 INFERENCE_HOME = os.getenv("INFERENCE_HOME", "/tmp/cache")

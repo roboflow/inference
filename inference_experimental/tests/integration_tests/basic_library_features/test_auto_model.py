@@ -7,7 +7,10 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 from inference_exp import AutoModel, ClassificationPrediction
-from inference_exp.configuration import ROBOFLOW_API_HOST
+from inference_exp.configuration import (
+    ROBOFLOW_API_HOST,
+    ROBOFLOW_API_MODEL_REGISTRY_ENDPOINT,
+)
 from inference_exp.errors import (
     DirectLocalStorageAccessError,
     ModelLoadingError,
@@ -282,7 +285,7 @@ def test_auto_loading_with_weights_provider_in_base_scenario(
         )
     )
     requests_mock.get(
-        f"{ROBOFLOW_API_HOST}/models/v1/external/weights",
+        f"{ROBOFLOW_API_HOST}{ROBOFLOW_API_MODEL_REGISTRY_ENDPOINT}",
         [
             {
                 "status_code": 200,
@@ -373,7 +376,7 @@ def test_auto_loading_with_weights_provider_when_cache_for_the_exact_model_and_a
         )
     )
     requests_mock.get(
-        f"{ROBOFLOW_API_HOST}/models/v1/external/weights",
+        f"{ROBOFLOW_API_HOST}{ROBOFLOW_API_MODEL_REGISTRY_ENDPOINT}",
         [
             {
                 "status_code": 200,
@@ -439,7 +442,7 @@ def test_auto_loading_with_weights_provider_when_cache_for_the_exact_model_but_d
         )
     )
     requests_mock.get(
-        f"{ROBOFLOW_API_HOST}/models/v1/external/weights",
+        f"{ROBOFLOW_API_HOST}{ROBOFLOW_API_MODEL_REGISTRY_ENDPOINT}",
         [
             {
                 "status_code": 200,
@@ -512,7 +515,7 @@ def test_auto_loading_with_weights_provider_when_api_denoted_forbidden(
         )
     )
     requests_mock.get(
-        f"{ROBOFLOW_API_HOST}/models/v1/external/weights",
+        f"{ROBOFLOW_API_HOST}{ROBOFLOW_API_MODEL_REGISTRY_ENDPOINT}",
         [
             {
                 "status_code": 401,
@@ -579,7 +582,7 @@ def test_auto_loading_with_weights_provider_when_api_denoted_forbidden_for_one_k
         )
     )
     requests_mock.get(
-        f"{ROBOFLOW_API_HOST}/models/v1/external/weights",
+        f"{ROBOFLOW_API_HOST}{ROBOFLOW_API_MODEL_REGISTRY_ENDPOINT}",
         [
             {
                 "status_code": 200,
@@ -679,7 +682,7 @@ def test_auto_loading_from_cached_local_path(
         )
     )
     requests_mock.get(
-        f"{ROBOFLOW_API_HOST}/models/v1/external/weights",
+        f"{ROBOFLOW_API_HOST}{ROBOFLOW_API_MODEL_REGISTRY_ENDPOINT}",
         [
             {
                 "status_code": 200,
