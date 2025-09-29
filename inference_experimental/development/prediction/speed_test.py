@@ -25,7 +25,7 @@ def main(
     dataset = download_dataset()
     images = [e[1] for e in dataset]
     model = AutoModel.from_pretrained(
-        model_name_or_path=model_id, model_package_id=model_package_id
+        model_id_or_path=model_id, model_package_id=model_package_id
     )
     for _ in tqdm(range(20), desc="Model warm-up...", total=20):
         _ = model(images[0])

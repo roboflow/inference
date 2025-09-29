@@ -84,6 +84,28 @@ def test_infer_from_ocr_model_when_valid_input_given(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+def test_infer_from_easy_ocr_model_when_valid_input_given(
+    core_models_service_url: str,
+) -> None:
+    # given
+    client = InferenceHTTPClient(
+        api_url=core_models_service_url,
+        api_key=ROBOFLOW_API_KEY,
+    ).select_api_v0()
+
+    # when
+    result = client.ocr_image(IMAGE_URL)
+
+    # then
+    assert isinstance(result, dict), "Expected dict as response"
+    assert set(result.keys()) == {
+        "result",
+        "time",
+        "parent_id",
+    }, "Expected all fields to be present in output"
+
+
+@pytest.mark.flaky(retries=4, delay=1)
 def test_infer_from_ocr_model_when_non_https_input_url_given(
     core_models_service_url: str,
 ) -> None:
@@ -107,12 +129,58 @@ def test_infer_from_ocr_model_when_non_https_input_url_given(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+def test_infer_from_easy_ocr_model_when_non_https_input_url_given(
+    core_models_service_url: str,
+) -> None:
+    # when
+    response = requests.post(
+        f"{core_models_service_url}/easy_ocr/ocr",
+        params={
+            "api_key": ROBOFLOW_API_KEY,
+        },
+        json={
+            "image": {"type": "url", "value": "http://some.com/image.jpg"},
+        },
+    )
+
+    # then
+    assert response.status_code == 400, "Expected bad request"
+    error_message = response.json()["message"]
+    assert (
+        "non https:// URL" in error_message
+    ), "Expected bad request be caused by http protocol"
+
+
+@pytest.mark.flaky(retries=4, delay=1)
 def test_infer_from_ocr_model_when_ip_based_input_url_given(
     core_models_service_url: str,
 ) -> None:
     # when
     response = requests.post(
         f"{core_models_service_url}/doctr/ocr",
+        params={
+            "api_key": ROBOFLOW_API_KEY,
+        },
+        json={
+            "image": {"type": "url", "value": "https://127.0.0.1/image.jpg"},
+        },
+    )
+
+    # then
+    assert response.status_code == 400, "Expected bad request"
+    error_message = response.json()["message"]
+    assert (
+        "URL without FQDN" in error_message
+    ), "Expected bad request be caused by lack of FQDN"
+
+
+@pytest.mark.flaky(retries=4, delay=1)
+def test_infer_from_easy_ocr_model_when_ip_based_input_url_given(
+    core_models_service_url: str,
+) -> None:
+    # when
+    response = requests.post(
+        f"{core_models_service_url}/easy_ocr/ocr",
         params={
             "api_key": ROBOFLOW_API_KEY,
         },

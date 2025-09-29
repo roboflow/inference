@@ -42,6 +42,9 @@ from inference.core.workflows.core_steps.classical_cv.camera_focus.v1 import (
 from inference.core.workflows.core_steps.classical_cv.contours.v1 import (
     ImageContoursDetectionBlockV1,
 )
+from inference.core.workflows.core_steps.classical_cv.contrast_equalization.v1 import (
+    ContrastEqualizationBlockV1,
+)
 from inference.core.workflows.core_steps.classical_cv.convert_grayscale.v1 import (
     ConvertGrayscaleBlockV1,
 )
@@ -56,6 +59,9 @@ from inference.core.workflows.core_steps.classical_cv.image_blur.v1 import (
 )
 from inference.core.workflows.core_steps.classical_cv.image_preprocessing.v1 import (
     ImagePreprocessingBlockV1,
+)
+from inference.core.workflows.core_steps.classical_cv.morphological_transformation.v1 import (
+    MorphologicalTransformationBlockV1,
 )
 from inference.core.workflows.core_steps.classical_cv.pixel_color_count.v1 import (
     PixelationCountBlockV1,
@@ -172,6 +178,9 @@ from inference.core.workflows.core_steps.models.foundation.cog_vlm.v1 import (
 )
 from inference.core.workflows.core_steps.models.foundation.depth_estimation.v1 import (
     DepthEstimationBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.easy_ocr.v1 import (
+    EasyOCRBlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.florence2.v1 import (
     Florence2BlockV1,
@@ -319,6 +328,9 @@ from inference.core.workflows.core_steps.transformations.camera_calibration.v1 i
 )
 from inference.core.workflows.core_steps.transformations.detection_offset.v1 import (
     DetectionOffsetBlockV1,
+)
+from inference.core.workflows.core_steps.transformations.detections_combine.v1 import (
+    DetectionsCombineBlockV1,
 )
 from inference.core.workflows.core_steps.transformations.detections_filter.v1 import (
     DetectionsFilterBlockV1,
@@ -577,6 +589,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         CogVLMBlockV1,
         ColorVisualizationBlockV1,
         ConvertGrayscaleBlockV1,
+        ContrastEqualizationBlockV1,
         CornerVisualizationBlockV1,
         CropVisualizationBlockV1,
         DetectionsConsensusBlockV1,
@@ -607,6 +620,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         LineCounterZoneVisualizationBlockV1,
         MaskVisualizationBlockV1,
         ModelComparisonVisualizationBlockV1,
+        MorphologicalTransformationBlockV1,
         OCRModelBlockV1,
         OpenAIBlockV1,
         OpenAIBlockV2,
@@ -674,7 +688,9 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         Moondream2BlockV1,
         OverlapBlockV1,
         ONVIFSinkBlockV1,
+        EasyOCRBlockV1,
         QRCodeGeneratorBlockV1,
+        DetectionsCombineBlockV1,
     ]
 
 

@@ -1,12 +1,20 @@
-from typing import List, Optional, Union
 import os
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
-from peft import PeftModel
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
-from transformers import AutoModelForImageTextToText, AutoProcessor
+from inference_exp.models.common.roboflow.model_packages import (
+    InferenceConfig,
+    ResizeMode,
+    parse_inference_config,
+)
+from inference_exp.models.common.roboflow.pre_processing import (
+    pre_process_network_input,
+)
+from peft import PeftModel
+from transformers import AutoModelForImageTextToText, AutoProcessor, BitsAndBytesConfig
 
 
 class SmolVLMHF:
@@ -16,58 +24,95 @@ class SmolVLMHF:
         cls,
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
+        trust_remote_code: bool = False,
+        local_files_only: bool = True,
+        quantization_config: Optional[BitsAndBytesConfig] = None,
+        disable_quantization: bool = False,
         **kwargs,
     ) -> "SmolVLMHF":
         torch_dtype = torch.float16 if device.type == "cuda" else torch.float32
-
+        inference_config_path = os.path.join(
+            model_name_or_path, "inference_config.json"
+        )
+        inference_config = None
+        if os.path.exists(inference_config_path):
+            inference_config = parse_inference_config(
+                config_path=inference_config_path,
+                allowed_resize_modes={
+                    ResizeMode.STRETCH_TO,
+                    ResizeMode.LETTERBOX,
+                    ResizeMode.CENTER_CROP,
+                    ResizeMode.LETTERBOX_REFLECT_EDGES,
+                },
+            )
         adapter_config_path = os.path.join(model_name_or_path, "adapter_config.json")
+        if (
+            quantization_config is None
+            and device.type == "cuda"
+            and not disable_quantization
+        ):
+            quantization_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_quant_type="nf4",
+            )
         if os.path.exists(adapter_config_path):
 
             base_model_path = os.path.join(model_name_or_path, "base")
             model = AutoModelForImageTextToText.from_pretrained(
                 base_model_path,
-                torch_dtype=torch_dtype,
-                trust_remote_code=True,
-                local_files_only=True,
+                dtype=torch_dtype,
+                trust_remote_code=trust_remote_code,
+                local_files_only=local_files_only,
+                quantization_config=quantization_config,
             )
             model = PeftModel.from_pretrained(model, model_name_or_path)
-            model.merge_and_unload()
+            if quantization_config is None:
+                model.merge_and_unload()
             model.to(device)
 
             processor = AutoProcessor.from_pretrained(
                 base_model_path,
                 padding_side="left",
-                trust_remote_code=True,
-                local_files_only=True,
+                trust_remote_code=trust_remote_code,
+                local_files_only=local_files_only,
+                use_fast=True,
             )
         else:
-            print("smolvlm_hf.from_pretrained", "no adapter_config.json")
             model = AutoModelForImageTextToText.from_pretrained(
                 model_name_or_path,
-                torch_dtype=torch_dtype,
+                dtype=torch_dtype,
                 device_map=device,
-                trust_remote_code=True,
-                local_files_only=True,
+                trust_remote_code=trust_remote_code,
+                local_files_only=local_files_only,
+                quantization_config=quantization_config,
             ).eval()
             processor = AutoProcessor.from_pretrained(
                 model_name_or_path,
                 padding_side="left",
-                trust_remote_code=True,
-                local_files_only=True,
+                trust_remote_code=trust_remote_code,
+                local_files_only=local_files_only,
+                use_fast=True,
             )
         return cls(
-            model=model, processor=processor, device=device, torch_dtype=torch_dtype
+            model=model,
+            processor=processor,
+            inference_config=inference_config,
+            device=device,
+            torch_dtype=torch_dtype,
         )
 
     def __init__(
         self,
         model: AutoModelForImageTextToText,
         processor: AutoProcessor,
+        inference_config: Optional[InferenceConfig],
         device: torch.device,
         torch_dtype: torch.dtype,
     ):
         self._model = model
         self._processor = processor
+        self._inference_config = inference_config
         self._device = device
         self._torch_dtype = torch_dtype
 
@@ -104,6 +149,7 @@ class SmolVLMHF:
         prompt: str,
         images_to_single_prompt: bool = True,
         input_color_format: Optional[ColorFormat] = None,
+        image_size: Optional[Tuple[int, int]] = None,
         **kwargs,
     ) -> dict:
         def _to_tensor(image: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
@@ -114,15 +160,31 @@ class SmolVLMHF:
                 tensor_image = image
             if input_color_format == "bgr" or (is_numpy and input_color_format is None):
                 tensor_image = tensor_image[[2, 1, 0], :, :]
+            if image_size is not None:
+                tensor_image = torch.nn.functional.interpolate(
+                    image,
+                    [image_size[1], image_size[0]],
+                    mode="bilinear",
+                )
             return tensor_image
 
-        if isinstance(images, torch.Tensor) and images.ndim > 3:
-            image_list = [_to_tensor(img) for img in images]
-        elif not isinstance(images, list):
-            image_list = [_to_tensor(images)]
+        if self._inference_config is None:
+            if isinstance(images, torch.Tensor) and images.ndim > 3:
+                image_list = [_to_tensor(img) for img in images]
+            elif not isinstance(images, list):
+                image_list = [_to_tensor(images)]
+            else:
+                image_list = [_to_tensor(img) for img in images]
         else:
-            image_list = [_to_tensor(img) for img in images]
-
+            images = pre_process_network_input(
+                images=images,
+                image_pre_processing=self._inference_config.image_pre_processing,
+                network_input=self._inference_config.network_input,
+                target_device=self._device,
+                input_color_format=input_color_format,
+                image_size_wh=image_size,
+            )[0]
+            image_list = [e[0] for e in torch.split(images, 1, dim=0)]
         if images_to_single_prompt:
             content = [{"type": "image"}] * len(image_list)
             content.append({"type": "text", "text": prompt})
@@ -144,8 +206,16 @@ class SmolVLMHF:
         text_prompts = self._processor.apply_chat_template(
             conversations, add_generation_prompt=True
         )
+        max_image_size = None
+        if image_size:
+            max_image_size = {"longest_edge": max(image_size[0], image_size[1])}
+
         inputs = self._processor(
-            text=text_prompts, images=image_list, return_tensors="pt", padding=True
+            text=text_prompts,
+            images=image_list,
+            return_tensors="pt",
+            padding=True,
+            max_image_size=max_image_size,
         )
         return inputs.to(self._device, dtype=self._torch_dtype)
 
