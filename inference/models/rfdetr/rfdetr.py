@@ -390,14 +390,28 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         """Initializes the ONNX model, setting up the inference session and other necessary properties."""
         logger.debug("Getting model artefacts")
         self.get_model_artifacts(**kwargs)
-        if self.environment.get("RESOLUTION") >= RFDETR_ONNX_MAX_RESOLUTION:
+
+        input_resolution = self.environment.get("RESOLUTION")
+        if input_resolution is None:
+            input_resolution = self.preproc.get("resize", {}).get("width")
+        if isinstance(input_resolution, (list, tuple)):
+            input_resolution = input_resolution[0]
+        try:
+            input_resolution = int(input_resolution)
+        except (TypeError, ValueError):
+            input_resolution = None
+        if (
+            input_resolution is not None
+            and input_resolution >= RFDETR_ONNX_MAX_RESOLUTION
+        ):
             logger.error(
                 "NOT loading '%s' model, input resolution is '%s', ONNX max resolution limit set to '%s'",
                 self.endpoint,
-                self.environment.get("RESOLUTION"),
+                input_resolution,
                 RFDETR_ONNX_MAX_RESOLUTION,
             )
             raise CannotInitialiseModelError(f"Resolution too high for RFDETR")
+
         logger.debug("Creating inference session")
         if self.load_weights or not self.has_model_metadata:
             t1_session = perf_counter()
