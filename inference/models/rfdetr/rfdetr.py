@@ -19,7 +19,11 @@ from inference.core.env import (
     TENSORRT_CACHE_PATH,
     USE_PYTORCH_FOR_PREPROCESSING,
 )
-from inference.core.exceptions import ModelArtefactError, OnnxProviderNotAvailable
+from inference.core.exceptions import (
+    CannotInitialiseModelError,
+    ModelArtefactError,
+    OnnxProviderNotAvailable,
+)
 from inference.core.logger import logger
 from inference.core.models.defaults import DEFAULT_CONFIDENCE, DEFAUlT_MAX_DETECTIONS
 from inference.core.models.object_detection_base import (
@@ -393,7 +397,7 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                 self.environment.get("RESOLUTION"),
                 RFDETR_ONNX_MAX_RESOLUTION,
             )
-            raise ModelArtefactError(f"Resolution too high for RFDETR")
+            raise CannotInitialiseModelError(f"Resolution too high for RFDETR")
         logger.debug("Creating inference session")
         if self.load_weights or not self.has_model_metadata:
             t1_session = perf_counter()
