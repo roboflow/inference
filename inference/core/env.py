@@ -665,4 +665,4 @@ HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT = float(
 )
 
 # RFDETR input resolution limit for models loaded through onnx runtime
-RFDETR_ONNX_MAX_RESOLUTION = int(os.getenv("RFDETR_MAX_RESOLUTION", "2048"))
+RFDETR_ONNX_MAX_RESOLUTION = int(os.getenv("RFDETR_ONNX_MAX_RESOLUTION", "1280"))
