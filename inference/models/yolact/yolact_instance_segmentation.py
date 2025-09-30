@@ -272,11 +272,11 @@ class YOLACT(OnnxRoboflowInferenceModel):
         """
         responses = [
             InstanceSegmentationInferenceResponse(
-                predictions=[
+                predictions=(
                     InstanceSegmentationPrediction(**p)
                     for p in batch_pred
                     if not class_filter or p["class_name"] in class_filter
-                ],
+                ),
                 image=InferenceResponseImage(
                     width=img_dims[i][1], height=img_dims[i][0]
                 ),

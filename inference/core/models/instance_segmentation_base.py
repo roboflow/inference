@@ -245,28 +245,24 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
         """
         responses = []
         for ind, (batch_predictions, batch_masks) in enumerate(zip(predictions, masks)):
-            predictions = []
-            for pred, mask in zip(batch_predictions, batch_masks):
-                if class_filter and not self.class_names[int(pred[6])] in class_filter:
-                    # TODO: logger.debug
-                    continue
-                # Passing args as a dictionary here since one of the args is 'class' (a protected term in Python)
-                predictions.append(
-                    InstanceSegmentationPrediction(
-                        **{
-                            "x": pred[0] + (pred[2] - pred[0]) / 2,
-                            "y": pred[1] + (pred[3] - pred[1]) / 2,
-                            "width": pred[2] - pred[0],
-                            "height": pred[3] - pred[1],
-                            "points": [Point(x=point[0], y=point[1]) for point in mask],
-                            "confidence": pred[4],
-                            "class": self.class_names[int(pred[6])],
-                            "class_id": int(pred[6]),
-                        }
-                    )
+            predictions_gen = (
+                InstanceSegmentationPrediction(
+                    **{
+                        "x": pred[0] + (pred[2] - pred[0]) / 2,
+                        "y": pred[1] + (pred[3] - pred[1]) / 2,
+                        "width": pred[2] - pred[0],
+                        "height": pred[3] - pred[1],
+                        "points": [Point(x=point[0], y=point[1]) for point in mask],
+                        "confidence": pred[4],
+                        "class": self.class_names[int(pred[6])],
+                        "class_id": int(pred[6]),
+                    }
                 )
+                for pred, mask in zip(batch_predictions, batch_masks)
+                if not class_filter or self.class_names[int(pred[6])] in class_filter
+            )
             response = InstanceSegmentationInferenceResponse(
-                predictions=predictions,
+                predictions=predictions_gen,
                 image=InferenceResponseImage(
                     width=img_dims[ind][1], height=img_dims[ind][0]
                 ),
