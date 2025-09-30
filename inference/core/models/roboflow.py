@@ -462,11 +462,13 @@ class RoboflowInferenceModel(Model):
                 "Fit within",
                 "Fill (with center crop) in",
             ]:
-                logger.error(
-                    "Unsupported resize method '%s', defaulting to 'Fit (grey edges) in' - this may result in degraded model performance.",
+                fallback_resize_method = "Fit (black edges) in"
+                logger.warning(
+                    "Unsupported resize method '%s', defaulting to '%s' - this may result in degraded model performance.",
                     self.resize_method,
+                    fallback_resize_method,
                 )
-                self.resize_method = "Fit (black edges) in"
+                self.resize_method = fallback_resize_method
             if self.resize_method not in [
                 "Stretch to",
                 "Fit (black edges) in",
