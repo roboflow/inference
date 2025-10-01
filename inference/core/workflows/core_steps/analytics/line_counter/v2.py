@@ -128,36 +128,44 @@ class LineCounterBlockV2(WorkflowBlock):
                 f"tracker_id not initialized, {self.__class__.__name__} requires detections to be tracked"
             )
         metadata = image.video_metadata
-        if metadata.video_identifier not in self._batch_of_line_zones:
-            if not isinstance(line_segment, list) or len(line_segment) != 2:
+        vid_id = metadata.video_identifier
+        line_zones = self._batch_of_line_zones
+
+        if vid_id not in line_zones:
+            # Perform all checks in one loop to avoid redundant passes
+            if not (isinstance(line_segment, list) and len(line_segment) == 2):
                 raise ValueError(
                     f"{self.__class__.__name__} requires line zone to be a list containing exactly 2 points"
                 )
-            if any(not isinstance(e, list) or len(e) != 2 for e in line_segment):
-                raise ValueError(
-                    f"{self.__class__.__name__} requires each point of line zone to be a list containing exactly 2 coordinates"
-                )
-            if any(
-                not isinstance(e[0], (int, float)) or not isinstance(e[1], (int, float))
-                for e in line_segment
-            ):
-                raise ValueError(
-                    f"{self.__class__.__name__} requires each coordinate of line zone to be a number"
-                )
+            for e in line_segment:
+                if not (isinstance(e, list) and len(e) == 2):
+                    raise ValueError(
+                        f"{self.__class__.__name__} requires each point of line zone to be a list containing exactly 2 coordinates"
+                    )
+                x, y = e
+                if not (isinstance(x, (int, float)) and isinstance(y, (int, float))):
+                    raise ValueError(
+                        f"{self.__class__.__name__} requires each coordinate of line zone to be a number"
+                    )
+
+            start, end = line_segment
             if triggering_anchor is not None:
-                self._batch_of_line_zones[metadata.video_identifier] = sv.LineZone(
-                    start=sv.Point(*line_segment[0]),
-                    end=sv.Point(*line_segment[1]),
+                line_zone = sv.LineZone(
+                    start=sv.Point(*start),
+                    end=sv.Point(*end),
                     triggering_anchors=[sv.Position(triggering_anchor)],
                 )
             else:
-                self._batch_of_line_zones[metadata.video_identifier] = sv.LineZone(
-                    start=sv.Point(*line_segment[0]),
-                    end=sv.Point(*line_segment[1]),
+                line_zone = sv.LineZone(
+                    start=sv.Point(*start),
+                    end=sv.Point(*end),
                 )
-        line_zone = self._batch_of_line_zones[metadata.video_identifier]
+            line_zones[vid_id] = line_zone
+        else:
+            line_zone = line_zones[vid_id]
 
         mask_in, mask_out = line_zone.trigger(detections=detections)
+        # sv.Detections likely supports indexing with a boolean array: do both in one step without repeated calls
         detections_in = detections[mask_in]
         detections_out = detections[mask_out]
 
