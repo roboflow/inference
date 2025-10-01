@@ -30,6 +30,55 @@ import sam3
 print("sam3.__version__", sam3.__version__)
 
 
+def _estimate_numeric_bytes(obj, seen=None):
+    """Estimate memory by summing bytes of numpy arrays and torch tensors found within obj.
+
+    This intentionally ignores shallow sizes of non-numeric containers and objects, focusing on
+    the dominant memory contributors for ML workloads.
+    """
+    if seen is None:
+        seen = set()
+    obj_id = id(obj)
+    if obj_id in seen:
+        return 0
+    seen.add(obj_id)
+
+    try:
+        # numpy arrays
+        if isinstance(obj, np.ndarray):
+            return int(obj.nbytes)
+        # torch tensors (CPU or CUDA)
+        if isinstance(obj, torch.Tensor):
+            return int(obj.element_size() * obj.nelement())
+    except Exception:
+        # If any unexpected error occurs, skip sizing this object
+        return 0
+
+    # Recurse into common containers
+    if isinstance(obj, dict):
+        total = 0
+        for key, value in obj.items():
+            total += _estimate_numeric_bytes(key, seen)
+            total += _estimate_numeric_bytes(value, seen)
+        return total
+    if isinstance(obj, (list, tuple, set, frozenset)):
+        return sum(_estimate_numeric_bytes(item, seen) for item in obj)
+
+    # Recurse into object attributes if available
+    if hasattr(obj, "__dict__"):
+        return _estimate_numeric_bytes(vars(obj), seen)
+    if hasattr(obj, "__slots__"):
+        total = 0
+        for slot in obj.__slots__:
+            try:
+                total += _estimate_numeric_bytes(getattr(obj, slot), seen)
+            except Exception:
+                continue
+        return total
+
+    return 0
+
+
 class SegmentAnything3(RoboflowCoreModel):
     """SAM3 wrapper with a similar interface to SAM2 in this codebase."""
 
@@ -44,6 +93,7 @@ class SegmentAnything3(RoboflowCoreModel):
         # import sys
         # if SAM3_REPO_PATH not in sys.path:
         #     sys.path.append(SAM3_REPO_PATH)
+        from sam3.model.sam3_image_processor import Sam3Processor
         from sam3 import build_sam3_image_model
 
         model_version = model_id.split("/")[1]
@@ -63,6 +113,8 @@ class SegmentAnything3(RoboflowCoreModel):
             has_presence_token=has_presence_token,
             device="cuda" if torch.cuda.is_available() else "cpu",
         )
+
+        self.processor = Sam3Processor()
 
         self.image_size = SAM3_IMAGE_SIZE
         self.embedding_cache: Dict[str, Dict[str, Any]] = {}
@@ -96,9 +148,10 @@ class SegmentAnything3(RoboflowCoreModel):
         if image_id and image_id in self.embedding_cache:
             return self.embedding_cache[image_id]["state"], image_id
 
+        # load image as numpy array
         np_image = None
         if image is not None:
-            np_image = self.preproc_image(image)
+            np_image = load_image_rgb(image)
             generated_id = hashlib.md5(np_image.tobytes()).hexdigest()[:12]
             image_id = image_id or generated_id
         elif image_id is None:
@@ -108,86 +161,17 @@ class SegmentAnything3(RoboflowCoreModel):
         if image_id in self.embedding_cache:
             return self.embedding_cache[image_id]["state"], image_id
 
-        # Directly initialize inference_state from the in-memory image to avoid temp files,
-        # mirroring the original SAM3 demo's init_state/load_image_as_single_frame logic.
-        if np_image is None:
-            raise ValueError("image is required when state not cached")
-
-        try:
-            image_size = getattr(self.model, "image_size", self.image_size)
-            # Use the already-available NumPy image directly without round-tripping through PIL
-            orig_h, orig_w = np_image.shape[:2]
-            img_np = np_image
-            if img_np.dtype == np.uint8:
-                img_t = (
-                    torch.from_numpy(img_np).permute(2, 0, 1).to(dtype=torch.float32)
-                    / 255.0
-                )
-            elif np.issubdtype(img_np.dtype, np.floating):
-                img_t = (
-                    torch.from_numpy(img_np).permute(2, 0, 1).to(dtype=torch.float32)
-                )
-            else:
-                raise RuntimeError(f"Unknown image dtype: {img_np.dtype}")
-
-            # Resize to the model's expected square resolution
-            img_t = img_t.unsqueeze(0)  # (1, C, H, W)
-            img_t = torch.nn.functional.interpolate(
-                img_t,
-                size=(image_size, image_size),
-                mode="bilinear",
-                align_corners=False,
-            )
-            images = img_t.half()
-
-            img_mean_vals = getattr(self.model, "image_mean", (0.5, 0.5, 0.5))
-            img_std_vals = getattr(self.model, "image_std", (0.5, 0.5, 0.5))
-            img_mean = torch.tensor(img_mean_vals, dtype=torch.float16)[:, None, None]
-            img_std = torch.tensor(img_std_vals, dtype=torch.float16)[:, None, None]
-
-            if torch.cuda.is_available():
-                images = images.cuda()
-                img_mean = img_mean.cuda()
-                img_std = img_std.cuda()
-
-            images -= img_mean
-            images /= img_std
-
-            inference_state = {}
-            inference_state["image_size"] = image_size
-            inference_state["num_frames"] = len(images)
-            inference_state["device"] = torch.device(
-                "cuda" if torch.cuda.is_available() else "cpu"
-            )
-            inference_state["orig_height"] = orig_h
-            inference_state["orig_width"] = orig_w
-            inference_state["constants"] = {}
-
-            # Let the model construct its input batch and placeholders as in the original implementation
-            self.model._construct_initial_input_batch(inference_state, images)
-        except Exception:
-            # Fallback to original temp-file pathway for safety if anything unexpected happens
-            import tempfile
-            import os
-            from PIL import Image
-
-            print("Falling back to temp file pathway")
-            pil = Image.fromarray(np_image)
-            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
-                pil.save(tmp.name, format="JPEG")
-                tmp_path = tmp.name
-
-            try:
-                inference_state = self.model.init_state(
-                    tmp_path, offload_to_cpu=not torch.cuda.is_available()
-                )
-            finally:
-                try:
-                    os.unlink(tmp_path)
-                except Exception:
-                    pass
+        inference_state = self.processor(images=np_image)
 
         self.embedding_cache[image_id] = {"state": inference_state}
+        # try:
+        #     bytes_total = _estimate_numeric_bytes(inference_state)
+        #     print(
+        #         f"[SAM3] Cached inference_state for {image_id} ~ {bytes_total / (1024 * 1024):.2f} MB"
+        #     )
+        # except Exception as e:
+        #     print(f"[SAM3] Failed to estimate size for {image_id}: {e}")
+
         # De-duplicate before appending to maintain order without duplicates
         if image_id in self.embedding_cache_keys:
             self.embedding_cache_keys.remove(image_id)
@@ -252,9 +236,9 @@ class SegmentAnything3(RoboflowCoreModel):
         )
 
         # Clear previous prompts
-        self.model.reset_state(inference_state)
+        self.processor.reset_state(inference_state)
 
-        outputs = self.model.add_prompt(
+        self.processor.add_prompt(
             inference_state,
             frame_idx=0,
             text_str=text,
@@ -264,8 +248,13 @@ class SegmentAnything3(RoboflowCoreModel):
             boxes_xywh=boxes,
             box_labels=box_labels,
             clear_old_boxes=True,
-            output_prob_thresh=output_prob_thresh,
             instance_prompt=instance_prompt,
+        )
+
+        self.model.run_inference(inference_state)
+
+        outputs = self.processor.postprocess_output(
+            inference_state, output_prob_thresh=output_prob_thresh
         )
 
         out_binary_masks = outputs["out_binary_masks"]  # (N, H, W) bool
@@ -285,7 +274,7 @@ class SegmentAnything3(RoboflowCoreModel):
                 Sam3SegmentationPrediction(
                     masks=[p.tolist() for p in poly],
                     confidence=float(score),
-                    format="polygon"
+                    format="polygon",
                 )
             )
         return Sam3SegmentationResponse(
@@ -303,13 +292,11 @@ class SegmentAnything3(RoboflowCoreModel):
 
             # Encode mask to RLE format
             rle = mask_utils.encode(np.asfortranarray(mask_binary))
-            rle['counts'] = rle['counts'].decode('utf-8')
+            rle["counts"] = rle["counts"].decode("utf-8")
 
             predictions.append(
                 Sam3SegmentationPrediction(
-                    masks=rle,
-                    confidence=float(score),
-                    format="rle"
+                    masks=rle, confidence=float(score), format="rle"
                 )
             )
 
