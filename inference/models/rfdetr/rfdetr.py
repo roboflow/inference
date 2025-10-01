@@ -405,7 +405,7 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
             and input_resolution >= RFDETR_ONNX_MAX_RESOLUTION
         ):
             logger.error(
-                "NOT loading '%s' model, input resolution is '%s', ONNX max resolution limit set to '%s'",
+                "NOT loading '%s' model, input resolution is '%s', ONNX max resolution limit set to '%s' (limit can be increased via RFDETR_ONNX_MAX_RESOLUTION env variable)",
                 self.endpoint,
                 input_resolution,
                 RFDETR_ONNX_MAX_RESOLUTION,
