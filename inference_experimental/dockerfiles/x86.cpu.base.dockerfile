@@ -4,6 +4,7 @@ RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_
     libopencv-dev \
     ffmpeg \
     libxext6 \
+    libvips-dev \
     curl && \
     rm -rf /var/lib/apt/lists/*
 

@@ -7,6 +7,7 @@ import requests
 from aiohttp import ClientConnectionError, ClientResponseError
 from requests import HTTPError
 
+from inference_sdk.config import EXECUTION_ID_HEADER, execution_id
 from inference_sdk.http.entities import (
     ALL_ROBOFLOW_API_URLS,
     CLASSIFICATION_TASK,
@@ -490,10 +491,17 @@ class InferenceHTTPClient:
             "api_key": self.__api_key,
         }
         params.update(self.__inference_configuration.to_legacy_call_parameters())
+
+        execution_id_value = execution_id.get()
+        headers = DEFAULT_HEADERS
+        if execution_id_value:
+            headers = headers.copy()
+            headers[EXECUTION_ID_HEADER] = execution_id_value
+
         requests_data = prepare_requests_data(
             url=f"{self.__api_url}/{model_id_chunks[0]}/{model_id_chunks[1]}",
             encoded_inference_inputs=encoded_inference_inputs,
-            headers=DEFAULT_HEADERS,
+            headers=headers,
             parameters=params,
             payload=None,
             max_batch_size=1,
@@ -568,10 +576,17 @@ class InferenceHTTPClient:
             "api_key": self.__api_key,
         }
         params.update(self.__inference_configuration.to_legacy_call_parameters())
+
+        execution_id_value = execution_id.get()
+        headers = DEFAULT_HEADERS
+        if execution_id_value:
+            headers = headers.copy()
+            headers[EXECUTION_ID_HEADER] = execution_id_value
+
         requests_data = prepare_requests_data(
             url=f"{self.__api_url}/{model_id_chunks[0]}/{model_id_chunks[1]}",
             encoded_inference_inputs=encoded_inference_inputs,
-            headers=DEFAULT_HEADERS,
+            headers=headers,
             parameters=params,
             payload=None,
             max_batch_size=1,
@@ -1011,6 +1026,9 @@ class InferenceHTTPClient:
         inference_input: Union[ImagesReference, List[ImagesReference]],
         model: str = "doctr",
         version: Optional[str] = None,
+        quantize: Optional[bool] = None,
+        generate_bounding_boxes: Optional[bool] = None,
+        language_codes: Optional[List[str]] = None,
     ) -> Union[dict, List[dict]]:
         """Run OCR on input image(s).
 
@@ -1019,7 +1037,13 @@ class InferenceHTTPClient:
             model (str, optional): OCR model to use ('doctr' or 'trocr'). Defaults to "doctr".
             version (Optional[str], optional): Model version to use. Defaults to None.
                 For trocr, supported versions are: 'trocr-small-printed', 'trocr-base-printed', 'trocr-large-printed'.
-
+            quantize: (Optional[bool]): flag of EasyOCR to decide which version of model to load
+            generate_bounding_boxes: (Optional[bool]): flag of some models (like DocTR) to decide if output variant
+                with sv.Detections(...) compatible bounding boxes should be returned (due to historical reasons, some
+                old implementations were flattening detected OCR structure into text and were only returning that as
+                results).
+            language_codes: (Optional[List[str]]): Parameter of EasyOCR that dictates the code of languages that
+                model should recognise (leave blank for default for given OCR model version).
         Returns:
             Union[dict, List[dict]]: OCR results for the input image(s).
 
@@ -1034,6 +1058,12 @@ class InferenceHTTPClient:
         if version:
             key = f"{model.lower()}_version_id"
             payload[key] = version
+        if quantize is not None:
+            payload["quantize"] = quantize
+        if generate_bounding_boxes is not None:
+            payload["generate_bounding_boxes"] = generate_bounding_boxes
+        if language_codes is not None:
+            payload["language_codes"] = language_codes
         model_path = resolve_ocr_path(model_name=model)
         url = self.__wrap_url_with_api_key(f"{self.__api_url}{model_path}")
         requests_data = prepare_requests_data(
@@ -1059,6 +1089,9 @@ class InferenceHTTPClient:
         inference_input: Union[ImagesReference, List[ImagesReference]],
         model: str = "doctr",
         version: Optional[str] = None,
+        quantize: Optional[bool] = None,
+        generate_bounding_boxes: Optional[bool] = None,
+        language_codes: Optional[List[str]] = None,
     ) -> Union[dict, List[dict]]:
         """Run OCR on input image(s) asynchronously.
 
@@ -1067,7 +1100,13 @@ class InferenceHTTPClient:
             model (str, optional): OCR model to use ('doctr' or 'trocr'). Defaults to "doctr".
             version (Optional[str], optional): Model version to use. Defaults to None.
                 For trocr, supported versions are: 'trocr-small-printed', 'trocr-base-printed', 'trocr-large-printed'.
-
+            quantize: (Optional[bool]): flag of EasyOCR to decide which version of model to load
+            generate_bounding_boxes: (Optional[bool]): flag of some models (like DocTR) to decide if output variant
+                with sv.Detections(...) compatible bounding boxes should be returned (due to historical reasons, some
+                old implementations were flattening detected OCR structure into text and were only returning that as
+                results).
+            language_codes: (Optional[List[str]]): Parameter of EasyOCR that dictates the code of languages that
+                model should recognise (leave blank for default for given OCR model version).
         Returns:
             Union[dict, List[dict]]: OCR results for the input image(s).
 
@@ -1082,6 +1121,12 @@ class InferenceHTTPClient:
         if version:
             key = f"{model.lower()}_version_id"
             payload[key] = version
+        if quantize is not None:
+            payload["quantize"] = quantize
+        if generate_bounding_boxes is not None:
+            payload["generate_bounding_boxes"] = generate_bounding_boxes
+        if language_codes is not None:
+            payload["language_codes"] = language_codes
         model_path = resolve_ocr_path(model_name=model)
         url = self.__wrap_url_with_api_key(f"{self.__api_url}{model_path}")
         requests_data = prepare_requests_data(
@@ -1231,10 +1276,15 @@ class InferenceHTTPClient:
         payload["text"] = text
         if clip_version is not None:
             payload["clip_version_id"] = clip_version
+        headers = DEFAULT_HEADERS.copy()
+        execution_id_value = execution_id.get()
+        if execution_id_value is not None:
+            headers[EXECUTION_ID_HEADER] = execution_id_value
+
         response = requests.post(
             self.__wrap_url_with_api_key(f"{self.__api_url}/clip/embed_text"),
             json=payload,
-            headers=DEFAULT_HEADERS,
+            headers=headers,
         )
         api_key_safe_raise_for_status(response=response)
         return unwrap_single_element_list(sequence=response.json())
@@ -1328,10 +1378,16 @@ class InferenceHTTPClient:
             )
         else:
             payload["prompt"] = prompt
+
+        headers = DEFAULT_HEADERS.copy()
+        execution_id_value = execution_id.get()
+        if execution_id_value is not None:
+            headers[EXECUTION_ID_HEADER] = execution_id_value
+
         response = requests.post(
             self.__wrap_url_with_api_key(f"{self.__api_url}/clip/compare"),
             json=payload,
-            headers=DEFAULT_HEADERS,
+            headers=headers,
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
@@ -1430,12 +1486,18 @@ class InferenceHTTPClient:
         payload["text"] = text
         if perception_encoder_version is not None:
             payload["perception_encoder_version_id"] = perception_encoder_version
+
+        headers = DEFAULT_HEADERS.copy()
+        execution_id_value = execution_id.get()
+        if execution_id_value is not None:
+            headers[EXECUTION_ID_HEADER] = execution_id_value
+
         response = requests.post(
             self.__wrap_url_with_api_key(
                 f"{self.__api_url}/perception_encoder/embed_text"
             ),
             json=payload,
-            headers=DEFAULT_HEADERS,
+            headers=headers,
         )
         api_key_safe_raise_for_status(response=response)
         return unwrap_single_element_list(sequence=response.json())

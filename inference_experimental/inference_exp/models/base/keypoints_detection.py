@@ -47,6 +47,11 @@ class KeyPointsDetectionModel(
     def class_names(self) -> List[str]:
         pass
 
+    @property
+    @abstractmethod
+    def skeletons(self) -> List[List[Tuple[int, int]]]:
+        pass
+
     def infer(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],

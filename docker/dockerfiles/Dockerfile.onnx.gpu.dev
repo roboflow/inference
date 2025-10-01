@@ -30,6 +30,7 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.pali.flash_attn.txt \
     requirements/requirements.sdk.http.txt \
     requirements/requirements.cli.txt \
+    requirements/requirements.easyocr.txt \
     ./
 
 RUN python3 -m pip install -U pip
@@ -46,6 +47,7 @@ RUN python3 -m pip install \
     -r requirements.transformers.txt \
     -r requirements.sdk.http.txt \
     -r requirements.cli.txt \
+    -r requirements.easyocr.txt \
     jupyterlab \
     "setuptools<=75.5.0" \
     --upgrade \

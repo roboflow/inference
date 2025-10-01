@@ -8,6 +8,8 @@ from inference_exp.models.clip.preprocessing import create_clip_preprocessor
 from PIL import Image
 
 
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_single_numpy_bgr_input(
     dog_image_numpy: np.ndarray, dog_image_pil: Image.Image
 ) -> None:
@@ -24,6 +26,8 @@ def test_single_numpy_bgr_input(
     assert max_diff < 0.03
 
 
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_single_numpy_rgb_input(
     dog_image_numpy: np.ndarray, dog_image_pil: Image.Image
 ) -> None:
@@ -44,6 +48,8 @@ def test_single_numpy_rgb_input(
     assert max_diff < 0.03
 
 
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_single_3d_rgb_tensor_input(
     dog_image_torch: torch.Tensor,
     dog_image_numpy: np.ndarray,
@@ -68,6 +74,8 @@ def test_single_3d_rgb_tensor_input(
     assert max_diff < 0.03
 
 
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_list_of_numpy_inputs_bgr(
     dog_image_numpy: np.ndarray, dog_image_pil: Image.Image
 ) -> None:
@@ -86,6 +94,8 @@ def test_list_of_numpy_inputs_bgr(
     assert torch.max(torch.abs(ours_output[1] - original_output[0])) < 0.03
 
 
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_list_of_numpy_inputs_rgb(
     dog_image_numpy: np.ndarray, dog_image_pil: Image.Image
 ) -> None:
@@ -107,6 +117,8 @@ def test_list_of_numpy_inputs_rgb(
     assert torch.max(torch.abs(ours_output[1] - original_output[0])) < 0.03
 
 
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_list_of_tensor_inputs(
     dog_image_torch: torch.Tensor, dog_image_pil: Image.Image
 ) -> None:
@@ -125,6 +137,8 @@ def test_list_of_tensor_inputs(
     assert torch.max(torch.abs(ours_output[1] - original_output[0])) < 0.03
 
 
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_list_of_elements_of_different_type(
     dog_image_torch: torch.Tensor,
     dog_image_numpy: np.ndarray,
@@ -145,6 +159,8 @@ def test_list_of_elements_of_different_type(
     assert torch.max(torch.abs(ours_output[1] - original_output[0])) < 0.03
 
 
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_list_of_elements_of_different_shape(
     dog_image_numpy: np.ndarray, dog_image_pil: Image.Image
 ) -> None:
@@ -162,6 +178,8 @@ def test_list_of_elements_of_different_shape(
     assert torch.max(torch.abs(ours_output[0] - original_output[0])) < 0.03
 
 
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_batched_tensor_input(
     dog_image_torch: torch.Tensor, dog_image_pil: Image.Image
 ) -> None:
@@ -180,6 +198,8 @@ def test_batched_tensor_input(
     assert torch.max(torch.abs(ours_output[1] - original_output[0])) < 0.03
 
 
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_clip_preprocessor_when_empty_list_provided() -> None:
     # given
     inference_preprocessor = create_clip_preprocessor(image_size=224)
@@ -189,6 +209,8 @@ def test_clip_preprocessor_when_empty_list_provided() -> None:
         _ = inference_preprocessor([], None, torch.device("cpu"))
 
 
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_clip_preprocessor_when_string_provided() -> None:
     # given
     inference_preprocessor = create_clip_preprocessor(image_size=224)
@@ -198,6 +220,8 @@ def test_clip_preprocessor_when_string_provided() -> None:
         _ = inference_preprocessor("some", None, torch.device("cpu"))
 
 
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_clip_preprocessor_when_list_of_string_provided() -> None:
     # given
     inference_preprocessor = create_clip_preprocessor(image_size=224)
@@ -207,6 +231,8 @@ def test_clip_preprocessor_when_list_of_string_provided() -> None:
         _ = inference_preprocessor(["some"], None, torch.device("cpu"))
 
 
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_clip_preprocessor_when_single_channel_np_array_provided() -> None:
     # given
     inference_preprocessor = create_clip_preprocessor(image_size=224)
@@ -216,6 +242,8 @@ def test_clip_preprocessor_when_single_channel_np_array_provided() -> None:
         _ = inference_preprocessor(np.zeros((192, 168, 1)), None, torch.device("cpu"))
 
 
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_clip_preprocessor_when_invalid_channel_np_array_provided() -> None:
     # given
     inference_preprocessor = create_clip_preprocessor(image_size=224)
@@ -225,6 +253,8 @@ def test_clip_preprocessor_when_invalid_channel_np_array_provided() -> None:
         _ = inference_preprocessor(np.zeros((192, 168, 4)), None, torch.device("cpu"))
 
 
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_clip_preprocessor_when_invalid_channel_np_array_provided_in_list() -> None:
     # given
     inference_preprocessor = create_clip_preprocessor(image_size=224)
@@ -234,6 +264,8 @@ def test_clip_preprocessor_when_invalid_channel_np_array_provided_in_list() -> N
         _ = inference_preprocessor([np.zeros((192, 168, 1))], None, torch.device("cpu"))
 
 
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_clip_preprocessor_when_batched_np_array_provided() -> None:
     # given
     inference_preprocessor = create_clip_preprocessor(image_size=224)
@@ -245,6 +277,8 @@ def test_clip_preprocessor_when_batched_np_array_provided() -> None:
         )
 
 
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_clip_preprocessor_when_batched_np_array_provided_in_list() -> None:
     # given
     inference_preprocessor = create_clip_preprocessor(image_size=224)
@@ -256,6 +290,8 @@ def test_clip_preprocessor_when_batched_np_array_provided_in_list() -> None:
         )
 
 
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_clip_preprocessor_invalid_channel_tensor_provided() -> None:
     # given
     inference_preprocessor = create_clip_preprocessor(image_size=224)
@@ -267,6 +303,8 @@ def test_clip_preprocessor_invalid_channel_tensor_provided() -> None:
         )
 
 
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_clip_preprocessor_invalid_channel_tensor_provided_in_list() -> None:
     # given
     inference_preprocessor = create_clip_preprocessor(image_size=224)
@@ -278,6 +316,8 @@ def test_clip_preprocessor_invalid_channel_tensor_provided_in_list() -> None:
         )
 
 
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_clip_preprocessor_batched_tensor_provided_in_list() -> None:
     # given
     inference_preprocessor = create_clip_preprocessor(image_size=224)

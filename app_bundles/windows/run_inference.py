@@ -69,7 +69,7 @@ if getattr(sys, 'frozen', False):
     logger.info("Launching Roboflow Inference (bundle)")
 
     app_dir = os.path.dirname(sys.executable)
-    
+
     bundled_site_packages = os.path.join(os.path.dirname(sys.executable), 'site-packages')
     sys.path.insert(0, bundled_site_packages)
 
@@ -111,7 +111,7 @@ os.environ.setdefault("ENABLE_PROMETHEUS", "True")
 os.environ.setdefault("ENABLE_BUILDER", "True")
 
 
-# # Force all foundational model imports 
+# # Force all foundational model imports
 # can uncomment this to to debug missing dependencies or hidden
 # modules needed for pyinstaller (the improt errors otherewise get
 # swallowed in inference )
