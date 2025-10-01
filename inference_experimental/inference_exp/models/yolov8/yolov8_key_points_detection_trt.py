@@ -139,6 +139,7 @@ class YOLOv8ForKeyPointsDetectionTRT(
             parsed_key_points_metadata=parsed_key_points_metadata,
             trt_config=trt_config,
             device=device,
+            cuda_context=cuda_context,
             execution_context=execution_context,
         )
 

@@ -663,3 +663,10 @@ MODEL_LOCK_ACQUIRE_TIMEOUT = float(os.getenv("MODEL_LOCK_ACQUIRE_TIMEOUT", "60.0
 HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT = float(
     os.getenv("HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT", "5.0")
 )
+
+# RFDETR input resolution limit for models loaded through onnx runtime
+# 1280 -> ~3.5G
+# 1440 -> ~5G
+# 1600 -> ~10G
+# 2048 -> ~22G
+RFDETR_ONNX_MAX_RESOLUTION = int(os.getenv("RFDETR_ONNX_MAX_RESOLUTION", "1600"))
