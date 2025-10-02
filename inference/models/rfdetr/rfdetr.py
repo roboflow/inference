@@ -475,8 +475,6 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
             logger.debug(f"Session created in {perf_counter() - t1_session} seconds")
 
             inputs = self.onnx_session.get_inputs()[0]
-            mask_shape = self.onnx_session.get_outputs()[2].shape
-            self.mask_shape = mask_shape[2:]
             input_shape = inputs.shape
             self.batch_size = input_shape[0]
             self.img_size_h = input_shape[2]
@@ -551,6 +549,11 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
 class RFDETRInstanceSegmentation(
     RFDETRObjectDetection, InstanceSegmentationBaseOnnxRoboflowInferenceModel
 ):
+    def initialize_model(self, **kwargs) -> None:
+        super().initialize_model(**kwargs)
+        mask_shape = self.onnx_session.get_outputs()[2].shape
+        self.mask_shape = mask_shape[2:]
+
     def predict(self, img_in: ImageMetaType, **kwargs) -> Tuple[np.ndarray]:
         """Performs object detection on the given image using the ONNX session with the RFDETR model.
 
