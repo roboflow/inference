@@ -570,11 +570,6 @@ class RFDETRInstanceSegmentation(
 
         return (bboxes, logits, masks)
 
-    def sigmoid_stable(self, x):
-        # More efficient, branchless, numerically stable sigmoid computation
-        z = np.exp(-np.abs(x))
-        return np.where(x >= 0, 1 / (1 + z), z / (1 + z))
-
     def postprocess(
         self,
         predictions: Tuple[np.ndarray, ...],
