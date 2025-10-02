@@ -107,6 +107,9 @@ def mask2poly(mask: np.ndarray) -> np.ndarray:
     Returns:
         np.ndarray: Contours represented as a float32 array.
     """
+    print(type(mask))
+    print(mask.shape)
+    print(mask.dtype)
     contours = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
     if contours:
         contours = np.array(

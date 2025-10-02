@@ -33,6 +33,7 @@ from inference.models import (
     YOLACT,
     ResNetClassification,
     RFDETRObjectDetection,
+    RFDETRInstanceSegmentation,
     VitClassification,
     YOLONASObjectDetection,
     YOLOv5InstanceSegmentation,
@@ -109,6 +110,7 @@ ROBOFLOW_MODEL_TYPES = {
     ("object-detection", "rfdetr-nano"): RFDETRObjectDetection,
     ("object-detection", "rfdetr-small"): RFDETRObjectDetection,
     ("object-detection", "rfdetr-medium"): RFDETRObjectDetection,
+    ("instance-segmentation", "rfdetr-seg-preview"): RFDETRInstanceSegmentation,
     (
         "instance-segmentation",
         "yolov11n",
