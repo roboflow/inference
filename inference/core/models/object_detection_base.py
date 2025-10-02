@@ -31,7 +31,7 @@ from inference.core.models.utils.validate import (
 )
 from inference.core.nms import w_np_non_max_suppression
 from inference.core.utils.postprocess import post_process_bboxes
-from inference.core.utils.postprocess import mask2poly
+
 
 class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
     """Roboflow ONNX Object detection model. This class implements an object detection specific infer method."""

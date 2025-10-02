@@ -32,8 +32,8 @@ from inference.core.warnings import ModelDependencyMissing
 from inference.models import (
     YOLACT,
     ResNetClassification,
-    RFDETRObjectDetection,
     RFDETRInstanceSegmentation,
+    RFDETRObjectDetection,
     VitClassification,
     YOLONASObjectDetection,
     YOLOv5InstanceSegmentation,

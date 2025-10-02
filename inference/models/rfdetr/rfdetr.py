@@ -1,7 +1,7 @@
 import os
 import time
 from time import perf_counter
-from typing import Any, List, Tuple, Union, Optional
+from typing import Any, List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -9,6 +9,7 @@ import onnxruntime
 from PIL import Image
 
 from inference.core.entities.requests.inference import InferenceRequestImage
+from inference.core.entities.responses.inference import InferenceResponseImage
 from inference.core.env import (
     DISABLE_PREPROC_AUTO_ORIENT,
     FIX_BATCH_SIZE,
@@ -26,17 +27,16 @@ from inference.core.exceptions import (
 )
 from inference.core.logger import logger
 from inference.core.models.defaults import DEFAULT_CONFIDENCE, DEFAUlT_MAX_DETECTIONS
-from inference.core.models.object_detection_base import (
-    ObjectDetectionBaseOnnxRoboflowInferenceModel,
-    ObjectDetectionInferenceResponse,
-)
 from inference.core.models.instance_segmentation_base import (
     InstanceSegmentationBaseOnnxRoboflowInferenceModel,
     InstanceSegmentationInferenceResponse,
     InstanceSegmentationPrediction,
     Point,
 )
-from inference.core.entities.responses.inference import InferenceResponseImage
+from inference.core.models.object_detection_base import (
+    ObjectDetectionBaseOnnxRoboflowInferenceModel,
+    ObjectDetectionInferenceResponse,
+)
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.models.utils.onnx import has_trt
 from inference.core.utils.image_utils import load_image
@@ -45,8 +45,8 @@ from inference.core.utils.onnx import (
     get_onnxruntime_execution_providers,
     run_session_via_iobinding,
 )
-from inference.core.utils.preprocess import letterbox_image
 from inference.core.utils.postprocess import mask2poly
+from inference.core.utils.preprocess import letterbox_image
 
 if USE_PYTORCH_FOR_PREPROCESSING:
     import torch
@@ -548,7 +548,9 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         pass
 
 
-class RFDETRInstanceSegmentation(RFDETRObjectDetection, InstanceSegmentationBaseOnnxRoboflowInferenceModel):
+class RFDETRInstanceSegmentation(
+    RFDETRObjectDetection, InstanceSegmentationBaseOnnxRoboflowInferenceModel
+):
     def predict(self, img_in: ImageMetaType, **kwargs) -> Tuple[np.ndarray]:
         """Performs object detection on the given image using the ONNX session with the RFDETR model.
 
@@ -679,13 +681,13 @@ class RFDETRInstanceSegmentation(RFDETRObjectDetection, InstanceSegmentationBase
 
             outputs = []
             for pred, mask in zip(batch_predictions, selected_masks):
-                outputs.append(list(pred) +  [mask])
+                outputs.append(list(pred) + [mask])
 
             processed_predictions.append(outputs)
 
         res = self.make_response(processed_predictions, img_dims, **kwargs)
         return res
-    
+
     def make_response(
         self,
         predictions: List[List[float]],
@@ -727,7 +729,6 @@ class RFDETRInstanceSegmentation(RFDETRObjectDetection, InstanceSegmentationBase
                     new_points.append(np.array([new_x, new_y]))
                 mask_preds.append(new_points)
             batch_mask_preds.append(mask_preds)
-                
 
         responses = [
             InstanceSegmentationInferenceResponse(
