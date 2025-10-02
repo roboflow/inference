@@ -54,6 +54,7 @@ OPTIONAL_MODELS = {
 STANDARD_MODELS = {
     "ResNetClassification": "inference.models.resnet",
     "RFDETRObjectDetection": "inference.models.rfdetr",
+    "RFDETRInstanceSegmentation": "inference.models.rfdetr",
     "VitClassification": "inference.models.vit",
     "YOLACT": "inference.models.yolact",
     "YOLONASObjectDetection": "inference.models.yolonas",

@@ -130,6 +130,7 @@ from inference.core.env import (
     API_KEY,
     API_LOGGING_ENABLED,
     BUILDER_ORIGIN,
+    CONFIDENCE_LOWER_BOUND_OOM_PREVENTION,
     CORE_MODEL_CLIP_ENABLED,
     CORE_MODEL_DOCTR_ENABLED,
     CORE_MODEL_EASYOCR_ENABLED,
@@ -2766,8 +2767,9 @@ class HttpInterface(BaseInterface):
                 model_id = f"{dataset_id}/{version_id}"
                 if confidence >= 1:
                     confidence /= 100
-                elif confidence < 0:
-                    confidence = 0
+                elif confidence < CONFIDENCE_LOWER_BOUND_OOM_PREVENTION:
+                    # allowing lower confidence results in RAM usage explosion
+                    confidence = CONFIDENCE_LOWER_BOUND_OOM_PREVENTION
 
                 if overlap >= 1:
                     overlap /= 100
