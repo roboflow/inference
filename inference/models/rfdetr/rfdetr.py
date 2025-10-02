@@ -1,7 +1,7 @@
 import os
 import time
 from time import perf_counter
-from typing import Any, List, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -9,6 +9,7 @@ import onnxruntime
 from PIL import Image
 
 from inference.core.entities.requests.inference import InferenceRequestImage
+from inference.core.entities.responses.inference import InferenceResponseImage
 from inference.core.env import (
     DISABLE_PREPROC_AUTO_ORIENT,
     FIX_BATCH_SIZE,
@@ -26,6 +27,12 @@ from inference.core.exceptions import (
 )
 from inference.core.logger import logger
 from inference.core.models.defaults import DEFAULT_CONFIDENCE, DEFAUlT_MAX_DETECTIONS
+from inference.core.models.instance_segmentation_base import (
+    InstanceSegmentationBaseOnnxRoboflowInferenceModel,
+    InstanceSegmentationInferenceResponse,
+    InstanceSegmentationPrediction,
+    Point,
+)
 from inference.core.models.object_detection_base import (
     ObjectDetectionBaseOnnxRoboflowInferenceModel,
     ObjectDetectionInferenceResponse,
@@ -38,6 +45,7 @@ from inference.core.utils.onnx import (
     get_onnxruntime_execution_providers,
     run_session_via_iobinding,
 )
+from inference.core.utils.postprocess import mask2poly
 from inference.core.utils.preprocess import letterbox_image
 
 if USE_PYTORCH_FOR_PREPROCESSING:
@@ -536,3 +544,222 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
 
     def validate_model_classes(self) -> None:
         pass
+
+
+class RFDETRInstanceSegmentation(
+    RFDETRObjectDetection, InstanceSegmentationBaseOnnxRoboflowInferenceModel
+):
+    def initialize_model(self, **kwargs) -> None:
+        super().initialize_model(**kwargs)
+        mask_shape = self.onnx_session.get_outputs()[2].shape
+        self.mask_shape = mask_shape[2:]
+
+    def predict(self, img_in: ImageMetaType, **kwargs) -> Tuple[np.ndarray]:
+        """Performs object detection on the given image using the ONNX session with the RFDETR model.
+
+        Args:
+            img_in (np.ndarray): Input image as a NumPy array.
+
+        Returns:
+            Tuple[np.ndarray]: NumPy array representing the predictions, including boxes, confidence scores, and class IDs.
+        """
+        with self._session_lock:
+            predictions = run_session_via_iobinding(
+                self.onnx_session, self.input_name, img_in
+            )
+        bboxes = predictions[0]
+        logits = predictions[1]
+        masks = predictions[2]
+
+        return (bboxes, logits, masks)
+
+    def postprocess(
+        self,
+        predictions: Tuple[np.ndarray, ...],
+        preproc_return_metadata: PreprocessReturnMetadata,
+        confidence: float = DEFAULT_CONFIDENCE,
+        max_detections: int = DEFAUlT_MAX_DETECTIONS,
+        **kwargs,
+    ) -> List[InstanceSegmentationInferenceResponse]:
+        bboxes, logits, masks = predictions
+        bboxes = bboxes.astype(np.float32)
+        logits = logits.astype(np.float32)
+
+        batch_size, num_queries, num_classes = logits.shape
+        logits_sigmoid = self.sigmoid_stable(logits)
+
+        img_dims = preproc_return_metadata["img_dims"]
+
+        processed_predictions = []
+
+        for batch_idx in range(batch_size):
+            orig_h, orig_w = img_dims[batch_idx]
+
+            logits_flat = logits_sigmoid[batch_idx].reshape(-1)
+
+            # Use argpartition for better performance when max_detections is smaller than logits_flat
+            partition_indices = np.argpartition(-logits_flat, max_detections)[
+                :max_detections
+            ]
+            sorted_indices = partition_indices[
+                np.argsort(-logits_flat[partition_indices])
+            ]
+            topk_scores = logits_flat[sorted_indices]
+
+            conf_mask = topk_scores > confidence
+            sorted_indices = sorted_indices[conf_mask]
+            topk_scores = topk_scores[conf_mask]
+
+            topk_boxes = sorted_indices // num_classes
+            topk_labels = sorted_indices % num_classes
+
+            if self.is_one_indexed:
+                class_filter_mask = topk_labels != self.background_class_index
+
+                topk_labels[topk_labels > self.background_class_index] -= 1
+                topk_scores = topk_scores[class_filter_mask]
+                topk_labels = topk_labels[class_filter_mask]
+                topk_boxes = topk_boxes[class_filter_mask]
+
+            selected_boxes = bboxes[batch_idx, topk_boxes]
+            selected_masks = masks[batch_idx, topk_boxes]
+            selected_masks = selected_masks > 0
+
+            cxcy = selected_boxes[:, :2]
+            wh = selected_boxes[:, 2:]
+            xy_min = cxcy - 0.5 * wh
+            xy_max = cxcy + 0.5 * wh
+            boxes_xyxy = np.concatenate([xy_min, xy_max], axis=1)
+
+            if self.resize_method == "Stretch to":
+                scale_fct = np.array([orig_w, orig_h, orig_w, orig_h], dtype=np.float32)
+                boxes_xyxy *= scale_fct
+            else:
+                input_h, input_w = self.img_size_h, self.img_size_w
+
+                scale = min(input_w / orig_w, input_h / orig_h)
+                scaled_w = int(orig_w * scale)
+                scaled_h = int(orig_h * scale)
+
+                pad_x = (input_w - scaled_w) / 2
+                pad_y = (input_h - scaled_h) / 2
+
+                boxes_input = boxes_xyxy * np.array(
+                    [input_w, input_h, input_w, input_h], dtype=np.float32
+                )
+
+                boxes_input[:, 0] -= pad_x
+                boxes_input[:, 1] -= pad_y
+                boxes_input[:, 2] -= pad_x
+                boxes_input[:, 3] -= pad_y
+
+                boxes_xyxy = boxes_input / scale
+
+            np.clip(
+                boxes_xyxy,
+                [0, 0, 0, 0],
+                [orig_w, orig_h, orig_w, orig_h],
+                out=boxes_xyxy,
+            )
+
+            batch_predictions = np.column_stack(
+                (
+                    boxes_xyxy,
+                    topk_scores,
+                    np.zeros((len(topk_scores), 1), dtype=np.float32),
+                    topk_labels,
+                )
+            )
+            batch_predictions = batch_predictions[
+                batch_predictions[:, 6] < len(self.class_names)
+            ]
+            selected_masks = selected_masks[
+                batch_predictions[:, 6] < len(self.class_names)
+            ]
+
+            outputs = []
+            for pred, mask in zip(batch_predictions, selected_masks):
+                outputs.append(list(pred) + [mask])
+
+            processed_predictions.append(outputs)
+
+        res = self.make_response(processed_predictions, img_dims, **kwargs)
+        return res
+
+    def make_response(
+        self,
+        predictions: List[List[float]],
+        img_dims: List[Tuple[int, int]],
+        class_filter: Optional[List[str]] = None,
+        *args,
+        **kwargs,
+    ) -> List[ObjectDetectionInferenceResponse]:
+        """Constructs object detection response objects based on predictions.
+
+        Args:
+            predictions (List[List[float]]): The list of predictions.
+            img_dims (List[Tuple[int, int]]): Dimensions of the images.
+            class_filter (Optional[List[str]]): A list of class names to filter, if provided.
+
+        Returns:
+            List[ObjectDetectionInferenceResponse]: A list of response objects containing object detection predictions.
+        """
+
+        if isinstance(img_dims, dict) and "img_dims" in img_dims:
+            img_dims = img_dims["img_dims"]
+
+        predictions = predictions[
+            : len(img_dims)
+        ]  # If the batch size was fixed we have empty preds at the end
+
+        batch_mask_preds = []
+        for image_ind in range(len(img_dims)):
+            masks = [pred[7] for pred in predictions[image_ind]]
+            orig_h, orig_w = img_dims[image_ind]
+            prediction_h, prediction_w = self.mask_shape[0], self.mask_shape[1]
+
+            mask_preds = []
+            for mask in masks:
+                points = mask2poly(mask.astype(np.uint8))
+                new_points = []
+                for point in points:
+                    if self.resize_method == "Stretch to":
+                        new_x = point[0] * (orig_w / prediction_w)
+                        new_y = point[1] * (orig_h / prediction_h)
+                    else:
+                        scale = max(orig_w / prediction_w, orig_h / prediction_h)
+                        pad_x = (orig_w - prediction_w * scale) / 2
+                        pad_y = (orig_h - prediction_h * scale) / 2
+                        new_x = point[0] * scale + pad_x
+                        new_y = point[1] * scale + pad_y
+                    new_points.append(np.array([new_x, new_y]))
+                mask_preds.append(new_points)
+            batch_mask_preds.append(mask_preds)
+
+        responses = [
+            InstanceSegmentationInferenceResponse(
+                predictions=[
+                    InstanceSegmentationPrediction(
+                        # Passing args as a dictionary here since one of the args is 'class' (a protected term in Python)
+                        **{
+                            "x": (pred[0] + pred[2]) / 2,
+                            "y": (pred[1] + pred[3]) / 2,
+                            "width": pred[2] - pred[0],
+                            "height": pred[3] - pred[1],
+                            "confidence": pred[4],
+                            "class": self.class_names[int(pred[6])],
+                            "class_id": int(pred[6]),
+                            "points": [Point(x=point[0], y=point[1]) for point in mask],
+                        }
+                    )
+                    for pred, mask in zip(batch_predictions, batch_mask_preds[ind])
+                    if not class_filter
+                    or self.class_names[int(pred[6])] in class_filter
+                ],
+                image=InferenceResponseImage(
+                    width=img_dims[ind][1], height=img_dims[ind][0]
+                ),
+            )
+            for ind, batch_predictions in enumerate(predictions)
+        ]
+        return responses
