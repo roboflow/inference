@@ -475,6 +475,8 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
             logger.debug(f"Session created in {perf_counter() - t1_session} seconds")
 
             inputs = self.onnx_session.get_inputs()[0]
+            mask_shape = self.onnx_session.get_outputs()[2].shape
+            self.mask_shape = mask_shape[2:]
             input_shape = inputs.shape
             self.batch_size = input_shape[0]
             self.img_size_h = input_shape[2]
@@ -621,12 +623,6 @@ class RFDETRInstanceSegmentation(RFDETRObjectDetection, InstanceSegmentationBase
 
             selected_boxes = bboxes[batch_idx, topk_boxes]
             selected_masks = masks[batch_idx, topk_boxes]
-            print(selected_boxes.shape)
-            print(selected_masks.shape)
-            new_selected_masks = []
-            for mask in selected_masks:
-                new_selected_masks.append(cv2.resize(mask, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR))
-            selected_masks = np.array(new_selected_masks)
             selected_masks = selected_masks > 0
 
             cxcy = selected_boxes[:, :2]
@@ -681,12 +677,9 @@ class RFDETRInstanceSegmentation(RFDETRObjectDetection, InstanceSegmentationBase
                 batch_predictions[:, 6] < len(self.class_names)
             ]
 
-            print(batch_predictions.shape)
-            print(selected_masks.shape)
             outputs = []
             for pred, mask in zip(batch_predictions, selected_masks):
                 outputs.append(list(pred) +  [mask])
-                print(type(mask))
 
             processed_predictions.append(outputs)
 
@@ -718,6 +711,24 @@ class RFDETRInstanceSegmentation(RFDETRObjectDetection, InstanceSegmentationBase
         predictions = predictions[
             : len(img_dims)
         ]  # If the batch size was fixed we have empty preds at the end
+
+        batch_mask_preds = []
+        for image_ind in range(len(img_dims)):
+            masks = [pred[7] for pred in predictions[image_ind]]
+            orig_h, orig_w = img_dims[image_ind]
+            prediction_h, prediction_w = self.mask_shape[0], self.mask_shape[1]
+            mask_preds = []
+            for mask in masks:
+                points = mask2poly(mask.astype(np.uint8))
+                new_points = []
+                for point in points:
+                    new_x = point[0] * (orig_w / prediction_w)
+                    new_y = point[1] * (orig_h / prediction_h)
+                    new_points.append(np.array([new_x, new_y]))
+                mask_preds.append(new_points)
+            batch_mask_preds.append(mask_preds)
+                
+
         responses = [
             InstanceSegmentationInferenceResponse(
                 predictions=[
@@ -731,10 +742,10 @@ class RFDETRInstanceSegmentation(RFDETRObjectDetection, InstanceSegmentationBase
                             "confidence": pred[4],
                             "class": self.class_names[int(pred[6])],
                             "class_id": int(pred[6]),
-                            "points": [Point(x=point[0], y=point[1]) for point in mask2poly(pred[7].astype(np.uint8))],
+                            "points": [Point(x=point[0], y=point[1]) for point in mask],
                         }
                     )
-                    for pred in batch_predictions
+                    for pred, mask in zip(batch_predictions, batch_mask_preds[ind])
                     if not class_filter
                     or self.class_names[int(pred[6])] in class_filter
                 ],
