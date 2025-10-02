@@ -717,13 +717,21 @@ class RFDETRInstanceSegmentation(
             masks = [pred[7] for pred in predictions[image_ind]]
             orig_h, orig_w = img_dims[image_ind]
             prediction_h, prediction_w = self.mask_shape[0], self.mask_shape[1]
+
             mask_preds = []
             for mask in masks:
                 points = mask2poly(mask.astype(np.uint8))
                 new_points = []
                 for point in points:
-                    new_x = point[0] * (orig_w / prediction_w)
-                    new_y = point[1] * (orig_h / prediction_h)
+                    if self.resize_method == "Stretch to":
+                        new_x = point[0] * (orig_w / prediction_w)
+                        new_y = point[1] * (orig_h / prediction_h)
+                    else:
+                        scale = max(orig_w / prediction_w, orig_h / prediction_h)
+                        pad_x = (orig_w - prediction_w * scale) / 2
+                        pad_y = (orig_h - prediction_h * scale) / 2
+                        new_x = point[0] * scale + pad_x
+                        new_y = point[1] * scale + pad_y
                     new_points.append(np.array([new_x, new_y]))
                 mask_preds.append(new_points)
             batch_mask_preds.append(mask_preds)
