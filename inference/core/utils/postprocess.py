@@ -35,9 +35,29 @@ def masks2poly(masks: np.ndarray) -> List[np.ndarray]:
         list: A list of segments, where each segment is obtained by converting the corresponding mask.
     """
     segments = []
-    masks = (masks * 255.0).astype(np.uint8)
+    # Process per-mask to avoid allocating an entire N x H x W uint8 copy
     for mask in masks:
-        segments.append(mask2poly(mask))
+        # Fast-path: bool -> zero-copy uint8 view
+        if mask.dtype == np.bool_:
+            m_uint8 = mask
+            if not m_uint8.flags.c_contiguous:
+                m_uint8 = np.ascontiguousarray(m_uint8)
+            m_uint8 = m_uint8.view(np.uint8)
+        elif mask.dtype == np.uint8:
+            m_uint8 = mask if mask.flags.c_contiguous else np.ascontiguousarray(mask)
+        else:
+            # Fallback: threshold to bool then view as uint8 (may allocate once)
+            m_bool = mask > 0
+            if not m_bool.flags.c_contiguous:
+                m_bool = np.ascontiguousarray(m_bool)
+            m_uint8 = m_bool.view(np.uint8)
+
+        # Quickly skip empty masks
+        if not np.any(m_uint8):
+            segments.append(np.zeros((0, 2), dtype=np.float32))
+            continue
+
+        segments.append(mask2poly(m_uint8))
     return segments
 
 
@@ -51,9 +71,29 @@ def masks2multipoly(masks: np.ndarray) -> List[np.ndarray]:
         list: A list of segments, where each segment is obtained by converting the corresponding mask.
     """
     segments = []
-    masks = (masks * 255.0).astype(np.uint8)
+    # Process per-mask to avoid allocating an entire N x H x W uint8 copy
     for mask in masks:
-        segments.append(mask2multipoly(mask))
+        # Fast-path: bool -> zero-copy uint8 view
+        if mask.dtype == np.bool_:
+            m_uint8 = mask
+            if not m_uint8.flags.c_contiguous:
+                m_uint8 = np.ascontiguousarray(m_uint8)
+            m_uint8 = m_uint8.view(np.uint8)
+        elif mask.dtype == np.uint8:
+            m_uint8 = mask if mask.flags.c_contiguous else np.ascontiguousarray(mask)
+        else:
+            # Fallback: threshold to bool then view as uint8 (may allocate once)
+            m_bool = mask > 0
+            if not m_bool.flags.c_contiguous:
+                m_bool = np.ascontiguousarray(m_bool)
+            m_uint8 = m_bool.view(np.uint8)
+
+        # Quickly skip empty masks
+        if not np.any(m_uint8):
+            segments.append([np.zeros((0, 2), dtype=np.float32)])
+            continue
+
+        segments.append(mask2multipoly(m_uint8))
     return segments
 
 
