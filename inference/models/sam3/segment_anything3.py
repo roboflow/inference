@@ -19,8 +19,31 @@ from inference.core.entities.responses.sam3 import (
     Sam3SegmentationPrediction,
     Sam3SegmentationResponse,
 )
-from inference.core.env import SAM3_IMAGE_SIZE, SAM3_EMBEDDING_CACHE_SIZE
-from inference.core.models.roboflow import RoboflowCoreModel
+from inference.core.env import (
+    SAM3_IMAGE_SIZE,
+    SAM3_EMBEDDING_CACHE_SIZE,
+    MODELS_CACHE_AUTH_ENABLED,
+    CORE_MODEL_BUCKET,
+    INFER_BUCKET,
+)
+from inference.core.models.roboflow import (
+    RoboflowCoreModel,
+    is_model_artefacts_bucket_available,
+)
+from inference.core.cache.model_artifacts import (
+    are_all_files_cached,
+    save_bytes_in_cache,
+)
+from inference.core.exceptions import (
+    ModelArtefactError,
+    RoboflowAPINotAuthorizedError,
+)
+from inference.core.roboflow_api import (
+    ModelEndpointType,
+    get_roboflow_model_data,
+    get_from_url,
+)
+from inference.core.registries.roboflow import _check_if_api_key_has_access_to_model
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2multipoly
 
@@ -79,6 +102,7 @@ def _estimate_numeric_bytes(obj, seen=None):
     return 0
 
 
+# its bith a core model and fine tuned model...
 class SegmentAnything3(RoboflowCoreModel):
     """SAM3 wrapper with a similar interface to SAM2 in this codebase."""
 
@@ -98,12 +122,15 @@ class SegmentAnything3(RoboflowCoreModel):
 
         model_version = model_id.split("/")[1]
 
-        has_presence_token = True
+        # base models have presence token if "presence is in then name
+        # for fine tuned models right now at least its always false
+        # we should add a config file to the model artifacts for this
+        has_presence_token = "presence" in model_id and model_id.startswith("sam3/")
         checkpoint = self.cache_file("weights.pt")
         bpe_path = self.cache_file("bpe_simple_vocab_16e6.txt.gz")
 
-        if model_version == "sam3_prod_v12_interactive_5box_image_only":
-            has_presence_token = False
+        # if model_version == "sam3_prod_v12_interactive_5box_image_only":
+        #     has_presence_token = False
 
         self.sam3_lock = threading.RLock()
 
@@ -123,9 +150,110 @@ class SegmentAnything3(RoboflowCoreModel):
         self.embedding_cache_size: int = SAM3_EMBEDDING_CACHE_SIZE
         self.task_type = "unsupervised-segmentation"
 
-    # # Override to prevent Roboflow API/download flows during initialization
-    # def download_weights(self) -> None:
-    #     return None
+    def _is_core_sam3_endpoint(self) -> bool:
+        return isinstance(self.endpoint, str) and self.endpoint.startswith("sam3/")
+
+    @property
+    def model_artifact_bucket(self):
+        # Use CORE bucket for base SAM3, standard INFER bucket for fine-tuned models
+        return CORE_MODEL_BUCKET if self._is_core_sam3_endpoint() else INFER_BUCKET
+
+    def _find_bpe_url(self, api_data: Dict[str, Any]) -> Optional[str]:
+        # Best-effort discovery of BPE URL in ORT response payloads
+        candidates: List[str] = []
+
+        def _maybe_add(value: Any):
+            if isinstance(value, str):
+                candidates.append(value)
+
+        # Common locations
+        _maybe_add(api_data.get("bpe"))
+        _maybe_add(api_data.get("bpe_url"))
+        ort = api_data.get("ort") if isinstance(api_data, dict) else None
+        if isinstance(ort, dict):
+            _maybe_add(ort.get("bpe"))
+            _maybe_add(ort.get("bpe_url"))
+            env = ort.get("environment")
+            if isinstance(env, dict):
+                for k in ("sam3_bpe_url", "bpe_url", "bpe"):
+                    _maybe_add(env.get(k))
+        env = api_data.get("environment")
+        if isinstance(env, dict):
+            for k in ("sam3_bpe_url", "bpe_url", "bpe"):
+                _maybe_add(env.get(k))
+
+        # Prefer gzipped vocab files
+        for url in candidates:
+            if isinstance(url, str) and url.endswith(".gz"):
+                return url
+        # Fallback: any url-ish string containing "bpe"
+        for url in candidates:
+            if isinstance(url, str) and "bpe" in url.lower():
+                return url
+        return None
+
+    def download_weights(self) -> None:
+        infer_bucket_files = self.get_infer_bucket_file_list()
+
+        # Auth check aligned with chosen endpoint type
+        if MODELS_CACHE_AUTH_ENABLED:
+            endpoint_type = (
+                ModelEndpointType.CORE_MODEL
+                if self._is_core_sam3_endpoint()
+                else ModelEndpointType.ORT
+            )
+            if not _check_if_api_key_has_access_to_model(
+                api_key=self.api_key,
+                model_id=self.endpoint,
+                endpoint_type=endpoint_type,
+            ):
+                raise RoboflowAPINotAuthorizedError(
+                    f"API key {self.api_key} does not have access to model {self.endpoint}"
+                )
+
+        # Already cached
+        if are_all_files_cached(files=infer_bucket_files, model_id=self.endpoint):
+            return None
+
+        # S3 path works for both; keys are {endpoint}/<file>
+        if is_model_artefacts_bucket_available():
+            self.download_model_artefacts_from_s3()
+            return None
+
+        # API fallback
+        if self._is_core_sam3_endpoint():
+            # Base SAM3 from core_model endpoint; preserves filenames
+            return super().download_model_from_roboflow_api()
+
+        # Fine-tuned SAM3: use ORT endpoint to fetch weights map or model url
+        api_data = get_roboflow_model_data(
+            api_key=self.api_key,
+            model_id=self.endpoint,
+            endpoint_type=ModelEndpointType.ORT,
+            device_id=self.device_id,
+        )
+
+        ort = api_data.get("ort") if isinstance(api_data, dict) else None
+        if not isinstance(ort, dict):
+            raise ModelArtefactError("ORT response malformed for fine-tuned SAM3")
+
+        # Preferred: explicit weights map of filename -> URL
+        weights_map = ort.get("weights")
+        if isinstance(weights_map, dict) and len(weights_map) > 0:
+            for filename, url in weights_map.items():
+                resp = get_from_url(
+                    url, json_response=False, verify_content_length=True
+                )
+                save_bytes_in_cache(
+                    content=resp.content,
+                    file=str(filename),
+                    model_id=self.endpoint,
+                )
+            return None
+
+        raise ModelArtefactError(
+            "ORT response missing both 'weights' for fine-tuned SAM3"
+        )
 
     def get_infer_bucket_file_list(self) -> List[str]:
         # SAM3 weights managed by env; no core bucket artifacts
