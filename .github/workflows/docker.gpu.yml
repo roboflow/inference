@@ -93,5 +93,5 @@ jobs:
           push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true') }}
           project: grl7ffzxd7
           tags: ${{ steps.set_up_build_variables.outputs.PROCESSED_TAGS }}
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           file: ${{ env.DOCKERFILE }}
