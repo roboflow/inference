@@ -670,3 +670,8 @@ HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT = float(
 # 1600 -> ~10G
 # 2048 -> ~22G
 RFDETR_ONNX_MAX_RESOLUTION = int(os.getenv("RFDETR_ONNX_MAX_RESOLUTION", "1600"))
+
+# Confidence lower bound to prevent OOM when inferring on instance segmentation models
+CONFIDENCE_LOWER_BOUND_OOM_PREVENTION = float(
+    os.getenv("CONFIDENCE_LOWER_BOUND_OOM_PREVENTION", "0.01")
+)

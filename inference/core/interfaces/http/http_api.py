@@ -122,6 +122,7 @@ from inference.core.env import (
     API_KEY,
     API_LOGGING_ENABLED,
     BUILDER_ORIGIN,
+    CONFIDENCE_LOWER_BOUND_OOM_PREVENTION,
     CORE_MODEL_CLIP_ENABLED,
     CORE_MODEL_DOCTR_ENABLED,
     CORE_MODEL_EASYOCR_ENABLED,
@@ -2670,6 +2671,11 @@ class HttpInterface(BaseInterface):
                     "external",
                     description="The detailed source information of the inference request",
                 ),
+                disable_model_monitoring: Optional[bool] = Query(
+                    False,
+                    description="If true, disables model monitoring for this request",
+                    include_in_schema=False,
+                ),
             ):
                 """
                 Legacy inference endpoint for object detection, instance segmentation, and classification.
@@ -2690,8 +2696,9 @@ class HttpInterface(BaseInterface):
                 model_id = f"{dataset_id}/{version_id}"
                 if confidence >= 1:
                     confidence /= 100
-                elif confidence < 0:
-                    confidence = 0
+                elif confidence < CONFIDENCE_LOWER_BOUND_OOM_PREVENTION:
+                    # allowing lower confidence results in RAM usage explosion
+                    confidence = CONFIDENCE_LOWER_BOUND_OOM_PREVENTION
 
                 if overlap >= 1:
                     overlap /= 100
@@ -2795,6 +2802,7 @@ class HttpInterface(BaseInterface):
                     source=source,
                     source_info=source_info,
                     usage_billable=countinference,
+                    disable_model_monitoring=disable_model_monitoring,
                     **args,
                 )
                 inference_response = self.model_manager.infer_from_request_sync(
