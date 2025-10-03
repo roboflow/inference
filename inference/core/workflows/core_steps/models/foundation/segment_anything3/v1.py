@@ -33,6 +33,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
+    ROBOFLOW_MODEL_ID_KIND,
+    RoboflowModelField,
     ImageInputField,
     Selector,
 )
@@ -97,20 +99,29 @@ class BlockManifest(WorkflowBlockManifest):
         default=None,
         json_schema_extra={"always_visible": True},
     )
-    # SAM3 does not have multiple server-side versions like SAM2 here; keep a placeholder for UI parity
-    version: Union[
-        Selector(kind=[STRING_KIND]),
-        Literal[
-            "paper_image_only_checkpoint_presence_0.35_completed_model_only",
-            "checkpoint_model_only_presence_0_5",
-            "sam3_prod_v12_interactive_5box_image_only",
-        ],
-    ] = Field(
-        default="paper_image_only_checkpoint_presence_0.35_completed_model_only",
+    # # SAM3 does not have multiple server-side versions like SAM2 here; keep a placeholder for UI parity
+    # version: Union[
+    #     Selector(kind=[STRING_KIND]),
+    #     Literal[
+    #         "paper_image_only_checkpoint_presence_0.35_completed_model_only",
+    #         "checkpoint_model_only_presence_0_5",
+    #         "sam3_prod_v12_interactive_5box_image_only",
+    #     ],
+    # ] = Field(
+    #     default="paper_image_only_checkpoint_presence_0.35_completed_model_only",
+    #     # description="Model variant placeholder (SAM3 local image model).",
+    #     description="model version",
+    #     examples=[
+    #         "paper_image_only_checkpoint_presence_0.35_completed_model_only",
+    #         "$inputs.model_variant",
+    #     ],
+    # )
+    model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), Optional[str]] = Field(
+        default="sam3/paper_image_only_checkpoint_presence_0.35_completed_model_only",
         # description="Model variant placeholder (SAM3 local image model).",
         description="model version",
         examples=[
-            "paper_image_only_checkpoint_presence_0.35_completed_model_only",
+            "sam3/paper_image_only_checkpoint_presence_0.35_completed_model_only",
             "$inputs.model_variant",
         ],
     )
@@ -122,11 +133,6 @@ class BlockManifest(WorkflowBlockManifest):
     threshold: Union[Selector(kind=[FLOAT_KIND]), float] = Field(
         default=0.5, description="Threshold for predicted mask scores", examples=[0.3]
     )
-    # multimask_output: Union[Optional[bool], Selector(kind=[BOOLEAN_KIND])] = Field(
-    #     default=None,
-    #     description="Unused for SAM3. Present for UI parity.",
-    #     examples=[None],
-    # )
 
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
@@ -170,7 +176,7 @@ class SegmentAnything3BlockV1(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         boxes: Optional[Batch[sv.Detections]],
-        version: str,
+        model_id: str,
         text: Optional[str],
         threshold: float,
         # multimask_output: Optional[bool],
@@ -179,7 +185,7 @@ class SegmentAnything3BlockV1(WorkflowBlock):
             return self.run_locally(
                 images=images,
                 boxes=boxes,
-                version=version,
+                model_id=model_id,
                 text=text,
                 threshold=threshold,
             )
@@ -196,7 +202,7 @@ class SegmentAnything3BlockV1(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         boxes: Optional[Batch[sv.Detections]],
-        version: str,
+        model_id: str,
         text: Optional[str],
         threshold: float,
     ) -> BlockResult:
@@ -234,23 +240,27 @@ class SegmentAnything3BlockV1(WorkflowBlock):
 
             inference_request = Sam3SegmentationRequest(
                 image=single_image.to_inference_format(numpy_preferred=True),
-                model_id="sam3",
+                model_id=model_id,
                 api_key=self._api_key,
-                sam3_version_id=version,
                 text=text,
                 boxes=norm_boxes if norm_boxes else None,
                 box_labels=box_labels if box_labels else None,
                 output_prob_thresh=threshold,
             )
 
-            sam_model_id = load_core_model(
-                model_manager=self._model_manager,
-                inference_request=inference_request,
-                core_model="sam3",
+            self._model_manager.add_model(
+                model_id=model_id,
+                api_key=self._api_key,
             )
 
+            # sam_model_id = load_core_model(
+            #     model_manager=self._model_manager,
+            #     inference_request=inference_request,
+            #     core_model="sam3",
+            # )
+
             sam3_segmentation_response = self._model_manager.infer_from_request_sync(
-                sam_model_id, inference_request
+                model_id, inference_request
             )
 
             prediction = convert_sam3_segmentation_response_to_inference_instances_seg_response(

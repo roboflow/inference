@@ -370,6 +370,7 @@ try:
         from inference.models import SegmentAnything
 
         ROBOFLOW_MODEL_TYPES[("embed", "sam")] = SegmentAnything
+
 except:
     warnings.warn(
         "Your `inference` configuration does not support SAM model. "
@@ -394,8 +395,9 @@ try:
     if CORE_MODEL_SAM3_ENABLED:
         from inference.models import SegmentAnything3
 
-        
         ROBOFLOW_MODEL_TYPES[("embed", "sam3")] = SegmentAnything3
+        ROBOFLOW_MODEL_TYPES[("instance-segmentation", "sam3-large")] = SegmentAnything3
+
 except Exception:
     warnings.warn(
         "Your `inference` configuration does not support SAM3 model. "

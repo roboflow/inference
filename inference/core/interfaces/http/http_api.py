@@ -738,7 +738,6 @@ class HttpInterface(BaseInterface):
         The SAM model ID.
         """
         load_sam2_model = partial(load_core_model, core_model="sam2")
-        load_sam3_model = partial(load_core_model, core_model="sam3")
         """Loads the SAM2 model into the model manager.
 
         Args:
@@ -2298,6 +2297,7 @@ class HttpInterface(BaseInterface):
                     return model_response
 
             if CORE_MODEL_SAM3_ENABLED:
+
                 @app.post(
                     "/seg-preview/embed_image",
                     response_model=Sam3EmbeddingResponse,
@@ -2317,14 +2317,24 @@ class HttpInterface(BaseInterface):
                     service_secret: Optional[str] = None,
                 ):
                     logger.debug(f"Reached /sam3/embed_image")
-                    sam3_model_id = load_sam3_model(
-                        inference_request,
-                        api_key=api_key,
-                        countinference=countinference,
-                        service_secret=service_secret,
-                    )
+                    if inference_request.model_id.startswith("sam3/"):
+                        self.model_manager.add_model(
+                            inference_request.model_id,
+                            api_key=api_key,
+                            endpoint_type=ModelEndpointType.CORE_MODEL,
+                            countinference=countinference,
+                            service_secret=service_secret,
+                        )
+                    else:
+                        self.model_manager.add_model(
+                            inference_request.model_id,
+                            api_key=api_key,
+                            endpoint_type=ModelEndpointType.ORT,
+                            countinference=countinference,
+                            service_secret=service_secret,
+                        )
                     model_response = self.model_manager.infer_from_request_sync(
-                        sam3_model_id, inference_request
+                        inference_request.model_id, inference_request
                     )
                     return model_response
 
@@ -2347,14 +2357,26 @@ class HttpInterface(BaseInterface):
                     service_secret: Optional[str] = None,
                 ):
                     logger.debug(f"Reached /sam3/segment_image")
-                    sam3_model_id = load_sam3_model(
-                        inference_request,
-                        api_key=api_key,
-                        countinference=countinference,
-                        service_secret=service_secret,
-                    )
+
+                    if inference_request.model_id.startswith("sam3/"):
+                        self.model_manager.add_model(
+                            inference_request.model_id,
+                            api_key=api_key,
+                            endpoint_type=ModelEndpointType.CORE_MODEL,
+                            countinference=countinference,
+                            service_secret=service_secret,
+                        )
+                    else:
+                        self.model_manager.add_model(
+                            inference_request.model_id,
+                            api_key=api_key,
+                            endpoint_type=ModelEndpointType.ORT,
+                            countinference=countinference,
+                            service_secret=service_secret,
+                        )
+
                     model_response = self.model_manager.infer_from_request_sync(
-                        sam3_model_id, inference_request
+                        inference_request.model_id, inference_request
                     )
                     if inference_request.format == "binary":
                         return Response(
