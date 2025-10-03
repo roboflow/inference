@@ -122,12 +122,15 @@ class SegmentAnything3(RoboflowCoreModel):
 
         model_version = model_id.split("/")[1]
 
-        has_presence_token = True
+        # base models have presence token if "presence is in then name
+        # for fine tuned models right now at least its always false
+        # we should add a config file to the model artifacts for this
+        has_presence_token = "presence" in model_id and model_id.startswith("sam3/")
         checkpoint = self.cache_file("weights.pt")
         bpe_path = self.cache_file("bpe_simple_vocab_16e6.txt.gz")
 
-        if model_version == "sam3_prod_v12_interactive_5box_image_only":
-            has_presence_token = False
+        # if model_version == "sam3_prod_v12_interactive_5box_image_only":
+        #     has_presence_token = False
 
         self.sam3_lock = threading.RLock()
 
