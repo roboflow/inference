@@ -1,10 +1,11 @@
 import asyncio
 import datetime
-import fractions
 import json
 import logging
+from multiprocessing import Process, Pipe, get_start_method, set_start_method
+import os
 import time
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import cv2 as cv
 import numpy as np
@@ -480,3 +481,183 @@ async def init_rtc_peer_connection(
     logger.debug(f"WebRTC connection status: {peer_connection.connectionState}")
 
     return peer_connection
+
+
+class RTCPeerConnectionWithLoop(RTCPeerConnection):
+    def __init__(
+        self,
+        asyncio_loop: asyncio.AbstractEventLoop,
+        *args,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        self._loop = asyncio_loop
+
+
+class VideoTransformTrackWithLoop(VideoStreamTrack):
+    def __init__(
+        self,
+        asyncio_loop: asyncio.AbstractEventLoop,
+        *args,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        self._loop = asyncio_loop
+
+        self.track: Optional[RemoteStreamTrack] = None
+        self._track_active: bool = False
+
+        self._av_logging_set: bool = False
+
+    def set_track(
+        self,
+        track: RemoteStreamTrack,
+    ):
+        if not self.track:
+            self.track = track
+
+    def close(self):
+        self._track_active = False
+
+    async def recv(self):
+        # Silencing swscaler warnings in multi-threading environment
+        if not self._av_logging_set:
+            av_logging.set_libav_level(av_logging.ERROR)
+            self._av_logging_set = True
+
+        frame: VideoFrame = await self.track.recv()
+        return frame
+
+
+async def _wait_ice_complete(peer_connection: RTCPeerConnectionWithLoop, timeout=2.0):
+    if peer_connection.iceGatheringState == "complete":
+        return
+    fut = asyncio.get_running_loop().create_future()
+    @peer_connection.on("icegatheringstatechange")
+    def _():
+        if not fut.done() and peer_connection.iceGatheringState == "complete":
+            fut.set_result(True)
+    try:
+        await asyncio.wait_for(fut, timeout)
+    except asyncio.TimeoutError:
+        pass
+
+
+async def init_rtc_peer_connection_with_loop(
+    webrtc_offer: WebRTCOffer,
+    send_answer: Callable[[Any], None],
+    webrtc_turn_config: Optional[WebRTCTURNConfig] = None,
+    asyncio_loop: Optional[asyncio.AbstractEventLoop] = None,
+) -> RTCPeerConnectionWithLoop:
+    relay = MediaRelay()
+    video_transform_track = VideoTransformTrackWithLoop(
+        asyncio_loop=asyncio_loop,
+    )
+
+    if webrtc_turn_config:
+        turn_server = RTCIceServer(
+            urls=[webrtc_turn_config.urls],
+            username=webrtc_turn_config.username,
+            credential=webrtc_turn_config.credential,
+        )
+        peer_connection = RTCPeerConnectionWithLoop(
+            configuration=RTCConfiguration(iceServers=[turn_server]),
+            asyncio_loop=asyncio_loop,
+        )
+    else:
+        peer_connection = RTCPeerConnectionWithLoop(
+            asyncio_loop=asyncio_loop,
+        )
+
+    @peer_connection.on("track")
+    def on_track(track: RemoteStreamTrack):
+        logger.info("track received")
+        # can be called with buffered=False
+        relay.subscribe(track)
+        video_transform_track.set_track(track=track)
+        peer_connection.addTrack(video_transform_track)
+
+    @peer_connection.on("connectionstatechange")
+    async def on_connectionstatechange():
+        logger.info("Connection state is %s", peer_connection.connectionState)
+        if peer_connection.connectionState in {"failed", "closed"}:
+            logger.info("Stopping WebRTC peer")
+            await peer_connection.close()
+        logger.info("'connectionstatechange' event handler finished")
+
+    await peer_connection.setRemoteDescription(
+        RTCSessionDescription(sdp=webrtc_offer.sdp, type=webrtc_offer.type)
+    )
+    answer = await peer_connection.createAnswer()
+    await peer_connection.setLocalDescription(answer)
+
+    logger.debug(f"WebRTC connection status: {peer_connection.connectionState}")
+
+    # 3) (Optional) wait for ICE gathering to finish so SDP has candidates
+    await _wait_ice_complete(peer_connection, timeout=2.0)
+
+    # Send the final answer back to parent (one-shot), then keep running
+    send_answer({"sdp": peer_connection.localDescription.sdp, "type": peer_connection.localDescription.type})
+
+    # Stay alive until the peer disconnects
+    while peer_connection.connectionState not in {"failed", "closed"}:
+        await asyncio.sleep(0.2)
+
+
+def rtc_peer_connection_process(
+    offer_sdp: str,
+    offer_type: str,
+    turn_urls: str,
+    turn_username: str,
+    turn_credential: str,
+    answer_conn=None,
+):
+    def send_answer(obj):
+        answer_conn.send(obj)
+        answer_conn.close()
+
+    offer = WebRTCOffer(type=offer_type, sdp=offer_sdp)
+    turn_config = WebRTCTURNConfig(urls=turn_urls, username=turn_username, credential=turn_credential)
+    asyncio.run(
+        init_rtc_peer_connection_with_loop(
+            webrtc_offer=offer,
+            webrtc_turn_config=turn_config,
+            send_answer=send_answer,
+        )
+    )
+
+
+# Prefer 'spawn' so we don't fork an active event loop (portable & safe)
+try:
+    if get_start_method(allow_none=True) != "spawn":
+        set_start_method("spawn", force=True)
+except RuntimeError:
+    pass
+
+
+async def start_worker(
+    webrtc_offer: WebRTCOffer,
+    webrtc_turn_config: Optional[WebRTCTURNConfig] = None,
+):
+    parent_conn, child_conn = Pipe(duplex=False)
+    p = Process(
+        target=rtc_peer_connection_process,
+        kwargs={
+            "offer_sdp": webrtc_offer.sdp,
+            "offer_type": webrtc_offer.type,
+            "turn_urls": webrtc_turn_config.urls,
+            "turn_username": webrtc_turn_config.username,
+            "turn_credential": webrtc_turn_config.credential,
+            "answer_conn": child_conn,
+        },
+        daemon=False,
+    )
+    p.start()
+    child_conn.close()
+
+    loop = asyncio.get_running_loop()
+    answer = await loop.run_in_executor(None, parent_conn.recv)
+    parent_conn.close()
+
+    # answer = json.loads(answer_line.decode("utf-8").strip())
+    return p.pid, p, answer
