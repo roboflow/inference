@@ -8,6 +8,7 @@ from time import sleep
 from typing import Annotated, Any, Dict, List, Optional, Tuple, Union
 from uuid import uuid4
 
+from aiortc import RTCSessionDescription
 import asgi_correlation_id
 import uvicorn
 from fastapi import (
@@ -193,7 +194,8 @@ from inference.core.interfaces.stream_manager.api.entities import (
     CommandResponse,
     ConsumePipelineResponse,
     InferencePipelineStatusResponse,
-    InitializeWebRTCPipelineResponse,
+    InitializeWebRTCResponse,
+    CommandContext,
     ListPipelinesResponse,
 )
 from inference.core.interfaces.stream_manager.api.stream_manager_client import (
@@ -203,6 +205,10 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
     ConsumeResultsPayload,
     InitialisePipelinePayload,
     InitialiseWebRTCPipelinePayload,
+    OperationStatus,
+)
+from inference.core.interfaces.stream_manager.manager_app.webrtc import (
+    start_worker,
 )
 from inference.core.managers.base import ModelManager
 from inference.core.managers.metrics import get_container_stats
@@ -1447,20 +1453,26 @@ class HttpInterface(BaseInterface):
 
             @app.post(
                 "/inference_pipelines/initialise_webrtc",
-                response_model=InitializeWebRTCPipelineResponse,
+                response_model=InitializeWebRTCResponse,
                 summary="[EXPERIMENTAL] Establishes WebRTC peer connection and starts new InferencePipeline consuming video track",
                 description="[EXPERIMENTAL] Establishes WebRTC peer connection and starts new InferencePipeline consuming video track",
             )
             @with_route_exceptions_async
             async def initialise_webrtc_inference_pipeline(
                 request: InitialiseWebRTCPipelinePayload,
-            ) -> CommandResponse:
+            ) -> InitializeWebRTCResponse:
                 logger.debug("Received initialise webrtc inference pipeline request")
-                resp = await self.stream_manager_client.initialise_webrtc_pipeline(
-                    initialisation_request=request
+                *_, answer = await start_worker(
+                    webrtc_offer=request.webrtc_offer,
+                    webrtc_turn_config=request.webrtc_turn_config,
                 )
                 logger.debug("Returning initialise webrtc inference pipeline response")
-                return resp
+                return InitializeWebRTCResponse(
+                    context=CommandContext(),
+                    status=OperationStatus.SUCCESS,
+                    sdp=answer["sdp"],
+                    type=answer["type"],
+                )
 
             @app.post(
                 "/inference_pipelines/{pipeline_id}/pause",
