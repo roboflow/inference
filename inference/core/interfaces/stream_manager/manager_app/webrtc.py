@@ -533,10 +533,12 @@ async def _wait_ice_complete(peer_connection: RTCPeerConnectionWithLoop, timeout
     if peer_connection.iceGatheringState == "complete":
         return
     fut = asyncio.get_running_loop().create_future()
+
     @peer_connection.on("icegatheringstatechange")
     def _():
         if not fut.done() and peer_connection.iceGatheringState == "complete":
             fut.set_result(True)
+
     try:
         await asyncio.wait_for(fut, timeout)
     except asyncio.TimeoutError:
@@ -597,7 +599,12 @@ async def init_rtc_peer_connection_with_loop(
     await _wait_ice_complete(peer_connection, timeout=2.0)
 
     # Send the final answer back to parent (one-shot), then keep running
-    send_answer({"sdp": peer_connection.localDescription.sdp, "type": peer_connection.localDescription.type})
+    send_answer(
+        {
+            "sdp": peer_connection.localDescription.sdp,
+            "type": peer_connection.localDescription.type,
+        }
+    )
 
     # Stay alive until the peer disconnects
     while peer_connection.connectionState not in {"failed", "closed"}:
@@ -617,7 +624,9 @@ def rtc_peer_connection_process(
         answer_conn.close()
 
     offer = WebRTCOffer(type=offer_type, sdp=offer_sdp)
-    turn_config = WebRTCTURNConfig(urls=turn_urls, username=turn_username, credential=turn_credential)
+    turn_config = WebRTCTURNConfig(
+        urls=turn_urls, username=turn_username, credential=turn_credential
+    )
     asyncio.run(
         init_rtc_peer_connection_with_loop(
             webrtc_offer=offer,
