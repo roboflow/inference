@@ -623,6 +623,26 @@ class RFDETRInstanceSegmentation(
 
             selected_boxes = bboxes[batch_idx, topk_boxes]
             selected_masks = masks[batch_idx, topk_boxes]
+            if selected_masks.size != 0:
+                if kwargs.get("mask_decode_mode", "accurate") == "accurate":
+                    target_res = (orig_w, orig_h)
+                    new_masks = []
+                    for mask in selected_masks:
+                        new_masks.append(cv2.resize(mask, target_res, interpolation=cv2.INTER_LINEAR))
+                    selected_masks = np.stack(new_masks, axis=0)
+                elif kwargs.get("mask_decode_mode", "accurate") == "tradeoff":
+                    tradeoff_factor = kwargs.get("tradeoff_factor", 0.0)
+                    mask_res = (selected_masks.shape[2], selected_masks.shape[1])
+                    full_res = (orig_w, orig_h)
+                    target_res = (
+                        int(mask_res[0] * (1 - tradeoff_factor) + full_res[0] * tradeoff_factor),
+                        int(mask_res[1] * (1 - tradeoff_factor) + full_res[1] * tradeoff_factor),
+                    )
+                    new_masks = []
+                    for mask in selected_masks:
+                        new_masks.append(cv2.resize(mask, target_res, interpolation=cv2.INTER_LINEAR))
+                    selected_masks = np.stack(new_masks, axis=0)
+
             selected_masks = selected_masks > 0
 
             cxcy = selected_boxes[:, :2]
@@ -716,12 +736,12 @@ class RFDETRInstanceSegmentation(
         for image_ind in range(len(img_dims)):
             masks = [pred[7] for pred in predictions[image_ind]]
             orig_h, orig_w = img_dims[image_ind]
-            prediction_h, prediction_w = self.mask_shape[0], self.mask_shape[1]
 
             mask_preds = []
             for mask in masks:
                 points = mask2poly(mask.astype(np.uint8))
                 new_points = []
+                prediction_h, prediction_w = mask.shape[0], mask.shape[1]
                 for point in points:
                     if self.resize_method == "Stretch to":
                         new_x = point[0] * (orig_w / prediction_w)
