@@ -628,19 +628,29 @@ class RFDETRInstanceSegmentation(
                     target_res = (orig_w, orig_h)
                     new_masks = []
                     for mask in selected_masks:
-                        new_masks.append(cv2.resize(mask, target_res, interpolation=cv2.INTER_LINEAR))
+                        new_masks.append(
+                            cv2.resize(mask, target_res, interpolation=cv2.INTER_LINEAR)
+                        )
                     selected_masks = np.stack(new_masks, axis=0)
                 elif kwargs.get("mask_decode_mode", "accurate") == "tradeoff":
                     tradeoff_factor = kwargs.get("tradeoff_factor", 0.0)
                     mask_res = (selected_masks.shape[2], selected_masks.shape[1])
                     full_res = (orig_w, orig_h)
                     target_res = (
-                        int(mask_res[0] * (1 - tradeoff_factor) + full_res[0] * tradeoff_factor),
-                        int(mask_res[1] * (1 - tradeoff_factor) + full_res[1] * tradeoff_factor),
+                        int(
+                            mask_res[0] * (1 - tradeoff_factor)
+                            + full_res[0] * tradeoff_factor
+                        ),
+                        int(
+                            mask_res[1] * (1 - tradeoff_factor)
+                            + full_res[1] * tradeoff_factor
+                        ),
                     )
                     new_masks = []
                     for mask in selected_masks:
-                        new_masks.append(cv2.resize(mask, target_res, interpolation=cv2.INTER_LINEAR))
+                        new_masks.append(
+                            cv2.resize(mask, target_res, interpolation=cv2.INTER_LINEAR)
+                        )
                     selected_masks = np.stack(new_masks, axis=0)
 
             selected_masks = selected_masks > 0
