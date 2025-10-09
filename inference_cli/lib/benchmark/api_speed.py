@@ -7,6 +7,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 import numpy as np
 import requests
+from requests import Response
 from tqdm import tqdm
 
 from inference_cli.lib.benchmark.results_gathering import (
@@ -258,10 +259,25 @@ def execute_infer_api_request(
     payload = images[:request_batch_size]
     start = time.time()
     try:
-        inference_result = client.infer(payload)
-        execution_time = inference_result.get("time")
-        remote_execution_time = inference_result.get(PROCESSING_TIME_HEADER)
+        if client.__client_mode is HTTPClientMode.V0:
+            request_data = client._prepare_infer_from_api_v0_request_data(
+                inference_input=payload,
+            )
+        else:
+            request_data = client._prepare_infer_from_api_v1_request_data(
+                inference_input=payload,
+            )
+        responses: List[Response] = client._execute_infer_from_api_request(
+            request_data=request_data
+        )
         duration = time.time() - start
+        execution_time = responses[0].json().get("time")
+        try:
+            remote_execution_time = float(
+                responses[0].headers.get(PROCESSING_TIME_HEADER)
+            )
+        except (OverflowError, TypeError, ValueError):
+            remote_execution_time = None
         results_collector.register_inference_duration(
             batch_size=request_batch_size,
             duration=duration,
