@@ -9,7 +9,6 @@ from requests import HTTPError, Response
 
 from inference_sdk.config import (
     EXECUTION_ID_HEADER,
-    PROCESSING_TIME_HEADER,
     execution_id,
 )
 from inference_sdk.http.entities import (
@@ -641,14 +640,6 @@ class InferenceHTTPClient:
                 prediction=parsed_response,
                 scaling_factor=request_data.image_scaling_factors[0],
             )
-            try:
-                processing_time = float(
-                    response.get("headers", {}).get(PROCESSING_TIME_HEADER, 0)
-                )
-            except (OverflowError, TypeError, ValueError):
-                processing_time = None
-            parsed_response[PROCESSING_TIME_HEADER] = processing_time
-
             results.append(parsed_response)
         return unwrap_single_element_list(sequence=results)
 
@@ -801,15 +792,6 @@ class InferenceHTTPClient:
                     prediction=parsed_response_element,
                     scaling_factor=scaling_factor,
                 )
-                try:
-                    processing_time = float(
-                        parsed_response.get("headers", {}).get(
-                            PROCESSING_TIME_HEADER, 0
-                        )
-                    )
-                except (OverflowError, TypeError, ValueError):
-                    processing_time = None
-                parsed_response_element[PROCESSING_TIME_HEADER] = processing_time
                 results.append(parsed_response_element)
         return unwrap_single_element_list(sequence=results)
 
