@@ -55,7 +55,9 @@ class ImagePreprocessingManifest(WorkflowBlockManifest):
     task_type: Literal["resize", "rotate", "flip"] = Field(
         description="Preprocessing task to be applied to the image.",
     )
-    width: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    width: Union[
+        PositiveInt, Selector(kind=[INTEGER_KIND])
+    ] = Field(  # type: ignore
         title="Width",
         default=640,
         description="Width of the image to be resized to.",
@@ -69,7 +71,9 @@ class ImagePreprocessingManifest(WorkflowBlockManifest):
             },
         },
     )
-    height: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    height: Union[
+        PositiveInt, Selector(kind=[INTEGER_KIND])
+    ] = Field(  # type: ignore
         title="Height",
         default=640,
         description="Height of the image to be resized to.",
@@ -83,7 +87,9 @@ class ImagePreprocessingManifest(WorkflowBlockManifest):
             },
         },
     )
-    rotation_degrees: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    rotation_degrees: Union[
+        int, Selector(kind=[INTEGER_KIND])
+    ] = Field(  # type: ignore
         title="Degrees of Rotation",
         description="Positive value to rotate clockwise, negative value to rotate counterclockwise",
         default=90,
