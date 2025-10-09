@@ -440,6 +440,23 @@ signed URL to the file when running the ingestion command.
 Notifications are delivered to clients via HTTP POST requests sent to the specified webhook endpoint. Each notification 
 will include an Authorization header containing the Roboflow Publishable Key to authenticate the request.
 
+#### Cloud storage
+##### S3 Datasource
+Using [AWS S3](https://aws.amazon.com/s3/) for ingesting data for batch processing can be achieved easily with this example script.
+This also supports S3-compatible datasources such as Backblaze B2, Cloudflare R2, Oracle Cloud Infrastructure Object Storage and many more
+
+```sh
+insrt script
+```
+
+##### GCS Datasource
+Using [google cloud storage (GCS)](https://cloud.google.com/storage) for ingesting data for batch processing can be easily achieved with this example script.
+
+```sh
+insert script
+```
+
+
 
 ##### `ingest-status` notifications
 
