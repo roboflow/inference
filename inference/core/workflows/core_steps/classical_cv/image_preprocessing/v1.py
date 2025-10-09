@@ -97,7 +97,9 @@ class ImagePreprocessingManifest(WorkflowBlockManifest):
             }
         },
     )
-    flip_type: Union[Selector(kind=[STRING_KIND]), Literal["vertical", "horizontal", "both"]] = Field(  # type: ignore
+    flip_type: Union[
+        Selector(kind=[STRING_KIND]), Literal["vertical", "horizontal", "both"]
+    ] = Field(  # type: ignore
         title="Flip Type",
         description="Type of flip to be applied to the image.",
         default="vertical",
@@ -152,12 +154,20 @@ class ImagePreprocessingBlockV1(WorkflowBlock):
                 raise ValueError("Height must be greater than 0")
             response_image = apply_resize_image(image.numpy_image, width, height)
         elif task_type == "rotate":
-            if rotation_degrees is not None and not (-360 <= rotation_degrees <= 360):
+            if rotation_degrees is not None and not (
+                -360 <= rotation_degrees <= 360
+            ):
                 raise ValueError("Rotation degrees must be between -360 and 360")
             response_image = apply_rotate_image(image.numpy_image, rotation_degrees)
         elif task_type == "flip":
-            if flip_type is not None and flip_type not in ["vertical", "horizontal", "both"]:
-                raise ValueError("Flip type must be 'vertical', 'horizontal', or 'both'")
+            if flip_type is not None and flip_type not in [
+                "vertical",
+                "horizontal",
+                "both",
+            ]:
+                raise ValueError(
+                    "Flip type must be 'vertical', 'horizontal', or 'both'"
+                )
             response_image = apply_flip_image(image.numpy_image, flip_type)
         else:
             raise ValueError(f"Invalid task type: {task_type}")
@@ -183,7 +193,9 @@ def apply_resize_image(
         aspect_ratio = width / current_width
         height = int(current_height * aspect_ratio)
 
-    resized_image = cv2.resize(np_image, (width, height), interpolation=cv2.INTER_AREA)
+    resized_image = cv2.resize(
+        np_image, (width, height), interpolation=cv2.INTER_AREA
+    )
     return resized_image
 
 
@@ -202,7 +214,9 @@ def apply_rotate_image(np_image: np.ndarray, rotation_degrees: Optional[int]):
     rotation_matrix[0, 2] += (new_width / 2) - center[0]
     rotation_matrix[1, 2] += (new_height / 2) - center[1]
 
-    rotated_image = cv2.warpAffine(np_image, rotation_matrix, (new_width, new_height))
+    rotated_image = cv2.warpAffine(
+        np_image, rotation_matrix, (new_width, new_height)
+    )
     return rotated_image
 
 
