@@ -4,9 +4,8 @@ from typing import Any, Dict, Generator, List, Literal, Optional, Tuple, Union
 import aiohttp
 import numpy as np
 import requests
-from requests import Response
 from aiohttp import ClientConnectionError, ClientResponseError
-from requests import HTTPError
+from requests import HTTPError, Response
 
 from inference_sdk.config import (
     EXECUTION_ID_HEADER,
