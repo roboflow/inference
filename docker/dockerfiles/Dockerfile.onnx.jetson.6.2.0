@@ -1,39 +1,56 @@
-FROM nvcr.io/nvidia/l4t-jetpack:r36.4.0
-#probably Python 3.10 or 3.12 based on ubuntu 22.04
+FROM roboflow/l4t-ml:r36.4.tegra-aarch64-cu126-22.04
+# Base image includes: PyTorch 2.8, torchvision, ONNXRuntime w/ TensorRT,
+# OpenCV w/ CUDA, cupy, pycuda, NumPy, SciPy, scikit-learn, pandas, scikit-image
 
 ARG DEBIAN_FRONTEND=noninteractive
 ENV LANG=en_US.UTF-8
 
-# Install dependencies
+# Install additional inference-specific dependencies
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \
     lshw \
     git \
-    gfortran \
-    build-essential \
-    libopenblas-dev \
-    libatlas-base-dev \
-    libsm6 \
-    libxext6 \
     wget \
-    gdal-bin \
-    libgdal-dev \
     rustc \
     cargo \
-    python3-pip \
     && rm -rf /var/lib/apt/lists/*
-
-COPY build_scripts/compile_opencv_jetpack_6_2.sh compile_opencv_jetpack_6_2.sh
-RUN chmod ugo+x compile_opencv_jetpack_6_2.sh
-RUN ./compile_opencv_jetpack_6_2.sh
 
 # Copy all requirements files
 COPY requirements/ ./requirements/
 
-# Upgrade pip and install Python packages
+# Remove packages from requirements that are already in base image or need special handling
+# - opencv: already in base image with CUDA support
+# - torch: torch 2.8 already in base image (requirements expect <2.7.0)
+# - torchvision: already in base image
+# - bitsandbytes: jetson index only has dev versions, exclude for now
+# - pybase64: installed separately to avoid slow source build with setuptools resolution
+# - zxing-cpp: installed separately to avoid slow source build with setuptools resolution
+RUN sed -i '/opencv-python/d' requirements/_requirements.txt && \
+    sed -i '/opencv-contrib-python/d' requirements/_requirements.txt && \
+    sed -i '/^torch/d' requirements/requirements.transformers.txt && \
+    sed -i '/^torchvision/d' requirements/requirements.transformers.txt && \
+    sed -i '/^bitsandbytes/d' requirements/requirements.transformers.txt && \
+    sed -i '/pybase64/d' requirements/_requirements.txt && \
+    sed -i '/zxing-cpp/d' requirements/_requirements.txt
+
+# Install packages separately to optimize build
+# Pre-install setuptools to speed up source builds
 RUN python3 -m pip install --upgrade pip && \
-    python3 -m pip install "torch>=2.0.1,<2.8.0" "torchvision>=0.15.2" --index-url https://pypi.jetson-ai-lab.dev/jp6/cu126 && \
-    python3 -m pip install \
+    python3 -m pip install --index-url https://pypi.jetson-ai-lab.io/jp6/cu126 "setuptools<=75.5.0" && \
+    python3 -m pip install --index-url https://pypi.jetson-ai-lab.io/jp6/cu126 "pybase64>=1.2.0,<2.0.0" && \
+    python3 -m pip install --index-url https://pypi.jetson-ai-lab.io/jp6/cu126 "zxing-cpp~=2.2.0"
+
+# Install inference-specific Python packages from jetson index
+# Use --index-url to explicitly use only the working .io endpoint (avoid .dev timeouts)
+# Packages already in base image (excluded from requirements):
+#   - PyTorch 2.8, torchvision (from requirements - already installed)
+#   - onnxruntime-gpu 1.23.0 (from requirements.gpu.txt - compiled with TensorRT support)
+#   - opencv-python 4.12.0, opencv-contrib-python 4.12.0 (removed from requirements - compiled with CUDA)
+#   - numpy, scipy, scikit-learn, scikit-image, pandas (from requirements._requirements.txt)
+#   - cupy, pycuda (CUDA Python support)
+# Packages removed for edge deployments:
+#   - jupyterlab (removed from requirements.jetson.txt - not needed in production)
+RUN python3 -m pip install --index-url https://pypi.jetson-ai-lab.io/jp6/cu126 \
     -r requirements/_requirements.txt \
     -r requirements/requirements.clip.txt \
     -r requirements/requirements.http.txt \
@@ -43,11 +60,8 @@ RUN python3 -m pip install --upgrade pip && \
     -r requirements/requirements.yolo_world.txt \
     -r requirements/requirements.jetson.txt \
     -r requirements/requirements.transformers.txt \
-    -r requirements/requirements.gpu.txt \
     -r requirements/requirements.easyocr.txt \
-    "setuptools<=75.5.0" \
-    --extra-index-url https://pypi.jetson-ai-lab.dev/jp6/cu126
-RUN python3 -m pip install "numpy<=1.26.4"
+    "setuptools<=75.5.0"
 
 # Set up the application runtime
 WORKDIR /app
