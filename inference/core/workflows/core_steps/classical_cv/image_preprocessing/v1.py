@@ -2,7 +2,7 @@ from typing import List, Literal, Optional, Type, Union
 
 import cv2
 import numpy as np
-from pydantic import AliasChoices, ConfigDict, Field
+from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
 
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
@@ -55,12 +55,11 @@ class ImagePreprocessingManifest(WorkflowBlockManifest):
     task_type: Literal["resize", "rotate", "flip"] = Field(
         description="Preprocessing task to be applied to the image.",
     )
-    width: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    width: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         title="Width",
         default=640,
         description="Width of the image to be resized to.",
         examples=[640, "$inputs.resize_width"],
-        gt=0,
         json_schema_extra={
             "relevant_for": {
                 "task_type": {
@@ -70,12 +69,11 @@ class ImagePreprocessingManifest(WorkflowBlockManifest):
             },
         },
     )
-    height: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    height: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         title="Height",
         default=640,
         description="Height of the image to be resized to.",
         examples=[640, "$inputs.resize_height"],
-        gt=0,
         json_schema_extra={
             "relevant_for": {
                 "task_type": {
@@ -90,8 +88,6 @@ class ImagePreprocessingManifest(WorkflowBlockManifest):
         description="Positive value to rotate clockwise, negative value to rotate counterclockwise",
         default=90,
         examples=[90, "$inputs.rotation_degrees"],
-        ge=-360,
-        le=360,
         json_schema_extra={
             "relevant_for": {
                 "task_type": {
@@ -150,10 +146,18 @@ class ImagePreprocessingBlockV1(WorkflowBlock):
         response_image = None
 
         if task_type == "resize":
+            if width is not None and width <= 0:
+                raise ValueError("Width must be greater than 0")
+            if height is not None and height <= 0:
+                raise ValueError("Height must be greater than 0")
             response_image = apply_resize_image(image.numpy_image, width, height)
         elif task_type == "rotate":
+            if rotation_degrees is not None and not (-360 <= rotation_degrees <= 360):
+                raise ValueError("Rotation degrees must be between -360 and 360")
             response_image = apply_rotate_image(image.numpy_image, rotation_degrees)
         elif task_type == "flip":
+            if flip_type is not None and flip_type not in ["vertical", "horizontal", "both"]:
+                raise ValueError("Flip type must be 'vertical', 'horizontal', or 'both'")
             response_image = apply_flip_image(image.numpy_image, flip_type)
         else:
             raise ValueError(f"Invalid task type: {task_type}")
