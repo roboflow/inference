@@ -55,9 +55,7 @@ class ImagePreprocessingManifest(WorkflowBlockManifest):
     task_type: Literal["resize", "rotate", "flip"] = Field(
         description="Preprocessing task to be applied to the image.",
     )
-    width: Union[
-        PositiveInt, Selector(kind=[INTEGER_KIND])
-    ] = Field(  # type: ignore
+    width: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         title="Width",
         default=640,
         description="Width of the image to be resized to.",
@@ -71,9 +69,7 @@ class ImagePreprocessingManifest(WorkflowBlockManifest):
             },
         },
     )
-    height: Union[
-        PositiveInt, Selector(kind=[INTEGER_KIND])
-    ] = Field(  # type: ignore
+    height: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         title="Height",
         default=640,
         description="Height of the image to be resized to.",
@@ -87,9 +83,7 @@ class ImagePreprocessingManifest(WorkflowBlockManifest):
             },
         },
     )
-    rotation_degrees: Union[
-        int, Selector(kind=[INTEGER_KIND])
-    ] = Field(  # type: ignore
+    rotation_degrees: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         title="Degrees of Rotation",
         description="Positive value to rotate clockwise, negative value to rotate counterclockwise",
         default=90,
@@ -160,9 +154,7 @@ class ImagePreprocessingBlockV1(WorkflowBlock):
                 raise ValueError("Height must be greater than 0")
             response_image = apply_resize_image(image.numpy_image, width, height)
         elif task_type == "rotate":
-            if rotation_degrees is not None and not (
-                -360 <= rotation_degrees <= 360
-            ):
+            if rotation_degrees is not None and not (-360 <= rotation_degrees <= 360):
                 raise ValueError("Rotation degrees must be between -360 and 360")
             response_image = apply_rotate_image(image.numpy_image, rotation_degrees)
         elif task_type == "flip":
@@ -199,9 +191,7 @@ def apply_resize_image(
         aspect_ratio = width / current_width
         height = int(current_height * aspect_ratio)
 
-    resized_image = cv2.resize(
-        np_image, (width, height), interpolation=cv2.INTER_AREA
-    )
+    resized_image = cv2.resize(np_image, (width, height), interpolation=cv2.INTER_AREA)
     return resized_image
 
 
@@ -220,9 +210,7 @@ def apply_rotate_image(np_image: np.ndarray, rotation_degrees: Optional[int]):
     rotation_matrix[0, 2] += (new_width / 2) - center[0]
     rotation_matrix[1, 2] += (new_height / 2) - center[1]
 
-    rotated_image = cv2.warpAffine(
-        np_image, rotation_matrix, (new_width, new_height)
-    )
+    rotated_image = cv2.warpAffine(np_image, rotation_matrix, (new_width, new_height))
     return rotated_image
 
 
