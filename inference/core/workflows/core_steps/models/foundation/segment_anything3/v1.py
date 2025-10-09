@@ -254,7 +254,7 @@ class SegmentAnything3BlockV1(WorkflowBlock):
                     prompt_class_names.append(bbox_data[DETECTIONS_CLASS_NAME_FIELD])
                     prompt_detection_ids.append(bbox_data[DETECTION_ID_FIELD])
             class_predictions = []
-            for class_name in class_names:
+            for class_id, class_name in enumerate(class_names):
                 inference_request = Sam3SegmentationRequest(
                     image=single_image.to_inference_format(numpy_preferred=True),
                     model_id=model_id,
@@ -280,6 +280,7 @@ class SegmentAnything3BlockV1(WorkflowBlock):
                     prompt_detection_ids=prompt_detection_ids,
                     threshold=threshold,
                     text_prompt=class_name,
+                    specific_class_id=class_id,
                 )
                 class_predictions.extend(class_prediction.predictions)
             image_width = single_image.numpy_image.shape[1]
@@ -323,12 +324,13 @@ def convert_sam3_segmentation_response_to_inference_instances_seg_response(
     prompt_detection_ids: List[Optional[str]],
     threshold: float,
     text_prompt: Optional[str] = None,
+    specific_class_id: Optional[int] = None,
 ) -> InstanceSegmentationInferenceResponse:
     image_width = image.numpy_image.shape[1]
     image_height = image.numpy_image.shape[0]
     predictions = []
     if len(prompt_class_ids) == 0:
-        prompt_class_ids = [0 for _ in range(len(sam3_segmentation_predictions))]
+        prompt_class_ids = [specific_class_id if specific_class_id else 0 for _ in range(len(sam3_segmentation_predictions))]
         prompt_class_names = [
             text_prompt if text_prompt else "foreground"
             for _ in range(len(sam3_segmentation_predictions))
