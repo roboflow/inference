@@ -32,6 +32,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    LIST_OF_VALUES_KIND,
     STRING_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     RoboflowModelField,
@@ -126,9 +127,16 @@ class BlockManifest(WorkflowBlockManifest):
         ],
     )
     text: Union[Optional[str], Selector(kind=[STRING_KIND])] = Field(
+        title="Prompt",
         default=None,
         description="Optional text prompt for open-vocabulary segmentation.",
         examples=["a cat", "$inputs.text_prompt"],
+    )
+    class_names: Optional[Union[List[str], Selector(kind=[LIST_OF_VALUES_KIND])]] = Field(
+        title="Class Names",
+        default=None,
+        description="List of classes to recognise",
+        examples=[["car", "person"], "$inputs.classes"]
     )
     threshold: Union[Selector(kind=[FLOAT_KIND]), float] = Field(
         default=0.5, description="Threshold for predicted mask scores", examples=[0.3]
@@ -178,6 +186,7 @@ class SegmentAnything3BlockV1(WorkflowBlock):
         boxes: Optional[Batch[sv.Detections]],
         model_id: str,
         text: Optional[str],
+        class_names: Optional[List[str]],
         threshold: float,
         # multimask_output: Optional[bool],
     ) -> BlockResult:
@@ -187,6 +196,7 @@ class SegmentAnything3BlockV1(WorkflowBlock):
                 boxes=boxes,
                 model_id=model_id,
                 text=text,
+                class_names=class_names,
                 threshold=threshold,
             )
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
@@ -204,12 +214,18 @@ class SegmentAnything3BlockV1(WorkflowBlock):
         boxes: Optional[Batch[sv.Detections]],
         model_id: str,
         text: Optional[str],
+        class_names: Optional[List[str]],
         threshold: float,
     ) -> BlockResult:
         predictions = []
         if boxes is None:
             boxes = [None] * len(images)
-
+        if class_names is None:
+            class_names = []
+        if text is not None:
+            class_names.append(text)
+        if len(class_names) == 0:
+            class_names.append(None)
         for single_image, boxes_for_image in zip(images, boxes):
             prompt_class_ids: List[Optional[int]] = []
             prompt_class_names: List[Optional[str]] = []
@@ -237,42 +253,42 @@ class SegmentAnything3BlockV1(WorkflowBlock):
                     prompt_class_ids.append(class_id)
                     prompt_class_names.append(bbox_data[DETECTIONS_CLASS_NAME_FIELD])
                     prompt_detection_ids.append(bbox_data[DETECTION_ID_FIELD])
+            class_predictions = []
+            for class_name in class_names:
+                inference_request = Sam3SegmentationRequest(
+                    image=single_image.to_inference_format(numpy_preferred=True),
+                    model_id=model_id,
+                    api_key=self._api_key,
+                    text=class_name,
+                    boxes=norm_boxes if norm_boxes else None,
+                    box_labels=box_labels if box_labels else None,
+                    output_prob_thresh=threshold,
+                )
 
-            inference_request = Sam3SegmentationRequest(
-                image=single_image.to_inference_format(numpy_preferred=True),
-                model_id=model_id,
-                api_key=self._api_key,
-                text=text,
-                boxes=norm_boxes if norm_boxes else None,
-                box_labels=box_labels if box_labels else None,
-                output_prob_thresh=threshold,
+                self._model_manager.add_model(
+                    model_id=model_id,
+                    api_key=self._api_key,
+                )
+                sam3_segmentation_response = self._model_manager.infer_from_request_sync(
+                    model_id, inference_request
+                )
+                class_prediction = convert_sam3_segmentation_response_to_inference_instances_seg_response(
+                    sam3_segmentation_predictions=sam3_segmentation_response.predictions,
+                    image=single_image,
+                    prompt_class_ids=prompt_class_ids,
+                    prompt_class_names=prompt_class_names,
+                    prompt_detection_ids=prompt_detection_ids,
+                    threshold=threshold,
+                    text_prompt=class_name,
+                )
+                class_predictions.extend(class_prediction.predictions)
+            image_width = single_image.numpy_image.shape[1]
+            image_height = single_image.numpy_image.shape[0]
+            final_inference_prediction = InstanceSegmentationInferenceResponse(
+                predictions=class_predictions,
+                image=InferenceResponseImage(width=image_width, height=image_height),
             )
-
-            self._model_manager.add_model(
-                model_id=model_id,
-                api_key=self._api_key,
-            )
-
-            # sam_model_id = load_core_model(
-            #     model_manager=self._model_manager,
-            #     inference_request=inference_request,
-            #     core_model="sam3",
-            # )
-
-            sam3_segmentation_response = self._model_manager.infer_from_request_sync(
-                model_id, inference_request
-            )
-
-            prediction = convert_sam3_segmentation_response_to_inference_instances_seg_response(
-                sam3_segmentation_predictions=sam3_segmentation_response.predictions,
-                image=single_image,
-                prompt_class_ids=prompt_class_ids,
-                prompt_class_names=prompt_class_names,
-                prompt_detection_ids=prompt_detection_ids,
-                threshold=threshold,
-                text_prompt=text,
-            )
-            predictions.append(prediction)
+            predictions.append(final_inference_prediction)
 
         predictions = [
             e.model_dump(by_alias=True, exclude_none=True) for e in predictions
