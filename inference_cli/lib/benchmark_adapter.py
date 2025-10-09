@@ -63,7 +63,7 @@ def run_infer_api_speed_benchmark(
     )
     if benchmark_results.avg_remote_execution_time is not None:
         print(
-            f"Average remote execution time: {benchmark_results.avg_remote_execution_time}"
+            f"Average remote execution time: {benchmark_results.avg_remote_execution_time:.3f}s (across {benchmark_results.inferences_made} requests)"
         )
     if output_location is None:
         ensure_error_rate_is_below_threshold(
@@ -135,7 +135,7 @@ def run_workflow_api_speed_benchmark(
     )
     if benchmark_results.avg_remote_execution_time is not None:
         print(
-            f"Average remote execution time: {benchmark_results.avg_remote_execution_time}"
+            f"Average remote execution time: {benchmark_results.avg_remote_execution_time:.3f}s (across {benchmark_results.inferences_made} requests)"
         )
     if output_location is None:
         ensure_error_rate_is_below_threshold(
@@ -210,7 +210,7 @@ def run_python_package_speed_benchmark(
     statistics_display_thread.join()
     if benchmark_results.avg_remote_execution_time is not None:
         print(
-            f"Average remote execution time: {benchmark_results.avg_remote_execution_time}"
+            f"Average remote execution time: {benchmark_results.avg_remote_execution_time:.3f}s (across {benchmark_results.inferences_made} requests)"
         )
     if output_location is None:
         return None
