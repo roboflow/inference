@@ -4,10 +4,11 @@ from typing import Any, Dict, Generator, List, Literal, Optional, Tuple, Union
 import aiohttp
 import numpy as np
 import requests
+from requests import Response
 from aiohttp import ClientConnectionError, ClientResponseError
 from requests import HTTPError
 
-from inference_sdk.config import EXECUTION_ID_HEADER, execution_id
+from inference_sdk.config import EXECUTION_ID_HEADER, PROCESSING_TIME_HEADER, execution_id
 from inference_sdk.http.entities import (
     ALL_ROBOFLOW_API_URLS,
     CLASSIFICATION_TASK,
@@ -531,6 +532,11 @@ class InferenceHTTPClient:
                 prediction=parsed_response,
                 scaling_factor=request_data.image_scaling_factors[0],
             )
+            try:
+                processing_time = float(response.headers.get(PROCESSING_TIME_HEADER, 0))
+            except (OverflowError, TypeError, ValueError):
+                processing_time = None
+            parsed_response[PROCESSING_TIME_HEADER] = processing_time
             results.append(parsed_response)
         return unwrap_single_element_list(sequence=results)
 
@@ -616,6 +622,12 @@ class InferenceHTTPClient:
                 prediction=parsed_response,
                 scaling_factor=request_data.image_scaling_factors[0],
             )
+            try:
+                processing_time = float(response.get("headers", {}).get(PROCESSING_TIME_HEADER, 0))
+            except (OverflowError, TypeError, ValueError):
+                processing_time = None
+            parsed_response[PROCESSING_TIME_HEADER] = processing_time
+
             results.append(parsed_response)
         return unwrap_single_element_list(sequence=results)
 
@@ -687,6 +699,11 @@ class InferenceHTTPClient:
                     prediction=parsed_response_element,
                     scaling_factor=scaling_factor,
                 )
+                try:
+                    processing_time = float(response.headers.get(PROCESSING_TIME_HEADER, 0))
+                except (OverflowError, TypeError, ValueError):
+                    processing_time = None
+                parsed_response_element[PROCESSING_TIME_HEADER] = processing_time
                 results.append(parsed_response_element)
         return unwrap_single_element_list(sequence=results)
 
@@ -759,6 +776,11 @@ class InferenceHTTPClient:
                     prediction=parsed_response_element,
                     scaling_factor=scaling_factor,
                 )
+                try:
+                    processing_time = float(parsed_response.get("headers", {}).get(PROCESSING_TIME_HEADER, 0))
+                except (OverflowError, TypeError, ValueError):
+                    processing_time = None
+                parsed_response_element[PROCESSING_TIME_HEADER] = processing_time
                 results.append(parsed_response_element)
         return unwrap_single_element_list(sequence=results)
 
@@ -1635,6 +1657,42 @@ class InferenceHTTPClient:
         use_cache: bool = True,
         enable_profiling: bool = False,
     ) -> List[Dict[str, Any]]:
+        response = self._execute_workflow_request(
+            workspace_name=workspace_name,
+            workflow_id=workflow_id,
+            specification=specification,
+            images=images,
+            parameters=parameters,
+            excluded_fields=excluded_fields,
+            legacy_endpoints=legacy_endpoints,
+            use_cache=use_cache,
+            enable_profiling=enable_profiling,
+        )
+        response_data = response.json()
+        workflow_outputs = response_data["outputs"]
+        profiler_trace = response_data.get("profiler_trace", [])
+        if enable_profiling:
+            save_workflows_profiler_trace(
+                directory=self.__inference_configuration.profiling_directory,
+                profiler_trace=profiler_trace,
+            )
+        return decode_workflow_outputs(
+            workflow_outputs=workflow_outputs,
+            expected_format=self.__inference_configuration.output_visualisation_format,
+        )
+
+    def _execute_workflow_request(
+        self,
+        workspace_name: Optional[str] = None,
+        workflow_id: Optional[str] = None,
+        specification: Optional[dict] = None,
+        images: Optional[Dict[str, Any]] = None,
+        parameters: Optional[Dict[str, Any]] = None,
+        excluded_fields: Optional[List[str]] = None,
+        legacy_endpoints: bool = False,
+        use_cache: bool = True,
+        enable_profiling: bool = False,
+    ) -> Response:
         named_workflow_specified = (workspace_name is not None) and (
             workflow_id is not None
         )
@@ -1684,18 +1742,7 @@ class InferenceHTTPClient:
             headers=DEFAULT_HEADERS,
             enable_retries=self.__inference_configuration.workflow_run_retries_enabled,
         )
-        response_data = response.json()
-        workflow_outputs = response_data["outputs"]
-        profiler_trace = response_data.get("profiler_trace", [])
-        if enable_profiling:
-            save_workflows_profiler_trace(
-                directory=self.__inference_configuration.profiling_directory,
-                profiler_trace=profiler_trace,
-            )
-        return decode_workflow_outputs(
-            workflow_outputs=workflow_outputs,
-            expected_format=self.__inference_configuration.output_visualisation_format,
-        )
+        return response
 
     @wrap_errors
     def infer_from_yolo_world(

@@ -14,6 +14,7 @@ from inference_cli.lib.benchmark.results_gathering import (
     ResultsCollector,
 )
 from inference_sdk import InferenceHTTPClient
+from inference_sdk.config import PROCESSING_TIME_HEADER
 from inference_sdk.http.entities import HTTPClientMode
 
 
@@ -259,16 +260,19 @@ def execute_infer_api_request(
     try:
         inference_result = client.infer(payload)
         execution_time = inference_result.get("time")
+        remote_execution_time = inference_result.get(PROCESSING_TIME_HEADER)
         duration = time.time() - start
         results_collector.register_inference_duration(
             batch_size=request_batch_size,
             duration=duration,
             execution_time=execution_time,
+            remote_execution_time=remote_execution_time,
         )
     except Exception as exc:
         duration = time.time() - start
         results_collector.register_inference_duration(
-            batch_size=request_batch_size, duration=duration
+            batch_size=request_batch_size,
+            duration=duration,
         )
         status_code = exc.__class__.__name__
         if isinstance(exc, requests.exceptions.HTTPError):
@@ -306,10 +310,16 @@ def execute_workflow_api_request(
             kwargs["workflow_id"] = workflow_id
         else:
             kwargs["specification"] = workflow_specification
-        _ = client.run_workflow(**kwargs)
+        response = client._execute_workflow_request(**kwargs)
+        try:
+            remote_execution_time = float(response.headers.get(PROCESSING_TIME_HEADER))
+        except (OverflowError, TypeError, ValueError):
+            remote_execution_time = None
         duration = time.time() - start
         results_collector.register_inference_duration(
-            batch_size=request_batch_size, duration=duration
+            batch_size=request_batch_size,
+            duration=duration,
+            remote_execution_time=remote_execution_time,
         )
     except Exception as exc:
         duration = time.time() - start
