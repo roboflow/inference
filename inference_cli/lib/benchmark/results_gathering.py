@@ -28,7 +28,7 @@ class InferenceStatistics:
     images_per_second: float
     error_rate: float
     error_status_codes: Dict[str, int]
-    total_remote_execution_time: Optional[float]
+    avg_remote_execution_time: Optional[float]
 
     def to_string(self) -> str:
         return STATISTICS_FORMAT.format(
@@ -41,7 +41,7 @@ class InferenceStatistics:
             p90_inference_latency_ms=self.p90_inference_latency_ms,
             error_rate=self.error_rate,
             error_status_codes=self.error_status_codes,
-            total_remote_execution_time=self.total_remote_execution_time or "N/A",
+            avg_remote_execution_time=self.avg_remote_execution_time or "N/A",
         )
 
 
@@ -115,9 +115,11 @@ class ResultsCollector:
             average_execution_time_ms = None
             average_execution_time_per_image_ms = None
         if remote_execution_times:
-            total_remote_execution_time = sum(remote_execution_times)
+            avg_remote_execution_time = sum(remote_execution_times) / len(
+                remote_execution_times
+            )
         else:
-            total_remote_execution_time = None
+            avg_remote_execution_time = None
         std_inference_latency_ms = round(np.std(latencies) * 1000, 1)
         average_inference_latency_per_image_ms = round(
             average_inference_latency_ms * inferences_made / images_processed, 2
@@ -163,5 +165,5 @@ class ResultsCollector:
             error_status_codes=", ".join(
                 f"{exc}: {count}" for exc, count in error_status_codes.items()
             ),
-            total_remote_execution_time=total_remote_execution_time,
+            avg_remote_execution_time=avg_remote_execution_time,
         )
