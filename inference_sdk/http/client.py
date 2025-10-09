@@ -8,7 +8,11 @@ from requests import Response
 from aiohttp import ClientConnectionError, ClientResponseError
 from requests import HTTPError
 
-from inference_sdk.config import EXECUTION_ID_HEADER, PROCESSING_TIME_HEADER, execution_id
+from inference_sdk.config import (
+    EXECUTION_ID_HEADER,
+    PROCESSING_TIME_HEADER,
+    execution_id,
+)
 from inference_sdk.http.entities import (
     ALL_ROBOFLOW_API_URLS,
     CLASSIFICATION_TASK,
@@ -623,7 +627,9 @@ class InferenceHTTPClient:
                 scaling_factor=request_data.image_scaling_factors[0],
             )
             try:
-                processing_time = float(response.get("headers", {}).get(PROCESSING_TIME_HEADER, 0))
+                processing_time = float(
+                    response.get("headers", {}).get(PROCESSING_TIME_HEADER, 0)
+                )
             except (OverflowError, TypeError, ValueError):
                 processing_time = None
             parsed_response[PROCESSING_TIME_HEADER] = processing_time
@@ -700,7 +706,9 @@ class InferenceHTTPClient:
                     scaling_factor=scaling_factor,
                 )
                 try:
-                    processing_time = float(response.headers.get(PROCESSING_TIME_HEADER, 0))
+                    processing_time = float(
+                        response.headers.get(PROCESSING_TIME_HEADER, 0)
+                    )
                 except (OverflowError, TypeError, ValueError):
                     processing_time = None
                 parsed_response_element[PROCESSING_TIME_HEADER] = processing_time
@@ -777,7 +785,11 @@ class InferenceHTTPClient:
                     scaling_factor=scaling_factor,
                 )
                 try:
-                    processing_time = float(parsed_response.get("headers", {}).get(PROCESSING_TIME_HEADER, 0))
+                    processing_time = float(
+                        parsed_response.get("headers", {}).get(
+                            PROCESSING_TIME_HEADER, 0
+                        )
+                    )
                 except (OverflowError, TypeError, ValueError):
                     processing_time = None
                 parsed_response_element[PROCESSING_TIME_HEADER] = processing_time

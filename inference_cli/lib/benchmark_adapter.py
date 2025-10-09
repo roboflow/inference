@@ -63,7 +63,9 @@ def run_infer_api_speed_benchmark(
     )
     if output_location is None:
         if benchmark_results.total_remote_execution_time is not None:
-            print(f"Total remote execution time: {benchmark_results.total_remote_execution_time}")
+            print(
+                f"Total remote execution time: {benchmark_results.total_remote_execution_time}"
+            )
         ensure_error_rate_is_below_threshold(
             error_rate=benchmark_results.error_rate,
             threshold=max_error_rate,
@@ -133,7 +135,9 @@ def run_workflow_api_speed_benchmark(
     )
     if output_location is None:
         if benchmark_results.total_remote_execution_time is not None:
-            print(f"Total remote execution time: {benchmark_results.total_remote_execution_time}")
+            print(
+                f"Total remote execution time: {benchmark_results.total_remote_execution_time}"
+            )
         ensure_error_rate_is_below_threshold(
             error_rate=benchmark_results.error_rate,
             threshold=max_error_rate,
@@ -206,7 +210,9 @@ def run_python_package_speed_benchmark(
     statistics_display_thread.join()
     if output_location is None:
         if benchmark_results.total_remote_execution_time is not None:
-            print(f"Total remote execution time: {benchmark_results.total_remote_execution_time}")
+            print(
+                f"Total remote execution time: {benchmark_results.total_remote_execution_time}"
+            )
         return None
     benchmark_parameters = {
         "datetime": datetime.now().isoformat(),

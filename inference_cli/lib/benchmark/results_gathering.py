@@ -49,7 +49,9 @@ class ResultsCollector:
 
     def __init__(self):
         self._benchmark_start: Optional[datetime] = None
-        self._inference_details: List[Tuple[datetime, int, float, Optional[float], Optional[float]]] = []
+        self._inference_details: List[
+            Tuple[datetime, int, float, Optional[float], Optional[float]]
+        ] = []
         self._benchmark_end: Optional[datetime] = None
         self._errors: List[Tuple[datetime, int, str]] = []
 
@@ -65,7 +67,13 @@ class ResultsCollector:
         remote_execution_time: Optional[float] = None,
     ) -> None:
         self._inference_details.append(
-            (datetime.now(), batch_size, duration, execution_time, remote_execution_time)
+            (
+                datetime.now(),
+                batch_size,
+                duration,
+                execution_time,
+                remote_execution_time,
+            )
         )
 
     def register_error(self, batch_size: int, status_code: str) -> None:
