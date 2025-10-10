@@ -439,7 +439,7 @@ signed URL to the file when running the ingestion command.
 #### Cloud Storage
 ##### AWS S3 Datasource
 Using [AWS S3](https://aws.amazon.com/s3/) for ingesting data for batch processing can be achieved easily with this example script.
-This also supports S3-compatible datasources such as Backblaze B2, Cloudflare R2, Oracle Cloud Infrastructure Object Storage and many more
+This also supports S3-compatible datasources such as Backblaze B2, Cloudflare R2, Oracle Cloud Infrastructure Object Storage and many more.
 
 ```sh
 #!/bin/bash
