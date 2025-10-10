@@ -7,7 +7,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 import numpy as np
 import requests
-from requests import Response
+from requests import Response 
 from tqdm import tqdm
 
 from inference_cli.lib.benchmark.results_gathering import (
