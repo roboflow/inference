@@ -259,7 +259,7 @@ def execute_infer_api_request(
     payload = images[:request_batch_size]
     start = time.time()
     try:
-        if client.__client_mode is HTTPClientMode.V0:
+        if client.client_mode is HTTPClientMode.V0:
             request_data = client._prepare_infer_from_api_v0_request_data(
                 inference_input=payload,
             )
@@ -268,7 +268,7 @@ def execute_infer_api_request(
                 inference_input=payload,
             )
         responses: List[Response] = client._execute_infer_from_api_request(
-            request_data=request_data
+            requests_data=request_data
         )
         duration = time.time() - start
         execution_time = responses[0].json().get("time")
