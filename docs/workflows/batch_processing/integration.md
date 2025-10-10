@@ -376,10 +376,10 @@ enterprise environments where data is stored in the cloud.
 
 * **Active Polling:** The process requires constant polling to verify statuses, which is inefficient and not scalable.
 
-To address these issues, the system supports webhook notifications for both data staging and batch processing. 
-Webhooks allow external systems to automatically react to status changes, eliminating the need for manual polling and 
-enabling seamless automation. Additionally, system allows for data ingestion through **signed URLs** 
-which should streamline integrations with cloud storage.
+To address these issues, the system supports webhook notifications for both data staging and batch processing.
+Webhooks allow external systems to automatically react to status changes, eliminating the need for manual polling and
+enabling seamless automation. Additionally, system allows for data ingestion through **signed URLs**
+which should streamline integrations with [cloud storage](#cloud-storage).
 
 !!! important "API integration"
 
@@ -388,8 +388,8 @@ which should streamline integrations with cloud storage.
 
 ### Data ingestion
 
-Both `inference rf-cloud data-staging create-batch-of-videos` and `inference rf-cloud data-staging create-batch-of-images` 
-commands support additional parameters to enable webhook notifications and ingest data directly from cloud storage.
+Both `inference rf-cloud data-staging create-batch-of-videos` and `inference rf-cloud data-staging create-batch-of-images`
+commands support additional parameters to enable webhook notifications and ingest data directly from [cloud storage](#cloud-storage).
 
 * `--data-source reference-file` instructs the CLI to process files referenced via signed URLs instead of requiring local data.
 
@@ -424,7 +424,7 @@ commands support additional parameters to enable webhook notifications and inges
 Each entry in the references file contains two key attributes:
 
 * `name`: A unique identifier for the file.
-* `url`: A signed URL pointing to the file in cloud storage.
+* `url`: A signed URL pointing to the file in [cloud storage](#cloud-storage).
 
 Here’s an example of the JSONL format:
 ```
@@ -432,14 +432,18 @@ Here’s an example of the JSONL format:
 {"name": "<your-unique-name-of-file-2>", "url": "https://<signed-url>"}
 ```
 
-You can store this references file locally or in cloud storage. If the file is stored in the cloud, simply provide the 
+You can store this references file locally or in [cloud storage](#cloud-storage). If the file is stored in the cloud, simply provide the
 signed URL to the file when running the ingestion command.
 
 
 #### Cloud Storage
 ##### AWS S3 Datasource
 Using [AWS S3](https://aws.amazon.com/s3/) for ingesting data for batch processing can be achieved easily with this example script.
-This also supports S3-compatible datasources such as Backblaze B2, Cloudflare R2, Oracle Cloud Infrastructure Object Storage and many more.
+This also supports S3-compatible datasources such as Backblaze B2, Cloudflare R2, Oracle Cloud Infrastructure Object Storage and many more by providing `--endpoint-url` for `aws` command.
+
+!!! note "AWS CLI Installation Required"
+
+    This script requires the [AWS CLI](https://aws.amazon.com/cli/) to be installed and configured with appropriate credentials.
 
 ```sh
 #!/bin/bash
@@ -515,6 +519,10 @@ echo "Total images processed: $(wc -l < "$OUTPUT_FILE")"
 
 ##### GCS Datasource
 Using [google cloud storage (GCS)](https://cloud.google.com/storage) for ingesting data for batch processing can be easily achieved with this example script.
+
+!!! note "gcloud CLI Installation Required"
+
+    This script requires the [gcloud CLI](https://cloud.google.com/sdk/gcloud) to be installed and configured with appropriate credentials.
 
 ```sh
 #!/bin/bash
