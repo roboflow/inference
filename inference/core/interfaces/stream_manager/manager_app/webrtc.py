@@ -40,7 +40,10 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
 )
 from inference.core.utils.async_utils import Queue as SyncAsyncQueue
 from inference.core.utils.function import experimental
-from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
+from inference.core.workflows.execution_engine.entities.base import (
+    VideoMetadata,
+    WorkflowImageData,
+)
 
 logging.getLogger("aiortc").setLevel(logging.WARNING)
 
@@ -61,9 +64,10 @@ def overlay_text_on_np_frame(frame: np.ndarray, text: List[str]):
 
 def get_frame_from_workflow_output(
     workflow_output: Dict[str, Union[WorkflowImageData, Any]], frame_output_key: str
-) -> Optional[np.ndarray]:
+) -> Optional[Tuple[VideoMetadata, np.ndarray]]:
     latency: Optional[datetime.timedelta] = None
     np_image: Optional[np.ndarray] = None
+    video_metadata: Optional[VideoMetadata] = None
 
     step_output = workflow_output.get(frame_output_key)
     if isinstance(step_output, WorkflowImageData):
@@ -76,6 +80,7 @@ def get_frame_from_workflow_output(
                 datetime.datetime.now() - step_output.video_metadata.frame_timestamp
             )
         np_image = step_output.numpy_image
+        video_metadata = step_output.video_metadata
     elif isinstance(step_output, dict):
         for frame_output in step_output.values():
             if isinstance(frame_output, WorkflowImageData):
@@ -89,19 +94,20 @@ def get_frame_from_workflow_output(
                         - frame_output.video_metadata.frame_timestamp
                     )
                 np_image = frame_output.numpy_image
+                video_metadata = frame_output.video_metadata
 
     # logger.warning since inference pipeline is noisy on INFO level
     if DEBUG_WEBRTC_PROCESSING_LATENCY and latency is not None:
         logger.warning("Processing latency: %ss", latency.total_seconds())
 
-    return np_image
+    return video_metadata, np_image
 
 
 class VideoTransformTrack(VideoStreamTrack):
     def __init__(
         self,
         to_inference_queue: "SyncAsyncQueue[VideoFrame]",
-        from_inference_queue: "SyncAsyncQueue[np.ndarray]",
+        from_inference_queue: "SyncAsyncQueue[Tuple[VideoMetadata, np.ndarray]]",
         asyncio_loop: asyncio.AbstractEventLoop,
         fps_probe_frames: int,
         webcam_fps: Optional[float] = None,
@@ -122,7 +128,9 @@ class VideoTransformTrack(VideoStreamTrack):
         self._processed = 0
 
         self.to_inference_queue: "SyncAsyncQueue[VideoFrame]" = to_inference_queue
-        self.from_inference_queue: "SyncAsyncQueue[np.ndarray]" = from_inference_queue
+        self.from_inference_queue: (
+            "SyncAsyncQueue[Tuple[VideoMetadata, np.ndarray]]"
+        ) = from_inference_queue
 
         self._fps_probe_frames = fps_probe_frames
         self._probe_count: int = 0
@@ -261,7 +269,7 @@ class VideoTransformTrack(VideoStreamTrack):
         self._processed += 1
 
         np_frame: Optional[np.ndarray] = None
-        np_frame = await self.from_inference_queue.async_get()
+        video_metadata, np_frame = await self.from_inference_queue.async_get()
 
         if np_frame is None:
             if self._last_processed_frame:
@@ -280,6 +288,8 @@ class VideoTransformTrack(VideoStreamTrack):
         pts, time_base = await self.next_timestamp()
         new_frame.pts = pts
         new_frame.time_base = time_base
+        if video_metadata is not None:
+            new_frame.opaque = video_metadata.frame_number
 
         return new_frame
 
@@ -378,7 +388,7 @@ class WebRTCPipelineWatchDog(BasePipelineWatchDog):
 async def init_rtc_peer_connection(
     webrtc_offer: WebRTCOffer,
     to_inference_queue: "SyncAsyncQueue[VideoFrame]",
-    from_inference_queue: "SyncAsyncQueue[np.ndarray]",
+    from_inference_queue: "SyncAsyncQueue[Tuple[VideoMetadata, np.ndarray]]",
     asyncio_loop: asyncio.AbstractEventLoop,
     fps_probe_frames: int,
     webrtc_turn_config: Optional[WebRTCTURNConfig] = None,
