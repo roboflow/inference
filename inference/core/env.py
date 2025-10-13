@@ -161,6 +161,9 @@ CORE_MODEL_SAM3_ENABLED = str2bool(os.getenv("CORE_MODEL_SAM3_ENABLED", True))
 
 CORE_MODEL_OWLV2_ENABLED = str2bool(os.getenv("CORE_MODEL_OWLV2_ENABLED", False))
 
+# Maximum prompt batch size for SAM3 PCS requests
+SAM3_MAX_PROMPT_BATCH_SIZE = int(os.getenv("SAM3_MAX_PROMPT_BATCH_SIZE", 16))
+
 # Flag to enable GAZE core model, default is True
 CORE_MODEL_GAZE_ENABLED = str2bool(os.getenv("CORE_MODEL_GAZE_ENABLED", True))
 

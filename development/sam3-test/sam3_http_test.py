@@ -48,7 +48,7 @@ def main():
     # Prepare request
     img_b64 = encode_image_base64(str(img_path))
     payload = {
-        "format": "json",
+        "format": "rle",
         "image": {"type": "base64", "value": img_b64},
         "output_prob_thresh": args.threshold,
         "api_key": "bYnuUL7O8JxPMe8KM0N0",

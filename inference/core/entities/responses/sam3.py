@@ -16,8 +16,7 @@ class Sam3SegmentationPrediction(BaseModel):
     )
     confidence: float = Field(description="Masks confidence")
     format: Optional[str] = Field(
-        default="polygon",
-        description="Format of the mask data: 'polygon' or 'rle'"
+        default="polygon", description="Format of the mask data: 'polygon' or 'rle'"
     )
 
 
@@ -28,3 +27,21 @@ class Sam3SegmentationResponse(BaseModel):
     )
 
 
+class Sam3PromptEcho(BaseModel):
+    prompt_index: int = Field()
+    type: Optional[str] = Field(default=None)
+    text: Optional[str] = Field(default=None)
+    num_boxes: Optional[int] = Field(default=None)
+
+
+class Sam3PromptResult(BaseModel):
+    prompt_index: int = Field()
+    echo: Sam3PromptEcho = Field()
+    predictions: List[Sam3SegmentationPrediction] = Field()
+
+
+class Sam3BatchSegmentationResponse(BaseModel):
+    prompt_results: List[Sam3PromptResult] = Field()
+    time: float = Field(
+        description="The time in seconds it took to produce the segmentation including preprocessing"
+    )
