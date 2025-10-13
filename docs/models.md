@@ -166,7 +166,7 @@ After you have python installed, install the pypi package `inference-cli` or `in
 pip install inference-cli
 ```
 
-From there you can run the inference server. See [Docker quickstart via CLI](./quickstart/docker.md/#via-cli) for more information.
+From there you can run the inference server. See [Docker quickstart via CLI](./quickstart/docker.md#set-up-a-docker-inference-server-via-inference-server-start) for more information.
 
 ```bash
 inference server start
@@ -179,7 +179,7 @@ inference server stop
 
 To use the CLI to make inferences, first <a href="https://docs.roboflow.com/api-reference/workspace-and-project-ids" target="_blank">find your project ID and model version number in Roboflow</a>.
 
-See more detailed documentation on [HTTP Inference quickstart via CLI](./quickstart/http_inference.md/#via-cli).
+See more detailed documentation on [HTTP Inference quickstart](./quickstart/http_inference.md).
 
 ```bash
 inference infer {image_path} \
