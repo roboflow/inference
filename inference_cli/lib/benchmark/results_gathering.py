@@ -28,6 +28,7 @@ class InferenceStatistics:
     images_per_second: float
     error_rate: float
     error_status_codes: Dict[str, int]
+    avg_remote_execution_time: Optional[float]
 
     def to_string(self) -> str:
         return STATISTICS_FORMAT.format(
@@ -40,6 +41,7 @@ class InferenceStatistics:
             p90_inference_latency_ms=self.p90_inference_latency_ms,
             error_rate=self.error_rate,
             error_status_codes=self.error_status_codes,
+            avg_remote_execution_time=self.avg_remote_execution_time or "N/A",
         )
 
 
@@ -47,7 +49,9 @@ class ResultsCollector:
 
     def __init__(self):
         self._benchmark_start: Optional[datetime] = None
-        self._inference_details: List[Tuple[datetime, int, float, Optional[float]]] = []
+        self._inference_details: List[
+            Tuple[datetime, int, float, Optional[float], Optional[float]]
+        ] = []
         self._benchmark_end: Optional[datetime] = None
         self._errors: List[Tuple[datetime, int, str]] = []
 
@@ -56,10 +60,20 @@ class ResultsCollector:
             self._benchmark_start = datetime.now()
 
     def register_inference_duration(
-        self, batch_size: int, duration: float, execution_time: Optional[float] = None
+        self,
+        batch_size: int,
+        duration: float,
+        execution_time: Optional[float] = None,
+        remote_execution_time: Optional[float] = None,
     ) -> None:
         self._inference_details.append(
-            (datetime.now(), batch_size, duration, execution_time)
+            (
+                datetime.now(),
+                batch_size,
+                duration,
+                execution_time,
+                remote_execution_time,
+            )
         )
 
     def register_error(self, batch_size: int, status_code: str) -> None:
@@ -88,6 +102,7 @@ class ResultsCollector:
             stats = stats[-window:]
         latencies = [s[2] for s in stats]
         execution_times = [s[3] for s in stats if s[3] is not None]
+        remote_execution_times = [s[4] for s in stats if s[4] is not None]
         inferences_made = len(stats)
         images_processed = sum(s[1] for s in stats)
         average_inference_latency_ms = round(np.average(latencies) * 1000, 1)
@@ -99,6 +114,12 @@ class ResultsCollector:
         else:
             average_execution_time_ms = None
             average_execution_time_per_image_ms = None
+        if remote_execution_times:
+            avg_remote_execution_time = sum(remote_execution_times) / len(
+                remote_execution_times
+            )
+        else:
+            avg_remote_execution_time = None
         std_inference_latency_ms = round(np.std(latencies) * 1000, 1)
         average_inference_latency_per_image_ms = round(
             average_inference_latency_ms * inferences_made / images_processed, 2
@@ -144,4 +165,5 @@ class ResultsCollector:
             error_status_codes=", ".join(
                 f"{exc}: {count}" for exc, count in error_status_codes.items()
             ),
+            avg_remote_execution_time=avg_remote_execution_time,
         )

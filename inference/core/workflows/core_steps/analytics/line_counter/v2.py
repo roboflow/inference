@@ -70,9 +70,9 @@ class LineCounterManifest(WorkflowBlockManifest):
         description="Line consisting of exactly two points. For line [[0, 100], [100, 100]], objects entering from the bottom will count as IN.",
         examples=[[[0, 50], [500, 50]], "$inputs.zones"],
     )
-    triggering_anchor: Union[str, Selector(kind=[STRING_KIND]), Literal[tuple(sv.Position.list())]] = Field(  # type: ignore
+    triggering_anchor: Optional[Union[str, Selector(kind=[STRING_KIND]), Literal[tuple(sv.Position.list())]]] = Field(  # type: ignore
         description=f"The point on the detection that must cross the line to be counted.",
-        default="CENTER",
+        default=None,
         examples=["CENTER"],
     )
 
@@ -121,7 +121,7 @@ class LineCounterBlockV2(WorkflowBlock):
         detections: sv.Detections,
         image: WorkflowImageData,
         line_segment: List[Tuple[int, int]],
-        triggering_anchor: str = "CENTER",
+        triggering_anchor: Optional[str] = None,
     ) -> BlockResult:
         if detections.tracker_id is None:
             raise ValueError(
@@ -144,11 +144,17 @@ class LineCounterBlockV2(WorkflowBlock):
                 raise ValueError(
                     f"{self.__class__.__name__} requires each coordinate of line zone to be a number"
                 )
-            self._batch_of_line_zones[metadata.video_identifier] = sv.LineZone(
-                start=sv.Point(*line_segment[0]),
-                end=sv.Point(*line_segment[1]),
-                triggering_anchors=[sv.Position(triggering_anchor)],
-            )
+            if triggering_anchor is not None:
+                self._batch_of_line_zones[metadata.video_identifier] = sv.LineZone(
+                    start=sv.Point(*line_segment[0]),
+                    end=sv.Point(*line_segment[1]),
+                    triggering_anchors=[sv.Position(triggering_anchor)],
+                )
+            else:
+                self._batch_of_line_zones[metadata.video_identifier] = sv.LineZone(
+                    start=sv.Point(*line_segment[0]),
+                    end=sv.Point(*line_segment[1]),
+                )
         line_zone = self._batch_of_line_zones[metadata.video_identifier]
 
         mask_in, mask_out = line_zone.trigger(detections=detections)

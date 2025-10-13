@@ -2671,6 +2671,11 @@ class HttpInterface(BaseInterface):
                     "external",
                     description="The detailed source information of the inference request",
                 ),
+                disable_model_monitoring: Optional[bool] = Query(
+                    False,
+                    description="If true, disables model monitoring for this request",
+                    include_in_schema=False,
+                ),
             ):
                 """
                 Legacy inference endpoint for object detection, instance segmentation, and classification.
@@ -2797,6 +2802,7 @@ class HttpInterface(BaseInterface):
                     source=source,
                     source_info=source_info,
                     usage_billable=countinference,
+                    disable_model_monitoring=disable_model_monitoring,
                     **args,
                 )
                 inference_response = self.model_manager.infer_from_request_sync(
