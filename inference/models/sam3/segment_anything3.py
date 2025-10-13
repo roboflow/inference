@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import torch
 import threading
+import logging
 from pycocotools import mask as mask_utils
 
 from inference.core.entities.requests.inference import InferenceRequestImage
@@ -73,6 +74,38 @@ from sam3.train.data.sam3_image_dataset import (
 from sam3.train.data.collator import collate_fn_api
 from sam3.train.utils.train_utils import copy_data_to_device
 from sam3.train.eval.postprocessors import PostProcessImage
+
+
+def _to_numpy_masks(masks_any) -> np.ndarray:
+    """Convert masks from torch/list to numpy uint8 array (N,H,W)."""
+    if masks_any is None:
+        return np.zeros((0, 0, 0), dtype=np.uint8)
+    if hasattr(masks_any, "detach"):
+        return masks_any.detach().cpu().numpy().astype(np.uint8)
+    arrs = []
+    for m in masks_any:
+        if hasattr(m, "detach"):
+            arrs.append(m.detach().cpu().numpy().astype(np.uint8))
+        else:
+            arrs.append(np.asarray(m, dtype=np.uint8))
+    if not arrs:
+        return np.zeros((0, 0, 0), dtype=np.uint8)
+    return np.stack(arrs, axis=0)
+
+
+def _normalize_masks_shape(masks_np: np.ndarray) -> np.ndarray:
+    """Ensure masks have shape (N,H,W).
+
+    - If (N,1,H,W) squeeze the channel dim.
+    - If (H,W) add batch dim -> (1,H,W).
+    - If already (N,H,W), return as is.
+    Other shapes will be returned unchanged and handled by guards.
+    """
+    if masks_np.ndim == 4 and masks_np.shape[1] == 1:
+        masks_np = masks_np[:, 0, ...]
+    elif masks_np.ndim == 2:
+        masks_np = masks_np[None, ...]
+    return masks_np
 
 
 def _estimate_numeric_bytes(obj, seen=None):
@@ -146,7 +179,7 @@ class SegmentAnything3(RoboflowCoreModel):
         # base models have presence token if "presence is in then name
         # for fine tuned models right now at least its always false
         # we should add a config file to the model artifacts for this
-        # has_presence_token = "presence" in model_id and model_id.startswith("sam3/")
+
         checkpoint = self.cache_file("weights.pt")
         bpe_path = self.cache_file("bpe_simple_vocab_16e6.txt.gz")
 
@@ -158,7 +191,6 @@ class SegmentAnything3(RoboflowCoreModel):
         self.model = build_sam3_image_model(
             bpe_path=bpe_path,
             checkpoint_path=checkpoint,
-            # has_presence_token=has_presence_token,
             device="cuda" if torch.cuda.is_available() else "cpu",
         )
 
@@ -345,10 +377,16 @@ class SegmentAnything3(RoboflowCoreModel):
         # Inference-only path; disable autograd throughout
         with torch.inference_mode():
             start_ts = perf_counter()
+            logging.debug(
+                f"SAM3.segment_image: start format={format} thresh={output_prob_thresh} prompts_in={(len(prompts) if prompts else 0)}"
+            )
             # Load image as PIL and build a SAM3 Datapoint with ordered prompts
             np_image = load_image_rgb(image)
             pil_image = Image.fromarray(np_image)
             h, w = pil_image.size[1], pil_image.size[0]
+            logging.debug(
+                f"SAM3.segment_image: np_image.shape={getattr(np_image, 'shape', None)} pil_size={(w, h)}"
+            )
 
             datapoint = Sam3Datapoint(
                 find_queries=[], images=[], raw_images=[pil_image]
@@ -438,19 +476,27 @@ class SegmentAnything3(RoboflowCoreModel):
             for p in prompts:
                 if isinstance(p, Sam3Prompt):
                     normalized_prompts.append(p)
-                else:
+                elif isinstance(p, dict):
                     try:
                         normalized_prompts.append(Sam3Prompt(**p))
-                    except Exception:
+                    except Exception as e:
+                        logging.debug(
+                            f"SAM3.segment_image: failed to normalize prompt dict: {e}"
+                        )
                         continue
             prompts = normalized_prompts
+            logging.debug(f"SAM3.segment_image: normalized_prompts={len(prompts)}")
             if not prompts:
                 # Backward compat: legacy fields in kwargs already normalized into prompts by validator
                 pass
             for p in prompts:
                 if p.boxes:
+                    logging.debug(
+                        f"SAM3.segment_image: add_visual boxes={len(p.boxes or [])} labels={len(p.box_labels or [])} text={p.text}"
+                    )
                     _add_visual(p.boxes, p.box_labels or [], p.text)
                 else:
+                    logging.debug(f"SAM3.segment_image: add_text text={p.text}")
                     _add_text(p.text)
 
             # Transform and collate to BatchedDatapoint
@@ -464,16 +510,44 @@ class SegmentAnything3(RoboflowCoreModel):
 
             # Forward
             output = self.model(batch)
+            logging.debug("SAM3.segment_image: model forward done")
 
             # Postprocess to original size and build per-prompt results
-            processed = self.postprocessor.process_results(output, batch.find_metadatas)
+            post = PostProcessImage(
+                max_dets_per_img=-1,
+                iou_type="segm",
+                use_original_sizes=True,
+                convert_mask_to_rle=False,
+                detection_threshold=float(
+                    output_prob_thresh if output_prob_thresh is not None else 0.35
+                ),
+                to_cpu=True,
+                # use_presence=False,
+            )
+            processed = post.process_results(output, batch.find_metadatas)
+            logging.debug(
+                f"SAM3.segment_image: postprocess done; stages={len(processed)} ids_sample={list(processed.keys())[:3]}"
+            )
+
         if len(prompt_coco_ids) == 1:
             # Legacy single response
             preds = []
             if format in ["polygon", "json"]:
-                polygons = processed[prompt_coco_ids[0]]["masks"]
-                scores = processed[prompt_coco_ids[0]]["scores"]
-                for poly, score in zip(polygons, scores):
+                masks_np = _to_numpy_masks(processed[prompt_coco_ids[0]].get("masks"))
+                masks_np = _normalize_masks_shape(masks_np)
+                scores = list(processed[prompt_coco_ids[0]].get("scores", []))
+                logging.debug(
+                    f"SAM3 single-prompt: masks_shape={getattr(masks_np, 'shape', None)} scores_len={len(scores)}"
+                )
+                if masks_np.size:
+                    logging.debug(
+                        f"SAM3 single-prompt: masks_nonzero={int((masks_np > 0).sum())}"
+                    )
+                if masks_np.ndim != 3 or 0 in masks_np.shape:
+                    polygons = []
+                else:
+                    polygons = masks2multipoly((masks_np > 0).astype(np.uint8))
+                for poly, score in zip(polygons, scores[: len(polygons)]):
                     preds.append(
                         Sam3SegmentationPrediction(
                             masks=[p.tolist() for p in poly],
@@ -485,9 +559,20 @@ class SegmentAnything3(RoboflowCoreModel):
                     time=perf_counter() - start_ts, predictions=preds
                 )
             elif format == "rle":
-                rles = processed[prompt_coco_ids[0]]["masks_rle"]
-                scores = processed[prompt_coco_ids[0]]["scores"]
-                for rle, score in zip(rles, scores):
+                rles = processed[prompt_coco_ids[0]].get("masks_rle")
+                scores = list(processed[prompt_coco_ids[0]].get("scores", []))
+                if rles is None:
+                    masks_np = _to_numpy_masks(
+                        processed[prompt_coco_ids[0]].get("masks")
+                    )
+                    masks_np = _normalize_masks_shape(masks_np)
+                    rles = []
+                    for m in masks_np:
+                        mb = (m > 0).astype(np.uint8)
+                        rle = mask_utils.encode(np.asfortranarray(mb))
+                        rle["counts"] = rle["counts"].decode("utf-8")
+                        rles.append(rle)
+                for rle, score in zip(rles, scores[: len(rles)]):
                     preds.append(
                         Sam3SegmentationPrediction(
                             masks=rle, confidence=float(score), format="rle"
@@ -498,13 +583,10 @@ class SegmentAnything3(RoboflowCoreModel):
                 )
             elif format == "binary":
                 # Return binary .npz content as in legacy path
-                mask_stack = processed[prompt_coco_ids[0]].get("masks")
-                if mask_stack is None:
-                    mask_stack = processed[prompt_coco_ids[0]].get(
-                        "masks_rle"
-                    )  # not ideal
+                masks_np = _to_numpy_masks(processed[prompt_coco_ids[0]].get("masks"))
+                masks_np = _normalize_masks_shape(masks_np)
                 binary_vector = BytesIO()
-                np.savez_compressed(binary_vector, masks=np.array(mask_stack))
+                np.savez_compressed(binary_vector, masks=masks_np)
                 binary_vector.seek(0)
                 return binary_vector.getvalue()
             else:
@@ -521,9 +603,14 @@ class SegmentAnything3(RoboflowCoreModel):
             )
             preds: List[Sam3SegmentationPrediction] = []
             if format in ["polygon", "json"]:
-                polygons = processed[coco_id]["masks"]
-                scores = processed[coco_id]["scores"]
-                for poly, score in zip(polygons, scores):
+                masks_np = _to_numpy_masks(processed[coco_id].get("masks"))
+                masks_np = _normalize_masks_shape(masks_np)
+                scores = list(processed[coco_id].get("scores", []))
+                if masks_np.ndim != 3 or 0 in masks_np.shape:
+                    polygons = []
+                else:
+                    polygons = masks2multipoly((masks_np > 0).astype(np.uint8))
+                for poly, score in zip(polygons, scores[: len(polygons)]):
                     preds.append(
                         Sam3SegmentationPrediction(
                             masks=[p.tolist() for p in poly],
@@ -532,24 +619,36 @@ class SegmentAnything3(RoboflowCoreModel):
                         )
                     )
             elif format == "rle":
-                rles = processed[coco_id]["masks_rle"]
-                scores = processed[coco_id]["scores"]
-                for rle, score in zip(rles, scores):
+                rles = processed[coco_id].get("masks_rle")
+                scores = list(processed[coco_id].get("scores", []))
+                if rles is None:
+                    masks_np = _to_numpy_masks(processed[coco_id].get("masks"))
+                    masks_np = _normalize_masks_shape(masks_np)
+                    rles = []
+                    for m in masks_np:
+                        mb = (m > 0).astype(np.uint8)
+                        rle = mask_utils.encode(np.asfortranarray(mb))
+                        rle["counts"] = rle["counts"].decode("utf-8")
+                        rles.append(rle)
+                for rle, score in zip(rles, scores[: len(rles)]):
                     preds.append(
                         Sam3SegmentationPrediction(
                             masks=rle, confidence=float(score), format="rle"
                         )
                     )
             elif format == "binary":
-                mask_stack = processed[coco_id].get("masks")
-                if mask_stack is None:
-                    mask_stack = processed[coco_id].get("masks_rle")
-                # For batch response, we keep polygon/rle list even for binary request to keep schema consistent
-                # If binary is strictly required per prompt, we could embed npz bytes per prompt item (heavier)
-                for m in mask_stack:
+                masks_np = _to_numpy_masks(processed[coco_id].get("masks"))
+                masks_np = _normalize_masks_shape(masks_np)
+                if masks_np.ndim != 3 or 0 in masks_np.shape:
+                    polygons = []
+                else:
+                    polygons = masks2multipoly((masks_np > 0).astype(np.uint8))
+                for poly in polygons:
                     preds.append(
                         Sam3SegmentationPrediction(
-                            masks=m, confidence=1.0, format="polygon"
+                            masks=[p.tolist() for p in poly],
+                            confidence=1.0,
+                            format="polygon",
                         )
                     )
             else:
