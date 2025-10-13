@@ -376,10 +376,10 @@ enterprise environments where data is stored in the cloud.
 
 * **Active Polling:** The process requires constant polling to verify statuses, which is inefficient and not scalable.
 
-To address these issues, the system supports webhook notifications for both data staging and batch processing. 
-Webhooks allow external systems to automatically react to status changes, eliminating the need for manual polling and 
-enabling seamless automation. Additionally, system allows for data ingestion through **signed URLs** 
-which should streamline integrations with cloud storage.
+To address these issues, the system supports webhook notifications for both data staging and batch processing.
+Webhooks allow external systems to automatically react to status changes, eliminating the need for manual polling and
+enabling seamless automation. Additionally, system allows for data ingestion through **signed URLs**
+which should streamline integrations with [cloud storage](#cloud-storage).
 
 !!! important "API integration"
 
@@ -388,8 +388,8 @@ which should streamline integrations with cloud storage.
 
 ### Data ingestion
 
-Both `inference rf-cloud data-staging create-batch-of-videos` and `inference rf-cloud data-staging create-batch-of-images` 
-commands support additional parameters to enable webhook notifications and ingest data directly from cloud storage.
+Both `inference rf-cloud data-staging create-batch-of-videos` and `inference rf-cloud data-staging create-batch-of-images`
+commands support additional parameters to enable webhook notifications and ingest data directly from [cloud storage](#cloud-storage).
 
 * `--data-source reference-file` instructs the CLI to process files referenced via signed URLs instead of requiring local data.
 
@@ -424,7 +424,7 @@ commands support additional parameters to enable webhook notifications and inges
 Each entry in the references file contains two key attributes:
 
 * `name`: A unique identifier for the file.
-* `url`: A signed URL pointing to the file in cloud storage.
+* `url`: A signed URL pointing to the file in [cloud storage](#cloud-storage).
 
 Here’s an example of the JSONL format:
 ```
@@ -432,8 +432,208 @@ Here’s an example of the JSONL format:
 {"name": "<your-unique-name-of-file-2>", "url": "https://<signed-url>"}
 ```
 
-You can store this references file locally or in cloud storage. If the file is stored in the cloud, simply provide the 
+You can store this references file locally or in [cloud storage](#cloud-storage). If the file is stored in the cloud, simply provide the
 signed URL to the file when running the ingestion command.
+
+
+#### Cloud Storage
+##### AWS S3 Datasource
+Using [AWS S3](https://aws.amazon.com/s3/) for ingesting data for batch processing can be achieved easily with this example script.
+This also supports S3-compatible datasources such as Backblaze B2, Cloudflare R2, Oracle Cloud Infrastructure Object Storage and many more by providing `--endpoint-url` for `aws` command.
+
+!!! note "AWS CLI Installation Required"
+
+    This script requires the [AWS CLI](https://aws.amazon.com/cli/) to be installed and configured with appropriate credentials.
+
+```sh
+#!/bin/bash
+
+# Script to generate S3 signed URLs for image files in JSONL format
+# Usage: ./generateS3SignedUrls.sh <s3-path> [output-file] [expiration-seconds] [parallel-jobs]
+# Or with curl:
+# curl -fsSL https://raw.githubusercontent.com/roboflow/roboflow-python/main/scripts/generateS3SignedUrls.sh | bash -s --  s3://bucket/path output.jsonl
+
+set -e
+
+# Check if S3 path is provided
+if [ -z "$1" ]; then
+    echo "Error: S3 path is required"
+    echo "Usage: $0 <s3-path> [output-file] [expiration-seconds] [parallel-jobs]"
+    echo "Example: $0 s3://my-bucket/images/ output.jsonl 3600 8"
+    exit 1
+fi
+
+S3_PATH="$1"
+OUTPUT_FILE="${2:-signed_urls.jsonl}"
+EXPIRATION="${3:-21600}"  # Default: 6 hours
+PARALLEL_JOBS="${4:-20}"  # Default: 20 parallel jobs
+
+# Remove trailing slash from S3 path if present
+S3_PATH="${S3_PATH%/}"
+
+# Extract bucket name from S3_PATH
+BUCKET=$(echo "$S3_PATH" | sed 's|s3://||' | cut -d'/' -f1)
+
+# Image file extensions to include (regex pattern for grep)
+IMAGE_PATTERN='\.(jpg|jpeg|png|gif|bmp|webp|tiff|tif|svg)$'
+
+# Function to process a single file
+process_file() {
+    local file_path="$1"
+    local bucket="$2"
+    local expiration="$3"
+
+    # Construct full S3 URI
+    local s3_uri="s3://${bucket}/${file_path}"
+
+    # Generate signed URL
+    local signed_url=$(aws s3 presign "$s3_uri" --expires-in "$expiration" 2>/dev/null)
+
+    if [ $? -eq 0 ]; then
+        # Create name with full path using double underscores instead of slashes
+        local name_with_path=$(echo "$file_path" | sed 's|/|__|g')
+
+        # Output JSONL
+        echo "{\"name\": \"$name_with_path\", \"url\": \"$signed_url\"}"
+    fi
+}
+
+# Export function and variables for xargs
+export -f process_file
+export BUCKET
+export EXPIRATION
+
+echo "Listing files from $S3_PATH..."
+
+# Get list of all files, filter for images, and process in parallel
+aws s3 ls "$S3_PATH/" --recursive | \
+    awk '{print $4}' | \
+    grep -iE "$IMAGE_PATTERN" | \
+    xargs -I {} -P "$PARALLEL_JOBS" bash -c 'process_file "$@"' _ {} "$BUCKET" "$EXPIRATION" | \
+    tee "$OUTPUT_FILE"
+
+echo ""
+echo "Done! Signed URLs written to $OUTPUT_FILE"
+echo "Total images processed: $(wc -l < "$OUTPUT_FILE")"
+```
+
+##### GCS Datasource
+Using [google cloud storage (GCS)](https://cloud.google.com/storage) for ingesting data for batch processing can be easily achieved with this example script.
+
+!!! note "gcloud CLI Installation Required"
+
+    This script requires the [gcloud CLI](https://cloud.google.com/sdk/gcloud) to be installed and configured with appropriate credentials.
+
+```sh
+#!/bin/bash
+
+# Script to generate GCS signed URLs for image files in JSONL format
+# Usage: ./listgcs.sh <gcs-path> [output-file] [expiration-seconds] [parallel-jobs]
+
+set -e
+
+# Check if GCS path is provided
+if [ -z "$1" ]; then
+    echo "Error: GCS path is required"
+    echo "Usage: $0 <gcs-path> [output-file] [expiration-seconds] [parallel-jobs]"
+    echo "Example: $0 gs://my-bucket/images/ output.jsonl 21600 8"
+    exit 1
+fi
+
+GCS_PATH="$1"
+OUTPUT_FILE="${2:-signed_urls.jsonl}"
+EXPIRATION_SECONDS="${3:-21600}"  # Default: 6 hours
+PARALLEL_JOBS="${4:-20}"  # Default: 20 parallel jobs
+
+# Remove trailing slash from GCS path if present
+GCS_PATH="${GCS_PATH%/}"
+
+# Convert seconds to duration format for gcloud (e.g., 21600s)
+EXPIRATION="${EXPIRATION_SECONDS}s"
+
+# Image file extensions to include (regex pattern for grep)
+IMAGE_PATTERN='\.(jpg|jpeg|png|gif|bmp|webp|tiff|tif|svg)$'
+
+# Function to find an appropriate service account
+find_service_account() {
+    # First, try to get the default compute service account for the current project
+    local project_id=$(gcloud config get-value project 2>/dev/null)
+    if [ -n "$project_id" ]; then
+        local compute_sa="${project_id}-compute@developer.gserviceaccount.com"
+        if gcloud iam service-accounts describe "$compute_sa" >/dev/null 2>&1; then
+            echo "$compute_sa"
+            return 0
+        fi
+    fi
+
+    # If that doesn't work, try to find any service account in the project
+    local sa_list=$(gcloud iam service-accounts list --format="value(email)" --limit=1 2>/dev/null)
+    if [ -n "$sa_list" ]; then
+        echo "$sa_list" | head -n 1
+        return 0
+    fi
+
+    return 1
+}
+
+# Try to find a service account to use
+SERVICE_ACCOUNT=$(find_service_account)
+if [ -z "$SERVICE_ACCOUNT" ]; then
+    echo "Warning: No service account found. Attempting to sign URLs without impersonation."
+    echo "If this fails, you may need to:"
+    echo "1. Authenticate with a service account: gcloud auth activate-service-account --key-file=key.json"
+    echo "2. Or ensure you have appropriate service accounts in your project"
+    echo ""
+fi
+
+# Function to process a single file
+process_file() {
+    local object="$1"
+    local service_account="$2"
+    local expiration="$3"
+
+    # Create signed URL using gcloud storage sign-url
+    local signed_url_output
+    if [ -n "$service_account" ]; then
+        signed_url_output=$(gcloud storage sign-url --http-verb=GET --duration="$expiration" --impersonate-service-account="$service_account" "$object" 2>/dev/null)
+    else
+        signed_url_output=$(gcloud storage sign-url --http-verb=GET --duration="$expiration" "$object" 2>/dev/null)
+    fi
+
+    if [ $? -eq 0 ] && [ -n "$signed_url_output" ]; then
+        # Extract just the signed_url from the YAML output
+        local signed_url=$(echo "$signed_url_output" | grep "signed_url:" | sed 's/signed_url: //')
+
+        if [ -n "$signed_url" ]; then
+            # Extract the path after the bucket name and convert slashes to double underscores
+            local path_part=$(echo "$object" | sed 's|gs://[^/]*/||')
+            local name_with_path=$(echo "$path_part" | sed 's|/|__|g')
+
+            # Output JSONL
+            echo "{\"name\": \"$name_with_path\", \"url\": \"$signed_url\"}"
+        fi
+    fi
+}
+
+# Export function and variables for xargs
+export -f process_file
+export SERVICE_ACCOUNT
+export EXPIRATION
+
+echo "Listing files from $GCS_PATH..."
+
+# Get list of all files, filter for images, and process in parallel
+gsutil ls -r "$GCS_PATH" 2>/dev/null | \
+    grep -v '/$' | \
+    grep -v ':$' | \
+    grep -iE "$IMAGE_PATTERN" | \
+    xargs -I {} -P "$PARALLEL_JOBS" bash -c 'process_file "$@"' _ {} "$SERVICE_ACCOUNT" "$EXPIRATION" | \
+    tee "$OUTPUT_FILE"
+
+echo ""
+echo "Done! Signed URLs written to $OUTPUT_FILE"
+echo "Total images processed: $(wc -l < "$OUTPUT_FILE")"
+```
 
 #### Notifications
 
