@@ -8,7 +8,7 @@ you haven't installed Docker yet, you can get it from <a href="https://www.docke
 
 Another easy way to run the Roboflow Inference Server with Docker is via the command line.
 
-First, [Install the CLI](../index.md#cli).
+First, [Install the CLI](../models.md#-cli).
 
 Running the Inference Server is as simple as running the following command:
 
@@ -30,7 +30,7 @@ Roboflow Inference CLI currently supports the following device targets:
 - ARM64 CPU
 - NVIDIA GPU
 
-For Jetson or TensorRT Runtime inference server images, pull the images directly following the [instructions below](#pull-from-docker-hub).
+For Jetson or TensorRT Runtime inference server images, pull the images directly following the [instructions below](#step-1-pull-from-docker-hub).
 
 ## Manually Set Up a Docker Container
 

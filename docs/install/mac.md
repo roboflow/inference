@@ -47,7 +47,7 @@ Simply download the latest DMS disk image from the latest release on Github.
     so hardware acceleration is not possible inside a container on Mac.
 
     !!! Tip
-        It's easiest to [get started with the CPU Docker](#cpu) and switch to running
+        It's easiest to [get started with the CPU Docker](#using-docker) and switch to running
         outside of Docker with MPS acceleration later if you need more speed.
 
     We recommend using
