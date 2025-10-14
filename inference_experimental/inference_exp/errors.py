@@ -97,6 +97,10 @@ class ModelLoadingError(BaseInferenceError):
     pass
 
 
+class InsecureModelIdentifierError(ModelLoadingError):
+    pass
+
+
 class DirectLocalStorageAccessError(ModelLoadingError):
     pass
 
