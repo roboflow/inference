@@ -28,7 +28,10 @@ from inference_exp.models.common.roboflow.model_packages import (
 from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
-from inference_exp.models.rfdetr.class_remapping import prepare_class_remapping
+from inference_exp.models.rfdetr.class_remapping import (
+    ClassesReMapping,
+    prepare_class_remapping,
+)
 from inference_exp.models.rfdetr.default_labels import resolve_labels
 from inference_exp.models.rfdetr.post_processor import PostProcess
 from inference_exp.models.rfdetr.rfdetr_base_pytorch import (
@@ -103,11 +106,12 @@ class RFDetrForObjectDetectionTorch(
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
             },
         )
-        class_id_remapping = None
+        classes_re_mapping = None
         if inference_config.class_names_operations:
-            class_names, class_id_remapping = prepare_class_remapping(
+            class_names, classes_re_mapping = prepare_class_remapping(
                 class_names=class_names,
                 class_names_operations=inference_config.class_names_operations,
+                device=device,
             )
         weights_dict = torch.load(
             model_package_content["weights.pth"],
@@ -124,17 +128,16 @@ class RFDetrForObjectDetectionTorch(
                 help_url="https://todo",
             )
         model_config = CONFIG_FOR_MODEL_TYPE[model_type](device=device)
-        model = build_model(config=model_config)
         checkpoint_num_classes = weights_dict["class_embed.bias"].shape[0]
-        if checkpoint_num_classes != model_config.num_classes + 1:
-            model.reinitialize_detection_head(num_classes=checkpoint_num_classes)
+        model_config.num_classes = checkpoint_num_classes - 1
+        model = build_model(config=model_config)
         model.load_state_dict(weights_dict)
         model = model.eval().to(device)
         post_processor = PostProcess()
         return cls(
             model=model,
             class_names=class_names,
-            class_id_remapping=class_id_remapping,
+            classes_re_mapping=classes_re_mapping,
             device=device,
             inference_config=inference_config,
             post_processor=post_processor,
@@ -199,10 +202,9 @@ class RFDetrForObjectDetectionTorch(
                 normalization=([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
             )
         )
-        model = build_model(config=model_config)
         checkpoint_num_classes = weights_dict["class_embed.bias"].shape[0]
-        if checkpoint_num_classes != model_config.num_classes + 1:
-            model.reinitialize_detection_head(num_classes=checkpoint_num_classes)
+        model_config.num_classes = checkpoint_num_classes - 1
+        model = build_model(config=model_config)
         if labels is None:
             class_names = [f"class_{i}" for i in range(checkpoint_num_classes)]
         elif isinstance(labels, str):
@@ -221,7 +223,7 @@ class RFDetrForObjectDetectionTorch(
         return cls(
             model=model,
             class_names=class_names,
-            class_id_remapping=None,
+            classes_re_mapping=None,
             device=device,
             inference_config=inference_config,
             post_processor=post_processor,
@@ -233,7 +235,7 @@ class RFDetrForObjectDetectionTorch(
         model: LWDETR,
         inference_config: InferenceConfig,
         class_names: List[str],
-        class_id_remapping: Optional[Dict[int, int]],
+        classes_re_mapping: Optional[ClassesReMapping],
         device: torch.device,
         post_processor: PostProcess,
         resolution: int,
@@ -241,7 +243,7 @@ class RFDetrForObjectDetectionTorch(
         self._model = model
         self._inference_config = inference_config
         self._class_names = class_names
-        self._class_id_remapping = class_id_remapping
+        self._classes_re_mapping = classes_re_mapping
         self._post_processor = post_processor
         self._device = device
         self._resolution = resolution
@@ -413,18 +415,12 @@ class RFDetrForObjectDetectionTorch(
             scores = image_result["scores"]
             labels = image_result["labels"]
             boxes = image_result["boxes"]
-            if self._class_id_remapping is not None:
-                remapping_mask = [
-                    label not in self._class_id_remapping for label in labels
-                ]
-                scores = scores[remapping_mask]
-                labels = torch.tensor(
-                    [
-                        self._class_id_remapping[label]
-                        for label in labels[remapping_mask].tolist()
-                    ],
-                    device=labels.device,
+            if self._classes_re_mapping is not None:
+                remapping_mask = torch.isin(
+                    labels, self._classes_re_mapping.remaining_class_ids
                 )
+                scores = scores[remapping_mask]
+                labels = self._classes_re_mapping.class_mapping[labels[remapping_mask]]
                 boxes = boxes[remapping_mask]
             keep = scores > threshold
             scores = scores[keep]
