@@ -61,7 +61,7 @@ class Sam3EmbeddingRequest(Sam3InferenceRequest):
 class Sam3SegmentationRequest(Sam3InferenceRequest):
     format: Optional[str] = Field(
         default="polygon",
-        description="One of 'polygon', 'rle', or 'binary'.",
+        description="One of 'polygon', 'rle'",
     )
     image: InferenceRequestImage = Field(description="The image to be segmented.")
     image_id: Optional[str] = Field(

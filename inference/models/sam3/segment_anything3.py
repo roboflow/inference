@@ -108,6 +108,48 @@ def _normalize_masks_shape(masks_np: np.ndarray) -> np.ndarray:
     return masks_np
 
 
+def _masks_to_predictions(
+    masks_np: np.ndarray, scores: List[float], fmt: str
+) -> List[Sam3SegmentationPrediction]:
+    """Convert boolean masks (N,H,W) to API predictions in requested format.
+
+    Args:
+        masks_np: Boolean or uint8 masks array (N,H,W)
+        scores: Confidence scores per mask
+        fmt: Output format: 'polygon', 'json', or 'rle'
+
+    Returns:
+        List of Sam3SegmentationPrediction
+    """
+    masks_np = _normalize_masks_shape(masks_np)
+    preds = []
+
+    if masks_np.ndim != 3 or 0 in masks_np.shape:
+        return preds
+
+    if fmt in ["polygon", "json"]:
+        polygons = masks2multipoly((masks_np > 0).astype(np.uint8))
+        for poly, score in zip(polygons, scores[: len(polygons)]):
+            preds.append(
+                Sam3SegmentationPrediction(
+                    masks=[p.tolist() for p in poly],
+                    confidence=float(score),
+                    format="polygon",
+                )
+            )
+    elif fmt == "rle":
+        for m, score in zip(masks_np, scores[: masks_np.shape[0]]):
+            mb = (m > 0).astype(np.uint8)
+            rle = mask_utils.encode(np.asfortranarray(mb))
+            rle["counts"] = rle["counts"].decode("utf-8")
+            preds.append(
+                Sam3SegmentationPrediction(
+                    masks=rle, confidence=float(score), format="rle"
+                )
+            )
+    return preds
+
+
 def _estimate_numeric_bytes(obj, seen=None):
     """Estimate memory by summing bytes of numpy arrays and torch tensors found within obj.
 
@@ -531,66 +573,15 @@ class SegmentAnything3(RoboflowCoreModel):
 
         if len(prompt_coco_ids) == 1:
             # Legacy single response
-            preds = []
-            if format in ["polygon", "json"]:
-                masks_np = _to_numpy_masks(processed[prompt_coco_ids[0]].get("masks"))
-                masks_np = _normalize_masks_shape(masks_np)
-                scores = list(processed[prompt_coco_ids[0]].get("scores", []))
-                logging.debug(
-                    f"SAM3 single-prompt: masks_shape={getattr(masks_np, 'shape', None)} scores_len={len(scores)}"
-                )
-                if masks_np.size:
-                    logging.debug(
-                        f"SAM3 single-prompt: masks_nonzero={int((masks_np > 0).sum())}"
-                    )
-                if masks_np.ndim != 3 or 0 in masks_np.shape:
-                    polygons = []
-                else:
-                    polygons = masks2multipoly((masks_np > 0).astype(np.uint8))
-                for poly, score in zip(polygons, scores[: len(polygons)]):
-                    preds.append(
-                        Sam3SegmentationPrediction(
-                            masks=[p.tolist() for p in poly],
-                            confidence=float(score),
-                            format="polygon",
-                        )
-                    )
-                return Sam3SegmentationResponse(
-                    time=perf_counter() - start_ts, predictions=preds
-                )
-            elif format == "rle":
-                rles = processed[prompt_coco_ids[0]].get("masks_rle")
-                scores = list(processed[prompt_coco_ids[0]].get("scores", []))
-                if rles is None:
-                    masks_np = _to_numpy_masks(
-                        processed[prompt_coco_ids[0]].get("masks")
-                    )
-                    masks_np = _normalize_masks_shape(masks_np)
-                    rles = []
-                    for m in masks_np:
-                        mb = (m > 0).astype(np.uint8)
-                        rle = mask_utils.encode(np.asfortranarray(mb))
-                        rle["counts"] = rle["counts"].decode("utf-8")
-                        rles.append(rle)
-                for rle, score in zip(rles, scores[: len(rles)]):
-                    preds.append(
-                        Sam3SegmentationPrediction(
-                            masks=rle, confidence=float(score), format="rle"
-                        )
-                    )
-                return Sam3SegmentationResponse(
-                    time=perf_counter() - start_ts, predictions=preds
-                )
-            elif format == "binary":
-                # Return binary .npz content as in legacy path
-                masks_np = _to_numpy_masks(processed[prompt_coco_ids[0]].get("masks"))
-                masks_np = _normalize_masks_shape(masks_np)
-                binary_vector = BytesIO()
-                np.savez_compressed(binary_vector, masks=masks_np)
-                binary_vector.seek(0)
-                return binary_vector.getvalue()
-            else:
-                raise ValueError(f"Invalid format {format}")
+            masks_np = _to_numpy_masks(processed[prompt_coco_ids[0]].get("masks"))
+            scores = list(processed[prompt_coco_ids[0]].get("scores", []))
+            logging.debug(
+                f"SAM3 single-prompt: masks_shape={getattr(masks_np, 'shape', None)} scores_len={len(scores)}"
+            )
+            preds = _masks_to_predictions(masks_np, scores, format)
+            return Sam3SegmentationResponse(
+                time=perf_counter() - start_ts, predictions=preds
+            )
 
         # Multi-prompt batch response
         prompt_results: List[Sam3PromptResult] = []
@@ -601,101 +592,12 @@ class SegmentAnything3(RoboflowCoreModel):
                 text=prompts[idx].text,
                 num_boxes=(len(prompts[idx].boxes) if prompts[idx].boxes else 0),
             )
-            preds: List[Sam3SegmentationPrediction] = []
-            if format in ["polygon", "json"]:
-                masks_np = _to_numpy_masks(processed[coco_id].get("masks"))
-                masks_np = _normalize_masks_shape(masks_np)
-                scores = list(processed[coco_id].get("scores", []))
-                if masks_np.ndim != 3 or 0 in masks_np.shape:
-                    polygons = []
-                else:
-                    polygons = masks2multipoly((masks_np > 0).astype(np.uint8))
-                for poly, score in zip(polygons, scores[: len(polygons)]):
-                    preds.append(
-                        Sam3SegmentationPrediction(
-                            masks=[p.tolist() for p in poly],
-                            confidence=float(score),
-                            format="polygon",
-                        )
-                    )
-            elif format == "rle":
-                rles = processed[coco_id].get("masks_rle")
-                scores = list(processed[coco_id].get("scores", []))
-                if rles is None:
-                    masks_np = _to_numpy_masks(processed[coco_id].get("masks"))
-                    masks_np = _normalize_masks_shape(masks_np)
-                    rles = []
-                    for m in masks_np:
-                        mb = (m > 0).astype(np.uint8)
-                        rle = mask_utils.encode(np.asfortranarray(mb))
-                        rle["counts"] = rle["counts"].decode("utf-8")
-                        rles.append(rle)
-                for rle, score in zip(rles, scores[: len(rles)]):
-                    preds.append(
-                        Sam3SegmentationPrediction(
-                            masks=rle, confidence=float(score), format="rle"
-                        )
-                    )
-            elif format == "binary":
-                masks_np = _to_numpy_masks(processed[coco_id].get("masks"))
-                masks_np = _normalize_masks_shape(masks_np)
-                if masks_np.ndim != 3 or 0 in masks_np.shape:
-                    polygons = []
-                else:
-                    polygons = masks2multipoly((masks_np > 0).astype(np.uint8))
-                for poly in polygons:
-                    preds.append(
-                        Sam3SegmentationPrediction(
-                            masks=[p.tolist() for p in poly],
-                            confidence=1.0,
-                            format="polygon",
-                        )
-                    )
-            else:
-                raise ValueError(f"Invalid format {format}")
+            masks_np = _to_numpy_masks(processed[coco_id].get("masks"))
+            scores = list(processed[coco_id].get("scores", []))
+            preds = _masks_to_predictions(masks_np, scores, format)
             prompt_results.append(
                 Sam3PromptResult(prompt_index=idx, echo=echo, predictions=preds)
             )
         return Sam3BatchSegmentationResponse(
             time=perf_counter() - start_ts, prompt_results=prompt_results
-        )
-
-    def _results_to_response(
-        self, masks: np.ndarray, scores: np.ndarray, start_ts: float
-    ) -> Sam3SegmentationResponse:
-        predictions: List[Sam3SegmentationPrediction] = []
-        polygons = masks2multipoly(masks >= 0.5)
-        for poly, score in zip(polygons, scores):
-            predictions.append(
-                Sam3SegmentationPrediction(
-                    masks=[p.tolist() for p in poly],
-                    confidence=float(score),
-                    format="polygon",
-                )
-            )
-        return Sam3SegmentationResponse(
-            time=perf_counter() - start_ts, predictions=predictions
-        )
-
-    def _results_to_rle_response(
-        self, masks: np.ndarray, scores: np.ndarray, start_ts: float
-    ) -> Sam3SegmentationResponse:
-        predictions: List[Sam3SegmentationPrediction] = []
-
-        for mask, score in zip(masks, scores):
-            # Apply same threshold as polygon format
-            mask_binary = (mask >= 0.5).astype(np.uint8)
-
-            # Encode mask to RLE format
-            rle = mask_utils.encode(np.asfortranarray(mask_binary))
-            rle["counts"] = rle["counts"].decode("utf-8")
-
-            predictions.append(
-                Sam3SegmentationPrediction(
-                    masks=rle, confidence=float(score), format="rle"
-                )
-            )
-
-        return Sam3SegmentationResponse(
-            time=perf_counter() - start_ts, predictions=predictions
         )
