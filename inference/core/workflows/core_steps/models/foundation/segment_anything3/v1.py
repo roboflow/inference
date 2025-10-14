@@ -89,20 +89,20 @@ class BlockManifest(WorkflowBlockManifest):
 
     type: Literal["roboflow_core/seg-preview@v1"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
-    boxes: Optional[
-        Selector(
-            kind=[
-                OBJECT_DETECTION_PREDICTION_KIND,
-                INSTANCE_SEGMENTATION_PREDICTION_KIND,
-                KEYPOINT_DETECTION_PREDICTION_KIND,
-            ]
-        )
-    ] = Field(  # type: ignore
-        description="Bounding boxes (from another model) to convert to polygons",
-        examples=["$steps.object_detection_model.predictions"],
-        default=None,
-        json_schema_extra={"always_visible": True},
-    )
+    # boxes: Optional[
+    #     Selector(
+    #         kind=[
+    #             OBJECT_DETECTION_PREDICTION_KIND,
+    #             INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    #             KEYPOINT_DETECTION_PREDICTION_KIND,
+    #         ]
+    #     )
+    # ] = Field(  # type: ignore
+    #     description="Bounding boxes (from another model) to convert to polygons",
+    #     examples=["$steps.object_detection_model.predictions"],
+    #     default=None,
+    #     json_schema_extra={"always_visible": True},
+    # )
 
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), Optional[str]] = Field(
         default="sam3/sam3_image_model_only",
@@ -113,12 +113,12 @@ class BlockManifest(WorkflowBlockManifest):
             "$inputs.model_variant",
         ],
     )
-    text: Union[Optional[str], Selector(kind=[STRING_KIND])] = Field(
-        title="Prompt",
-        default=None,
-        description="Optional text prompt for open-vocabulary segmentation.",
-        examples=["a cat", "$inputs.text_prompt"],
-    )
+    # text: Union[Optional[str], Selector(kind=[STRING_KIND])] = Field(
+    #     title="Prompt",
+    #     default=None,
+    #     description="Optional text prompt for open-vocabulary segmentation.",
+    #     examples=["a cat", "$inputs.text_prompt"],
+    # )
     class_names: Optional[Union[List[str], Selector(kind=[LIST_OF_VALUES_KIND])]] = (
         Field(
             title="Class Names",
@@ -172,9 +172,9 @@ class SegmentAnything3BlockV1(WorkflowBlock):
     def run(
         self,
         images: Batch[WorkflowImageData],
-        boxes: Optional[Batch[sv.Detections]],
+        # boxes: Optional[Batch[sv.Detections]],
         model_id: str,
-        text: Optional[str],
+        # text: Optional[str],
         class_names: Optional[List[str]],
         threshold: float,
         # multimask_output: Optional[bool],
@@ -182,9 +182,9 @@ class SegmentAnything3BlockV1(WorkflowBlock):
         if self._step_execution_mode is StepExecutionMode.LOCAL:
             return self.run_locally(
                 images=images,
-                boxes=boxes,
+                # boxes=boxes,
                 model_id=model_id,
-                text=text,
+                # text=text,
                 class_names=class_names,
                 threshold=threshold,
             )
@@ -200,19 +200,19 @@ class SegmentAnything3BlockV1(WorkflowBlock):
     def run_locally(
         self,
         images: Batch[WorkflowImageData],
-        boxes: Optional[Batch[sv.Detections]],
+        # boxes: Optional[Batch[sv.Detections]],
         model_id: str,
-        text: Optional[str],
+        # text: Optional[str],
         class_names: Optional[List[str]],
         threshold: float,
     ) -> BlockResult:
         predictions = []
-        if boxes is None:
-            boxes = [None] * len(images)
+        # if boxes is None:
+        #     boxes = [None] * len(images)
         if class_names is None:
             class_names = []
-        if text is not None:
-            class_names.append(text)
+        # if text is not None:
+        #     class_names.append(text)
         if len(class_names) == 0:
             class_names.append(None)
 
@@ -221,46 +221,39 @@ class SegmentAnything3BlockV1(WorkflowBlock):
             api_key=self._api_key,
         )
 
-        for single_image, boxes_for_image in zip(images, boxes):
+        for single_image in images:
             # Metadata for visual box prompts (if provided)
             prompt_class_ids: List[Optional[int]] = []
             prompt_class_names: List[Optional[str]] = []
             prompt_detection_ids: List[Optional[str]] = []
 
-            norm_boxes: List[List[float]] = []
-            box_labels: List[int] = []
+            # norm_boxes: List[List[float]] = []
+            # box_labels: List[int] = []
 
-            if boxes_for_image is not None:
-                img_h, img_w = (
-                    single_image.numpy_image.shape[0],
-                    single_image.numpy_image.shape[1],
-                )
-                for xyxy, _, confidence, class_id, _, bbox_data in boxes_for_image:
-                    x1, y1, x2, y2 = xyxy
-                    width = max(0.0, x2 - x1)
-                    height = max(0.0, y2 - y1)
-                    # Normalize to 0-1 for SAM3 (XYWH)
-                    nx = float(x1) / img_w
-                    ny = float(y1) / img_h
-                    nw = float(width) / img_w
-                    nh = float(height) / img_h
-                    norm_boxes.append([nx, ny, nw, nh])
-                    box_labels.append(1)
-                    prompt_class_ids.append(class_id)
-                    prompt_class_names.append(bbox_data[DETECTIONS_CLASS_NAME_FIELD])
-                    prompt_detection_ids.append(bbox_data[DETECTION_ID_FIELD])
+            # if boxes_for_image is not None:
+            #     img_h, img_w = (
+            #         single_image.numpy_image.shape[0],
+            #         single_image.numpy_image.shape[1],
+            #     )
+            #     for xyxy, _, confidence, class_id, _, bbox_data in boxes_for_image:
+            #         x1, y1, x2, y2 = xyxy
+            #         width = max(0.0, x2 - x1)
+            #         height = max(0.0, y2 - y1)
+            #         # Normalize to 0-1 for SAM3 (XYWH)
+            #         nx = float(x1) / img_w
+            #         ny = float(y1) / img_h
+            #         nw = float(width) / img_w
+            #         nh = float(height) / img_h
+            #         norm_boxes.append([nx, ny, nw, nh])
+            #         box_labels.append(1)
+            #         prompt_class_ids.append(class_id)
+            #         prompt_class_names.append(bbox_data[DETECTIONS_CLASS_NAME_FIELD])
+            #         prompt_detection_ids.append(bbox_data[DETECTION_ID_FIELD])
 
             # Build unified prompt list: one per class name
             unified_prompts: List[Sam3Prompt] = []
             for class_name in class_names:
-                unified_prompts.append(
-                    Sam3Prompt(
-                        type="visual" if norm_boxes else "text",
-                        text=class_name,
-                        boxes=norm_boxes if norm_boxes else None,
-                        box_labels=box_labels if box_labels else None,
-                    )
-                )
+                unified_prompts.append(Sam3Prompt(type="text", text=class_name))
 
             # Single batched request with all prompts
             inference_request = Sam3SegmentationRequest(
