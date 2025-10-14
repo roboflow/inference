@@ -171,9 +171,6 @@ class SegmentAnything3(RoboflowCoreModel):
         checkpoint = self.cache_file("weights.pt")
         bpe_path = self.cache_file("bpe_simple_vocab_16e6.txt.gz")
 
-        # if model_version == "sam3_prod_v12_interactive_5box_image_only":
-        #     has_presence_token = False
-
         self.sam3_lock = threading.RLock()
 
         self.model = build_sam3_image_model(
@@ -194,14 +191,6 @@ class SegmentAnything3(RoboflowCoreModel):
                 ToTensorAPI(),
                 NormalizeAPI(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
             ]
-        )
-        self.postprocessor = PostProcessImage(
-            max_dets_per_img=-1,
-            iou_type="segm",
-            use_original_sizes=True,
-            convert_mask_to_rle=False,
-            detection_threshold=0.5,
-            to_cpu=False,
         )
 
         self.image_size = SAM3_IMAGE_SIZE
@@ -380,8 +369,8 @@ class SegmentAnything3(RoboflowCoreModel):
             # attach image
             datapoint.images = [Sam3ImageDP(data=pil_image, objects=[], size=(h, w))]
 
-            # Map prompt_index -> coco_id to retrieve results later
-            prompt_coco_ids: List[int] = []
+            # Map prompt_index -> prompt_id to retrieve results later
+            prompt_ids: List[int] = []
             next_id = 0
 
             def _add_text(text: Optional[str]):
@@ -407,7 +396,7 @@ class SegmentAnything3(RoboflowCoreModel):
                     ),
                 )
                 datapoint.find_queries.append(q)
-                prompt_coco_ids.append(next_id)
+                prompt_ids.append(next_id)
                 next_id += 1
 
             def _add_visual(
@@ -452,7 +441,7 @@ class SegmentAnything3(RoboflowCoreModel):
                     ),
                 )
                 datapoint.find_queries.append(q)
-                prompt_coco_ids.append(next_id)
+                prompt_ids.append(next_id)
                 next_id += 1
 
             # Build prompts in order; ignore points for PCS
@@ -508,17 +497,16 @@ class SegmentAnything3(RoboflowCoreModel):
                     output_prob_thresh if output_prob_thresh is not None else 0.35
                 ),
                 to_cpu=True,
-                # use_presence=False,
             )
             processed = post.process_results(output, batch.find_metadatas)
             logging.debug(
                 f"SAM3.segment_image: postprocess done; stages={len(processed)} ids_sample={list(processed.keys())[:3]}"
             )
 
-        if len(prompt_coco_ids) == 1:
+        if len(prompt_ids) == 1:
             # Legacy single response
-            masks_np = _to_numpy_masks(processed[prompt_coco_ids[0]].get("masks"))
-            scores = list(processed[prompt_coco_ids[0]].get("scores", []))
+            masks_np = _to_numpy_masks(processed[prompt_ids[0]].get("masks"))
+            scores = list(processed[prompt_ids[0]].get("scores", []))
             logging.debug(
                 f"SAM3 single-prompt: masks_shape={getattr(masks_np, 'shape', None)} scores_len={len(scores)}"
             )
@@ -529,7 +517,7 @@ class SegmentAnything3(RoboflowCoreModel):
 
         # Multi-prompt batch response
         prompt_results: List[Sam3PromptResult] = []
-        for idx, coco_id in enumerate(prompt_coco_ids):
+        for idx, coco_id in enumerate(prompt_ids):
             echo = Sam3PromptEcho(
                 prompt_index=idx,
                 type=("visual" if prompts[idx].boxes else "text"),

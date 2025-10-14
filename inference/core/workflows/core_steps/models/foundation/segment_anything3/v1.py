@@ -4,14 +4,17 @@ import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
 
-from inference.core.entities.requests.sam3 import Sam3SegmentationRequest
+from inference.core.entities.requests.sam3 import Sam3SegmentationRequest, Sam3Prompt
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
     InstanceSegmentationInferenceResponse,
     InstanceSegmentationPrediction,
     Point,
 )
-from inference.core.entities.responses.sam3 import Sam3SegmentationPrediction
+from inference.core.entities.responses.sam3 import (
+    Sam3SegmentationPrediction,
+    Sam3BatchSegmentationResponse,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
@@ -212,7 +215,14 @@ class SegmentAnything3BlockV1(WorkflowBlock):
             class_names.append(text)
         if len(class_names) == 0:
             class_names.append(None)
+
+        self._model_manager.add_model(
+            model_id=model_id,
+            api_key=self._api_key,
+        )
+
         for single_image, boxes_for_image in zip(images, boxes):
+            # Metadata for visual box prompts (if provided)
             prompt_class_ids: List[Optional[int]] = []
             prompt_class_names: List[Optional[str]] = []
             prompt_detection_ids: List[Optional[str]] = []
@@ -229,7 +239,7 @@ class SegmentAnything3BlockV1(WorkflowBlock):
                     x1, y1, x2, y2 = xyxy
                     width = max(0.0, x2 - x1)
                     height = max(0.0, y2 - y1)
-                    # Normalize to 0-1 for SAM3
+                    # Normalize to 0-1 for SAM3 (XYWH)
                     nx = float(x1) / img_w
                     ny = float(y1) / img_h
                     nw = float(width) / img_w
@@ -239,38 +249,64 @@ class SegmentAnything3BlockV1(WorkflowBlock):
                     prompt_class_ids.append(class_id)
                     prompt_class_names.append(bbox_data[DETECTIONS_CLASS_NAME_FIELD])
                     prompt_detection_ids.append(bbox_data[DETECTION_ID_FIELD])
-            class_predictions = []
-            for class_id, class_name in enumerate(class_names):
-                inference_request = Sam3SegmentationRequest(
-                    image=single_image.to_inference_format(numpy_preferred=True),
-                    model_id=model_id,
-                    api_key=self._api_key,
-                    text=class_name,
-                    boxes=norm_boxes if norm_boxes else None,
-                    box_labels=box_labels if box_labels else None,
-                    output_prob_thresh=threshold,
-                )
 
-                self._model_manager.add_model(
-                    model_id=model_id,
-                    api_key=self._api_key,
-                )
-                sam3_segmentation_response = (
-                    self._model_manager.infer_from_request_sync(
-                        model_id, inference_request
+            # Build unified prompt list: one per class name
+            unified_prompts: List[Sam3Prompt] = []
+            for class_name in class_names:
+                unified_prompts.append(
+                    Sam3Prompt(
+                        type="visual" if norm_boxes else "text",
+                        text=class_name,
+                        boxes=norm_boxes if norm_boxes else None,
+                        box_labels=box_labels if box_labels else None,
                     )
                 )
-                class_prediction = convert_sam3_segmentation_response_to_inference_instances_seg_response(
-                    sam3_segmentation_predictions=sam3_segmentation_response.predictions,
+
+            # Single batched request with all prompts
+            inference_request = Sam3SegmentationRequest(
+                image=single_image.to_inference_format(numpy_preferred=True),
+                model_id=model_id,
+                api_key=self._api_key,
+                prompts=unified_prompts,
+                output_prob_thresh=threshold,
+            )
+
+            sam3_response = self._model_manager.infer_from_request_sync(
+                model_id, inference_request
+            )
+
+            # Unpack response: single-prompt or batch
+            class_predictions = []
+            if isinstance(sam3_response, Sam3BatchSegmentationResponse):
+                # Multi-prompt batch response
+                for prompt_result in sam3_response.prompt_results:
+                    idx = prompt_result.prompt_index
+                    class_name = class_names[idx] if idx < len(class_names) else None
+                    class_pred = convert_sam3_segmentation_response_to_inference_instances_seg_response(
+                        sam3_segmentation_predictions=prompt_result.predictions,
+                        image=single_image,
+                        prompt_class_ids=prompt_class_ids,
+                        prompt_class_names=prompt_class_names,
+                        prompt_detection_ids=prompt_detection_ids,
+                        threshold=threshold,
+                        text_prompt=class_name,
+                        specific_class_id=idx,
+                    )
+                    class_predictions.extend(class_pred.predictions)
+            else:
+                # Legacy single-prompt response
+                class_pred = convert_sam3_segmentation_response_to_inference_instances_seg_response(
+                    sam3_segmentation_predictions=sam3_response.predictions,
                     image=single_image,
                     prompt_class_ids=prompt_class_ids,
                     prompt_class_names=prompt_class_names,
                     prompt_detection_ids=prompt_detection_ids,
                     threshold=threshold,
-                    text_prompt=class_name,
-                    specific_class_id=class_id,
+                    text_prompt=class_names[0] if class_names else None,
+                    specific_class_id=0,
                 )
-                class_predictions.extend(class_prediction.predictions)
+                class_predictions.extend(class_pred.predictions)
+
             image_width = single_image.numpy_image.shape[1]
             image_height = single_image.numpy_image.shape[0]
             final_inference_prediction = InstanceSegmentationInferenceResponse(
