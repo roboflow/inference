@@ -94,31 +94,6 @@ MODEL_TYPES_TO_LOAD_FROM_CHECKPOINT = {
     "rfdetr-large",
 }
 
-WINDOWS_RESERVED_FILE_NAMES = {
-    "aux",
-    "com1",
-    "com2",
-    "com3",
-    "com4",
-    "com5",
-    "com6",
-    "com7",
-    "com8",
-    "com9",
-    "con",
-    "lpt1",
-    "lpt2",
-    "lpt3",
-    "lpt4",
-    "lpt5",
-    "lpt6",
-    "lpt7",
-    "lpt8",
-    "lpt9",
-    "nul",
-    "prn",
-}
-
 
 class AutoModel:
 
