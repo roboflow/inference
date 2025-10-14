@@ -77,34 +77,36 @@ from sam3.train.eval.postprocessors import PostProcessImage
 
 
 def _to_numpy_masks(masks_any) -> np.ndarray:
-    """Convert masks from torch/list to numpy uint8 array (N,H,W)."""
+    """Convert masks from torch/list to numpy uint8 array (N,H,W).
+
+    Automatically normalizes shape:
+    - (N,1,H,W) -> (N,H,W)
+    - (H,W) -> (1,H,W)
+    - (N,H,W) -> unchanged
+    """
     if masks_any is None:
         return np.zeros((0, 0, 0), dtype=np.uint8)
+
+    # Convert to numpy
     if hasattr(masks_any, "detach"):
-        return masks_any.detach().cpu().numpy().astype(np.uint8)
-    arrs = []
-    for m in masks_any:
-        if hasattr(m, "detach"):
-            arrs.append(m.detach().cpu().numpy().astype(np.uint8))
-        else:
-            arrs.append(np.asarray(m, dtype=np.uint8))
-    if not arrs:
-        return np.zeros((0, 0, 0), dtype=np.uint8)
-    return np.stack(arrs, axis=0)
+        masks_np = masks_any.detach().cpu().numpy().astype(np.uint8)
+    else:
+        arrs = []
+        for m in masks_any:
+            if hasattr(m, "detach"):
+                arrs.append(m.detach().cpu().numpy().astype(np.uint8))
+            else:
+                arrs.append(np.asarray(m, dtype=np.uint8))
+        if not arrs:
+            return np.zeros((0, 0, 0), dtype=np.uint8)
+        masks_np = np.stack(arrs, axis=0)
 
-
-def _normalize_masks_shape(masks_np: np.ndarray) -> np.ndarray:
-    """Ensure masks have shape (N,H,W).
-
-    - If (N,1,H,W) squeeze the channel dim.
-    - If (H,W) add batch dim -> (1,H,W).
-    - If already (N,H,W), return as is.
-    Other shapes will be returned unchanged and handled by guards.
-    """
+    # Normalize shape to (N,H,W)
     if masks_np.ndim == 4 and masks_np.shape[1] == 1:
         masks_np = masks_np[:, 0, ...]
     elif masks_np.ndim == 2:
         masks_np = masks_np[None, ...]
+
     return masks_np
 
 
@@ -112,6 +114,8 @@ def _masks_to_predictions(
     masks_np: np.ndarray, scores: List[float], fmt: str
 ) -> List[Sam3SegmentationPrediction]:
     """Convert boolean masks (N,H,W) to API predictions in requested format.
+
+    Assumes masks_np is already normalized to (N,H,W) by _to_numpy_masks.
 
     Args:
         masks_np: Boolean or uint8 masks array (N,H,W)
@@ -121,7 +125,6 @@ def _masks_to_predictions(
     Returns:
         List of Sam3SegmentationPrediction
     """
-    masks_np = _normalize_masks_shape(masks_np)
     preds = []
 
     if masks_np.ndim != 3 or 0 in masks_np.shape:
@@ -150,55 +153,6 @@ def _masks_to_predictions(
     return preds
 
 
-def _estimate_numeric_bytes(obj, seen=None):
-    """Estimate memory by summing bytes of numpy arrays and torch tensors found within obj.
-
-    This intentionally ignores shallow sizes of non-numeric containers and objects, focusing on
-    the dominant memory contributors for ML workloads.
-    """
-    if seen is None:
-        seen = set()
-    obj_id = id(obj)
-    if obj_id in seen:
-        return 0
-    seen.add(obj_id)
-
-    try:
-        # numpy arrays
-        if isinstance(obj, np.ndarray):
-            return int(obj.nbytes)
-        # torch tensors (CPU or CUDA)
-        if isinstance(obj, torch.Tensor):
-            return int(obj.element_size() * obj.nelement())
-    except Exception:
-        # If any unexpected error occurs, skip sizing this object
-        return 0
-
-    # Recurse into common containers
-    if isinstance(obj, dict):
-        total = 0
-        for key, value in obj.items():
-            total += _estimate_numeric_bytes(key, seen)
-            total += _estimate_numeric_bytes(value, seen)
-        return total
-    if isinstance(obj, (list, tuple, set, frozenset)):
-        return sum(_estimate_numeric_bytes(item, seen) for item in obj)
-
-    # Recurse into object attributes if available
-    if hasattr(obj, "__dict__"):
-        return _estimate_numeric_bytes(vars(obj), seen)
-    if hasattr(obj, "__slots__"):
-        total = 0
-        for slot in obj.__slots__:
-            try:
-                total += _estimate_numeric_bytes(getattr(obj, slot), seen)
-            except Exception:
-                continue
-        return total
-
-    return 0
-
-
 # its bith a core model and fine tuned model...
 class SegmentAnything3(RoboflowCoreModel):
     """SAM3 wrapper with a similar interface to SAM2 in this codebase."""
@@ -210,17 +164,9 @@ class SegmentAnything3(RoboflowCoreModel):
         **kwargs,
     ):
         super().__init__(*args, model_id=model_id, **kwargs)
+
         # Lazy import SAM3 to avoid hard dependency when disabled
-        # import sys
-        # if SAM3_REPO_PATH not in sys.path:
-        #     sys.path.append(SAM3_REPO_PATH)
         from sam3 import build_sam3_image_model
-
-        model_version = model_id.split("/")[1]
-
-        # base models have presence token if "presence is in then name
-        # for fine tuned models right now at least its always false
-        # we should add a config file to the model artifacts for this
 
         checkpoint = self.cache_file("weights.pt")
         bpe_path = self.cache_file("bpe_simple_vocab_16e6.txt.gz")
@@ -368,8 +314,6 @@ class SegmentAnything3(RoboflowCoreModel):
 
     def get_infer_bucket_file_list(self) -> List[str]:
         # SAM3 weights managed by env; no core bucket artifacts
-
-        model_version = self.endpoint.split("/")[1]
 
         return [
             "weights.pt",
