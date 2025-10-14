@@ -152,11 +152,11 @@ def test_parse_model_config_when_full_config_provided(full_config_path: str) -> 
 def test_generate_model_package_cache_path() -> None:
     # when
     result = generate_model_package_cache_path(
-        model_id="my-model", package_id="my-package"
+        model_id="my-model", package_id="mypackage"
     )
 
     # then
-    assert result == "/some/models-cache/my-model-6fa11b0c/my-package"
+    assert result == "/some/models-cache/my-model-6fa11b0c/mypackage"
 
 
 @mock.patch.object(core, "INFERENCE_HOME", "/some")
@@ -165,11 +165,11 @@ def test_generate_model_package_cache_path_when_id_contains_forward_slash_at_fro
 ):
     # when
     result = generate_model_package_cache_path(
-        model_id="/my-model", package_id="my-package"
+        model_id="/my-model", package_id="mypackage"
     )
 
     # then
-    assert result == "/some/models-cache/-my-model-9651d483/my-package"
+    assert result == "/some/models-cache/-my-model-9651d483/mypackage"
 
 
 @mock.patch.object(core, "INFERENCE_HOME", "/some")
@@ -178,11 +178,11 @@ def test_generate_model_package_cache_path_when_id_contains_forward_slash_in_the
 ):
     # when
     result = generate_model_package_cache_path(
-        model_id="my-model/../../home", package_id="my-package"
+        model_id="my-model/../../home", package_id="mypackage"
     )
 
     # then
-    assert result == "/some/models-cache/my-model-home-0b1d84f7/my-package"
+    assert result == "/some/models-cache/my-model-home-0b1d84f7/mypackage"
 
 
 @mock.patch.object(core, "INFERENCE_HOME", "/some")
