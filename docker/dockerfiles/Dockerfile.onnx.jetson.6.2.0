@@ -5,65 +5,12 @@ FROM roboflow/l4t-ml:r36.4.tegra-aarch64-cu126-22.04
 ARG DEBIAN_FRONTEND=noninteractive
 ENV LANG=en_US.UTF-8
 
-# Install additional inference-specific dependencies
+# Install minimal system dependencies
 RUN apt-get update -y && \
-    apt-get install -y --no-install-recommends \
-    lshw \
-    git \
-    wget \
-    rustc \
-    cargo \
-    && rm -rf /var/lib/apt/lists/*
+    apt-get install -y --no-install-recommends lshw git && \
+    rm -rf /var/lib/apt/lists/*
 
-# Copy all requirements files
-COPY requirements/ ./requirements/
-
-# Remove packages from requirements that are already in base image or need special handling
-# - opencv: already in base image with CUDA support
-# - torch: torch 2.8 already in base image (requirements expect <2.7.0)
-# - torchvision: already in base image
-# - bitsandbytes: jetson index only has dev versions, exclude for now
-# - pybase64: installed separately to avoid slow source build with setuptools resolution
-# - zxing-cpp: installed separately to avoid slow source build with setuptools resolution
-RUN sed -i '/opencv-python/d' requirements/_requirements.txt && \
-    sed -i '/opencv-contrib-python/d' requirements/_requirements.txt && \
-    sed -i '/^torch/d' requirements/requirements.transformers.txt && \
-    sed -i '/^torchvision/d' requirements/requirements.transformers.txt && \
-    sed -i '/^bitsandbytes/d' requirements/requirements.transformers.txt && \
-    sed -i '/pybase64/d' requirements/_requirements.txt && \
-    sed -i '/zxing-cpp/d' requirements/_requirements.txt
-
-# Install packages separately to optimize build
-# Pre-install setuptools to speed up source builds
-RUN python3 -m pip install --upgrade pip && \
-    python3 -m pip install --index-url https://pypi.jetson-ai-lab.io/jp6/cu126 "setuptools<=75.5.0" && \
-    python3 -m pip install --index-url https://pypi.jetson-ai-lab.io/jp6/cu126 "pybase64>=1.2.0,<2.0.0" && \
-    python3 -m pip install --index-url https://pypi.jetson-ai-lab.io/jp6/cu126 "zxing-cpp~=2.2.0"
-
-# Install inference-specific Python packages from jetson index
-# Use --index-url to explicitly use only the working .io endpoint (avoid .dev timeouts)
-# Packages already in base image (excluded from requirements):
-#   - PyTorch 2.8, torchvision (from requirements - already installed)
-#   - onnxruntime-gpu 1.23.0 (from requirements.gpu.txt - compiled with TensorRT support)
-#   - opencv-python 4.12.0, opencv-contrib-python 4.12.0 (removed from requirements - compiled with CUDA)
-#   - numpy, scipy, scikit-learn, scikit-image, pandas (from requirements._requirements.txt)
-#   - cupy, pycuda (CUDA Python support)
-# Packages removed for edge deployments:
-#   - jupyterlab (removed from requirements.jetson.txt - not needed in production)
-RUN python3 -m pip install --index-url https://pypi.jetson-ai-lab.io/jp6/cu126 \
-    -r requirements/_requirements.txt \
-    -r requirements/requirements.clip.txt \
-    -r requirements/requirements.http.txt \
-    -r requirements/requirements.doctr.txt \
-    -r requirements/requirements.groundingdino.txt \
-    -r requirements/requirements.sdk.http.txt \
-    -r requirements/requirements.yolo_world.txt \
-    -r requirements/requirements.jetson.txt \
-    -r requirements/requirements.transformers.txt \
-    -r requirements/requirements.easyocr.txt \
-    "setuptools<=75.5.0"
-
-# Set up the application runtime
+# Set up application first (minimal layers)
 WORKDIR /app
 COPY inference/ ./inference/
 COPY inference_cli/ ./inference_cli/
@@ -73,8 +20,9 @@ COPY .release .release
 COPY requirements requirements
 COPY Makefile Makefile
 
-RUN make create_inference_cli_whl PYTHON=python3
-RUN pip3 install dist/inference_cli*.whl
+# Build and install inference CLI - this will pull in required dependencies
+RUN make create_inference_cli_whl PYTHON=python3 && \
+    pip3 install --index-url https://pypi.jetson-ai-lab.io/jp6/cu126 dist/inference_cli*.whl
 
 # Set environment variables
 ENV VERSION_CHECK_MODE=continuous \
@@ -97,8 +45,5 @@ ENV VERSION_CHECK_MODE=continuous \
     STREAM_API_PRELOADED_PROCESSES=2 \
     PYTHONPATH=/app:$PYTHONPATH
 
-# Expose the application port
 EXPOSE 9001
-
-# Set the entrypoint
 ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT
