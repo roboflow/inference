@@ -128,10 +128,9 @@ class RFDetrForObjectDetectionTorch(
                 help_url="https://todo",
             )
         model_config = CONFIG_FOR_MODEL_TYPE[model_type](device=device)
-        model = build_model(config=model_config)
         checkpoint_num_classes = weights_dict["class_embed.bias"].shape[0]
-        if checkpoint_num_classes != model_config.num_classes + 1:
-            model.reinitialize_detection_head(num_classes=checkpoint_num_classes)
+        model_config.num_classes = checkpoint_num_classes
+        model = build_model(config=model_config)
         model.load_state_dict(weights_dict)
         model = model.eval().to(device)
         post_processor = PostProcess()
@@ -203,10 +202,9 @@ class RFDetrForObjectDetectionTorch(
                 normalization=([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
             )
         )
-        model = build_model(config=model_config)
         checkpoint_num_classes = weights_dict["class_embed.bias"].shape[0]
-        if checkpoint_num_classes != model_config.num_classes + 1:
-            model.reinitialize_detection_head(num_classes=checkpoint_num_classes)
+        model_config.num_classes = checkpoint_num_classes - 1
+        model = build_model(config=model_config)
         if labels is None:
             class_names = [f"class_{i}" for i in range(checkpoint_num_classes)]
         elif isinstance(labels, str):
