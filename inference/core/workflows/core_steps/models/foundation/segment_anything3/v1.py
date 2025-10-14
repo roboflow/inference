@@ -100,29 +100,13 @@ class BlockManifest(WorkflowBlockManifest):
         default=None,
         json_schema_extra={"always_visible": True},
     )
-    # # SAM3 does not have multiple server-side versions like SAM2 here; keep a placeholder for UI parity
-    # version: Union[
-    #     Selector(kind=[STRING_KIND]),
-    #     Literal[
-    #         "paper_image_only_checkpoint_presence_0.35_completed_model_only",
-    #         "checkpoint_model_only_presence_0_5",
-    #         "sam3_prod_v12_interactive_5box_image_only",
-    #     ],
-    # ] = Field(
-    #     default="paper_image_only_checkpoint_presence_0.35_completed_model_only",
-    #     # description="Model variant placeholder (SAM3 local image model).",
-    #     description="model version",
-    #     examples=[
-    #         "paper_image_only_checkpoint_presence_0.35_completed_model_only",
-    #         "$inputs.model_variant",
-    #     ],
-    # )
+
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), Optional[str]] = Field(
-        default="sam3/paper_image_only_checkpoint_presence_0.35_completed_model_only",
+        default="sam3/sam3_image_model_only",
         # description="Model variant placeholder (SAM3 local image model).",
         description="model version",
         examples=[
-            "sam3/paper_image_only_checkpoint_presence_0.35_completed_model_only",
+            "sam3/sam3_image_model_only",
             "$inputs.model_variant",
         ],
     )
@@ -132,11 +116,13 @@ class BlockManifest(WorkflowBlockManifest):
         description="Optional text prompt for open-vocabulary segmentation.",
         examples=["a cat", "$inputs.text_prompt"],
     )
-    class_names: Optional[Union[List[str], Selector(kind=[LIST_OF_VALUES_KIND])]] = Field(
-        title="Class Names",
-        default=None,
-        description="List of classes to recognise",
-        examples=[["car", "person"], "$inputs.classes"]
+    class_names: Optional[Union[List[str], Selector(kind=[LIST_OF_VALUES_KIND])]] = (
+        Field(
+            title="Class Names",
+            default=None,
+            description="List of classes to recognise",
+            examples=[["car", "person"], "$inputs.classes"],
+        )
     )
     threshold: Union[Selector(kind=[FLOAT_KIND]), float] = Field(
         default=0.5, description="Threshold for predicted mask scores", examples=[0.3]
@@ -269,8 +255,10 @@ class SegmentAnything3BlockV1(WorkflowBlock):
                     model_id=model_id,
                     api_key=self._api_key,
                 )
-                sam3_segmentation_response = self._model_manager.infer_from_request_sync(
-                    model_id, inference_request
+                sam3_segmentation_response = (
+                    self._model_manager.infer_from_request_sync(
+                        model_id, inference_request
+                    )
                 )
                 class_prediction = convert_sam3_segmentation_response_to_inference_instances_seg_response(
                     sam3_segmentation_predictions=sam3_segmentation_response.predictions,
@@ -330,7 +318,10 @@ def convert_sam3_segmentation_response_to_inference_instances_seg_response(
     image_height = image.numpy_image.shape[0]
     predictions = []
     if len(prompt_class_ids) == 0:
-        prompt_class_ids = [specific_class_id if specific_class_id else 0 for _ in range(len(sam3_segmentation_predictions))]
+        prompt_class_ids = [
+            specific_class_id if specific_class_id else 0
+            for _ in range(len(sam3_segmentation_predictions))
+        ]
         prompt_class_names = [
             text_prompt if text_prompt else "foreground"
             for _ in range(len(sam3_segmentation_predictions))

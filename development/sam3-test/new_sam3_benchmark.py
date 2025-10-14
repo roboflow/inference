@@ -15,8 +15,8 @@ torch.autocast("cuda", dtype=torch.bfloat16).__enter__()
 
 
 sam3_root = "/home/hansent/inference-private/sam3_private"
-bpe_path = "/tmp/cache/sam3/paper_image_only_checkpoint_presence_0.35_completed_model_only/bpe_simple_vocab_16e6.txt.gz"
-checkpoint_path = "/tmp/cache/sam3/paper_image_only_checkpoint_presence_0.35_completed_model_only/weights.pt"
+bpe_path = "/tmp/cache/sam3/sam3_image_model_only/bpe_simple_vocab_16e6.txt.gz"
+checkpoint_path = "/tmp/cache/sam3/sam3_image_model_only/weights.pt"
 has_presence_token = True
 
 

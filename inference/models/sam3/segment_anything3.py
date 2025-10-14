@@ -164,7 +164,7 @@ class SegmentAnything3(RoboflowCoreModel):
     def __init__(
         self,
         *args,
-        model_id: str = "sam3/paper_image_only_checkpoint_presence_0.35_completed_model_only",
+        model_id: str = "sam3/sam3_image_model_only",
         **kwargs,
     ):
         super().__init__(*args, model_id=model_id, **kwargs)

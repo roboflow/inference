@@ -622,12 +622,12 @@ def parse_args():
     p.add_argument(
         "--bpe_path",
         type=str,
-        default="/tmp/cache/sam3/paper_image_only_checkpoint_presence_0.35_completed_model_only/bpe_simple_vocab_16e6.txt.gz",
+        default="/tmp/cache/sam3/sam3_image_model_only/bpe_simple_vocab_16e6.txt.gz",
     )
     p.add_argument(
         "--checkpoint_path",
         type=str,
-        default="/tmp/cache/sam3/paper_image_only_checkpoint_presence_0.35_completed_model_only/weights.pt",
+        default="/tmp/cache/sam3/sam3_image_model_only/weights.pt",
     )
     p.add_argument(
         "--output_csv", type=str, default="benchmarks/out/sam3_benchmark.csv"

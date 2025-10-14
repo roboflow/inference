@@ -9,8 +9,8 @@ os.environ["TORCHDYNAMO_DISABLE"] = "1"
 
 torch.set_grad_enabled(False)
 
-checkpoint_path = "/tmp/cache/sam3/paper_image_only_checkpoint_presence_0.35_completed_model_only/weights.pt"
-bpe_path = "/tmp/cache/sam3/paper_image_only_checkpoint_presence_0.35_completed_model_only/bpe_simple_vocab_16e6.txt.gz"
+checkpoint_path = "/tmp/cache/sam3/sam3_image_model_only/weights.pt"
+bpe_path = "/tmp/cache/sam3/sam3_image_model_only/bpe_simple_vocab_16e6.txt.gz"
 
 
 model = build_sam3_image_model(
