@@ -1,6 +1,8 @@
+import hashlib
 import importlib
 import importlib.util
 import os.path
+import re
 from datetime import datetime
 from functools import partial
 from typing import Callable, Dict, List, Optional, Set, Tuple, Union
@@ -11,6 +13,7 @@ from inference_exp.configuration import DEFAULT_DEVICE, INFERENCE_HOME
 from inference_exp.errors import (
     CorruptedModelPackageError,
     DirectLocalStorageAccessError,
+    InsecureModelIdentifierError,
     ModelLoadingError,
     NoModelPackagesAvailableError,
     UnauthorizedModelAccessError,
@@ -89,6 +92,31 @@ MODEL_TYPES_TO_LOAD_FROM_CHECKPOINT = {
     "rfdetr-medium",
     "rfdetr-nano",
     "rfdetr-large",
+}
+
+WINDOWS_RESERVED_FILE_NAMES = {
+    "aux",
+    "com1",
+    "com2",
+    "com3",
+    "com4",
+    "com5",
+    "com6",
+    "com7",
+    "com8",
+    "com9",
+    "con",
+    "lpt1",
+    "lpt2",
+    "lpt3",
+    "lpt4",
+    "lpt5",
+    "lpt6",
+    "lpt7",
+    "lpt8",
+    "lpt9",
+    "nul",
+    "prn",
 }
 
 
@@ -739,7 +767,35 @@ def generate_shared_blobs_path() -> str:
 
 
 def generate_model_package_cache_path(model_id: str, package_id: str) -> str:
-    return os.path.join(INFERENCE_HOME, "models-cache", model_id, package_id)
+    ensure_package_id_is_os_safe(model_id=model_id, package_id=package_id)
+    model_id_slug = slugify_model_id_to_os_safe_format(model_id=model_id)
+    return os.path.join(INFERENCE_HOME, "models-cache", model_id_slug, package_id)
+
+
+def ensure_package_id_is_os_safe(model_id: str, package_id: str) -> None:
+    if re.search(r"[^A-Za-z0-9]", package_id):
+        raise InsecureModelIdentifierError(
+            message=f"Attempted to load model: {model_id} using package ID: {package_id} which "
+            f"has invalid format. ID is expected to contain only ASCII characters and numbers to "
+            f"ensure safety of local cache. If you see this error running your model on Roboflow platform, "
+            f"raise the issue: https://github.com/roboflow/inference/issues. If you are running `inference` "
+            f"outside of the platform, verify that your weights provider keeps the model packages identifiers "
+            f"in the expected format.",
+            help_url="https://TODO",
+        )
+
+
+def slugify_model_id_to_os_safe_format(model_id: str) -> str:
+    # Only ASCII
+    model_id_slug = re.sub(r"[^A-Za-z0-9_-]+", "-", model_id)
+    # Collapse multiple underscores/dashes
+    model_id_slug = re.sub(r"[_-]{2,}", "-", model_id_slug)
+    if not model_id_slug:
+        model_id_slug = "special-char-only-model-id"
+    if len(model_id_slug) > 48:
+        model_id_slug = model_id_slug[:48]
+    digest = hashlib.blake2s(model_id.encode("utf-8"), digest_size=4).hexdigest()
+    return f"{model_id_slug}-{digest}"
 
 
 def attempt_loading_model_from_local_storage(
