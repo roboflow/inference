@@ -329,16 +329,16 @@ class SegmentAnything3(RoboflowCoreModel):
         return Sam3EmbeddingResponse(time=perf_counter() - t1, image_id=computed_id)
 
     def infer_from_request(self, request: Sam3InferenceRequest):
-        with self.sam3_lock:
-            t1 = perf_counter()
-            if isinstance(request, Sam3EmbeddingRequest):
-                return self.embed_image(**request.dict())
-            elif isinstance(request, Sam3SegmentationRequest):
-                result = self.segment_image(**request.dict())
-                # segment_image now returns either bytes or a response model
-                return result
-            else:
-                raise ValueError(f"Invalid request type {type(request)}")
+        # with self.sam3_lock:
+        t1 = perf_counter()
+        if isinstance(request, Sam3EmbeddingRequest):
+            return self.embed_image(**request.dict())
+        elif isinstance(request, Sam3SegmentationRequest):
+            result = self.segment_image(**request.dict())
+            # segment_image now returns either bytes or a response model
+            return result
+        else:
+            raise ValueError(f"Invalid request type {type(request)}")
 
     def segment_image(
         self,
@@ -351,157 +351,158 @@ class SegmentAnything3(RoboflowCoreModel):
     ):
         # Inference-only path; disable autograd throughout
         with torch.inference_mode():
-            start_ts = perf_counter()
-            logging.debug(
-                f"SAM3.segment_image: start format={format} thresh={output_prob_thresh} prompts_in={(len(prompts) if prompts else 0)}"
-            )
-            # Load image as PIL and build a SAM3 Datapoint with ordered prompts
-            np_image = load_image_rgb(image)
-            pil_image = Image.fromarray(np_image)
-            h, w = pil_image.size[1], pil_image.size[0]
-            logging.debug(
-                f"SAM3.segment_image: np_image.shape={getattr(np_image, 'shape', None)} pil_size={(w, h)}"
-            )
-
-            datapoint = Sam3Datapoint(
-                find_queries=[], images=[], raw_images=[pil_image]
-            )
-            # attach image
-            datapoint.images = [Sam3ImageDP(data=pil_image, objects=[], size=(h, w))]
-
-            # Map prompt_index -> prompt_id to retrieve results later
-            prompt_ids: List[int] = []
-            next_id = 0
-
-            def _add_text(text: Optional[str]):
-                nonlocal next_id
-                q = FindQueryLoaded(
-                    query_text=text if text is not None else "visual",
-                    image_id=0,
-                    object_ids_output=[],
-                    is_exhaustive=True,
-                    query_processing_order=0,
-                    input_bbox=None,
-                    input_bbox_label=None,
-                    input_points=None,
-                    semantic_target=None,
-                    is_pixel_exhaustive=None,
-                    inference_metadata=InferenceMetadata(
-                        coco_image_id=next_id,
-                        original_image_id=next_id,
-                        original_category_id=1,
-                        original_size=(h, w),
-                        object_id=0,
-                        frame_index=0,
-                    ),
+            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                start_ts = perf_counter()
+                logging.debug(
+                    f"SAM3.segment_image: start format={format} thresh={output_prob_thresh} prompts_in={(len(prompts) if prompts else 0)}"
                 )
-                datapoint.find_queries.append(q)
-                prompt_ids.append(next_id)
-                next_id += 1
-
-            def _add_visual(
-                boxes_xywh_norm: List[List[float]],
-                labels: List[Union[int, bool]],
-                text: Optional[str],
-            ):
-                nonlocal next_id
-                # Convert normalized XYWH -> pixel XYXY
-                xyxy: List[List[float]] = []
-                for x, y, bw, bh in boxes_xywh_norm or []:
-                    x0 = x * w
-                    y0 = y * h
-                    x1 = x0 + bw * w
-                    y1 = y0 + bh * h
-                    xyxy.append([x0, y0, x1, y1])
-                labels_bool = [bool(int(v)) for v in (labels or [])]
-                q = FindQueryLoaded(
-                    query_text=text if text is not None else "visual",
-                    image_id=0,
-                    object_ids_output=[],
-                    is_exhaustive=True,
-                    query_processing_order=0,
-                    input_bbox=(
-                        torch.tensor(xyxy, dtype=torch.float32) if xyxy else None
-                    ),
-                    input_bbox_label=(
-                        torch.tensor(labels_bool, dtype=torch.bool)
-                        if labels_bool
-                        else None
-                    ),
-                    input_points=None,
-                    semantic_target=None,
-                    is_pixel_exhaustive=None,
-                    inference_metadata=InferenceMetadata(
-                        coco_image_id=next_id,
-                        original_image_id=next_id,
-                        original_category_id=1,
-                        original_size=(h, w),
-                        object_id=0,
-                        frame_index=0,
-                    ),
+                # Load image as PIL and build a SAM3 Datapoint with ordered prompts
+                np_image = load_image_rgb(image)
+                pil_image = Image.fromarray(np_image)
+                h, w = pil_image.size[1], pil_image.size[0]
+                logging.debug(
+                    f"SAM3.segment_image: np_image.shape={getattr(np_image, 'shape', None)} pil_size={(w, h)}"
                 )
-                datapoint.find_queries.append(q)
-                prompt_ids.append(next_id)
-                next_id += 1
 
-            # Build prompts in order; ignore points for PCS
-            prompts = prompts or []
-            # Normalize prompts that may arrive as dicts from request.dict()
-            normalized_prompts: List[Sam3Prompt] = []
-            for p in prompts:
-                if isinstance(p, Sam3Prompt):
-                    normalized_prompts.append(p)
-                elif isinstance(p, dict):
-                    try:
-                        normalized_prompts.append(Sam3Prompt(**p))
-                    except Exception as e:
-                        logging.debug(
-                            f"SAM3.segment_image: failed to normalize prompt dict: {e}"
-                        )
-                        continue
-            prompts = normalized_prompts
-            logging.debug(f"SAM3.segment_image: normalized_prompts={len(prompts)}")
-            if not prompts:
-                # Backward compat: legacy fields in kwargs already normalized into prompts by validator
-                pass
-            for p in prompts:
-                if p.boxes:
-                    logging.debug(
-                        f"SAM3.segment_image: add_visual boxes={len(p.boxes or [])} labels={len(p.box_labels or [])} text={p.text}"
+                datapoint = Sam3Datapoint(
+                    find_queries=[], images=[], raw_images=[pil_image]
+                )
+                # attach image
+                datapoint.images = [Sam3ImageDP(data=pil_image, objects=[], size=(h, w))]
+
+                # Map prompt_index -> prompt_id to retrieve results later
+                prompt_ids: List[int] = []
+                next_id = 0
+
+                def _add_text(text: Optional[str]):
+                    nonlocal next_id
+                    q = FindQueryLoaded(
+                        query_text=text if text is not None else "visual",
+                        image_id=0,
+                        object_ids_output=[],
+                        is_exhaustive=True,
+                        query_processing_order=0,
+                        input_bbox=None,
+                        input_bbox_label=None,
+                        input_points=None,
+                        semantic_target=None,
+                        is_pixel_exhaustive=None,
+                        inference_metadata=InferenceMetadata(
+                            coco_image_id=next_id,
+                            original_image_id=next_id,
+                            original_category_id=1,
+                            original_size=(h, w),
+                            object_id=0,
+                            frame_index=0,
+                        ),
                     )
-                    _add_visual(p.boxes, p.box_labels or [], p.text)
-                else:
-                    logging.debug(f"SAM3.segment_image: add_text text={p.text}")
-                    _add_text(p.text)
+                    datapoint.find_queries.append(q)
+                    prompt_ids.append(next_id)
+                    next_id += 1
 
-            # Transform and collate to BatchedDatapoint
-            datapoint = self.transform(datapoint)
-            batch = collate_fn_api(batch=[datapoint], dict_key="dummy")["dummy"]
-            batch = copy_data_to_device(
-                batch,
-                torch.device("cuda" if torch.cuda.is_available() else "cpu"),
-                non_blocking=True,
-            )
+                def _add_visual(
+                    boxes_xywh_norm: List[List[float]],
+                    labels: List[Union[int, bool]],
+                    text: Optional[str],
+                ):
+                    nonlocal next_id
+                    # Convert normalized XYWH -> pixel XYXY
+                    xyxy: List[List[float]] = []
+                    for x, y, bw, bh in boxes_xywh_norm or []:
+                        x0 = x * w
+                        y0 = y * h
+                        x1 = x0 + bw * w
+                        y1 = y0 + bh * h
+                        xyxy.append([x0, y0, x1, y1])
+                    labels_bool = [bool(int(v)) for v in (labels or [])]
+                    q = FindQueryLoaded(
+                        query_text=text if text is not None else "visual",
+                        image_id=0,
+                        object_ids_output=[],
+                        is_exhaustive=True,
+                        query_processing_order=0,
+                        input_bbox=(
+                            torch.tensor(xyxy, dtype=torch.float32) if xyxy else None
+                        ),
+                        input_bbox_label=(
+                            torch.tensor(labels_bool, dtype=torch.bool)
+                            if labels_bool
+                            else None
+                        ),
+                        input_points=None,
+                        semantic_target=None,
+                        is_pixel_exhaustive=None,
+                        inference_metadata=InferenceMetadata(
+                            coco_image_id=next_id,
+                            original_image_id=next_id,
+                            original_category_id=1,
+                            original_size=(h, w),
+                            object_id=0,
+                            frame_index=0,
+                        ),
+                    )
+                    datapoint.find_queries.append(q)
+                    prompt_ids.append(next_id)
+                    next_id += 1
 
-            # Forward
-            output = self.model(batch)
-            logging.debug("SAM3.segment_image: model forward done")
+                # Build prompts in order; ignore points for PCS
+                prompts = prompts or []
+                # Normalize prompts that may arrive as dicts from request.dict()
+                normalized_prompts: List[Sam3Prompt] = []
+                for p in prompts:
+                    if isinstance(p, Sam3Prompt):
+                        normalized_prompts.append(p)
+                    elif isinstance(p, dict):
+                        try:
+                            normalized_prompts.append(Sam3Prompt(**p))
+                        except Exception as e:
+                            logging.debug(
+                                f"SAM3.segment_image: failed to normalize prompt dict: {e}"
+                            )
+                            continue
+                prompts = normalized_prompts
+                logging.debug(f"SAM3.segment_image: normalized_prompts={len(prompts)}")
+                if not prompts:
+                    # Backward compat: legacy fields in kwargs already normalized into prompts by validator
+                    pass
+                for p in prompts:
+                    if p.boxes:
+                        logging.debug(
+                            f"SAM3.segment_image: add_visual boxes={len(p.boxes or [])} labels={len(p.box_labels or [])} text={p.text}"
+                        )
+                        _add_visual(p.boxes, p.box_labels or [], p.text)
+                    else:
+                        logging.debug(f"SAM3.segment_image: add_text text={p.text}")
+                        _add_text(p.text)
 
-            # Postprocess to original size and build per-prompt results
-            post = PostProcessImage(
-                max_dets_per_img=-1,
-                iou_type="segm",
-                use_original_sizes=True,
-                convert_mask_to_rle=False,
-                detection_threshold=float(
-                    output_prob_thresh if output_prob_thresh is not None else 0.35
-                ),
-                to_cpu=True,
-            )
-            processed = post.process_results(output, batch.find_metadatas)
-            logging.debug(
-                f"SAM3.segment_image: postprocess done; stages={len(processed)} ids_sample={list(processed.keys())[:3]}"
-            )
+                # Transform and collate to BatchedDatapoint
+                datapoint = self.transform(datapoint)
+                batch = collate_fn_api(batch=[datapoint], dict_key="dummy")["dummy"]
+                batch = copy_data_to_device(
+                    batch,
+                    torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+                    non_blocking=True,
+                )
+
+                # Forward
+                output = self.model(batch)
+                logging.debug("SAM3.segment_image: model forward done")
+
+                # Postprocess to original size and build per-prompt results
+                post = PostProcessImage(
+                    max_dets_per_img=-1,
+                    iou_type="segm",
+                    use_original_sizes=True,
+                    convert_mask_to_rle=False,
+                    detection_threshold=float(
+                        output_prob_thresh if output_prob_thresh is not None else 0.35
+                    ),
+                    to_cpu=True,
+                )
+                processed = post.process_results(output, batch.find_metadatas)
+                logging.debug(
+                    f"SAM3.segment_image: postprocess done; stages={len(processed)} ids_sample={list(processed.keys())[:3]}"
+                )
 
         if len(prompt_ids) == 1:
             # Legacy single response
