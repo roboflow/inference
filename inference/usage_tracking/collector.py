@@ -731,6 +731,8 @@ class UsageCollector:
                     t2 = time.time()
                     if GCP_SERVERLESS is True:
                         execution_duration = max(t2 - t1, 0.1)
+                    else:
+                        execution_duration = t2 - t1
                     exc_type = type(exc).__name__
                     if hasattr(exc, "inner_error_type"):
                         exc_type = exc.inner_error_type
@@ -793,6 +795,8 @@ class UsageCollector:
                     t2 = time.time()
                     if GCP_SERVERLESS is True:
                         execution_duration = max(t2 - t1, 0.1)
+                    else:
+                        execution_duration = t2 - t1
                     exc_type = type(exc).__name__
                     if hasattr(exc, "inner_error_type"):
                         exc_type = exc.inner_error_type
