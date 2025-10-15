@@ -62,6 +62,8 @@ RUN git clone --recursive --branch main https://github.com/microsoft/onnxruntime
 WORKDIR /tmp/onnxruntime
 
 # Build ONNX Runtime with CUDA 13 for DGX Spark (following working CUDA 13 build configuration)
+# Set CPATH to ensure CUDA headers are found by all compilers
+ENV CPATH=/usr/local/cuda/include:$CPATH
 RUN ./build.sh \
     --config RelWithDebInfo \
     --build_shared_lib \
@@ -77,7 +79,7 @@ RUN ./build.sh \
     --cmake_generator Ninja \
     --enable_cuda_nhwc_ops \
     --cmake_extra_defines CMAKE_CUDA_ARCHITECTURES="120-real;121-real;121-virtual" \
-    --cmake_extra_defines CMAKE_CXX_FLAGS="-I/usr/local/cuda/include -Wno-psabi -Wno-unused-parameter" \
+    --cmake_extra_defines CMAKE_CXX_FLAGS="-Wno-psabi -Wno-unused-parameter" \
     --cmake_extra_defines CMAKE_CUDA_FLAGS="-I/usr/local/cuda/include" \
     --cmake_extra_defines onnxruntime_BUILD_UNIT_TESTS=OFF
 
