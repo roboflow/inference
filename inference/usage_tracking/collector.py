@@ -728,25 +728,25 @@ class UsageCollector:
                         )
                     )
                 except Exception as exc:
+                    t2 = time.time()
                     if GCP_SERVERLESS is True:
-                        t2 = time.time()
                         execution_duration = max(t2 - t1, 0.1)
-                        self.record_usage(
-                            **self._extract_usage_params_from_func_kwargs(
-                                usage_fps=usage_fps,
-                                usage_api_key=usage_api_key,
-                                usage_workflow_id=usage_workflow_id,
-                                usage_workflow_preview=usage_workflow_preview,
-                                usage_inference_test_run=usage_inference_test_run,
-                                usage_billable=usage_billable,
-                                execution_duration=execution_duration,
-                                func=func,
-                                category=category,
-                                exc=str(exc),
-                                args=args,
-                                kwargs=kwargs,
-                            )
+                    self.record_usage(
+                        **self._extract_usage_params_from_func_kwargs(
+                            usage_fps=usage_fps,
+                            usage_api_key=usage_api_key,
+                            usage_workflow_id=usage_workflow_id,
+                            usage_workflow_preview=usage_workflow_preview,
+                            usage_inference_test_run=usage_inference_test_run,
+                            usage_billable=usage_billable,
+                            execution_duration=execution_duration,
+                            func=func,
+                            category=category,
+                            exc=str(exc),
+                            args=args,
+                            kwargs=kwargs,
                         )
+                    )
                     raise
                 return res
 
@@ -786,25 +786,25 @@ class UsageCollector:
                         )
                     )
                 except Exception as exc:
+                    t2 = time.time()
                     if GCP_SERVERLESS is True:
-                        t2 = time.time()
                         execution_duration = max(t2 - t1, 0.1)
-                        await self.async_record_usage(
-                            **self._extract_usage_params_from_func_kwargs(
-                                usage_fps=usage_fps,
-                                usage_api_key=usage_api_key,
-                                usage_workflow_id=usage_workflow_id,
-                                usage_workflow_preview=usage_workflow_preview,
-                                usage_inference_test_run=usage_inference_test_run,
-                                usage_billable=usage_billable,
-                                execution_duration=execution_duration,
-                                func=func,
-                                category=category,
-                                exc=str(exc),
-                                args=args,
-                                kwargs=kwargs,
-                            )
+                    await self.async_record_usage(
+                        **self._extract_usage_params_from_func_kwargs(
+                            usage_fps=usage_fps,
+                            usage_api_key=usage_api_key,
+                            usage_workflow_id=usage_workflow_id,
+                            usage_workflow_preview=usage_workflow_preview,
+                            usage_inference_test_run=usage_inference_test_run,
+                            usage_billable=usage_billable,
+                            execution_duration=execution_duration,
+                            func=func,
+                            category=category,
+                            exc=str(exc),
+                            args=args,
+                            kwargs=kwargs,
                         )
+                    )
                     raise
                 return res
 
