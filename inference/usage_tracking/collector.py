@@ -731,6 +731,10 @@ class UsageCollector:
                     t2 = time.time()
                     if GCP_SERVERLESS is True:
                         execution_duration = max(t2 - t1, 0.1)
+                    exc_type = type(exc).__name__
+                    if hasattr(exc, "inner_error_type"):
+                        exc_type = exc.inner_error_type
+                    exc_str = f"{exc_type}: {str(exc)}"
                     self.record_usage(
                         **self._extract_usage_params_from_func_kwargs(
                             usage_fps=usage_fps,
@@ -742,7 +746,7 @@ class UsageCollector:
                             execution_duration=execution_duration,
                             func=func,
                             category=category,
-                            exc=str(exc),
+                            exc=exc_str,
                             args=args,
                             kwargs=kwargs,
                         )
@@ -789,6 +793,10 @@ class UsageCollector:
                     t2 = time.time()
                     if GCP_SERVERLESS is True:
                         execution_duration = max(t2 - t1, 0.1)
+                    exc_type = type(exc).__name__
+                    if hasattr(exc, "inner_error_type"):
+                        exc_type = exc.inner_error_type
+                    exc_str = f"{exc_type}: {str(exc)}"
                     await self.async_record_usage(
                         **self._extract_usage_params_from_func_kwargs(
                             usage_fps=usage_fps,
@@ -800,7 +808,7 @@ class UsageCollector:
                             execution_duration=execution_duration,
                             func=func,
                             category=category,
-                            exc=str(exc),
+                            exc=exc_str,
                             args=args,
                             kwargs=kwargs,
                         )
