@@ -53,8 +53,10 @@ def get_inference_image():
     scaledown_window=60,
     cloud="aws",
     region="us-east-1",
-    buffer_containers=1,
+    buffer_containers=0,
+    memory=256
 )
+@modal.concurrent(max_inputs=10, target_inputs=2)
 class Executor:
     """Parameterized Modal class for executing custom Python blocks via web endpoint."""
 
