@@ -1,5 +1,5 @@
 import json
-from typing import Optional
+from typing import List, Optional
 
 import typer
 from typing_extensions import Annotated
@@ -144,6 +144,66 @@ def api_speed(
             "return non-success error code. Expected percentage values in range 0.0-100.0",
         ),
     ] = None,
+    endpoint: Annotated[
+        Optional[str],
+        typer.Option(
+            "--endpoint",
+            "-e",
+            help="SAM3 endpoint to infer against, use /seg-preview/segment_image",
+        ),
+    ] = None,
+    format: Annotated[
+        str,
+        typer.Option(
+            "--format",
+            "-f",
+            help="Format of the output. One of 'polygon', 'rle', or 'binary'.",
+        ),
+    ] = "polygon",
+    text: Annotated[
+        Optional[str],
+        typer.Option(
+            "--text", "-t", help="Text query for open-vocabulary segmentation."
+        ),
+    ] = None,
+    points: Annotated[
+        Optional[str],
+        typer.Option(
+            "--points",
+            "-p",
+            help="List of [x, y] points normalized to 0-1. Used only with instance_prompt=True. Format: '[[x1,y1],[x2,y2],...]'",
+        ),
+    ] = None,
+    point_labels: Annotated[
+        Optional[List[int]],
+        typer.Option("--point_labels", "-pl", help="List of 0/1 labels for points."),
+    ] = None,
+    boxes: Annotated[
+        Optional[str],
+        typer.Option(
+            "--boxes",
+            "-b",
+            help="List of [x, y, w, h] boxes normalized to 0-1. Format: '[[x1,y1,w1,h1],[x2,y2,w2,h2],...]'",
+        ),
+    ] = None,
+    box_labels: Annotated[
+        Optional[List[int]],
+        typer.Option("--box_labels", "-bl", help="List of 0/1 labels for boxes."),
+    ] = None,
+    instance_prompt: Annotated[
+        Optional[bool],
+        typer.Option(
+            "--instance_prompt",
+            "-ip",
+            help="Enable instance tracking style point prompts.",
+        ),
+    ] = False,
+    output_prob_thresh: Annotated[
+        Optional[float],
+        typer.Option(
+            "--output_prob_thresh", "-otp", help="Score threshold for outputs."
+        ),
+    ] = None,
 ):
     if "roboflow.com" in host and not proceed_automatically:
         proceed = input(
@@ -151,6 +211,39 @@ def api_speed(
         )
         if proceed.lower() != "y":
             return None
+
+    parsed_points = None
+    if points:
+        try:
+            parsed_points = json.loads(points)
+        except json.JSONDecodeError:
+            typer.echo(
+                f"Error parsing points: {points}. Expected format: '[[x1,y1],[x2,y2],...]'"
+            )
+            raise typer.Exit(code=1)
+
+    parsed_boxes = None
+    if boxes:
+        try:
+            parsed_boxes = json.loads(boxes)
+        except json.JSONDecodeError:
+            typer.echo(
+                f"Error parsing boxes: {boxes}. Expected format: '[[x1,y1,w1,h1],[x2,y2,w2,h2],...]'"
+            )
+            raise typer.Exit(code=1)
+
+    sam3_params = {
+        "endpoint": endpoint,
+        "format": format,
+        "text": text,
+        "points": parsed_points,
+        "point_labels": point_labels,
+        "boxes": parsed_boxes,
+        "box_labels": box_labels,
+        "instance_prompt": instance_prompt,
+        "output_prob_thresh": output_prob_thresh,
+    }
+
     try:
         if model_id:
             run_infer_api_speed_benchmark(
@@ -167,6 +260,7 @@ def api_speed(
                 output_location=output_location,
                 enforce_legacy_endpoints=enforce_legacy_endpoints,
                 max_error_rate=max_error_rate,
+                sam3_params=sam3_params,
             )
         else:
             if workflow_specification:

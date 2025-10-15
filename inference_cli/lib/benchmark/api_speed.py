@@ -43,6 +43,7 @@ def coordinate_infer_api_speed_benchmark(
     request_batch_size: int,
     number_of_clients: int,
     requests_per_second: Optional[int],
+    sam3_params: Optional[Dict[str, Any]],
 ) -> InferenceStatistics:
     run_api_warm_up(client=client, image=images[0], warm_up_requests=warm_up_requests)
     image_sizes = {i.shape[:2] for i in images}
@@ -66,6 +67,7 @@ def coordinate_infer_api_speed_benchmark(
         request_batch_size=request_batch_size,
         number_of_clients=number_of_clients,
         requests_per_second=requests_per_second,
+        sam3_params=sam3_params,
     )
     statistics = results_collector.get_statistics()
     statistics_display_thread.join()
@@ -117,6 +119,7 @@ def execute_infer_api_speed_benchmark(
     request_batch_size: int,
     number_of_clients: int,
     requests_per_second: Optional[int],
+    sam3_params: Optional[Dict[str, Any]],
 ) -> None:
     while len(images) < request_batch_size:
         images = images + images
@@ -127,6 +130,7 @@ def execute_infer_api_speed_benchmark(
         images=images,
         request_batch_size=request_batch_size,
         delay=requests_per_second is not None,
+        sam3_params=sam3_params,
     )
     if requests_per_second is not None:
         if number_of_clients is not None:
@@ -252,6 +256,7 @@ def execute_infer_api_request(
     images: List[np.ndarray],
     request_batch_size: int,
     delay: bool = False,
+    sam3_params: Optional[Dict[str, Any]] = None,
 ) -> None:
     if delay:
         time.sleep(random.random())
@@ -259,7 +264,15 @@ def execute_infer_api_request(
     payload = images[:request_batch_size]
     start = time.time()
     try:
-        if client.client_mode is HTTPClientMode.V0:
+        if sam3_params is not None and sam3_params.get("endpoint") in {
+            "/seg-preview/segment_image",
+            "/seg-preview/embed_image",
+        }:
+            request_data = client._prepare_sam_3_segment_request_data(
+                inference_input=payload,
+                sam3_params=sam3_params,
+            )
+        elif client.client_mode is HTTPClientMode.V0:
             request_data = client._prepare_infer_from_api_v0_request_data(
                 inference_input=payload,
             )

@@ -36,6 +36,7 @@ def run_infer_api_speed_benchmark(
     output_location: Optional[str] = None,
     enforce_legacy_endpoints: bool = False,
     max_error_rate: Optional[float] = None,
+    sam3_params: Optional[Dict[str, Any]] = None,
 ) -> None:
     dataset_images = load_dataset_images(
         dataset_reference=dataset_reference,
@@ -60,6 +61,7 @@ def run_infer_api_speed_benchmark(
         request_batch_size=request_batch_size,
         number_of_clients=number_of_clients,
         requests_per_second=requests_per_second,
+        sam3_params=sam3_params,
     )
     if benchmark_results.avg_remote_execution_time is not None:
         print(

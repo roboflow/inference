@@ -378,7 +378,6 @@ class InferenceHTTPClient:
         self,
         input_uri: str,
         model_id: Optional[str] = None,
-        endpoint: Optional[str] = None,
         sam3_params: Optional[Dict[str, Any]] = None,
     ) -> Generator[Tuple[Union[str, int], np.ndarray, dict], None, None]:
         """Run inference on a video stream or sequence of images.
@@ -397,7 +396,6 @@ class InferenceHTTPClient:
             prediction = self.infer(
                 inference_input=frame,
                 model_id=model_id,
-                endpoint=endpoint,
                 sam3_params=sam3_params,
             )
             yield reference, frame, prediction
@@ -407,7 +405,6 @@ class InferenceHTTPClient:
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
         model_id: Optional[str] = None,
-        endpoint: Optional[str] = None,
         sam3_params: Optional[Dict[str, Any]] = None,
     ) -> Union[dict, List[dict]]:
         """Run inference on one or more images.
@@ -423,11 +420,13 @@ class InferenceHTTPClient:
             HTTPCallErrorError: If there is an error in the HTTP call.
             HTTPClientError: If there is an error with the server connection.
         """
-        if endpoint in {"/seg-preview/segment_image", "/seg-preview/embed_image"}:
+        if sam3_params and sam3_params.get("endpoint") in {
+            "/seg-preview/segment_image",
+            "/seg-preview/embed_image",
+        }:
             return self.infer_from_sam3_segment(
                 inference_input=inference_input,
                 model_id=model_id,
-                endpoint=endpoint,
                 sam3_params=sam3_params,
             )
         if self.__client_mode is HTTPClientMode.V0:
@@ -445,7 +444,6 @@ class InferenceHTTPClient:
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
         model_id: Optional[str] = None,
-        endpoint: Optional[str] = None,
         sam3_params: Optional[Dict[str, Any]] = None,
     ) -> Union[dict, List[dict]]:
         """Run inference asynchronously on one or more images.
@@ -461,7 +459,10 @@ class InferenceHTTPClient:
             HTTPCallErrorError: If there is an error in the HTTP call.
             HTTPClientError: If there is an error with the server connection.
         """
-        if endpoint in {"/seg-preview/segment_image", "/seg-preview/embed_image"}:
+        if sam3_params and sam3_params.get("endpoint") in {
+            "/seg-preview/segment_image",
+            "/seg-preview/embed_image",
+        }:
             raise NotImplementedError
         if self.__client_mode is HTTPClientMode.V0:
             return await self.infer_from_api_v0_async(
@@ -2249,14 +2250,12 @@ class InferenceHTTPClient:
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
         model_id: Optional[str] = None,
-        endpoint: str = "/seg-preview/segment_image",
         sam3_params: Optional[Dict[str, Any]] = None,
     ) -> Union[dict, List[dict]]:
         requests_data = self._prepare_sam_3_segment_request_data(
             inference_input=inference_input,
             sam3_params=sam3_params,
             model_id=model_id,
-            endpoint=endpoint,
         )
         responses = self._execute_infer_from_api_request(
             requests_data=requests_data,
@@ -2268,7 +2267,6 @@ class InferenceHTTPClient:
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
         model_id: Optional[str] = None,
-        endpoint: str = "/seg-preview/segment_image",
         sam3_params: Optional[Dict[str, Any]] = None,
     ) -> List[RequestData]:
         model_id_to_be_used = model_id or self.__selected_model
@@ -2311,7 +2309,7 @@ class InferenceHTTPClient:
             )
 
         requests_data = prepare_requests_data(
-            url=f"{self.__api_url}/{endpoint}",
+            url=f"{self.__api_url}/{sam3_params.get('endpoint')}",
             encoded_inference_inputs=encoded_inference_inputs,
             headers=headers,
             parameters=None,
