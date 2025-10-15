@@ -2,7 +2,7 @@ import base64
 import os.path
 from functools import partial
 from glob import glob
-from typing import Callable, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import cv2
 import numpy as np
@@ -89,6 +89,8 @@ def infer(
     visualise: bool,
     visualisation_config: Optional[str],
     model_configuration: Optional[str],
+    sam3_params: Optional[Dict[str, Any]] = None,
+    endpoint: Optional[str] = None,
 ) -> None:
     if api_key is None:
         api_key = ROBOFLOW_API_KEY
@@ -116,6 +118,8 @@ def infer(
             visualise=visualise,
             visualisation_config=visualisation_config,
             model_configuration=model_configuration,
+            sam3_params=sam3_params,
+            endpoint=endpoint,
         )
         return None
     infer_on_image(
@@ -128,6 +132,8 @@ def infer(
         visualise=visualise,
         visualisation_config=visualisation_config,
         model_configuration=model_configuration,
+        sam3_params=sam3_params,
+        endpoint=endpoint,
     )
 
 
@@ -214,6 +220,8 @@ def infer_on_directory(
     visualise: bool,
     visualisation_config: Optional[str],
     model_configuration: Optional[str],
+    sam3_params: Optional[Dict[str, Any]],
+    endpoint: Optional[str],
 ) -> None:
     if not is_something_to_do(
         output_location=output_location, display=display, visualise=visualise
@@ -234,7 +242,12 @@ def infer_on_directory(
             visualisation_config=visualisation_config,
         )
     for reference, frame, prediction in tqdm(
-        client.infer_on_stream(input_uri=input_reference, model_id=model_id),
+        client.infer_on_stream(
+            input_uri=input_reference,
+            model_id=model_id,
+            sam3_params=sam3_params,
+            endpoint=endpoint,
+        ),
         desc=f"Inference from directory: {input_reference}",
     ):
         visualised = None
@@ -267,6 +280,8 @@ def infer_on_image(
     visualise: bool,
     visualisation_config: Optional[str],
     model_configuration: Optional[str],
+    sam3_params: Optional[Dict[str, Any]],
+    endpoint: Optional[str],
 ) -> None:
     client = initialise_client(
         host=host,
@@ -278,7 +293,12 @@ def infer_on_image(
         on_frame_visualise = build_visualisation_callback(
             visualisation_config=visualisation_config,
         )
-    prediction = client.infer(inference_input=input_reference, model_id=model_id)
+    prediction = client.infer(
+        inference_input=input_reference,
+        model_id=model_id,
+        sam3_params=sam3_params,
+        endpoint=endpoint,
+    )
     visualised = None
     if visualise:
         frame_base64 = load_image_from_string(reference=input_reference)[0]

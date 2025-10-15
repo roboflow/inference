@@ -1,3 +1,4 @@
+import base64
 from contextlib import contextmanager
 from typing import Any, Dict, Generator, List, Literal, Optional, Tuple, Union
 
@@ -7,7 +8,12 @@ import requests
 from aiohttp import ClientConnectionError, ClientResponseError
 from requests import HTTPError, Response
 
-from inference_sdk.config import EXECUTION_ID_HEADER, execution_id
+from inference_sdk.config import (
+    EXECUTION_ID_HEADER,
+    INFERENCE_INTERNAL_PASSWORD,
+    INFERENCE_INTERNAL_USERNAME,
+    execution_id,
+)
 from inference_sdk.http.entities import (
     ALL_ROBOFLOW_API_URLS,
     CLASSIFICATION_TASK,
@@ -372,6 +378,8 @@ class InferenceHTTPClient:
         self,
         input_uri: str,
         model_id: Optional[str] = None,
+        endpoint: Optional[str] = None,
+        sam3_params: Optional[Dict[str, Any]] = None,
     ) -> Generator[Tuple[Union[str, int], np.ndarray, dict], None, None]:
         """Run inference on a video stream or sequence of images.
 
@@ -389,6 +397,8 @@ class InferenceHTTPClient:
             prediction = self.infer(
                 inference_input=frame,
                 model_id=model_id,
+                endpoint=endpoint,
+                sam3_params=sam3_params,
             )
             yield reference, frame, prediction
 
@@ -397,6 +407,8 @@ class InferenceHTTPClient:
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
         model_id: Optional[str] = None,
+        endpoint: Optional[str] = None,
+        sam3_params: Optional[Dict[str, Any]] = None,
     ) -> Union[dict, List[dict]]:
         """Run inference on one or more images.
 
@@ -411,6 +423,13 @@ class InferenceHTTPClient:
             HTTPCallErrorError: If there is an error in the HTTP call.
             HTTPClientError: If there is an error with the server connection.
         """
+        if endpoint in {"/seg-preview/segment_image", "/seg-preview/embed_image"}:
+            return self.infer_from_sam3_segment(
+                inference_input=inference_input,
+                model_id=model_id,
+                endpoint=endpoint,
+                sam3_params=sam3_params,
+            )
         if self.__client_mode is HTTPClientMode.V0:
             return self.infer_from_api_v0(
                 inference_input=inference_input,
@@ -426,6 +445,8 @@ class InferenceHTTPClient:
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
         model_id: Optional[str] = None,
+        endpoint: Optional[str] = None,
+        sam3_params: Optional[Dict[str, Any]] = None,
     ) -> Union[dict, List[dict]]:
         """Run inference asynchronously on one or more images.
 
@@ -440,6 +461,8 @@ class InferenceHTTPClient:
             HTTPCallErrorError: If there is an error in the HTTP call.
             HTTPClientError: If there is an error with the server connection.
         """
+        if endpoint in {"/seg-preview/segment_image", "/seg-preview/embed_image"}:
+            raise NotImplementedError
         if self.__client_mode is HTTPClientMode.V0:
             return await self.infer_from_api_v0_async(
                 inference_input=inference_input,
@@ -2221,6 +2244,82 @@ class InferenceHTTPClient:
     def __ensure_v1_client_mode(self) -> None:
         if self.__client_mode is not HTTPClientMode.V1:
             raise WrongClientModeError("Use client mode `v1` to run this operation.")
+
+    def infer_from_sam3_segment(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        model_id: Optional[str] = None,
+        endpoint: str = "/seg-preview/segment_image",
+        sam3_params: Optional[Dict[str, Any]] = None,
+    ) -> Union[dict, List[dict]]:
+        requests_data = self._prepare_sam_3_segment_request_data(
+            inference_input=inference_input,
+            sam3_params=sam3_params,
+            model_id=model_id,
+            endpoint=endpoint,
+        )
+        responses = self._execute_infer_from_api_request(
+            requests_data=requests_data,
+        )
+        # TODO: Adjust predictions to client scaling factor (not required when benchmarking)
+        return responses
+
+    def _prepare_sam_3_segment_request_data(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        model_id: Optional[str] = None,
+        endpoint: str = "/seg-preview/segment_image",
+        sam3_params: Optional[Dict[str, Any]] = None,
+    ) -> List[RequestData]:
+        model_id_to_be_used = model_id or self.__selected_model
+        _ensure_model_is_selected(model_id=model_id_to_be_used)
+        _ensure_api_key_provided(api_key=self.__api_key)
+        model_id_to_be_used = resolve_roboflow_model_alias(model_id=model_id_to_be_used)
+        model_id_chunks = model_id_to_be_used.split("/")
+        if len(model_id_chunks) != 2:
+            raise InvalidModelIdentifier(
+                f"Invalid model id: {model_id}. Expected format: project_id/model_version_id."
+            )
+        max_height, max_width = _determine_client_downsizing_parameters(
+            client_downsizing_disabled=self.__inference_configuration.client_downsizing_disabled,
+            model_description=None,
+            default_max_input_size=self.__inference_configuration.default_max_input_size,
+        )
+        encoded_inference_inputs = load_static_inference_input(
+            inference_input=inference_input,
+            max_height=max_height,
+            max_width=max_width,
+        )
+        payload = {
+            "api_key": self.__api_key,
+            **sam3_params,
+        }
+
+        execution_id_value = execution_id.get()
+        headers = DEFAULT_HEADERS
+        if execution_id_value:
+            headers = headers.copy()
+            headers[EXECUTION_ID_HEADER] = execution_id_value
+
+        if (
+            INFERENCE_INTERNAL_USERNAME is not None
+            and INFERENCE_INTERNAL_PASSWORD is not None
+        ):
+            headers = headers.copy()
+            headers["Authorization"] = (
+                f"Basic {base64.b64encode(f'{INFERENCE_INTERNAL_USERNAME}:{INFERENCE_INTERNAL_PASSWORD}'.encode()).decode()}"
+            )
+
+        requests_data = prepare_requests_data(
+            url=f"{self.__api_url}/{endpoint}",
+            encoded_inference_inputs=encoded_inference_inputs,
+            headers=headers,
+            parameters=None,
+            payload=payload,
+            max_batch_size=1,
+            image_placement=ImagePlacement.JSON,
+        )
+        return requests_data
 
 
 def _determine_client_downsizing_parameters(

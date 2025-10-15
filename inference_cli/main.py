@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import List, Literal, Optional
 
 import typer
 from typing_extensions import Annotated
@@ -115,11 +115,75 @@ def infer(
             "--model_config", "-mc", help="Location of yaml file with model config"
         ),
     ] = None,
+    endpoint: Annotated[
+        Optional[str],
+        typer.Option("--endpoint", "-e", help="Endpoint to infer against"),
+    ] = None,
+    format: Annotated[
+        Literal["polygon", "rle", "binary"],
+        typer.Option(
+            "--format",
+            "-f",
+            help="Format of the output. One of 'polygon', 'rle', or 'binary'.",
+        ),
+    ] = "polygon",
+    text: Annotated[
+        Optional[str],
+        typer.Option(
+            "--text", "-t", help="Text query for open-vocabulary segmentation."
+        ),
+    ] = None,
+    points: Annotated[
+        Optional[List[List[float]]],
+        typer.Option(
+            "--points",
+            "-p",
+            help="List of [x, y] points normalized to 0-1. Used only with instance_prompt=True.",
+        ),
+    ] = None,
+    point_labels: Annotated[
+        Optional[List[int]],
+        typer.Option("--point_labels", "-pl", help="List of 0/1 labels for points."),
+    ] = None,
+    boxes: Annotated[
+        Optional[List[List[float]]],
+        typer.Option(
+            "--boxes", "-b", help="List of [x, y, w, h] boxes normalized to 0-1."
+        ),
+    ] = None,
+    box_labels: Annotated[
+        Optional[List[int]],
+        typer.Option("--box_labels", "-bl", help="List of 0/1 labels for boxes."),
+    ] = None,
+    instance_prompt: Annotated[
+        Optional[bool],
+        typer.Option(
+            "--instance_prompt",
+            "-ip",
+            help="Enable instance tracking style point prompts.",
+        ),
+    ] = False,
+    output_prob_thresh: Annotated[
+        Optional[float],
+        typer.Option(
+            "--output_prob_thresh", "-otp", help="Score threshold for outputs."
+        ),
+    ] = None,
 ):
     typer.echo(
         f"Running inference on {input_reference}, using model: {model_id}, and host: {host}"
     )
     try:
+        sam3_params = {
+            "format": format,
+            "text": text,
+            "points": points,
+            "point_labels": point_labels,
+            "boxes": boxes,
+            "box_labels": box_labels,
+            "instance_prompt": instance_prompt,
+            "output_prob_thresh": output_prob_thresh,
+        }
         inference_cli.lib.infer(
             input_reference=input_reference,
             model_id=model_id,
@@ -130,6 +194,8 @@ def infer(
             visualise=visualise,
             visualisation_config=visualisation_config,
             model_configuration=model_config,
+            endpoint=endpoint,
+            sam3_params=sam3_params,
         )
     except Exception as error:
         typer.echo(f"Command failed. Cause: {error}")
