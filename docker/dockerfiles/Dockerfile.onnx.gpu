@@ -33,7 +33,7 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.pali.flash_attn.txt \
     ./
 
-# Use uv for much faster package installation (includes onnxruntime-gpu from PyPI)
+# Use uv for much faster package installation (WITHOUT onnxruntime-gpu, we'll build from source)
 RUN uv pip install --system --break-system-packages \
     -r _requirements.txt \
     -r requirements.sam.txt \
@@ -48,10 +48,35 @@ RUN uv pip install --system --break-system-packages \
     "setuptools<=75.5.0" \
     && rm -rf ~/.cache/uv
 
-# Install build tools
+# Install build tools for ONNX Runtime
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    cmake \
     ninja-build \
     && rm -rf /var/lib/apt/lists/*
+
+# Build ONNX Runtime from source for CUDA 12.9
+WORKDIR /tmp
+RUN git clone --recursive --branch v1.20.1 https://github.com/microsoft/onnxruntime.git /tmp/onnxruntime
+WORKDIR /tmp/onnxruntime
+
+# Build ONNX Runtime with CUDA, disabling all tests to avoid C++ ABI compilation issues
+RUN ./build.sh \
+    --config RelWithDebInfo \
+    --build_shared_lib \
+    --parallel \
+    --skip_submodule_sync \
+    --use_cuda \
+    --cuda_home /usr/local/cuda \
+    --cudnn_home /usr/local/cuda \
+    --cuda_version=12.9 \
+    --build_wheel \
+    --skip_tests \
+    --allow_running_as_root \
+    --cmake_extra_defines 'CMAKE_CUDA_ARCHITECTURES=120;121' 'onnxruntime_BUILD_UNIT_TESTS=OFF' \
+    --parallel 16
+
+# Install the built ONNX Runtime wheel
+RUN uv pip install --system --break-system-packages /tmp/onnxruntime/build/Linux/RelWithDebInfo/dist/onnxruntime_gpu-*.whl
 
 # Install GPU-enabled PyTorch stack (CUDA 12.8)
 RUN uv pip uninstall torch torchvision torchaudio || true && \
