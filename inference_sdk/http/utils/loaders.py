@@ -9,6 +9,10 @@ import requests
 import supervision as sv
 from PIL import Image
 
+from inference_sdk.config import (
+    INFERENCE_INTERNAL_PASSWORD,
+    INFERENCE_INTERNAL_USERNAME,
+)
 from inference_sdk.http.entities import ImagesReference
 from inference_sdk.http.errors import EncodingError, InvalidInputFormatError
 from inference_sdk.http.utils.encoding import (
@@ -307,7 +311,15 @@ def load_image_from_url(
     Returns:
         The image and the scaling factor.
     """
-    response = requests.get(url)
+    headers = {}
+    if (
+        INFERENCE_INTERNAL_USERNAME is not None
+        and INFERENCE_INTERNAL_PASSWORD is not None
+    ):
+        headers["Authorization"] = (
+            f"Basic {base64.b64encode(f'{INFERENCE_INTERNAL_USERNAME}:{INFERENCE_INTERNAL_PASSWORD}'.encode()).decode()}"
+        )
+    response = requests.get(url, headers=headers)
     response.raise_for_status()
     if max_height is None or max_width is None:
         return encode_base_64(response.content), None

@@ -369,7 +369,15 @@ class InferenceHTTPClient:
             HTTPCallErrorError: If there is an error in the HTTP call.
             HTTPClientError: If there is an error with the server connection.
         """
-        response = requests.get(f"{self.__api_url}/info")
+        headers = {}
+        if (
+            INFERENCE_INTERNAL_USERNAME is not None
+            and INFERENCE_INTERNAL_PASSWORD is not None
+        ):
+            headers["Authorization"] = (
+                f"Basic {base64.b64encode(f'{INFERENCE_INTERNAL_USERNAME}:{INFERENCE_INTERNAL_PASSWORD}'.encode()).decode()}"
+            )
+        response = requests.get(f"{self.__api_url}/info", headers=headers)
         response.raise_for_status()
         response_payload = response.json()
         return ServerInfo.from_dict(response_payload)
@@ -903,8 +911,17 @@ class InferenceHTTPClient:
             HTTPClientError: If there is an error with the server connection.
         """
         self.__ensure_v1_client_mode()
+        headers = {}
+        if (
+            INFERENCE_INTERNAL_USERNAME is not None
+            and INFERENCE_INTERNAL_PASSWORD is not None
+        ):
+            headers["Authorization"] = (
+                f"Basic {base64.b64encode(f'{INFERENCE_INTERNAL_USERNAME}:{INFERENCE_INTERNAL_PASSWORD}'.encode()).decode()}"
+            )
         response = requests.get(
-            f"{self.__api_url}/model/registry?api_key={self.__api_key}"
+            f"{self.__api_url}/model/registry?api_key={self.__api_key}",
+            headers=headers,
         )
         response.raise_for_status()
         response_payload = response.json()
@@ -951,13 +968,23 @@ class InferenceHTTPClient:
         """
         self.__ensure_v1_client_mode()
         de_aliased_model_id = resolve_roboflow_model_alias(model_id=model_id)
+        headers = DEFAULT_HEADERS
+        if (
+            INFERENCE_INTERNAL_USERNAME is not None
+            and INFERENCE_INTERNAL_PASSWORD is not None
+        ):
+            headers = headers.copy()
+            headers["Authorization"] = (
+                f"Basic {base64.b64encode(f'{INFERENCE_INTERNAL_USERNAME}:{INFERENCE_INTERNAL_PASSWORD}'.encode()).decode()}"
+            )
+
         response = requests.post(
             f"{self.__api_url}/model/add",
             json={
                 "model_id": de_aliased_model_id,
                 "api_key": self.__api_key,
             },
-            headers=DEFAULT_HEADERS,
+            headers=headers,
         )
         response.raise_for_status()
         response_payload = response.json()
@@ -1018,12 +1045,22 @@ class InferenceHTTPClient:
         """
         self.__ensure_v1_client_mode()
         de_aliased_model_id = resolve_roboflow_model_alias(model_id=model_id)
+        headers = DEFAULT_HEADERS
+        if (
+            INFERENCE_INTERNAL_USERNAME is not None
+            and INFERENCE_INTERNAL_PASSWORD is not None
+        ):
+            headers = headers.copy()
+            headers["Authorization"] = (
+                f"Basic {base64.b64encode(f'{INFERENCE_INTERNAL_USERNAME}:{INFERENCE_INTERNAL_PASSWORD}'.encode()).decode()}"
+            )
+
         response = requests.post(
             f"{self.__api_url}/model/remove",
             json={
                 "model_id": de_aliased_model_id,
             },
-            headers=DEFAULT_HEADERS,
+            headers=headers,
         )
         response.raise_for_status()
         response_payload = response.json()
@@ -1058,7 +1095,16 @@ class InferenceHTTPClient:
     @wrap_errors
     def unload_all_models(self) -> RegisteredModels:
         self.__ensure_v1_client_mode()
-        response = requests.post(f"{self.__api_url}/model/clear")
+        headers = {}
+        if (
+            INFERENCE_INTERNAL_USERNAME is not None
+            and INFERENCE_INTERNAL_PASSWORD is not None
+        ):
+            headers["Authorization"] = (
+                f"Basic {base64.b64encode(f'{INFERENCE_INTERNAL_USERNAME}:{INFERENCE_INTERNAL_PASSWORD}'.encode()).decode()}"
+            )
+
+        response = requests.post(f"{self.__api_url}/model/clear", headers=headers)
         response.raise_for_status()
         response_payload = response.json()
         self.__selected_model = None
@@ -1334,6 +1380,14 @@ class InferenceHTTPClient:
         execution_id_value = execution_id.get()
         if execution_id_value is not None:
             headers[EXECUTION_ID_HEADER] = execution_id_value
+        if (
+            INFERENCE_INTERNAL_USERNAME is not None
+            and INFERENCE_INTERNAL_PASSWORD is not None
+        ):
+            headers = headers.copy()
+            headers["Authorization"] = (
+                f"Basic {base64.b64encode(f'{INFERENCE_INTERNAL_USERNAME}:{INFERENCE_INTERNAL_PASSWORD}'.encode()).decode()}"
+            )
 
         response = requests.post(
             self.__wrap_url_with_api_key(f"{self.__api_url}/clip/embed_text"),
@@ -1437,6 +1491,14 @@ class InferenceHTTPClient:
         execution_id_value = execution_id.get()
         if execution_id_value is not None:
             headers[EXECUTION_ID_HEADER] = execution_id_value
+        if (
+            INFERENCE_INTERNAL_USERNAME is not None
+            and INFERENCE_INTERNAL_PASSWORD is not None
+        ):
+            headers = headers.copy()
+            headers["Authorization"] = (
+                f"Basic {base64.b64encode(f'{INFERENCE_INTERNAL_USERNAME}:{INFERENCE_INTERNAL_PASSWORD}'.encode()).decode()}"
+            )
 
         response = requests.post(
             self.__wrap_url_with_api_key(f"{self.__api_url}/clip/compare"),
@@ -2003,10 +2065,19 @@ class InferenceHTTPClient:
             HTTPCallErrorError: If there is an error in the HTTP call.
             HTTPClientError: If there is an error with the server connection.
         """
+        headers = {}
+        if (
+            INFERENCE_INTERNAL_USERNAME is not None
+            and INFERENCE_INTERNAL_PASSWORD is not None
+        ):
+            headers["Authorization"] = (
+                f"Basic {base64.b64encode(f'{INFERENCE_INTERNAL_USERNAME}:{INFERENCE_INTERNAL_PASSWORD}'.encode()).decode()}"
+            )
         payload = {"api_key": self.__api_key}
         response = requests.get(
             f"{self.__api_url}/inference_pipelines/list",
             json=payload,
+            headers=headers,
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
@@ -2031,9 +2102,18 @@ class InferenceHTTPClient:
         """
         self._ensure_pipeline_id_not_empty(pipeline_id=pipeline_id)
         payload = {"api_key": self.__api_key}
+        headers = {}
+        if (
+            INFERENCE_INTERNAL_USERNAME is not None
+            and INFERENCE_INTERNAL_PASSWORD is not None
+        ):
+            headers["Authorization"] = (
+                f"Basic {base64.b64encode(f'{INFERENCE_INTERNAL_USERNAME}:{INFERENCE_INTERNAL_PASSWORD}'.encode()).decode()}"
+            )
         response = requests.get(
             f"{self.__api_url}/inference_pipelines/{pipeline_id}/status",
             json=payload,
+            headers=headers,
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
@@ -2155,10 +2235,19 @@ class InferenceHTTPClient:
         self._ensure_pipeline_id_not_empty(pipeline_id=pipeline_id)
         if excluded_fields is None:
             excluded_fields = []
+        headers = {}
+        if (
+            INFERENCE_INTERNAL_USERNAME is not None
+            and INFERENCE_INTERNAL_PASSWORD is not None
+        ):
+            headers["Authorization"] = (
+                f"Basic {base64.b64encode(f'{INFERENCE_INTERNAL_USERNAME}:{INFERENCE_INTERNAL_PASSWORD}'.encode()).decode()}"
+            )
         payload = {"api_key": self.__api_key, "excluded_fields": excluded_fields}
         response = requests.get(
             f"{self.__api_url}/inference_pipelines/{pipeline_id}/consume",
             json=payload,
+            headers=headers,
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
