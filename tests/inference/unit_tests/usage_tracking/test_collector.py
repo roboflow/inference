@@ -979,5 +979,5 @@ def test_record_usage_with_exception_on_GCP(usage_collector_with_mocked_threads)
         json.loads(
             usage_collector._usage["test_key"]["model:unknown"]["resource_details"]
         ).get("error")
-        == "test exception"
+        == "Exception: test exception"
     )
