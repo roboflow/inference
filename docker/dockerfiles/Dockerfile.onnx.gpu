@@ -74,6 +74,7 @@ RUN ./build.sh \
     --skip_tests \
     --allow_running_as_root \
     --use_preinstalled_eigen \
+    --eigen_path /usr/include/eigen3 \
     --cmake_extra_defines 'CMAKE_CUDA_ARCHITECTURES=120;121' 'onnxruntime_BUILD_UNIT_TESTS=OFF' \
     --parallel 16
 
