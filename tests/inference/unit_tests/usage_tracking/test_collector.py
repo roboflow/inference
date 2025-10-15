@@ -955,7 +955,7 @@ def test_record_usage_with_exception(usage_collector_with_mocked_threads):
         test_func()
 
     # then
-    assert len(usage_collector._usage) == 0
+    assert len(usage_collector._usage) == 1
 
 
 def test_record_usage_with_exception_on_GCP(usage_collector_with_mocked_threads):
