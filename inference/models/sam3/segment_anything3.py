@@ -26,7 +26,6 @@ from inference.core.entities.responses.sam3 import (
 )
 from inference.core.env import (
     SAM3_IMAGE_SIZE,
-    SAM3_EMBEDDING_CACHE_SIZE,
     MODELS_CACHE_AUTH_ENABLED,
     CORE_MODEL_BUCKET,
     INFER_BUCKET,
