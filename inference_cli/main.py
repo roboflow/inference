@@ -130,8 +130,6 @@ def infer(
             visualise=visualise,
             visualisation_config=visualisation_config,
             model_configuration=model_config,
-            endpoint=endpoint,
-            sam3_params=sam3_params,
         )
     except Exception as error:
         typer.echo(f"Command failed. Cause: {error}")
