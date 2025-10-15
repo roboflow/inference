@@ -77,7 +77,7 @@ RUN ./build.sh \
     --cmake_generator Ninja \
     --enable_cuda_nhwc_ops \
     --cmake_extra_defines CMAKE_CUDA_ARCHITECTURES="120-real;121-real;121-virtual" \
-    --cmake_extra_defines CMAKE_CXX_FLAGS="-I/usr/local/cuda/include -Wno-psabi -Wno-error" \
+    --cmake_extra_defines CMAKE_CXX_FLAGS="-I/usr/local/cuda/include -Wno-psabi -Wno-unused-parameter" \
     --cmake_extra_defines CMAKE_CUDA_FLAGS="-I/usr/local/cuda/include" \
     --cmake_extra_defines onnxruntime_BUILD_UNIT_TESTS=OFF
 
