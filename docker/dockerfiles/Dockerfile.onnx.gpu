@@ -54,9 +54,9 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     ninja-build \
     && rm -rf /var/lib/apt/lists/*
 
-# Build ONNX Runtime from source for CUDA 12.9
+# Build ONNX Runtime from source for CUDA 12.9 (using main branch for latest CUDA 13 fixes)
 WORKDIR /tmp
-RUN git clone --recursive --branch v1.21.0 https://github.com/microsoft/onnxruntime.git /tmp/onnxruntime
+RUN git clone --recursive --branch main https://github.com/microsoft/onnxruntime.git /tmp/onnxruntime
 WORKDIR /tmp/onnxruntime
 
 # Build ONNX Runtime with CUDA, disabling all tests to avoid C++ ABI compilation issues
