@@ -76,8 +76,10 @@ RUN ./build.sh \
     --allow_running_as_root \
     --cmake_generator Ninja \
     --use_binskim_compliant_compile_flags \
+    --enable_cuda_nhwc_ops \
     --cmake_extra_defines CMAKE_CUDA_ARCHITECTURES="120-real;121-real;121-virtual" \
     --cmake_extra_defines CMAKE_CXX_FLAGS="-Wno-psabi -Wno-unused-parameter" \
+    --cmake_extra_defines CMAKE_CUDA_FLAGS="--expt-relaxed-constexpr -Wno-deprecated-gpu-targets" \
     --cmake_extra_defines onnxruntime_BUILD_UNIT_TESTS=OFF
 
 # Install the built ONNX Runtime wheel
