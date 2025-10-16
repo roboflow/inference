@@ -2,7 +2,7 @@ import os.path
 from dataclasses import asdict
 from datetime import datetime
 from threading import Thread
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from inference_cli.lib.benchmark.api_speed import (
     coordinate_infer_api_speed_benchmark,
@@ -105,6 +105,7 @@ def run_sam3_concept_segment_api_speed_benchmark(
     benchmark_requests: int = 1000,
     request_batch_size: int = 1,
     number_of_clients: int = 1,
+    default_prompt: List[Dict[str, Any]] = None,
     requests_per_second: Optional[int] = None,
     api_key: Optional[str] = None,
     output_location: Optional[str] = None,
@@ -112,6 +113,7 @@ def run_sam3_concept_segment_api_speed_benchmark(
 ) -> None:
     dataset_images_with_prompts = load_dataset_images_with_prompts(
         dataset_reference=dataset_reference,
+        default_prompt=default_prompt,
     )
     client: InferenceHTTPClient = initialise_client(
         host=host,

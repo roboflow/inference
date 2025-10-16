@@ -145,6 +145,13 @@ def api_speed(
             "return non-success error code. Expected percentage values in range 0.0-100.0",
         ),
     ] = None,
+    default_prompt: Annotated[
+        Optional[str],
+        typer.Option(
+            "--default_prompt",
+            help="Default prompt to use for images without prompts, if not provided, following prompt will be used: [{ 'type': 'text', 'text': 'person' }]",
+        ),
+    ] = '[{ "type": "text", "text": "person"}]',
 ):
     if "roboflow.com" in host and not proceed_automatically:
         proceed = input(
@@ -155,6 +162,7 @@ def api_speed(
 
     try:
         if model_id == "sam3/concept_segment":
+            default_prompt = json.loads(default_prompt)
             run_sam3_concept_segment_api_speed_benchmark(
                 model_id=model_id,
                 dataset_reference=dataset_reference,
@@ -167,6 +175,7 @@ def api_speed(
                 api_key=api_key,
                 output_location=output_location,
                 max_error_rate=max_error_rate,
+                default_prompt=default_prompt,
             )
         elif model_id:
             run_infer_api_speed_benchmark(

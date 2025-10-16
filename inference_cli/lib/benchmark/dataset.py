@@ -90,20 +90,24 @@ def download_image(url: str) -> Optional[np.ndarray]:
 
 def load_dataset_images_with_prompts(
     dataset_reference: str,
+    default_prompt: List[Dict[str, Any]],
 ) -> List[Tuple[np.ndarray, Dict[str, Any]]]:
     if os.path.isdir(dataset_reference):
-        return load_images_with_prompts(directory=dataset_reference)
-    # TODO: add support for predefined datasets
-    raise DatasetLoadingError(
-        "Predefined datasets support not implemented for sam3 models"
-    )
-    # if dataset_reference not in PREDEFINED_DATASETS:
-    #     raise DatasetLoadingError(f"Could not find dataset: {dataset_reference}")
-    # return download_images_with_prompts(urls=PREDEFINED_DATASETS[dataset_reference])
+        return load_images_with_prompts(
+            directory=dataset_reference, default_prompt=default_prompt
+        )
+    if dataset_reference not in PREDEFINED_DATASETS:
+        raise DatasetLoadingError(f"Could not find dataset: {dataset_reference}")
+    return [
+        (image, default_prompt)
+        for image in download_images(urls=PREDEFINED_DATASETS[dataset_reference])
+    ]
 
 
 def load_images_with_prompts(
-    directory: str, max_images_to_load: int = MAX_IMAGES_TO_LOAD
+    directory: str,
+    max_images_to_load: int = MAX_IMAGES_TO_LOAD,
+    default_prompt: List[Dict[str, Any]] = None,
 ) -> List[Tuple[np.ndarray, Dict[str, Any]]]:
     image_file_paths = sorted(
         list(
@@ -120,7 +124,9 @@ def load_images_with_prompts(
             continue
         prompt_file_path = Path(image_file_path).with_suffix(".json")
         if not prompt_file_path.exists():
-            continue
+            if default_prompt is None:
+                continue
+            prompt = default_prompt
         with open(prompt_file_path, "r") as f:
             prompt = json.load(f)
         results.append((image, prompt))
