@@ -55,12 +55,6 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     cmake \
     ninja-build \
     && rm -rf /var/lib/apt/lists/*
-# Fix CUDA 13.0 missing CCCL headers - fetch from NVIDIA repository
-RUN git clone --depth=1 --branch v2.6.1 https://github.com/NVIDIA/cccl.git /tmp/cccl && \
-    mkdir -p /usr/local/cuda/include/cuda && \
-    cp -r /tmp/cccl/libcudacxx/include/cuda/* /usr/local/cuda/include/cuda/ && \
-    rm -rf /tmp/cccl
-
 
 # Build ONNX Runtime from source for CUDA 13.0 (using main branch for latest CUDA 13 fixes)
 WORKDIR /tmp
@@ -83,6 +77,8 @@ RUN ./build.sh \
     --enable_cuda_nhwc_ops \
     --use_binskim_compliant_compile_flags \
     --allow_running_as_root \
+    --cmake_extra_defines CMAKE_CUDA_FLAGS="-I/usr/local/cuda/include/cccl" \
+    --cmake_extra_defines CMAKE_CXX_FLAGS="-I/usr/local/cuda/include/cccl" \
     --cmake_extra_defines CMAKE_CUDA_ARCHITECTURES="120-real;121-real;121-virtual" \
     --cmake_extra_defines onnxruntime_BUILD_UNIT_TESTS=OFF
 
