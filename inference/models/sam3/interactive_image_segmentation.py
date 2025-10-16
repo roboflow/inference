@@ -4,6 +4,7 @@ from io import BytesIO
 from threading import RLock
 from time import perf_counter
 from typing import Any, Dict, List, Optional, Tuple, TypedDict, Union
+from pycocotools import mask as mask_utils
 
 import numpy as np
 import torch
@@ -195,25 +196,11 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
                 masks, scores, low_resolution_logits = self.segment_image(
                     **request.dict()
                 )
-                if request.format == "json":
-                    return turn_segmentation_results_into_api_response(
-                        masks=masks,
-                        scores=scores,
-                        # mask_threshold=predictor.mask_threshold,
-                        mask_threshold=0.0,
-                        inference_start_timestamp=t1,
-                    )
-                elif request.format == "binary":
-                    binary_vector = BytesIO()
-                    np.savez_compressed(
-                        binary_vector, masks=masks, low_res_masks=low_resolution_logits
-                    )
-                    binary_vector.seek(0)
-                    binary_data = binary_vector.getvalue()
-                    return binary_data
-                else:
-                    raise ValueError(f"Invalid format {request.format}")
-
+                predictions = _masks_to_predictions(masks, scores, request.format)
+                return Sam2SegmentationResponse(
+                    time=perf_counter() - t1,
+                    predictions=predictions,
+                )
             else:
                 raise ValueError(f"Invalid request type {type(request)}")
 
@@ -598,3 +585,46 @@ def pad_points(args: Dict[str, Any]) -> Dict[str, Any]:
                 "Can't have point labels without corresponding point coordinates"
             )
     return args
+
+
+def _masks_to_predictions(
+    masks_np: np.ndarray, scores: List[float], fmt: str
+) -> List[Sam2SegmentationPrediction]:
+    """Convert boolean masks (N,H,W) to API predictions in requested format.
+
+    Assumes masks_np is already normalized to (N,H,W) by _to_numpy_masks.
+
+    Args:
+        masks_np: Boolean or uint8 masks array (N,H,W)
+        scores: Confidence scores per mask
+        fmt: Output format: 'polygon', 'json', or 'rle'
+
+    Returns:
+        List of Sam2SegmentationPrediction
+    """
+    preds = []
+
+    if masks_np.ndim != 3 or 0 in masks_np.shape:
+        return preds
+
+    if fmt in ["polygon", "json"]:
+        polygons = masks2multipoly((masks_np > 0).astype(np.uint8))
+        for poly, score in zip(polygons, scores[: len(polygons)]):
+            preds.append(
+                Sam2SegmentationPrediction(
+                    masks=[p.tolist() for p in poly],
+                    confidence=float(score),
+                    format="polygon",
+                )
+            )
+    elif fmt == "rle":
+        for m, score in zip(masks_np, scores[: masks_np.shape[0]]):
+            mb = (m > 0).astype(np.uint8)
+            rle = mask_utils.encode(np.asfortranarray(mb))
+            rle["counts"] = rle["counts"].decode("utf-8")
+            preds.append(
+                Sam2SegmentationPrediction(
+                    masks=rle, confidence=float(score), format="rle"
+                )
+            )
+    return preds
