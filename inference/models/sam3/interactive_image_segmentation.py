@@ -7,13 +7,20 @@ from typing import Any, Dict, List, Optional, Tuple, TypedDict, Union
 
 import numpy as np
 import torch
-from inference.core.cache.model_artifacts import are_all_files_cached, save_bytes_in_cache
+from inference.core.cache.model_artifacts import (
+    are_all_files_cached,
+    save_bytes_in_cache,
+)
 
 from inference.core.exceptions import RoboflowAPINotAuthorizedError, ModelArtefactError
 
 from inference.core.registries.roboflow import _check_if_api_key_has_access_to_model
 
-from inference.core.roboflow_api import ModelEndpointType, get_roboflow_model_data, get_from_url
+from inference.core.roboflow_api import (
+    ModelEndpointType,
+    get_roboflow_model_data,
+    get_from_url,
+)
 from sam3.model.sam1_task_predictor import SAM3InteractiveImagePredictor
 from sam3.sam3_video_model_builder import build_sam3_tracking_predictor
 
@@ -34,9 +41,15 @@ from inference.core.env import (
     DEVICE,
     DISABLE_SAM3_LOGITS_CACHE,
     SAM3_MAX_LOGITS_CACHE_SIZE,
-    SAM3_MAX_EMBEDDING_CACHE_SIZE, CORE_MODEL_BUCKET, INFER_BUCKET, MODELS_CACHE_AUTH_ENABLED,
+    SAM3_MAX_EMBEDDING_CACHE_SIZE,
+    CORE_MODEL_BUCKET,
+    INFER_BUCKET,
+    MODELS_CACHE_AUTH_ENABLED,
 )
-from inference.core.models.roboflow import RoboflowCoreModel, is_model_artefacts_bucket_available
+from inference.core.models.roboflow import (
+    RoboflowCoreModel,
+    is_model_artefacts_bucket_available,
+)
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2multipoly
 
@@ -72,7 +85,11 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
         super().__init__(*args, model_id=model_id, **kwargs)
         checkpoint = self.cache_file("weights.pt")
         checkpoint = torch.load(checkpoint, map_location=DEVICE)
-        self.sam = build_sam3_tracking_predictor(checkpoint).to(DEVICE).eval()
+        self._sam_model = (
+            build_sam3_tracking_predictor(checkpoint, compile_mode=None)
+            .to(DEVICE)
+            .eval()
+        )
         self.low_res_logits_cache_size = low_res_logits_cache_size
         self.embedding_cache_size = embedding_cache_size
         self.embedding_cache = {}
@@ -142,7 +159,9 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
 
         with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
             predictor = SAM3InteractiveImagePredictor(sam_model=self._sam_model)
-            predictor.set_image(image)
+            print("setting image")
+            x = predictor.set_image(img_in)
+            print("image set", x)
             embedding_dict = predictor._features
 
         with self._state_lock:
@@ -268,10 +287,12 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
                 image=image, image_id=image_id
             )
 
-            self.predictor._is_image_set = True
-            self.predictor._features = embedding
-            self.predictor._orig_hw = [original_image_size]
-            self.predictor._is_batch = False
+            predictor = SAM3InteractiveImagePredictor(sam_model=self._sam_model)
+
+            predictor._is_image_set = True
+            predictor._features = embedding
+            predictor._orig_hw = [original_image_size]
+            predictor._is_batch = False
             args = dict()
             prompt_set: Sam2PromptSet
             if prompts:
@@ -292,7 +313,7 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
             args = pad_points(args)
             if not any(args.values()):
                 args = {"point_coords": [[0, 0]], "point_labels": [-1], "box": None}
-            masks, scores, low_resolution_logits = self.predictor.predict(
+            masks, scores, low_resolution_logits = predictor.predict(
                 mask_input=mask_input,
                 multimask_output=multimask_output,
                 return_logits=True,

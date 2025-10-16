@@ -176,6 +176,7 @@ class SegmentAnything3(RoboflowCoreModel):
             bpe_path=bpe_path,
             checkpoint_path=checkpoint,
             device="cuda" if torch.cuda.is_available() else "cpu",
+            compile_mode=None,
         )
 
         # Preprocessing and postprocessing for PCS image path
@@ -367,7 +368,9 @@ class SegmentAnything3(RoboflowCoreModel):
                     find_queries=[], images=[], raw_images=[pil_image]
                 )
                 # attach image
-                datapoint.images = [Sam3ImageDP(data=pil_image, objects=[], size=(h, w))]
+                datapoint.images = [
+                    Sam3ImageDP(data=pil_image, objects=[], size=(h, w))
+                ]
 
                 # Map prompt_index -> prompt_id to retrieve results later
                 prompt_ids: List[int] = []
