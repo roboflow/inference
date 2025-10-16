@@ -154,27 +154,37 @@ RUN find /usr/local/lib/python3.12 -name "onnxruntime*"
 RUN python -m pip install --break-system-packages wheel twine requests && \
     rm -f dist/* && \
     python .release/pypi/inference.core.setup.py bdist_wheel && \
-    python .release/pypi/inference.gpu.setup.py bdist_wheel
+    python .release/pypi/inference.gpu.setup.py bdist_wheel && \
+    python .release/pypi/inference.cli.setup.py bdist_wheel && \
+    python .release/pypi/inference.sdk.setup.py bdist_wheel
 # Build wheels directly without upgrading pip (Debian-installed pip issue)
 RUN python -m pip install --break-system-packages wheel twine requests && \
     rm -f dist/* && \
     python .release/pypi/inference.core.setup.py bdist_wheel && \
-    python .release/pypi/inference.gpu.setup.py bdist_wheel
+    python .release/pypi/inference.gpu.setup.py bdist_wheel && \
+    python .release/pypi/inference.cli.setup.py bdist_wheel && \
+    python .release/pypi/inference.sdk.setup.py bdist_wheel
 # Build wheels directly without upgrading pip (Debian-installed pip issue)
 RUN python -m pip install --break-system-packages wheel twine requests && \
     rm -f dist/* && \
     python .release/pypi/inference.core.setup.py bdist_wheel && \
-    python .release/pypi/inference.gpu.setup.py bdist_wheel
+    python .release/pypi/inference.gpu.setup.py bdist_wheel && \
+    python .release/pypi/inference.cli.setup.py bdist_wheel && \
+    python .release/pypi/inference.sdk.setup.py bdist_wheel
 # Build wheels directly without upgrading pip (Debian-installed pip issue)
 RUN python -m pip install --break-system-packages wheel twine requests && \
     rm -f dist/* && \
     python .release/pypi/inference.core.setup.py bdist_wheel && \
-    python .release/pypi/inference.gpu.setup.py bdist_wheel
+    python .release/pypi/inference.gpu.setup.py bdist_wheel && \
+    python .release/pypi/inference.cli.setup.py bdist_wheel && \
+    python .release/pypi/inference.sdk.setup.py bdist_wheel
 # Build wheels directly without upgrading pip (Debian-installed pip issue)
 RUN python -m pip install --break-system-packages wheel twine requests && \
     rm -f dist/* && \
     python .release/pypi/inference.core.setup.py bdist_wheel && \
-    python .release/pypi/inference.gpu.setup.py bdist_wheel
+    python .release/pypi/inference.gpu.setup.py bdist_wheel && \
+    python .release/pypi/inference.cli.setup.py bdist_wheel && \
+    python .release/pypi/inference.sdk.setup.py bdist_wheel
 
 # First install the GPU wheel with no dependencies to avoid re-installing onnxruntime-gpu
 RUN python -m pip install --break-system-packages --no-deps dist/inference_gpu*.whl
@@ -183,21 +193,41 @@ RUN python -m pip install --break-system-packages --no-deps dist/inference_gpu*.
 # Install only the wheels that were actually built
 RUN python -m pip install --break-system-packages \
     dist/inference_core*.whl \
+    dist/inference_cli*.whl \
+    dist/inference_sdk*.whl \
+    dist/inference_cli*.whl \
+    dist/inference_sdk*.whl \
     "setuptools<=75.5.0"
 RUN python -m pip install --break-system-packages \
     dist/inference_core*.whl \
+    dist/inference_cli*.whl \
+    dist/inference_sdk*.whl \
+    dist/inference_cli*.whl \
+    dist/inference_sdk*.whl \
     "setuptools<=75.5.0"
 # Install only the wheels that were actually built
 RUN python -m pip install --break-system-packages \
     dist/inference_core*.whl \
+    dist/inference_cli*.whl \
+    dist/inference_sdk*.whl \
+    dist/inference_cli*.whl \
+    dist/inference_sdk*.whl \
     "setuptools<=75.5.0"
 # Install only the wheels that were actually built
 RUN python -m pip install --break-system-packages \
     dist/inference_core*.whl \
+    dist/inference_cli*.whl \
+    dist/inference_sdk*.whl \
+    dist/inference_cli*.whl \
+    dist/inference_sdk*.whl \
     "setuptools<=75.5.0"
 # Install only the wheels that were actually built
 RUN python -m pip install --break-system-packages \
     dist/inference_core*.whl \
+    dist/inference_cli*.whl \
+    dist/inference_sdk*.whl \
+    dist/inference_cli*.whl \
+    dist/inference_sdk*.whl \
     "setuptools<=75.5.0"
 
 
