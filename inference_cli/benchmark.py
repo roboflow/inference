@@ -161,7 +161,7 @@ def api_speed(
             return None
 
     try:
-        if model_id == "sam3/concept_segment":
+        if model_id == "sam3/concept_segment" or model_id == "sam3/visual_segment":
             default_prompt = json.loads(default_prompt)
             run_sam3_concept_segment_api_speed_benchmark(
                 model_id=model_id,
