@@ -149,7 +149,12 @@ COPY . .
 RUN ln -s /usr/bin/python3 /usr/bin/python
 RUN ls -R /usr/local/lib/python3.12
 RUN find /usr/local/lib/python3.12 -name "onnxruntime*"
-RUN /bin/make create_wheels_for_gpu_notebook
+# Build wheels directly without Makefile to handle PEP 668
+RUN python -m pip install --system --break-system-packages --upgrade pip && \
+    python -m pip install --system --break-system-packages wheel twine requests && \
+    rm -f dist/* && \
+    python .release/pypi/inference.core.setup.py bdist_wheel && \
+    python .release/pypi/inference.gpu.setup.py bdist_wheel
 
 # First install the GPU wheel with no dependencies to avoid re-installing onnxruntime-gpu
 RUN uv pip install --system --break-system-packages --no-deps dist/inference_gpu*.whl
