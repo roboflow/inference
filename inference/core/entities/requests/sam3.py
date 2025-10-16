@@ -13,20 +13,54 @@ from inference.core.env import SAM3_MAX_PROMPT_BATCH_SIZE
 class Sam3Prompt(BaseModel):
     """Unified prompt that can contain text and/or geometry.
 
-    Geometry is normalized to [0,1] in request: boxes in XYWH, points in XY.
-    Labels accept 0/1 or booleans.
+    Absolute pixel coordinates are used for boxes. Labels accept 0/1 or booleans.
     """
 
     type: Optional[str] = Field(
         default=None, description="Optional hint: 'text' or 'visual'"
     )
     text: Optional[str] = Field(default=None)
-    boxes: Optional[List[List[float]]] = Field(
-        default=None, description="List of [x, y, w, h] normalized to 0-1"
+
+    # Absolute-coordinate boxes (preferred) in pixels.
+    # XYWH absolute pixels
+    class Box(BaseModel):
+        x: float
+        y: float
+        width: float
+        height: float
+
+    # XYXY absolute pixels
+    class BoxXYXY(BaseModel):
+        x0: float
+        y0: float
+        x1: float
+        y1: float
+
+    # Single unified boxes field; each entry can be XYWH or XYXY
+    boxes: Optional[List[Union[Box, BoxXYXY]]] = Field(
+        default=None,
+        description="Absolute pixel boxes as either XYWH or XYXY entries",
     )
     box_labels: Optional[List[Union[int, bool]]] = Field(
         default=None, description="List of 0/1 or booleans for boxes"
     )
+
+    @validator("boxes", always=True)
+    def _validate_visual_boxes(cls, boxes, values):
+        prompt_type = values.get("type")
+        if prompt_type == "visual":
+            if not boxes or len(boxes) == 0:
+                raise ValueError("Visual prompt requires at least one box")
+        return boxes
+
+    @validator("box_labels", always=True)
+    def _validate_box_labels(cls, labels, values):
+        boxes = values.get("boxes")
+        if labels is None:
+            return labels
+        if boxes is None or len(labels) != len(boxes):
+            raise ValueError("box_labels must match boxes length when provided")
+        return labels
 
 
 class Sam3InferenceRequest(BaseRequest):

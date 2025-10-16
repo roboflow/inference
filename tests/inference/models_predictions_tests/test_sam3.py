@@ -51,7 +51,20 @@ def test_sam3_segment_with_box_prompt(monkeypatch):
     box = [0.25, 0.25, 0.5, 0.5]
     req = Sam3SegmentationRequest(
         image={"type": "numpy", "value": img},
-        prompts=[Sam3Prompt(type="visual", boxes=[box], box_labels=[1])],
+        prompts=[
+            Sam3Prompt(
+                type="visual",
+                boxes=[
+                    Sam3Prompt.Box(
+                        x=box[0] * img.shape[1],
+                        y=box[1] * img.shape[0],
+                        width=box[2] * img.shape[1],
+                        height=box[3] * img.shape[0],
+                    )
+                ],
+                box_labels=[1],
+            )
+        ],
         output_prob_thresh=0.0,
     )
     resp = model.infer_from_request(req)
@@ -128,7 +141,18 @@ def test_sam3_segment_format_compatibility(monkeypatch):
     req = Sam3SegmentationRequest(
         image={"type": "numpy", "value": img},
         prompts=[
-            Sam3Prompt(type="visual", boxes=[[0.25, 0.25, 0.5, 0.5]], box_labels=[1])
+            Sam3Prompt(
+                type="visual",
+                boxes=[
+                    Sam3Prompt.Box(
+                        x=0.25 * img.shape[1],
+                        y=0.25 * img.shape[0],
+                        width=0.5 * img.shape[1],
+                        height=0.5 * img.shape[0],
+                    )
+                ],
+                box_labels=[1],
+            )
         ],
         output_prob_thresh=0.0,
     )

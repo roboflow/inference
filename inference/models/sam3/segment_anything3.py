@@ -181,21 +181,27 @@ def _build_visual_query(
     coco_id: int,
     h: int,
     w: int,
-    boxes_xywh_norm: Optional[List[List[float]]],
+    boxes: Optional[List[Any]],
     labels: Optional[List[Union[int, bool]]],
     text: Optional[str],
 ) -> FindQueryLoaded:
-    """Create a FindQueryLoaded for a visual (box) prompt.
+    """Create a FindQueryLoaded for a visual (box) prompt from absolute boxes.
 
-    Converts normalized XYWH boxes to pixel XYXY and casts labels to bools.
+    Accepts boxes as either XYWH (x,y,width,height) or XYXY (x0,y0,x1,y1) objects.
     """
-    xyxy: List[List[float]] = []
-    for x, y, bw, bh in boxes_xywh_norm or []:
-        x0 = x * w
-        y0 = y * h
-        x1 = x0 + bw * w
-        y1 = y0 + bh * h
-        xyxy.append([x0, y0, x1, y1])
+    xyxy_pixels: List[List[float]] = []
+    for b in boxes or []:
+        if hasattr(b, "x"):
+            x0 = float(b.x)
+            y0 = float(b.y)
+            x1 = x0 + float(b.width)
+            y1 = y0 + float(b.height)
+        else:
+            x0 = float(b.x0)
+            y0 = float(b.y0)
+            x1 = float(b.x1)
+            y1 = float(b.y1)
+        xyxy_pixels.append([x0, y0, x1, y1])
 
     labels_bool = [bool(int(v)) for v in (labels or [])]
 
@@ -205,7 +211,9 @@ def _build_visual_query(
         object_ids_output=[],
         is_exhaustive=True,
         query_processing_order=0,
-        input_bbox=(torch.tensor(xyxy, dtype=torch.float32) if xyxy else None),
+        input_bbox=(
+            torch.tensor(xyxy_pixels, dtype=torch.float32) if xyxy_pixels else None
+        ),
         input_bbox_label=(
             torch.tensor(labels_bool, dtype=torch.bool) if labels_bool else None
         ),
@@ -354,7 +362,14 @@ class SegmentAnything3(RoboflowCoreModel):
         # with self.sam3_lock:
         t1 = perf_counter()
         if isinstance(request, Sam3SegmentationRequest):
-            result = self.segment_image(**request.dict())
+            # Pass strongly-typed fields to preserve Sam3Prompt objects
+            result = self.segment_image(
+                image=request.image,
+                image_id=request.image_id,
+                prompts=request.prompts,
+                output_prob_thresh=request.output_prob_thresh or 0.5,
+                format=request.format or "polygon",
+            )
             # segment_image now returns either bytes or a response model
             return result
         else:
@@ -387,27 +402,16 @@ class SegmentAnything3(RoboflowCoreModel):
 
                 # Build prompts in order
                 prompts = prompts or []
-                # Normalize prompts that may arrive as dicts from request.dict()
-                normalized_prompts: List[Sam3Prompt] = []
-                for p in prompts:
-                    if isinstance(p, Sam3Prompt):
-                        normalized_prompts.append(p)
-                    elif isinstance(p, dict):
-                        try:
-                            normalized_prompts.append(Sam3Prompt(**p))
-                        except Exception as e:
-                            continue
-                prompts = normalized_prompts
 
                 # Map prompt_index -> prompt_id to retrieve results later
                 prompt_ids: List[int] = []
                 for idx, p in enumerate(prompts):
-                    if p.boxes:
+                    if getattr(p, "boxes", None):
                         q = _build_visual_query(
                             coco_id=idx,
                             h=h,
                             w=w,
-                            boxes_xywh_norm=p.boxes,
+                            boxes=p.boxes,
                             labels=p.box_labels or [],
                             text=p.text,
                         )
@@ -449,11 +453,13 @@ class SegmentAnything3(RoboflowCoreModel):
         # Batched prompt response (even for a single prompt)
         prompt_results: List[Sam3PromptResult] = []
         for idx, coco_id in enumerate(prompt_ids):
+            has_visual = bool(getattr(prompts[idx], "boxes", None))
+            num_boxes = len(prompts[idx].boxes or []) if has_visual else 0
             echo = Sam3PromptEcho(
                 prompt_index=idx,
-                type=("visual" if prompts[idx].boxes else "text"),
+                type=("visual" if has_visual else "text"),
                 text=prompts[idx].text,
-                num_boxes=(len(prompts[idx].boxes) if prompts[idx].boxes else 0),
+                num_boxes=num_boxes,
             )
             masks_np = _to_numpy_masks(processed[coco_id].get("masks"))
             scores = list(processed[coco_id].get("scores", []))

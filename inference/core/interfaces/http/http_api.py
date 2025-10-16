@@ -2390,8 +2390,6 @@ class HttpInterface(BaseInterface):
                     countinference: Optional[bool] = None,
                     service_secret: Optional[str] = None,
                 ):
-                    logger.debug(f"Reached /sam3/segment_image")
-
                     if inference_request.model_id.startswith("sam3/"):
                         self.model_manager.add_model(
                             inference_request.model_id,
