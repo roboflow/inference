@@ -120,6 +120,7 @@ def make_request(request_data: RequestData, request_method: RequestMethod) -> Re
         params=request_data.parameters,
         data=request_data.data,
         json=request_data.payload,
+        timeout=5,
     )
 
 
