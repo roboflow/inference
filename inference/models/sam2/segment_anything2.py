@@ -1,9 +1,9 @@
 import copy
 import hashlib
 from io import BytesIO
-from threading import Lock
+from threading import RLock
 from time import perf_counter
-from typing import Any, Dict, List, Optional, Tuple, TypedDict, Union
+from typing import Any, Dict, List, Optional, Tuple, TypedDict, Union, TypeVar
 
 import numpy as np
 import sam2.utils.misc
@@ -50,13 +50,14 @@ class LogitsCacheType(TypedDict):
     prompt_set: Sam2PromptSet
 
 
+T = TypeVar("T")
+
+
 class SegmentAnything2(RoboflowCoreModel):
     """SegmentAnything class for handling segmentation tasks.
 
     Attributes:
         sam: The segmentation model.
-        predictor: The predictor for the segmentation model.
-        ort_session: ONNX runtime inference session.
         embedding_cache: Cache for embeddings.
         image_size_cache: Cache for image sizes.
         embedding_cache_keys: Keys for the embedding cache.
@@ -90,14 +91,12 @@ class SegmentAnything2(RoboflowCoreModel):
         self.low_res_logits_cache_size = low_res_logits_cache_size
         self.embedding_cache_size = embedding_cache_size
 
-        self.predictor = SAM2ImagePredictor(self.sam)
-
         self.embedding_cache = {}
         self.image_size_cache = {}
         self.embedding_cache_keys = []
         self.low_res_logits_cache: Dict[Tuple[str, str], LogitsCacheType] = {}
         self.low_res_logits_cache_keys = []
-        self._state_lock = Lock()
+        self._state_lock = RLock()
         self.task_type = "unsupervised-segmentation"
 
     def get_infer_bucket_file_list(self) -> List[str]:
@@ -138,38 +137,41 @@ class SegmentAnything2(RoboflowCoreModel):
             >>> embed_image(img_array, image_id="sample123")
             (array([...]), (224, 224))
         """
-        if image_id and image_id in self.embedding_cache:
-            return (
-                self.embedding_cache[image_id],
-                self.image_size_cache[image_id],
-                image_id,
-            )
+        if image_id:
+            embedding_cache_content = self.embedding_cache.get(image_id)
+            image_size_content = self.image_size_cache.get(image_id)
+            if embedding_cache_content is not None and image_size_content is not None:
+                return embedding_cache_content, image_size_content, image_id
 
         img_in = self.preproc_image(image)
         if image_id is None:
             image_id = hashlib.md5(img_in.tobytes()).hexdigest()[:12]
 
-        if image_id in self.embedding_cache:
+        embedding_cache_content = self.embedding_cache.get(image_id)
+        image_size_content = self.image_size_cache.get(image_id)
+        if embedding_cache_content is not None and image_size_content is not None:
             return (
-                self.embedding_cache[image_id],
-                self.image_size_cache[image_id],
+                embedding_cache_content,
+                image_size_content,
                 image_id,
             )
 
         with torch.inference_mode():
-            self.predictor.set_image(img_in)
-            embedding_dict = self.predictor._features
+            predictor = SAM2ImagePredictor(self.sam)
+            predictor.set_image(img_in)
+            embedding_dict = predictor._features
 
-        self.embedding_cache[image_id] = embedding_dict
-        self.image_size_cache[image_id] = img_in.shape[:2]
-        if image_id in self.embedding_cache_keys:
-            self.embedding_cache_keys.remove(image_id)
-        self.embedding_cache_keys.append(image_id)
-        if len(self.embedding_cache_keys) > self.embedding_cache_size:
-            cache_key = self.embedding_cache_keys.pop(0)
-            del self.embedding_cache[cache_key]
-            del self.image_size_cache[cache_key]
-        return (embedding_dict, img_in.shape[:2], image_id)
+        with self._state_lock:
+            self.embedding_cache[image_id] = embedding_dict
+            self.image_size_cache[image_id] = img_in.shape[:2]
+            safe_remove_from_list(values=self.embedding_cache_keys, element=image_id)
+            self.embedding_cache_keys.append(image_id)
+            if len(self.embedding_cache_keys) > self.embedding_cache_size:
+                cache_key = safe_pop_from_list(values=self.embedding_cache_keys)
+                if cache_key is not None:
+                    safe_remove_from_dict(values=self.embedding_cache, key=cache_key)
+                    safe_remove_from_dict(values=self.image_size_cache, key=cache_key)
+            return embedding_dict, img_in.shape[:2], image_id
 
     def infer_from_request(self, request: Sam2InferenceRequest):
         """Performs inference based on the request type.
@@ -180,36 +182,35 @@ class SegmentAnything2(RoboflowCoreModel):
         Returns:
             Union[SamEmbeddingResponse, SamSegmentationResponse]: The inference response.
         """
-        with self._state_lock:
-            t1 = perf_counter()
-            if isinstance(request, Sam2EmbeddingRequest):
-                _, _, image_id = self.embed_image(**request.dict())
-                inference_time = perf_counter() - t1
-                return Sam2EmbeddingResponse(time=inference_time, image_id=image_id)
-            elif isinstance(request, Sam2SegmentationRequest):
-                masks, scores, low_resolution_logits = self.segment_image(
-                    **request.dict()
+        t1 = perf_counter()
+        if isinstance(request, Sam2EmbeddingRequest):
+            _, _, image_id = self.embed_image(**request.dict())
+            inference_time = perf_counter() - t1
+            return Sam2EmbeddingResponse(time=inference_time, image_id=image_id)
+        elif isinstance(request, Sam2SegmentationRequest):
+            masks, scores, low_resolution_logits = self.segment_image(
+                **request.dict()
+            )
+            if request.format == "json":
+                return turn_segmentation_results_into_api_response(
+                    masks=masks,
+                    scores=scores,
+                    mask_threshold=0.0,
+                    inference_start_timestamp=t1,
                 )
-                if request.format == "json":
-                    return turn_segmentation_results_into_api_response(
-                        masks=masks,
-                        scores=scores,
-                        mask_threshold=self.predictor.mask_threshold,
-                        inference_start_timestamp=t1,
-                    )
-                elif request.format == "binary":
-                    binary_vector = BytesIO()
-                    np.savez_compressed(
-                        binary_vector, masks=masks, low_res_masks=low_resolution_logits
-                    )
-                    binary_vector.seek(0)
-                    binary_data = binary_vector.getvalue()
-                    return binary_data
-                else:
-                    raise ValueError(f"Invalid format {request.format}")
-
+            elif request.format == "binary":
+                binary_vector = BytesIO()
+                np.savez_compressed(
+                    binary_vector, masks=masks, low_res_masks=low_resolution_logits
+                )
+                binary_vector.seek(0)
+                binary_data = binary_vector.getvalue()
+                return binary_data
             else:
-                raise ValueError(f"Invalid request type {type(request)}")
+                raise ValueError(f"Invalid format {request.format}")
+
+        else:
+            raise ValueError(f"Invalid request type {type(request)}")
 
     def preproc_image(self, image: InferenceRequestImage):
         """Preprocesses an image.
@@ -281,11 +282,11 @@ class SegmentAnything2(RoboflowCoreModel):
             embedding, original_image_size, image_id = self.embed_image(
                 image=image, image_id=image_id
             )
-
-            self.predictor._is_image_set = True
-            self.predictor._features = embedding
-            self.predictor._orig_hw = [original_image_size]
-            self.predictor._is_batch = False
+            predictor = SAM2ImagePredictor(self.sam)
+            predictor._is_image_set = True
+            predictor._features = embedding
+            predictor._orig_hw = [original_image_size]
+            predictor._is_batch = False
             args = dict()
             prompt_set: Sam2PromptSet
             if prompts:
@@ -306,7 +307,7 @@ class SegmentAnything2(RoboflowCoreModel):
             args = pad_points(args)
             if not any(args.values()):
                 args = {"point_coords": [[0, 0]], "point_labels": [-1], "box": None}
-            masks, scores, low_resolution_logits = self.predictor.predict(
+            masks, scores, low_resolution_logits = predictor.predict(
                 mask_input=mask_input,
                 multimask_output=multimask_output,
                 return_logits=True,
@@ -331,16 +332,17 @@ class SegmentAnything2(RoboflowCoreModel):
     ) -> None:
         logits = logits[:, None, :, :]
         prompt_id = hash_prompt_set(image_id, prompt_set)
-        self.low_res_logits_cache[prompt_id] = {
-            "logits": logits,
-            "prompt_set": prompt_set,
-        }
-        if prompt_id in self.low_res_logits_cache_keys:
-            self.low_res_logits_cache_keys.remove(prompt_id)
-        self.low_res_logits_cache_keys.append(prompt_id)
-        if len(self.low_res_logits_cache_keys) > self.low_res_logits_cache_size:
-            cache_key = self.low_res_logits_cache_keys.pop(0)
-            del self.low_res_logits_cache[cache_key]
+        with self._state_lock:
+            self.low_res_logits_cache[prompt_id] = {
+                "logits": logits,
+                "prompt_set": prompt_set,
+            }
+            safe_remove_from_list(values=self.low_res_logits_cache_keys, element=prompt_id)
+            self.low_res_logits_cache_keys.append(prompt_id)
+            if len(self.low_res_logits_cache_keys) > self.low_res_logits_cache_size:
+                cache_key = safe_pop_from_list(values=self.low_res_logits_cache_keys)
+                if cache_key is not None:
+                    safe_remove_from_dict(values=self.low_res_logits_cache, key=cache_key)
 
 
 def hash_prompt_set(image_id: str, prompt_set: Sam2PromptSet) -> Tuple[str, str]:
@@ -523,3 +525,25 @@ def pad_points(args: Dict[str, Any]) -> Dict[str, Any]:
                 "Can't have point labels without corresponding point coordinates"
             )
     return args
+
+
+
+def safe_remove_from_list(values: List[T], element: T) -> None:
+    try:
+        values.remove(element)
+    except ValueError:
+        pass
+
+
+def safe_pop_from_list(values: List[T]) -> Optional[T]:
+    try:
+        return values.pop(0)
+    except IndexError:
+        return None
+
+
+def safe_remove_from_dict(values: Dict[T, Any], key: T) -> None:
+    try:
+        del values[key]
+    except ValueError:
+        pass
