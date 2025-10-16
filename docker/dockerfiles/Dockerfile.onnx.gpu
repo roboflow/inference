@@ -34,7 +34,7 @@ COPY requirements/requirements.sam.txt \
     ./
 
 # Use uv for much faster package installation (WITHOUT onnxruntime-gpu, we'll build from source)
-RUN python -m pip install --break-system-packages \
+RUN uv pip install --system --break-system-packages \
     -r _requirements.txt \
     -r requirements.sam.txt \
     -r requirements.clip.txt \
@@ -93,11 +93,11 @@ RUN ./build.sh \
     --cmake_extra_defines onnxruntime_BUILD_UNIT_TESTS=OFF
 
 # Install the built ONNX Runtime wheel
-RUN python -m pip install --break-system-packages /tmp/onnxruntime/build/cuda13/Release/dist/onnxruntime_gpu-*.whl
+RUN uv pip install --system --break-system-packages /tmp/onnxruntime/build/cuda13/Release/dist/onnxruntime_gpu-*.whl
 
 # Install GPU-enabled PyTorch 2.9.0 with CUDA 13.0 support
 RUN uv pip uninstall torch torchvision torchaudio || true && \
-    python -m pip install --break-system-packages torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
+    uv pip install --system --break-system-packages torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
 
 # Remove any existing install and clone fresh
 RUN uv pip uninstall xformers || true && \
@@ -105,7 +105,7 @@ RUN uv pip uninstall xformers || true && \
     git clone --recursive https://github.com/facebookresearch/xformers.git /tmp/xformers
 
 WORKDIR /tmp/xformers
-RUN MAX_JOBS=8 CMAKE_BUILD_PARALLEL_LEVEL=8 python -m pip install --break-system-packages . --no-build-isolation -v
+RUN MAX_JOBS=8 CMAKE_BUILD_PARALLEL_LEVEL=8 uv pip install --system --break-system-packages . --no-build-isolation -v
 
 ENV CMAKE_BUILD_PARALLEL_LEVEL=4
 ENV MAX_JOBS=4
@@ -114,7 +114,7 @@ ENV SETUPTOOLS_BUILD_PARALLEL=1
 WORKDIR /tmp
 RUN git clone https://github.com/Dao-AILab/flash-attention.git
 WORKDIR /tmp/flash-attention
-RUN MAX_JOBS=4 CMAKE_BUILD_PARALLEL_LEVEL=4 python -m pip install --break-system-packages . --no-build-isolation -v
+RUN MAX_JOBS=4 CMAKE_BUILD_PARALLEL_LEVEL=4 uv pip install --system --break-system-packages . --no-build-isolation -v
 
 RUN ls -R /usr/local/lib/python3.12
 
