@@ -2317,7 +2317,7 @@ class HttpInterface(BaseInterface):
                 ):
                     logger.debug(f"Reached /sam3/embed_image")
 
-                    from inference.models.sam3.interactive_image_segmentation import (
+                    from inference.models.sam3.visual_segmentation import (
                         Sam3ForInteractiveImageSegmentation,
                     )
 
@@ -2354,7 +2354,7 @@ class HttpInterface(BaseInterface):
                     service_secret: Optional[str] = None,
                 ):
 
-                    from inference.models.sam3.interactive_image_segmentation import (
+                    from inference.models.sam3.visual_segmentation import (
                         Sam3ForInteractiveImageSegmentation,
                     )
 
