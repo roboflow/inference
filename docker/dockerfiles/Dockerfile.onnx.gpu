@@ -61,29 +61,26 @@ WORKDIR /tmp
 RUN git clone --recursive --branch main https://github.com/microsoft/onnxruntime.git /tmp/onnxruntime
 WORKDIR /tmp/onnxruntime
 
-# Build ONNX Runtime with CUDA 13 for DGX Spark (using Release like working example)
+# Build ONNX Runtime with CUDA 13 - using exact working config from GitHub PR
 RUN ./build.sh \
     --config Release \
-    --build_shared_lib \
+    --build_dir build/cuda13 \
     --parallel 16 \
-    --skip_submodule_sync \
     --use_cuda \
+    --cuda_version 13.0 \
     --cuda_home /usr/local/cuda \
     --cudnn_home /usr/local/cuda \
-    --cuda_version=13.0 \
     --build_wheel \
     --skip_tests \
-    --allow_running_as_root \
     --cmake_generator Ninja \
-    --use_binskim_compliant_compile_flags \
     --enable_cuda_nhwc_ops \
+    --use_binskim_compliant_compile_flags \
+    --allow_running_as_root \
     --cmake_extra_defines CMAKE_CUDA_ARCHITECTURES="120-real;121-real;121-virtual" \
-    --cmake_extra_defines CMAKE_CXX_FLAGS="-Wno-psabi -Wno-unused-parameter" \
-    --cmake_extra_defines CMAKE_CUDA_FLAGS="--expt-relaxed-constexpr -Wno-deprecated-gpu-targets" \
     --cmake_extra_defines onnxruntime_BUILD_UNIT_TESTS=OFF
 
 # Install the built ONNX Runtime wheel
-RUN uv pip install --system --break-system-packages /tmp/onnxruntime/build/Linux/Release/dist/onnxruntime_gpu-*.whl
+RUN uv pip install --system --break-system-packages /tmp/onnxruntime/build/cuda13/Release/dist/onnxruntime_gpu-*.whl
 
 # Install GPU-enabled PyTorch 2.9.0 with CUDA 13.0 support
 RUN uv pip uninstall torch torchvision torchaudio || true && \
