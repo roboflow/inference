@@ -1,9 +1,15 @@
+import base64
 from copy import deepcopy
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from inference_sdk.config import EXECUTION_ID_HEADER, execution_id
+from inference_sdk.config import (
+    EXECUTION_ID_HEADER,
+    INFERENCE_INTERNAL_PASSWORD,
+    INFERENCE_INTERNAL_USERNAME,
+    execution_id,
+)
 from inference_sdk.http.utils.iterables import make_batches
 from inference_sdk.http.utils.requests import inject_images_into_payload
 
@@ -65,6 +71,14 @@ def prepare_requests_data(
             batch_size=max_batch_size,
         )
     )
+    if (
+        INFERENCE_INTERNAL_USERNAME is not None
+        and INFERENCE_INTERNAL_PASSWORD is not None
+    ):
+        headers = headers.copy()
+        headers["Authorization"] = (
+            f"Basic {base64.b64encode(f'{INFERENCE_INTERNAL_USERNAME}:{INFERENCE_INTERNAL_PASSWORD}'.encode()).decode()}"
+        )
     requests_data = []
     for batch_inference_inputs in batches:
         request_data = assembly_request_data(

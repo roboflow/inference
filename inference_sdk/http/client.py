@@ -2414,15 +2414,6 @@ class InferenceHTTPClient:
                 headers = headers.copy()
                 headers[EXECUTION_ID_HEADER] = execution_id_value
 
-            if (
-                INFERENCE_INTERNAL_USERNAME is not None
-                and INFERENCE_INTERNAL_PASSWORD is not None
-            ):
-                headers = headers.copy()
-                headers["Authorization"] = (
-                    f"Basic {base64.b64encode(f'{INFERENCE_INTERNAL_USERNAME}:{INFERENCE_INTERNAL_PASSWORD}'.encode()).decode()}"
-                )
-
             requests_data.extend(
                 prepare_requests_data(
                     url=f"{self.__api_url}/{endpoint}",
