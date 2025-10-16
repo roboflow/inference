@@ -2299,7 +2299,7 @@ class HttpInterface(BaseInterface):
             if CORE_MODEL_SAM3_ENABLED:
 
                 @app.post(
-                    "/seg-preview/embed_image",
+                    "/sam3/embed_image",
                     response_model=Sam3EmbeddingResponse,
                     summary="Seg preview Image Embeddings",
                     description="Run the  Model to embed image data.",
@@ -2307,7 +2307,7 @@ class HttpInterface(BaseInterface):
                 @with_route_exceptions
                 @usage_collector("request")
                 def sam3_embed_image(
-                    inference_request: Sam3EmbeddingRequest,
+                    inference_request: Sam2EmbeddingRequest,
                     request: Request,
                     api_key: Optional[str] = Query(
                         None,
@@ -2317,24 +2317,59 @@ class HttpInterface(BaseInterface):
                     service_secret: Optional[str] = None,
                 ):
                     logger.debug(f"Reached /sam3/embed_image")
-                    if inference_request.model_id.startswith("sam3/"):
-                        self.model_manager.add_model(
-                            inference_request.model_id,
-                            api_key=api_key,
-                            endpoint_type=ModelEndpointType.CORE_MODEL,
-                            countinference=countinference,
-                            service_secret=service_secret,
-                        )
-                    else:
-                        self.model_manager.add_model(
-                            inference_request.model_id,
-                            api_key=api_key,
-                            endpoint_type=ModelEndpointType.ORT,
-                            countinference=countinference,
-                            service_secret=service_secret,
-                        )
+
+                    from inference.models.sam3.interactive_image_segmentation import (
+                        Sam3ForInteractiveImageSegmentation,
+                    )
+
+                    self.model_manager.add_model(
+                        "sam3/sam3_video_model_only",
+                        api_key=api_key,
+                        endpoint_type=ModelEndpointType.CORE_MODEL,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                        model_class_override=Sam3ForInteractiveImageSegmentation,
+                    )
+
                     model_response = self.model_manager.infer_from_request_sync(
-                        inference_request.model_id, inference_request
+                        "sam3/sam3_video_model_only", inference_request
+                    )
+                    return model_response
+
+                @app.post(
+                    "/sam3/visual_segment",
+                    response_model=Sam2SegmentationResponse,
+                    summary="Seg preview Image Segmentation",
+                    description="Run the segmentations for image data.",
+                )
+                @with_route_exceptions
+                @usage_collector("request")
+                def sam3_visual_segment(
+                    inference_request: Sam2SegmentationRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
+                ):
+
+                    from inference.models.sam3.interactive_image_segmentation import (
+                        Sam3ForInteractiveImageSegmentation,
+                    )
+
+                    self.model_manager.add_model(
+                        "sam3/sam3_video_model_only",
+                        api_key=api_key,
+                        endpoint_type=ModelEndpointType.CORE_MODEL,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                        model_class_override=Sam3ForInteractiveImageSegmentation,
+                    )
+
+                    model_response = self.model_manager.infer_from_request_sync(
+                        "sam3/sam3_video_model_only", inference_request
                     )
                     return model_response
 

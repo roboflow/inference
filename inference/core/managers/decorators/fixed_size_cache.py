@@ -46,6 +46,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
         endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
         countinference: Optional[bool] = None,
         service_secret: Optional[str] = None,
+        model_class_override: Optional[any] = None,
     ) -> None:
         """Adds a model to the manager and evicts the least recently used if the cache is full.
 
@@ -115,6 +116,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
                 endpoint_type=endpoint_type,
                 countinference=countinference,
                 service_secret=service_secret,
+                model_class_override=model_class_override,
             )
         except Exception as error:
             logger.debug(

@@ -62,6 +62,7 @@ class ModelManager:
         endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
         countinference: Optional[bool] = None,
         service_secret: Optional[str] = None,
+        model_class_override: Optional[any] = None,
     ) -> None:
         """Adds a new model to the manager.
 
@@ -106,6 +107,11 @@ class ModelManager:
                     countinference=countinference,
                     service_secret=service_secret,
                 )
+
+                # (╯°□°）╯︵ ┻━┻
+                if model_class_override is not None:
+                    model_class = model_class_override
+
                 model = model_class(
                     model_id=model_id,
                     api_key=api_key,
