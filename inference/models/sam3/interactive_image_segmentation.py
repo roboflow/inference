@@ -199,7 +199,8 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
                     return turn_segmentation_results_into_api_response(
                         masks=masks,
                         scores=scores,
-                        mask_threshold=self.predictor.mask_threshold,
+                        # mask_threshold=predictor.mask_threshold,
+                        mask_threshold=0.0,
                         inference_start_timestamp=t1,
                     )
                 elif request.format == "binary":
