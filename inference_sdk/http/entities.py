@@ -88,6 +88,7 @@ class HTTPClientMode(str, Enum):
     V0 = "v0"
     V1 = "v1"
     SAM3_CONCEPT_SEGMENT = "sam3_concept_segment"
+    SAM3_VISUAL_SEGMENT = "sam3_visual_segment"
 
 
 class VisualisationResponseFormat(str, Enum):

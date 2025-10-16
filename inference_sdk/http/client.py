@@ -311,6 +311,15 @@ class InferenceHTTPClient:
         self.__client_mode = HTTPClientMode.SAM3_CONCEPT_SEGMENT
         return self
 
+    def select_sam3_visual_segment(self) -> "InferenceHTTPClient":
+        """Select SAM3 visual segment for client operations.
+
+        Returns:
+            InferenceHTTPClient: The client instance with SAM3 visual segment selected.
+        """
+        self.__client_mode = HTTPClientMode.SAM3_VISUAL_SEGMENT
+        return self
+
     @contextmanager
     def use_api_v0(self) -> Generator["InferenceHTTPClient", None, None]:
         """Temporarily use API version 0 for client operations.
@@ -440,8 +449,11 @@ class InferenceHTTPClient:
             HTTPCallErrorError: If there is an error in the HTTP call.
             HTTPClientError: If there is an error with the server connection.
         """
-        if self.__client_mode is HTTPClientMode.SAM3_CONCEPT_SEGMENT:
-            return self.infer_from_sam3_concept_segment(
+        if (
+            self.__client_mode is HTTPClientMode.SAM3_CONCEPT_SEGMENT
+            or self.__client_mode is HTTPClientMode.SAM3_VISUAL_SEGMENT
+        ):
+            return self.infer_from_sam3(
                 inference_input=inference_input,
                 model_id=model_id,
             )
@@ -2347,16 +2359,14 @@ class InferenceHTTPClient:
         if self.__client_mode is not HTTPClientMode.V1:
             raise WrongClientModeError("Use client mode `v1` to run this operation.")
 
-    def infer_from_sam3_concept_segment(
+    def infer_from_sam3(
         self,
         inference_input: Union[
             ImagesReferenceWithPrompt, List[ImagesReferenceWithPrompt]
         ],
-        model_id: Optional[str] = None,
     ) -> Union[dict, List[dict]]:
-        requests_data = self._prepare_sam_3_concept_segment_request_data(
+        requests_data = self._prepare_sam_3_request_data(
             inference_input=inference_input,
-            model_id=model_id,
         )
         responses = self._execute_infer_from_api_request(
             requests_data=requests_data,
@@ -2364,7 +2374,7 @@ class InferenceHTTPClient:
         # TODO: Adjust predictions to client scaling factor (not required when benchmarking)
         return responses
 
-    def _prepare_sam_3_concept_segment_request_data(
+    def _prepare_sam_3_request_data(
         self,
         inference_input: Union[
             ImagesReferenceWithPrompt, List[ImagesReferenceWithPrompt]
@@ -2372,8 +2382,13 @@ class InferenceHTTPClient:
         model_id: Optional[str] = None,
         format: str = "polygon",
         output_prob_thresh: float = 0.5,
-        endpoint: str = "sam3/concept_segment",
     ) -> List[RequestData]:
+        if self.__client_mode is HTTPClientMode.SAM3_CONCEPT_SEGMENT:
+            endpoint = "sam3/concept_segment"
+        elif self.__client_mode is HTTPClientMode.SAM3_VISUAL_SEGMENT:
+            endpoint = "sam3/visual_segment"
+        else:
+            raise ValueError("Unsupported client mode")
         model_id_to_be_used = model_id or self.__selected_model
         _ensure_model_is_selected(model_id=model_id_to_be_used)
         _ensure_api_key_provided(api_key=self.__api_key)

@@ -97,7 +97,7 @@ def run_infer_api_speed_benchmark(
     )
 
 
-def run_sam3_concept_segment_api_speed_benchmark(
+def run_sam3_api_speed_benchmark(
     model_id: str,
     dataset_reference: str,
     host: str,
@@ -124,7 +124,10 @@ def run_sam3_concept_segment_api_speed_benchmark(
         model_configuration=None,
     )
     client.select_model(model_id=model_id)
-    client.select_sam3_concept_segment()
+    if model_id == "sam3/concept_segment":
+        client.select_sam3_concept_segment()
+    elif model_id == "sam3/visual_segment":
+        client.select_sam3_visual_segment()
     benchmark_results: InferenceStatistics = coordinate_infer_api_speed_benchmark(
         client=client,
         images=dataset_images_with_prompts,

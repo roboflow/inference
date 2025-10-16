@@ -262,8 +262,11 @@ def execute_infer_api_request(
     payload = images[:request_batch_size]
     start = time.time()
     try:
-        if client.client_mode is HTTPClientMode.SAM3_CONCEPT_SEGMENT:
-            request_data = client._prepare_sam_3_concept_segment_request_data(
+        if (
+            client.client_mode is HTTPClientMode.SAM3_CONCEPT_SEGMENT
+            or client.client_mode is HTTPClientMode.SAM3_VISUAL_SEGMENT
+        ):
+            request_data = client._prepare_sam_3_request_data(
                 inference_input=payload,
             )
         elif client.client_mode is HTTPClientMode.V0:

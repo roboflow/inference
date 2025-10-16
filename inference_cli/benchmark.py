@@ -8,7 +8,7 @@ from inference_cli.lib.benchmark.dataset import PREDEFINED_DATASETS
 from inference_cli.lib.benchmark_adapter import (
     run_infer_api_speed_benchmark,
     run_python_package_speed_benchmark,
-    run_sam3_concept_segment_api_speed_benchmark,
+    run_sam3_api_speed_benchmark,
     run_workflow_api_speed_benchmark,
 )
 
@@ -163,7 +163,7 @@ def api_speed(
     try:
         if model_id == "sam3/concept_segment" or model_id == "sam3/visual_segment":
             default_prompt = json.loads(default_prompt)
-            run_sam3_concept_segment_api_speed_benchmark(
+            run_sam3_api_speed_benchmark(
                 model_id=model_id,
                 dataset_reference=dataset_reference,
                 host=host,
