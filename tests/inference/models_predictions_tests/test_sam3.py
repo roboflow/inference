@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from inference.core.entities.requests.sam3 import Sam3SegmentationRequest
+from inference.core.entities.requests.sam3 import Sam3SegmentationRequest, Sam3Prompt
 
 try:
     from inference.models.sam3 import SegmentAnything3
@@ -30,13 +30,12 @@ def test_sam3_embed_and_segment_with_text(monkeypatch):
 
     req = Sam3SegmentationRequest(
         image={"type": "numpy", "value": img},
-        text="object",
+        prompts=[Sam3Prompt(type="text", text="object")],
         output_prob_thresh=0.0,
     )
     resp = model.infer_from_request(req)
     assert resp.time >= 0
-    # Predictions may be empty depending on checkpoint/text; just ensure well-formed structure
-    assert hasattr(resp, "predictions")
+    assert hasattr(resp, "prompt_results")
 
 
 @pytest.mark.skipif(SegmentAnything3 is None, reason="SAM3 not installed")
@@ -52,12 +51,11 @@ def test_sam3_segment_with_box_prompt(monkeypatch):
     box = [0.25, 0.25, 0.5, 0.5]
     req = Sam3SegmentationRequest(
         image={"type": "numpy", "value": img},
-        boxes=[box],
-        box_labels=[1],
+        prompts=[Sam3Prompt(type="visual", boxes=[box], box_labels=[1])],
         output_prob_thresh=0.0,
     )
     resp = model.infer_from_request(req)
-    assert hasattr(resp, "predictions")
+    assert hasattr(resp, "prompt_results")
 
 
 @pytest.mark.skipif(SegmentAnything3 is None, reason="SAM3 not installed")
@@ -72,22 +70,21 @@ def test_sam3_segment_with_rle_format(monkeypatch):
 
     req = Sam3SegmentationRequest(
         image={"type": "numpy", "value": img},
-        text="object",
+        prompts=[Sam3Prompt(type="text", text="object")],
         format="rle",
         output_prob_thresh=0.0,
     )
     resp = model.infer_from_request(req)
     assert resp.time >= 0
-    # Predictions may be empty depending on checkpoint/text; just ensure well-formed structure
-    assert hasattr(resp, "predictions")
-
-    # If there are predictions, verify RLE structure
-    if resp.predictions:
-        pred = resp.predictions[0]  # Check first prediction
-        assert pred.format == "rle"
-        assert isinstance(pred.masks, dict)
-        assert "size" in pred.masks
-        assert "counts" in pred.masks
+    assert hasattr(resp, "prompt_results")
+    if resp.prompt_results:
+        first = resp.prompt_results[0]
+        if first.predictions:
+            pred = first.predictions[0]
+            assert pred.format == "rle"
+            assert isinstance(pred.masks, dict)
+            assert "size" in pred.masks
+            assert "counts" in pred.masks
 
 
 @pytest.mark.skipif(SegmentAnything3 is None, reason="SAM3 not installed")
@@ -102,20 +99,19 @@ def test_sam3_segment_polygon_format_explicit(monkeypatch):
 
     req = Sam3SegmentationRequest(
         image={"type": "numpy", "value": img},
-        text="object",
+        prompts=[Sam3Prompt(type="text", text="object")],
         format="polygon",
         output_prob_thresh=0.0,
     )
     resp = model.infer_from_request(req)
     assert resp.time >= 0
-    # Predictions may be empty depending on checkpoint/text; just ensure well-formed structure
-    assert hasattr(resp, "predictions")
-
-    # If there are predictions, verify polygon structure
-    if resp.predictions:
-        pred = resp.predictions[0]  # Check first prediction
-        assert pred.format == "polygon"
-        assert isinstance(pred.masks, list)
+    assert hasattr(resp, "prompt_results")
+    if resp.prompt_results:
+        first = resp.prompt_results[0]
+        if first.predictions:
+            pred = first.predictions[0]
+            assert pred.format == "polygon"
+            assert isinstance(pred.masks, list)
 
 
 @pytest.mark.skipif(SegmentAnything3 is None, reason="SAM3 not installed")
@@ -131,15 +127,12 @@ def test_sam3_segment_format_compatibility(monkeypatch):
     # Without specifying format (should use default "polygon")
     req = Sam3SegmentationRequest(
         image={"type": "numpy", "value": img},
-        boxes=[[0.25, 0.25, 0.5, 0.5]],
-        box_labels=[1],
+        prompts=[
+            Sam3Prompt(type="visual", boxes=[[0.25, 0.25, 0.5, 0.5]], box_labels=[1])
+        ],
         output_prob_thresh=0.0,
     )
     resp = model.infer_from_request(req)
-    assert hasattr(resp, "predictions")
-
-    # Verify it uses polygon by default
-    if resp.predictions:
-        assert resp.predictions[0].format == "polygon"
-
-
+    assert hasattr(resp, "prompt_results")
+    if resp.prompt_results and resp.prompt_results[0].predictions:
+        assert resp.prompt_results[0].predictions[0].format == "polygon"

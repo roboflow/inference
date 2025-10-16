@@ -1,11 +1,12 @@
 from typing import List, Optional, Union
 
-from pydantic import BaseModel, Field, validator, root_validator
+from pydantic import BaseModel, Field, validator
 
 from inference.core.entities.requests.inference import (
     BaseRequest,
     InferenceRequestImage,
 )
+
 from inference.core.env import SAM3_MAX_PROMPT_BATCH_SIZE
 
 
@@ -26,13 +27,6 @@ class Sam3Prompt(BaseModel):
     box_labels: Optional[List[Union[int, bool]]] = Field(
         default=None, description="List of 0/1 or booleans for boxes"
     )
-    points: Optional[List[List[float]]] = Field(
-        default=None,
-        description="List of [x, y] normalized to 0-1 (PCS ignores points)",
-    )
-    point_labels: Optional[List[Union[int, bool]]] = Field(
-        default=None, description="List of 0/1 or booleans for points"
-    )
 
 
 class Sam3InferenceRequest(BaseRequest):
@@ -48,16 +42,6 @@ class Sam3InferenceRequest(BaseRequest):
     )
 
 
-class Sam3EmbeddingRequest(Sam3InferenceRequest):
-    image: Optional[InferenceRequestImage] = Field(
-        default=None, description="The image to be embedded. Optional for caching."
-    )
-    image_id: Optional[str] = Field(
-        default=None,
-        description="Optional ID for caching embeddings.",
-    )
-
-
 class Sam3SegmentationRequest(Sam3InferenceRequest):
     format: Optional[str] = Field(
         default="polygon",
@@ -67,61 +51,21 @@ class Sam3SegmentationRequest(Sam3InferenceRequest):
     image_id: Optional[str] = Field(
         default=None, description="Optional ID for caching embeddings."
     )
-    # Legacy single-prompt fields (backward-compatible)
-    text: Optional[str] = Field(
-        default=None, description="Text query for open-vocabulary segmentation."
-    )
-    points: Optional[List[List[float]]] = Field(
-        default=None,
-        description="List of [x, y] points normalized to 0-1. Used only with instance_prompt=True.",
-    )
-    point_labels: Optional[List[int]] = Field(
-        default=None, description="List of 0/1 labels for points."
-    )
-    boxes: Optional[List[List[float]]] = Field(
-        default=None,
-        description="List of [x, y, w, h] boxes normalized to 0-1.",
-    )
-    box_labels: Optional[List[int]] = Field(
-        default=None, description="List of 0/1 labels for boxes."
-    )
-    instance_prompt: Optional[bool] = Field(
-        default=False, description="Enable instance tracking style point prompts."
-    )
     output_prob_thresh: Optional[float] = Field(
         default=0.5, description="Score threshold for outputs."
     )
 
-    # New unified prompts list for batched prompts (preferred)
-    prompts: Optional[List[Sam3Prompt]] = Field(
-        default=None, description="List of unified prompts (text and/or visual)."
+    # Unified prompts list (required)
+    prompts: List[Sam3Prompt] = Field(
+        description="List of prompts (text and/or visual)", min_items=1
     )
 
-    @root_validator(skip_on_failure=True)
-    def _normalize_prompts(cls, values):
-        prompts = values.get("prompts")
-        # If prompts not provided, wrap legacy fields into a single prompt when present
-        if not prompts:
-            legacy_any = any(
-                values.get(k) is not None
-                for k in ["text", "boxes", "box_labels", "points", "point_labels"]
+    @validator("prompts")
+    def _validate_prompts(cls, prompts: List[Sam3Prompt]):
+        if not prompts or len(prompts) == 0:
+            raise ValueError("At least one prompt is required")
+        if len(prompts) > SAM3_MAX_PROMPT_BATCH_SIZE:
+            raise ValueError(
+                f"Exceeded SAM3_MAX_PROMPT_BATCH_SIZE={SAM3_MAX_PROMPT_BATCH_SIZE}: got {len(prompts)}"
             )
-            if legacy_any:
-                prompts = [
-                    Sam3Prompt(
-                        type="visual" if values.get("boxes") else "text",
-                        text=values.get("text"),
-                        boxes=values.get("boxes"),
-                        box_labels=values.get("box_labels"),
-                        points=values.get("points"),
-                        point_labels=values.get("point_labels"),
-                    )
-                ]
-        # Enforce max prompts limit
-        if prompts:
-            if len(prompts) > SAM3_MAX_PROMPT_BATCH_SIZE:
-                raise ValueError(
-                    f"Exceeded SAM3_MAX_PROMPT_BATCH_SIZE={SAM3_MAX_PROMPT_BATCH_SIZE}: got {len(prompts)}"
-                )
-            values["prompts"] = prompts
-        return values
+        return prompts

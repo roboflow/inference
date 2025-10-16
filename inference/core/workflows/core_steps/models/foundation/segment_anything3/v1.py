@@ -268,35 +268,20 @@ class SegmentAnything3BlockV1(WorkflowBlock):
                 model_id, inference_request
             )
 
-            # Unpack response: single-prompt or batch
+            # Unpack unified batch response
             class_predictions = []
-            if isinstance(sam3_response, Sam3BatchSegmentationResponse):
-                # Multi-prompt batch response
-                for prompt_result in sam3_response.prompt_results:
-                    idx = prompt_result.prompt_index
-                    class_name = class_names[idx] if idx < len(class_names) else None
-                    class_pred = convert_sam3_segmentation_response_to_inference_instances_seg_response(
-                        sam3_segmentation_predictions=prompt_result.predictions,
-                        image=single_image,
-                        prompt_class_ids=prompt_class_ids,
-                        prompt_class_names=prompt_class_names,
-                        prompt_detection_ids=prompt_detection_ids,
-                        threshold=threshold,
-                        text_prompt=class_name,
-                        specific_class_id=idx,
-                    )
-                    class_predictions.extend(class_pred.predictions)
-            else:
-                # Legacy single-prompt response
+            for prompt_result in sam3_response.prompt_results:
+                idx = prompt_result.prompt_index
+                class_name = class_names[idx] if idx < len(class_names) else None
                 class_pred = convert_sam3_segmentation_response_to_inference_instances_seg_response(
-                    sam3_segmentation_predictions=sam3_response.predictions,
+                    sam3_segmentation_predictions=prompt_result.predictions,
                     image=single_image,
                     prompt_class_ids=prompt_class_ids,
                     prompt_class_names=prompt_class_names,
                     prompt_detection_ids=prompt_detection_ids,
                     threshold=threshold,
-                    text_prompt=class_names[0] if class_names else None,
-                    specific_class_id=0,
+                    text_prompt=class_name,
+                    specific_class_id=idx,
                 )
                 class_predictions.extend(class_pred.predictions)
 

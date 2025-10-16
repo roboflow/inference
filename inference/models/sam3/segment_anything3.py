@@ -11,15 +11,12 @@ from pycocotools import mask as mask_utils
 
 from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.entities.requests.sam3 import (
-    Sam3EmbeddingRequest,
     Sam3InferenceRequest,
     Sam3SegmentationRequest,
     Sam3Prompt,
 )
 from inference.core.entities.responses.sam3 import (
-    Sam3EmbeddingResponse,
     Sam3SegmentationPrediction,
-    Sam3SegmentationResponse,
     Sam3BatchSegmentationResponse,
     Sam3PromptEcho,
     Sam3PromptResult,
@@ -55,7 +52,6 @@ from inference.core.utils.postprocess import masks2multipoly
 import sam3
 from PIL import Image
 
-print("sam3.__version__", sam3.__version__)
 
 # SAM3 batched PCS utilities
 from sam3.train.transforms.basic_for_api import (
@@ -152,6 +148,81 @@ def _masks_to_predictions(
     return preds
 
 
+def _build_text_query(
+    coco_id: int,
+    h: int,
+    w: int,
+    text: Optional[str],
+) -> FindQueryLoaded:
+    """Create a FindQueryLoaded for a text-only prompt."""
+    return FindQueryLoaded(
+        query_text=text if text is not None else "visual",
+        image_id=0,
+        object_ids_output=[],
+        is_exhaustive=True,
+        query_processing_order=0,
+        input_bbox=None,
+        input_bbox_label=None,
+        input_points=None,
+        semantic_target=None,
+        is_pixel_exhaustive=None,
+        inference_metadata=InferenceMetadata(
+            coco_image_id=coco_id,
+            original_image_id=coco_id,
+            original_category_id=1,
+            original_size=(h, w),
+            object_id=0,
+            frame_index=0,
+        ),
+    )
+
+
+def _build_visual_query(
+    coco_id: int,
+    h: int,
+    w: int,
+    boxes_xywh_norm: Optional[List[List[float]]],
+    labels: Optional[List[Union[int, bool]]],
+    text: Optional[str],
+) -> FindQueryLoaded:
+    """Create a FindQueryLoaded for a visual (box) prompt.
+
+    Converts normalized XYWH boxes to pixel XYXY and casts labels to bools.
+    """
+    xyxy: List[List[float]] = []
+    for x, y, bw, bh in boxes_xywh_norm or []:
+        x0 = x * w
+        y0 = y * h
+        x1 = x0 + bw * w
+        y1 = y0 + bh * h
+        xyxy.append([x0, y0, x1, y1])
+
+    labels_bool = [bool(int(v)) for v in (labels or [])]
+
+    return FindQueryLoaded(
+        query_text=text if text is not None else "visual",
+        image_id=0,
+        object_ids_output=[],
+        is_exhaustive=True,
+        query_processing_order=0,
+        input_bbox=(torch.tensor(xyxy, dtype=torch.float32) if xyxy else None),
+        input_bbox_label=(
+            torch.tensor(labels_bool, dtype=torch.bool) if labels_bool else None
+        ),
+        input_points=None,
+        semantic_target=None,
+        is_pixel_exhaustive=None,
+        inference_metadata=InferenceMetadata(
+            coco_image_id=coco_id,
+            original_image_id=coco_id,
+            original_category_id=1,
+            original_size=(h, w),
+            object_id=0,
+            frame_index=0,
+        ),
+    )
+
+
 # its bith a core model and fine tuned model...
 class SegmentAnything3(RoboflowCoreModel):
     """SAM3 wrapper with a similar interface to SAM2 in this codebase."""
@@ -203,40 +274,6 @@ class SegmentAnything3(RoboflowCoreModel):
     def model_artifact_bucket(self):
         # Use CORE bucket for base SAM3, standard INFER bucket for fine-tuned models
         return CORE_MODEL_BUCKET if self._is_core_sam3_endpoint() else INFER_BUCKET
-
-    def _find_bpe_url(self, api_data: Dict[str, Any]) -> Optional[str]:
-        # Best-effort discovery of BPE URL in ORT response payloads
-        candidates: List[str] = []
-
-        def _maybe_add(value: Any):
-            if isinstance(value, str):
-                candidates.append(value)
-
-        # Common locations
-        _maybe_add(api_data.get("bpe"))
-        _maybe_add(api_data.get("bpe_url"))
-        ort = api_data.get("ort") if isinstance(api_data, dict) else None
-        if isinstance(ort, dict):
-            _maybe_add(ort.get("bpe"))
-            _maybe_add(ort.get("bpe_url"))
-            env = ort.get("environment")
-            if isinstance(env, dict):
-                for k in ("sam3_bpe_url", "bpe_url", "bpe"):
-                    _maybe_add(env.get(k))
-        env = api_data.get("environment")
-        if isinstance(env, dict):
-            for k in ("sam3_bpe_url", "bpe_url", "bpe"):
-                _maybe_add(env.get(k))
-
-        # Prefer gzipped vocab files
-        for url in candidates:
-            if isinstance(url, str) and url.endswith(".gz"):
-                return url
-        # Fallback: any url-ish string containing "bpe"
-        for url in candidates:
-            if isinstance(url, str) and "bpe" in url.lower():
-                return url
-        return None
 
     def download_weights(self) -> None:
         infer_bucket_files = self.get_infer_bucket_file_list()
@@ -313,27 +350,10 @@ class SegmentAnything3(RoboflowCoreModel):
         np_image = load_image_rgb(image)
         return np_image
 
-    # Embedding cache removed for SAM3 PCS path; images processed per request
-
-    def embed_image(
-        self,
-        image: Optional[InferenceRequestImage],
-        image_id: Optional[str] = None,
-        **kwargs,
-    ):
-        # No-op or simple passthrough since we do not cache embeddings in PCS path
-        t1 = perf_counter()
-        computed_id = (
-            image_id or hashlib.md5(load_image_rgb(image).tobytes()).hexdigest()[:12]
-        )
-        return Sam3EmbeddingResponse(time=perf_counter() - t1, image_id=computed_id)
-
     def infer_from_request(self, request: Sam3InferenceRequest):
         # with self.sam3_lock:
         t1 = perf_counter()
-        if isinstance(request, Sam3EmbeddingRequest):
-            return self.embed_image(**request.dict())
-        elif isinstance(request, Sam3SegmentationRequest):
+        if isinstance(request, Sam3SegmentationRequest):
             result = self.segment_image(**request.dict())
             # segment_image now returns either bytes or a response model
             return result
@@ -349,105 +369,23 @@ class SegmentAnything3(RoboflowCoreModel):
         format: Optional[str] = "polygon",
         **kwargs,
     ):
+        np_image = load_image_rgb(image)
+        h, w = np_image.shape[:2]
+        pil_image = Image.fromarray(np_image)
+
         # Inference-only path; disable autograd throughout
         with torch.inference_mode():
             with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
                 start_ts = perf_counter()
-                logging.debug(
-                    f"SAM3.segment_image: start format={format} thresh={output_prob_thresh} prompts_in={(len(prompts) if prompts else 0)}"
-                )
-                # Load image as PIL and build a SAM3 Datapoint with ordered prompts
-                np_image = load_image_rgb(image)
-                pil_image = Image.fromarray(np_image)
-                h, w = pil_image.size[1], pil_image.size[0]
-                logging.debug(
-                    f"SAM3.segment_image: np_image.shape={getattr(np_image, 'shape', None)} pil_size={(w, h)}"
-                )
 
+                # TODO this can also take tensor directly instead of PIL image, so we want to avoid double conversion
+                # TODO: this also supports multiple images for multi batch inference
                 datapoint = Sam3Datapoint(
-                    find_queries=[], images=[], raw_images=[pil_image]
+                    find_queries=[],
+                    images=[Sam3ImageDP(data=pil_image, objects=[], size=(h, w))],
                 )
-                # attach image
-                datapoint.images = [
-                    Sam3ImageDP(data=pil_image, objects=[], size=(h, w))
-                ]
 
-                # Map prompt_index -> prompt_id to retrieve results later
-                prompt_ids: List[int] = []
-                next_id = 0
-
-                def _add_text(text: Optional[str]):
-                    nonlocal next_id
-                    q = FindQueryLoaded(
-                        query_text=text if text is not None else "visual",
-                        image_id=0,
-                        object_ids_output=[],
-                        is_exhaustive=True,
-                        query_processing_order=0,
-                        input_bbox=None,
-                        input_bbox_label=None,
-                        input_points=None,
-                        semantic_target=None,
-                        is_pixel_exhaustive=None,
-                        inference_metadata=InferenceMetadata(
-                            coco_image_id=next_id,
-                            original_image_id=next_id,
-                            original_category_id=1,
-                            original_size=(h, w),
-                            object_id=0,
-                            frame_index=0,
-                        ),
-                    )
-                    datapoint.find_queries.append(q)
-                    prompt_ids.append(next_id)
-                    next_id += 1
-
-                def _add_visual(
-                    boxes_xywh_norm: List[List[float]],
-                    labels: List[Union[int, bool]],
-                    text: Optional[str],
-                ):
-                    nonlocal next_id
-                    # Convert normalized XYWH -> pixel XYXY
-                    xyxy: List[List[float]] = []
-                    for x, y, bw, bh in boxes_xywh_norm or []:
-                        x0 = x * w
-                        y0 = y * h
-                        x1 = x0 + bw * w
-                        y1 = y0 + bh * h
-                        xyxy.append([x0, y0, x1, y1])
-                    labels_bool = [bool(int(v)) for v in (labels or [])]
-                    q = FindQueryLoaded(
-                        query_text=text if text is not None else "visual",
-                        image_id=0,
-                        object_ids_output=[],
-                        is_exhaustive=True,
-                        query_processing_order=0,
-                        input_bbox=(
-                            torch.tensor(xyxy, dtype=torch.float32) if xyxy else None
-                        ),
-                        input_bbox_label=(
-                            torch.tensor(labels_bool, dtype=torch.bool)
-                            if labels_bool
-                            else None
-                        ),
-                        input_points=None,
-                        semantic_target=None,
-                        is_pixel_exhaustive=None,
-                        inference_metadata=InferenceMetadata(
-                            coco_image_id=next_id,
-                            original_image_id=next_id,
-                            original_category_id=1,
-                            original_size=(h, w),
-                            object_id=0,
-                            frame_index=0,
-                        ),
-                    )
-                    datapoint.find_queries.append(q)
-                    prompt_ids.append(next_id)
-                    next_id += 1
-
-                # Build prompts in order; ignore points for PCS
+                # Build prompts in order
                 prompts = prompts or []
                 # Normalize prompts that may arrive as dicts from request.dict()
                 normalized_prompts: List[Sam3Prompt] = []
@@ -458,24 +396,30 @@ class SegmentAnything3(RoboflowCoreModel):
                         try:
                             normalized_prompts.append(Sam3Prompt(**p))
                         except Exception as e:
-                            logging.debug(
-                                f"SAM3.segment_image: failed to normalize prompt dict: {e}"
-                            )
                             continue
                 prompts = normalized_prompts
-                logging.debug(f"SAM3.segment_image: normalized_prompts={len(prompts)}")
-                if not prompts:
-                    # Backward compat: legacy fields in kwargs already normalized into prompts by validator
-                    pass
-                for p in prompts:
+
+                # Map prompt_index -> prompt_id to retrieve results later
+                prompt_ids: List[int] = []
+                for idx, p in enumerate(prompts):
                     if p.boxes:
-                        logging.debug(
-                            f"SAM3.segment_image: add_visual boxes={len(p.boxes or [])} labels={len(p.box_labels or [])} text={p.text}"
+                        q = _build_visual_query(
+                            coco_id=idx,
+                            h=h,
+                            w=w,
+                            boxes_xywh_norm=p.boxes,
+                            labels=p.box_labels or [],
+                            text=p.text,
                         )
-                        _add_visual(p.boxes, p.box_labels or [], p.text)
                     else:
-                        logging.debug(f"SAM3.segment_image: add_text text={p.text}")
-                        _add_text(p.text)
+                        q = _build_text_query(
+                            coco_id=idx,
+                            h=h,
+                            w=w,
+                            text=p.text,
+                        )
+                    datapoint.find_queries.append(q)
+                    prompt_ids.append(idx)
 
                 # Transform and collate to BatchedDatapoint
                 datapoint = self.transform(datapoint)
@@ -488,7 +432,6 @@ class SegmentAnything3(RoboflowCoreModel):
 
                 # Forward
                 output = self.model(batch)
-                logging.debug("SAM3.segment_image: model forward done")
 
                 # Postprocess to original size and build per-prompt results
                 post = PostProcessImage(
@@ -502,23 +445,8 @@ class SegmentAnything3(RoboflowCoreModel):
                     to_cpu=True,
                 )
                 processed = post.process_results(output, batch.find_metadatas)
-                logging.debug(
-                    f"SAM3.segment_image: postprocess done; stages={len(processed)} ids_sample={list(processed.keys())[:3]}"
-                )
 
-        if len(prompt_ids) == 1:
-            # Legacy single response
-            masks_np = _to_numpy_masks(processed[prompt_ids[0]].get("masks"))
-            scores = list(processed[prompt_ids[0]].get("scores", []))
-            logging.debug(
-                f"SAM3 single-prompt: masks_shape={getattr(masks_np, 'shape', None)} scores_len={len(scores)}"
-            )
-            preds = _masks_to_predictions(masks_np, scores, format)
-            return Sam3SegmentationResponse(
-                time=perf_counter() - start_ts, predictions=preds
-            )
-
-        # Multi-prompt batch response
+        # Batched prompt response (even for a single prompt)
         prompt_results: List[Sam3PromptResult] = []
         for idx, coco_id in enumerate(prompt_ids):
             echo = Sam3PromptEcho(

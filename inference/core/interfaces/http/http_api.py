@@ -62,7 +62,6 @@ from inference.core.entities.requests.sam2 import (
     Sam2SegmentationRequest,
 )
 from inference.core.entities.requests.sam3 import (
-    Sam3EmbeddingRequest,
     Sam3SegmentationRequest,
 )
 from inference.core.entities.requests.server_state import (
@@ -111,7 +110,7 @@ from inference.core.entities.responses.sam2 import (
 )
 from inference.core.entities.responses.sam3 import (
     Sam3EmbeddingResponse,
-    Sam3SegmentationResponse,
+    Sam3BatchSegmentationResponse,
 )
 from inference.core.entities.responses.server_state import (
     ModelsDescriptions,
@@ -2339,8 +2338,8 @@ class HttpInterface(BaseInterface):
                 @app.post(
                     "/sam3/visual_segment",
                     response_model=Sam2SegmentationResponse,
-                    summary="Seg preview Image Segmentation",
-                    description="Run the segmentations for image data.",
+                    summary="SAM3 PVS (promptable visual segmentation)",
+                    description="Run the SAM3 PVS (promptable visual segmentation) to generate segmentations for image data.",
                 )
                 @with_route_exceptions
                 @usage_collector("request")
@@ -2374,10 +2373,10 @@ class HttpInterface(BaseInterface):
                     return model_response
 
                 @app.post(
-                    "/seg-preview/segment_image",
-                    response_model=Sam3SegmentationResponse,
-                    summary="Seg preview Image Segmentation",
-                    description="Run the segmentations for image data.",
+                    "/sam3/concept_segment",
+                    response_model=Sam3BatchSegmentationResponse,
+                    summary="SAM3 PCS (promptable concept segmentation)",
+                    description="Run the SAM3 PCS (promptable concept segmentation) to generate segmentations for image data.",
                 )
                 @with_route_exceptions
                 @usage_collector("request")
