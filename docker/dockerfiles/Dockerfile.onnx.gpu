@@ -150,8 +150,28 @@ RUN ln -s /usr/bin/python3 /usr/bin/python
 RUN ls -R /usr/local/lib/python3.12
 RUN find /usr/local/lib/python3.12 -name "onnxruntime*"
 # Build wheels directly without Makefile to handle PEP 668
-RUN python -m pip install --break-system-packages --force-reinstall --upgrade pip && \
-    python -m pip install --break-system-packages wheel twine requests && \
+# Build wheels directly without upgrading pip (Debian-installed pip issue)
+RUN python -m pip install --break-system-packages wheel twine requests && \
+    rm -f dist/* && \
+    python .release/pypi/inference.core.setup.py bdist_wheel && \
+    python .release/pypi/inference.gpu.setup.py bdist_wheel
+# Build wheels directly without upgrading pip (Debian-installed pip issue)
+RUN python -m pip install --break-system-packages wheel twine requests && \
+    rm -f dist/* && \
+    python .release/pypi/inference.core.setup.py bdist_wheel && \
+    python .release/pypi/inference.gpu.setup.py bdist_wheel
+# Build wheels directly without upgrading pip (Debian-installed pip issue)
+RUN python -m pip install --break-system-packages wheel twine requests && \
+    rm -f dist/* && \
+    python .release/pypi/inference.core.setup.py bdist_wheel && \
+    python .release/pypi/inference.gpu.setup.py bdist_wheel
+# Build wheels directly without upgrading pip (Debian-installed pip issue)
+RUN python -m pip install --break-system-packages wheel twine requests && \
+    rm -f dist/* && \
+    python .release/pypi/inference.core.setup.py bdist_wheel && \
+    python .release/pypi/inference.gpu.setup.py bdist_wheel
+# Build wheels directly without upgrading pip (Debian-installed pip issue)
+RUN python -m pip install --break-system-packages wheel twine requests && \
     rm -f dist/* && \
     python .release/pypi/inference.core.setup.py bdist_wheel && \
     python .release/pypi/inference.gpu.setup.py bdist_wheel
