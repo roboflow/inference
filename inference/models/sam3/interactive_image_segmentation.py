@@ -3,7 +3,7 @@ import hashlib
 from io import BytesIO
 from threading import RLock
 from time import perf_counter
-from typing import Any, Dict, List, Optional, Tuple, TypedDict, Union
+from typing import Any, Dict, List, Optional, Tuple, TypedDict, Union, TypeVar
 from pycocotools import mask as mask_utils
 
 import numpy as np
@@ -56,6 +56,9 @@ from inference.core.utils.postprocess import masks2multipoly
 
 if DEVICE is None:
     DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
+
+
+T = TypeVar("T")
 
 
 class LogitsCacheType(TypedDict):
@@ -140,21 +143,22 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
             >>> embed_image(img_array, image_id="sample123")
             (array([...]), (224, 224))
         """
-        if image_id and image_id in self.embedding_cache:
-            return (
-                self.embedding_cache[image_id],
-                self.image_size_cache[image_id],
-                image_id,
-            )
+        if image_id:
+            embedding_cache_content = self.embedding_cache.get(image_id)
+            image_size_content = self.image_size_cache.get(image_id)
+            if embedding_cache_content is not None and image_size_content is not None:
+                return embedding_cache_content, image_size_content, image_id
 
         img_in = self.preproc_image(image)
         if image_id is None:
             image_id = hashlib.md5(img_in.tobytes()).hexdigest()[:12]
 
-        if image_id in self.embedding_cache:
+        embedding_cache_content = self.embedding_cache.get(image_id)
+        image_size_content = self.image_size_cache.get(image_id)
+        if embedding_cache_content is not None and image_size_content is not None:
             return (
-                self.embedding_cache[image_id],
-                self.image_size_cache[image_id],
+                embedding_cache_content,
+                image_size_content,
                 image_id,
             )
 
@@ -168,14 +172,14 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
         with self._state_lock:
             self.embedding_cache[image_id] = embedding_dict
             self.image_size_cache[image_id] = img_in.shape[:2]
-            if image_id in self.embedding_cache_keys:
-                self.embedding_cache_keys.remove(image_id)
+            safe_remove_from_list(values=self.embedding_cache_keys, element=image_id)
             self.embedding_cache_keys.append(image_id)
             if len(self.embedding_cache_keys) > self.embedding_cache_size:
-                cache_key = self.embedding_cache_keys.pop(0)
-                del self.embedding_cache[cache_key]
-                del self.image_size_cache[cache_key]
-            return (embedding_dict, img_in.shape[:2], image_id)
+                cache_key = safe_pop_from_list(values=self.embedding_cache_keys)
+                if cache_key is not None:
+                    safe_remove_from_dict(values=self.embedding_cache, key=cache_key)
+                    safe_remove_from_dict(values=self.image_size_cache, key=cache_key)
+            return embedding_dict, img_in.shape[:2], image_id
 
     def infer_from_request(self, request: Sam2InferenceRequest):
         """Performs inference based on the request type.
@@ -186,23 +190,22 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
         Returns:
             Union[SamEmbeddingResponse, SamSegmentationResponse]: The inference response.
         """
-        with self._state_lock:
-            t1 = perf_counter()
-            if isinstance(request, Sam2EmbeddingRequest):
-                _, _, image_id = self.embed_image(**request.dict())
-                inference_time = perf_counter() - t1
-                return Sam2EmbeddingResponse(time=inference_time, image_id=image_id)
-            elif isinstance(request, Sam2SegmentationRequest):
-                masks, scores, low_resolution_logits = self.segment_image(
-                    **request.dict()
-                )
-                predictions = _masks_to_predictions(masks, scores, request.format)
-                return Sam2SegmentationResponse(
-                    time=perf_counter() - t1,
-                    predictions=predictions,
-                )
-            else:
-                raise ValueError(f"Invalid request type {type(request)}")
+        t1 = perf_counter()
+        if isinstance(request, Sam2EmbeddingRequest):
+            _, _, image_id = self.embed_image(**request.dict())
+            inference_time = perf_counter() - t1
+            return Sam2EmbeddingResponse(time=inference_time, image_id=image_id)
+        elif isinstance(request, Sam2SegmentationRequest):
+            masks, scores, low_resolution_logits = self.segment_image(
+                **request.dict()
+            )
+            predictions = _masks_to_predictions(masks, scores, request.format)
+            return Sam2SegmentationResponse(
+                time=perf_counter() - t1,
+                predictions=predictions,
+            )
+        else:
+            raise ValueError(f"Invalid request type {type(request)}")
 
     def preproc_image(self, image: InferenceRequestImage):
         """Preprocesses an image.
@@ -326,16 +329,17 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
     ) -> None:
         logits = logits[:, None, :, :]
         prompt_id = hash_prompt_set(image_id, prompt_set)
-        self.low_res_logits_cache[prompt_id] = {
-            "logits": logits,
-            "prompt_set": prompt_set,
-        }
-        if prompt_id in self.low_res_logits_cache_keys:
-            self.low_res_logits_cache_keys.remove(prompt_id)
-        self.low_res_logits_cache_keys.append(prompt_id)
-        if len(self.low_res_logits_cache_keys) > self.low_res_logits_cache_size:
-            cache_key = self.low_res_logits_cache_keys.pop(0)
-            del self.low_res_logits_cache[cache_key]
+        with self._state_lock:
+            self.low_res_logits_cache[prompt_id] = {
+                "logits": logits,
+                "prompt_set": prompt_set,
+            }
+            safe_remove_from_list(values=self.low_res_logits_cache_keys, element=prompt_id)
+            self.low_res_logits_cache_keys.append(prompt_id)
+            if len(self.low_res_logits_cache_keys) > self.low_res_logits_cache_size:
+                cache_key = safe_pop_from_list(values=self.low_res_logits_cache_keys)
+                if cache_key is not None:
+                    safe_remove_from_dict(values=self.low_res_logits_cache, key=cache_key)
 
     @property
     def model_artifact_bucket(self):
@@ -421,7 +425,6 @@ def maybe_load_low_res_logits_from_cache(
     prompts = prompt_set.prompts
     if not prompts:
         return None
-
     return find_prior_prompt_in_cache(prompt_set, image_id, cache)
 
 
@@ -628,3 +631,25 @@ def _masks_to_predictions(
                 )
             )
     return preds
+
+
+def safe_remove_from_list(values: List[T], element: T) -> None:
+    try:
+        values.remove(element)
+    except ValueError:
+        pass
+
+
+def safe_pop_from_list(values: List[T]) -> Optional[T]:
+    try:
+        return values.pop(0)
+    except IndexError:
+        return None
+
+
+def safe_remove_from_dict(values: Dict[T, Any], key: T) -> None:
+    try:
+        del values[key]
+    except ValueError:
+        pass
+
