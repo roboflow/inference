@@ -56,9 +56,13 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     ninja-build \
     && rm -rf /var/lib/apt/lists/*
 # Fix CUDA 13.0 missing CCCL headers - fetch from NVIDIA repository
-RUN git clone --depth=1 --branch v2.6.1 https://github.com/NVIDIA/cccl.git /tmp/cccl && \
-    mkdir -p /usr/local/cuda/include/cuda && \
-    cp -r /tmp/cccl/libcudacxx/include/cuda/* /usr/local/cuda/include/cuda/ && \
+# Fix CUDA 13.0 missing CCCL headers - use CCCL 3.0 for CUDA 13
+# The base image has CUDA at /usr/local/cuda-13.0/targets/sbsa-linux/
+RUN git clone --depth=1 --branch v3.0.0 https://github.com/NVIDIA/cccl.git /tmp/cccl && \
+    mkdir -p /usr/local/cuda-13.0/targets/sbsa-linux/include/cccl && \
+    cp -r /tmp/cccl/libcudacxx/include/* /usr/local/cuda-13.0/targets/sbsa-linux/include/cccl/ && \
+    cp -r /tmp/cccl/cub/cub /usr/local/cuda-13.0/targets/sbsa-linux/include/cccl/ && \
+    cp -r /tmp/cccl/thrust/thrust /usr/local/cuda-13.0/targets/sbsa-linux/include/cccl/ && \
     rm -rf /tmp/cccl
 
 
