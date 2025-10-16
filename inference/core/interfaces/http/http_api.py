@@ -110,7 +110,7 @@ from inference.core.entities.responses.sam2 import (
 )
 from inference.core.entities.responses.sam3 import (
     Sam3EmbeddingResponse,
-    Sam3BatchSegmentationResponse,
+    Sam3SegmentationResponse,
 )
 from inference.core.entities.responses.server_state import (
     ModelsDescriptions,
@@ -2374,7 +2374,7 @@ class HttpInterface(BaseInterface):
 
                 @app.post(
                     "/sam3/concept_segment",
-                    response_model=Sam3BatchSegmentationResponse,
+                    response_model=Sam3SegmentationResponse,
                     summary="SAM3 PCS (promptable concept segmentation)",
                     description="Run the SAM3 PCS (promptable concept segmentation) to generate segmentations for image data.",
                 )

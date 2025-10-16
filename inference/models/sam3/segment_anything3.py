@@ -17,7 +17,7 @@ from inference.core.entities.requests.sam3 import (
 )
 from inference.core.entities.responses.sam3 import (
     Sam3SegmentationPrediction,
-    Sam3BatchSegmentationResponse,
+    Sam3SegmentationResponse,
     Sam3PromptEcho,
     Sam3PromptResult,
 )
@@ -461,6 +461,6 @@ class SegmentAnything3(RoboflowCoreModel):
             prompt_results.append(
                 Sam3PromptResult(prompt_index=idx, echo=echo, predictions=preds)
             )
-        return Sam3BatchSegmentationResponse(
+        return Sam3SegmentationResponse(
             time=perf_counter() - start_ts, prompt_results=prompt_results
         )

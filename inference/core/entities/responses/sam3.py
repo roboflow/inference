@@ -20,13 +20,6 @@ class Sam3SegmentationPrediction(BaseModel):
     )
 
 
-class Sam3SegmentationResponse(BaseModel):
-    predictions: List[Sam3SegmentationPrediction] = Field()
-    time: float = Field(
-        description="The time in seconds it took to produce the segmentation including preprocessing"
-    )
-
-
 class Sam3PromptEcho(BaseModel):
     prompt_index: int = Field()
     type: Optional[str] = Field(default=None)
@@ -40,7 +33,7 @@ class Sam3PromptResult(BaseModel):
     predictions: List[Sam3SegmentationPrediction] = Field()
 
 
-class Sam3BatchSegmentationResponse(BaseModel):
+class Sam3SegmentationResponse(BaseModel):
     prompt_results: List[Sam3PromptResult] = Field()
     time: float = Field(
         description="The time in seconds it took to produce the segmentation including preprocessing"

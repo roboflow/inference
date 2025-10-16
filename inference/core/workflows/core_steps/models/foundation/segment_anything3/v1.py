@@ -13,7 +13,7 @@ from inference.core.entities.responses.inference import (
 )
 from inference.core.entities.responses.sam3 import (
     Sam3SegmentationPrediction,
-    Sam3BatchSegmentationResponse,
+    Sam3SegmentationResponse,
 )
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
