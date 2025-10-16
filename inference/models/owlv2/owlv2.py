@@ -439,7 +439,7 @@ class OwlV2(RoboflowInferenceModel):
         # Download from huggingface
         pass
 
-    def get_image_embeds(self, image_hash: Hash) -> Optional[Tuple[torch.Tensor, ...]]:
+    def get_image_embeds(self, image_hash: Hash) -> Optional[tuple]:
         image_embed_cache_hit = self.image_embed_cache.get(image_hash)
         if image_embed_cache_hit is not None:
             return image_embed_cache_hit
@@ -464,7 +464,7 @@ class OwlV2(RoboflowInferenceModel):
             return image.shape[:2][::-1]
 
     @torch.no_grad()
-    def embed_image(self, image: Union[np.ndarray, LazyImageRetrievalWrapper]) -> Tuple[Hash, Tuple[torch.Tensor, ...]]:
+    def embed_image(self, image: Union[np.ndarray, LazyImageRetrievalWrapper]) -> Tuple[Hash, tuple]:
         if isinstance(image, LazyImageRetrievalWrapper):
             image_hash = image.image_hash
         else:
