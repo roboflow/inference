@@ -579,7 +579,7 @@ class OwlV2(RoboflowInferenceModel):
         confidence: float,
         iou_threshold: float,
         max_detections: int = MAX_DETECTIONS,
-        image_embeds: Optional[Tuple[torch.Tensor], ...] = None,
+        image_embeds: Optional[tuple] = None,
     ) -> List[Dict]:
         if image_embeds is None:
             image_embeds = self.get_image_embeds(image_hash)
