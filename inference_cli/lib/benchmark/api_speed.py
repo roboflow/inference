@@ -45,7 +45,10 @@ def coordinate_infer_api_speed_benchmark(
     requests_per_second: Optional[int],
 ) -> InferenceStatistics:
     run_api_warm_up(client=client, image=images[0], warm_up_requests=warm_up_requests)
-    image_sizes = {i.shape[:2] for i in images}
+    if isinstance(images[0], tuple):
+        image_sizes = {i[0].shape[:2] for i in images}
+    else:
+        image_sizes = {i.shape[:2] for i in images}
     print(f"Detected images dimensions: {image_sizes}")
     if client.client_mode is HTTPClientMode.V1:
         model_details = client.get_model_description(model_id=model_id)

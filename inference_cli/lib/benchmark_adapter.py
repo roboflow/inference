@@ -119,6 +119,7 @@ def run_sam3_concept_segment_api_speed_benchmark(
         disable_active_learning=True,
         max_concurrent_requests=1,
         max_batch_size=request_batch_size,
+        model_configuration=None,
     )
     client.select_model(model_id=model_id)
     client.select_sam3_concept_segment()
