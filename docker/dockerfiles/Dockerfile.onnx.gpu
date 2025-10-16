@@ -61,9 +61,9 @@ WORKDIR /tmp
 RUN git clone --recursive --branch main https://github.com/microsoft/onnxruntime.git /tmp/onnxruntime
 WORKDIR /tmp/onnxruntime
 
-# Build ONNX Runtime with CUDA 13 for DGX Spark (following working CUDA 13 build configuration)
+# Build ONNX Runtime with CUDA 13 for DGX Spark (using Release like working example)
 RUN ./build.sh \
-    --config RelWithDebInfo \
+    --config Release \
     --build_shared_lib \
     --parallel 16 \
     --skip_submodule_sync \
@@ -81,7 +81,7 @@ RUN ./build.sh \
     --cmake_extra_defines onnxruntime_BUILD_UNIT_TESTS=OFF
 
 # Install the built ONNX Runtime wheel
-RUN uv pip install --system --break-system-packages /tmp/onnxruntime/build/Linux/RelWithDebInfo/dist/onnxruntime_gpu-*.whl
+RUN uv pip install --system --break-system-packages /tmp/onnxruntime/build/Linux/Release/dist/onnxruntime_gpu-*.whl
 
 # Install GPU-enabled PyTorch 2.9.0 with CUDA 13.0 support
 RUN uv pip uninstall torch torchvision torchaudio || true && \
