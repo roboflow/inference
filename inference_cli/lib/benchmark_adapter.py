@@ -9,7 +9,10 @@ from inference_cli.lib.benchmark.api_speed import (
     coordinate_workflow_api_speed_benchmark,
     display_benchmark_statistics,
 )
-from inference_cli.lib.benchmark.dataset import load_dataset_images
+from inference_cli.lib.benchmark.dataset import (
+    load_dataset_images,
+    load_dataset_images_with_prompts,
+)
 from inference_cli.lib.benchmark.platform import retrieve_platform_specifics
 from inference_cli.lib.benchmark.results_gathering import (
     InferenceStatistics,
@@ -20,6 +23,7 @@ from inference_cli.lib.utils import (
     ensure_inference_is_installed,
     initialise_client,
 )
+from inference_sdk import InferenceHTTPClient
 
 
 def run_infer_api_speed_benchmark(
@@ -36,7 +40,6 @@ def run_infer_api_speed_benchmark(
     output_location: Optional[str] = None,
     enforce_legacy_endpoints: bool = False,
     max_error_rate: Optional[float] = None,
-    sam3_params: Optional[Dict[str, Any]] = None,
 ) -> None:
     dataset_images = load_dataset_images(
         dataset_reference=dataset_reference,
@@ -61,7 +64,6 @@ def run_infer_api_speed_benchmark(
         request_batch_size=request_batch_size,
         number_of_clients=number_of_clients,
         requests_per_second=requests_per_second,
-        sam3_params=sam3_params,
     )
     if benchmark_results.avg_remote_execution_time is not None:
         print(
@@ -83,6 +85,72 @@ def run_infer_api_speed_benchmark(
         "number_of_clients": number_of_clients,
         "requests_per_second": requests_per_second,
         "model_configuration": model_configuration,
+    }
+    dump_benchmark_results(
+        output_location=output_location,
+        benchmark_parameters=benchmark_parameters,
+        benchmark_results=benchmark_results,
+    )
+    ensure_error_rate_is_below_threshold(
+        error_rate=benchmark_results.error_rate,
+        threshold=max_error_rate,
+    )
+
+
+def run_sam3_concept_segment_api_speed_benchmark(
+    model_id: str,
+    dataset_reference: str,
+    host: str,
+    warm_up_requests: int = 10,
+    benchmark_requests: int = 1000,
+    request_batch_size: int = 1,
+    number_of_clients: int = 1,
+    requests_per_second: Optional[int] = None,
+    api_key: Optional[str] = None,
+    output_location: Optional[str] = None,
+    max_error_rate: Optional[float] = None,
+) -> None:
+    dataset_images_with_prompts = load_dataset_images_with_prompts(
+        dataset_reference=dataset_reference,
+    )
+    client: InferenceHTTPClient = initialise_client(
+        host=host,
+        api_key=api_key,
+        disable_active_learning=True,
+        max_concurrent_requests=1,
+        max_batch_size=request_batch_size,
+    )
+    client.select_model(model_id=model_id)
+    client.select_sam3_concept_segment()
+    benchmark_results: InferenceStatistics = coordinate_infer_api_speed_benchmark(
+        client=client,
+        images=dataset_images_with_prompts,
+        model_id=model_id,
+        warm_up_requests=warm_up_requests,
+        benchmark_requests=benchmark_requests,
+        request_batch_size=request_batch_size,
+        number_of_clients=number_of_clients,
+        requests_per_second=requests_per_second,
+    )
+    if benchmark_results.avg_remote_execution_time is not None:
+        print(
+            f"Average remote execution time: {benchmark_results.avg_remote_execution_time:.3f}s (across {benchmark_results.inferences_made} requests)"
+        )
+    if output_location is None:
+        ensure_error_rate_is_below_threshold(
+            error_rate=benchmark_results.error_rate,
+            threshold=max_error_rate,
+        )
+        return None
+    benchmark_parameters = {
+        "datetime": datetime.now().isoformat(),
+        "model_id": model_id,
+        "dataset_reference": dataset_reference,
+        "host": host,
+        "benchmark_inferences": benchmark_requests,
+        "batch_size": request_batch_size,
+        "number_of_clients": number_of_clients,
+        "requests_per_second": requests_per_second,
     }
     dump_benchmark_results(
         output_location=output_location,

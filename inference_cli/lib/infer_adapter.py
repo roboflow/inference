@@ -89,8 +89,6 @@ def infer(
     visualise: bool,
     visualisation_config: Optional[str],
     model_configuration: Optional[str],
-    sam3_params: Optional[Dict[str, Any]] = None,
-    endpoint: Optional[str] = None,
 ) -> None:
     if api_key is None:
         api_key = ROBOFLOW_API_KEY
@@ -118,8 +116,6 @@ def infer(
             visualise=visualise,
             visualisation_config=visualisation_config,
             model_configuration=model_configuration,
-            sam3_params=sam3_params,
-            endpoint=endpoint,
         )
         return None
     infer_on_image(
@@ -132,8 +128,6 @@ def infer(
         visualise=visualise,
         visualisation_config=visualisation_config,
         model_configuration=model_configuration,
-        sam3_params=sam3_params,
-        endpoint=endpoint,
     )
 
 
@@ -220,8 +214,6 @@ def infer_on_directory(
     visualise: bool,
     visualisation_config: Optional[str],
     model_configuration: Optional[str],
-    sam3_params: Optional[Dict[str, Any]],
-    endpoint: Optional[str],
 ) -> None:
     if not is_something_to_do(
         output_location=output_location, display=display, visualise=visualise
@@ -245,8 +237,6 @@ def infer_on_directory(
         client.infer_on_stream(
             input_uri=input_reference,
             model_id=model_id,
-            sam3_params=sam3_params,
-            endpoint=endpoint,
         ),
         desc=f"Inference from directory: {input_reference}",
     ):
@@ -280,8 +270,6 @@ def infer_on_image(
     visualise: bool,
     visualisation_config: Optional[str],
     model_configuration: Optional[str],
-    sam3_params: Optional[Dict[str, Any]],
-    endpoint: Optional[str],
 ) -> None:
     client = initialise_client(
         host=host,
@@ -296,8 +284,6 @@ def infer_on_image(
     prediction = client.infer(
         inference_input=input_reference,
         model_id=model_id,
-        sam3_params=sam3_params,
-        endpoint=endpoint,
     )
     visualised = None
     if visualise:

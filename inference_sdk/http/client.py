@@ -22,6 +22,7 @@ from inference_sdk.http.entities import (
     OBJECT_DETECTION_TASK,
     HTTPClientMode,
     ImagesReference,
+    ImagesReferenceWithPrompt,
     InferenceConfiguration,
     ModelDescription,
     RegisteredModels,
@@ -301,6 +302,15 @@ class InferenceHTTPClient:
         self.__client_mode = HTTPClientMode.V1
         return self
 
+    def select_sam3_concept_segment(self) -> "InferenceHTTPClient":
+        """Select SAM3 concept segment for client operations.
+
+        Returns:
+            InferenceHTTPClient: The client instance with SAM3 concept segment selected.
+        """
+        self.__client_mode = HTTPClientMode.SAM3_CONCEPT_SEGMENT
+        return self
+
     @contextmanager
     def use_api_v0(self) -> Generator["InferenceHTTPClient", None, None]:
         """Temporarily use API version 0 for client operations.
@@ -386,7 +396,6 @@ class InferenceHTTPClient:
         self,
         input_uri: str,
         model_id: Optional[str] = None,
-        sam3_params: Optional[Dict[str, Any]] = None,
     ) -> Generator[Tuple[Union[str, int], np.ndarray, dict], None, None]:
         """Run inference on a video stream or sequence of images.
 
@@ -404,21 +413,24 @@ class InferenceHTTPClient:
             prediction = self.infer(
                 inference_input=frame,
                 model_id=model_id,
-                sam3_params=sam3_params,
             )
             yield reference, frame, prediction
 
     @wrap_errors
     def infer(
         self,
-        inference_input: Union[ImagesReference, List[ImagesReference]],
+        inference_input: Union[
+            ImagesReference,
+            List[ImagesReference],
+            ImagesReferenceWithPrompt,
+            List[ImagesReferenceWithPrompt],
+        ],
         model_id: Optional[str] = None,
-        sam3_params: Optional[Dict[str, Any]] = None,
     ) -> Union[dict, List[dict]]:
         """Run inference on one or more images.
 
         Args:
-            inference_input (Union[ImagesReference, List[ImagesReference]]): Input image(s) for inference.
+            inference_input (Union[ImagesReference, List[ImagesReference], ImagesReferenceWithPrompt, List[ImagesReferenceWithPrompt]]): Input image(s) with/without prompts for inference.
             model_id (Optional[str], optional): Model identifier to use for inference. Defaults to None.
 
         Returns:
@@ -428,14 +440,10 @@ class InferenceHTTPClient:
             HTTPCallErrorError: If there is an error in the HTTP call.
             HTTPClientError: If there is an error with the server connection.
         """
-        if sam3_params and sam3_params.get("endpoint") in {
-            "/seg-preview/segment_image",
-            "/seg-preview/embed_image",
-        }:
-            return self.infer_from_sam3_segment(
+        if self.__client_mode is HTTPClientMode.SAM3_CONCEPT_SEGMENT:
+            return self.infer_from_sam3_concept_segment(
                 inference_input=inference_input,
                 model_id=model_id,
-                sam3_params=sam3_params,
             )
         if self.__client_mode is HTTPClientMode.V0:
             return self.infer_from_api_v0(
@@ -452,7 +460,6 @@ class InferenceHTTPClient:
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
         model_id: Optional[str] = None,
-        sam3_params: Optional[Dict[str, Any]] = None,
     ) -> Union[dict, List[dict]]:
         """Run inference asynchronously on one or more images.
 
@@ -467,10 +474,7 @@ class InferenceHTTPClient:
             HTTPCallErrorError: If there is an error in the HTTP call.
             HTTPClientError: If there is an error with the server connection.
         """
-        if sam3_params and sam3_params.get("endpoint") in {
-            "/seg-preview/segment_image",
-            "/seg-preview/embed_image",
-        }:
+        if self.__client_mode is HTTPClientMode.SAM3_CONCEPT_SEGMENT:
             raise NotImplementedError
         if self.__client_mode is HTTPClientMode.V0:
             return await self.infer_from_api_v0_async(
@@ -2335,15 +2339,15 @@ class InferenceHTTPClient:
         if self.__client_mode is not HTTPClientMode.V1:
             raise WrongClientModeError("Use client mode `v1` to run this operation.")
 
-    def infer_from_sam3_segment(
+    def infer_from_sam3_concept_segment(
         self,
-        inference_input: Union[ImagesReference, List[ImagesReference]],
+        inference_input: Union[
+            ImagesReferenceWithPrompt, List[ImagesReferenceWithPrompt]
+        ],
         model_id: Optional[str] = None,
-        sam3_params: Optional[Dict[str, Any]] = None,
     ) -> Union[dict, List[dict]]:
-        requests_data = self._prepare_sam_3_segment_request_data(
+        requests_data = self._prepare_sam_3_concept_segment_request_data(
             inference_input=inference_input,
-            sam3_params=sam3_params,
             model_id=model_id,
         )
         responses = self._execute_infer_from_api_request(
@@ -2352,11 +2356,15 @@ class InferenceHTTPClient:
         # TODO: Adjust predictions to client scaling factor (not required when benchmarking)
         return responses
 
-    def _prepare_sam_3_segment_request_data(
+    def _prepare_sam_3_concept_segment_request_data(
         self,
-        inference_input: Union[ImagesReference, List[ImagesReference]],
+        inference_input: Union[
+            ImagesReferenceWithPrompt, List[ImagesReferenceWithPrompt]
+        ],
         model_id: Optional[str] = None,
-        sam3_params: Optional[Dict[str, Any]] = None,
+        format: str = "polygon",
+        output_prob_thresh: float = 0.5,
+        endpoint: str = "sam3/concept_segment",
     ) -> List[RequestData]:
         model_id_to_be_used = model_id or self.__selected_model
         _ensure_model_is_selected(model_id=model_id_to_be_used)
@@ -2372,40 +2380,52 @@ class InferenceHTTPClient:
             model_description=None,
             default_max_input_size=self.__inference_configuration.default_max_input_size,
         )
-        encoded_inference_inputs = load_static_inference_input(
-            inference_input=inference_input,
-            max_height=max_height,
-            max_width=max_width,
-        )
-        payload = {
-            "api_key": self.__api_key,
-            **sam3_params,
-        }
-
-        execution_id_value = execution_id.get()
-        headers = DEFAULT_HEADERS
-        if execution_id_value:
-            headers = headers.copy()
-            headers[EXECUTION_ID_HEADER] = execution_id_value
-
-        if (
-            INFERENCE_INTERNAL_USERNAME is not None
-            and INFERENCE_INTERNAL_PASSWORD is not None
-        ):
-            headers = headers.copy()
-            headers["Authorization"] = (
-                f"Basic {base64.b64encode(f'{INFERENCE_INTERNAL_USERNAME}:{INFERENCE_INTERNAL_PASSWORD}'.encode()).decode()}"
+        if not isinstance(inference_input, list):
+            inference_input = [inference_input]
+        requests_data = []
+        for image_reference, prompts in inference_input:
+            encoded_inference_inputs = load_static_inference_input(
+                inference_input=image_reference,
+                max_height=max_height,
+                max_width=max_width,
             )
+            params = {
+                "api_key": self.__api_key,
+            }
+            if not isinstance(prompts, list):
+                prompts = [prompts]
+            payload = {
+                "format": format,
+                "prompts": prompts,
+                "output_prob_thresh": output_prob_thresh,
+            }
 
-        requests_data = prepare_requests_data(
-            url=f"{self.__api_url}/{sam3_params.get('endpoint')}",
-            encoded_inference_inputs=encoded_inference_inputs,
-            headers=headers,
-            parameters=None,
-            payload=payload,
-            max_batch_size=1,
-            image_placement=ImagePlacement.JSON,
-        )
+            execution_id_value = execution_id.get()
+            headers = DEFAULT_HEADERS
+            if execution_id_value:
+                headers = headers.copy()
+                headers[EXECUTION_ID_HEADER] = execution_id_value
+
+            if (
+                INFERENCE_INTERNAL_USERNAME is not None
+                and INFERENCE_INTERNAL_PASSWORD is not None
+            ):
+                headers = headers.copy()
+                headers["Authorization"] = (
+                    f"Basic {base64.b64encode(f'{INFERENCE_INTERNAL_USERNAME}:{INFERENCE_INTERNAL_PASSWORD}'.encode()).decode()}"
+                )
+
+            requests_data.extend(
+                prepare_requests_data(
+                    url=f"{self.__api_url}/{endpoint}",
+                    encoded_inference_inputs=encoded_inference_inputs,
+                    headers=headers,
+                    parameters=params,
+                    payload=payload,
+                    max_batch_size=1,
+                    image_placement=ImagePlacement.JSON,
+                )
+            )
         return requests_data
 
 

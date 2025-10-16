@@ -11,6 +11,7 @@ from inference_sdk.http.errors import ModelTaskTypeNotSupportedError
 from inference_sdk.http.utils.iterables import remove_empty_values
 
 ImagesReference = Union[np.ndarray, Image.Image, str]
+ImagesReferenceWithPrompt = Tuple[ImagesReference, Dict[str, Any]]
 
 DEFAULT_IMAGE_EXTENSIONS = ["jpg", "jpeg", "JPG", "JPEG", "png", "PNG"]
 
@@ -86,6 +87,7 @@ class HTTPClientMode(str, Enum):
 
     V0 = "v0"
     V1 = "v1"
+    SAM3_CONCEPT_SEGMENT = "sam3_concept_segment"
 
 
 class VisualisationResponseFormat(str, Enum):
