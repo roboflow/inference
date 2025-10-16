@@ -65,7 +65,7 @@ WORKDIR /tmp/onnxruntime
 RUN ./build.sh \
     --config Release \
     --build_dir build/cuda13 \
-    --parallel 16 \
+    --parallel 4 \
     --use_cuda \
     --cuda_version 13.0 \
     --cuda_home /usr/local/cuda \
@@ -77,8 +77,6 @@ RUN ./build.sh \
     --enable_cuda_nhwc_ops \
     --use_binskim_compliant_compile_flags \
     --allow_running_as_root \
-    --cmake_extra_defines CMAKE_CUDA_FLAGS="-I/usr/local/cuda/include/cccl" \
-    --cmake_extra_defines CMAKE_CXX_FLAGS="-I/usr/local/cuda/include/cccl" \
     --cmake_extra_defines CMAKE_CUDA_ARCHITECTURES="120-real;121-real;121-virtual" \
     --cmake_extra_defines onnxruntime_BUILD_UNIT_TESTS=OFF
 
