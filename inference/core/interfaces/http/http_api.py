@@ -2327,7 +2327,7 @@ class HttpInterface(BaseInterface):
                         endpoint_type=ModelEndpointType.CORE_MODEL,
                         countinference=countinference,
                         service_secret=service_secret,
-                        model_class_override=Sam3ForInteractiveImageSegmentation,
+                        # model_class_override=Sam3ForInteractiveImageSegmentation,
                     )
 
                     model_response = self.model_manager.infer_from_request_sync(
@@ -2364,7 +2364,7 @@ class HttpInterface(BaseInterface):
                         endpoint_type=ModelEndpointType.CORE_MODEL,
                         countinference=countinference,
                         service_secret=service_secret,
-                        model_class_override=Sam3ForInteractiveImageSegmentation,
+                        # model_class_override=Sam3ForInteractiveImageSegmentation,
                     )
 
                     model_response = self.model_manager.infer_from_request_sync(

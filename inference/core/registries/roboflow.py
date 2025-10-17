@@ -48,6 +48,7 @@ GENERIC_MODELS = {
     "sam": ("embed", "sam"),
     "sam2": ("embed", "sam2"),
     "sam3": ("embed", "sam3"),
+    "sam3/sam3_video_model_only": ("interactive-segmentation", "sam3"),
     "gaze": ("gaze", "l2cs"),
     "doctr": ("ocr", "doctr"),
     "easy_ocr": ("ocr", "easy_ocr"),
@@ -170,6 +171,12 @@ def get_model_type(
     model_id = resolve_roboflow_model_alias(model_id=model_id)
     dataset_id, version_id = get_model_id_chunks(model_id=model_id)
 
+    # first check if the model id as a whole is in the GENERIC_MODELS dictionary
+    if model_id in GENERIC_MODELS:
+        logger.debug(f"Loading generic model: {model_id}.")
+        return GENERIC_MODELS[model_id]
+
+    # then check if the dataset id is in the GENERIC_MODELS dictionary
     if dataset_id in GENERIC_MODELS:
         logger.debug(f"Loading generic model: {dataset_id}.")
         return GENERIC_MODELS[dataset_id]

@@ -23,6 +23,10 @@ CORE_MODELS = {
     "SegmentAnything": ("inference.models.sam", CORE_MODEL_SAM_ENABLED),
     "SegmentAnything2": ("inference.models.sam2", CORE_MODEL_SAM2_ENABLED),
     "SegmentAnything3": ("inference.models.sam3", CORE_MODEL_SAM3_ENABLED),
+    "Sam3ForInteractiveImageSegmentation": (
+        "inference.models.sam3",
+        CORE_MODEL_SAM3_ENABLED,
+    ),
     "DocTR": ("inference.models.doctr", CORE_MODEL_DOCTR_ENABLED),
     "EasyOCR": ("inference.models.easy_ocr", CORE_MODEL_EASYOCR_ENABLED),
     "GroundingDINO": (
