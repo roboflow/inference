@@ -35,6 +35,7 @@ from inference.models import (
     RFDETRInstanceSegmentation,
     RFDETRObjectDetection,
     VitClassification,
+    DinoV3Classification,
     YOLONASObjectDetection,
     YOLOv5InstanceSegmentation,
     YOLOv5ObjectDetection,
@@ -56,6 +57,7 @@ from inference.models.yolov11.yolov11_keypoints_detection import (
 ROBOFLOW_MODEL_TYPES = {
     ("classification", "stub"): ClassificationModelStub,
     ("classification", "vit"): VitClassification,
+    ("classification", "dinov3"): DinoV3Classification,
     ("classification", "resnet18"): ResNetClassification,
     ("classification", "resnet34"): ResNetClassification,
     ("classification", "resnet50"): ResNetClassification,
