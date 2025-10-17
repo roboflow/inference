@@ -399,6 +399,7 @@ try:
         )
 
         ROBOFLOW_MODEL_TYPES[("embed", "sam3")] = SegmentAnything3
+        ROBOFLOW_MODEL_TYPES[("instance-segmentation", "sam3-large")] = SegmentAnything3
         ROBOFLOW_MODEL_TYPES[("interactive-segmentation", "sam3")] = (
             Sam3ForInteractiveImageSegmentation
         )
