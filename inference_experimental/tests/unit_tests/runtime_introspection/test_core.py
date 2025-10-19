@@ -17,6 +17,8 @@ from inference_exp.runtime_introspection.core import (
     get_l4t_version_from_tegra_release,
     get_onnxruntime_info,
     get_os_version,
+    get_torch_version,
+    get_torchvision_version,
     get_trt_version,
     get_trt_version_from_libnvinfer,
     is_hf_transformers_available,
@@ -805,3 +807,131 @@ def test_get_onnxruntime_info_when_onnxruntime_available() -> None:
         Version("1.21.0"),
         ["CoreMLExecutionProvider", "AzureExecutionProvider", "CPUExecutionProvider"],
     )
+
+
+def test_get_torch_version_when_torch_not_available() -> None:
+    # given
+    get_torch_version.cache_clear()
+    try:
+        with mock.patch("builtins.__import__") as import_mock:
+            import_mock.side_effect = ImportError()
+
+            # when
+            result = get_torch_version()
+    finally:
+        get_torch_version.cache_clear()
+
+    # then
+    assert result is None
+
+
+def test_get_torch_version_when_torch_available_but_version_not_parsable() -> None:
+    # given
+    get_torch_version.cache_clear()
+    try:
+        with mock.patch("builtins.__import__") as import_mock:
+            torch_mock = MagicMock()
+            torch_mock.__version__ = "invalid"
+            import_mock.return_value = torch_mock
+
+            # when
+            result = get_torch_version()
+    finally:
+        get_torch_version.cache_clear()
+
+    # then
+    assert result is None
+
+
+@pytest.mark.parametrize(
+    "version, expected_result",
+    [
+        ("2.6.0", Version("2.6.0")),
+        ("2.6.0+cu118", Version("2.6.0")),
+        ("2.6.0+cu126", Version("2.6.0")),
+        ("2.6.0++gitabcdef1", Version("2.6.0")),
+    ],
+)
+def test_get_torch_version_when_torch_available_but_version_parsable(
+    version: str, expected_result: Version
+) -> None:
+    # given
+    get_torch_version.cache_clear()
+    try:
+        with mock.patch("builtins.__import__") as import_mock:
+            torch_mock = MagicMock()
+            torch_mock.__version__ = version
+            import_mock.return_value = torch_mock
+
+            # when
+            result = get_torch_version()
+    finally:
+        get_torch_version.cache_clear()
+
+    # then
+    assert result == expected_result
+
+
+def test_get_torchvision_version_when_torch_not_available() -> None:
+    # given
+    get_torchvision_version.cache_clear()
+    try:
+        with mock.patch("builtins.__import__") as import_mock:
+            import_mock.side_effect = ImportError()
+
+            # when
+            result = get_torchvision_version()
+    finally:
+        get_torchvision_version.cache_clear()
+
+    # then
+    assert result is None
+
+
+def test_get_torchvision_version_when_torch_available_but_version_not_parsable() -> (
+    None
+):
+    # given
+    get_torchvision_version.cache_clear()
+    try:
+        with mock.patch("builtins.__import__") as import_mock:
+            torch_mock = MagicMock()
+            torch_mock.__version__ = "invalid"
+            import_mock.return_value = torch_mock
+
+            # when
+            result = get_torchvision_version()
+    finally:
+        get_torchvision_version.cache_clear()
+
+    # then
+    assert result is None
+
+
+@pytest.mark.parametrize(
+    "version, expected_result",
+    [
+        ("2.6.0", Version("2.6.0")),
+        ("2.6.0+cu118", Version("2.6.0")),
+        ("2.6.0+cu126", Version("2.6.0")),
+        ("2.6.0++gitabcdef1", Version("2.6.0")),
+    ],
+)
+def test_get_torchvision_version_when_torch_available_but_version_parsable(
+    version: str, expected_result: Version
+) -> None:
+    # given
+    get_torchvision_version.cache_clear()
+    try:
+        with mock.patch("builtins.__import__") as import_mock:
+            torch_mock = MagicMock()
+            torch_mock.__version__ = version
+            import_mock.return_value = torch_mock
+
+            # when
+            result = get_torchvision_version()
+    finally:
+        get_torchvision_version.cache_clear()
+
+    # then
+    assert result == expected_result

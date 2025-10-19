@@ -5,6 +5,7 @@ import types
 
 import torch
 import torch.nn.functional as F
+from inference_exp.logger import LOGGER
 from inference_exp.models.rfdetr.dinov2_with_windowed_attn import (
     WindowedDinov2WithRegistersBackbone,
     WindowedDinov2WithRegistersConfig,
@@ -97,14 +98,14 @@ class DinoV2(nn.Module):
             implied_resolution = positional_encoding_size * patch_size
 
             if implied_resolution != dino_config["image_size"]:
-                print(
+                LOGGER.warning(
                     f"Using a different number of positional encodings than DINOv2, which means we're not loading DINOv2 backbone weights. This is not a problem if finetuning a pretrained RF-DETR model."
                 )
                 dino_config["image_size"] = implied_resolution
                 load_dinov2_weights = False
 
             if patch_size != 14:
-                print(
+                LOGGER.warning(
                     f"Using patch size {patch_size} instead of 14, which means we're not loading DINOv2 backbone weights. This is not a problem if finetuning a pretrained RF-DETR model."
                 )
                 dino_config["patch_size"] = patch_size
@@ -301,7 +302,7 @@ class Backbone(BackboneBase):
         self.forward = self.forward_export
 
         if isinstance(self.encoder, PeftModel):
-            print("Merging and unloading LoRA weights")
+            LOGGER.info("Merging and unloading LoRA weights")
             self.encoder.merge_and_unload()
 
     def forward(self, tensor_list: NestedTensor):

@@ -3,7 +3,7 @@ import concurrent
 import os
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from functools import partial
-from threading import Lock, Semaphore, Thread
+from threading import Lock, Thread
 from time import sleep
 from typing import Annotated, Any, Dict, List, Optional, Tuple, Union
 from uuid import uuid4
@@ -34,6 +34,7 @@ from inference.core.entities.requests.clip import (
     ClipTextEmbeddingRequest,
 )
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
+from inference.core.entities.requests.easy_ocr import EasyOCRInferenceRequest
 from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
 from inference.core.entities.requests.groundingdino import GroundingDINOInferenceRequest
 from inference.core.entities.requests.inference import (
@@ -121,8 +122,10 @@ from inference.core.env import (
     API_KEY,
     API_LOGGING_ENABLED,
     BUILDER_ORIGIN,
+    CONFIDENCE_LOWER_BOUND_OOM_PREVENTION,
     CORE_MODEL_CLIP_ENABLED,
     CORE_MODEL_DOCTR_ENABLED,
+    CORE_MODEL_EASYOCR_ENABLED,
     CORE_MODEL_GAZE_ENABLED,
     CORE_MODEL_GROUNDINGDINO_ENABLED,
     CORE_MODEL_OWLV2_ENABLED,
@@ -182,7 +185,10 @@ from inference.core.interfaces.http.handlers.workflows import (
 )
 from inference.core.interfaces.http.middlewares.cors import PathAwareCORSMiddleware
 from inference.core.interfaces.http.middlewares.gzip import gzip_response_if_requested
-from inference.core.interfaces.http.orjson_utils import orjson_response
+from inference.core.interfaces.http.orjson_utils import (
+    orjson_response,
+    orjson_response_keeping_parent_id,
+)
 from inference.core.interfaces.stream_manager.api.entities import (
     CommandResponse,
     ConsumePipelineResponse,
@@ -237,6 +243,12 @@ import time
 from inference.core.roboflow_api import ModelEndpointType
 from inference.core.version import __version__
 
+try:
+    from inference_sdk.config import EXECUTION_ID_HEADER, execution_id
+except ImportError:
+    execution_id = None
+    EXECUTION_ID_HEADER = None
+
 
 class LambdaMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
@@ -248,10 +260,17 @@ class LambdaMiddleware(BaseHTTPMiddleware):
 
 class GCPServerlessMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
+        if execution_id is not None:
+            execution_id_value = request.headers.get(EXECUTION_ID_HEADER)
+            if not execution_id_value:
+                execution_id_value = f"{time.time_ns()}_{uuid4().hex[:4]}"
+            execution_id.set(execution_id_value)
         t1 = time.time()
         response = await call_next(request)
         t2 = time.time()
         response.headers[PROCESSING_TIME_HEADER] = str(t2 - t1)
+        if execution_id is not None:
+            response.headers[EXECUTION_ID_HEADER] = execution_id_value
         return response
 
 
@@ -423,8 +442,7 @@ class HttpInterface(BaseInterface):
                         "/docs",
                         "/info",
                         "/openapi.json",  # needed for /docs and /redoc
-                        # "/workflows/blocks/describe",
-                        # "/workflows/definition/schema",
+                        "/model/registry",  # dont auth this route, usually not used on serverlerless, but queue based serverless uses it internally (not accessible from outside)
                     ]
                     or request.url.path.startswith("/static/")
                     or request.url.path.startswith("/_next/")
@@ -739,6 +757,17 @@ class HttpInterface(BaseInterface):
         Returns:
         The DocTR model ID.
         """
+
+        load_easy_ocr_model = partial(load_core_model, core_model="easy_ocr")
+        """Loads the EasyOCR model into the model manager.
+
+        Args:
+        Same as `load_core_model`.
+
+        Returns:
+        The EasyOCR model ID.
+        """
+
         load_paligemma_model = partial(load_core_model, core_model="paligemma")
 
         load_grounding_dino_model = partial(
@@ -1969,7 +1998,9 @@ class HttpInterface(BaseInterface):
 
                 @app.post(
                     "/doctr/ocr",
-                    response_model=OCRInferenceResponse,
+                    response_model=Union[
+                        OCRInferenceResponse, List[OCRInferenceResponse]
+                    ],
                     summary="DocTR OCR response",
                     description="Run the DocTR OCR model to retrieve text in an image.",
                 )
@@ -1994,7 +2025,7 @@ class HttpInterface(BaseInterface):
                         request (Request, default Body()): The HTTP request.
 
                     Returns:
-                        M.OCRInferenceResponse: The response containing the embedded image.
+                        OCRInferenceResponse: The response containing the embedded image.
                     """
                     logger.debug(f"Reached /doctr/ocr")
                     doctr_model_id = load_doctr_model(
@@ -2011,7 +2042,57 @@ class HttpInterface(BaseInterface):
                             "authorizer"
                         ]["lambda"]["actor"]
                         trackUsage(doctr_model_id, actor)
-                    return response
+                    return orjson_response_keeping_parent_id(response)
+
+            if CORE_MODEL_EASYOCR_ENABLED:
+
+                @app.post(
+                    "/easy_ocr/ocr",
+                    response_model=Union[
+                        OCRInferenceResponse, List[OCRInferenceResponse]
+                    ],
+                    summary="EasyOCR OCR response",
+                    description="Run the EasyOCR model to retrieve text in an image.",
+                )
+                @with_route_exceptions
+                @usage_collector("request")
+                def easy_ocr_retrieve_text(
+                    inference_request: EasyOCRInferenceRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
+                ):
+                    """
+                    Embeds image data using the EasyOCR model.
+
+                    Args:
+                        inference_request (EasyOCRInferenceRequest): The request containing the image from which to retrieve text.
+                        api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
+                        request (Request, default Body()): The HTTP request.
+
+                    Returns:
+                        OCRInferenceResponse: The response containing the embedded image.
+                    """
+                    logger.debug(f"Reached /easy_ocr/ocr")
+                    easy_ocr_model_id = load_easy_ocr_model(
+                        inference_request,
+                        api_key=api_key,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
+                    response = self.model_manager.infer_from_request_sync(
+                        easy_ocr_model_id, inference_request
+                    )
+                    if LAMBDA:
+                        actor = request.scope["aws.event"]["requestContext"][
+                            "authorizer"
+                        ]["lambda"]["actor"]
+                        trackUsage(easy_ocr_model_id, actor)
+                    return orjson_response_keeping_parent_id(response)
 
             if CORE_MODEL_SAM_ENABLED:
 
@@ -2399,7 +2480,7 @@ class HttpInterface(BaseInterface):
                             "authorizer"
                         ]["lambda"]["actor"]
                         trackUsage(trocr_model_id, actor)
-                    return response
+                    return orjson_response_keeping_parent_id(response)
 
         if not (LAMBDA or GCP_SERVERLESS):
 
@@ -2590,6 +2671,11 @@ class HttpInterface(BaseInterface):
                     "external",
                     description="The detailed source information of the inference request",
                 ),
+                disable_model_monitoring: Optional[bool] = Query(
+                    False,
+                    description="If true, disables model monitoring for this request",
+                    include_in_schema=False,
+                ),
             ):
                 """
                 Legacy inference endpoint for object detection, instance segmentation, and classification.
@@ -2610,8 +2696,9 @@ class HttpInterface(BaseInterface):
                 model_id = f"{dataset_id}/{version_id}"
                 if confidence >= 1:
                     confidence /= 100
-                elif confidence < 0:
-                    confidence = 0
+                elif confidence < CONFIDENCE_LOWER_BOUND_OOM_PREVENTION:
+                    # allowing lower confidence results in RAM usage explosion
+                    confidence = CONFIDENCE_LOWER_BOUND_OOM_PREVENTION
 
                 if overlap >= 1:
                     overlap /= 100
@@ -2715,6 +2802,7 @@ class HttpInterface(BaseInterface):
                     source=source,
                     source_info=source_info,
                     usage_billable=countinference,
+                    disable_model_monitoring=disable_model_monitoring,
                     **args,
                 )
                 inference_response = self.model_manager.infer_from_request_sync(

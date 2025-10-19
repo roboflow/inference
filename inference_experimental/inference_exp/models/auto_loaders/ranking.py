@@ -1,6 +1,13 @@
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import torch
+from inference_exp.models.auto_loaders.constants import (
+    NMS_CLASS_AGNOSTIC_KEY,
+    NMS_CONFIDENCE_THRESHOLD_KEY,
+    NMS_FUSED_FEATURE,
+    NMS_IOU_THRESHOLD_KEY,
+    NMS_MAX_DETECTIONS_KEY,
+)
 from inference_exp.models.auto_loaders.utils import (
     filter_available_devices_with_selected_device,
 )
@@ -14,10 +21,11 @@ from inference_exp.weights_providers.entities import (
 )
 
 BACKEND_PRIORITY = {
-    BackendType.TRT: 5,
-    BackendType.TORCH: 4,
-    BackendType.HF: 3,
-    BackendType.ONNX: 2,
+    BackendType.TRT: 6,
+    BackendType.TORCH: 5,
+    BackendType.HF: 5,
+    BackendType.ONNX: 3,
+    BackendType.TORCH_SCRIPT: 2,
     BackendType.ULTRALYTICS: 1,
 }
 QUANTIZATION_PRIORITY = {
@@ -37,8 +45,9 @@ BATCH_SIZE_PRIORITY = {
 def rank_model_packages(
     model_packages: List[ModelPackageMetadata],
     selected_device: Optional[torch.device] = None,
+    nms_fusion_preferences: Optional[Union[bool, dict]] = None,
 ) -> List[ModelPackageMetadata]:
-    # I feel like this will be the biggest liability of new inference :)
+    # I feel like this will be the biggest liability of new inference :))
     # Some dimensions are just hard to rank arbitrarily and reasonably
     sorting_features = []
     # ordering TRT and Cu versions from older to newest -
@@ -49,8 +58,10 @@ def rank_model_packages(
     # discarded in the previous stage.
     cuda_ranking = rank_cuda_versions(model_packages=model_packages)
     trt_ranking = rank_trt_versions(model_packages=model_packages)
-    for model_package, package_cu_rank, package_trt_rank in zip(
-        model_packages, cuda_ranking, trt_ranking
+    # this is to ensure determinism when other methods fail
+    identifiers_ranking = rank_packages_ids(model_packages=model_packages)
+    for model_package, package_cu_rank, package_trt_rank, package_id_rank in zip(
+        model_packages, cuda_ranking, trt_ranking, identifiers_ranking
     ):
         batch_mode = (
             DYNAMIC_BATCH_SIZE_KEY
@@ -82,15 +93,19 @@ def rank_model_packages(
                 package_trt_rank,
                 retrieve_onnx_incompatible_providers_score(model_package),
                 retrieve_trt_dynamic_batch_size_score(model_package),
+                retrieve_fused_nms_rank(
+                    model_package, nms_fusion_preferences=nms_fusion_preferences
+                ),
                 retrieve_trt_lean_runtime_excluded_score(model_package),
                 retrieve_jetson_device_name_match_score(model_package),
                 retrieve_os_version_match_score(model_package),
                 retrieve_l4t_version_match_score(model_package),
                 retrieve_driver_version_match_score(model_package),
+                package_id_rank,
                 model_package,
             )
         )
-    sorted_features = sorted(sorting_features, key=lambda x: x[:17], reverse=True)
+    sorted_features = sorted(sorting_features, key=lambda x: x[:-1], reverse=True)
     return [f[-1] for f in sorted_features]
 
 
@@ -254,6 +269,87 @@ def retrieve_jetson_device_name_match_score(model_package: ModelPackageMetadata)
     )
 
 
+def retrieve_fused_nms_rank(
+    model_package: ModelPackageMetadata,
+    nms_fusion_preferences: Optional[Union[bool, dict]],
+) -> Union[float, int]:
+    if nms_fusion_preferences is None or nms_fusion_preferences is False:
+        return 0
+    if not model_package.model_features:
+        return 0
+    nms_fused = model_package.model_features.get(NMS_FUSED_FEATURE)
+    if not isinstance(nms_fused, dict):
+        return 0
+    if nms_fusion_preferences is True:
+        # default values should be passed by filter, so here we treat every package equally good
+        return 1
+    actual_max_detections = nms_fused[NMS_MAX_DETECTIONS_KEY]
+    actual_confidence_threshold = nms_fused[NMS_CONFIDENCE_THRESHOLD_KEY]
+    actual_iou_threshold = nms_fused[NMS_IOU_THRESHOLD_KEY]
+    actual_class_agnostic = nms_fused[NMS_CLASS_AGNOSTIC_KEY]
+    final_score = 0.0
+    if NMS_MAX_DETECTIONS_KEY in nms_fusion_preferences:
+        requested_max_detections = nms_fusion_preferences[NMS_MAX_DETECTIONS_KEY]
+        if isinstance(requested_max_detections, (list, tuple)):
+            min_detections, max_detections = requested_max_detections
+        else:
+            min_detections, max_detections = (
+                requested_max_detections,
+                requested_max_detections,
+            )
+        final_score += score_distance_from_mean(
+            min_value=min_detections,
+            max_value=max_detections,
+            examined_value=actual_max_detections,
+        )
+    if NMS_CONFIDENCE_THRESHOLD_KEY in nms_fusion_preferences:
+        requested_confidence = nms_fusion_preferences[NMS_CONFIDENCE_THRESHOLD_KEY]
+        if isinstance(requested_confidence, (list, tuple)):
+            min_confidence, max_confidence = requested_confidence
+        else:
+            min_confidence, max_confidence = (
+                requested_confidence,
+                requested_confidence,
+            )
+        final_score += score_distance_from_mean(
+            min_value=min_confidence,
+            max_value=max_confidence,
+            examined_value=actual_confidence_threshold,
+        )
+    if NMS_IOU_THRESHOLD_KEY in nms_fusion_preferences:
+        requested_iou_threshold = nms_fusion_preferences[NMS_IOU_THRESHOLD_KEY]
+        if isinstance(requested_iou_threshold, (list, tuple)):
+            min_iou_threshold, max_iou_threshold = requested_iou_threshold
+        else:
+            min_iou_threshold, max_iou_threshold = (
+                requested_iou_threshold,
+                requested_iou_threshold,
+            )
+        final_score += score_distance_from_mean(
+            min_value=min_iou_threshold,
+            max_value=max_iou_threshold,
+            examined_value=actual_iou_threshold,
+        )
+    if NMS_CLASS_AGNOSTIC_KEY in nms_fusion_preferences:
+        final_score += float(
+            actual_class_agnostic == nms_fusion_preferences[NMS_CLASS_AGNOSTIC_KEY]
+        )
+    return final_score
+
+
+def score_distance_from_mean(
+    min_value: float, max_value: float, examined_value: float
+) -> float:
+    min_value, max_value = min(min_value, max_value), max(min_value, max_value)
+    if min_value == max_value:
+        return float(abs(examined_value - max_value) < 1e-5)
+    if examined_value < min_value or examined_value > max_value:
+        return 0.0
+    span = max_value - min_value
+    examined_value_scaled = min(max((examined_value - min_value) / (span + 1e-6), 0), 1)
+    return 1.0 - abs(0.5 - examined_value_scaled)
+
+
 def rank_cuda_versions(model_packages: List[ModelPackageMetadata]) -> List[int]:
     cuda_versions = []
     package_id_to_cuda_version = {}
@@ -306,3 +402,8 @@ def rank_trt_versions(model_packages: List[ModelPackageMetadata]) -> List[int]:
         result = trt_versions_ranking.get(package_trt_version, last_ranking)
         results.append(result)
     return results
+
+
+def rank_packages_ids(model_packages: List[ModelPackageMetadata]) -> List[int]:
+    package_ids = [p.package_id for p in model_packages]
+    return sorted(range(len(package_ids)), key=lambda i: package_ids[i])

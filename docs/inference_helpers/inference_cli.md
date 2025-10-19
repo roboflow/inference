@@ -38,4 +38,4 @@ Roboflow Inference CLI currently supports the following device targets:
 - ARM64 CPU
 - NVIDIA GPU
 
-For Jetson specific inference server images, check out the <a href="https://pypi.org/project/inference/" target="_blank">Roboflow Inference</a> package, or pull the images directly following instructions in the official [Roboflow Inference documentation](../quickstart/docker.md#pull-from-docker-hub).
+For Jetson specific inference server images, check out the <a href="https://pypi.org/project/inference/" target="_blank">Roboflow Inference</a> package, or pull the images directly following instructions in the official [Roboflow Inference documentation](../quickstart/docker.md#step-1-pull-from-docker-hub).

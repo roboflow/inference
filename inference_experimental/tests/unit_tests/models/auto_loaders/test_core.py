@@ -7,7 +7,11 @@ from unittest.mock import MagicMock, call
 import numpy as np
 import pytest
 from inference_exp import ClassificationPrediction
-from inference_exp.errors import CorruptedModelPackageError, ModelLoadingError
+from inference_exp.errors import (
+    CorruptedModelPackageError,
+    InsecureModelIdentifierError,
+    ModelLoadingError,
+)
 from inference_exp.models.auto_loaders import core
 from inference_exp.models.auto_loaders.auto_resolution_cache import (
     AutoResolutionCacheEntry,
@@ -77,7 +81,7 @@ def test_attempt_loading_model_from_local_storage_when_valid_model_package_provi
 ) -> None:
     # when
     my_model = attempt_loading_model_from_local_storage(
-        model_dir=example_model_package_dir,
+        model_dir_or_weights_path=example_model_package_dir,
         allow_local_code_packages=True,
         model_init_kwargs={"some": "value"},
     )
@@ -94,7 +98,7 @@ def test_attempt_loading_model_from_local_storage_when_local_packages_forbidden(
     # when
     with pytest.raises(ModelLoadingError):
         _ = attempt_loading_model_from_local_storage(
-            model_dir=example_model_package_dir,
+            model_dir_or_weights_path=example_model_package_dir,
             allow_local_code_packages=False,
             model_init_kwargs={"some": "value"},
         )
@@ -148,11 +152,46 @@ def test_parse_model_config_when_full_config_provided(full_config_path: str) -> 
 def test_generate_model_package_cache_path() -> None:
     # when
     result = generate_model_package_cache_path(
-        model_id="my-model", package_id="my-package"
+        model_id="my-model", package_id="mypackage"
     )
 
     # then
-    assert result == "/some/models-cache/my-model/my-package"
+    assert result == "/some/models-cache/my-model-6fa11b0c/mypackage"
+
+
+@mock.patch.object(core, "INFERENCE_HOME", "/some")
+def test_generate_model_package_cache_path_when_id_contains_forward_slash_at_front() -> (
+    None
+):
+    # when
+    result = generate_model_package_cache_path(
+        model_id="/my-model", package_id="mypackage"
+    )
+
+    # then
+    assert result == "/some/models-cache/-my-model-9651d483/mypackage"
+
+
+@mock.patch.object(core, "INFERENCE_HOME", "/some")
+def test_generate_model_package_cache_path_when_id_contains_forward_slash_in_the_middle() -> (
+    None
+):
+    # when
+    result = generate_model_package_cache_path(
+        model_id="my-model/../../home", package_id="mypackage"
+    )
+
+    # then
+    assert result == "/some/models-cache/my-model-home-0b1d84f7/mypackage"
+
+
+@mock.patch.object(core, "INFERENCE_HOME", "/some")
+def test_generate_model_package_cache_path_when_package_id_is_not_sanitized() -> None:
+    # when
+    with pytest.raises(InsecureModelIdentifierError):
+        _ = generate_model_package_cache_path(
+            model_id="my-model", package_id="/my-package"
+        )
 
 
 def test_dump_auto_resolution_cache_when_cache_disabled() -> None:

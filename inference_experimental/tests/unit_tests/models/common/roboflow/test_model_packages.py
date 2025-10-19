@@ -1,93 +1,22 @@
 import pytest
-from inference_exp.entities import ImageDimensions
 from inference_exp.errors import CorruptedModelPackageError
 from inference_exp.models.common.roboflow.model_packages import (
-    ModelCharacteristics,
-    PreProcessingConfig,
-    PreProcessingMode,
+    AnySizePadding,
+    AutoOrient,
+    ColorMode,
+    ForwardPassConfiguration,
+    ImagePreProcessing,
+    InferenceConfig,
+    NetworkInputDefinition,
+    ResizeMode,
+    StaticCrop,
+    TrainingInputSize,
     TRTConfig,
-    parse_class_map_from_environment_file,
     parse_class_names_file,
+    parse_inference_config,
     parse_key_points_metadata,
-    parse_model_characteristics,
-    parse_pre_processing_config,
     parse_trt_config,
 )
-
-
-def test_parse_class_map_from_environment_file_when_file_not_exists() -> None:
-    with pytest.raises(CorruptedModelPackageError):
-        parse_class_map_from_environment_file(
-            environment_file_path="/some/invalid/file.json"
-        )
-
-
-def test_parse_class_map_from_environment_file_when_file_is_not_a_valid_json(
-    not_a_json_file_path: str,
-) -> None:
-    with pytest.raises(CorruptedModelPackageError):
-        parse_class_map_from_environment_file(
-            environment_file_path=not_a_json_file_path
-        )
-
-
-def test_parse_class_map_from_environment_file_when_file_contains_json_but_not_dict_object(
-    json_without_dict_path: str,
-) -> None:
-    with pytest.raises(CorruptedModelPackageError):
-        parse_class_map_from_environment_file(
-            environment_file_path=json_without_dict_path
-        )
-
-
-def test_parse_class_map_from_environment_file_when_file_does_not_have_class_map(
-    env_without_class_map: str,
-) -> None:
-    with pytest.raises(CorruptedModelPackageError):
-        parse_class_map_from_environment_file(
-            environment_file_path=env_without_class_map
-        )
-
-
-def test_parse_class_map_from_environment_file_when_file_is_valid(
-    env_with_class_map: str,
-) -> None:
-    # when
-    result = parse_class_map_from_environment_file(
-        environment_file_path=env_with_class_map
-    )
-
-    # then
-    assert result == [
-        "person",
-        "bicycle",
-        "car",
-        "motorcycle",
-        "airplane",
-        "bus",
-        "train",
-        "truck",
-    ]
-
-
-def test_parse_class_map_from_environment_file_when_file_contains_malformed_class_map(
-    env_with_malformed_class_map: str,
-) -> None:
-    # when
-    with pytest.raises(CorruptedModelPackageError):
-        _ = parse_class_map_from_environment_file(
-            environment_file_path=env_with_malformed_class_map
-        )
-
-
-def test_parse_class_map_from_environment_file_when_file_contains_malformed_class_map_index(
-    env_with_malformed_class_map_index: str,
-) -> None:
-    # when
-    with pytest.raises(CorruptedModelPackageError):
-        _ = parse_class_map_from_environment_file(
-            environment_file_path=env_with_malformed_class_map_index
-        )
 
 
 def test_parse_trt_config_when_invalid_path_provided() -> None:
@@ -213,12 +142,12 @@ def test_parse_key_points_metadata_when_valid_input_provided(
     valid_key_points_metadata: str,
 ) -> None:
     # when
-    result = parse_key_points_metadata(
+    keypoints, edges = parse_key_points_metadata(
         key_points_metadata_path=valid_key_points_metadata
     )
 
     # then
-    assert result == [
+    assert keypoints == [
         ["shoulder-right", "shoulder-left", "neck"],
         [
             "nose",
@@ -240,6 +169,7 @@ def test_parse_key_points_metadata_when_valid_input_provided(
             "right_ankle",
         ],
     ]
+    assert edges == [[(0, 2)], [(0, 2)]]
 
 
 def test_parse_key_points_metadata_when_object_class_id_not_available(
@@ -282,169 +212,34 @@ def test_parse_key_points_metadata_with_missing_classes(
         )
 
 
-def test_parse_model_characteristics_when_file_not_found() -> None:
-    # when
-    with pytest.raises(CorruptedModelPackageError):
-        _ = parse_model_characteristics(config_path="/not/existing.json")
-
-
-def test_parse_model_characteristics_when_config_is_not_a_json_file(
-    not_a_json_file_path: str,
+def test_parse_key_points_metadata_with_missing_edges(
+    key_points_metadata_with_missing_edges: str,
 ) -> None:
     # when
     with pytest.raises(CorruptedModelPackageError):
-        _ = parse_model_characteristics(config_path=not_a_json_file_path)
-
-
-def test_parse_model_characteristics_when_project_task_type_missing(
-    model_characteristics_with_task_type_missing: str,
-) -> None:
-    # when
-    with pytest.raises(CorruptedModelPackageError):
-        _ = parse_model_characteristics(
-            config_path=model_characteristics_with_task_type_missing
+        _ = parse_key_points_metadata(
+            key_points_metadata_path=key_points_metadata_with_missing_edges
         )
 
 
-def test_parse_model_characteristics_when_model_type_missing(
-    model_characteristics_with_model_type_missing: str,
+def test_parse_key_points_metadata_with_malformed_edges(
+    key_points_metadata_with_malformed_edges: str,
 ) -> None:
     # when
     with pytest.raises(CorruptedModelPackageError):
-        _ = parse_model_characteristics(
-            config_path=model_characteristics_with_model_type_missing
+        _ = parse_key_points_metadata(
+            key_points_metadata_path=key_points_metadata_with_malformed_edges
         )
 
 
-def test_parse_model_characteristics_when_valid_config_provided(
-    valid_model_characteristics: str,
-) -> None:
-    # when
-    result = parse_model_characteristics(config_path=valid_model_characteristics)
-
-    # then
-    assert result == ModelCharacteristics(
-        task_type="object-detection",
-        model_type="yolov8",
-    )
-
-
-def test_parse_pre_processing_config_when_invalid_path_provided() -> None:
-    # when
-    with pytest.raises(CorruptedModelPackageError):
-        _ = parse_pre_processing_config(config_path="/some/invalid.json")
-
-
-def test_parse_pre_processing_config_when_not_a_json_file_provided(
-    not_a_json_file_path: str,
+def test_parse_key_points_metadata_with_edges_pointing_non_existing_class(
+    key_points_metadata_with_edges_pointing_non_existing_class: str,
 ) -> None:
     # when
     with pytest.raises(CorruptedModelPackageError):
-        _ = parse_pre_processing_config(config_path=not_a_json_file_path)
-
-
-def test_parse_pre_processing_config_not_a_dict_payload_provided(
-    empty_environment: str,
-) -> None:
-    # when
-    with pytest.raises(CorruptedModelPackageError):
-        _ = parse_pre_processing_config(config_path=empty_environment)
-
-
-def test_parse_pre_processing_config_when_pre_processing_config_is_missing(
-    environment_without_preprocessing: str,
-) -> None:
-    # when
-    with pytest.raises(CorruptedModelPackageError):
-        _ = parse_pre_processing_config(config_path=environment_without_preprocessing)
-
-
-def test_parse_pre_processing_config_when_not_a_json_preprocess_config_provided(
-    environment_with_not_a_json_preprocessing: str,
-) -> None:
-    # when
-    with pytest.raises(CorruptedModelPackageError):
-        _ = parse_pre_processing_config(
-            config_path=environment_with_not_a_json_preprocessing
+        _ = parse_key_points_metadata(
+            key_points_metadata_path=key_points_metadata_with_edges_pointing_non_existing_class
         )
-
-
-def test_parse_pre_processing_config_when_valid_environment_config_provided_with_stretch(
-    valid_environment_stretch: str,
-) -> None:
-    # when
-    result = parse_pre_processing_config(config_path=valid_environment_stretch)
-
-    # then
-    assert result == PreProcessingConfig(
-        mode=PreProcessingMode.STRETCH,
-        target_size=ImageDimensions(width=560, height=560),
-        padding_value=None,
-    )
-
-
-def test_parse_pre_processing_config_when_valid_environment_config_provided_with_letterbox(
-    valid_environment_letterbox: str,
-) -> None:
-    # when
-    result = parse_pre_processing_config(config_path=valid_environment_letterbox)
-
-    # then
-    assert result == PreProcessingConfig(
-        mode=PreProcessingMode.LETTERBOX,
-        target_size=ImageDimensions(width=560, height=560),
-        padding_value=127,
-    )
-
-
-def test_parse_pre_processing_config_when_valid_environment_config_provided_without_resize(
-    valid_environment_no_resize: str,
-) -> None:
-    # when
-    result = parse_pre_processing_config(config_path=valid_environment_no_resize)
-
-    # then
-    assert result == PreProcessingConfig(
-        mode=PreProcessingMode.NONE,
-        target_size=None,
-        padding_value=None,
-    )
-
-
-def test_parse_pre_processing_config_when_resize_without_dimensions_provided(
-    environment_resize_without_dimensions: str,
-) -> None:
-    # when
-    with pytest.raises(CorruptedModelPackageError):
-        _ = parse_pre_processing_config(
-            config_path=environment_resize_without_dimensions
-        )
-
-
-def test_parse_pre_processing_config_when_resize_with_invalid_dimensions_provided(
-    environment_resize_invalid_dimensions: str,
-) -> None:
-    # when
-    with pytest.raises(CorruptedModelPackageError):
-        _ = parse_pre_processing_config(
-            config_path=environment_resize_invalid_dimensions
-        )
-
-
-def test_parse_pre_processing_config_when_resize_without_format_provided(
-    environment_resize_without_format: str,
-) -> None:
-    # when
-    with pytest.raises(CorruptedModelPackageError):
-        _ = parse_pre_processing_config(config_path=environment_resize_without_format)
-
-
-def test_parse_pre_processing_config_when_resize_with_invalid_format_provided(
-    environment_resize_invalid_format: str,
-) -> None:
-    # when
-    with pytest.raises(CorruptedModelPackageError):
-        _ = parse_pre_processing_config(config_path=environment_resize_invalid_format)
 
 
 def test_parse_class_names_file_when_invalid_path_provided() -> None:
@@ -469,3 +264,140 @@ def test_parse_class_names_file_when_valid_config_provided(
 
     # then
     assert result == ["some", "other", "yet-another"]
+
+
+def test_parse_inference_config_when_path_does_not_exists() -> None:
+    # when
+    with pytest.raises(CorruptedModelPackageError):
+        _ = parse_inference_config(
+            config_path="/some/non/existing.json",
+            allowed_resize_modes={ResizeMode.CENTER_CROP},
+        )
+
+
+def test_parse_inference_config_when_file_is_not_json(class_names_valid: str) -> None:
+    with pytest.raises(CorruptedModelPackageError):
+        _ = parse_inference_config(
+            config_path=class_names_valid, allowed_resize_modes={ResizeMode.CENTER_CROP}
+        )
+
+
+def test_parse_inference_config_when_json_file_does_not_define_dict_config(
+    json_without_dict_path: str,
+) -> None:
+    with pytest.raises(CorruptedModelPackageError):
+        _ = parse_inference_config(
+            config_path=json_without_dict_path,
+            allowed_resize_modes={ResizeMode.STRETCH_TO},
+        )
+
+
+def test_parse_inference_config_when_invalid_image_pre_processing(
+    inference_config_invalid_image_pre_processing: str,
+) -> None:
+    with pytest.raises(CorruptedModelPackageError):
+        _ = parse_inference_config(
+            config_path=inference_config_invalid_image_pre_processing,
+            allowed_resize_modes={ResizeMode.STRETCH_TO},
+        )
+
+
+def test_parse_inference_config_when_invalid_network_input(
+    inference_config_invalid_network_input: str,
+) -> None:
+    with pytest.raises(CorruptedModelPackageError):
+        _ = parse_inference_config(
+            config_path=inference_config_invalid_network_input,
+            allowed_resize_modes={ResizeMode.STRETCH_TO},
+        )
+
+
+def test_parse_inference_config_when_missing_network_input(
+    inference_config_missing_network_input: str,
+) -> None:
+    with pytest.raises(CorruptedModelPackageError):
+        _ = parse_inference_config(
+            config_path=inference_config_missing_network_input,
+            allowed_resize_modes={ResizeMode.STRETCH_TO},
+        )
+
+
+def test_parse_inference_config_when_invalid_forward_pass_config(
+    inference_config_invalid_forward_pass_config: str,
+) -> None:
+    with pytest.raises(CorruptedModelPackageError):
+        _ = parse_inference_config(
+            config_path=inference_config_invalid_forward_pass_config,
+            allowed_resize_modes={ResizeMode.STRETCH_TO},
+        )
+
+
+def test_parse_inference_config_when_invalid_post_processing_config(
+    inference_config_invalid_post_processing_config: str,
+) -> None:
+    with pytest.raises(CorruptedModelPackageError):
+        _ = parse_inference_config(
+            config_path=inference_config_invalid_post_processing_config,
+            allowed_resize_modes={ResizeMode.STRETCH_TO},
+        )
+
+
+def test_parse_inference_config_when_invalid_class_names_operations(
+    inference_config_invalid_class_names_operations: str,
+) -> None:
+    with pytest.raises(CorruptedModelPackageError):
+        _ = parse_inference_config(
+            config_path=inference_config_invalid_class_names_operations,
+            allowed_resize_modes={ResizeMode.STRETCH_TO},
+        )
+
+
+def test_parse_inference_config_when_parsing_should_succeed(
+    inference_config_valid_config: str,
+) -> None:
+    # when
+    result = parse_inference_config(
+        config_path=inference_config_valid_config,
+        allowed_resize_modes={ResizeMode.STRETCH_TO},
+    )
+
+    # then
+    expected_result = InferenceConfig(
+        image_pre_processing=ImagePreProcessing(
+            **{
+                "auto-orient": AutoOrient(enabled=True),
+                "static-crop": StaticCrop(
+                    enabled=True, x_min=9, x_max=94, y_min=9, y_max=75
+                ),
+            }
+        ),
+        network_input=NetworkInputDefinition(
+            training_input_size=TrainingInputSize(height=412, width=412),
+            dynamic_spatial_size_supported=True,
+            dynamic_spatial_size_mode=AnySizePadding(type="any-size"),
+            color_mode=ColorMode.RGB,
+            resize_mode=ResizeMode.STRETCH_TO,
+            padding_value=None,
+            input_channels=3,
+            scaling_factor=None,
+            normalization=None,
+        ),
+        forward_pass=ForwardPassConfiguration(
+            static_batch_size=None, max_dynamic_batch_size=None
+        ),
+        post_processing=None,
+        model_initialization=None,
+        class_names_operations=None,
+    )
+    assert result == expected_result
+
+
+def test_parse_inference_config_when_resize_mode_is_invalid(
+    inference_config_valid_config: str,
+) -> None:
+    # when
+    with pytest.raises(CorruptedModelPackageError):
+        _ = parse_inference_config(
+            config_path=inference_config_valid_config,
+            allowed_resize_modes={ResizeMode.LETTERBOX},
+        )

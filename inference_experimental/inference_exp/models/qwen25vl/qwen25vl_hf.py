@@ -1,20 +1,23 @@
-from typing import List, Union
 import os
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
-from peft import PeftModel
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
-from transformers import (
-    AutoProcessor,
-    Qwen2_5_VLForConditionalGeneration,
-    Qwen2_5_VLConfig,
-    AutoModelForCausalLM,
+from inference_exp.models.common.roboflow.model_packages import (
+    InferenceConfig,
+    ResizeMode,
+    parse_inference_config,
 )
-
-AutoModelForCausalLM.register(
-    config_class=Qwen2_5_VLConfig, model_class=Qwen2_5_VLForConditionalGeneration
+from inference_exp.models.common.roboflow.pre_processing import (
+    pre_process_network_input,
+)
+from peft import PeftModel
+from transformers import (
+    BitsAndBytesConfig,
+    Qwen2_5_VLForConditionalGeneration,
+    Qwen2_5_VLProcessor,
 )
 
 
@@ -24,52 +27,90 @@ class Qwen25VLHF:
         cls,
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
+        trust_remote_code: bool = False,
+        local_files_only: bool = True,
+        quantization_config: Optional[BitsAndBytesConfig] = None,
+        disable_quantization: bool = False,
         **kwargs,
     ) -> "Qwen25VLHF":
-        torch_dtype = torch.bfloat16 if device.type == "cuda" else torch.float32
-
         adapter_config_path = os.path.join(model_name_or_path, "adapter_config.json")
+        inference_config_path = os.path.join(
+            model_name_or_path, "inference_config.json"
+        )
+        inference_config = None
+        if os.path.exists(inference_config_path):
+            inference_config = parse_inference_config(
+                config_path=inference_config_path,
+                allowed_resize_modes={
+                    ResizeMode.STRETCH_TO,
+                    ResizeMode.LETTERBOX,
+                    ResizeMode.CENTER_CROP,
+                    ResizeMode.LETTERBOX_REFLECT_EDGES,
+                },
+            )
+        if (
+            quantization_config is None
+            and device.type == "cuda"
+            and not disable_quantization
+        ):
+            quantization_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_quant_type="nf4",
+            )
         if os.path.exists(adapter_config_path):
             base_model_path = os.path.join(model_name_or_path, "base")
             model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
                 base_model_path,
-                torch_dtype=torch_dtype,
-                trust_remote_code=True,
-                local_files_only=True,
+                dtype="auto",
+                trust_remote_code=trust_remote_code,
+                local_files_only=local_files_only,
+                quantization_config=quantization_config,
             )
             model = PeftModel.from_pretrained(model, model_name_or_path)
-            model.merge_and_unload()
+            if quantization_config is None:
+                model.merge_and_unload()
             model.to(device)
-
-            processor = AutoProcessor.from_pretrained(
-                base_model_path, trust_remote_code=True, local_files_only=True
+            processor = Qwen2_5_VLProcessor.from_pretrained(
+                model_name_or_path,
+                trust_remote_code=trust_remote_code,
+                local_files_only=local_files_only,
+                use_fast=True,
             )
         else:
             model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
                 model_name_or_path,
-                torch_dtype=torch_dtype,
+                dtype="auto",
                 device_map=device,
-                trust_remote_code=True,
-                local_files_only=True,
+                trust_remote_code=trust_remote_code,
+                local_files_only=local_files_only,
+                quantization_config=quantization_config,
             ).eval()
-            processor = AutoProcessor.from_pretrained(
-                model_name_or_path, trust_remote_code=True, local_files_only=True
+            Qwen2_5_VLProcessor.image_processor_class = "Qwen2VLImageProcessor"
+            processor = Qwen2_5_VLProcessor.from_pretrained(
+                model_name_or_path,
+                trust_remote_code=trust_remote_code,
+                local_files_only=local_files_only,
+                use_fast=True,
             )
         return cls(
-            model=model, processor=processor, device=device, torch_dtype=torch_dtype
+            model=model,
+            processor=processor,
+            inference_config=inference_config,
+            device=device,
         )
 
     def __init__(
         self,
         model: Qwen2_5_VLForConditionalGeneration,
-        processor: AutoProcessor,
+        processor: Qwen2_5_VLProcessor,
+        inference_config: Optional[InferenceConfig],
         device: torch.device,
-        torch_dtype: torch.dtype,
     ):
         self._model = model
         self._processor = processor
+        self._inference_config = inference_config
         self._device = device
-        self._torch_dtype = torch_dtype
         self.default_system_prompt = (
             "You are a Qwen2.5-VL model that can answer questions about any image."
         )
@@ -102,6 +143,7 @@ class Qwen25VLHF:
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         prompt: str = None,
         input_color_format: ColorFormat = None,
+        image_size: Optional[Tuple[int, int]] = None,
         **kwargs,
     ) -> dict:
         def _to_tensor(image: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
@@ -114,12 +156,23 @@ class Qwen25VLHF:
                 tensor_image = tensor_image[[2, 1, 0], :, :]
             return tensor_image
 
-        if isinstance(images, torch.Tensor) and images.ndim > 3:
-            image_list = [_to_tensor(img) for img in images]
-        elif not isinstance(images, list):
-            image_list = [_to_tensor(images)]
+        if self._inference_config is None:
+            if isinstance(images, torch.Tensor) and images.ndim > 3:
+                image_list = [_to_tensor(img) for img in images]
+            elif not isinstance(images, list):
+                image_list = [_to_tensor(images)]
+            else:
+                image_list = [_to_tensor(img) for img in images]
         else:
-            image_list = [_to_tensor(img) for img in images]
+            images = pre_process_network_input(
+                images=images,
+                image_pre_processing=self._inference_config.image_pre_processing,
+                network_input=self._inference_config.network_input,
+                target_device=self._device,
+                input_color_format=input_color_format,
+                image_size_wh=image_size,
+            )[0]
+            image_list = [e[0] for e in torch.split(images, 1, dim=0)]
         # Handle prompt and system prompt parsing logic from original implementation
         if prompt is None:
             prompt = ""
@@ -212,3 +265,20 @@ class Qwen25VLHF:
             result.append(text.strip())
 
         return result
+
+
+def adjust_lora_model_state_dict(state_dict: dict) -> dict:
+    return {
+        refactor_adapter_weights_key(key=key): value
+        for key, value in state_dict.items()
+    }
+
+
+def refactor_adapter_weights_key(key: str) -> str:
+    if ".language_model." in key:
+        return key
+    return (
+        key.replace("model.layers", "model.language_model.layers")
+        .replace(".weight", ".default.weight")
+        .replace(".lora_magnitude_vector", ".lora_magnitude_vector.default.weight")
+    )

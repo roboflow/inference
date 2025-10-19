@@ -270,7 +270,9 @@ class LoRAQwen25VL(LoRATransformerModel):
         if os.path.exists(rm_weights):
             os.remove(rm_weights)
 
-        files_folder = MODEL_CACHE_DIR + "lora-bases/qwen/qwen25vl-7b/main/"
+        files_folder = os.path.join(
+            MODEL_CACHE_DIR, "lora-bases/qwen/qwen25vl-7b/main/"
+        )
         _patch_preprocessor_config(files_folder)
 
         if self.use_quantization:

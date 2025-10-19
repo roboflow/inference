@@ -29,7 +29,7 @@ For instance, for filtering people on bicycles, "bicycle" could be used as the o
 Examples applications: people in a car, items on a pallet
 
 The filter will remove the overlap class from the results, and only return the objects that overlap it. So
-in the case above, bicycle will also be removed from the results. 
+in the case above, bicycle will also be removed from the results.
 """
 
 
@@ -43,8 +43,9 @@ class OverlapManifest(WorkflowBlockManifest):
             "license": "Apache-2.0",
             "block_type": "analytics",
             "ui_manifest": {
+                "section": "flow_control",
                 "icon": "far fa-square-o",
-                "blockPriority": 1,
+                "blockPriority": 1.5,
             },
         }
     )

@@ -46,6 +46,7 @@ def get_image_data(image_shape):
     return rgb_image_tensor, bgr_image_numpy, rgb_image_numpy
 
 
+@pytest.mark.torch_models
 @pytest.mark.parametrize("model_size", [224, 336, 448])
 @pytest.mark.parametrize("image_shape", [(224, 224), (336, 448), (640, 640)])
 def test_single_numpy_input(model_size, image_shape):
@@ -60,6 +61,7 @@ def test_single_numpy_input(model_size, image_shape):
     assert torch.allclose(tensor_output, pil_output, atol=1e-2)
 
 
+@pytest.mark.torch_models
 @pytest.mark.parametrize("model_size", [224, 336, 448])
 @pytest.mark.parametrize("image_shape", [(224, 224), (336, 448), (640, 640)])
 def test_single_tensor_input(model_size, image_shape):
@@ -74,6 +76,7 @@ def test_single_tensor_input(model_size, image_shape):
     assert torch.allclose(tensor_output, pil_output, atol=1e-2)
 
 
+@pytest.mark.torch_models
 @pytest.mark.parametrize("model_size", [224, 336, 448])
 @pytest.mark.parametrize("image_shape", [(224, 224), (336, 448), (640, 640)])
 def test_list_of_numpy_inputs(model_size, image_shape):
@@ -92,6 +95,7 @@ def test_list_of_numpy_inputs(model_size, image_shape):
     assert torch.allclose(tensor_output, pil_output, atol=1e-2)
 
 
+@pytest.mark.torch_models
 @pytest.mark.parametrize("model_size", [224, 336, 448])
 @pytest.mark.parametrize("image_shape", [(224, 224), (336, 448), (640, 640)])
 def test_list_of_tensor_inputs(model_size, image_shape):
@@ -107,6 +111,7 @@ def test_list_of_tensor_inputs(model_size, image_shape):
     assert torch.allclose(tensor_output, pil_output, atol=1e-2)
 
 
+@pytest.mark.torch_models
 @pytest.mark.parametrize("model_size", [224, 336, 448])
 @pytest.mark.parametrize("image_shape", [(224, 224), (336, 448), (640, 640)])
 def test_batched_tensor_input(model_size, image_shape):
@@ -124,6 +129,7 @@ def test_batched_tensor_input(model_size, image_shape):
     assert torch.allclose(tensor_output, pil_output, atol=1e-2)
 
 
+@pytest.mark.torch_models
 @pytest.mark.parametrize("model_size", [224, 336, 448])
 @pytest.mark.parametrize("image_shape", [(224, 224), (336, 448), (640, 640)])
 def test_list_of_varied_size_numpy_inputs(model_size, image_shape):
@@ -144,6 +150,7 @@ def test_list_of_varied_size_numpy_inputs(model_size, image_shape):
     assert torch.allclose(tensor_output, pil_output, atol=1e-2)
 
 
+@pytest.mark.torch_models
 @pytest.mark.parametrize("model_size", [224, 336, 448])
 @pytest.mark.parametrize("image_shape", [(224, 224), (336, 448), (640, 640)])
 def test_internal_consistency_of_tensor_inputs(model_size, image_shape):
@@ -159,6 +166,7 @@ def test_internal_consistency_of_tensor_inputs(model_size, image_shape):
     assert torch.allclose(list_tensor_output, batched_tensor_output, atol=1e-2)
 
 
+@pytest.mark.torch_models
 @pytest.mark.parametrize("model_size", [224, 336, 448])
 @pytest.mark.parametrize("image_shape", [(224, 224), (336, 448), (640, 640)])
 def test_internal_consistency_of_numpy_and_tensor_inputs(model_size, image_shape):

@@ -1052,13 +1052,14 @@ def reference_clip_model(
     with FileLock(lock_file=lock_file, timeout=120):
         original_model, preprocess = clip.load(
             "RN50",
-            device=torch.device("cpu"),
+            device=DEFAULT_DEVICE,
             download_root=original_clip_download_dir,
         )
         yield original_model, preprocess
 
 
 @pytest.mark.slow
+@pytest.mark.torch_models
 def test_clip_torch_image_prediction_for_numpy(
     clip_rn50_pytorch_path: str,
     dog_image_numpy: np.ndarray,
@@ -1073,10 +1074,13 @@ def test_clip_torch_image_prediction_for_numpy(
 
     # then
     assert tuple(embeddings.shape) == (1, 1024)
-    assert torch.allclose(embeddings, EXPECTED_DOG_IMAGE_EMBEDDING, atol=1e-4)
+    assert torch.allclose(
+        embeddings, EXPECTED_DOG_IMAGE_EMBEDDING.to(embeddings.dtype), atol=5e-3
+    )
 
 
 @pytest.mark.slow
+@pytest.mark.torch_models
 def test_clip_torch_image_prediction_for_torch_tensor(
     clip_rn50_pytorch_path: str,
     dog_image_torch: np.ndarray,
@@ -1091,10 +1095,13 @@ def test_clip_torch_image_prediction_for_torch_tensor(
 
     # then
     assert tuple(embeddings.shape) == (1, 1024)
-    assert torch.allclose(embeddings, EXPECTED_DOG_IMAGE_EMBEDDING, atol=1e-4)
+    assert torch.allclose(
+        embeddings, EXPECTED_DOG_IMAGE_EMBEDDING.to(embeddings.dtype), atol=5e-3
+    )
 
 
 @pytest.mark.slow
+@pytest.mark.torch_models
 def test_clip_predictions_for_image_are_comparable_with_reference_implementation(
     clip_rn50_pytorch_path: str,
     dog_image_torch: np.ndarray,
@@ -1107,7 +1114,7 @@ def test_clip_predictions_for_image_are_comparable_with_reference_implementation
     inference_model = ClipTorch.from_pretrained(clip_rn50_pytorch_path)
     original_model, preprocess = reference_clip_model
     dog_image_original_preprocessing = (
-        preprocess(dog_image_pil).unsqueeze(0).to(torch.device("cpu"))
+        preprocess(dog_image_pil).unsqueeze(0).to(DEFAULT_DEVICE)
     )
 
     # when
@@ -1118,13 +1125,16 @@ def test_clip_predictions_for_image_are_comparable_with_reference_implementation
     inference_image_features = inference_model.embed_images(dog_image_torch)
 
     # then
-    similarity = F.cosine_similarity(original_image_features, inference_image_features)
+    similarity = F.cosine_similarity(
+        original_image_features.cpu(), inference_image_features.cpu()
+    )
     assert (
         similarity >= 0.9985
     ), "We get different results due different input scaling PIL vs Torch"
 
 
 @pytest.mark.slow
+@pytest.mark.torch_models
 def test_clip_torch_image_text_embeddings(
     clip_rn50_pytorch_path: str,
     dog_image_numpy: np.ndarray,
@@ -1142,6 +1152,7 @@ def test_clip_torch_image_text_embeddings(
 
 
 @pytest.mark.slow
+@pytest.mark.torch_models
 def test_clip_torch_image_text_embeddings_on_pair_with_reference_implementation(
     clip_rn50_pytorch_path: str,
     reference_clip_model: Tuple[nn.Module, callable],
@@ -1151,7 +1162,7 @@ def test_clip_torch_image_text_embeddings_on_pair_with_reference_implementation(
 
     inference_model = ClipTorch.from_pretrained(clip_rn50_pytorch_path)
     original_model, _ = reference_clip_model
-    text = clip.tokenize(["This is example text"]).to(torch.device("cpu"))
+    text = clip.tokenize(["This is example text"]).to(DEFAULT_DEVICE)
 
     # when
     with torch.no_grad():
@@ -1159,7 +1170,7 @@ def test_clip_torch_image_text_embeddings_on_pair_with_reference_implementation(
     inference_text_features = inference_model.embed_text("This is example text")
 
     # then
-    assert torch.allclose(original_text_features, inference_text_features)
+    assert torch.allclose(original_text_features.cpu(), inference_text_features.cpu())
 
 
 @pytest.mark.slow

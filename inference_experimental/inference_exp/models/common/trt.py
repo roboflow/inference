@@ -60,6 +60,22 @@ class InferenceTRTLogger(trt.ILogger):
 TRT_LOGGER = InferenceTRTLogger()
 
 
+def get_engine_inputs_and_outputs(
+    engine: trt.ICudaEngine,
+) -> Tuple[List[str], List[str]]:
+    num_inputs = engine.num_io_tensors
+    inputs = []
+    outputs = []
+    for i in range(num_inputs):
+        name = engine.get_tensor_name(i)
+        io_mode = engine.get_tensor_mode(name)
+        if io_mode == trt.TensorIOMode.INPUT:
+            inputs.append(name)
+        elif io_mode == trt.TensorIOMode.OUTPUT:
+            outputs.append(name)
+    return inputs, outputs
+
+
 def infer_from_trt_engine(
     pre_processed_images: torch.Tensor,
     trt_config: TRTConfig,
@@ -237,12 +253,3 @@ def load_model(
             "https://github.com/roboflow/inference/issues",
             help_url="https://todo",
         ) from error
-
-
-def get_output_tensor_names(engine: trt.ICudaEngine) -> List[str]:
-    output_names = []
-    for i in range(engine.num_io_tensors):
-        name = engine.get_tensor_name(i)
-        if engine.get_tensor_mode(name) == trt.TensorIOMode.OUTPUT:
-            output_names.append(name)
-    return output_names

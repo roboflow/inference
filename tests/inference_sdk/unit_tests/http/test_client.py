@@ -7,10 +7,10 @@ from unittest import mock
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+import requests
 from aiohttp import ClientConnectionError, ClientResponseError, RequestInfo
 from aioresponses import aioresponses
 from requests import HTTPError, Request, Response
-import requests
 from requests_mock.mocker import Mocker
 from yarl import URL
 
@@ -3463,7 +3463,8 @@ def test_infer_from_workflow_when_v0_mode_used(
 
 
 @pytest.mark.parametrize(
-    "legacy_endpoints", [(True, ), (False, )],
+    "legacy_endpoints",
+    [(True,), (False,)],
 )
 @mock.patch.object(executors, "requests")
 def test_infer_from_workflow_when_connection_error_to_be_retried_successfully(
@@ -3475,7 +3476,9 @@ def test_infer_from_workflow_when_connection_error_to_be_retried_successfully(
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
     valid_response = Response()
     valid_response.status_code = 200
-    valid_response._content = json.dumps({"outputs": [{"some": 3, "other": [1, {"a": "b"}]}]}).encode("utf-8")
+    valid_response._content = json.dumps(
+        {"outputs": [{"some": 3, "other": [1, {"a": "b"}]}]}
+    ).encode("utf-8")
     requests_mock.exceptions.ConnectionError = requests.exceptions.ConnectionError
     requests_mock.post.side_effect = [ConnectionError, valid_response]
     method = (
@@ -3497,7 +3500,8 @@ def test_infer_from_workflow_when_connection_error_to_be_retried_successfully(
 
 
 @pytest.mark.parametrize(
-    "legacy_endpoints", [(True, ), (False, )],
+    "legacy_endpoints",
+    [(True,), (False,)],
 )
 @mock.patch.object(executors, "requests")
 def test_infer_from_workflow_when_connection_error_cannot_be_retried_successfully(
@@ -3524,7 +3528,8 @@ def test_infer_from_workflow_when_connection_error_cannot_be_retried_successfull
 
 
 @pytest.mark.parametrize(
-    "legacy_endpoints", [(True, ), (False, )],
+    "legacy_endpoints",
+    [(True,), (False,)],
 )
 @mock.patch.object(executors, "requests")
 def test_infer_from_workflow_when_connection_error_happens_and_retries_disabled(
@@ -3540,7 +3545,9 @@ def test_infer_from_workflow_when_connection_error_happens_and_retries_disabled(
     valid_response = Response()
     valid_response.url = api_url
     valid_response.status_code = 200
-    valid_response._content = json.dumps({"outputs": [{"some": 3, "other": [1, {"a": "b"}]}]}).encode("utf-8")
+    valid_response._content = json.dumps(
+        {"outputs": [{"some": 3, "other": [1, {"a": "b"}]}]}
+    ).encode("utf-8")
     requests_mock.exceptions.ConnectionError = requests.exceptions.ConnectionError
     requests_mock.post.side_effect = [ConnectionError, valid_response]
     method = (
@@ -3558,7 +3565,8 @@ def test_infer_from_workflow_when_connection_error_happens_and_retries_disabled(
 
 
 @pytest.mark.parametrize(
-    "legacy_endpoints", [(True, ), (False, )],
+    "legacy_endpoints",
+    [(True,), (False,)],
 )
 @mock.patch.object(executors, "requests")
 def test_infer_from_workflow_when_transient_error_to_be_retried_successfully(
@@ -3572,9 +3580,15 @@ def test_infer_from_workflow_when_transient_error_to_be_retried_successfully(
     invalid_response.status_code = 503
     valid_response = Response()
     valid_response.status_code = 200
-    valid_response._content = json.dumps({"outputs": [{"some": 3, "other": [1, {"a": "b"}]}]}).encode("utf-8")
+    valid_response._content = json.dumps(
+        {"outputs": [{"some": 3, "other": [1, {"a": "b"}]}]}
+    ).encode("utf-8")
     requests_mock.exceptions.ConnectionError = requests.exceptions.ConnectionError
-    requests_mock.post.side_effect = [invalid_response, invalid_response, valid_response]
+    requests_mock.post.side_effect = [
+        invalid_response,
+        invalid_response,
+        valid_response,
+    ]
     method = (
         http_client.infer_from_workflow
         if legacy_endpoints
@@ -3594,7 +3608,8 @@ def test_infer_from_workflow_when_transient_error_to_be_retried_successfully(
 
 
 @pytest.mark.parametrize(
-    "legacy_endpoints", [(True, ), (False, )],
+    "legacy_endpoints",
+    [(True,), (False,)],
 )
 @mock.patch.object(executors, "requests")
 def test_infer_from_workflow_when_transient_error_happens_with_retries_disabled(
@@ -3612,9 +3627,15 @@ def test_infer_from_workflow_when_transient_error_happens_with_retries_disabled(
     valid_response = Response()
     valid_response.url = api_url
     valid_response.status_code = 200
-    valid_response._content = json.dumps({"outputs": [{"some": 3, "other": [1, {"a": "b"}]}]}).encode("utf-8")
+    valid_response._content = json.dumps(
+        {"outputs": [{"some": 3, "other": [1, {"a": "b"}]}]}
+    ).encode("utf-8")
     requests_mock.exceptions.ConnectionError = requests.exceptions.ConnectionError
-    requests_mock.post.side_effect = [invalid_response, invalid_response, valid_response]
+    requests_mock.post.side_effect = [
+        invalid_response,
+        invalid_response,
+        valid_response,
+    ]
     method = (
         http_client.infer_from_workflow
         if legacy_endpoints
@@ -3630,7 +3651,8 @@ def test_infer_from_workflow_when_transient_error_happens_with_retries_disabled(
 
 
 @pytest.mark.parametrize(
-    "legacy_endpoints", [(True, ), (False, )],
+    "legacy_endpoints",
+    [(True,), (False,)],
 )
 @mock.patch.object(executors, "requests")
 def test_infer_from_workflow_when_transient_error_cannot_be_retried_successfully(
@@ -3659,7 +3681,8 @@ def test_infer_from_workflow_when_transient_error_cannot_be_retried_successfully
 
 
 @pytest.mark.parametrize(
-    "legacy_endpoints", [(True, ), (False, )],
+    "legacy_endpoints",
+    [(True,), (False,)],
 )
 @mock.patch.object(executors, "requests")
 def test_infer_from_workflow_when_non_transient_error_occurred(

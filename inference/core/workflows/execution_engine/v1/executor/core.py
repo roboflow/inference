@@ -3,6 +3,11 @@ from datetime import datetime
 from functools import partial
 from typing import Any, Callable, Dict, List, Optional, Set
 
+try:
+    from inference_sdk.config import execution_id
+except ImportError:
+    execution_id = None
+
 from inference.core import logger
 from inference.core.exceptions import (
     InferenceModelNotFound,
@@ -98,6 +103,10 @@ def execute_steps(
     profiler: Optional[WorkflowsProfiler] = None,
     executor: Optional[ThreadPoolExecutor] = None,
 ) -> None:
+    if execution_id is not None:
+        workflow_execution_id = execution_id.get()
+    else:
+        workflow_execution_id = None
     logger.info(f"Executing steps: {next_steps}.")
     steps_functions = [
         partial(
@@ -106,6 +115,7 @@ def execute_steps(
             workflow=workflow,
             execution_data_manager=execution_data_manager,
             profiler=profiler,
+            workflow_execution_id=workflow_execution_id,
         )
         for step_selector in next_steps
     ]
@@ -124,7 +134,10 @@ def safe_execute_step(
     workflow: CompiledWorkflow,
     execution_data_manager: ExecutionDataManager,
     profiler: Optional[WorkflowsProfiler] = None,
+    workflow_execution_id: Optional[str] = None,
 ) -> None:
+    if execution_id is not None:
+        execution_id.set(workflow_execution_id)
     if profiler is None:
         profiler = NullWorkflowsProfiler.init()
     try:

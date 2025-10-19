@@ -9,15 +9,15 @@ from inference_exp.entities import ColorFormat
 from inference_exp.errors import EnvironmentConfigurationError, MissingDependencyError
 from inference_exp.models.common.model_packages import get_model_package_contents
 from inference_exp.models.common.onnx import (
-    run_session_via_iobinding,
     run_session_with_batch_size_limit,
     set_execution_provider_defaults,
 )
 from inference_exp.models.common.roboflow.model_packages import (
-    PreProcessingConfig,
+    InferenceConfig,
     PreProcessingMetadata,
+    ResizeMode,
     parse_class_names_file,
-    parse_pre_processing_config,
+    parse_inference_config,
 )
 from inference_exp.models.common.roboflow.post_processing import (
     align_instance_segmentation_results,
@@ -82,15 +82,21 @@ class YOLOv7ForInstanceSegmentationOnnx(
             model_package_dir=model_name_or_path,
             elements=[
                 "class_names.txt",
-                "environment.json",
+                "inference_config.json",
                 "weights.onnx",
             ],
         )
         class_names = parse_class_names_file(
             class_names_path=model_package_content["class_names.txt"]
         )
-        pre_processing_config = parse_pre_processing_config(
-            config_path=model_package_content["environment.json"],
+        inference_config = parse_inference_config(
+            config_path=model_package_content["inference_config.json"],
+            allowed_resize_modes={
+                ResizeMode.STRETCH_TO,
+                ResizeMode.LETTERBOX,
+                ResizeMode.CENTER_CROP,
+                ResizeMode.LETTERBOX_REFLECT_EDGES,
+            },
         )
         session = onnxruntime.InferenceSession(
             path_or_bytes=model_package_content["weights.onnx"],
@@ -99,10 +105,12 @@ class YOLOv7ForInstanceSegmentationOnnx(
         input_batch_size = session.get_inputs()[0].shape[0]
         if isinstance(input_batch_size, str):
             input_batch_size = None
+        input_name = session.get_inputs()[0].name
         return cls(
             session=session,
+            input_name=input_name,
             class_names=class_names,
-            pre_processing_config=pre_processing_config,
+            inference_config=inference_config,
             device=device,
             input_batch_size=input_batch_size,
         )
@@ -110,13 +118,15 @@ class YOLOv7ForInstanceSegmentationOnnx(
     def __init__(
         self,
         session: onnxruntime.InferenceSession,
-        pre_processing_config: PreProcessingConfig,
+        input_name: str,
+        inference_config: InferenceConfig,
         class_names: List[str],
         device: torch.device,
         input_batch_size: Optional[int],
     ):
         self._session = session
-        self._pre_processing_config = pre_processing_config
+        self._input_name = input_name
+        self._inference_config = inference_config
         self._class_names = class_names
         self._device = device
         self._input_batch_size = input_batch_size
@@ -134,8 +144,8 @@ class YOLOv7ForInstanceSegmentationOnnx(
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         return pre_process_network_input(
             images=images,
-            pre_processing_config=self._pre_processing_config,
-            expected_network_color_format="rgb",
+            image_pre_processing=self._inference_config.image_pre_processing,
+            network_input=self._inference_config.network_input,
             target_device=self._device,
             input_color_format=input_color_format,
         )
@@ -146,7 +156,7 @@ class YOLOv7ForInstanceSegmentationOnnx(
         with self._session_thread_lock:
             raw_outputs = run_session_with_batch_size_limit(
                 session=self._session,
-                inputs={"images": pre_processed_images},
+                inputs={self._input_name: pre_processed_images},
                 min_batch_size=self._input_batch_size,
                 max_batch_size=self._input_batch_size,
             )
@@ -195,7 +205,9 @@ class YOLOv7ForInstanceSegmentationOnnx(
                 scale_height=image_meta.scale_height,
                 scale_width=image_meta.scale_width,
                 original_size=image_meta.original_size,
+                size_after_pre_processing=image_meta.size_after_pre_processing,
                 inference_size=image_meta.inference_size,
+                static_crop_offset=image_meta.static_crop_offset,
             )
             final_results.append(
                 InstanceDetections(

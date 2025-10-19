@@ -93,6 +93,7 @@ REGISTERED_ALIASES = {
 OCR_ENDPOINTS = {
     "doctr": "/doctr/ocr",
     "trocr": "/ocr/trocr",
+    "easy_ocr": "/easy_ocr/ocr",
 }
 
 

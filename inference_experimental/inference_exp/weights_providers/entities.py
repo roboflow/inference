@@ -1,12 +1,13 @@
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Set, Tuple, Union
 
 from packaging.version import Version
 
 
 class BackendType(str, Enum):
     TORCH = "torch"
+    TORCH_SCRIPT = "torch-script"
     ONNX = "onnx"
     TRT = "trt"
     HF = "hugging-face"
@@ -90,6 +91,13 @@ class ONNXPackageDetails:
 
 
 @dataclass(frozen=True)
+class TorchScriptPackageDetails:
+    supported_device_types: Set[str]
+    torch_version: Version
+    torch_vision_version: Optional[Version] = field(default=None)
+
+
+@dataclass(frozen=True)
 class ModelPackageMetadata:
     package_id: str
     backend: BackendType
@@ -99,17 +107,21 @@ class ModelPackageMetadata:
     static_batch_size: Optional[int] = field(default=None)
     trt_package_details: Optional[TRTPackageDetails] = field(default=None)
     onnx_package_details: Optional[ONNXPackageDetails] = field(default=None)
+    torch_script_package_details: Optional[TorchScriptPackageDetails] = field(
+        default=None
+    )
     trusted_source: bool = field(default=False)
     environment_requirements: Optional[
         Union[ServerEnvironmentRequirements, JetsonEnvironmentRequirements]
     ] = field(default=None)
+    model_features: Optional[dict] = field(default=None)
 
     def get_summary(self) -> str:
         return (
             f"ModelPackageMetadata(package_id={self.package_id}, backend={self.backend.value}, quantization={self.quantization} "
             f"dynamic_batch_size_supported={self.dynamic_batch_size_supported}, "
             f"static_batch_size={self.static_batch_size}, trt_package_details={self.trt_package_details}, "
-            f"environment_requirements={self.environment_requirements})"
+            f"environment_requirements={self.environment_requirements}, model_features={self.model_features})"
         )
 
     def get_dynamic_batch_boundaries(self) -> Tuple[int, int]:

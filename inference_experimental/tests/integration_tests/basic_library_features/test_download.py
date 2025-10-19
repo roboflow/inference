@@ -3,10 +3,12 @@ import os.path
 
 import pytest
 from inference_exp.errors import FileHashSumMissmatch, UntrustedFileError
-from inference_exp.utils.download import download_files_to_directory
+from inference_exp.utils.download import download_files_to_directory, get_content_length
 
 
 @pytest.mark.timeout(10)
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_download_files_to_directory_small_files(empty_local_dir: str) -> None:
     # given
     some_path = os.path.join(empty_local_dir, "some.jpg")
@@ -38,6 +40,8 @@ def test_download_files_to_directory_small_files(empty_local_dir: str) -> None:
 
 
 @pytest.mark.timeout(10)
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_download_files_to_directory_small_files_with_nested_file_handles_and_event_handlers(
     empty_local_dir: str,
 ) -> None:
@@ -87,6 +91,8 @@ def test_download_files_to_directory_small_files_with_nested_file_handles_and_ev
 
 
 @pytest.mark.timeout(10)
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_download_files_to_directory_when_invalid_hash_sum_provided(
     empty_local_dir: str,
 ) -> None:
@@ -109,6 +115,8 @@ def test_download_files_to_directory_when_invalid_hash_sum_provided(
 
 
 @pytest.mark.timeout(10)
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_download_files_to_directory_when_invalid_hash_sum_provided_but_verification_disabled(
     empty_local_dir: str,
 ) -> None:
@@ -141,6 +149,8 @@ def test_download_files_to_directory_when_invalid_hash_sum_provided_but_verifica
 
 
 @pytest.mark.timeout(10)
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_download_files_to_directory_when_hash_sum_not_provided(
     empty_local_dir: str,
 ) -> None:
@@ -163,6 +173,8 @@ def test_download_files_to_directory_when_hash_sum_not_provided(
 
 
 @pytest.mark.timeout(10)
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_download_files_to_directory_when_hash_sum_not_provided_but_untrusted_allowed(
     empty_local_dir: str,
 ) -> None:
@@ -196,6 +208,8 @@ def test_download_files_to_directory_when_hash_sum_not_provided_but_untrusted_al
 
 @pytest.mark.timeout(120)
 @pytest.mark.slow
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 def test_download_files_to_directory_large_files(empty_local_dir: str) -> None:
     # given
     yolonas_path = os.path.join(empty_local_dir, "yolonas.zip")
@@ -235,3 +249,14 @@ def calculate_md5(file: str) -> str:
                 break
             hash_object.update(chunk)
     return hash_object.hexdigest()
+
+
+@pytest.mark.timeout(10)
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
+def test_get_content_length_against_real_asset() -> None:
+    # when
+    result = get_content_length("https://media.roboflow.com/dog.jpeg")
+
+    # then
+    assert result == 106055

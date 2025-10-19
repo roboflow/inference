@@ -228,7 +228,12 @@ class RoboflowInferenceModel(Model):
     def has_model_metadata(self):
         return self.model_metadata_from_memcache() is not None
 
-    def get_model_artifacts(self, **kwargs) -> None:
+    def get_model_artifacts(
+        self,
+        countinference: Optional[bool] = None,
+        service_secret: Optional[str] = None,
+        **kwargs,
+    ) -> None:
         """Fetch or load the model artifacts.
 
         Downloads the model artifacts from S3 or the Roboflow API if they are not already cached.
@@ -238,14 +243,25 @@ class RoboflowInferenceModel(Model):
                 api_key=self.api_key,
                 model_id=self.endpoint,
                 endpoint_type=ModelEndpointType.ORT,
+                countinference=countinference,
+                service_secret=service_secret,
             ):
                 raise RoboflowAPINotAuthorizedError(
                     f"API key {self.api_key} does not have access to model {self.endpoint}"
                 )
-        self.cache_model_artefacts(**kwargs)
+        self.cache_model_artefacts(
+            countinference=countinference,
+            service_secret=service_secret,
+            **kwargs,
+        )
         self.load_model_artifacts_from_cache()
 
-    def cache_model_artefacts(self, **kwargs) -> None:
+    def cache_model_artefacts(
+        self,
+        countinference: Optional[bool] = None,
+        service_secret: Optional[str] = None,
+        **kwargs,
+    ) -> None:
         infer_bucket_files = self.get_all_required_infer_bucket_file()
 
         if are_all_files_cached(files=infer_bucket_files, model_id=self.endpoint):
@@ -253,7 +269,11 @@ class RoboflowInferenceModel(Model):
         if is_model_artefacts_bucket_available():
             self.download_model_artefacts_from_s3()
             return None
-        self.download_model_artifacts_from_roboflow_api(**kwargs)
+        self.download_model_artifacts_from_roboflow_api(
+            countinference=countinference,
+            service_secret=service_secret,
+            **kwargs,
+        )
 
     def get_all_required_infer_bucket_file(self) -> List[str]:
         infer_bucket_files = self.get_infer_bucket_file_list()
@@ -437,14 +457,33 @@ class RoboflowInferenceModel(Model):
             self.preproc = json.loads(self.environment["PREPROCESSING"])
         if self.preproc.get("resize"):
             self.resize_method = self.preproc["resize"].get("format", "Stretch to")
+            if self.resize_method in [
+                "Fit (reflect edges) in",
+                "Fit within",
+                "Fill (with center crop) in",
+            ]:
+                fallback_resize_method = "Fit (black edges) in"
+                logger.warning(
+                    "Unsupported resize method '%s', defaulting to '%s' - this may result in degraded model performance.",
+                    self.resize_method,
+                    fallback_resize_method,
+                )
+                self.resize_method = fallback_resize_method
             if self.resize_method not in [
                 "Stretch to",
                 "Fit (black edges) in",
-                "Fit (white edges) in",
                 "Fit (grey edges) in",
+                "Fit (white edges) in",
             ]:
+                logger.error(
+                    "Unsupported resize method '%s', defaulting to 'Stretch to' - this may result in degraded model performance.",
+                    self.resize_method,
+                )
                 self.resize_method = "Stretch to"
         else:
+            logger.error(
+                "Unknown resize method, defaulting to 'Stretch to' - this may result in degraded model performance."
+            )
             self.resize_method = "Stretch to"
         logger.debug(f"Resize method is '{self.resize_method}'")
         self.multiclass = self.environment.get("MULTICLASS", False)
@@ -500,7 +539,6 @@ class RoboflowInferenceModel(Model):
             preprocessed_image = (
                 preprocessed_image.permute(2, 0, 1).unsqueeze(0).contiguous().float()
             )
-
         if self.resize_method == "Stretch to":
             if isinstance(preprocessed_image, np.ndarray):
                 preprocessed_image = preprocessed_image.astype(np.float32)
@@ -690,7 +728,7 @@ class RoboflowCoreModel(RoboflowInferenceModel):
             List[str]: A list of filenames.
         """
         raise NotImplementedError(
-            "get_infer_bucket_file_list not implemented for OnnxRoboflowCoreModel"
+            "get_infer_bucket_file_list not implemented for RoboflowCoreModel"
         )
 
     def preprocess_image(self, image: Image.Image) -> Image.Image:

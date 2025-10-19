@@ -26,6 +26,7 @@ COPY requirements/_requirements.txt \
     requirements/requirements.groundingdino.txt \
     requirements/requirements.yolo_world.txt \
     requirements/requirements.transformers.txt \
+    requirements/requirements.easyocr.txt \
     ./
 
 RUN pip3 install --upgrade pip && pip3 install "wheel>=0.38.1,<=0.45.1"
@@ -40,6 +41,7 @@ RUN pip3 install \
     -r requirements.groundingdino.txt \
     -r requirements.yolo_world.txt \
     -r requirements.transformers.txt \
+    -r requirements.easyocr.txt \
     jupyterlab \
     "setuptools<=75.5.0" \
     --upgrade \

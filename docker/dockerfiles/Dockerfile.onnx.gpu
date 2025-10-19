@@ -31,6 +31,7 @@ COPY requirements/requirements.sam.txt \
     requirements/_requirements.txt \
     requirements/requirements.transformers.txt \
     requirements/requirements.pali.flash_attn.txt \
+    requirements/requirements.easyocr.txt \
     ./
 
 # Use uv for much faster package installation (WITHOUT onnxruntime-gpu, we'll build from source)
@@ -44,6 +45,7 @@ RUN uv pip install --system --break-system-packages \
     -r requirements.doctr.txt \
     -r requirements.yolo_world.txt \
     -r requirements.transformers.txt \
+    -r requirements.easyocr.txt \
     jupyterlab \
     "setuptools<=75.5.0" \
     packaging \

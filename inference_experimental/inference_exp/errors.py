@@ -17,6 +17,10 @@ class BaseInferenceError(Exception):
         return f"{super().__str__()} - VISIT {self._help_url} FOR FURTHER SUPPORT"
 
 
+class AssumptionError(BaseInferenceError):
+    pass
+
+
 class EnvironmentConfigurationError(BaseInferenceError):
     pass
 
@@ -90,6 +94,10 @@ class AmbiguousModelPackageResolutionError(ModelPackageNegotiationError):
 
 
 class ModelLoadingError(BaseInferenceError):
+    pass
+
+
+class InsecureModelIdentifierError(ModelLoadingError):
     pass
 
 

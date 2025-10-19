@@ -5,6 +5,7 @@ RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_
     libopencv-dev \
     ffmpeg \
     libxext6 \
+    libvips-dev \
     curl
 RUN add-apt-repository -y ppa:deadsnakes/ppa && apt update -y && apt install -y python3.12 python3.12-dev
 RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12

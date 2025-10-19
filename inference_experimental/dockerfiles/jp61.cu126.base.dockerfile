@@ -19,6 +19,7 @@ RUN apt-get update -y && \
     rustc \
     cargo \
     curl \
+    libvips-dev \
     python3-pip \
     && rm -rf /var/lib/apt/lists/*
 

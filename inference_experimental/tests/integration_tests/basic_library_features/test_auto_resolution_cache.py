@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from unittest import mock
 from unittest.mock import MagicMock
 
+import pytest
 from inference_exp.models.auto_loaders import auto_resolution_cache
 from inference_exp.models.auto_loaders.auto_resolution_cache import (
     AutoResolutionCacheEntry,
@@ -13,6 +14,8 @@ from inference_exp.models.auto_loaders.auto_resolution_cache import (
 from inference_exp.weights_providers.entities import BackendType
 
 
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 @mock.patch.object(auto_resolution_cache, "generate_auto_resolution_cache_path")
 def test_cache_entry_registration_for_base_cache(
     generate_auto_resolution_cache_path_mock: MagicMock,
@@ -59,6 +62,8 @@ def test_cache_entry_registration_for_base_cache(
     assert cache_entry == retrieved_entry
 
 
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 @mock.patch.object(auto_resolution_cache, "generate_auto_resolution_cache_path")
 def test_cache_entry_retrieval_when_cache_file_does_not_exist(
     generate_auto_resolution_cache_path_mock: MagicMock,
@@ -86,6 +91,8 @@ def test_cache_entry_retrieval_when_cache_file_does_not_exist(
     on_file_created.assert_not_called()
 
 
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 @mock.patch.object(auto_resolution_cache, "generate_auto_resolution_cache_path")
 def test_cache_entry_retrieval_when_cache_file_exist_but_is_not_json(
     generate_auto_resolution_cache_path_mock: MagicMock,
@@ -116,6 +123,8 @@ def test_cache_entry_retrieval_when_cache_file_exist_but_is_not_json(
     on_file_created.assert_not_called()
 
 
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 @mock.patch.object(auto_resolution_cache, "generate_auto_resolution_cache_path")
 def test_cache_entry_retrieval_when_cache_file_exist_but_is_empty(
     generate_auto_resolution_cache_path_mock: MagicMock,
@@ -146,6 +155,8 @@ def test_cache_entry_retrieval_when_cache_file_exist_but_is_empty(
     on_file_created.assert_not_called()
 
 
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 @mock.patch.object(auto_resolution_cache, "generate_auto_resolution_cache_path")
 def test_cache_entry_retrieval_when_cache_file_exist_but_is_invalid_json(
     generate_auto_resolution_cache_path_mock: MagicMock,
@@ -176,6 +187,8 @@ def test_cache_entry_retrieval_when_cache_file_exist_but_is_invalid_json(
     on_file_created.assert_not_called()
 
 
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 @mock.patch.object(auto_resolution_cache, "generate_auto_resolution_cache_path")
 def test_cache_entry_retrieval_when_cache_file_exist_but_is_expired(
     generate_auto_resolution_cache_path_mock: MagicMock,
@@ -216,6 +229,8 @@ def test_cache_entry_retrieval_when_cache_file_exist_but_is_expired(
     assert not os.path.exists(expected_cache_path)
 
 
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 @mock.patch.object(auto_resolution_cache, "generate_auto_resolution_cache_path")
 def test_cache_entry_invalidation_when_file_exists(
     generate_auto_resolution_cache_path_mock: MagicMock,
@@ -255,6 +270,8 @@ def test_cache_entry_invalidation_when_file_exists(
     assert not os.path.exists(expected_cache_path)
 
 
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 @mock.patch.object(auto_resolution_cache, "generate_auto_resolution_cache_path")
 def test_cache_entry_invalidation_when_file_does_not_exist(
     generate_auto_resolution_cache_path_mock: MagicMock,
@@ -283,6 +300,8 @@ def test_cache_entry_invalidation_when_file_does_not_exist(
     assert not os.path.exists(expected_cache_path)
 
 
+@pytest.mark.torch_models
+@pytest.mark.cpu_only
 @mock.patch.object(auto_resolution_cache, "INFERENCE_HOME", "/some")
 def test_generate_auto_resolution_cache_path() -> None:
     # when

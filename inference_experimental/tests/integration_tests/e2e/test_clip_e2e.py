@@ -37,9 +37,9 @@ def _get_clip_torch_wrapper(
     if max_batch_size is not None:
         kwargs["max_batch_size"] = max_batch_size
     return AutoModel.from_pretrained(
-        model_name_or_path=f"clip/{clip_model_name}",
+        model_id_or_path=f"clip/{clip_model_name}",
         device=torch.device("cpu"),
-        backends=[BackendType.TORCH],
+        backend=[BackendType.TORCH],
         **kwargs,
     )
 
@@ -51,9 +51,9 @@ def _get_clip_onnx_wrapper(
     if max_batch_size is not None:
         kwargs["max_batch_size"] = max_batch_size
     return AutoModel.from_pretrained(
-        model_name_or_path=f"clip/{clip_model_name}",
+        model_id_or_path=f"clip/{clip_model_name}",
         device=torch.device("cpu"),
-        backends=[BackendType.ONNX],
+        backend=[BackendType.ONNX],
         **kwargs,
     )
 

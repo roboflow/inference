@@ -19,6 +19,8 @@ class DoctrOCRInferenceRequest(BaseRequest):
     image: Union[List[InferenceRequestImage], InferenceRequestImage]
     doctr_version_id: Optional[str] = "default"
     model_id: Optional[str] = Field(None)
+    # flag to generate bounding box data rather than just a string, set to False for backwards compatibility
+    generate_bounding_boxes: Optional[bool] = False
 
     # TODO[pydantic]: We couldn't refactor the `validator`, please replace it by `field_validator` manually.
     # Check https://docs.pydantic.dev/dev-v2/migration/#changes-to-validators for more information.

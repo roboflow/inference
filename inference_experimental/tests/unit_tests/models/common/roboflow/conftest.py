@@ -108,6 +108,23 @@ def key_points_metadata_with_missing_classes() -> str:
 
 
 @pytest.fixture
+def key_points_metadata_with_missing_edges() -> str:
+    return os.path.join(ASSETS_DIR, "key_points_metadata_with_missing_edges.json")
+
+
+@pytest.fixture
+def key_points_metadata_with_malformed_edges() -> str:
+    return os.path.join(ASSETS_DIR, "key_points_metadata_with_malformed_edges.json")
+
+
+@pytest.fixture
+def key_points_metadata_with_edges_pointing_non_existing_class() -> str:
+    return os.path.join(
+        ASSETS_DIR, "key_points_metadata_with_edges_pointing_non_existing_class.json"
+    )
+
+
+@pytest.fixture
 def valid_model_characteristics() -> str:
     return os.path.join(ASSETS_DIR, "valid_model_characteristics.json")
 
@@ -182,3 +199,44 @@ def class_names_empty() -> str:
 @pytest.fixture
 def class_names_valid() -> str:
     return os.path.join(ASSETS_DIR, "class_names_valid.txt")
+
+
+@pytest.fixture
+def inference_config_invalid_image_pre_processing() -> str:
+    return os.path.join(
+        ASSETS_DIR, "inference_config_invalid_image_pre_processing.json"
+    )
+
+
+@pytest.fixture
+def inference_config_invalid_network_input() -> str:
+    return os.path.join(ASSETS_DIR, "inference_config_invalid_network_input.json")
+
+
+@pytest.fixture
+def inference_config_missing_network_input() -> str:
+    return os.path.join(ASSETS_DIR, "inference_config_missing_network_input.json")
+
+
+@pytest.fixture
+def inference_config_invalid_forward_pass_config() -> str:
+    return os.path.join(ASSETS_DIR, "inference_config_invalid_forward_pass_config.json")
+
+
+@pytest.fixture
+def inference_config_invalid_post_processing_config() -> str:
+    return os.path.join(
+        ASSETS_DIR, "inference_config_invalid_post_processing_config.json"
+    )
+
+
+@pytest.fixture
+def inference_config_invalid_class_names_operations() -> str:
+    return os.path.join(
+        ASSETS_DIR, "inference_config_invalid_class_names_operations.json"
+    )
+
+
+@pytest.fixture
+def inference_config_valid_config() -> str:
+    return os.path.join(ASSETS_DIR, "inference_config_valid_config.json")

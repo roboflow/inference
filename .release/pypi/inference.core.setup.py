@@ -64,6 +64,7 @@ setuptools.setup(
     ),
     extras_require={
         "clip": read_requirements("requirements/requirements.clip.txt"),
+        "easy-ocr": read_requirements("requirements/requirements.easyocr.txt"),
         "cpu": read_requirements("requirements/requirements.cpu.txt"),
         "gaze": read_requirements("requirements/requirements.gaze.txt"),
         "gpu": read_requirements("requirements/requirements.gpu.txt"),

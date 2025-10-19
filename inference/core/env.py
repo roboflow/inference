@@ -166,6 +166,9 @@ CORE_MODEL_GAZE_ENABLED = str2bool(os.getenv("CORE_MODEL_GAZE_ENABLED", True))
 # Flag to enable DocTR core model, default is True
 CORE_MODEL_DOCTR_ENABLED = str2bool(os.getenv("CORE_MODEL_DOCTR_ENABLED", True))
 
+# Flag to enable EasyOCR core model, default is True
+CORE_MODEL_EASYOCR_ENABLED = str2bool(os.getenv("CORE_MODEL_EASYOCR_ENABLED", True))
+
 # Flag to enable TrOCR core model, default is True
 CORE_MODEL_TROCR_ENABLED = str2bool(os.getenv("CORE_MODEL_TROCR_ENABLED", True))
 
@@ -398,6 +401,8 @@ DISABLE_SAM2_LOGITS_CACHE = str2bool(os.getenv("DISABLE_SAM2_LOGITS_CACHE", Fals
 SAM_VERSION_ID = os.getenv("SAM_VERSION_ID", "vit_h")
 SAM2_VERSION_ID = os.getenv("SAM2_VERSION_ID", "hiera_large")
 
+# EasyOCR version ID, default is "english_g2"
+EASYOCR_VERSION_ID = os.getenv("EASYOCR_VERSION_ID", "english_g2")
 
 # Device ID, default is "sample-device-id"
 INFERENCE_SERVER_ID = os.getenv("INFERENCE_SERVER_ID", None)
@@ -657,4 +662,16 @@ CACHE_METADATA_LOCK_TIMEOUT = float(os.getenv("CACHE_METADATA_LOCK_TIMEOUT", 1.0
 MODEL_LOCK_ACQUIRE_TIMEOUT = float(os.getenv("MODEL_LOCK_ACQUIRE_TIMEOUT", "60.0"))
 HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT = float(
     os.getenv("HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT", "5.0")
+)
+
+# RFDETR input resolution limit for models loaded through onnx runtime
+# 1280 -> ~3.5G
+# 1440 -> ~5G
+# 1600 -> ~10G
+# 2048 -> ~22G
+RFDETR_ONNX_MAX_RESOLUTION = int(os.getenv("RFDETR_ONNX_MAX_RESOLUTION", "1600"))
+
+# Confidence lower bound to prevent OOM when inferring on instance segmentation models
+CONFIDENCE_LOWER_BOUND_OOM_PREVENTION = float(
+    os.getenv("CONFIDENCE_LOWER_BOUND_OOM_PREVENTION", "0.01")
 )

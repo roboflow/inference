@@ -1,5 +1,10 @@
-from typing import List, Literal, Optional, Type
+import json
+from typing import Dict, List, Literal, Optional, Type
+from urllib import response
+from uuid import uuid4
 
+import numpy as np
+import supervision as sv
 from pydantic import ConfigDict, Field
 
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
@@ -14,12 +19,7 @@ from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     load_core_model,
-    remove_unexpected_keys_from_dictionary,
-)
-from inference.core.workflows.execution_engine.constants import (
-    PARENT_ID_KEY,
-    PREDICTION_TYPE_KEY,
-    ROOT_PARENT_ID_KEY,
+    post_process_ocr_result,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -28,6 +28,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
+    OBJECT_DETECTION_PREDICTION_KIND,
     PARENT_ID_KIND,
     PREDICTION_TYPE_KIND,
     STRING_KIND,
@@ -42,20 +43,26 @@ from inference.core.workflows.prototypes.block import (
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 LONG_DESCRIPTION = """
- Retrieve the characters in an image using Optical Character Recognition (OCR).
+ Retrieve the characters in an image using DocTR Optical Character Recognition (OCR).
 
 This block returns the text within an image.
 
-You may want to use this block in combination with a detections-based block (i.e. 
-ObjectDetectionBlock). An object detection model could isolate specific regions from an 
-image (i.e. a shipping container ID in a logistics use case) for further processing. 
+You may want to use this block in combination with a detections-based block (i.e.
+ObjectDetectionBlock). An object detection model could isolate specific regions from an
+image (i.e. a shipping container ID in a logistics use case) for further processing.
 You can then use a DynamicCropBlock to crop the region of interest before running OCR.
 
-Using a detections model then cropping detections allows you to isolate your analysis 
+Using a detections model then cropping detections allows you to isolate your analysis
 on particular regions of an image.
 """
 
-EXPECTED_OUTPUT_KEYS = {"result", "parent_id", "root_parent_id", "prediction_type"}
+EXPECTED_OUTPUT_KEYS = {
+    "result",
+    "parent_id",
+    "root_parent_id",
+    "prediction_type",
+    "predictions",
+}
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -63,7 +70,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "OCR Model",
             "version": "v1",
-            "short_description": "Extract text from an image using optical character recognition.",
+            "short_description": "Extract text from an image using DocTR optical character recognition.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
@@ -71,7 +78,6 @@ class BlockManifest(WorkflowBlockManifest):
                 "section": "model",
                 "icon": "far fa-text",
                 "blockPriority": 11,
-                "inDevelopment": True,
                 "inference": True,
             },
         }
@@ -88,6 +94,9 @@ class BlockManifest(WorkflowBlockManifest):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="result", kind=[STRING_KIND]),
+            OutputDefinition(
+                name="predictions", kind=[OBJECT_DETECTION_PREDICTION_KIND]
+            ),
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
             OutputDefinition(name="root_parent_id", kind=[PARENT_ID_KIND]),
             OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),
@@ -141,6 +150,7 @@ class OCRModelBlockV1(WorkflowBlock):
             inference_request = DoctrOCRInferenceRequest(
                 image=single_image.to_inference_format(numpy_preferred=True),
                 api_key=self._api_key,
+                generate_bounding_boxes=True,
             )
             doctr_model_id = load_core_model(
                 model_manager=self._model_manager,
@@ -150,10 +160,11 @@ class OCRModelBlockV1(WorkflowBlock):
             result = self._model_manager.infer_from_request_sync(
                 doctr_model_id, inference_request
             )
-            predictions.append(result.model_dump())
-        return self._post_process_result(
+            predictions.append(result.model_dump(by_alias=True, exclude_none=True))
+        return post_process_ocr_result(
             predictions=predictions,
             images=images,
+            expected_output_keys=EXPECTED_OUTPUT_KEYS,
         )
 
     def run_remotely(
@@ -179,27 +190,12 @@ class OCRModelBlockV1(WorkflowBlock):
         non_empty_inference_images = [i.base64_image for i in images]
         predictions = client.ocr_image(
             inference_input=non_empty_inference_images,
+            generate_bounding_boxes=True,
         )
         if len(images) == 1:
             predictions = [predictions]
-        return self._post_process_result(
+        return post_process_ocr_result(
             predictions=predictions,
             images=images,
+            expected_output_keys=EXPECTED_OUTPUT_KEYS,
         )
-
-    def _post_process_result(
-        self,
-        images: Batch[WorkflowImageData],
-        predictions: List[dict],
-    ) -> BlockResult:
-        for prediction, image in zip(predictions, images):
-            prediction[PREDICTION_TYPE_KEY] = "ocr"
-            prediction[PARENT_ID_KEY] = image.parent_metadata.parent_id
-            prediction[ROOT_PARENT_ID_KEY] = (
-                image.workflow_root_ancestor_metadata.parent_id
-            )
-            _ = remove_unexpected_keys_from_dictionary(
-                dictionary=prediction,
-                expected_keys=EXPECTED_OUTPUT_KEYS,
-            )
-        return predictions

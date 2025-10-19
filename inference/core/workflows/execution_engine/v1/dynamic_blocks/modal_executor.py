@@ -247,7 +247,8 @@ class ModalExecutor:
             BlockResult from the execution
 
         Raises:
-            DynamicBlockError: If execution fails
+            DynamicBlockError: If Modal is not available or Modal request fails
+            Exception: If remote execution throws an exception
         """
         # Check if Modal is available
         if not MODAL_AVAILABLE:
@@ -324,8 +325,8 @@ class ModalExecutor:
                 else:
                     message = f"{error_type}: {error_msg}"
 
-                # Raise Exception on runtime error. Will be caught by the core executor
-                # and wrapped in StepExecutionError with block metadata
+                # Propagate remote Exception on runtime error. Will be caught by the
+                # core executor and wrapped in StepExecutionError with block metadata.
                 raise Exception(message)
 
             # Get the result and deserialize from JSON
@@ -336,13 +337,6 @@ class ModalExecutor:
             raise DynamicBlockError(
                 public_message=f"Failed to connect to Modal endpoint: {str(e)}",
                 context="modal_executor | http_connection",
-            )
-        except Exception as e:
-            if isinstance(e, DynamicBlockError):
-                raise
-            raise DynamicBlockError(
-                public_message=f"Failed to execute custom block remotely: {str(e)}",
-                context="modal_executor | remote_execution",
             )
 
 

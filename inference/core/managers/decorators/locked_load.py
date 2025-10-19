@@ -25,4 +25,6 @@ class LockedLoadModelManagerDecorator(ModelManagerDecorator):
                 api_key,
                 model_id_alias=model_id_alias,
                 endpoint_type=endpoint_type,
+                countinference=countinference,
+                service_secret=service_secret,
             )

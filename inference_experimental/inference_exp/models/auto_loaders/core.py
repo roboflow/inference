@@ -1,6 +1,8 @@
+import hashlib
 import importlib
 import importlib.util
 import os.path
+import re
 from datetime import datetime
 from functools import partial
 from typing import Callable, Dict, List, Optional, Set, Tuple, Union
@@ -11,11 +13,16 @@ from inference_exp.configuration import DEFAULT_DEVICE, INFERENCE_HOME
 from inference_exp.errors import (
     CorruptedModelPackageError,
     DirectLocalStorageAccessError,
+    InsecureModelIdentifierError,
     ModelLoadingError,
+    NoModelPackagesAvailableError,
     UnauthorizedModelAccessError,
 )
 from inference_exp.logger import LOGGER, verbose_info
-from inference_exp.models.auto_loaders.auto_negotiation import negotiate_model_packages
+from inference_exp.models.auto_loaders.auto_negotiation import (
+    negotiate_model_packages,
+    parse_backend_type,
+)
 from inference_exp.models.auto_loaders.auto_resolution_cache import (
     AutoResolutionCache,
     AutoResolutionCacheEntry,
@@ -27,7 +34,18 @@ from inference_exp.models.auto_loaders.entities import (
     ModelArchitecture,
     TaskType,
 )
-from inference_exp.models.auto_loaders.models_registry import resolve_model_class
+from inference_exp.models.auto_loaders.models_registry import (
+    OBJECT_DETECTION_TASK,
+    resolve_model_class,
+)
+from inference_exp.models.auto_loaders.presentation_utils import (
+    calculate_artefacts_size,
+    calculate_size_of_all_model_packages_artefacts,
+    render_model_package_details_table,
+    render_runtime_x_ray,
+    render_table_with_model_overview,
+    render_table_with_model_packages,
+)
 from inference_exp.models.auto_loaders.storage_manager import (
     AccessIdentifiers,
     LiberalModelStorageManager,
@@ -43,6 +61,7 @@ from inference_exp.models.base.embeddings import TextImageEmbeddingModel
 from inference_exp.models.base.instance_segmentation import InstanceSegmentationModel
 from inference_exp.models.base.keypoints_detection import KeyPointsDetectionModel
 from inference_exp.models.base.object_detection import ObjectDetectionModel
+from inference_exp.runtime_introspection.core import x_ray_runtime_environment
 from inference_exp.utils.download import FileHandle, download_files_to_directory
 from inference_exp.utils.file_system import dump_json, read_json
 from inference_exp.utils.hashing import hash_dict_content
@@ -52,6 +71,8 @@ from inference_exp.weights_providers.entities import (
     ModelPackageMetadata,
     Quantization,
 )
+from rich.console import Console
+from rich.text import Text
 
 AnyModel = Union[
     ClassificationModel,
@@ -65,16 +86,123 @@ AnyModel = Union[
 ]
 
 
+MODEL_TYPES_TO_LOAD_FROM_CHECKPOINT = {
+    "rfdetr-base",
+    "rfdetr-small",
+    "rfdetr-medium",
+    "rfdetr-nano",
+    "rfdetr-large",
+}
+
+
 class AutoModel:
+
+    @classmethod
+    def describe_model(
+        cls,
+        model_id: str,
+        weights_provider: str = "roboflow",
+        api_key: Optional[str] = None,
+        pull_artefacts_size: bool = False,
+    ) -> None:
+        model_metadata = get_model_from_provider(
+            provider=weights_provider,
+            model_id=model_id,
+            api_key=api_key,
+        )
+        model_packages_size = None
+        if pull_artefacts_size:
+            model_packages_size = calculate_size_of_all_model_packages_artefacts(
+                model_packages=model_metadata.model_packages
+            )
+        console = Console()
+        model_overview_table = render_table_with_model_overview(
+            model_id=model_metadata.model_id,
+            requested_model_id=model_id,
+            model_architecture=model_metadata.model_architecture,
+            task_type=model_metadata.task_type,
+            weights_provider=weights_provider,
+            registered_packages=len(model_metadata.model_packages),
+        )
+        console.print(model_overview_table)
+        packages_overview_table = render_table_with_model_packages(
+            model_packages=model_metadata.model_packages,
+            model_packages_size=model_packages_size,
+        )
+        console.print(packages_overview_table)
+        text = Text.assemble(
+            ("\nWant to check more details about specific package?", "bold"),
+            "\nUse AutoModel.describe_model_package('model_id', 'package_id').",
+        )
+        console.print(text)
+        if not pull_artefacts_size:
+            text = Text.assemble(
+                ("\nWant to verify the size of model package?", "bold"),
+                "\nUse AutoModel.describe_model('model_id', pull_artefacts_size=True) - the execution will be "
+                "slightly longer, as we must collect the size of all elements of model package.",
+            )
+            console.print(text)
+
+    @classmethod
+    def describe_model_package(
+        cls,
+        model_id: str,
+        package_id: str,
+        weights_provider: str = "roboflow",
+        api_key: Optional[str] = None,
+        pull_artefacts_size: bool = True,
+    ) -> None:
+        model_metadata = get_model_from_provider(
+            provider=weights_provider,
+            model_id=model_id,
+            api_key=api_key,
+        )
+        selected_package = None
+        for package in model_metadata.model_packages:
+            if package.package_id == package_id:
+                selected_package = package
+        if selected_package is None:
+            raise NoModelPackagesAvailableError(
+                message=f"Selected model package {package_id} does not exist for model {model_id}. Make sure provided "
+                f"value is valid.",
+                help_url="https://todo",
+            )
+        artefacts_size = None
+        if pull_artefacts_size:
+            artefacts_size = calculate_artefacts_size(
+                package_artefacts=selected_package.package_artefacts
+            )
+        table = render_model_package_details_table(
+            model_id=model_metadata.model_id,
+            requested_model_id=model_id,
+            artefacts_size=artefacts_size,
+            model_package=selected_package,
+        )
+        console = Console()
+        console.print(table)
+        if not pull_artefacts_size:
+            text = Text.assemble(
+                ("\nWant to verify the size of model package?", "bold"),
+                "\nUse AutoModel.describe_model_package('model_id', 'package_id', pull_artefacts_size=True)"
+                "- the execution will be slightly longer, as we must collect the size of all elements of model package.",
+            )
+            console.print(text)
+
+    @classmethod
+    def describe_compute_environment(cls) -> None:
+        runtime_x_ray = x_ray_runtime_environment()
+        table = render_runtime_x_ray(runtime_x_ray=runtime_x_ray)
+        console = Console()
+        console.print(table)
 
     @classmethod
     def from_pretrained(
         cls,
-        model_name_or_path: str,
+        model_id_or_path: str,
         weights_provider: str = "roboflow",
         api_key: Optional[str] = None,
         model_package_id: Optional[str] = None,
-        backends: Optional[
+        backend: Optional[
             Union[str, BackendType, List[Union[str, BackendType]]]
         ] = None,
         batch_size: Optional[Union[int, Tuple[int, int]]] = None,
@@ -96,12 +224,15 @@ class AutoModel:
         auto_resolution_cache: Optional[AutoResolutionCache] = None,
         allow_direct_local_storage_loading: bool = True,
         model_storage_manager: Optional[ModelStorageManager] = None,
+        nms_fusion_preferences: Optional[Union[bool, dict]] = None,
+        model_type: Optional[str] = None,
+        task_type: Optional[str] = None,
         **kwargs,
     ) -> AnyModel:
         if model_storage_manager is None:
             model_storage_manager = LiberalModelStorageManager()
         if model_storage_manager.is_model_access_forbidden(
-            model_id=model_name_or_path, api_key=api_key
+            model_id=model_id_or_path, api_key=api_key
         ):
             raise UnauthorizedModelAccessError(
                 message=f"Unauthorized not access model with ID: {model_package_id}. Are you sure you use valid "
@@ -139,7 +270,7 @@ class AutoModel:
             "engine_host_code_allowed": trt_engine_host_code_allowed,
         }
         model_init_kwargs.update(kwargs)
-        if not os.path.isdir(model_name_or_path):
+        if not os.path.exists(model_id_or_path):
             # QUESTION: is it enough to assume presence of local dir as the intent to load
             # model from disc drive? What if we have clash of model id / model alias with
             # contents of someone's local drive - shall we then try to load from both sources?
@@ -149,16 +280,17 @@ class AutoModel:
             auto_negotiation_hash = hash_dict_content(
                 content={
                     "provider": weights_provider,
-                    "model_id": model_name_or_path,
+                    "model_id": model_id_or_path,
                     "api_key": api_key,
                     "requested_model_package_id": model_package_id,
-                    "requested_backends": backends,
+                    "requested_backends": backend,
                     "requested_batch_size": batch_size,
                     "requested_quantization": quantization,
                     "device": str(device),
                     "onnx_execution_providers": onnx_execution_providers,
                     "allow_untrusted_packages": allow_untrusted_packages,
                     "trt_engine_host_code_allowed": trt_engine_host_code_allowed,
+                    "nms_fusion_preferences": nms_fusion_preferences,
                 }
             )
             model_from_cache = attempt_loading_model_with_auto_load_cache(
@@ -166,7 +298,7 @@ class AutoModel:
                 auto_resolution_cache=auto_resolution_cache,
                 auto_negotiation_hash=auto_negotiation_hash,
                 model_storage_manager=model_storage_manager,
-                model_name_or_path=model_name_or_path,
+                model_name_or_path=model_id_or_path,
                 model_init_kwargs=model_init_kwargs,
                 api_key=api_key,
                 verbose=verbose,
@@ -176,12 +308,12 @@ class AutoModel:
             try:
                 model_metadata = get_model_from_provider(
                     provider=weights_provider,
-                    model_id=model_name_or_path,
+                    model_id=model_id_or_path,
                     api_key=api_key,
                 )
             except UnauthorizedModelAccessError as error:
                 model_storage_manager.on_model_access_forbidden(
-                    model_id=model_name_or_path, api_key=api_key
+                    model_id=model_id_or_path, api_key=api_key
                 )
                 raise error
             matching_model_packages = negotiate_model_packages(
@@ -189,17 +321,18 @@ class AutoModel:
                 task_type=model_metadata.task_type,
                 model_packages=model_metadata.model_packages,
                 requested_model_package_id=model_package_id,
-                requested_backends=backends,
+                requested_backends=backend,
                 requested_batch_size=batch_size,
                 requested_quantization=quantization,
                 device=device,
                 onnx_execution_providers=onnx_execution_providers,
                 allow_untrusted_packages=allow_untrusted_packages,
                 trt_engine_host_code_allowed=trt_engine_host_code_allowed,
+                nms_fusion_preferences=nms_fusion_preferences,
                 verbose=verbose,
             )
             return attempt_loading_matching_model_packages(
-                model_id=model_name_or_path,
+                model_id=model_id_or_path,
                 model_architecture=model_metadata.model_architecture,
                 task_type=model_metadata.task_type,
                 matching_model_packages=matching_model_packages,
@@ -227,9 +360,12 @@ class AutoModel:
                 help_url="https://todo",
             )
         return attempt_loading_model_from_local_storage(
-            model_dir=model_name_or_path,
+            model_dir_or_weights_path=model_id_or_path,
             allow_local_code_packages=allow_local_code_packages,
             model_init_kwargs=model_init_kwargs,
+            model_type=model_type,
+            task_type=task_type,
+            backend_type=backend,
         )
 
 
@@ -606,19 +742,60 @@ def generate_shared_blobs_path() -> str:
 
 
 def generate_model_package_cache_path(model_id: str, package_id: str) -> str:
-    return os.path.join(INFERENCE_HOME, "models-cache", model_id, package_id)
+    ensure_package_id_is_os_safe(model_id=model_id, package_id=package_id)
+    model_id_slug = slugify_model_id_to_os_safe_format(model_id=model_id)
+    return os.path.join(INFERENCE_HOME, "models-cache", model_id_slug, package_id)
+
+
+def ensure_package_id_is_os_safe(model_id: str, package_id: str) -> None:
+    if re.search(r"[^A-Za-z0-9]", package_id):
+        raise InsecureModelIdentifierError(
+            message=f"Attempted to load model: {model_id} using package ID: {package_id} which "
+            f"has invalid format. ID is expected to contain only ASCII characters and numbers to "
+            f"ensure safety of local cache. If you see this error running your model on Roboflow platform, "
+            f"raise the issue: https://github.com/roboflow/inference/issues. If you are running `inference` "
+            f"outside of the platform, verify that your weights provider keeps the model packages identifiers "
+            f"in the expected format.",
+            help_url="https://TODO",
+        )
+
+
+def slugify_model_id_to_os_safe_format(model_id: str) -> str:
+    # Only ASCII
+    model_id_slug = re.sub(r"[^A-Za-z0-9_-]+", "-", model_id)
+    # Collapse multiple underscores/dashes
+    model_id_slug = re.sub(r"[_-]{2,}", "-", model_id_slug)
+    if not model_id_slug:
+        model_id_slug = "special-char-only-model-id"
+    if len(model_id_slug) > 48:
+        model_id_slug = model_id_slug[:48]
+    digest = hashlib.blake2s(model_id.encode("utf-8"), digest_size=4).hexdigest()
+    return f"{model_id_slug}-{digest}"
 
 
 def attempt_loading_model_from_local_storage(
-    model_dir: str,
+    model_dir_or_weights_path: str,
     allow_local_code_packages: bool,
     model_init_kwargs: dict,
+    model_type: Optional[str] = None,
+    task_type: Optional[str] = None,
+    backend_type: Optional[
+        Union[str, BackendType, List[Union[str, BackendType]]]
+    ] = None,
 ) -> AnyModel:
-    config_path = os.path.join(model_dir, MODEL_CONFIG_FILE_NAME)
+    if os.path.isfile(model_dir_or_weights_path):
+        return attempt_loading_model_from_checkpoint(
+            checkpoint_path=model_dir_or_weights_path,
+            model_init_kwargs=model_init_kwargs,
+            model_type=model_type,
+            task_type=task_type,
+            backend_type=backend_type,
+        )
+    config_path = os.path.join(model_dir_or_weights_path, MODEL_CONFIG_FILE_NAME)
     model_config = parse_model_config(config_path=config_path)
     if model_config.is_library_model():
         return load_library_model_from_local_dir(
-            model_dir=model_dir,
+            model_dir=model_dir_or_weights_path,
             model_config=model_config,
             model_init_kwargs=model_init_kwargs,
         )
@@ -631,10 +808,87 @@ def attempt_loading_model_from_local_storage(
             help_url="https://todo",
         )
     return load_model_from_local_package_with_arbitrary_code(
-        model_dir=model_dir,
+        model_dir=model_dir_or_weights_path,
         model_config=model_config,
         model_init_kwargs=model_init_kwargs,
     )
+
+
+def attempt_loading_model_from_checkpoint(
+    checkpoint_path: str,
+    model_init_kwargs: dict,
+    model_type: Optional[str] = None,
+    task_type: Optional[str] = None,
+    backend_type: Optional[
+        Union[str, BackendType, List[Union[str, BackendType]]]
+    ] = None,
+) -> AnyModel:
+    model_architecture, task_type, backend_type = resolve_models_registry_entry(
+        model_type=model_type,
+        task_type=task_type,
+        backend_type=backend_type,
+    )
+    model_init_kwargs["model_type"] = model_type
+    model_class = resolve_model_class(
+        model_architecture=model_architecture,
+        task_type=task_type,
+        backend=backend_type,
+    )
+    return model_class.from_pretrained(checkpoint_path, **model_init_kwargs)
+
+
+def resolve_models_registry_entry(
+    model_type: Optional[str],
+    task_type: Optional[str] = None,
+    backend_type: Optional[
+        Union[str, BackendType, List[Union[str, BackendType]]]
+    ] = None,
+) -> Tuple[str, str, BackendType]:
+    #  TODO: in the future this check will grow in size
+    if not model_type:
+        raise ModelLoadingError(
+            message="When loading model directly from checkpoint path, `model_type` parameter must be specified. "
+            "Use one of the supported value, for example `rfdetr-nano` in case you refer checkpoint of "
+            "RFDetr Nano model.",
+            help_url="https://todo",
+        )
+    if model_type not in MODEL_TYPES_TO_LOAD_FROM_CHECKPOINT:
+        raise ModelLoadingError(
+            message="When loading model directly from checkpoint path, `model_type` parameter must define "
+            "one of the type of model that support loading directly from the checkpoints. "
+            f"Models supported in current version: {MODEL_TYPES_TO_LOAD_FROM_CHECKPOINT}",
+            help_url="https://todo",
+        )
+    # a bit of hard coding here, over time we must maintain
+    model_architecture = "rfdetr"
+    if task_type is None:
+        task_type = OBJECT_DETECTION_TASK
+    if task_type != OBJECT_DETECTION_TASK:
+        raise ModelLoadingError(
+            message=f"When loading model directly from checkpoint path, set `model_type` as {model_type} and "
+            f"`task_type` as {task_type}, whereas selected model do only support `{OBJECT_DETECTION_TASK}` "
+            f"task while loading from checkpoint file.",
+            help_url="https://todo",
+        )
+    if backend_type is None:
+        backend_type = BackendType.TORCH
+    if isinstance(backend_type, list) and len(backend_type) != 1:
+        if len(backend_type) != 1:
+            raise ModelLoadingError(
+                message=f"When loading model directly from checkpoint path, set `backend` parameter to be {backend_type}, "
+                f"whereas it is only supported to pass a single value.",
+                help_url="https://todo",
+            )
+        backend_type = backend_type[0]
+    if isinstance(backend_type, str):
+        backend_type = parse_backend_type(value=backend_type)
+    if backend_type is not BackendType.TORCH:
+        raise ModelLoadingError(
+            message=f"When loading model directly from checkpoint path, selected the following backend {backend_type}, "
+            f"but the backend supported for model {model_type} is {BackendType.TORCH}",
+            help_url="https://todo",
+        )
+    return model_architecture, task_type, backend_type
 
 
 def parse_model_config(config_path: str) -> InferenceModelConfig:

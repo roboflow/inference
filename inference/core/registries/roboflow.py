@@ -49,6 +49,7 @@ GENERIC_MODELS = {
     "sam2": ("embed", "sam2"),
     "gaze": ("gaze", "l2cs"),
     "doctr": ("ocr", "doctr"),
+    "easy_ocr": ("ocr", "easy_ocr"),
     "trocr": ("ocr", "trocr"),
     "grounding_dino": ("object-detection", "grounding-dino"),
     "paligemma": ("llm", "paligemma"),
@@ -72,8 +73,8 @@ class RoboflowModelRegistry(ModelRegistry):
         self,
         model_id: ModelID,
         api_key: str,
-        countinference: bool = None,
-        service_secret: str = None,
+        countinference: Optional[bool] = None,
+        service_secret: Optional[str] = None,
     ) -> Model:
         """Returns the model class based on the given model id and API key.
 

@@ -43,6 +43,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install --upgrade setuptools
-          pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements/_requirements.txt -r requirements/requirements.sam.txt -r requirements/requirements.cpu.txt -r requirements/requirements.http.txt -r requirements/requirements.test.unit.txt -r requirements/requirements.doctr.txt -r requirements/requirements.yolo_world.txt -r requirements/requirements.transformers.txt -r requirements/requirements.sdk.http.txt
+          pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements/_requirements.txt -r requirements/requirements.sam.txt -r requirements/requirements.cpu.txt -r requirements/requirements.http.txt -r requirements/requirements.test.unit.txt -r requirements/requirements.doctr.txt -r requirements/requirements.yolo_world.txt -r requirements/requirements.transformers.txt -r requirements/requirements.sdk.http.txt -r requirements/requirements.easyocr.txt
       - name: 🧪 Integration Tests of Workflows
         run: ROBOFLOW_API_KEY=${{ secrets.API_KEY }} MODAL_TOKEN_ID=${{ secrets.MODAL_TOKEN_ID }} MODAL_TOKEN_SECRET=${{ secrets.MODAL_TOKEN_SECRET }} MODAL_ALLOW_ANONYMOUS_EXECUTION=True MODAL_ANONYMOUS_WORKSPACE_NAME=github-test MODAL_SKIP_FLORENCE2_TEST=FALSE LOAD_ENTERPRISE_BLOCKS=TRUE python -m pytest tests/workflows/integration_tests

@@ -9,8 +9,9 @@ from typing import List, Optional, Set, Tuple
 import torch
 from inference_exp.configuration import L4T_VERSION, RUNNING_ON_JETSON
 from inference_exp.errors import JetsonTypeResolutionError
+from inference_exp.logger import LOGGER
 from inference_exp.utils.environment import str2bool
-from packaging.version import Version
+from packaging.version import InvalidVersion, Version
 
 JETSON_DEVICES_TABLE = [
     "NVIDIA Jetson Orin Nano",
@@ -37,6 +38,8 @@ class RuntimeXRayResult:
     l4t_version: Optional[Version]
     os_version: Optional[str]
     torch_available: bool
+    torch_version: Optional[Version]
+    torchvision_version: Optional[Version]
     onnxruntime_version: Optional[Version]
     available_onnx_execution_providers: Optional[Set[str]]
     hf_transformers_available: bool
@@ -53,7 +56,8 @@ class RuntimeXRayResult:
             f"torch_available={self.torch_available}, onnxruntime_version={self.onnxruntime_version}, "
             f"available_onnx_execution_providers={self.available_onnx_execution_providers}, hf_transformers_available={self.hf_transformers_available}, "
             f"ultralytics_available={self.ultralytics_available}, "
-            f"trt_python_package_available={self.trt_python_package_available})"
+            f"trt_python_package_available={self.trt_python_package_available}, torch_version={self.torch_version}, "
+            f"torchvision_version={self.torchvision_version})"
         )
 
 
@@ -71,6 +75,8 @@ def x_ray_runtime_environment() -> RuntimeXRayResult:
     gpu_devices = get_available_gpu_devices()
     gpu_devices_cc = get_available_gpu_devices_cc()
     torch_available = is_torch_available()
+    torch_version = get_torch_version()
+    torchvision_version = get_torchvision_version()
     onnx_info = get_onnxruntime_info()
     if onnx_info:
         onnxruntime_version, available_onnx_execution_providers = onnx_info
@@ -90,6 +96,8 @@ def x_ray_runtime_environment() -> RuntimeXRayResult:
         l4t_version=l4t_version,
         os_version=os_version,
         torch_available=torch_available,
+        torch_version=torch_version,
+        torchvision_version=torchvision_version,
         onnxruntime_version=onnxruntime_version,
         available_onnx_execution_providers=available_onnx_execution_providers,
         hf_transformers_available=hf_transformers_available,
@@ -300,6 +308,38 @@ def is_torch_available() -> bool:
         return True
     except ImportError:
         return False
+
+
+@cache
+def get_torch_version() -> Optional[Version]:
+    try:
+        import torch
+
+        version_str = torch.__version__
+        if "+" in version_str:
+            version_str = version_str.split("+")[0]
+        return Version(version_str)
+    except ImportError:
+        return None
+    except InvalidVersion as e:
+        LOGGER.warning(f"Could not parse torch version: {e}")
+        return None
+
+
+@cache
+def get_torchvision_version() -> Optional[Version]:
+    try:
+        import torchvision
+
+        version_str = torchvision.__version__
+        if "+" in version_str:
+            version_str = version_str.split("+")[0]
+        return Version(version_str)
+    except ImportError:
+        return None
+    except InvalidVersion as e:
+        LOGGER.warning(f"Could not parse torch version: {e}")
+        return None
 
 
 @cache

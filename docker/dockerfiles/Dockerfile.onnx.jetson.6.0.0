@@ -37,6 +37,7 @@ RUN python3 -m pip install --upgrade pip && \
     -r requirements/requirements.sdk.http.txt \
     -r requirements/requirements.yolo_world.txt \
     -r requirements/requirements.jetson.txt \
+    -r requirements/requirements.easyocr.txt \
     "setuptools<=75.5.0"
 
 # Set up the application runtime

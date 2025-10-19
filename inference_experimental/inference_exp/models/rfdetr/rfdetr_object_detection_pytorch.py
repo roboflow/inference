@@ -1,24 +1,38 @@
+import os.path
 from copy import deepcopy
-from typing import List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
 from inference_exp import Detections, ObjectDetectionModel
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
-from inference_exp.errors import CorruptedModelPackageError, ModelRuntimeError
+from inference_exp.errors import (
+    CorruptedModelPackageError,
+    ModelLoadingError,
+    ModelRuntimeError,
+)
 from inference_exp.logger import LOGGER
 from inference_exp.models.common.model_packages import get_model_package_contents
 from inference_exp.models.common.roboflow.model_packages import (
-    PreProcessingConfig,
+    ColorMode,
+    DivisiblePadding,
+    InferenceConfig,
+    NetworkInputDefinition,
     PreProcessingMetadata,
+    ResizeMode,
+    TrainingInputSize,
     parse_class_names_file,
-    parse_model_characteristics,
-    parse_pre_processing_config,
+    parse_inference_config,
 )
 from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
+from inference_exp.models.rfdetr.class_remapping import (
+    ClassesReMapping,
+    prepare_class_remapping,
+)
+from inference_exp.models.rfdetr.default_labels import resolve_labels
 from inference_exp.models.rfdetr.post_processor import PostProcess
 from inference_exp.models.rfdetr.rfdetr_base_pytorch import (
     LWDETR,
@@ -29,6 +43,7 @@ from inference_exp.models.rfdetr.rfdetr_base_pytorch import (
     RFDETRSmallConfig,
     build_model,
 )
+from inference_exp.utils.file_system import read_json
 
 try:
     torch.set_float32_matmul_precision("high")
@@ -43,6 +58,11 @@ CONFIG_FOR_MODEL_TYPE = {
     "rfdetr-large": RFDETRLargeConfig,
 }
 
+RESIZE_MODES_TO_REVERT_PADDING = {
+    ResizeMode.LETTERBOX,
+    ResizeMode.LETTERBOX_REFLECT_EDGES,
+}
+
 
 class RFDetrForObjectDetectionTorch(
     (ObjectDetectionModel[torch.Tensor, PreProcessingMetadata, dict])
@@ -53,13 +73,23 @@ class RFDetrForObjectDetectionTorch(
         cls,
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
+        model_type: Optional[str] = None,
+        labels: Optional[Union[str, List[str]]] = None,
+        resolution: Optional[int] = None,
         **kwargs,
     ) -> "RFDetrForObjectDetectionTorch":
+        if os.path.isfile(model_name_or_path):
+            return cls.from_checkpoint_file(
+                checkpoint_path=model_name_or_path,
+                model_type=model_type,
+                labels=labels,
+                resolution=resolution,
+            )
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
             elements=[
                 "class_names.txt",
-                "environment.json",
+                "inference_config.json",
                 "model_type.json",
                 "weights.pth",
             ],
@@ -67,27 +97,39 @@ class RFDetrForObjectDetectionTorch(
         class_names = parse_class_names_file(
             class_names_path=model_package_content["class_names.txt"]
         )
-        pre_processing_config = parse_pre_processing_config(
-            config_path=model_package_content["environment.json"],
+        inference_config = parse_inference_config(
+            config_path=model_package_content["inference_config.json"],
+            allowed_resize_modes={
+                ResizeMode.STRETCH_TO,
+                ResizeMode.LETTERBOX,
+                ResizeMode.CENTER_CROP,
+                ResizeMode.LETTERBOX_REFLECT_EDGES,
+            },
         )
+        classes_re_mapping = None
+        if inference_config.class_names_operations:
+            class_names, classes_re_mapping = prepare_class_remapping(
+                class_names=class_names,
+                class_names_operations=inference_config.class_names_operations,
+                device=device,
+            )
         weights_dict = torch.load(
             model_package_content["weights.pth"],
             map_location=device,
             weights_only=False,
         )["model"]
-        model_characteristics = parse_model_characteristics(
+        model_type = parse_model_type(
             config_path=model_package_content["model_type.json"]
         )
-        if model_characteristics.model_type not in CONFIG_FOR_MODEL_TYPE:
+        if model_type not in CONFIG_FOR_MODEL_TYPE:
             raise CorruptedModelPackageError(
-                message=f"Model package describes model_type as '{model_characteristics.model_type}' which is not supported. "
+                message=f"Model package describes model_type as '{model_type}' which is not supported. "
                 f"Supported model types: {list(CONFIG_FOR_MODEL_TYPE.keys())}.",
                 help_url="https://todo",
             )
-        model_config = CONFIG_FOR_MODEL_TYPE[model_characteristics.model_type](
-            device=device
-        )
-
+        model_config = CONFIG_FOR_MODEL_TYPE[model_type](device=device)
+        checkpoint_num_classes = weights_dict["class_embed.bias"].shape[0]
+        model_config.num_classes = checkpoint_num_classes - 1
         model = build_model(config=model_config)
         model.load_state_dict(weights_dict)
         model = model.eval().to(device)
@@ -95,8 +137,95 @@ class RFDetrForObjectDetectionTorch(
         return cls(
             model=model,
             class_names=class_names,
+            classes_re_mapping=classes_re_mapping,
             device=device,
-            pre_processing_config=pre_processing_config,
+            inference_config=inference_config,
+            post_processor=post_processor,
+            resolution=model_config.resolution,
+        )
+
+    @classmethod
+    def from_checkpoint_file(
+        cls,
+        checkpoint_path: str,
+        model_type: Optional[str] = None,
+        labels: Optional[Union[str, List[str]]] = None,
+        resolution: Optional[int] = None,
+        device: torch.device = DEFAULT_DEVICE,
+    ):
+        if model_type is None:
+            raise ModelLoadingError(
+                message="While loading RFDetr model (using torch backend) could not determine `model_type`. "
+                "If you used `RFDetrForObjectDetectionTorch` directly imported in your code, please pass "
+                f"one of the value: {CONFIG_FOR_MODEL_TYPE.keys()} as the parameter. If you see this "
+                f"error, while using `AutoModel.from_pretrained(...)` or thrown from managed Roboflow service, "
+                f"this is a bug - raise the issue: https://github.com/roboflow/inference/issue providing "
+                f"full context.",
+                help_url="https://todo",
+            )
+        weights_dict = torch.load(
+            checkpoint_path,
+            map_location=device,
+            weights_only=False,
+        )["model"]
+        if model_type not in CONFIG_FOR_MODEL_TYPE:
+            raise ModelLoadingError(
+                message=f"Model package describes model_type as '{model_type}' which is not supported. "
+                f"Supported model types: {list(CONFIG_FOR_MODEL_TYPE.keys())}.",
+                help_url="https://todo",
+            )
+        model_config = CONFIG_FOR_MODEL_TYPE[model_type](device=device)
+        if resolution is not None:
+            if resolution < 0 or resolution % 56 != 0:
+                raise ModelLoadingError(
+                    message=f"Attempted to load RFDetr model (using torch backend) with `resolution` parameter which "
+                    f"is invalid - the model required positive value divisible by 56. Make sure you used "
+                    f"proper value, corresponding to the one used to train the model.",
+                    help_url="https://todo",
+                )
+            model_config.resolution = resolution
+        inference_config = InferenceConfig(
+            network_input=NetworkInputDefinition(
+                training_input_size=TrainingInputSize(
+                    height=model_config.resolution,
+                    width=model_config.resolution,
+                ),
+                dynamic_spatial_size_supported=True,
+                dynamic_spatial_size_mode=DivisiblePadding(
+                    type="pad-to-be-divisible",
+                    value=56,
+                ),
+                color_mode=ColorMode.BGR,
+                resize_mode=ResizeMode.STRETCH_TO,
+                input_channels=3,
+                scaling_factor=255,
+                normalization=([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+            )
+        )
+        checkpoint_num_classes = weights_dict["class_embed.bias"].shape[0]
+        model_config.num_classes = checkpoint_num_classes - 1
+        model = build_model(config=model_config)
+        if labels is None:
+            class_names = [f"class_{i}" for i in range(checkpoint_num_classes)]
+        elif isinstance(labels, str):
+            class_names = resolve_labels(labels=labels)
+        else:
+            class_names = labels
+        if checkpoint_num_classes != len(class_names):
+            raise ModelLoadingError(
+                message=f"Checkpoint pointed to load RFDetr defines {checkpoint_num_classes} output classes, but "
+                f"loaded labels define {len(class_names)} classes - fix the value of `labels` parameter.",
+                help_url="https://todo",
+            )
+        model.load_state_dict(weights_dict)
+        model = model.eval().to(device)
+        post_processor = PostProcess()
+        return cls(
+            model=model,
+            class_names=class_names,
+            classes_re_mapping=None,
+            device=device,
+            inference_config=inference_config,
             post_processor=post_processor,
             resolution=model_config.resolution,
         )
@@ -104,15 +233,17 @@ class RFDetrForObjectDetectionTorch(
     def __init__(
         self,
         model: LWDETR,
-        pre_processing_config: PreProcessingConfig,
+        inference_config: InferenceConfig,
         class_names: List[str],
+        classes_re_mapping: Optional[ClassesReMapping],
         device: torch.device,
         post_processor: PostProcess,
         resolution: int,
     ):
         self._model = model
-        self._pre_processing_config = pre_processing_config
+        self._inference_config = inference_config
         self._class_names = class_names
+        self._classes_re_mapping = classes_re_mapping
         self._post_processor = post_processor
         self._device = device
         self._resolution = resolution
@@ -163,15 +294,16 @@ class RFDetrForObjectDetectionTorch(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
+        image_size: Optional[Tuple[int, int]] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         return pre_process_network_input(
             images=images,
-            pre_processing_config=self._pre_processing_config,
-            expected_network_color_format="rgb",
+            image_pre_processing=self._inference_config.image_pre_processing,
+            network_input=self._inference_config.network_input,
             target_device=self._device,
             input_color_format=input_color_format,
-            normalization=([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+            image_size_wh=image_size,
         )
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> dict:
@@ -226,22 +358,104 @@ class RFDetrForObjectDetectionTorch(
         threshold: float = 0.5,
         **kwargs,
     ) -> List[Detections]:
-        orig_sizes = [
-            (e.original_size.height, e.original_size.width) for e in pre_processing_meta
-        ]
+        if (
+            self._inference_config.network_input.resize_mode
+            in RESIZE_MODES_TO_REVERT_PADDING
+        ):
+            un_padding_results = []
+            for out_box_tensor, image_metadata in zip(
+                model_results["pred_boxes"], pre_processing_meta
+            ):
+                box_center_offsets = torch.as_tensor(  # bboxes in format cxcywh now, so only cx, cy to be pushed
+                    [
+                        image_metadata.pad_left / image_metadata.inference_size.width,
+                        image_metadata.pad_top / image_metadata.inference_size.height,
+                        0.0,
+                        0.0,
+                    ],
+                    dtype=out_box_tensor.dtype,
+                    device=out_box_tensor.device,
+                )
+                ox_padding = (
+                    image_metadata.pad_left + image_metadata.pad_right
+                ) / image_metadata.inference_size.width
+                oy_padding = (
+                    image_metadata.pad_top + image_metadata.pad_bottom
+                ) / image_metadata.inference_size.height
+                box_wh_offsets = torch.as_tensor(  # bboxes in format cxcywh now, so only cx, cy to be pushed
+                    [
+                        1.0 - ox_padding,
+                        1.0 - oy_padding,
+                        1.0 - ox_padding,
+                        1.0 - oy_padding,
+                    ],
+                    dtype=out_box_tensor.dtype,
+                    device=out_box_tensor.device,
+                )
+                out_box_tensor = (out_box_tensor - box_center_offsets) / box_wh_offsets
+                un_padding_results.append(out_box_tensor)
+            model_results["pred_boxes"] = torch.stack(un_padding_results, dim=0)
+        if self._inference_config.network_input.resize_mode is ResizeMode.CENTER_CROP:
+            orig_sizes = [
+                (
+                    round(e.inference_size.height / e.scale_height),
+                    round(e.inference_size.width / e.scale_width),
+                )
+                for e in pre_processing_meta
+            ]
+        else:
+            orig_sizes = [
+                (e.size_after_pre_processing.height, e.size_after_pre_processing.width)
+                for e in pre_processing_meta
+            ]
         target_sizes = torch.tensor(orig_sizes, device=self._device)
         results = self._post_processor(model_results, target_sizes=target_sizes)
         detections_list = []
-        for result in results:
-            scores = result["scores"]
-            labels = result["labels"]
-            boxes = result["boxes"]
-
+        for image_result, image_metadata in zip(results, pre_processing_meta):
+            scores = image_result["scores"]
+            labels = image_result["labels"]
+            boxes = image_result["boxes"]
+            if self._classes_re_mapping is not None:
+                remapping_mask = torch.isin(
+                    labels, self._classes_re_mapping.remaining_class_ids
+                )
+                scores = scores[remapping_mask]
+                labels = self._classes_re_mapping.class_mapping[labels[remapping_mask]]
+                boxes = boxes[remapping_mask]
             keep = scores > threshold
             scores = scores[keep]
             labels = labels[keep]
             boxes = boxes[keep]
-
+            if (
+                self._inference_config.network_input.resize_mode
+                is ResizeMode.CENTER_CROP
+            ):
+                offsets = torch.as_tensor(
+                    [
+                        image_metadata.pad_left,
+                        image_metadata.pad_top,
+                        image_metadata.pad_left,
+                        image_metadata.pad_top,
+                    ],
+                    dtype=boxes.dtype,
+                    device=boxes.device,
+                )
+                boxes[:, :4].sub_(offsets)
+            if (
+                image_metadata.static_crop_offset.offset_x != 0
+                or image_metadata.static_crop_offset.offset_y != 0
+            ):
+                static_crop_offsets = torch.as_tensor(
+                    [
+                        image_metadata.static_crop_offset.offset_x,
+                        image_metadata.static_crop_offset.offset_y,
+                        image_metadata.static_crop_offset.offset_x,
+                        image_metadata.static_crop_offset.offset_y,
+                    ],
+                    dtype=boxes.dtype,
+                    device=boxes.device,
+                )
+                boxes[:, :4].add_(static_crop_offsets)
             detections = Detections(
                 xyxy=boxes.round().int(),
                 confidence=scores,
@@ -249,3 +463,28 @@ class RFDetrForObjectDetectionTorch(
             )
             detections_list.append(detections)
         return detections_list
+
+
+def parse_model_type(config_path: str) -> str:
+    try:
+        parsed_config = read_json(path=config_path)
+        if not isinstance(parsed_config, dict):
+            raise ValueError(
+                f"decoded value is {type(parsed_config)}, but dictionary expected"
+            )
+        if "model_type" not in parsed_config or not isinstance(
+            parsed_config["model_type"], str
+        ):
+            raise ValueError(
+                "could not find required entries in config - either "
+                "'model_type' field is missing or not a string"
+            )
+        return parsed_config["model_type"]
+    except (IOError, OSError, ValueError) as error:
+        raise CorruptedModelPackageError(
+            message=f"Model type config file is malformed: "
+            f"{error}. In case that the package is "
+            f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
+            f"verify its consistency in docs.",
+            help_url="https://todo",
+        ) from error

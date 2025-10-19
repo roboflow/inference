@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import fractions
 import json
 import logging
 import time
@@ -135,11 +136,6 @@ class VideoTransformTrack(VideoStreamTrack):
 
         self._last_queue_log_time: float = 0.0
 
-        # Synthetic PTS generation to prevent quality drops
-        self._output_frame_count: int = 0
-        self._first_input_pts: Optional[int] = None
-        self._pts_offset: int = 0
-
         self._drain_remote_stream_track = drain_remote_stream_track
 
     def set_track(
@@ -170,6 +166,60 @@ class VideoTransformTrack(VideoStreamTrack):
     async def _raw_frames_reader_loop(self):
         try:
             while self._track_active:
+                current_time = time.time()
+                # logger.warning since inference pipeline is noisy on INFO level
+                if (
+                    DEBUG_AIORTC_QUEUES
+                    and current_time - self._last_queue_log_time >= 5.0
+                ):
+                    logger.warning("=== AIORTC QUEUE SIZES ===")
+
+                    logger.warning(
+                        "from_inference_queue: %s",
+                        self.from_inference_queue._queue.qsize(),
+                    )
+                    logger.warning(
+                        "to_inference_queue: %s", self.to_inference_queue._queue.qsize()
+                    )
+
+                    if self.track and hasattr(self.track, "_queue"):
+                        logger.warning(
+                            f"RemoteStreamTrack._queue: {self.track._queue.qsize()} (UNBOUNDED!)"
+                        )
+
+                    if (
+                        self._relay_track
+                        and hasattr(self._relay_track, "_queue")
+                        and self._relay_track._queue
+                    ):
+                        logger.warning(
+                            f"RelayStreamTrack._queue: {self._relay_track._queue.qsize()} (UNBOUNDED!)"
+                        )
+
+                    if self._rtp_receiver:
+                        if hasattr(
+                            self._rtp_receiver, "_RTCRtpReceiver__decoder_queue"
+                        ):
+                            decoder_queue_size = (
+                                self._rtp_receiver._RTCRtpReceiver__decoder_queue.qsize()
+                            )
+                            logger.warning(
+                                f"RTCRtpReceiver.__decoder_queue: {decoder_queue_size} (UNBOUNDED!)"
+                            )
+
+                        if hasattr(
+                            self._rtp_receiver, "_RTCRtpReceiver__jitter_buffer"
+                        ):
+                            jb = self._rtp_receiver._RTCRtpReceiver__jitter_buffer
+                            if hasattr(jb, "_packets"):
+                                filled = sum(1 for p in jb._packets if p is not None)
+                                logger.warning(
+                                    f"RTCRtpReceiver.JitterBuffer: {filled}/{jb._capacity} (bounded)"
+                                )
+
+                    logger.warning("========================")
+                    self._last_queue_log_time = current_time
+
                 frame: VideoFrame = await self.track.recv()
                 if self._drain_remote_stream_track:
                     # Prevent spam in log, only inform about major drains
@@ -178,8 +228,8 @@ class VideoTransformTrack(VideoStreamTrack):
                             "Draining RemoteStreamTrack._queue: %s (UNBOUNDED)",
                             self.track._queue.qsize(),
                         )
-                    while self.track._queue.qsize() > 0:
-                        frame: VideoFrame = await self.track.recv()
+                        while self.track._queue.qsize() > 0:
+                            frame: VideoFrame = await self.track.recv()
 
                 if self.incoming_stream_fps is None:
                     self._probe_count += 1
@@ -210,50 +260,8 @@ class VideoTransformTrack(VideoStreamTrack):
             self._av_logging_set = True
         self._processed += 1
 
-        current_time = time.time()
-        # logger.warning since inference pipeline is noisy on INFO level
-        if DEBUG_AIORTC_QUEUES and current_time - self._last_queue_log_time >= 5.0:
-            logger.warning("=== AIORTC QUEUE SIZES ===")
-
-            if self.track and hasattr(self.track, "_queue"):
-                logger.warning(
-                    f"RemoteStreamTrack._queue: {self.track._queue.qsize()} (UNBOUNDED!)"
-                )
-
-            if (
-                self._relay_track
-                and hasattr(self._relay_track, "_queue")
-                and self._relay_track._queue
-            ):
-                logger.warning(
-                    f"RelayStreamTrack._queue: {self._relay_track._queue.qsize()} (UNBOUNDED!)"
-                )
-
-            if self._rtp_receiver:
-                if hasattr(self._rtp_receiver, "_RTCRtpReceiver__decoder_queue"):
-                    decoder_queue_size = (
-                        self._rtp_receiver._RTCRtpReceiver__decoder_queue.qsize()
-                    )
-                    logger.warning(
-                        f"RTCRtpReceiver.__decoder_queue: {decoder_queue_size} (UNBOUNDED!)"
-                    )
-
-                if hasattr(self._rtp_receiver, "_RTCRtpReceiver__jitter_buffer"):
-                    jb = self._rtp_receiver._RTCRtpReceiver__jitter_buffer
-                    if hasattr(jb, "_packets"):
-                        filled = sum(1 for p in jb._packets if p is not None)
-                        logger.warning(
-                            f"RTCRtpReceiver.JitterBuffer: {filled}/{jb._capacity} (bounded)"
-                        )
-
-            logger.warning("========================")
-            self._last_queue_log_time = current_time
-
         np_frame: Optional[np.ndarray] = None
-        try:
-            np_frame = await self.from_inference_queue.async_get_nowait()
-        except asyncio.QueueEmpty:
-            pass
+        np_frame = await self.from_inference_queue.async_get()
 
         if np_frame is None:
             if self._last_processed_frame:
@@ -290,29 +298,24 @@ class WebRTCVideoFrameProducer(VideoFrameProducer):
         self._w: Optional[int] = None
         self._h: Optional[int] = None
         self._video_transform_track = webrtc_video_transform_track
-        self._is_opened = True
 
     def grab(self) -> bool:
-        res = self.to_inference_queue.sync_get()
-        if res is None:
-            logger.debug("Received termination signal")
-            return False
-        return True
+        return self._video_transform_track._track_active
 
     def retrieve(self) -> Tuple[bool, Optional[np.ndarray]]:
-        frame: VideoFrame = self.to_inference_queue.sync_get()
-        if frame is None:
-            logger.debug("Received termination signal")
-            return False, None
-        img = frame.to_ndarray(format="bgr24")
+        frame: Optional[VideoFrame] = self.to_inference_queue.sync_get()
 
+        if frame is None:
+            return False, None
+
+        img = frame.to_ndarray(format="bgr24")
         return True, img
 
     def release(self):
-        self._is_opened = False
+        self._video_transform_track.close()
 
     def isOpened(self) -> bool:
-        return self._is_opened
+        return self._video_transform_track._track_active
 
     def discover_source_properties(self) -> SourceProperties:
         while not self._video_transform_track.incoming_stream_fps:
@@ -419,6 +422,7 @@ async def init_rtc_peer_connection(
     @peer_connection.on("track")
     def on_track(track: RemoteStreamTrack):
         logger.info("track received")
+        # can be called with buffered=False
         relay_track = relay.subscribe(track)
 
         # Find the RTCRtpReceiver for this track

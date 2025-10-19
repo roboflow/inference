@@ -9,23 +9,27 @@ def run_yolonas_nms_for_object_detection(
     conf_thresh: float = 0.25,
     iou_thresh: float = 0.45,
     max_detections: int = 100,
+    class_agnostic: bool = False,
 ) -> List[torch.Tensor]:
     bs = output.shape[0]
     boxes = output[:, :, :4]
-    scores = output[:, :, 4]
+    scores = output[:, :, 4:]
     results = []
     for b in range(bs):
         # Combine transpose & max for efficiency
-        class_scores = scores[b]  # (80, 8400)
-        mask = class_scores > conf_thresh
+        class_scores = scores[b]  # (8400, cls_num)
+        class_conf, class_ids = torch.max(class_scores, dim=-1)
+        mask = class_conf > conf_thresh
         if not torch.any(mask):
             results.append(torch.zeros((0, 6), device=output.device))
             continue
         bboxes = boxes[b][mask]
-        class_conf = class_scores[mask]
-        # THIS IS PROBABLY BUG - Could not export class id from YOLONAS model
-        class_ids = torch.zeros(size=(class_conf.shape[0],), device=output.device)
-        keep = torchvision.ops.batched_nms(bboxes, class_conf, class_ids, iou_thresh)
+        class_conf = class_conf[mask]
+        class_ids = class_ids[mask]
+        nms_class_ids = torch.zeros_like(class_ids) if class_agnostic else class_ids
+        keep = torchvision.ops.batched_nms(
+            bboxes, class_conf, nms_class_ids, iou_thresh
+        )
         if keep.numel() > max_detections:
             keep = keep[:max_detections]
         detections = torch.cat(

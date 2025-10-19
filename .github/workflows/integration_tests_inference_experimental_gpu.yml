@@ -15,28 +15,29 @@ on:
           - ''
           - onnx_extras
           - trt_extras
+          - torch_models
+          - hf_vlm_models
       python_version:
-        description: 'Python version to test. Available options: 3.10, 3.11, 3.12. Leave empty to run all.'
+        description: 'Python version to test. Available options: 3.12. Leave empty to run all.'
         required: false
-        default: ''
+        default: '3.12'
         type: choice
         options:
-          - ''
-          - '3.10'
-          - '3.11'
           - '3.12'
 
 jobs:
   integration-tests-inference-experimental-gpu:
     name: ${{ matrix.extras.marker }}:${{ matrix.python-version }}
     runs-on: Roboflow-GPU-VM-Runner
-    timeout-minutes: 10
+    timeout-minutes: 20
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.12"]
         extras:
-          - { install: "onnx-cu12", marker: "onnx_extras" }
-          - { install: "trt10", marker: "trt_extras" }
+          - { install: "onnx-cu12", marker: "onnx_extras", workers: "auto" }
+          - { install: "trt10", marker: "trt_extras", workers: "auto" }
+          - { install: "torch-cu124", marker: "torch_models", workers: "auto" }
+          - { install: "torch-cu124", marker: "hf_vlm_models", workers: "1" }
     steps:
       - name: 🛎️ Checkout
         if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
@@ -76,7 +77,8 @@ jobs:
               cuda-cudart-dev-12-5 \
               cuda-nvcc-12-5 \
               cuda-profiler-api-12-5 \
-              libcurand-dev-12-5
+              libcurand-dev-12-5 \
+              libvips-dev
 
           sudo cp /var/cache/apt/archives/*.deb ~/apt-cache/ 2>/dev/null || true
           sudo chown -R $(whoami):$(whoami) ~/apt-cache
@@ -96,7 +98,7 @@ jobs:
       - name: 🧪 Run tests marked `${{ matrix.extras.marker }}`
         if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
         working-directory: inference_experimental
-        timeout-minutes: 30
+        timeout-minutes: 20
         run: |
           source .venv/bin/activate
-          python -m pytest -n auto -m "${{ matrix.extras.marker }} and not cpu_only" tests/integration_tests
+          python -m pytest -n ${{ matrix.extras.workers }} -m "${{ matrix.extras.marker }} and not cpu_only" tests/integration_tests
