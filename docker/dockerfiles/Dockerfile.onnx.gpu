@@ -34,6 +34,7 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.easyocr.txt \
     ./
 
+# Use uv for much faster package installation (WITHOUT onnxruntime-gpu, we'll build from source)
 RUN uv pip install --system --break-system-packages \
     -r _requirements.txt \
     -r requirements.sam.txt \
@@ -51,8 +52,6 @@ RUN uv pip install --system --break-system-packages \
     numpy \
     && rm -rf ~/.cache/uv
 
-
-
 # Install build tools for ONNX Runtime
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     cmake \
@@ -68,8 +67,6 @@ RUN git clone --depth=1 --branch v3.0.0 https://github.com/NVIDIA/cccl.git /tmp/
     cp -r /tmp/cccl/thrust/thrust /usr/local/cuda-13.0/targets/sbsa-linux/include/cccl/ && \
     ln -sf /usr/local/cuda-13.0/targets/sbsa-linux /usr/local/cuda/targets/sbsa-linux && \
     rm -rf /tmp/cccl
-
-
 
 # Build ONNX Runtime from source for CUDA 13.0 (using main branch for latest CUDA 13 fixes)
 WORKDIR /tmp
@@ -119,9 +116,9 @@ RUN git clone https://github.com/Dao-AILab/flash-attention.git
 WORKDIR /tmp/flash-attention
 RUN MAX_JOBS=4 CMAKE_BUILD_PARALLEL_LEVEL=4 uv pip install --system --break-system-packages . --no-build-isolation -v
 
-RUN ls -R /usr/local/lib/python3.12
-
-# Start runtime stage
+################################################################################
+# RUNTIME STAGE
+################################################################################
 FROM nvcr.io/nvidia/cuda:13.0.1-cudnn-runtime-ubuntu24.04 as runtime
 
 WORKDIR /app
@@ -145,41 +142,12 @@ RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_
     curl \
     && rm -rf /var/lib/apt/lists/*
 
+# uv was already copied from builder stage, no need to reinstall
 
 WORKDIR /build
 COPY . .
 RUN ln -s /usr/bin/python3 /usr/bin/python
-RUN ls -R /usr/local/lib/python3.12
-RUN find /usr/local/lib/python3.12 -name "onnxruntime*"
-# Build wheels directly without Makefile to handle PEP 668
-# Build wheels directly without upgrading pip (Debian-installed pip issue)
-RUN python -m pip install --break-system-packages wheel twine requests && \
-    rm -f dist/* && \
-    python .release/pypi/inference.core.setup.py bdist_wheel && \
-    python .release/pypi/inference.gpu.setup.py bdist_wheel && \
-    python .release/pypi/inference.cli.setup.py bdist_wheel && \
-    python .release/pypi/inference.sdk.setup.py bdist_wheel
-# Build wheels directly without upgrading pip (Debian-installed pip issue)
-RUN python -m pip install --break-system-packages wheel twine requests && \
-    rm -f dist/* && \
-    python .release/pypi/inference.core.setup.py bdist_wheel && \
-    python .release/pypi/inference.gpu.setup.py bdist_wheel && \
-    python .release/pypi/inference.cli.setup.py bdist_wheel && \
-    python .release/pypi/inference.sdk.setup.py bdist_wheel
-# Build wheels directly without upgrading pip (Debian-installed pip issue)
-RUN python -m pip install --break-system-packages wheel twine requests && \
-    rm -f dist/* && \
-    python .release/pypi/inference.core.setup.py bdist_wheel && \
-    python .release/pypi/inference.gpu.setup.py bdist_wheel && \
-    python .release/pypi/inference.cli.setup.py bdist_wheel && \
-    python .release/pypi/inference.sdk.setup.py bdist_wheel
-# Build wheels directly without upgrading pip (Debian-installed pip issue)
-RUN python -m pip install --break-system-packages wheel twine requests && \
-    rm -f dist/* && \
-    python .release/pypi/inference.core.setup.py bdist_wheel && \
-    python .release/pypi/inference.gpu.setup.py bdist_wheel && \
-    python .release/pypi/inference.cli.setup.py bdist_wheel && \
-    python .release/pypi/inference.sdk.setup.py bdist_wheel
+
 # Build wheels directly without upgrading pip (Debian-installed pip issue)
 RUN python -m pip install --break-system-packages wheel twine requests && \
     rm -f dist/* && \
@@ -192,42 +160,8 @@ RUN python -m pip install --break-system-packages wheel twine requests && \
 RUN python -m pip install --break-system-packages --no-deps dist/inference_gpu*.whl
 
 # Then install the rest with dependency resolution enabled
-# Install only the wheels that were actually built
 RUN python -m pip install --break-system-packages \
     dist/inference_core*.whl \
-    dist/inference_cli*.whl \
-    dist/inference_sdk*.whl \
-    dist/inference_cli*.whl \
-    dist/inference_sdk*.whl \
-    "setuptools<=75.5.0"
-RUN python -m pip install --break-system-packages \
-    dist/inference_core*.whl \
-    dist/inference_cli*.whl \
-    dist/inference_sdk*.whl \
-    dist/inference_cli*.whl \
-    dist/inference_sdk*.whl \
-    "setuptools<=75.5.0"
-# Install only the wheels that were actually built
-RUN python -m pip install --break-system-packages \
-    dist/inference_core*.whl \
-    dist/inference_cli*.whl \
-    dist/inference_sdk*.whl \
-    dist/inference_cli*.whl \
-    dist/inference_sdk*.whl \
-    "setuptools<=75.5.0"
-# Install only the wheels that were actually built
-RUN python -m pip install --break-system-packages \
-    dist/inference_core*.whl \
-    dist/inference_cli*.whl \
-    dist/inference_sdk*.whl \
-    dist/inference_cli*.whl \
-    dist/inference_sdk*.whl \
-    "setuptools<=75.5.0"
-# Install only the wheels that were actually built
-RUN python -m pip install --break-system-packages \
-    dist/inference_core*.whl \
-    dist/inference_cli*.whl \
-    dist/inference_sdk*.whl \
     dist/inference_cli*.whl \
     dist/inference_sdk*.whl \
     "setuptools<=75.5.0"
