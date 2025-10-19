@@ -34,7 +34,6 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.easyocr.txt \
     ./
 
-# Use uv for much faster package installation (WITHOUT onnxruntime-gpu, we'll build from source)
 RUN uv pip install --system --break-system-packages \
     -r _requirements.txt \
     -r requirements.sam.txt \
