@@ -50,6 +50,8 @@ RUN uv pip install --system --break-system-packages \
     numpy \
     && rm -rf ~/.cache/uv
 
+
+
 # Install build tools for ONNX Runtime
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     cmake \
@@ -232,6 +234,23 @@ RUN python -m pip install --break-system-packages \
 
 
 WORKDIR /notebooks
+
+# Install Node.js 20.x and build JupyterLab assets in runtime container
+RUN apt-get update && \
+    apt-get install -y ca-certificates curl gnupg && \
+    mkdir -p /etc/apt/keyrings && \
+    curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
+    echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list && \
+    apt-get update && \
+    apt-get install -y nodejs && \
+    node --version && \
+    jupyter lab build --minimize=False --dev-build=False && \
+    jupyter lab clean && \
+    npm cache clean --force && \
+    apt-get remove -y nodejs gnupg && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
+
 COPY examples/notebooks .
 
 WORKDIR /app/
@@ -253,4 +272,6 @@ ENV ENABLE_STREAM_API=True
 ENV ENABLE_PROMETHEUS=True
 ENV STREAM_API_PRELOADED_PROCESSES=2
 
-ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT
+COPY docker/config/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+ENTRYPOINT ["/app/entrypoint.sh"]
