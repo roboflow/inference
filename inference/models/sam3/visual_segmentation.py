@@ -53,6 +53,9 @@ from inference.core.models.roboflow import (
 )
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2multipoly
+from inference.core.utils.torchscript_guard import (
+    _temporarily_disable_torch_jit_script,
+)
 
 if DEVICE is None:
     DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -163,7 +166,8 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
             )
 
         with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-            predictor = SAM3InteractiveImagePredictor(sam_model=self._sam_model)
+            with _temporarily_disable_torch_jit_script():
+                predictor = SAM3InteractiveImagePredictor(sam_model=self._sam_model)
             print("setting image")
             x = predictor.set_image(img_in)
             print("image set", x)
@@ -196,9 +200,7 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
             inference_time = perf_counter() - t1
             return Sam2EmbeddingResponse(time=inference_time, image_id=image_id)
         elif isinstance(request, Sam2SegmentationRequest):
-            masks, scores, low_resolution_logits = self.segment_image(
-                **request.dict()
-            )
+            masks, scores, low_resolution_logits = self.segment_image(**request.dict())
             predictions = _masks_to_predictions(masks, scores, request.format)
             return Sam2SegmentationResponse(
                 time=perf_counter() - t1,
@@ -278,7 +280,8 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
                 image=image, image_id=image_id
             )
 
-            predictor = SAM3InteractiveImagePredictor(sam_model=self._sam_model)
+            with _temporarily_disable_torch_jit_script():
+                predictor = SAM3InteractiveImagePredictor(sam_model=self._sam_model)
 
             predictor._is_image_set = True
             predictor._features = embedding
@@ -334,12 +337,16 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
                 "logits": logits,
                 "prompt_set": prompt_set,
             }
-            safe_remove_from_list(values=self.low_res_logits_cache_keys, element=prompt_id)
+            safe_remove_from_list(
+                values=self.low_res_logits_cache_keys, element=prompt_id
+            )
             self.low_res_logits_cache_keys.append(prompt_id)
             if len(self.low_res_logits_cache_keys) > self.low_res_logits_cache_size:
                 cache_key = safe_pop_from_list(values=self.low_res_logits_cache_keys)
                 if cache_key is not None:
-                    safe_remove_from_dict(values=self.low_res_logits_cache, key=cache_key)
+                    safe_remove_from_dict(
+                        values=self.low_res_logits_cache, key=cache_key
+                    )
 
     @property
     def model_artifact_bucket(self):
@@ -652,4 +659,3 @@ def safe_remove_from_dict(values: Dict[T, Any], key: T) -> None:
         del values[key]
     except ValueError:
         pass
-

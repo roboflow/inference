@@ -40,6 +40,9 @@ from inference.core.env import (
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2multipoly
+from inference.core.utils.torchscript_guard import (
+    _temporarily_disable_torch_jit_script,
+)
 
 if DEVICE is None:
     DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -157,7 +160,8 @@ class SegmentAnything2(RoboflowCoreModel):
             )
 
         with torch.inference_mode():
-            predictor = SAM2ImagePredictor(self.sam)
+            with _temporarily_disable_torch_jit_script():
+                predictor = SAM2ImagePredictor(self.sam)
             predictor.set_image(img_in)
             embedding_dict = predictor._features
 
@@ -188,9 +192,7 @@ class SegmentAnything2(RoboflowCoreModel):
             inference_time = perf_counter() - t1
             return Sam2EmbeddingResponse(time=inference_time, image_id=image_id)
         elif isinstance(request, Sam2SegmentationRequest):
-            masks, scores, low_resolution_logits = self.segment_image(
-                **request.dict()
-            )
+            masks, scores, low_resolution_logits = self.segment_image(**request.dict())
             if request.format == "json":
                 return turn_segmentation_results_into_api_response(
                     masks=masks,
@@ -282,7 +284,8 @@ class SegmentAnything2(RoboflowCoreModel):
             embedding, original_image_size, image_id = self.embed_image(
                 image=image, image_id=image_id
             )
-            predictor = SAM2ImagePredictor(self.sam)
+            with _temporarily_disable_torch_jit_script():
+                predictor = SAM2ImagePredictor(self.sam)
             predictor._is_image_set = True
             predictor._features = embedding
             predictor._orig_hw = [original_image_size]
@@ -337,12 +340,16 @@ class SegmentAnything2(RoboflowCoreModel):
                 "logits": logits,
                 "prompt_set": prompt_set,
             }
-            safe_remove_from_list(values=self.low_res_logits_cache_keys, element=prompt_id)
+            safe_remove_from_list(
+                values=self.low_res_logits_cache_keys, element=prompt_id
+            )
             self.low_res_logits_cache_keys.append(prompt_id)
             if len(self.low_res_logits_cache_keys) > self.low_res_logits_cache_size:
                 cache_key = safe_pop_from_list(values=self.low_res_logits_cache_keys)
                 if cache_key is not None:
-                    safe_remove_from_dict(values=self.low_res_logits_cache, key=cache_key)
+                    safe_remove_from_dict(
+                        values=self.low_res_logits_cache, key=cache_key
+                    )
 
 
 def hash_prompt_set(image_id: str, prompt_set: Sam2PromptSet) -> Tuple[str, str]:
@@ -525,7 +532,6 @@ def pad_points(args: Dict[str, Any]) -> Dict[str, Any]:
                 "Can't have point labels without corresponding point coordinates"
             )
     return args
-
 
 
 def safe_remove_from_list(values: List[T], element: T) -> None:
