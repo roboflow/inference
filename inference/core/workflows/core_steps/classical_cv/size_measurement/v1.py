@@ -52,7 +52,7 @@ The block will use the known dimensions of the calibration card to calculate the
 
 This allows you to obtain the real-world dimensions of the packages based on the reference object's known size.
 
-[Watch the video tutorial](https://www.loom.com/share/355116ea17c84af18c4052b3c64303e2)
+[Watch the video tutorial](https://www.youtube.com/watch?v=FQY7TSHfZeI)
 """
 
 
