@@ -342,7 +342,7 @@ The following model IDs are registered:
 
 **Access level:** `public-open`
 
-**License:**  [FAIR Noncommercial Research License](./inference_exp/models/perception_encoder/vision_encoder/LICENSE.weigths.txt)
+**License:**  [MIT](./inference_exp/models/clip/LICENSE.txt)
 
 The following model IDs are registered:
 
