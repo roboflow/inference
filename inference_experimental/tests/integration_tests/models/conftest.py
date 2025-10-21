@@ -118,6 +118,8 @@ YOLOV8N_POSE_TORCHSCRIPT_STATIC_STATIC_CROP_STRETCH_PACKAGE_URL = "https://stora
 YOLOV8N_POSE_TORCHSCRIPT_STATIC_NMS_FUSED_CENTER_CROP_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-pose-torchscript-static-nms-fused-center-crop.zip"
 YOLOV8N_POSE_TORCHSCRIPT_STATIC_NMS_FUSED_STATIC_CROP_CENTER_CROP_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-pose-torchscript-static-nms-fused-static-crop-center-crop.zip"
 
+YOLOV8_CLS_ONNX_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8-cls-onnx-static-bs.zip"
+
 
 @pytest.fixture(scope="module")
 def original_clip_download_dir() -> str:
@@ -941,4 +943,12 @@ def yolov8n_pose_torchscript_static_nms_fused_static_crop_center_crop_package() 
     return download_model_package(
         model_package_zip_url=YOLOV8N_POSE_TORCHSCRIPT_STATIC_NMS_FUSED_STATIC_CROP_CENTER_CROP_PACKAGE_URL,
         package_name="yolov8n-pose-torchscript-static-nms-fused-static-crop-center-crop",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolov8_cls_static_bs_onnx_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLOV8_CLS_ONNX_PACKAGE_URL,
+        package_name="yolov8-cls-static-onnx",
     )
