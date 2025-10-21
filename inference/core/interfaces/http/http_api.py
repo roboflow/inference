@@ -250,6 +250,11 @@ except ImportError:
     EXECUTION_ID_HEADER = None
 
 
+def get_content_type(request: Request) -> str:
+    content_type = request.headers.get("content-type", "")
+    return content_type.split(";")[0].strip()
+
+
 class LambdaMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         response = await call_next(request)
@@ -457,7 +462,7 @@ class HttpInterface(BaseInterface):
                         skip_check = True
 
                     elif (
-                        request.headers.get("content-type", None) == "application/json"
+                        get_content_type(request) == "application/json"
                         and int(request.headers.get("content-length", 0)) > 0
                     ):
                         json_params = await request.json()
@@ -484,7 +489,7 @@ class HttpInterface(BaseInterface):
                 api_key = req_params.get("api_key", None)
                 if (
                     api_key is None
-                    and request.headers.get("content-type", None) == "application/json"
+                    and get_content_type(request) == "application/json"
                     and int(request.headers.get("content-length", 0)) > 0
                 ):
                     # have to try catch here, because some legacy endpoints that abuse Content-Type header but dont actually receive json
@@ -544,7 +549,7 @@ class HttpInterface(BaseInterface):
                 api_key = req_params.get("api_key", None)
                 if (
                     api_key is None
-                    and request.headers.get("content-type", None) == "application/json"
+                    and get_content_type(request) == "application/json"
                     and int(request.headers.get("content-length", 0)) > 0
                 ):
                     # have to try catch here, because some legacy endpoints that abuse Content-Type header but dont actually receive json
