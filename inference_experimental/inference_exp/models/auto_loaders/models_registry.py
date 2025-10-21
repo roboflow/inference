@@ -57,6 +57,12 @@ REGISTERED_MODELS: Dict[
         module_name="inference_exp.models.yolov7.yolov7_instance_segmentation_trt",
         class_name="YOLOv7ForInstanceSegmentationTRT",
     ),
+    ("yolov8", CLASSIFICATION_TASK, BackendType.ONNX): RegistryEntry(
+        model_class=LazyClass(
+            module_name="inference_exp.models.yolov8.yolov8_classification_onnx",
+            class_name="YOLOv8ForClassificationOnnx",
+        ),
+    ),
     ("yolov8", OBJECT_DETECTION_TASK, BackendType.ONNX): RegistryEntry(
         model_class=LazyClass(
             module_name="inference_exp.models.yolov8.yolov8_object_detection_onnx",
@@ -136,6 +142,12 @@ REGISTERED_MODELS: Dict[
     ("yolov10", OBJECT_DETECTION_TASK, BackendType.TRT): LazyClass(
         module_name="inference_exp.models.yolov10.yolov10_object_detection_trt",
         class_name="YOLOv10ForObjectDetectionTRT",
+    ),
+    ("yolov11", CLASSIFICATION_TASK, BackendType.ONNX): RegistryEntry(
+        model_class=LazyClass(
+            module_name="inference_exp.models.yolov11.yolov11_onnx",
+            class_name="YOLOv11ForClassificationOnnx",
+        ),
     ),
     ("yolov11", OBJECT_DETECTION_TASK, BackendType.ONNX): RegistryEntry(
         model_class=LazyClass(

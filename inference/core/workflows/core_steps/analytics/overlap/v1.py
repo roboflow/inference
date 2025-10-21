@@ -43,8 +43,9 @@ class OverlapManifest(WorkflowBlockManifest):
             "license": "Apache-2.0",
             "block_type": "analytics",
             "ui_manifest": {
+                "section": "flow_control",
                 "icon": "far fa-square-o",
-                "blockPriority": 1,
+                "blockPriority": 1.5,
             },
         }
     )
