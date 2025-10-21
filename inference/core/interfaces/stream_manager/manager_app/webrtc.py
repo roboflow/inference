@@ -2,9 +2,9 @@ import asyncio
 import datetime
 import json
 import logging
-from multiprocessing import Process, Pipe, get_start_method, set_start_method
 import os
 import time
+from multiprocessing import Pipe, Process, get_start_method, set_start_method
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import cv2 as cv
@@ -23,7 +23,12 @@ from av import VideoFrame
 from av import logging as av_logging
 
 from inference.core import logger
-from inference.core.env import DEBUG_AIORTC_QUEUES, DEBUG_WEBRTC_PROCESSING_LATENCY
+from inference.core.env import (
+    DEBUG_AIORTC_QUEUES,
+    DEBUG_WEBRTC_PROCESSING_LATENCY,
+    WEBRTC_MODAL_TOKEN_ID,
+    WEBRTC_MODAL_TOKEN_SECRET,
+)
 from inference.core.interfaces.camera.entities import (
     SourceProperties,
     StatusUpdate,
@@ -42,6 +47,12 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
 from inference.core.utils.async_utils import Queue as SyncAsyncQueue
 from inference.core.utils.function import experimental
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
+
+try:
+    import modal
+    from modal.config import Config
+except ImportError:
+    modal = None
 
 logging.getLogger("aiortc").setLevel(logging.WARNING)
 
@@ -636,37 +647,108 @@ def rtc_peer_connection_process(
     )
 
 
-# Prefer 'spawn' so we don't fork an active event loop (portable & safe)
-try:
-    if get_start_method(allow_none=True) != "spawn":
-        set_start_method("spawn", force=True)
-except RuntimeError:
-    pass
+if modal is not None:
+    # https://modal.com/docs/reference/modal.config#override_locally
+    if WEBRTC_MODAL_TOKEN_ID and WEBRTC_MODAL_TOKEN_SECRET:
+        config = Config()
+        config.override_locally(
+            key="token_id",
+            value=WEBRTC_MODAL_TOKEN_ID,
+        )
+        config.override_locally(
+            key="token_secret",
+            value=WEBRTC_MODAL_TOKEN_SECRET,
+        )
+
+    # https://modal.com/docs/reference/modal.Image
+    video_processing_image = (
+        modal.Image.from_registry("roboflow/roboflow-inference-server-gpu:latest")
+        .pip_install("modal")
+        .entrypoint([])
+    )
+
+    # https://modal.com/docs/reference/modal.App
+    app = modal.App(
+        name="inference-webrtc",
+        image=video_processing_image,
+    )
+
+    # https://modal.com/docs/reference/modal.App#function
+    @app.function()
+    def rtc_peer_connection_modal(
+        offer_sdp: str,
+        offer_type: str,
+        turn_urls: str,
+        turn_username: str,
+        turn_credential: str,
+        q: modal.Queue,
+    ):
+        def send_answer(obj):
+            q.put(obj)
+
+        offer = WebRTCOffer(type=offer_type, sdp=offer_sdp)
+        turn_config = WebRTCTURNConfig(
+            urls=turn_urls, username=turn_username, credential=turn_credential
+        )
+        asyncio.run(
+            init_rtc_peer_connection_with_loop(
+                webrtc_offer=offer,
+                webrtc_turn_config=turn_config,
+                send_answer=send_answer,
+            )
+        )
+
+    def spawn_rtc_peer_connection_modal(
+        webrtc_offer: WebRTCOffer,
+        webrtc_turn_config: Optional[WebRTCTURNConfig] = None,
+    ):
+        # https://modal.com/docs/reference/modal.App#run
+        with app.run(detach=True):
+            # https://modal.com/docs/reference/modal.Queue#ephemeral
+            with modal.Queue.ephemeral() as q:
+                # https://modal.com/docs/reference/modal.Function#spawn
+                rtc_peer_connection_modal.spawn(
+                    offer_sdp=webrtc_offer.sdp,
+                    offer_type=webrtc_offer.type,
+                    turn_urls=webrtc_turn_config.urls,
+                    turn_username=webrtc_turn_config.username,
+                    turn_credential=webrtc_turn_config.credential,
+                    q=q,
+                )
+                answer = q.get(block=True, timeout=10.0)
+                return None, answer
 
 
 async def start_worker(
     webrtc_offer: WebRTCOffer,
     webrtc_turn_config: Optional[WebRTCTURNConfig] = None,
 ):
-    parent_conn, child_conn = Pipe(duplex=False)
-    p = Process(
-        target=rtc_peer_connection_process,
-        kwargs={
-            "offer_sdp": webrtc_offer.sdp,
-            "offer_type": webrtc_offer.type,
-            "turn_urls": webrtc_turn_config.urls,
-            "turn_username": webrtc_turn_config.username,
-            "turn_credential": webrtc_turn_config.credential,
-            "answer_conn": child_conn,
-        },
-        daemon=False,
-    )
-    p.start()
-    child_conn.close()
+    if modal is not None and WEBRTC_MODAL_TOKEN_ID and WEBRTC_MODAL_TOKEN_SECRET:
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None, spawn_rtc_peer_connection_modal, webrtc_offer, webrtc_turn_config
+        )
+        return result
+    else:
+        parent_conn, child_conn = Pipe(duplex=False)
+        p = Process(
+            target=rtc_peer_connection_process,
+            kwargs={
+                "offer_sdp": webrtc_offer.sdp,
+                "offer_type": webrtc_offer.type,
+                "turn_urls": webrtc_turn_config.urls,
+                "turn_username": webrtc_turn_config.username,
+                "turn_credential": webrtc_turn_config.credential,
+                "answer_conn": child_conn,
+            },
+            daemon=False,
+        )
+        p.start()
+        child_conn.close()
 
-    loop = asyncio.get_running_loop()
-    answer = await loop.run_in_executor(None, parent_conn.recv)
-    parent_conn.close()
+        loop = asyncio.get_running_loop()
+        answer = await loop.run_in_executor(None, parent_conn.recv)
+        parent_conn.close()
 
-    # answer = json.loads(answer_line.decode("utf-8").strip())
-    return p.pid, p, answer
+        # answer = json.loads(answer_line.decode("utf-8").strip())
+        return p.pid, p, answer

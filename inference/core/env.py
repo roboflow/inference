@@ -675,3 +675,15 @@ RFDETR_ONNX_MAX_RESOLUTION = int(os.getenv("RFDETR_ONNX_MAX_RESOLUTION", "1600")
 CONFIDENCE_LOWER_BOUND_OOM_PREVENTION = float(
     os.getenv("CONFIDENCE_LOWER_BOUND_OOM_PREVENTION", "0.01")
 )
+
+# Strip quotes from Modal WebRTC worker credentials in case users include them
+_webrtc_modal_token_id = os.getenv("WEBRTC_MODAL_TOKEN_ID")
+_webrtc_modal_token_secret = os.getenv("WEBRTC_MODAL_TOKEN_SECRET")
+
+# Remove common quote characters that users might accidentally include
+WEBRTC_MODAL_TOKEN_ID = (
+    _webrtc_modal_token_id.strip("\"'") if _webrtc_modal_token_id else None
+)
+WEBRTC_MODAL_TOKEN_SECRET = (
+    _webrtc_modal_token_secret.strip("\"'") if _webrtc_modal_token_secret else None
+)

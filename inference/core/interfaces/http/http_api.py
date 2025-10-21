@@ -8,7 +8,6 @@ from time import sleep
 from typing import Annotated, Any, Dict, List, Optional, Tuple, Union
 from uuid import uuid4
 
-from aiortc import RTCSessionDescription
 import asgi_correlation_id
 import uvicorn
 from fastapi import (
@@ -191,11 +190,11 @@ from inference.core.interfaces.http.orjson_utils import (
     orjson_response_keeping_parent_id,
 )
 from inference.core.interfaces.stream_manager.api.entities import (
+    CommandContext,
     CommandResponse,
     ConsumePipelineResponse,
     InferencePipelineStatusResponse,
     InitializeWebRTCResponse,
-    CommandContext,
     ListPipelinesResponse,
 )
 from inference.core.interfaces.stream_manager.api.stream_manager_client import (
@@ -207,9 +206,7 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
     InitialiseWebRTCPipelinePayload,
     OperationStatus,
 )
-from inference.core.interfaces.stream_manager.manager_app.webrtc import (
-    start_worker,
-)
+from inference.core.interfaces.stream_manager.manager_app.webrtc import start_worker
 from inference.core.managers.base import ModelManager
 from inference.core.managers.metrics import get_container_stats
 from inference.core.managers.prometheus import InferenceInstrumentator
