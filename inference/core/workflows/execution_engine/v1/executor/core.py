@@ -107,7 +107,7 @@ def execute_steps(
         workflow_execution_id = execution_id.get()
     else:
         workflow_execution_id = None
-    logger.info(f"Executing steps: {next_steps}.")
+    logger.debug(f"Executing steps: {next_steps}.")
     steps_functions = [
         partial(
             safe_execute_step,
@@ -141,7 +141,7 @@ def safe_execute_step(
     if profiler is None:
         profiler = NullWorkflowsProfiler.init()
     try:
-        logger.info(
+        logger.debug(
             f"started execution of: {step_selector} - {datetime.now().isoformat()}"
         )
         run_step(
@@ -150,7 +150,7 @@ def safe_execute_step(
             execution_data_manager=execution_data_manager,
             profiler=profiler,
         )
-        logger.info(
+        logger.debug(
             f"finished execution of: {step_selector} - {datetime.now().isoformat()}"
         )
     except (ModelManagerLockAcquisitionError, InferenceModelNotFound) as error:
