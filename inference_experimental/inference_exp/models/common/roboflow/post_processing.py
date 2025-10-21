@@ -263,7 +263,7 @@ def rescale_key_points_detections(
             dtype=image_detections.dtype,
             device=image_detections.device,
         ).repeat(key_points_slots_in_prediction)
-        image_detections[:, 6 :].sub_(key_points_offsets)
+        image_detections[:, 6:].sub_(key_points_offsets)
         key_points_scale = torch.as_tensor(
             [metadata.scale_width, metadata.scale_height, 1.0],
             dtype=image_detections.dtype,
@@ -274,9 +274,7 @@ def rescale_key_points_detections(
             metadata.static_crop_offset.offset_x != 0
             or metadata.static_crop_offset.offset_y != 0
         ):
-            static_crop_offset_length = (
-                image_detections.shape[1] - 6
-            ) // 3
+            static_crop_offset_length = (image_detections.shape[1] - 6) // 3
             static_crop_offsets = torch.as_tensor(
                 [
                     metadata.static_crop_offset.offset_x,

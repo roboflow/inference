@@ -1,3 +1,6 @@
+from inference_exp.models.yolov8.yolov8_classification_onnx import (
+    YOLOv8ForClassificationOnnx,
+)
 from inference_exp.models.yolov8.yolov8_instance_segmentation_onnx import (
     YOLOv8ForInstanceSegmentationOnnx,
 )
@@ -18,4 +21,8 @@ class YOLOv11ForInstanceSegmentationOnnx(YOLOv8ForInstanceSegmentationOnnx):
 
 
 class YOLOv11ForForKeyPointsDetectionOnnx(YOLOv8ForKeyPointsDetectionOnnx):
+    pass
+
+
+class YOLOv11ForClassificationOnnx(YOLOv8ForClassificationOnnx):
     pass
