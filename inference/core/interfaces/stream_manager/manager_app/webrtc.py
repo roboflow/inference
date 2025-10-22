@@ -652,7 +652,7 @@ if modal is not None and WEBRTC_MODAL_TOKEN_ID and WEBRTC_MODAL_TOKEN_SECRET:
     # https://modal.com/docs/reference/modal.Image
     video_processing_image = (
         modal.Image.from_registry(
-            "roboflow/roboflow-inference-server-cpu:0.58.2-modal-webrtc-rc6"
+            "roboflow/roboflow-inference-server-cpu:0.58.2-modal-webrtc-rc7"
         )
         .pip_install("modal")
         .env(
@@ -673,8 +673,7 @@ if modal is not None and WEBRTC_MODAL_TOKEN_ID and WEBRTC_MODAL_TOKEN_SECRET:
     # https://modal.com/docs/reference/modal.App#function
     @app.function(
         min_containers=1,
-        buffer_containers=1,
-        scaledown_window=300,
+        timeout=3600,
         enable_memory_snapshot=True,
     )
     def rtc_peer_connection_modal(
@@ -713,7 +712,7 @@ if modal is not None and WEBRTC_MODAL_TOKEN_ID and WEBRTC_MODAL_TOKEN_SECRET:
             token_secret=WEBRTC_MODAL_TOKEN_SECRET,
         )
         # https://modal.com/docs/reference/modal.App#run
-        with app.run(detach=True, client=client):
+        with app.run(client=client):
             # https://modal.com/docs/reference/modal.Queue#ephemeral
             with modal.Queue.ephemeral(client=client) as q:
                 # https://modal.com/docs/reference/modal.Function#spawn
