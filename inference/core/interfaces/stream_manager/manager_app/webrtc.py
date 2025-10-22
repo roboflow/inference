@@ -26,6 +26,7 @@ from inference.core import logger
 from inference.core.env import (
     DEBUG_AIORTC_QUEUES,
     DEBUG_WEBRTC_PROCESSING_LATENCY,
+    MODEL_CACHE_DIR,
     WEBRTC_MODAL_TOKEN_ID,
     WEBRTC_MODAL_TOKEN_SECRET,
 )
@@ -647,23 +648,11 @@ def rtc_peer_connection_process(
     )
 
 
-if modal is not None:
-    # https://modal.com/docs/reference/modal.config#override_locally
-    if WEBRTC_MODAL_TOKEN_ID and WEBRTC_MODAL_TOKEN_SECRET:
-        config = Config()
-        config.override_locally(
-            key="token_id",
-            value=WEBRTC_MODAL_TOKEN_ID,
-        )
-        config.override_locally(
-            key="token_secret",
-            value=WEBRTC_MODAL_TOKEN_SECRET,
-        )
-
+if modal is not None and WEBRTC_MODAL_TOKEN_ID and WEBRTC_MODAL_TOKEN_SECRET:
     # https://modal.com/docs/reference/modal.Image
     video_processing_image = (
         modal.Image.from_registry(
-            "roboflow/roboflow-inference-server-cpu:0.58.2-modal-webrtc-rc4"
+            "roboflow/roboflow-inference-server-cpu:0.58.2-modal-webrtc-rc5"
         )
         .pip_install("modal")
         .entrypoint([])
@@ -680,6 +669,7 @@ if modal is not None:
         min_containers=1,
         buffer_containers=1,
         scaledown_window=300,
+        enable_memory_snapshot=True,
     )
     def rtc_peer_connection_modal(
         offer_sdp: str,
@@ -711,10 +701,15 @@ if modal is not None:
         webrtc_offer: WebRTCOffer,
         webrtc_turn_config: Optional[WebRTCTURNConfig] = None,
     ):
+        # https://modal.com/docs/reference/modal.Client#from_credentials
+        client = modal.Client.from_credentials(
+            token_id=WEBRTC_MODAL_TOKEN_ID,
+            token_secret=WEBRTC_MODAL_TOKEN_SECRET,
+        )
         # https://modal.com/docs/reference/modal.App#run
-        with app.run(detach=True, environment_name=f"webrtc-{random.randint(0, 1000)}"):
+        with app.run(detach=True, client=client):
             # https://modal.com/docs/reference/modal.Queue#ephemeral
-            with modal.Queue.ephemeral() as q:
+            with modal.Queue.ephemeral(client=client) as q:
                 # https://modal.com/docs/reference/modal.Function#spawn
                 rtc_peer_connection_modal.spawn(
                     offer_sdp=webrtc_offer.sdp,
