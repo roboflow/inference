@@ -676,7 +676,8 @@ if modal is not None:
     # https://modal.com/docs/reference/modal.App#function
     @app.function(
         buffer_containers=1,
-        timeout=None,
+        timeout=60*60*24,
+        retries=365,
     )
     def rtc_peer_connection_modal(
         q: modal.Queue,
