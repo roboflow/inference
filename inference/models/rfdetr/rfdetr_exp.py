@@ -1,7 +1,8 @@
 from threading import Lock
-from typing import Any, List, Tuple, Union
+from typing import Any, List, Union
 
 import numpy as np
+from time import perf_counter
 
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
@@ -9,7 +10,6 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionPrediction,
 )
 from inference.core.models.roboflow import RoboflowInferenceModel
-from inference.core.nms import w_np_non_max_suppression
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.logger import logger
 
@@ -35,11 +35,15 @@ class RFDetrExperimentalModel(RoboflowInferenceModel):
             model_id_or_path=model_id, api_key=self.api_key
         )
 
+        # self._exp_model.optimize_for_inference()
+
         # Propagate class names for response formatting
         try:
             self.class_names = list(self._exp_model.class_names)
         except Exception:
             self.class_names = []
+
+        self.task_type = "object-detection"
 
     def infer(
         self,
@@ -56,6 +60,7 @@ class RFDetrExperimentalModel(RoboflowInferenceModel):
         ObjectDetectionInferenceResponse,
         List[ObjectDetectionInferenceResponse],
     ]:
+        global CACHED_RESULT
         logger.info(
             f"RFDetrExperimentalModel Running inference for {len(image) if isinstance(image, list) else 1} images"
         )
@@ -66,7 +71,16 @@ class RFDetrExperimentalModel(RoboflowInferenceModel):
             for v in images
         ]
 
-        detections_list = self._exp_model(np_images, threshold=float(confidence))
+        # Time experimental backend call
+        t0 = perf_counter()
+        # if CACHED_RESULT is None:
+        detections_list = self._exp_model(np_images[0])
+        elapsed_ms = (perf_counter() - t0) * 1000.0
+        logger.error(
+            f"RFDetrExperimentalModel backend call took {elapsed_ms:.2f} ms {self._exp_model._device}"
+        )
+
+        # detections_list = CACHED_RESULT
 
         responses: List[ObjectDetectionInferenceResponse] = []
         for np_img, det in zip(np_images, detections_list):
