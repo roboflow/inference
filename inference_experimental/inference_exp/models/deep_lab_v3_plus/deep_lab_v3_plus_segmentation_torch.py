@@ -54,7 +54,6 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
                 ResizeMode.LETTERBOX,
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
-                ResizeMode.FIT_LONGER_EDGE,
             },
         )
         if inference_config.model_initialization is None:
@@ -93,8 +92,10 @@ class DeepLabV3PlusForSemanticSegmentationTorch(
             model_package_content["weights.pt"],
             weights_only=True,
             map_location=device,
-        )["state_dict"]
-        state_dict = {k[len("model.") :]: v for k, v in state_dict.items()}
+        )
+        if "state_dict" in state_dict:
+            state_dict = state_dict["state_dict"]
+            state_dict = {k[len("model.") :]: v for k, v in state_dict.items()}
         model.load_state_dict(state_dict)
         return cls(
             model=model.eval(),
