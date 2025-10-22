@@ -336,6 +336,7 @@ def align_instance_segmentation_results(
     size_after_pre_processing: ImageDimensions,
     inference_size: ImageDimensions,
     static_crop_offset: StaticCropOffset,
+    binarization_threshold: float = 0.0,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     if image_bboxes.shape[0] == 0:
         empty_masks = torch.empty(
@@ -401,7 +402,7 @@ def align_instance_segmentation_results(
             [size_after_pre_processing.height, size_after_pre_processing.width],
             interpolation=functional.InterpolationMode.BILINEAR,
         )
-        .gt_(0.0)
+        .gt_(binarization_threshold)
         .to(dtype=torch.bool)
     )
     if static_crop_offset.offset_x > 0 or static_crop_offset.offset_y > 0:
