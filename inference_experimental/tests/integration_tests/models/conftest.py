@@ -79,6 +79,7 @@ ASL_YOLOV8N_SEG_TORCHSCRIPT_STATIC_BS_CENTER_CROP_URL = "https://storage.googlea
 ASL_YOLOV8N_SEG_ONNX_DYNAMIC_BS_STATIC_CROP_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-seg-onnx-dynamic-bs-static-crop-letterbox.zip"
 ASL_YOLOV8N_SEG_TORCHSCRIPT_STATIC_BS_STATIC_CROP_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-seg-torchscript-static-bs-static-crop-letterbox.zip"
 ASL_YOLOv5_SEG_ONNX_STATIC_BS_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov5-seg-static-bs-letterbox-onnx.zip"
+ASL_YOLOv7_SEG_ONNX_STATIC_BS_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov7-seg-static-bs-letterbox-onnx.zip"
 
 DEEP_LAB_V3_SEGMENTATION_ONNX_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/deep-lab-v3-plus-segmentation-stretch-onnx.zip"
 DEEP_LAB_V3_SEGMENTATION_TORCH_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/deep-lab-v3-plus-segmentation-stretch-torch.zip"
@@ -977,4 +978,12 @@ def asl_yolov5_onnx_seg_static_bs_letterbox() -> str:
     return download_model_package(
         model_package_zip_url=ASL_YOLOv5_SEG_ONNX_STATIC_BS_LETTERBOX_URL,
         package_name="asl-yolov5-onnx-static-bs-letterbox",
+    )
+
+
+@pytest.fixture(scope="module")
+def asl_yolov7_onnx_seg_static_bs_letterbox() -> str:
+    return download_model_package(
+        model_package_zip_url=ASL_YOLOv7_SEG_ONNX_STATIC_BS_LETTERBOX_URL,
+        package_name="asl-yolov7-onnx-static-bs-letterbox",
     )
