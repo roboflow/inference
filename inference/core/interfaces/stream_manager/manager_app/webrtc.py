@@ -663,7 +663,7 @@ if modal is not None:
     # https://modal.com/docs/reference/modal.Image
     video_processing_image = (
         modal.Image.from_registry(
-            "roboflow/roboflow-inference-server-cpu:0.58.2-modal-webrtc-rc1"
+            "roboflow/roboflow-inference-server-cpu:0.58.2-modal-webrtc-rc3"
         )
         .pip_install("modal")
         .entrypoint([])
