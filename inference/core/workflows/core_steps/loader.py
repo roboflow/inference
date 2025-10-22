@@ -353,6 +353,9 @@ from inference.core.workflows.core_steps.transformations.image_slicer.v1 import 
 from inference.core.workflows.core_steps.transformations.image_slicer.v2 import (
     ImageSlicerBlockV2,
 )
+from inference.core.workflows.core_steps.transformations.load_image_from_url.v1 import (
+    LoadImageFromUrlBlockV1,
+)
 from inference.core.workflows.core_steps.transformations.perspective_correction.v1 import (
     PerspectiveCorrectionBlockV1,
 )
@@ -548,6 +551,7 @@ KINDS_DESERIALIZERS = {
 def load_blocks() -> List[Type[WorkflowBlock]]:
     return [
         AbsoluteStaticCropBlockV1,
+        LoadImageFromUrlBlockV1,
         DynamicCropBlockV1,
         DetectionsFilterBlockV1,
         DetectionOffsetBlockV1,
