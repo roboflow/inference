@@ -58,7 +58,10 @@ from inference.core.workflows.core_steps.common.serializers import (
     serialise_sv_detections,
 )
 from inference.core.workflows.errors import WorkflowSyntaxError
-from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
+from inference.core.workflows.execution_engine.entities.base import (
+    VideoMetadata,
+    WorkflowImageData,
+)
 
 
 def ignore_signal(signal_number: int, frame: FrameType) -> None:
@@ -262,7 +265,9 @@ class InferencePipelineManager(Process):
             webrtc_turn_config = parsed_payload.webrtc_turn_config
             webcam_fps = parsed_payload.webcam_fps
             to_inference_queue = SyncAsyncQueue(loop=loop, maxsize=10)
-            from_inference_queue = SyncAsyncQueue(loop=loop, maxsize=10)
+            from_inference_queue: "SyncAsyncQueue[Tuple[VideoMetadata, np.ndarray]]" = (
+                SyncAsyncQueue(loop=loop, maxsize=10)
+            )
 
             stream_output = None
             if parsed_payload.stream_output:
@@ -336,6 +341,16 @@ class InferencePipelineManager(Process):
                 ):
                     if peer_connection.data_output in prediction:
                         workflow_output = prediction[peer_connection.data_output]
+                        json_data = {
+                            peer_connection.data_output: None,
+                            "_video_metadata": {
+                                "frame_id": video_frame.frame_id,
+                                "frame_timestamp": video_frame.frame_timestamp.isoformat(),
+                                "measured_fps": video_frame.measured_fps,
+                                "fps": video_frame.fps,
+                            },
+                        }
+
                         serialized_data = None
                         if isinstance(workflow_output, WorkflowImageData):
                             errors.append(
@@ -346,35 +361,43 @@ class InferencePipelineManager(Process):
                                 parsed_detections = serialise_sv_detections(
                                     workflow_output
                                 )
-                                serialized_data = json.dumps(parsed_detections)
+                                json_data[peer_connection.data_output] = (
+                                    parsed_detections
+                                )
+                                serialized_data = json.dumps(json_data)
                             except Exception as error:
                                 errors.append(
                                     f"Failed to serialise output: {peer_connection.data_output}"
                                 )
                         elif isinstance(workflow_output, dict):
                             try:
-                                serialized_data = json.dumps(workflow_output)
+                                json_data[peer_connection.data_output] = workflow_output
+                                serialized_data = json.dumps(json_data)
                             except Exception as error:
                                 errors.append(
                                     f"Failed to serialise output: {peer_connection.data_output}"
                                 )
                         else:
-                            serialized_data = str(workflow_output)
-                        if serialized_data is not None:
-                            peer_connection.data_channel.send(serialized_data)
+                            json_data[peer_connection.data_output] = str(
+                                workflow_output
+                            )
+                            serialized_data = json.dumps(json_data)
+                        if serialized_data is None:
+                            serialized_data = json.dumps(json_data)
+                        peer_connection.data_channel.send(serialized_data)
                     else:
                         errors.append(
                             f"Selected data output '{peer_connection.data_output}' not found in workflow outputs"
                         )
 
                 if peer_connection.stream_output is not None:
-                    frame: Optional[np.ndarray] = get_frame_from_workflow_output(
+                    video_metadata, frame = get_frame_from_workflow_output(
                         workflow_output=prediction,
                         frame_output_key=peer_connection.stream_output,
                     )
                     if frame is None:
                         for k in prediction.keys():
-                            frame = get_frame_from_workflow_output(
+                            video_metadata, frame = get_frame_from_workflow_output(
                                 workflow_output=prediction,
                                 frame_output_key=k,
                             )
@@ -382,8 +405,6 @@ class InferencePipelineManager(Process):
                                 errors.append(
                                     f"'{peer_connection.stream_output}' not found in workflow outputs, using '{k}' instead"
                                 )
-                                frame = frame.copy()
-                                break
                     if frame is None:
                         errors.append("Visualisation blocks were not executed")
                         errors.append(
@@ -393,8 +414,14 @@ class InferencePipelineManager(Process):
                             "Please try to adjust the scene so models detect objects"
                         )
                         errors.append("or stop preview, update workflow and try again.")
-                        frame = video_frame.image.copy()
-
+                        frame = video_frame.image
+                        video_metadata = VideoMetadata(
+                            frame_number=video_frame.frame_id,
+                            frame_timestamp=video_frame.frame_timestamp,
+                            fps=video_frame.fps,
+                            measured_fps=video_frame.measured_fps,
+                            video_identifier=video_frame.source_id,
+                        )
                     for row, error in enumerate(errors):
                         frame = cv.putText(
                             frame,
@@ -405,7 +432,7 @@ class InferencePipelineManager(Process):
                             (0, 255, 0),
                             2,
                         )
-                    from_inference_queue.sync_put(frame)
+                    from_inference_queue.sync_put((video_metadata, frame))
 
             buffer_sink = InMemoryBufferSink.init(
                 queue_size=parsed_payload.sink_configuration.results_buffer_size,
