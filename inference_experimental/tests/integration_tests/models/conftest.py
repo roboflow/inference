@@ -50,6 +50,8 @@ COIN_COUNTING_YOLOV8N_ONNX_DYNAMIC_BS_CENTER_CROP_NMS_FUSED_URL = "https://stora
 COIN_COUNTING_YOLOV8N_ONNX_STATIC_BS_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-onnx-static-bs-center-crop.zip"
 COIN_COUNTING_YOLOV8N_TORCHSCRIPT_STATIC_BS_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-torchscript-static-bs-center-crop.zip"
 COIN_COUNTING_YOLOV8N_TORCHSCRIPT_STATIC_BS_CENTER_CROP_FUSED_NMS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-torchscript-static-bs-center-crop-fused-nms.zip"
+COIN_COUNTING_YOLO5_ONNX_STATIC_BS_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov5-od-static-bs-letterbox-onnx.zip"
+COIN_COUNTING_YOLO5_ONNX_DYNAMIC_BS_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov5-od-dynamic-bs-letterbox-onnx.zip"
 
 COIN_COUNTING_YOLO_NAS_ONNX_DYNAMIC_BS_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolo-nas-onnx-dynamic-bs-letterbox.zip"
 COIN_COUNTING_YOLO_NAS_ONNX_STATIC_BS_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolo-nas-onnx-static-bs-letterbox.zip"
@@ -76,7 +78,7 @@ ASL_YOLOV8N_SEG_ONNX_DYNAMIC_BS_CENTER_CROP_URL = "https://storage.googleapis.co
 ASL_YOLOV8N_SEG_TORCHSCRIPT_STATIC_BS_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-seg-torchscript-static-bs-center-crop.zip"
 ASL_YOLOV8N_SEG_ONNX_DYNAMIC_BS_STATIC_CROP_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-seg-onnx-dynamic-bs-static-crop-letterbox.zip"
 ASL_YOLOV8N_SEG_TORCHSCRIPT_STATIC_BS_STATIC_CROP_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-seg-torchscript-static-bs-static-crop-letterbox.zip"
-
+ASL_YOLOv5_SEG_ONNX_STATIC_BS_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov5-seg-static-bs-letterbox-onnx.zip"
 
 DEEP_LAB_V3_SEGMENTATION_ONNX_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/deep-lab-v3-plus-segmentation-stretch-onnx.zip"
 DEEP_LAB_V3_SEGMENTATION_TORCH_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/deep-lab-v3-plus-segmentation-stretch-torch.zip"
@@ -951,4 +953,28 @@ def yolov8_cls_static_bs_onnx_package() -> str:
     return download_model_package(
         model_package_zip_url=YOLOV8_CLS_ONNX_PACKAGE_URL,
         package_name="yolov8-cls-static-onnx",
+    )
+
+
+@pytest.fixture(scope="module")
+def coin_counting_yolov5_onnx_static_bs_letterbox_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_YOLO5_ONNX_STATIC_BS_CENTER_CROP_URL,
+        package_name="coin-counting-yolov5-onnx-static-bs-letterbox",
+    )
+
+
+@pytest.fixture(scope="module")
+def coin_counting_yolov5_onnx_dynamic_bs_letterbox_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_YOLO5_ONNX_DYNAMIC_BS_CENTER_CROP_URL,
+        package_name="coin-counting-yolov5-onnx-dynamic-bs-letterbox",
+    )
+
+
+@pytest.fixture(scope="module")
+def asl_yolov5_onnx_seg_static_bs_letterbox() -> str:
+    return download_model_package(
+        model_package_zip_url=ASL_YOLOv5_SEG_ONNX_STATIC_BS_LETTERBOX_URL,
+        package_name="asl-yolov5-onnx-static-bs-letterbox",
     )
