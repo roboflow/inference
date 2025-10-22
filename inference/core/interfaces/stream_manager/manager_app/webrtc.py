@@ -662,7 +662,9 @@ if modal is not None:
 
     # https://modal.com/docs/reference/modal.Image
     video_processing_image = (
-        modal.Image.from_registry("roboflow/roboflow-inference-server-cpu:0.58.2-modal-webrtc-rc2")
+        modal.Image.from_registry(
+            "roboflow/roboflow-inference-server-cpu:0.58.2-modal-webrtc-rc1"
+        )
         .pip_install("modal")
         .entrypoint([])
     )
@@ -674,22 +676,17 @@ if modal is not None:
     )
 
     # https://modal.com/docs/reference/modal.App#function
-    # max retries: 10
     @app.function(
-        buffer_containers=1,
-        timeout=60*60*24*365,
-        retries=10,
+        min_containers=1,
     )
     def rtc_peer_connection_modal(
+        offer_sdp: str,
+        offer_type: str,
+        turn_urls: str,
+        turn_username: str,
+        turn_credential: str,
         q: modal.Queue,
     ):
-        webrtc_payload = q.get()
-        offer_sdp = webrtc_payload["offer_sdp"]
-        offer_type = webrtc_payload["offer_type"]
-        turn_urls = webrtc_payload["turn_urls"]
-        turn_username = webrtc_payload["turn_username"]
-        turn_credential = webrtc_payload["turn_credential"]
-
         def send_answer(obj):
             q.put(obj)
 
@@ -713,15 +710,13 @@ if modal is not None:
         with app.run(detach=True):
             # https://modal.com/docs/reference/modal.Queue#ephemeral
             with modal.Queue.ephemeral() as q:
-                q.put({
-                    "offer_sdp": webrtc_offer.sdp,
-                    "offer_type": webrtc_offer.type,
-                    "turn_urls": webrtc_turn_config.urls,
-                    "turn_username": webrtc_turn_config.username,
-                    "turn_credential": webrtc_turn_config.credential,
-                })
                 # https://modal.com/docs/reference/modal.Function#spawn
                 rtc_peer_connection_modal.spawn(
+                    offer_sdp=webrtc_offer.sdp,
+                    offer_type=webrtc_offer.type,
+                    turn_urls=webrtc_turn_config.urls,
+                    turn_username=webrtc_turn_config.username,
+                    turn_credential=webrtc_turn_config.credential,
                     q=q,
                 )
                 answer = q.get(block=True, timeout=60.0)
