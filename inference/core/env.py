@@ -196,6 +196,9 @@ CORE_MODEL_YOLO_WORLD_ENABLED = str2bool(
     os.getenv("CORE_MODEL_YOLO_WORLD_ENABLED", True)
 )
 
+# Enable experimental RFDETR backend (inference_exp) rollout, default is True
+USE_EXPERIMENTAL_RFDETR = str2bool(os.getenv("USE_EXPERIMENTAL_RFDETR", "True"))
+
 # ID of host device, default is None
 DEVICE_ID = os.getenv("DEVICE_ID", None)
 

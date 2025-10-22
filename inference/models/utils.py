@@ -2,6 +2,7 @@ import warnings
 
 from inference.core.env import (
     API_KEY,
+    USE_EXPERIMENTAL_RFDETR,
     CORE_MODEL_CLIP_ENABLED,
     CORE_MODEL_DOCTR_ENABLED,
     CORE_MODEL_EASYOCR_ENABLED,
@@ -550,3 +551,19 @@ def get_model(model_id, api_key=API_KEY, **kwargs) -> Model:
 
 def get_roboflow_model(*args, **kwargs):
     return get_model(*args, **kwargs)
+
+
+# Prefer inference_exp backend for RF-DETR variants when enabled and available
+try:
+    if USE_EXPERIMENTAL_RFDETR:
+        # Ensure experimental package is importable before swapping
+        __import__("inference_exp")
+        from inference.models.rfdetr.rfdetr_exp import RFDetrExperimentalModel
+
+        for variant in ("base", "large", "nano", "small", "medium"):
+            key = ("object-detection", f"rfdetr-{variant}")
+            if key in ROBOFLOW_MODEL_TYPES:
+                ROBOFLOW_MODEL_TYPES[key] = RFDetrExperimentalModel
+except Exception:
+    # Fallback silently to legacy ONNX RFDETR when experimental stack is unavailable
+    pass
