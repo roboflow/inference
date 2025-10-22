@@ -2,9 +2,9 @@ import asyncio
 import datetime
 import json
 import logging
-import os
+import random
 import time
-from multiprocessing import Pipe, Process, get_start_method, set_start_method
+from multiprocessing import Pipe, Process
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import cv2 as cv
@@ -712,7 +712,7 @@ if modal is not None:
         webrtc_turn_config: Optional[WebRTCTURNConfig] = None,
     ):
         # https://modal.com/docs/reference/modal.App#run
-        with app.run(detach=True):
+        with app.run(detach=True, environment_name=f"webrtc-{random.randint(0, 1000)}"):
             # https://modal.com/docs/reference/modal.Queue#ephemeral
             with modal.Queue.ephemeral() as q:
                 # https://modal.com/docs/reference/modal.Function#spawn
