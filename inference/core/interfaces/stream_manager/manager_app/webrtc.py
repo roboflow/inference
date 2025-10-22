@@ -663,7 +663,7 @@ if modal is not None:
     # https://modal.com/docs/reference/modal.Image
     video_processing_image = (
         modal.Image.from_registry(
-            "roboflow/roboflow-inference-server-cpu:0.58.2-modal-webrtc-rc3"
+            "roboflow/roboflow-inference-server-cpu:0.58.2-modal-webrtc-rc4"
         )
         .pip_install("modal")
         .entrypoint([])
@@ -678,6 +678,8 @@ if modal is not None:
     # https://modal.com/docs/reference/modal.App#function
     @app.function(
         min_containers=1,
+        buffer_containers=1,
+        scaledown_window=300,
     )
     def rtc_peer_connection_modal(
         offer_sdp: str,
@@ -687,7 +689,10 @@ if modal is not None:
         turn_credential: str,
         q: modal.Queue,
     ):
+        logger.info("Received webrtc offer")
+
         def send_answer(obj):
+            logger.info("Sending webrtc answer")
             q.put(obj)
 
         offer = WebRTCOffer(type=offer_type, sdp=offer_sdp)
