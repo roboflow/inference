@@ -674,10 +674,11 @@ if modal is not None:
     )
 
     # https://modal.com/docs/reference/modal.App#function
+    # max retries: 10
     @app.function(
         buffer_containers=1,
-        timeout=60*60*24,
-        retries=365,
+        timeout=60*60*24*365,
+        retries=10,
     )
     def rtc_peer_connection_modal(
         q: modal.Queue,
