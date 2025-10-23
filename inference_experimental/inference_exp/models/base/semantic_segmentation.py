@@ -66,6 +66,8 @@ class SemanticSegmentationModel(
         pass
 
     def __call__(
-        self, images: torch.Tensor, **kwargs
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
     ) -> List[SemanticSegmentationResult]:
         return self.infer(images, **kwargs)
