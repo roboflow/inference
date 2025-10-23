@@ -2,7 +2,7 @@ import warnings
 
 from inference.core.env import (
     API_KEY,
-    USE_EXPERIMENTAL_RFDETR,
+    USE_INFERENCE_EXP_MODELS,
     CORE_MODEL_CLIP_ENABLED,
     CORE_MODEL_DOCTR_ENABLED,
     CORE_MODEL_EASYOCR_ENABLED,
@@ -555,7 +555,7 @@ def get_roboflow_model(*args, **kwargs):
 
 # Prefer inference_exp backend for RF-DETR variants when enabled and available
 try:
-    if USE_EXPERIMENTAL_RFDETR:
+    if USE_INFERENCE_EXP_MODELS:
         # Ensure experimental package is importable before swapping
         __import__("inference_exp")
         from inference.models.rfdetr.rfdetr_exp import RFDetrExperimentalModel
