@@ -9,82 +9,83 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
 )
-from inference.core.models.roboflow import RoboflowInferenceModel
+from inference.core.models.base import Model
+from inference.models.aliases import resolve_roboflow_model_alias
+
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.logger import logger
 
 
-class RFDetrExperimentalModel(RoboflowInferenceModel):
-    """Adapter for RF-DETR using inference_exp AutoModel backend.
+from inference.core.env import API_KEY
 
-    This class wraps an inference_exp AutoModel to present the same interface
-    as legacy models in the inference server.
-    """
+import numpy as np
+from typing import Generic, List, Optional, Tuple, Union
+from inference_exp.models.base.types import (
+    PreprocessedInputs,
+    PreprocessingMetadata,
+    RawPrediction,
+)
+from inference_exp.models.base.object_detection import (
+    Detections,
+    ObjectDetectionModel,
+)
 
-    def __init__(self, model_id: str, api_key: str = None, **kwargs) -> None:
-        # Avoid legacy download/initialization path
-        super().__init__(model_id, api_key=api_key, load_weights=False, **kwargs)
-        self._state_lock = Lock()
 
-        logger.info(f"Initialized RFDetrExperimentalModel for model_id: {model_id}")
-        # Lazy import to avoid hard dependency if flag disabled
-        from inference_exp import AutoModel  # type: ignore
+class InferenceExpObjectDetectionModelAdapter(Model):
+    def __init__(self, model_id: str, api_key: str = None, **kwargs):
+        super().__init__()
 
-        # Load experimental model; API key taken from self.api_key
-        self._exp_model = AutoModel.from_pretrained(
-            model_id_or_path=model_id, api_key=self.api_key
-        )
+        self.metrics = {"num_inferences": 0, "avg_inference_time": 0.0}
 
-        # self._exp_model.optimize_for_inference()
-
-        # Propagate class names for response formatting
-        try:
-            self.class_names = list(self._exp_model.class_names)
-        except Exception:
-            self.class_names = []
+        self.api_key = api_key if api_key else API_KEY
+        model_id = resolve_roboflow_model_alias(model_id=model_id)
 
         self.task_type = "object-detection"
 
-    def infer(
-        self,
-        image: Any,
-        class_agnostic_nms: bool = False,
-        confidence: float = 0.4,
-        iou_threshold: float = 0.5,
-        max_candidates: int = 3000,
-        max_detections: int = 300,
-        disable_preproc_auto_orient: bool = False,
-        return_image_dims: bool = False,
-        **kwargs,
-    ) -> Union[
-        ObjectDetectionInferenceResponse,
-        List[ObjectDetectionInferenceResponse],
-    ]:
-        global CACHED_RESULT
-        logger.info(
-            f"RFDetrExperimentalModel Running inference for {len(image) if isinstance(image, list) else 1} images"
+        # Lazy import to avoid hard dependency if flag disabled
+        from inference_exp import AutoModel  # type: ignore
+
+        self._exp_model: ObjectDetectionModel = AutoModel.from_pretrained(
+            model_id_or_path=model_id, api_key=self.api_key
         )
+        self._exp_model.optimize_for_inference()
+        self.class_names = list(self._exp_model.class_names)
+
+    def map_inference_kwargs(self, kwargs: dict) -> dict:
+        return kwargs
+
+    def preprocess(self, image: Any, **kwargs):
         is_batch = isinstance(image, list)
         images = image if is_batch else [image]
         np_images: List[np.ndarray] = [
-            load_image_rgb(v, disable_preproc_auto_orient=disable_preproc_auto_orient)
+            load_image_rgb(
+                v,
+                disable_preproc_auto_orient=kwargs.get(
+                    "disable_preproc_auto_orient", False
+                ),
+            )
             for v in images
         ]
+        return self._exp_model.pre_process(np_images, **kwargs)
 
-        # Time experimental backend call
-        t0 = perf_counter()
-        # if CACHED_RESULT is None:
-        detections_list = self._exp_model(np_images[0])
-        elapsed_ms = (perf_counter() - t0) * 1000.0
-        logger.error(
-            f"RFDetrExperimentalModel backend call took {elapsed_ms:.2f} ms {self._exp_model._device}"
+    def predict(self, img_in, **kwargs):
+        mapped_kwargs = self.map_inference_kwargs(kwargs)
+        return self._exp_model.forward(img_in, **mapped_kwargs)
+
+    def postprocess(
+        self,
+        predictions: Tuple[np.ndarray, ...],
+        preprocess_return_metadata: PreprocessingMetadata,
+        **kwargs,
+    ) -> List[Detections]:
+        detections_list = self._exp_model.post_process(
+            predictions, preprocess_return_metadata, **kwargs
         )
 
-        # detections_list = CACHED_RESULT
-
         responses: List[ObjectDetectionInferenceResponse] = []
-        for np_img, det in zip(np_images, detections_list):
-            H, W = np_img.shape[0], np_img.shape[1]
+        for preproc_metadata, det in zip(preprocess_return_metadata, detections_list):
+            H = preproc_metadata.original_size.height
+            W = preproc_metadata.original_size.width
 
             xyxy = det.xyxy.detach().cpu().numpy()
             confs = det.confidence.detach().cpu().numpy()
@@ -122,18 +123,25 @@ class RFDetrExperimentalModel(RoboflowInferenceModel):
                 )
             )
 
-        return responses if is_batch else responses[0]
+        return responses
 
-    def infer_from_request(
-        self, request
-    ) -> Union[
-        List[ObjectDetectionInferenceResponse], ObjectDetectionInferenceResponse
-    ]:
-        with self._state_lock:
-            # request may be a Pydantic model; prefer model_dump when available
-            payload = (
-                request.model_dump()
-                if hasattr(request, "model_dump")
-                else request.dict()
-            )
-            return self.infer(**payload)
+    def clear_cache(self, delete_from_disk: bool = True) -> None:
+        """Clears any cache if necessary. TODO: Implement this to delete the cache from the experimental model.
+
+        Args:
+            delete_from_disk (bool, optional): Whether to delete cached files from disk. Defaults to True.
+        """
+        pass
+
+
+class RFDetrExperimentalModel(InferenceExpObjectDetectionModelAdapter):
+    """Adapter for RF-DETR using inference_exp AutoModel backend.
+
+    This class wraps an inference_exp AutoModel to present the same interface
+    as legacy models in the inference server.
+    """
+
+    def map_inference_kwargs(self, kwargs: dict) -> dict:
+        return {
+            "threshold": kwargs.get("confidence"),
+        }
