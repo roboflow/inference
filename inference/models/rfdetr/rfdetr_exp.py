@@ -12,6 +12,7 @@ from inference.core.entities.responses.inference import (
 from inference.core.models.roboflow import RoboflowInferenceModel
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.logger import logger
+from inference.usage_tracking.collector import usage_collector
 
 
 class RFDetrExperimentalModel(RoboflowInferenceModel):
@@ -45,6 +46,7 @@ class RFDetrExperimentalModel(RoboflowInferenceModel):
 
         self.task_type = "object-detection"
 
+    @usage_collector("model")
     def infer(
         self,
         image: Any,
