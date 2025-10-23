@@ -687,3 +687,12 @@ WEBRTC_MODAL_TOKEN_ID = (
 WEBRTC_MODAL_TOKEN_SECRET = (
     _webrtc_modal_token_secret.strip("\"'") if _webrtc_modal_token_secret else None
 )
+WEBRTC_MODAL_APP_NAME = os.getenv("WEBRTC_MODAL_APP_NAME", "inference-webrtc")
+WEBRTC_MODAL_RESPONSE_TIMEOUT = int(os.getenv("WEBRTC_MODAL_RESPONSE_TIMEOUT", "60"))
+WEBRTC_MODAL_IMAGE_NAME = os.getenv(
+    "WEBRTC_MODAL_IMAGE_NAME", "roboflow/roboflow-inference-server-cpu"
+)
+WEBRTC_MODAL_IMAGE_TAG = os.getenv("WEBRTC_MODAL_IMAGE_TAG")
+WEBRTC_MODAL_ROBOFLOW_INTERNAL_SERVICE_NAME = os.getenv(
+    "WEBRTC_MODAL_ROBOFLOW_INTERNAL_SERVICE_NAME", "webrtc-modal"
+)

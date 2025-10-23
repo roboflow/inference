@@ -24,11 +24,29 @@ from av import logging as av_logging
 
 from inference.core import logger
 from inference.core.env import (
+    ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
+    API_KEY,
     DEBUG_AIORTC_QUEUES,
     DEBUG_WEBRTC_PROCESSING_LATENCY,
+    INTERNAL_WEIGHTS_URL_SUFFIX,
+    LOG_LEVEL,
+    MODAL_TOKEN_ID,
+    MODAL_TOKEN_SECRET,
+    MODAL_WORKSPACE_NAME,
     MODEL_CACHE_DIR,
+    MODELS_CACHE_AUTH_CACHE_MAX_SIZE,
+    MODELS_CACHE_AUTH_CACHE_TTL,
+    MODELS_CACHE_AUTH_ENABLED,
+    PROJECT,
+    ROBOFLOW_INTERNAL_SERVICE_SECRET,
+    WEBRTC_MODAL_APP_NAME,
+    WEBRTC_MODAL_IMAGE_NAME,
+    WEBRTC_MODAL_IMAGE_TAG,
+    WEBRTC_MODAL_RESPONSE_TIMEOUT,
+    WEBRTC_MODAL_ROBOFLOW_INTERNAL_SERVICE_NAME,
     WEBRTC_MODAL_TOKEN_ID,
     WEBRTC_MODAL_TOKEN_SECRET,
+    WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
 )
 from inference.core.interfaces.camera.entities import (
     SourceProperties,
@@ -47,6 +65,7 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
 )
 from inference.core.utils.async_utils import Queue as SyncAsyncQueue
 from inference.core.utils.function import experimental
+from inference.core.version import __version__
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 
 try:
@@ -652,7 +671,7 @@ if modal is not None and WEBRTC_MODAL_TOKEN_ID and WEBRTC_MODAL_TOKEN_SECRET:
     # https://modal.com/docs/reference/modal.Image
     video_processing_image = (
         modal.Image.from_registry(
-            "roboflow/roboflow-inference-server-cpu:0.58.3-modal-webrtc-rc8"
+            f"{WEBRTC_MODAL_IMAGE_NAME}:{WEBRTC_MODAL_IMAGE_TAG if WEBRTC_MODAL_IMAGE_TAG else __version__}"
         )
         .pip_install("modal")
         .env(
@@ -664,17 +683,42 @@ if modal is not None and WEBRTC_MODAL_TOKEN_ID and WEBRTC_MODAL_TOKEN_SECRET:
         .entrypoint([])
     )
 
+    # https://modal.com/docs/reference/modal.Volume
+    rfcache_volume = modal.Volume.from_name("rfcache", create_if_missing=True)
+
     # https://modal.com/docs/reference/modal.App
     app = modal.App(
-        name="inference-webrtc",
+        name=WEBRTC_MODAL_APP_NAME,
         image=video_processing_image,
     )
 
     # https://modal.com/docs/reference/modal.App#function
     @app.function(
         min_containers=1,
+        buffer_containers=1,
+        scaledown_window=300,
         timeout=3600,
         enable_memory_snapshot=True,
+        env={
+            "ROBOFLOW_INTERNAL_SERVICE_SECRET": ROBOFLOW_INTERNAL_SERVICE_SECRET,
+            "ROBOFLOW_INTERNAL_SERVICE_NAME": WEBRTC_MODAL_ROBOFLOW_INTERNAL_SERVICE_NAME,
+            "PROJECT": PROJECT,
+            "API_KEY": API_KEY,
+            "INTERNAL_WEIGHTS_URL_SUFFIX": INTERNAL_WEIGHTS_URL_SUFFIX,
+            "LOG_LEVEL": LOG_LEVEL,
+            "MODELS_CACHE_AUTH_ENABLED": MODELS_CACHE_AUTH_ENABLED,
+            "MODELS_CACHE_AUTH_CACHE_TTL": MODELS_CACHE_AUTH_CACHE_TTL,
+            "MODELS_CACHE_AUTH_CACHE_MAX_SIZE": MODELS_CACHE_AUTH_CACHE_MAX_SIZE,
+            "METRICS_ENABLED": False,
+            "ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS": ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
+            "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
+            "MODAL_TOKEN_ID": MODAL_TOKEN_ID,
+            "MODAL_TOKEN_SECRET": MODAL_TOKEN_SECRET,
+            "MODAL_WORKSPACE_NAME": MODAL_WORKSPACE_NAME,
+            "ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES": False,
+            "DISABLE_VERSION_CHECK": True,
+        },
+        volumes={"/tmp/cache": rfcache_volume},
     )
     def rtc_peer_connection_modal(
         offer_sdp: str,
@@ -711,21 +755,29 @@ if modal is not None and WEBRTC_MODAL_TOKEN_ID and WEBRTC_MODAL_TOKEN_SECRET:
             token_id=WEBRTC_MODAL_TOKEN_ID,
             token_secret=WEBRTC_MODAL_TOKEN_SECRET,
         )
-        # https://modal.com/docs/reference/modal.App#run
-        with app.run(client=client):
-            # https://modal.com/docs/reference/modal.Queue#ephemeral
-            with modal.Queue.ephemeral(client=client) as q:
-                # https://modal.com/docs/reference/modal.Function#spawn
-                rtc_peer_connection_modal.spawn(
-                    offer_sdp=webrtc_offer.sdp,
-                    offer_type=webrtc_offer.type,
-                    turn_urls=webrtc_turn_config.urls,
-                    turn_username=webrtc_turn_config.username,
-                    turn_credential=webrtc_turn_config.credential,
-                    q=q,
-                )
-                answer = q.get(block=True, timeout=60.0)
-                return None, answer
+        try:
+            modal.App.lookup(
+                name=WEBRTC_MODAL_APP_NAME, client=client, create_if_missing=False
+            )
+        except modal.exception.NotFoundError:
+            app.deploy(name=WEBRTC_MODAL_APP_NAME, client=client)
+        deployed_func = modal.Function.from_name(
+            app_name=app.name, name=rtc_peer_connection_modal.__name__
+        )
+        deployed_func.hydrate(client=client)
+        # https://modal.com/docs/reference/modal.Queue#ephemeral
+        with modal.Queue.ephemeral(client=client) as q:
+            # https://modal.com/docs/reference/modal.Function#spawn
+            deployed_func.spawn(
+                offer_sdp=webrtc_offer.sdp,
+                offer_type=webrtc_offer.type,
+                turn_urls=webrtc_turn_config.urls,
+                turn_username=webrtc_turn_config.username,
+                turn_credential=webrtc_turn_config.credential,
+                q=q,
+            )
+            answer = q.get(block=True, timeout=WEBRTC_MODAL_RESPONSE_TIMEOUT)
+            return None, answer
 
 
 async def start_worker(
