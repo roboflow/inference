@@ -767,14 +767,14 @@ if modal is not None and WEBRTC_MODAL_TOKEN_ID and WEBRTC_MODAL_TOKEN_SECRET:
             logger.info("Deploying webrtc modal app %s", WEBRTC_MODAL_APP_NAME)
             app.deploy(name=WEBRTC_MODAL_APP_NAME, client=client)
         deployed_func = modal.Function.from_name(
-            app_name=app.name, name=rtc_peer_connection_modal.__name__
+            app_name=app.name, name=rtc_peer_connection_modal.info.function_name
         )
         deployed_func.hydrate(client=client)
         # https://modal.com/docs/reference/modal.Queue#ephemeral
         with modal.Queue.ephemeral(client=client) as q:
             logger.info(
                 "Spawning webrtc modal function %s into modal app %s",
-                rtc_peer_connection_modal.__name__,
+                rtc_peer_connection_modal.info.function_name,
                 app.name,
             )
             # https://modal.com/docs/reference/modal.Function#spawn
