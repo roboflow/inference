@@ -115,7 +115,7 @@ class UsageCollector:
             logger.debug("Persistence through RedisQueue")
             self._queue: "Queue[UsagePayload]" = RedisQueue()
             self._api_keys_hashing_enabled = False
-        elif (LAMBDA or GCP_SERVERLESS) or self._settings.opt_out:
+        elif (LAMBDA or GCP_SERVERLESS) or not self._settings.use_persistent_queue:
             logger.debug("No persistence")
             self._queue: "Queue[UsagePayload]" = Queue(
                 maxsize=self._settings.queue_size
