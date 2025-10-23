@@ -225,6 +225,10 @@ REGISTERED_MODELS: Dict[
         module_name="inference_exp.models.paligemma.paligemma_hf",
         class_name="PaliGemmaHF",
     ),
+    ("paligemma", VLM_TASK, BackendType.HF): LazyClass(
+        module_name="inference_exp.models.paligemma.paligemma_hf",
+        class_name="PaliGemmaHF",
+    ),
     ("smolvlm-v2", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_exp.models.smolvlm.smolvlm_hf",
         class_name="SmolVLMHF",
