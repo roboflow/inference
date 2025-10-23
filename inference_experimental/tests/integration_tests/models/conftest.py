@@ -60,6 +60,10 @@ COIN_COUNTING_YOLO_NAS_ONNX_STATIC_BS_STATIC_CROP_STRETCH_URL = "https://storage
 COIN_COUNTING_YOLO_NAS_ONNX_STATIC_BS_STATIC_CROP_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolo-nas-onnx-static-bs-static-crop-center-crop.zip"
 COIN_COUNTING_YOLO_NAS_ONNX_STATIC_BS_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolo-nas-onnx-static-bs-center-crop.zip"
 
+COIN_COUNTING_YOLACT_ONNX_STATIC_BS_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolact-static-bs-letterbox-onnx.zip"
+COIN_COUNTING_YOLACT_ONNX_STATIC_BS_STATIC_CROP_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolact-static-bs-static-crop-stretch-onnx.zip"
+COIN_COUNTING_YOLACT_ONNX_STATIC_BS_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolact-static-bs-stretch-onnx.zip"
+
 ASL_YOLOV8N_SEG_ONNX_DYNAMIC_BS_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-seg-onnx-dynamic-bs-stretch.zip"
 ASL_YOLOV8N_SEG_ONNX_DYNAMIC_BS_STRETCH_FUSED_NMS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-seg-onnx-dynamic-bs-stretch-fused-nms.zip"
 ASL_YOLOV8N_SEG_ONNX_STATIC_BS_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-seg-onnx-static-bs-stretch.zip"
@@ -986,4 +990,28 @@ def asl_yolov7_onnx_seg_static_bs_letterbox() -> str:
     return download_model_package(
         model_package_zip_url=ASL_YOLOv7_SEG_ONNX_STATIC_BS_LETTERBOX_URL,
         package_name="asl-yolov7-onnx-static-bs-letterbox",
+    )
+
+
+@pytest.fixture(scope="module")
+def asl_yolact_onnx_seg_static_bs_letterbox() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_YOLACT_ONNX_STATIC_BS_LETTERBOX_URL,
+        package_name="asl-yolact-onnx-static-bs-letterbox",
+    )
+
+
+@pytest.fixture(scope="module")
+def asl_yolact_onnx_seg_static_bs_stretch() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_YOLACT_ONNX_STATIC_BS_STRETCH_URL,
+        package_name="asl-yolact-onnx-static-bs-stretch",
+    )
+
+
+@pytest.fixture(scope="module")
+def asl_yolact_onnx_seg_static_bs_static_crop_stretch() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_YOLACT_ONNX_STATIC_BS_STATIC_CROP_STRETCH_URL,
+        package_name="asl-yolact-onnx-static-bs-static_crop-stretch",
     )
