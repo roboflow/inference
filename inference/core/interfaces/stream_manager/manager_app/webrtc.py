@@ -86,6 +86,61 @@ except ImportError:
 logging.getLogger("aiortc").setLevel(logging.WARNING)
 
 
+def process_frame(
+    np_image: np.ndarray,
+    frame_id: int,
+    inference_pipeline: InferencePipeline,
+    stream_output: str,
+) -> np.ndarray:
+    try:
+        video_frame = InferenceVideoFrame(
+            image=np_image,
+            frame_id=frame_id,
+            frame_timestamp=datetime.datetime.now(),
+            comes_from_video_file=False,
+            fps=30,  # placeholder
+            measured_fps=30,  # placeholder
+        )
+        workflow_output: Dict[str, Union[WorkflowImageData, Any]] = (
+            inference_pipeline._on_video_frame([video_frame])[0]
+        )
+        logger.info("Frame processed")
+        np_image: Optional[np.ndarray] = get_frame_from_workflow_output(
+            workflow_output=workflow_output,
+            frame_output_key=stream_output,
+        )
+        errors = []
+        if np_image is None:
+            for k in workflow_output.keys():
+                np_image = get_frame_from_workflow_output(
+                    workflow_output=workflow_output,
+                    frame_output_key=k,
+                )
+                if np_image is not None:
+                    errors.append(
+                        f"'{stream_output}' not found in workflow outputs, using '{k}' instead"
+                    )
+                    break
+        if np_image is None:
+            errors.append("Visualisation blocks were not executed")
+            errors.append("or workflow was not configured to output visuals.")
+            errors.append("Please try to adjust the scene so models detect objects")
+            errors.append("or stop preview, update workflow and try again.")
+            np_image = video_frame.image
+
+        np_image = overlay_text_on_np_frame(
+            frame=np_image,
+            text=errors,
+        )
+    except Exception as e:
+        logger.error(f"Error in inference pipeline: {e}")
+        np_image = overlay_text_on_np_frame(
+            np_image,
+            ["Workflow error", str(e)],
+        )
+    return np_image
+
+
 def overlay_text_on_np_frame(frame: np.ndarray, text: List[str]):
     for i, l in enumerate(text):
         frame = cv.putText(
@@ -587,58 +642,16 @@ class VideoTransformTrackWithLoop(VideoStreamTrack):
 
         frame: VideoFrame = await self.track.recv()
         self._received_frames += 1
-        np_image = frame.to_ndarray(format="bgr24")
-        try:
-            video_frame = InferenceVideoFrame(
-                image=np_image,
-                frame_id=self._received_frames,
-                frame_timestamp=datetime.datetime.now(),
-                comes_from_video_file=False,
-                fps=30,  # placeholder
-                measured_fps=30,  # placeholder
-            )
-            workflow_output: Dict[str, Union[WorkflowImageData, Any]] = (
-                self._inference_pipeline._on_video_frame([video_frame])[0]
-            )
-            np_image: Optional[np.ndarray] = get_frame_from_workflow_output(
-                workflow_output=workflow_output,
-                frame_output_key=self._stream_output,
-            )
-            errors = []
-            if np_image is None:
-                for k in workflow_output.keys():
-                    np_image = get_frame_from_workflow_output(
-                        workflow_output=workflow_output,
-                        frame_output_key=k,
-                    )
-                    if np_image is not None:
-                        errors.append(
-                            f"'{self._stream_output}' not found in workflow outputs, using '{k}' instead"
-                        )
-                        break
-            if np_image is None:
-                errors.append("Visualisation blocks were not executed")
-                errors.append("or workflow was not configured to output visuals.")
-                errors.append("Please try to adjust the scene so models detect objects")
-                errors.append("or stop preview, update workflow and try again.")
-                np_image = video_frame.image
+        np_image = process_frame(
+            np_image=frame.to_ndarray(format="bgr24"),
+            frame_id=self._received_frames,
+            inference_pipeline=self._inference_pipeline,
+            stream_output=self._stream_output,
+        )
 
-            overlay_text_on_np_frame(
-                frame=np_image,
-                text=errors,
-            )
-            new_frame = VideoFrame.from_ndarray(np_image, format="bgr24")
-            new_frame.pts = frame.pts
-            new_frame.time_base = frame.time_base
-        except Exception as e:
-            logger.error(f"Error in inference pipeline: {e}")
-            np_frame = overlay_text_on_np_frame(
-                np_image,
-                ["Workflow error", str(e)],
-            )
-            new_frame = VideoFrame.from_ndarray(np_frame, format="bgr24")
-            new_frame.pts = frame.pts
-            new_frame.time_base = frame.time_base
+        new_frame = VideoFrame.from_ndarray(np_image, format="bgr24")
+        new_frame.pts = frame.pts
+        new_frame.time_base = frame.time_base
         return new_frame
 
 
