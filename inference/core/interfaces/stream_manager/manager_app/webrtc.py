@@ -1,10 +1,10 @@
 import asyncio
 import datetime
-import fractions
 import json
 import logging
 import time
-from typing import Any, Dict, List, Optional, Tuple, Union
+from multiprocessing import Pipe, Process
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import cv2 as cv
 import numpy as np
@@ -22,27 +22,122 @@ from av import VideoFrame
 from av import logging as av_logging
 
 from inference.core import logger
-from inference.core.env import DEBUG_AIORTC_QUEUES, DEBUG_WEBRTC_PROCESSING_LATENCY
+from inference.core.env import (
+    ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
+    API_KEY,
+    DEBUG_AIORTC_QUEUES,
+    DEBUG_WEBRTC_PROCESSING_LATENCY,
+    INTERNAL_WEIGHTS_URL_SUFFIX,
+    LOG_LEVEL,
+    MODAL_TOKEN_ID,
+    MODAL_TOKEN_SECRET,
+    MODAL_WORKSPACE_NAME,
+    MODEL_CACHE_DIR,
+    MODELS_CACHE_AUTH_CACHE_MAX_SIZE,
+    MODELS_CACHE_AUTH_CACHE_TTL,
+    MODELS_CACHE_AUTH_ENABLED,
+    PROJECT,
+    ROBOFLOW_INTERNAL_SERVICE_SECRET,
+    WEBRTC_MODAL_APP_NAME,
+    WEBRTC_MODAL_FUNCTION_BUFFER_CONTAINERS,
+    WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT,
+    WEBRTC_MODAL_FUNCTION_GPU,
+    WEBRTC_MODAL_FUNCTION_MAX_INPUTS,
+    WEBRTC_MODAL_FUNCTION_MIN_CONTAINERS,
+    WEBRTC_MODAL_FUNCTION_SCALEDOWN_WINDOW,
+    WEBRTC_MODAL_FUNCTION_TIME_LIMIT,
+    WEBRTC_MODAL_IMAGE_NAME,
+    WEBRTC_MODAL_IMAGE_TAG,
+    WEBRTC_MODAL_RESPONSE_TIMEOUT,
+    WEBRTC_MODAL_ROBOFLOW_INTERNAL_SERVICE_NAME,
+    WEBRTC_MODAL_TOKEN_ID,
+    WEBRTC_MODAL_TOKEN_SECRET,
+    WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
+)
 from inference.core.interfaces.camera.entities import (
     SourceProperties,
     StatusUpdate,
     UpdateSeverity,
-    VideoFrameProducer,
 )
+from inference.core.interfaces.camera.entities import VideoFrame as InferenceVideoFrame
+from inference.core.interfaces.camera.entities import VideoFrameProducer
 from inference.core.interfaces.stream.inference_pipeline import (
     INFERENCE_THREAD_FINISHED_EVENT,
+    InferencePipeline,
 )
 from inference.core.interfaces.stream.watchdog import BasePipelineWatchDog
 from inference.core.interfaces.stream_manager.manager_app.entities import (
     WebRTCData,
     WebRTCOffer,
     WebRTCTURNConfig,
+    WorkflowConfiguration,
 )
 from inference.core.utils.async_utils import Queue as SyncAsyncQueue
 from inference.core.utils.function import experimental
+from inference.core.version import __version__
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 
+try:
+    import modal
+    from modal.config import Config
+except ImportError:
+    modal = None
+
 logging.getLogger("aiortc").setLevel(logging.WARNING)
+
+
+def process_frame(
+    np_image: np.ndarray,
+    frame_id: int,
+    inference_pipeline: InferencePipeline,
+    stream_output: str,
+) -> np.ndarray:
+    try:
+        video_frame = InferenceVideoFrame(
+            image=np_image,
+            frame_id=frame_id,
+            frame_timestamp=datetime.datetime.now(),
+            comes_from_video_file=False,
+            fps=30,  # placeholder
+            measured_fps=30,  # placeholder
+        )
+        workflow_output: Dict[str, Union[WorkflowImageData, Any]] = (
+            inference_pipeline._on_video_frame([video_frame])[0]
+        )
+        result_np_image: Optional[np.ndarray] = get_frame_from_workflow_output(
+            workflow_output=workflow_output,
+            frame_output_key=stream_output,
+        )
+        errors = []
+        if result_np_image is None:
+            for k in workflow_output.keys():
+                result_np_image = get_frame_from_workflow_output(
+                    workflow_output=workflow_output,
+                    frame_output_key=k,
+                )
+                if result_np_image is not None:
+                    errors.append(
+                        f"'{stream_output}' not found in workflow outputs, using '{k}' instead"
+                    )
+                    break
+        if result_np_image is None:
+            errors.append("Visualisation blocks were not executed")
+            errors.append("or workflow was not configured to output visuals.")
+            errors.append("Please try to adjust the scene so models detect objects")
+            errors.append("or stop preview, update workflow and try again.")
+            result_np_image = np_image
+
+        result_np_image = overlay_text_on_np_frame(
+            frame=result_np_image,
+            text=errors,
+        )
+    except Exception as e:
+        logger.exception("Error in inference pipeline")
+        result_np_image = overlay_text_on_np_frame(
+            frame=np_image,
+            text=["Workflow error", str(e)],
+        )
+    return result_np_image
 
 
 def overlay_text_on_np_frame(frame: np.ndarray, text: List[str]):
@@ -242,7 +337,7 @@ class VideoTransformTrack(VideoStreamTrack):
                         self.incoming_stream_fps = (self._fps_probe_frames - 1) / dt
                         logger.info("Incoming stream fps: %s", self.incoming_stream_fps)
 
-                await self.to_inference_queue.async_put(frame)
+                await self.async_put(frame)
             logger.info("WebRTC reader loop finished")
 
         except asyncio.CancelledError:
@@ -480,3 +575,408 @@ async def init_rtc_peer_connection(
     logger.debug(f"WebRTC connection status: {peer_connection.connectionState}")
 
     return peer_connection
+
+
+class RTCPeerConnectionWithLoop(RTCPeerConnection):
+    def __init__(
+        self,
+        asyncio_loop: asyncio.AbstractEventLoop,
+        *args,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        self._loop = asyncio_loop
+
+
+class VideoTransformTrackWithLoop(VideoStreamTrack):
+    def __init__(
+        self,
+        asyncio_loop: asyncio.AbstractEventLoop,
+        workflow_configuration: WorkflowConfiguration,
+        api_key: str,
+        data_output: Optional[str] = None,
+        stream_output: Optional[str] = None,
+        *args,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        self._loop = asyncio_loop
+
+        self.track: Optional[RemoteStreamTrack] = None
+        self._track_active: bool = False
+
+        self._av_logging_set: bool = False
+
+        self._inference_pipeline = InferencePipeline.init_with_workflow(
+            video_reference=VideoFrameProducer,
+            workflow_specification=workflow_configuration.workflow_specification,
+            workspace_name=workflow_configuration.workspace_name,
+            workflow_id=workflow_configuration.workflow_id,
+            api_key=api_key,
+            image_input_name=workflow_configuration.image_input_name,
+            workflows_parameters=workflow_configuration.workflows_parameters,
+            workflows_thread_pool_workers=workflow_configuration.workflows_thread_pool_workers,
+            cancel_thread_pool_tasks_on_exit=workflow_configuration.cancel_thread_pool_tasks_on_exit,
+            video_metadata_input_name=workflow_configuration.video_metadata_input_name,
+        )
+        self._data_output = data_output
+        self._stream_output = stream_output
+        self._received_frames = 0
+
+    def set_track(
+        self,
+        track: RemoteStreamTrack,
+    ):
+        if not self.track:
+            self.track = track
+
+    def close(self):
+        self._track_active = False
+
+    async def recv(self):
+        # Silencing swscaler warnings in multi-threading environment
+        if not self._av_logging_set:
+            av_logging.set_libav_level(av_logging.ERROR)
+            self._av_logging_set = True
+
+        frame = None
+        while self.track._queue.qsize() > 0:
+            frame: VideoFrame = await self.track.recv()
+        if frame is None:
+            frame: VideoFrame = await self.track.recv()
+
+        self._received_frames += 1
+        loop = asyncio.get_running_loop()
+        np_image = await loop.run_in_executor(
+            None,
+            process_frame,
+            frame.to_ndarray(format="bgr24"),
+            self._received_frames,
+            self._inference_pipeline,
+            self._stream_output,
+        )
+
+        new_frame = VideoFrame.from_ndarray(np_image, format="bgr24")
+        new_frame.pts = frame.pts
+        new_frame.time_base = frame.time_base
+        return new_frame
+
+
+async def _wait_ice_complete(peer_connection: RTCPeerConnectionWithLoop, timeout=2.0):
+    if peer_connection.iceGatheringState == "complete":
+        return
+    fut = asyncio.get_running_loop().create_future()
+
+    @peer_connection.on("icegatheringstatechange")
+    def _():
+        if not fut.done() and peer_connection.iceGatheringState == "complete":
+            fut.set_result(True)
+
+    try:
+        await asyncio.wait_for(fut, timeout)
+    except asyncio.TimeoutError:
+        pass
+
+
+async def init_rtc_peer_connection_with_loop(
+    webrtc_offer: WebRTCOffer,
+    send_answer: Callable[[Any], None],
+    workflow_configuration: WorkflowConfiguration,
+    api_key: str,
+    webrtc_turn_config: Optional[WebRTCTURNConfig] = None,
+    asyncio_loop: Optional[asyncio.AbstractEventLoop] = None,
+    data_output: Optional[str] = None,
+    stream_output: Optional[str] = None,
+) -> RTCPeerConnectionWithLoop:
+    relay = MediaRelay()
+    video_transform_track = VideoTransformTrackWithLoop(
+        asyncio_loop=asyncio_loop,
+        workflow_configuration=workflow_configuration,
+        api_key=api_key,
+        data_output=data_output,
+        stream_output=stream_output,
+    )
+
+    if webrtc_turn_config:
+        turn_server = RTCIceServer(
+            urls=[webrtc_turn_config.urls],
+            username=webrtc_turn_config.username,
+            credential=webrtc_turn_config.credential,
+        )
+        peer_connection = RTCPeerConnectionWithLoop(
+            configuration=RTCConfiguration(iceServers=[turn_server]),
+            asyncio_loop=asyncio_loop,
+        )
+    else:
+        peer_connection = RTCPeerConnectionWithLoop(
+            asyncio_loop=asyncio_loop,
+        )
+
+    @peer_connection.on("track")
+    def on_track(track: RemoteStreamTrack):
+        logger.info("track received")
+        # can be called with buffered=False
+        relay.subscribe(track)
+        video_transform_track.set_track(track=track)
+        peer_connection.addTrack(video_transform_track)
+
+    @peer_connection.on("connectionstatechange")
+    async def on_connectionstatechange():
+        logger.info("Connection state is %s", peer_connection.connectionState)
+        if peer_connection.connectionState in {"failed", "closed"}:
+            logger.info("Stopping WebRTC peer")
+            await peer_connection.close()
+        logger.info("'connectionstatechange' event handler finished")
+
+    await peer_connection.setRemoteDescription(
+        RTCSessionDescription(sdp=webrtc_offer.sdp, type=webrtc_offer.type)
+    )
+    answer = await peer_connection.createAnswer()
+    await peer_connection.setLocalDescription(answer)
+
+    logger.debug(f"WebRTC connection status: {peer_connection.connectionState}")
+
+    await _wait_ice_complete(peer_connection, timeout=2.0)
+
+    send_answer(
+        {
+            "sdp": peer_connection.localDescription.sdp,
+            "type": peer_connection.localDescription.type,
+        }
+    )
+
+    while peer_connection.connectionState not in {"failed", "closed"}:
+        await asyncio.sleep(0.2)
+
+
+def rtc_peer_connection_process(
+    offer_sdp: str,
+    offer_type: str,
+    turn_urls: str,
+    turn_username: str,
+    turn_credential: str,
+    workflow_configuration: WorkflowConfiguration,
+    api_key: str,
+    answer_conn=None,
+    data_output: Optional[str] = None,
+    stream_output: Optional[str] = None,
+):
+    def send_answer(obj):
+        answer_conn.send(obj)
+        answer_conn.close()
+
+    offer = WebRTCOffer(type=offer_type, sdp=offer_sdp)
+    turn_config = WebRTCTURNConfig(
+        urls=turn_urls, username=turn_username, credential=turn_credential
+    )
+    asyncio.run(
+        init_rtc_peer_connection_with_loop(
+            webrtc_offer=offer,
+            webrtc_turn_config=turn_config,
+            send_answer=send_answer,
+            workflow_configuration=workflow_configuration,
+            api_key=api_key,
+            data_output=data_output,
+            stream_output=stream_output,
+        )
+    )
+
+
+if modal is not None and WEBRTC_MODAL_TOKEN_ID and WEBRTC_MODAL_TOKEN_SECRET:
+    # https://modal.com/docs/reference/modal.Image
+    video_processing_image = (
+        modal.Image.from_registry(
+            f"{WEBRTC_MODAL_IMAGE_NAME}:{WEBRTC_MODAL_IMAGE_TAG if WEBRTC_MODAL_IMAGE_TAG else __version__}"
+        )
+        .pip_install("modal")
+        .env(
+            {
+                "WEBRTC_MODAL_TOKEN_ID": "placeholder",
+                "WEBRTC_MODAL_TOKEN_SECRET": "placeholder",
+            }
+        )
+        .entrypoint([])
+    )
+
+    # https://modal.com/docs/reference/modal.Volume
+    rfcache_volume = modal.Volume.from_name("rfcache", create_if_missing=True)
+
+    # https://modal.com/docs/reference/modal.App
+    app = modal.App(
+        name=WEBRTC_MODAL_APP_NAME,
+        image=video_processing_image,
+    )
+
+    # https://modal.com/docs/reference/modal.App#function
+    @app.function(
+        min_containers=WEBRTC_MODAL_FUNCTION_MIN_CONTAINERS,
+        buffer_containers=WEBRTC_MODAL_FUNCTION_BUFFER_CONTAINERS,
+        scaledown_window=WEBRTC_MODAL_FUNCTION_SCALEDOWN_WINDOW,
+        timeout=WEBRTC_MODAL_FUNCTION_TIME_LIMIT,
+        enable_memory_snapshot=WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT,
+        gpu=WEBRTC_MODAL_FUNCTION_GPU,
+        max_inputs=WEBRTC_MODAL_FUNCTION_MAX_INPUTS,
+        env={
+            "ROBOFLOW_INTERNAL_SERVICE_SECRET": ROBOFLOW_INTERNAL_SERVICE_SECRET,
+            "ROBOFLOW_INTERNAL_SERVICE_NAME": WEBRTC_MODAL_ROBOFLOW_INTERNAL_SERVICE_NAME,
+            "PROJECT": PROJECT,
+            "API_KEY": API_KEY,
+            "INTERNAL_WEIGHTS_URL_SUFFIX": INTERNAL_WEIGHTS_URL_SUFFIX,
+            "LOG_LEVEL": LOG_LEVEL,
+            "MODELS_CACHE_AUTH_ENABLED": str(MODELS_CACHE_AUTH_ENABLED),
+            "MODELS_CACHE_AUTH_CACHE_TTL": str(MODELS_CACHE_AUTH_CACHE_TTL),
+            "MODELS_CACHE_AUTH_CACHE_MAX_SIZE": str(MODELS_CACHE_AUTH_CACHE_MAX_SIZE),
+            "METRICS_ENABLED": "False",
+            "ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS": str(
+                ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS
+            ),
+            "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
+            "MODAL_TOKEN_ID": MODAL_TOKEN_ID,
+            "MODAL_TOKEN_SECRET": MODAL_TOKEN_SECRET,
+            "MODAL_WORKSPACE_NAME": MODAL_WORKSPACE_NAME,
+            "ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES": "False",
+            "DISABLE_VERSION_CHECK": "True",
+            "MODEL_CACHE_DIR": MODEL_CACHE_DIR,
+            "TELEMETRY_USE_PERSISTENT_QUEUE": "False",
+            "WEBRTC_MODAL_FUNCTION_GPU": WEBRTC_MODAL_FUNCTION_GPU,
+            "ONNXRUNTIME_EXECUTION_PROVIDERS": (
+                "CUDAExecutionProvider"
+                if WEBRTC_MODAL_FUNCTION_GPU
+                else "CPUExecutionProvider"
+            ),
+        },
+        volumes={MODEL_CACHE_DIR: rfcache_volume},
+    )
+    def rtc_peer_connection_modal(
+        offer_sdp: str,
+        offer_type: str,
+        turn_urls: str,
+        turn_username: str,
+        turn_credential: str,
+        q: modal.Queue,
+        workflow_configuration_dict: Dict[str, Any],
+        api_key: str,
+        data_output: Optional[str] = None,
+        stream_output: Optional[str] = None,
+    ):
+        logger.info("Received webrtc offer")
+
+        def send_answer(obj):
+            logger.info("Sending webrtc answer")
+            q.put(obj)
+
+        offer = WebRTCOffer(type=offer_type, sdp=offer_sdp)
+        turn_config = WebRTCTURNConfig(
+            urls=turn_urls, username=turn_username, credential=turn_credential
+        )
+        workflow_configuration = WorkflowConfiguration.model_validate(
+            workflow_configuration_dict
+        )
+        asyncio.run(
+            init_rtc_peer_connection_with_loop(
+                webrtc_offer=offer,
+                webrtc_turn_config=turn_config,
+                send_answer=send_answer,
+                workflow_configuration=workflow_configuration,
+                api_key=api_key,
+                data_output=data_output,
+                stream_output=stream_output,
+            )
+        )
+
+    def spawn_rtc_peer_connection_modal(
+        webrtc_offer: WebRTCOffer,
+        workflow_configuration_dict: Dict[str, Any],
+        api_key: str,
+        webrtc_turn_config: Optional[WebRTCTURNConfig] = None,
+        data_output: Optional[str] = None,
+        stream_output: Optional[str] = None,
+    ):
+        # https://modal.com/docs/reference/modal.Client#from_credentials
+        client = modal.Client.from_credentials(
+            token_id=WEBRTC_MODAL_TOKEN_ID,
+            token_secret=WEBRTC_MODAL_TOKEN_SECRET,
+        )
+        try:
+            modal.App.lookup(
+                name=WEBRTC_MODAL_APP_NAME, client=client, create_if_missing=False
+            )
+        except modal.exception.NotFoundError:
+            logger.info("Deploying webrtc modal app %s", WEBRTC_MODAL_APP_NAME)
+            app.deploy(name=WEBRTC_MODAL_APP_NAME, client=client)
+        deployed_func = modal.Function.from_name(
+            app_name=app.name, name=rtc_peer_connection_modal.info.function_name
+        )
+        deployed_func.hydrate(client=client)
+        # https://modal.com/docs/reference/modal.Queue#ephemeral
+        with modal.Queue.ephemeral(client=client) as q:
+            logger.info(
+                "Spawning webrtc modal function %s into modal app %s",
+                rtc_peer_connection_modal.info.function_name,
+                app.name,
+            )
+            # https://modal.com/docs/reference/modal.Function#spawn
+            deployed_func.spawn(
+                offer_sdp=webrtc_offer.sdp,
+                offer_type=webrtc_offer.type,
+                turn_urls=webrtc_turn_config.urls,
+                turn_username=webrtc_turn_config.username,
+                turn_credential=webrtc_turn_config.credential,
+                q=q,
+                workflow_configuration_dict=workflow_configuration_dict,
+                api_key=api_key,
+                data_output=data_output,
+                stream_output=stream_output,
+            )
+            answer = q.get(block=True, timeout=WEBRTC_MODAL_RESPONSE_TIMEOUT)
+            return None, answer
+
+
+async def start_worker(
+    webrtc_offer: WebRTCOffer,
+    workflow_configuration: WorkflowConfiguration,
+    api_key: str,
+    data_output: Optional[str] = None,
+    stream_output: Optional[str] = None,
+    webrtc_turn_config: Optional[WebRTCTURNConfig] = None,
+):
+    if modal is not None and WEBRTC_MODAL_TOKEN_ID and WEBRTC_MODAL_TOKEN_SECRET:
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            spawn_rtc_peer_connection_modal,
+            webrtc_offer,
+            workflow_configuration.model_dump(),
+            api_key,
+            webrtc_turn_config,
+            data_output,
+            stream_output,
+        )
+        return result
+    else:
+        parent_conn, child_conn = Pipe(duplex=False)
+        p = Process(
+            target=rtc_peer_connection_process,
+            kwargs={
+                "offer_sdp": webrtc_offer.sdp,
+                "offer_type": webrtc_offer.type,
+                "turn_urls": webrtc_turn_config.urls,
+                "turn_username": webrtc_turn_config.username,
+                "turn_credential": webrtc_turn_config.credential,
+                "answer_conn": child_conn,
+                "workflow_configuration": workflow_configuration,
+                "api_key": api_key,
+                "data_output": data_output,
+                "stream_output": stream_output,
+            },
+            daemon=False,
+        )
+        p.start()
+        child_conn.close()
+
+        loop = asyncio.get_running_loop()
+        answer = await loop.run_in_executor(None, parent_conn.recv)
+        parent_conn.close()
+
+        # answer = json.loads(answer_line.decode("utf-8").strip())
+        return p.pid, p, answer

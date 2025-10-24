@@ -190,10 +190,11 @@ from inference.core.interfaces.http.orjson_utils import (
     orjson_response_keeping_parent_id,
 )
 from inference.core.interfaces.stream_manager.api.entities import (
+    CommandContext,
     CommandResponse,
     ConsumePipelineResponse,
     InferencePipelineStatusResponse,
-    InitializeWebRTCPipelineResponse,
+    InitializeWebRTCResponse,
     ListPipelinesResponse,
 )
 from inference.core.interfaces.stream_manager.api.stream_manager_client import (
@@ -203,7 +204,9 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
     ConsumeResultsPayload,
     InitialisePipelinePayload,
     InitialiseWebRTCPipelinePayload,
+    OperationStatus,
 )
+from inference.core.interfaces.stream_manager.manager_app.webrtc import start_worker
 from inference.core.managers.base import ModelManager
 from inference.core.managers.metrics import get_container_stats
 from inference.core.managers.prometheus import InferenceInstrumentator
@@ -1414,6 +1417,40 @@ class HttpInterface(BaseInterface):
                 )
                 return WorkflowValidationStatus(status="ok")
 
+        @app.post(
+            "/inference_pipelines/initialise_webrtc",
+            response_model=InitializeWebRTCResponse,
+            summary="[EXPERIMENTAL] Establishes WebRTC peer connection and starts new InferencePipeline consuming video track",
+            description="[EXPERIMENTAL] Establishes WebRTC peer connection and starts new InferencePipeline consuming video track",
+        )
+        @with_route_exceptions_async
+        async def initialise_webrtc_inference_pipeline(
+            request: InitialiseWebRTCPipelinePayload,
+        ) -> InitializeWebRTCResponse:
+            logger.debug("Received initialise webrtc inference pipeline request")
+            stream_output = None
+            if request.stream_output:
+                # TODO: UI sends None as stream_output for wildcard outputs
+                stream_output = request.stream_output[0] or ""
+            data_output = None
+            if request.data_output:
+                data_output = request.data_output[0]
+            *_, answer = await start_worker(
+                webrtc_offer=request.webrtc_offer,
+                webrtc_turn_config=request.webrtc_turn_config,
+                workflow_configuration=request.processing_configuration,
+                api_key=request.api_key,
+                data_output=data_output,
+                stream_output=stream_output,
+            )
+            logger.debug("Returning initialise webrtc inference pipeline response")
+            return InitializeWebRTCResponse(
+                context=CommandContext(),
+                status=OperationStatus.SUCCESS,
+                sdp=answer["sdp"],
+                type=answer["type"],
+            )
+
         if ENABLE_STREAM_API:
 
             @app.get(
@@ -1449,23 +1486,6 @@ class HttpInterface(BaseInterface):
                 return await self.stream_manager_client.initialise_pipeline(
                     initialisation_request=request
                 )
-
-            @app.post(
-                "/inference_pipelines/initialise_webrtc",
-                response_model=InitializeWebRTCPipelineResponse,
-                summary="[EXPERIMENTAL] Establishes WebRTC peer connection and starts new InferencePipeline consuming video track",
-                description="[EXPERIMENTAL] Establishes WebRTC peer connection and starts new InferencePipeline consuming video track",
-            )
-            @with_route_exceptions_async
-            async def initialise_webrtc_inference_pipeline(
-                request: InitialiseWebRTCPipelinePayload,
-            ) -> CommandResponse:
-                logger.debug("Received initialise webrtc inference pipeline request")
-                resp = await self.stream_manager_client.initialise_webrtc_pipeline(
-                    initialisation_request=request
-                )
-                logger.debug("Returning initialise webrtc inference pipeline response")
-                return resp
 
             @app.post(
                 "/inference_pipelines/{pipeline_id}/pause",

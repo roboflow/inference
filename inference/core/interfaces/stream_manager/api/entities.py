@@ -40,3 +40,8 @@ class ConsumePipelineResponse(CommandResponse):
 class InitializeWebRTCPipelineResponse(CommandResponse):
     sdp: str
     type: str
+
+
+class InitializeWebRTCResponse(CommandResponse):
+    sdp: str
+    type: str
