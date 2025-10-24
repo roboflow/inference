@@ -1431,6 +1431,10 @@ class HttpInterface(BaseInterface):
             *_, answer = await start_worker(
                 webrtc_offer=request.webrtc_offer,
                 webrtc_turn_config=request.webrtc_turn_config,
+                workflow_configuration=request.processing_configuration,
+                api_key=request.api_key,
+                data_output=request.data_output,
+                stream_output=request.stream_output,
             )
             logger.debug("Returning initialise webrtc inference pipeline response")
             return InitializeWebRTCResponse(

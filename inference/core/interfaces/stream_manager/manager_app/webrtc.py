@@ -2,7 +2,6 @@ import asyncio
 import datetime
 import json
 import logging
-import random
 import time
 from multiprocessing import Pipe, Process
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
@@ -63,12 +62,14 @@ from inference.core.interfaces.camera.entities import (
 )
 from inference.core.interfaces.stream.inference_pipeline import (
     INFERENCE_THREAD_FINISHED_EVENT,
+    InferencePipeline,
 )
 from inference.core.interfaces.stream.watchdog import BasePipelineWatchDog
 from inference.core.interfaces.stream_manager.manager_app.entities import (
     WebRTCData,
     WebRTCOffer,
     WebRTCTURNConfig,
+    WorkflowConfiguration,
 )
 from inference.core.utils.async_utils import Queue as SyncAsyncQueue
 from inference.core.utils.function import experimental
@@ -281,7 +282,7 @@ class VideoTransformTrack(VideoStreamTrack):
                         self.incoming_stream_fps = (self._fps_probe_frames - 1) / dt
                         logger.info("Incoming stream fps: %s", self.incoming_stream_fps)
 
-                await self.to_inference_queue.async_put(frame)
+                await self.async_put(frame)
             logger.info("WebRTC reader loop finished")
 
         except asyncio.CancelledError:
@@ -536,6 +537,10 @@ class VideoTransformTrackWithLoop(VideoStreamTrack):
     def __init__(
         self,
         asyncio_loop: asyncio.AbstractEventLoop,
+        workflow_configuration: WorkflowConfiguration,
+        api_key: str,
+        data_output: Optional[str] = None,
+        stream_output: Optional[str] = None,
         *args,
         **kwargs,
     ):
@@ -546,6 +551,21 @@ class VideoTransformTrackWithLoop(VideoStreamTrack):
         self._track_active: bool = False
 
         self._av_logging_set: bool = False
+
+        self._inference_pipeline = InferencePipeline.init_with_workflow(
+            video_reference=VideoFrameProducer,
+            workflow_specification=workflow_configuration.workflow_specification,
+            workspace_name=workflow_configuration.workspace_name,
+            workflow_id=workflow_configuration.workflow_id,
+            api_key=api_key,
+            image_input_name=workflow_configuration.image_input_name,
+            workflows_parameters=workflow_configuration.workflows_parameters,
+            workflows_thread_pool_workers=workflow_configuration.workflows_thread_pool_workers,
+            cancel_thread_pool_tasks_on_exit=workflow_configuration.cancel_thread_pool_tasks_on_exit,
+            video_metadata_input_name=workflow_configuration.video_metadata_input_name,
+        )
+        self._data_output = data_output
+        self._stream_output = stream_output
 
     def set_track(
         self,
@@ -564,6 +584,19 @@ class VideoTransformTrackWithLoop(VideoStreamTrack):
             self._av_logging_set = True
 
         frame: VideoFrame = await self.track.recv()
+        np_image = frame.to_ndarray(format="bgr24")
+        try:
+            predictions = self._inference_pipeline._on_video_frame(np_image)
+        except Exception as e:
+            logger.error(f"Error in inference pipeline: {e}")
+            np_frame = overlay_text_on_np_frame(
+                np_image,
+                ["Workflow error", str(e)],
+            )
+            new_frame = VideoFrame.from_ndarray(np_frame)
+            new_frame.pts = frame.pts
+            new_frame.time_base = frame.time_base
+            return new_frame
         return frame
 
 
@@ -586,12 +619,20 @@ async def _wait_ice_complete(peer_connection: RTCPeerConnectionWithLoop, timeout
 async def init_rtc_peer_connection_with_loop(
     webrtc_offer: WebRTCOffer,
     send_answer: Callable[[Any], None],
+    workflow_configuration: WorkflowConfiguration,
+    api_key: str,
     webrtc_turn_config: Optional[WebRTCTURNConfig] = None,
     asyncio_loop: Optional[asyncio.AbstractEventLoop] = None,
+    data_output: Optional[str] = None,
+    stream_output: Optional[str] = None,
 ) -> RTCPeerConnectionWithLoop:
     relay = MediaRelay()
     video_transform_track = VideoTransformTrackWithLoop(
         asyncio_loop=asyncio_loop,
+        workflow_configuration=workflow_configuration,
+        api_key=api_key,
+        data_output=data_output,
+        stream_output=stream_output,
     )
 
     if webrtc_turn_config:
@@ -655,7 +696,11 @@ def rtc_peer_connection_process(
     turn_urls: str,
     turn_username: str,
     turn_credential: str,
+    workflow_configuration: WorkflowConfiguration,
+    api_key: str,
     answer_conn=None,
+    data_output: Optional[str] = None,
+    stream_output: Optional[str] = None,
 ):
     def send_answer(obj):
         answer_conn.send(obj)
@@ -670,6 +715,10 @@ def rtc_peer_connection_process(
             webrtc_offer=offer,
             webrtc_turn_config=turn_config,
             send_answer=send_answer,
+            workflow_configuration=workflow_configuration,
+            api_key=api_key,
+            data_output=data_output,
+            stream_output=stream_output,
         )
     )
 
@@ -740,6 +789,10 @@ if modal is not None and WEBRTC_MODAL_TOKEN_ID and WEBRTC_MODAL_TOKEN_SECRET:
         turn_username: str,
         turn_credential: str,
         q: modal.Queue,
+        workflow_configuration_dict: Dict[str, Any],
+        api_key: str,
+        data_output: Optional[str] = None,
+        stream_output: Optional[str] = None,
     ):
         logger.info("Received webrtc offer")
 
@@ -751,17 +804,28 @@ if modal is not None and WEBRTC_MODAL_TOKEN_ID and WEBRTC_MODAL_TOKEN_SECRET:
         turn_config = WebRTCTURNConfig(
             urls=turn_urls, username=turn_username, credential=turn_credential
         )
+        workflow_configuration = WorkflowConfiguration.model_validate(
+            workflow_configuration_dict
+        )
         asyncio.run(
             init_rtc_peer_connection_with_loop(
                 webrtc_offer=offer,
                 webrtc_turn_config=turn_config,
                 send_answer=send_answer,
+                workflow_configuration=workflow_configuration,
+                api_key=api_key,
+                data_output=data_output,
+                stream_output=stream_output,
             )
         )
 
     def spawn_rtc_peer_connection_modal(
         webrtc_offer: WebRTCOffer,
+        workflow_configuration_dict: Dict[str, Any],
+        api_key: str,
         webrtc_turn_config: Optional[WebRTCTURNConfig] = None,
+        data_output: Optional[str] = None,
+        stream_output: Optional[str] = None,
     ):
         # https://modal.com/docs/reference/modal.Client#from_credentials
         client = modal.Client.from_credentials(
@@ -794,6 +858,10 @@ if modal is not None and WEBRTC_MODAL_TOKEN_ID and WEBRTC_MODAL_TOKEN_SECRET:
                 turn_username=webrtc_turn_config.username,
                 turn_credential=webrtc_turn_config.credential,
                 q=q,
+                workflow_configuration_dict=workflow_configuration_dict,
+                api_key=api_key,
+                data_output=data_output,
+                stream_output=stream_output,
             )
             answer = q.get(block=True, timeout=WEBRTC_MODAL_RESPONSE_TIMEOUT)
             return None, answer
@@ -801,12 +869,23 @@ if modal is not None and WEBRTC_MODAL_TOKEN_ID and WEBRTC_MODAL_TOKEN_SECRET:
 
 async def start_worker(
     webrtc_offer: WebRTCOffer,
+    workflow_configuration: WorkflowConfiguration,
+    api_key: str,
+    data_output: Optional[str] = None,
+    stream_output: Optional[str] = None,
     webrtc_turn_config: Optional[WebRTCTURNConfig] = None,
 ):
     if modal is not None and WEBRTC_MODAL_TOKEN_ID and WEBRTC_MODAL_TOKEN_SECRET:
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
-            None, spawn_rtc_peer_connection_modal, webrtc_offer, webrtc_turn_config
+            None,
+            spawn_rtc_peer_connection_modal,
+            webrtc_offer,
+            workflow_configuration.model_dump(),
+            api_key,
+            webrtc_turn_config,
+            data_output,
+            stream_output,
         )
         return result
     else:
@@ -820,6 +899,10 @@ async def start_worker(
                 "turn_username": webrtc_turn_config.username,
                 "turn_credential": webrtc_turn_config.credential,
                 "answer_conn": child_conn,
+                "workflow_configuration": workflow_configuration,
+                "api_kley": api_key,
+                "data_output": data_output,
+                "stream_output": stream_output,
             },
             daemon=False,
         )
