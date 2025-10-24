@@ -104,41 +104,40 @@ def process_frame(
         workflow_output: Dict[str, Union[WorkflowImageData, Any]] = (
             inference_pipeline._on_video_frame([video_frame])[0]
         )
-        logger.info("Frame processed")
-        np_image: Optional[np.ndarray] = get_frame_from_workflow_output(
+        result_np_image: Optional[np.ndarray] = get_frame_from_workflow_output(
             workflow_output=workflow_output,
             frame_output_key=stream_output,
         )
         errors = []
-        if np_image is None:
+        if result_np_image is None:
             for k in workflow_output.keys():
-                np_image = get_frame_from_workflow_output(
+                result_np_image = get_frame_from_workflow_output(
                     workflow_output=workflow_output,
                     frame_output_key=k,
                 )
-                if np_image is not None:
+                if result_np_image is not None:
                     errors.append(
                         f"'{stream_output}' not found in workflow outputs, using '{k}' instead"
                     )
                     break
-        if np_image is None:
+        if result_np_image is None:
             errors.append("Visualisation blocks were not executed")
             errors.append("or workflow was not configured to output visuals.")
             errors.append("Please try to adjust the scene so models detect objects")
             errors.append("or stop preview, update workflow and try again.")
-            np_image = video_frame.image
+            result_np_image = video_frame.image
 
-        np_image = overlay_text_on_np_frame(
-            frame=np_image,
+        result_np_image = overlay_text_on_np_frame(
+            frame=result_np_image,
             text=errors,
         )
     except Exception as e:
-        logger.error(f"Error in inference pipeline: {e}")
-        np_image = overlay_text_on_np_frame(
-            np_image,
-            ["Workflow error", str(e)],
+        logger.exception("Error in inference pipeline")
+        result_np_image = overlay_text_on_np_frame(
+            frame=result_np_image,
+            text=["Workflow error", str(e)],
         )
-    return np_image
+    return result_np_image
 
 
 def overlay_text_on_np_frame(frame: np.ndarray, text: List[str]):
