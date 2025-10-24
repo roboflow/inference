@@ -9,8 +9,9 @@ from inference.core.workflows.errors import (
 )
 from inference.core.workflows.execution_engine import core
 from inference.core.workflows.execution_engine.core import (
+    ExecutionEngine,
     _select_execution_engine,
-    retrieve_requested_execution_engine_version, ExecutionEngine,
+    retrieve_requested_execution_engine_version,
 )
 from inference.core.workflows.execution_engine.v1.core import (
     EXECUTION_ENGINE_V1_VERSION,

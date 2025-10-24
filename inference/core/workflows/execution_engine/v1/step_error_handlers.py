@@ -3,7 +3,8 @@ from inference.core.exceptions import (
     InvalidModelIDError,
     ModelManagerLockAcquisitionError,
     RoboflowAPIForbiddenError,
-    RoboflowAPINotAuthorizedError, RoboflowAPINotNotFoundError,
+    RoboflowAPINotAuthorizedError,
+    RoboflowAPINotNotFoundError,
 )
 from inference.core.workflows.errors import ClientCausedStepExecutionError
 from inference_sdk.http.errors import HTTPCallErrorError
@@ -55,7 +56,7 @@ def extended_roboflow_errors_handler(step_name: str, error: Exception) -> None:
             block_id=step_name,
             status_code=404,
             public_message=f"Could not find requested Roboflow resource while execution of step {step_name} - "
-                           f"details of error: {error}. This error usually mean the problem with not existing model.",
+            f"details of error: {error}. This error usually mean the problem with not existing model.",
             context="workflow_execution | step_execution",
             inner_error=error,
         ) from error
@@ -92,7 +93,7 @@ def extended_roboflow_errors_handler(step_name: str, error: Exception) -> None:
                 block_id=step_name,
                 status_code=404,
                 public_message=f"Could not find requested Roboflow resource while remote execution of step {step_name} - "
-                       f"details of error: {error}. This error usually mean the problem with not existing model.",
+                f"details of error: {error}. This error usually mean the problem with not existing model.",
                 context="workflow_execution | step_execution",
                 inner_error=error,
             ) from error
