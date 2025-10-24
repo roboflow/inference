@@ -3,7 +3,7 @@ from inference.core.exceptions import (
     InvalidModelIDError,
     ModelManagerLockAcquisitionError,
     RoboflowAPIForbiddenError,
-    RoboflowAPINotAuthorizedError,
+    RoboflowAPINotAuthorizedError, RoboflowAPINotNotFoundError,
 )
 from inference.core.workflows.errors import ClientCausedStepExecutionError
 from inference_sdk.http.errors import HTTPCallErrorError
@@ -36,7 +36,7 @@ def extended_roboflow_errors_handler(step_name: str, error: Exception) -> None:
         raise ClientCausedStepExecutionError(
             block_id=step_name,
             status_code=401,
-            public_message=f"Unauthorized error occurred while remote execution of step {step_name} - "
+            public_message=f"Unauthorized error occurred while execution of step {step_name} - "
             f"details of error: {error}. This error usually mean the problem with Roboflow API key.",
             context="workflow_execution | step_execution",
             inner_error=error,
@@ -45,8 +45,17 @@ def extended_roboflow_errors_handler(step_name: str, error: Exception) -> None:
         raise ClientCausedStepExecutionError(
             block_id=step_name,
             status_code=403,
-            public_message=f"Forbidden error occurred while remote execution of step {step_name} - "
+            public_message=f"Forbidden error occurred while execution of step {step_name} - "
             f"details of error: {error}. This error usually mean the problem with Roboflow API key.",
+            context="workflow_execution | step_execution",
+            inner_error=error,
+        ) from error
+    if isinstance(error, RoboflowAPINotNotFoundError):
+        raise ClientCausedStepExecutionError(
+            block_id=step_name,
+            status_code=404,
+            public_message=f"Could not find requested Roboflow resource while execution of step {step_name} - "
+                           f"details of error: {error}. This error usually mean the problem with not existing model.",
             context="workflow_execution | step_execution",
             inner_error=error,
         ) from error
@@ -75,6 +84,15 @@ def extended_roboflow_errors_handler(step_name: str, error: Exception) -> None:
                 status_code=403,
                 public_message=f"Forbidden error occurred while remote execution of step {step_name} - "
                 f"details of error: {error}. This error usually mean the problem with Roboflow API key.",
+                context="workflow_execution | step_execution",
+                inner_error=error,
+            ) from error
+        if error.status_code == 404:
+            raise ClientCausedStepExecutionError(
+                block_id=step_name,
+                status_code=404,
+                public_message=f"Could not find requested Roboflow resource while remote execution of step {step_name} - "
+                       f"details of error: {error}. This error usually mean the problem with not existing model.",
                 context="workflow_execution | step_execution",
                 inner_error=error,
             ) from error

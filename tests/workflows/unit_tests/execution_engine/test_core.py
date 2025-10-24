@@ -10,7 +10,7 @@ from inference.core.workflows.errors import (
 from inference.core.workflows.execution_engine import core
 from inference.core.workflows.execution_engine.core import (
     _select_execution_engine,
-    retrieve_requested_execution_engine_version,
+    retrieve_requested_execution_engine_version, ExecutionEngine,
 )
 from inference.core.workflows.execution_engine.v1.core import (
     EXECUTION_ENGINE_V1_VERSION,
@@ -79,3 +79,11 @@ def test_select_execution_engine_when_no_version_match() -> None:
     # when
     with pytest.raises(NotSupportedExecutionEngineError):
         _ = _select_execution_engine(requested_engine_version=Version("2.0.0"))
+
+
+def test_execution_engine_init_with_invalid_step_error_handler() -> None:
+    with pytest.raises(WorkflowEnvironmentConfigurationError):
+        _ = ExecutionEngine.init(
+            workflow_definition={},
+            step_error_handler="invalid",
+        )

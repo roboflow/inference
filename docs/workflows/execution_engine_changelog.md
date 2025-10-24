@@ -11,7 +11,7 @@ Below you can find the changelog for Execution Engine.
     effective immediately on Roboflow Hosted Platform and in `inference>=0.59.0`, Workflow blocks interacting with 
     Roboflow platform which fails due to client misconfiguration (invalid Roboflow API key, invalid model ID, etc.) 
     instead of raising `StepExecutionError` (and HTTP 500 response from the server) will raise 
-    `ClientCausedStepExecutionError` (and relevant HTTP response codes, such as 400, 401 or 403).
+    `ClientCausedStepExecutionError` (and relevant HTTP response codes, such as 400, 401, 403, 404).
 
 List of scenarios affected with the change:
 
@@ -21,6 +21,9 @@ List of scenarios affected with the change:
 
 * Block using Roboflow model defines invalid API key or missing valid key with scpe to access resource - now will raise 
 `ClientCausedStepExecutionError` with status code 403
+
+* Block using Roboflow model defines model which does not exist - now will raise 
+`ClientCausedStepExecutionError` with status code 404
 
 
 !!! Note "Bringing back `legacy` error handling"
