@@ -20,6 +20,7 @@ def render_table_with_model_overview(
     model_id: str,
     requested_model_id: str,
     model_architecture: str,
+    model_variant: Optional[str],
     task_type: Optional[str],
     weights_provider: str,
     registered_packages: int,
@@ -32,6 +33,7 @@ def render_table_with_model_overview(
         model_id_str = f"{model_id_str} (alias: {requested_model_id})"
     table.add_row("Model ID:", model_id_str)
     table.add_row("Architecture:", model_architecture)
+    table.add_row("Variant:", model_variant or "N/A")
     table.add_row("Task:", task_type or "N/A")
     table.add_row("Weights provider:", weights_provider)
     table.add_row("Number of packages:", str(registered_packages))
