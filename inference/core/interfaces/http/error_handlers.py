@@ -22,6 +22,7 @@ from inference.core.exceptions import (
     PostProcessingError,
     PreProcessingError,
     RoboflowAPIConnectionError,
+    RoboflowAPIForbiddenError,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
     RoboflowAPITimeoutError,
@@ -45,6 +46,7 @@ from inference.core.workflows.core_steps.common.query_language.errors import (
     OperationTypeNotRecognisedError,
 )
 from inference.core.workflows.errors import (
+    ClientCausedStepExecutionError,
     DynamicBlockError,
     ExecutionGraphStructureError,
     InvalidReferenceTargetError,
@@ -187,6 +189,16 @@ def with_route_exceptions(route):
                     "to learn how to retrieve one."
                 },
             )
+        except RoboflowAPIForbiddenError as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=403,
+                content={
+                    "message": "Unauthorized access to roboflow API - check API key and make sure the key is valid and "
+                    "have required scopes. Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key "
+                    "to learn how to retrieve one."
+                },
+            )
         except RoboflowAPINotNotFoundError as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
@@ -283,6 +295,24 @@ def with_route_exceptions(route):
                 content={
                     "message": "Timeout when attempting to connect to Roboflow API."
                 },
+            )
+        except ClientCausedStepExecutionError as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            content = WorkflowErrorResponse(
+                message=str(error.public_message),
+                error_type=error.__class__.__name__,
+                context=str(error.context),
+                inner_error_type=str(error.inner_error_type),
+                inner_error_message=str(error.inner_error),
+                blocks_errors=[
+                    WorkflowBlockError(
+                        block_id=error.block_id,
+                    ),
+                ],
+            )
+            resp = JSONResponse(
+                status_code=error.status_code,
+                content=content.model_dump(),
             )
         except StepExecutionError as error:
             logger.exception("%s: %s", type(error).__name__, error)
@@ -462,6 +492,16 @@ def with_route_exceptions_async(route):
                     "to learn how to retrieve one."
                 },
             )
+        except RoboflowAPIForbiddenError as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=403,
+                content={
+                    "message": "Unauthorized access to roboflow API - check API key and make sure the key is valid and "
+                    "have required scopes. Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key "
+                    "to learn how to retrieve one."
+                },
+            )
         except RoboflowAPINotNotFoundError as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
@@ -558,6 +598,24 @@ def with_route_exceptions_async(route):
                 content={
                     "message": "Timeout when attempting to connect to Roboflow API."
                 },
+            )
+        except ClientCausedStepExecutionError as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            content = WorkflowErrorResponse(
+                message=str(error.public_message),
+                error_type=error.__class__.__name__,
+                context=str(error.context),
+                inner_error_type=str(error.inner_error_type),
+                inner_error_message=str(error.inner_error),
+                blocks_errors=[
+                    WorkflowBlockError(
+                        block_id=error.block_id,
+                    ),
+                ],
+            )
+            resp = JSONResponse(
+                status_code=error.status_code,
+                content=content.model_dump(),
             )
         except StepExecutionError as error:
             logger.exception("%s: %s", type(error).__name__, error)
