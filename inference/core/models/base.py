@@ -134,7 +134,7 @@ class Model(BaseInference):
         responses = self.infer(**request.dict(), return_image_dims=False)
         for response in responses:
             response.time = perf_counter() - t1
-            logger.error(f"model infer time: {response.time * 1000.0} ms")
+            logger.debug(f"model infer time: {response.time * 1000.0} ms")
             if request.id:
                 response.inference_id = request.id
 

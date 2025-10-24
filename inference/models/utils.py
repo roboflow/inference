@@ -559,11 +559,22 @@ try:
         # Ensure experimental package is importable before swapping
         __import__("inference_exp")
         from inference.models.rfdetr.rfdetr_exp import RFDetrExperimentalModel
+        from inference.models.yolov8.yolov8_object_detection_exp import (
+            Yolo8ODExperimentalModel,
+        )
 
-        for variant in ("base", "large", "nano", "small", "medium"):
-            key = ("object-detection", f"rfdetr-{variant}")
-            if key in ROBOFLOW_MODEL_TYPES:
-                ROBOFLOW_MODEL_TYPES[key] = RFDetrExperimentalModel
+        for task, variant in ROBOFLOW_MODEL_TYPES.keys():
+            if task == "object-detection" and variant.startswith("rfdetr-"):
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = RFDetrExperimentalModel
+
+        # iterate over ROBOFLOW_MODEL_TYPES and replace all valuses where the model variatn starts with yolov8 with the experimental model
+        for task, variant in ROBOFLOW_MODEL_TYPES.keys():
+            if task == "object-detection" and variant.startswith("yolov8"):
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = Yolo8ODExperimentalModel
+
+
 except Exception:
     # Fallback silently to legacy ONNX RFDETR when experimental stack is unavailable
-    pass
+    warnings.warn(
+        "Inference experimental stack is unavailable, falling back to regular model inference stack"
+    )
