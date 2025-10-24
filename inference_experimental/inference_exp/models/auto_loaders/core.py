@@ -120,6 +120,7 @@ class AutoModel:
             model_id=model_metadata.model_id,
             requested_model_id=model_id,
             model_architecture=model_metadata.model_architecture,
+            model_variant=model_metadata.model_variant,
             task_type=model_metadata.task_type,
             weights_provider=weights_provider,
             registered_packages=len(model_metadata.model_packages),

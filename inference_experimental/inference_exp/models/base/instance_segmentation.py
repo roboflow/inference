@@ -78,5 +78,9 @@ class InstanceSegmentationModel(
     ) -> List[InstanceDetections]:
         pass
 
-    def __call__(self, images: torch.Tensor, **kwargs) -> List[InstanceDetections]:
+    def __call__(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> List[InstanceDetections]:
         return self.infer(images, **kwargs)

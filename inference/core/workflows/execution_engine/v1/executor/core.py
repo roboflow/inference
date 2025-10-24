@@ -9,15 +9,7 @@ except ImportError:
     execution_id = None
 
 from inference.core import logger
-from inference.core.exceptions import (
-    InferenceModelNotFound,
-    ModelManagerLockAcquisitionError,
-)
-from inference.core.workflows.errors import (
-    ExecutionEngineRuntimeError,
-    StepExecutionError,
-    WorkflowError,
-)
+from inference.core.workflows.errors import StepExecutionError, WorkflowError
 from inference.core.workflows.execution_engine.profiling.core import (
     NullWorkflowsProfiler,
     WorkflowsProfiler,
@@ -58,6 +50,7 @@ def run_workflow(
     serialize_results: bool = False,
     profiler: Optional[WorkflowsProfiler] = None,
     executor: Optional[ThreadPoolExecutor] = None,
+    step_error_handler: Optional[Callable[[Exception], None]] = None,
 ) -> List[Dict[str, Any]]:
     execution_data_manager = ExecutionDataManager.init(
         execution_graph=workflow.execution_graph,
@@ -75,6 +68,7 @@ def run_workflow(
             max_concurrent_steps=max_concurrent_steps,
             profiler=profiler,
             executor=executor,
+            step_error_handler=step_error_handler,
         )
         next_steps = execution_coordinator.get_steps_to_execute_next(profiler=profiler)
     with profiler.profile_execution_phase(
@@ -102,6 +96,7 @@ def execute_steps(
     max_concurrent_steps: int,
     profiler: Optional[WorkflowsProfiler] = None,
     executor: Optional[ThreadPoolExecutor] = None,
+    step_error_handler: Optional[Callable[[str, Exception], None]] = None,
 ) -> None:
     if execution_id is not None:
         workflow_execution_id = execution_id.get()
@@ -116,6 +111,7 @@ def execute_steps(
             execution_data_manager=execution_data_manager,
             profiler=profiler,
             workflow_execution_id=workflow_execution_id,
+            step_error_handler=step_error_handler,
         )
         for step_selector in next_steps
     ]
@@ -135,6 +131,7 @@ def safe_execute_step(
     execution_data_manager: ExecutionDataManager,
     profiler: Optional[WorkflowsProfiler] = None,
     workflow_execution_id: Optional[str] = None,
+    step_error_handler: Optional[Callable[[str, Exception], None]] = None,
 ) -> None:
     if execution_id is not None:
         execution_id.set(workflow_execution_id)
@@ -153,13 +150,13 @@ def safe_execute_step(
         logger.debug(
             f"finished execution of: {step_selector} - {datetime.now().isoformat()}"
         )
-    except (ModelManagerLockAcquisitionError, InferenceModelNotFound) as error:
-        raise error
     except WorkflowError as error:
         raise error
     except Exception as error:
-        logger.exception(f"Execution of step {step_selector} encountered error.")
         step_name = get_last_chunk_of_selector(selector=step_selector)
+        if step_error_handler:
+            step_error_handler(step_name, error)
+        logger.exception(f"Execution of step {step_selector} encountered error.")
         raise StepExecutionError(
             block_id=step_name,
             block_type=workflow.steps[step_name].manifest.type,
