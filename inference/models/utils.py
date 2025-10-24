@@ -2,7 +2,6 @@ import warnings
 
 from inference.core.env import (
     API_KEY,
-    USE_INFERENCE_EXP_MODELS,
     CORE_MODEL_CLIP_ENABLED,
     CORE_MODEL_DOCTR_ENABLED,
     CORE_MODEL_EASYOCR_ENABLED,
@@ -20,6 +19,7 @@ from inference.core.env import (
     PALIGEMMA_ENABLED,
     QWEN_2_5_ENABLED,
     SMOLVLM2_ENABLED,
+    USE_INFERENCE_EXP_MODELS,
 )
 from inference.core.models.base import Model
 from inference.core.models.stubs import (

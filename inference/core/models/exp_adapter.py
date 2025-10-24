@@ -1,34 +1,25 @@
 from threading import Lock
-from typing import Any, List, Union
+from time import perf_counter
+from typing import Any, Generic, List, Optional, Tuple, Union
 
 import numpy as np
-from time import perf_counter
+from inference_exp.models.base.object_detection import Detections, ObjectDetectionModel
+from inference_exp.models.base.types import (
+    PreprocessedInputs,
+    PreprocessingMetadata,
+    RawPrediction,
+)
 
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
 )
-from inference.core.models.base import Model
-from inference.models.aliases import resolve_roboflow_model_alias
-
-from inference.core.utils.image_utils import load_image_rgb
-from inference.core.logger import logger
-
-
 from inference.core.env import API_KEY
-
-import numpy as np
-from typing import Generic, List, Optional, Tuple, Union
-from inference_exp.models.base.types import (
-    PreprocessedInputs,
-    PreprocessingMetadata,
-    RawPrediction,
-)
-from inference_exp.models.base.object_detection import (
-    Detections,
-    ObjectDetectionModel,
-)
+from inference.core.logger import logger
+from inference.core.models.base import Model
+from inference.core.utils.image_utils import load_image_rgb
+from inference.models.aliases import resolve_roboflow_model_alias
 
 
 class InferenceExpObjectDetectionModelAdapter(Model):
