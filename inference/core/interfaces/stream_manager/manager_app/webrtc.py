@@ -125,7 +125,7 @@ def process_frame(
             errors.append("or workflow was not configured to output visuals.")
             errors.append("Please try to adjust the scene so models detect objects")
             errors.append("or stop preview, update workflow and try again.")
-            result_np_image = video_frame.image
+            result_np_image = np_image
 
         result_np_image = overlay_text_on_np_frame(
             frame=result_np_image,
@@ -134,7 +134,7 @@ def process_frame(
     except Exception as e:
         logger.exception("Error in inference pipeline")
         result_np_image = overlay_text_on_np_frame(
-            frame=result_np_image,
+            frame=np_image,
             text=["Workflow error", str(e)],
         )
     return result_np_image

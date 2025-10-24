@@ -1428,13 +1428,20 @@ class HttpInterface(BaseInterface):
             request: InitialiseWebRTCPipelinePayload,
         ) -> InitializeWebRTCResponse:
             logger.debug("Received initialise webrtc inference pipeline request")
+            stream_output = None
+            if request.stream_output:
+                # TODO: UI sends None as stream_output for wildcard outputs
+                stream_output = request.stream_output[0] or ""
+            data_output = None
+            if request.data_output:
+                data_output = request.data_output[0]
             *_, answer = await start_worker(
                 webrtc_offer=request.webrtc_offer,
                 webrtc_turn_config=request.webrtc_turn_config,
                 workflow_configuration=request.processing_configuration,
                 api_key=request.api_key,
-                data_output=request.data_output,
-                stream_output=request.stream_output,
+                data_output=data_output,
+                stream_output=stream_output,
             )
             logger.debug("Returning initialise webrtc inference pipeline response")
             return InitializeWebRTCResponse(
