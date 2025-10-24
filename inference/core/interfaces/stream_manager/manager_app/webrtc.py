@@ -639,13 +639,21 @@ class VideoTransformTrackWithLoop(VideoStreamTrack):
             av_logging.set_libav_level(av_logging.ERROR)
             self._av_logging_set = True
 
-        frame: VideoFrame = await self.track.recv()
+        frame = None
+        while self.track._queue.qsize() > 0:
+            frame: VideoFrame = await self.track.recv()
+        if frame is None:
+            frame: VideoFrame = await self.track.recv()
+
         self._received_frames += 1
-        np_image = process_frame(
-            np_image=frame.to_ndarray(format="bgr24"),
-            frame_id=self._received_frames,
-            inference_pipeline=self._inference_pipeline,
-            stream_output=self._stream_output,
+        loop = asyncio.get_running_loop()
+        np_image = await loop.run_in_executor(
+            None,
+            process_frame,
+            frame.to_ndarray(format="bgr24"),
+            self._received_frames,
+            self._inference_pipeline,
+            self._stream_output,
         )
 
         new_frame = VideoFrame.from_ndarray(np_image, format="bgr24")
@@ -957,7 +965,7 @@ async def start_worker(
                 "turn_credential": webrtc_turn_config.credential,
                 "answer_conn": child_conn,
                 "workflow_configuration": workflow_configuration,
-                "api_kley": api_key,
+                "api_key": api_key,
                 "data_output": data_output,
                 "stream_output": stream_output,
             },
