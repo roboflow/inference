@@ -129,7 +129,7 @@ def test_get_versions_of_execution_engine(object_detection_service_url: str) -> 
     # then
     response.raise_for_status()
     response_data = response.json()
-    assert response_data["versions"] == ["1.6.0"]
+    assert response_data["versions"] == ["1.7.0"]
 
 
 FUNCTION = """

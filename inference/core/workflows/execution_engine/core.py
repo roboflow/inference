@@ -1,5 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Callable, Dict, List, Optional, Type, Union
 
 from packaging.specifiers import SpecifierSet
 from packaging.version import Version
@@ -39,6 +39,9 @@ class ExecutionEngine(BaseExecutionEngine):
         workflow_id: Optional[str] = None,
         profiler: Optional[WorkflowsProfiler] = None,
         executor: Optional[ThreadPoolExecutor] = None,
+        step_error_handler: Optional[
+            Union[str, Callable[[str, Exception], None]]
+        ] = "extended_roboflow_errors",
     ) -> "ExecutionEngine":
         requested_engine_version = retrieve_requested_execution_engine_version(
             workflow_definition=workflow_definition,
@@ -54,6 +57,7 @@ class ExecutionEngine(BaseExecutionEngine):
             workflow_id=workflow_id,
             profiler=profiler,
             executor=executor,
+            step_error_handler=step_error_handler,
         )
         return cls(engine=engine)
 

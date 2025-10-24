@@ -1,0 +1,72 @@
+from inference.core.exceptions import (
+    InferenceModelNotFound,
+    InvalidModelIDError,
+    ModelManagerLockAcquisitionError,
+    RoboflowAPIForbiddenError,
+    RoboflowAPINotAuthorizedError,
+)
+from inference.core.workflows.errors import ClientCausedStepExecutionError
+from inference_sdk.http.errors import HTTPCallErrorError
+
+
+def legacy_step_error_handler(step_name: str, error: Exception) -> None:
+    if isinstance(error, (ModelManagerLockAcquisitionError, InferenceModelNotFound)):
+        raise error
+    return None
+
+
+def extended_roboflow_errors_handler(step_name: str, error: Exception) -> None:
+    if isinstance(
+        error,
+        (
+            ModelManagerLockAcquisitionError,
+            InferenceModelNotFound,
+        ),
+    ):
+        raise error
+    if isinstance(error, InvalidModelIDError):
+        raise ClientCausedStepExecutionError(
+            block_id=step_name,
+            status_code=400,
+            public_message=f"Problem with Workflow Block configuration - {error}",
+            context="workflow_execution | step_execution",
+            inner_error=error,
+        ) from error
+    if isinstance(error, RoboflowAPINotAuthorizedError):
+        raise ClientCausedStepExecutionError(
+            block_id=step_name,
+            status_code=401,
+            public_message=f"Unauthorized error occurred while remote execution of step {step_name} - "
+            f"details of error: {error}. This error usually mean the problem with Roboflow API key.",
+            context="workflow_execution | step_execution",
+            inner_error=error,
+        ) from error
+    if isinstance(error, RoboflowAPIForbiddenError):
+        raise ClientCausedStepExecutionError(
+            block_id=step_name,
+            status_code=403,
+            public_message=f"Forbidden error occurred while remote execution of step {step_name} - "
+            f"details of error: {error}. This error usually mean the problem with Roboflow API key.",
+            context="workflow_execution | step_execution",
+            inner_error=error,
+        ) from error
+    if isinstance(error, HTTPCallErrorError):
+        if error.status_code == 401:
+            raise ClientCausedStepExecutionError(
+                block_id=step_name,
+                status_code=401,
+                public_message=f"Unauthorized error occurred while remote execution of step {step_name} - "
+                f"details of error: {error}. This error usually mean the problem with Roboflow API key.",
+                context="workflow_execution | step_execution",
+                inner_error=error,
+            ) from error
+        if error.status_code == 403:
+            raise ClientCausedStepExecutionError(
+                block_id=step_name,
+                status_code=403,
+                public_message=f"Forbidden error occurred while remote execution of step {step_name} - "
+                f"details of error: {error}. This error usually mean the problem with Roboflow API key.",
+                context="workflow_execution | step_execution",
+                inner_error=error,
+            ) from error
+    return None
