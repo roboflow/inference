@@ -59,7 +59,8 @@ class InferenceExpObjectDetectionModelAdapter(Model):
             )
             for v in images
         ]
-        return self._exp_model.pre_process(np_images, **kwargs)
+        mapped_kwargs = self.map_inference_kwargs(kwargs)
+        return self._exp_model.pre_process(np_images, **mapped_kwargs)
 
     def predict(self, img_in, **kwargs):
         mapped_kwargs = self.map_inference_kwargs(kwargs)
@@ -71,8 +72,9 @@ class InferenceExpObjectDetectionModelAdapter(Model):
         preprocess_return_metadata: PreprocessingMetadata,
         **kwargs,
     ) -> List[Detections]:
+        mapped_kwargs = self.map_inference_kwargs(kwargs)
         detections_list = self._exp_model.post_process(
-            predictions, preprocess_return_metadata, **kwargs
+            predictions, preprocess_return_metadata, **mapped_kwargs
         )
 
         responses: List[ObjectDetectionInferenceResponse] = []
