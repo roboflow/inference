@@ -204,7 +204,11 @@ def test_rotate_image_workflow_with_dynamic_rotation_degrees(
         "version": "1.0",
         "inputs": [
             {"type": "InferenceImage", "name": "image"},
-            {"type": "WorkflowParameter", "name": "rotation_angle", "default_value": 90},
+            {
+                "type": "WorkflowParameter",
+                "name": "rotation_angle",
+                "default_value": 90,
+            },
         ],
         "steps": [
             {

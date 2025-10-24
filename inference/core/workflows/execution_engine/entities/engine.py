@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Union
 
 from inference.core.workflows.execution_engine.profiling.core import WorkflowsProfiler
 
@@ -18,6 +18,9 @@ class BaseExecutionEngine(ABC):
         workflow_id: Optional[str] = None,
         profiler: Optional[WorkflowsProfiler] = None,
         executor: Optional[ThreadPoolExecutor] = None,
+        step_error_handler: Optional[
+            Union[str, Callable[[str, Exception], None]]
+        ] = None,
     ) -> "BaseExecutionEngine":
         pass
 

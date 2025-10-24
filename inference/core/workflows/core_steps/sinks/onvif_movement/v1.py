@@ -17,13 +17,6 @@ from simple_pid import PID
 from inference.core import logger
 from inference.core.utils.function import experimental
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.query_language.entities.operations import (
-    AllOperationsType,
-)
-from inference.core.workflows.core_steps.common.query_language.operations.core import (
-    build_operations_chain,
-)
-from inference.core.workflows.errors import StepExecutionError, WorkflowError
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
@@ -403,9 +396,7 @@ class CameraWrapper:
         Doesn't currently run in init since it needs to be awaited
         """
         if not self.camera:
-            raise StepExecutionError(
-                f"Tried to configure camera, but camera was not created"
-            )
+            raise ValueError(f"Tried to configure camera, but camera was not created")
         if self._has_config_error:
             return
 

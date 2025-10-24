@@ -20,7 +20,6 @@ import pytest
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 
-
 # Skip all tests if Modal credentials are not present
 MODAL_TOKEN_ID = os.getenv("MODAL_TOKEN_ID")
 MODAL_TOKEN_SECRET = os.getenv("MODAL_TOKEN_SECRET")
