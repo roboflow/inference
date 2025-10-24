@@ -14,6 +14,7 @@ from inference.core.workflows.execution_engine.entities.engine import (
 )
 from inference.core.workflows.execution_engine.profiling.core import WorkflowsProfiler
 from inference.core.workflows.execution_engine.v1.core import (
+    DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER,
     EXECUTION_ENGINE_V1_VERSION,
     ExecutionEngineV1,
 )
@@ -41,7 +42,7 @@ class ExecutionEngine(BaseExecutionEngine):
         executor: Optional[ThreadPoolExecutor] = None,
         step_error_handler: Optional[
             Union[str, Callable[[str, Exception], None]]
-        ] = "extended_roboflow_errors",
+        ] = DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER,
     ) -> "ExecutionEngine":
         requested_engine_version = retrieve_requested_execution_engine_version(
             workflow_definition=workflow_definition,

@@ -1,3 +1,4 @@
+import os
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, List, Optional, Union
 
@@ -30,6 +31,10 @@ from inference.core.workflows.execution_engine.v1.step_error_handlers import (
 
 EXECUTION_ENGINE_V1_VERSION = Version("1.7.0")
 
+DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER = os.getenv(
+    "DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER", "extended_roboflow_errors"
+)
+
 REGISTERED_STEP_ERROR_HANDLERS = {
     "legacy": legacy_step_error_handler,
     "extended_roboflow_errors": extended_roboflow_errors_handler,
@@ -50,7 +55,7 @@ class ExecutionEngineV1(BaseExecutionEngine):
         executor: Optional[ThreadPoolExecutor] = None,
         step_error_handler: Optional[
             Union[str, Callable[[str, Exception], None]]
-        ] = "extended_roboflow_errors",
+        ] = DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER,
     ) -> "ExecutionEngineV1":
         if init_parameters is None:
             init_parameters = {}

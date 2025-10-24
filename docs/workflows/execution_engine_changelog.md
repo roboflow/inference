@@ -2,6 +2,33 @@
 
 Below you can find the changelog for Execution Engine.
 
+## Execution Engine `v1.7.0` | inference `v0.59.0`
+
+!!! warning "Breaking change regarding step errors in workflows"
+  
+    To fix a bug related to invalid HTTP responses codes in `inference-server` handling Workflows execution requests 
+    we needed to alter the default mechanism responsible for handling errors in Execution Engine. As a result of change,
+    effective immediately on Roboflow Hosted Platform and in `inference>=0.59.0`, Workflow blocks interacting with 
+    Roboflow platform which fails due to client misconfiguration (invalid Roboflow API key, invalid model ID, etc.) 
+    instead of raising `StepExecutionError` (and HTTP 500 response from the server) will raise 
+    `ClientCausedStepExecutionError` (and relevant HTTP response codes, such as 400, 401 or 403).
+
+List of scenarios affected with the change:
+
+* Block using Roboflow model defines invalid model ID - now will raise `ClientCausedStepExecutionError` with status code 400
+
+* Block using Roboflow model defines invalid API key - now will raise `ClientCausedStepExecutionError` with status code 401
+
+* Block using Roboflow model defines invalid API key or missing valid key with scpe to access resource - now will raise 
+`ClientCausedStepExecutionError` with status code 403
+
+
+!!! Note "Bringing back `legacy` error handling"
+    
+    It is possible to bring back the legacy behaviour of error handler if needed, which may be halpful in transition 
+    period - all it takes is setting environmental variable `DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER=legacy`.
+
+
 ## Execution Engine `v1.6.0` | inference `v0.53.0`
 
 !!! Note "Change may require attention"
@@ -552,5 +579,3 @@ include a new `video_metadata` property. This property can be optionally set in 
 a default value with reasonable defaults will be used. To simplify metadata manipulation within blocks, we have 
 introduced two new class methods: `WorkflowImageData.copy_and_replace(...)` and `WorkflowImageData.create_crop(...)`. 
 For more details, refer to the updated [`WoorkflowImageData` usage guide](/workflows/internal_data_types.md#workflowimagedata).
-
-

@@ -51,6 +51,15 @@ def extended_roboflow_errors_handler(step_name: str, error: Exception) -> None:
             inner_error=error,
         ) from error
     if isinstance(error, HTTPCallErrorError):
+        if error.status_code == 400:
+            raise ClientCausedStepExecutionError(
+                block_id=step_name,
+                status_code=400,
+                public_message=f"Bad request error detected while remote execution of step {step_name} - "
+                f"details of error: {error}. This error usually mean that the Workflow block configuration is faulty.",
+                context="workflow_execution | step_execution",
+                inner_error=error,
+            ) from error
         if error.status_code == 401:
             raise ClientCausedStepExecutionError(
                 block_id=step_name,
