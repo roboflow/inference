@@ -132,18 +132,32 @@ class Model(BaseInference):
         """
         t1 = perf_counter()
         responses = self.infer(**request.dict(), return_image_dims=False)
+
+        # Fast-path: assign attr and log/debug in single tight loop without recomputing perf_counter or calling logger multiple times per response
+        req_id = request.id
+        responses_len = len(responses)
+        is_single = not isinstance(request.image, list) and responses_len > 0
+
+        t2 = perf_counter()  # Call perf_counter once after infer
+        model_infer_time = t2 - t1
+        debug_msg = f"model infer time: {model_infer_time * 1000.0} ms"
         for response in responses:
-            response.time = perf_counter() - t1
-            logger.debug(f"model infer time: {response.time * 1000.0} ms")
-            if request.id:
-                response.inference_id = request.id
+            response.time = model_infer_time
+            logger.debug(debug_msg)
+            if req_id:
+                response.inference_id = req_id
 
-        if hasattr(request, "visualize_predictions") and request.visualize_predictions:
+        # Only apply visualization if requested (minimize hasattr cost and early exit)
+        if getattr(request, "visualize_predictions", False):
+            draw_predictions = (
+                self.draw_predictions
+            )  # Local var for attribute lookup speedup
             for response in responses:
-                response.visualization = self.draw_predictions(request, response)
+                response.visualization = draw_predictions(request, response)
 
-        if not isinstance(request.image, list) and len(responses) > 0:
-            responses = responses[0]
+        # Avoid unnecessary len() and isinstance check if already non-list request.image
+        if is_single:
+            return responses[0]
 
         return responses
 
