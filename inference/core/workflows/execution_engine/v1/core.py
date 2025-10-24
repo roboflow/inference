@@ -1,9 +1,11 @@
+import os
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Union
 
 from packaging.version import Version
 
 from inference.core.logger import logger
+from inference.core.workflows.errors import WorkflowEnvironmentConfigurationError
 from inference.core.workflows.execution_engine.entities.engine import (
     BaseExecutionEngine,
 )
@@ -22,8 +24,21 @@ from inference.core.workflows.execution_engine.v1.executor.runtime_input_assembl
 from inference.core.workflows.execution_engine.v1.executor.runtime_input_validator import (
     validate_runtime_input,
 )
+from inference.core.workflows.execution_engine.v1.step_error_handlers import (
+    extended_roboflow_errors_handler,
+    legacy_step_error_handler,
+)
 
-EXECUTION_ENGINE_V1_VERSION = Version("1.6.0")
+EXECUTION_ENGINE_V1_VERSION = Version("1.7.0")
+
+DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER = os.getenv(
+    "DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER", "extended_roboflow_errors"
+)
+
+REGISTERED_STEP_ERROR_HANDLERS = {
+    "legacy": legacy_step_error_handler,
+    "extended_roboflow_errors": extended_roboflow_errors_handler,
+}
 
 
 class ExecutionEngineV1(BaseExecutionEngine):
@@ -38,10 +53,21 @@ class ExecutionEngineV1(BaseExecutionEngine):
         workflow_id: Optional[str] = None,
         profiler: Optional[WorkflowsProfiler] = None,
         executor: Optional[ThreadPoolExecutor] = None,
+        step_error_handler: Optional[
+            Union[str, Callable[[str, Exception], None]]
+        ] = DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER,
     ) -> "ExecutionEngineV1":
         if init_parameters is None:
             init_parameters = {}
-
+        if isinstance(step_error_handler, str):
+            if step_error_handler not in REGISTERED_STEP_ERROR_HANDLERS:
+                raise WorkflowEnvironmentConfigurationError(
+                    public_message=f"Execution engine was initialised with step_error_handler='{step_error_handler}' "
+                    f"which is not registered. Supported values: "
+                    f"{list(REGISTERED_STEP_ERROR_HANDLERS.keys())}",
+                    context="workflow_compilation | engine_initialisation",
+                )
+            step_error_handler = REGISTERED_STEP_ERROR_HANDLERS[step_error_handler]
         init_parameters["dynamic_workflows_blocks.api_key"] = init_parameters.get(
             "dynamic_workflows_blocks.api_key",
             init_parameters.get("workflows_core.api_key"),
@@ -63,6 +89,7 @@ class ExecutionEngineV1(BaseExecutionEngine):
             workflow_id=workflow_id,
             internal_id=workflow_definition.get("id"),
             executor=executor,
+            step_error_handler=step_error_handler,
         )
 
     def __init__(
@@ -74,6 +101,7 @@ class ExecutionEngineV1(BaseExecutionEngine):
         workflow_id: Optional[str] = None,
         internal_id: Optional[str] = None,
         executor: Optional[ThreadPoolExecutor] = None,
+        step_error_handler: Optional[Callable[[str, Exception], None]] = None,
     ):
         self._compiled_workflow = compiled_workflow
         self._max_concurrent_steps = max_concurrent_steps
@@ -82,6 +110,7 @@ class ExecutionEngineV1(BaseExecutionEngine):
         self._profiler = profiler
         self._internal_id = internal_id
         self._executor = executor
+        self._step_error_handler = step_error_handler
 
     def run(
         self,
@@ -121,6 +150,7 @@ class ExecutionEngineV1(BaseExecutionEngine):
             serialize_results=serialize_results,
             profiler=self._profiler,
             executor=self._executor,
+            step_error_handler=self._step_error_handler,
         )
         self._profiler.end_workflow_run()
         return result

@@ -77,7 +77,7 @@ class YOLOv5ForObjectDetectionOnnx(
             elements=[
                 "class_names.txt",
                 "inference_config.json",
-                "yolov5s_weights.onnx",
+                "weights.onnx",
             ],
         )
         class_names = parse_class_names_file(
@@ -93,7 +93,7 @@ class YOLOv5ForObjectDetectionOnnx(
             },
         )
         session = onnxruntime.InferenceSession(
-            path_or_bytes=model_package_content["yolov5s_weights.onnx"],
+            path_or_bytes=model_package_content["weights.onnx"],
             providers=onnx_execution_providers,
         )
         input_batch_size = session.get_inputs()[0].shape[0]

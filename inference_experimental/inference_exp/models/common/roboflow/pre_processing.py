@@ -288,6 +288,8 @@ def handle_tensor_input_preparation_with_stretch(
     if network_input.scaling_factor is not None:
         image = image / network_input.scaling_factor
     if network_input.normalization is not None:
+        if not image.is_floating_point():
+            image = image.to(dtype=torch.float32)
         image = functional.normalize(
             image,
             mean=network_input.normalization[0],
@@ -367,6 +369,8 @@ def handle_torch_input_preparation_with_letterbox(
     if network_input.scaling_factor is not None:
         final_batch = final_batch / network_input.scaling_factor
     if network_input.normalization is not None:
+        if not final_batch.is_floating_point():
+            final_batch = final_batch.to(dtype=torch.float32)
         final_batch = functional.normalize(
             final_batch,
             mean=network_input.normalization[0],
@@ -453,6 +457,8 @@ def handle_torch_input_preparation_with_center_crop(
     if network_input.scaling_factor is not None:
         image = image / network_input.scaling_factor
     if network_input.normalization is not None:
+        if not image.is_floating_point():
+            image = image.to(dtype=torch.float32)
         image = functional.normalize(
             image,
             mean=network_input.normalization[0],
@@ -509,6 +515,8 @@ def handle_torch_input_preparation_fitting_longer_edge(
     if network_input.scaling_factor is not None:
         image = image / network_input.scaling_factor
     if network_input.normalization is not None:
+        if not image.is_floating_point():
+            image = image.to(dtype=torch.float32)
         image = functional.normalize(
             image,
             mean=network_input.normalization[0],
@@ -644,6 +652,8 @@ def handle_tensor_list_input_preparation_with_stretch(
         if network_input.scaling_factor is not None:
             img = img / network_input.scaling_factor
         if network_input.normalization is not None:
+            if not img.is_floating_point():
+                img = img.to(dtype=torch.float32)
             img = functional.normalize(
                 img,
                 mean=network_input.normalization[0],
@@ -736,6 +746,8 @@ def handle_tensor_list_input_preparation_with_letterbox(
     if network_input.scaling_factor is not None:
         final_batch = final_batch / network_input.scaling_factor
     if network_input.normalization:
+        if not final_batch.is_floating_point():
+            final_batch = final_batch.to(dtype=torch.float32)
         final_batch = functional.normalize(
             final_batch,
             mean=network_input.normalization[0],
@@ -979,6 +991,8 @@ def handle_numpy_input_preparation_with_stretch(
     if network_input.scaling_factor is not None:
         tensor = tensor / network_input.scaling_factor
     if network_input.normalization:
+        if not tensor.is_floating_point():
+            tensor = tensor.to(dtype=torch.float32)
         tensor = functional.normalize(
             tensor,
             mean=network_input.normalization[0],
@@ -1056,6 +1070,8 @@ def handle_numpy_input_preparation_with_letterbox(
     if network_input.scaling_factor is not None:
         final_batch = final_batch / network_input.scaling_factor
     if network_input.normalization is not None:
+        if not final_batch.is_floating_point():
+            final_batch = final_batch.to(dtype=torch.float32)
         final_batch = functional.normalize(
             final_batch,
             mean=network_input.normalization[0],
@@ -1133,6 +1149,8 @@ def handle_numpy_input_preparation_with_center_crop(
     if network_input.scaling_factor is not None:
         tensor = tensor / network_input.scaling_factor
     if network_input.normalization:
+        if not tensor.is_floating_point():
+            tensor = tensor.to(dtype=torch.float32)
         tensor = functional.normalize(
             tensor,
             mean=network_input.normalization[0],
@@ -1189,6 +1207,8 @@ def handle_numpy_input_preparation_fitting_longer_edge(
     if network_input.scaling_factor is not None:
         tensor = tensor / network_input.scaling_factor
     if network_input.normalization:
+        if not tensor.is_floating_point():
+            tensor = tensor.to(dtype=torch.float32)
         tensor = functional.normalize(
             tensor,
             mean=network_input.normalization[0],

@@ -94,7 +94,10 @@ def test_polygon_zone_visualization_multiple_zones_block() -> None:
             parent_metadata=ImageParentMetadata(parent_id="some"),
             numpy_image=start_image,
         ),
-        zone=[[(10, 10), (100, 100), (100, 10), (50, 0)], [(10, 10), (100, 100), (100, 10), (50, 0)]],
+        zone=[
+            [(10, 10), (100, 100), (100, 10), (50, 0)],
+            [(10, 10), (100, 100), (100, 10), (50, 0)],
+        ],
         copy_image=True,
         color="#FF0000",
         opacity=0.5,

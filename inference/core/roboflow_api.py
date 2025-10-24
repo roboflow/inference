@@ -53,6 +53,7 @@ from inference.core.exceptions import (
     MissingDefaultModelError,
     RetryRequestError,
     RoboflowAPIConnectionError,
+    RoboflowAPIForbiddenError,
     RoboflowAPIIAlreadyAnnotatedError,
     RoboflowAPIIAnnotationRejectionError,
     RoboflowAPIImageUploadRejectionError,
@@ -95,6 +96,12 @@ DEFAULT_ERROR_HANDLERS = {
         e,
         RoboflowAPINotAuthorizedError,
         "Unauthorized access to roboflow API - check API key. Visit "
+        "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to retrieve one.",
+    ),
+    403: lambda e: raise_from_lambda(
+        e,
+        RoboflowAPIForbiddenError,
+        "Unauthorized access to roboflow API - check API key regarding correctness and required scopes. Visit "
         "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to retrieve one.",
     ),
     404: lambda e: raise_from_lambda(

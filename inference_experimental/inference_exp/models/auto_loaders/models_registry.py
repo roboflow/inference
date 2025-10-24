@@ -225,6 +225,10 @@ REGISTERED_MODELS: Dict[
         module_name="inference_exp.models.paligemma.paligemma_hf",
         class_name="PaliGemmaHF",
     ),
+    ("paligemma", VLM_TASK, BackendType.HF): LazyClass(
+        module_name="inference_exp.models.paligemma.paligemma_hf",
+        class_name="PaliGemmaHF",
+    ),
     ("smolvlm-v2", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_exp.models.smolvlm.smolvlm_hf",
         class_name="SmolVLMHF",
@@ -308,6 +312,10 @@ REGISTERED_MODELS: Dict[
     ("deep-lab-v3-plus", SEMANTIC_SEGMENTATION_TASK, BackendType.ONNX): LazyClass(
         module_name="inference_exp.models.deep_lab_v3_plus.deep_lab_v3_plus_segmentation_onnx",
         class_name="DeepLabV3PlusForSemanticSegmentationOnnx",
+    ),
+    ("yolact", INSTANCE_SEGMENTATION_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_exp.models.yolact.yolact_instance_segmentation_onnx",
+        class_name="YOLOACTForInstanceSegmentationOnnx",
     ),
 }
 

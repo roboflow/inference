@@ -156,3 +156,4 @@ class ModelMetadata:
     model_architecture: str
     model_packages: List[ModelPackageMetadata]
     task_type: Optional[str] = field(default=None)
+    model_variant: Optional[str] = field(default=None)
