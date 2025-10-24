@@ -484,8 +484,7 @@ def test_simple_workflow_run_when_api_key_is_invalid(
 
     # then
     assert (
-        response.status_code == 500
-        or response.status_code == 401  # serverless will return 401
+        response.status_code == 401
     ), "Auth error is expected to be manifested as runtime error for one of the step"
 
 
