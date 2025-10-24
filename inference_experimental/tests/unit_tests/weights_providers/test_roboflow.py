@@ -1317,6 +1317,7 @@ def test_get_roboflow_model(requests_mock: Mocker) -> None:
                         "type": "external-model-metadata-v1",
                         "modelId": "my-model",
                         "modelArchitecture": "yolov8",
+                        "modelVariant": "yolov8-n",
                         "taskType": "object-detection",
                         "modelPackages": [
                             {
@@ -1352,6 +1353,7 @@ def test_get_roboflow_model(requests_mock: Mocker) -> None:
                         "type": "external-model-metadata-v1",
                         "modelId": "my-model",
                         "modelArchitecture": "yolov8",
+                        "modelVariant": "yolov8-n",
                         "taskType": "object-detection",
                         "modelPackages": [
                             {
@@ -1401,5 +1403,6 @@ def test_get_roboflow_model(requests_mock: Mocker) -> None:
     # then
     assert result.model_id == "my-model"
     assert result.model_architecture == "yolov8"
+    assert result.model_variant == "yolov8-n"
     assert result.task_type == "object-detection"
     assert len(result.model_packages) == 2
