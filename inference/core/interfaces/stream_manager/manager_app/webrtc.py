@@ -830,6 +830,12 @@ if modal is not None and WEBRTC_MODAL_TOKEN_ID and WEBRTC_MODAL_TOKEN_SECRET:
             "DISABLE_VERSION_CHECK": "True",
             "MODEL_CACHE_DIR": MODEL_CACHE_DIR,
             "TELEMETRY_USE_PERSISTENT_QUEUE": "False",
+            "WEBRTC_MODAL_FUNCTION_GPU": WEBRTC_MODAL_FUNCTION_GPU,
+            "ONNXRUNTIME_EXECUTION_PROVIDERS": (
+                "CUDAExecutionProvider"
+                if WEBRTC_MODAL_FUNCTION_GPU
+                else "CPUExecutionProvider"
+            ),
         },
         volumes={MODEL_CACHE_DIR: rfcache_volume},
     )
