@@ -6,6 +6,7 @@ from typing import Optional, Union
 import pytest
 from asyncua import Server
 from asyncua.client import Client as AsyncClient
+
 try:
     from asyncua.server.users import User, UserRole
 except ImportError:
