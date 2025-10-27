@@ -713,6 +713,8 @@ async def init_rtc_peer_connection_with_loop(
             asyncio_loop=asyncio_loop,
         )
 
+    closed = asyncio.Event()
+
     @peer_connection.on("track")
     def on_track(track: RemoteStreamTrack):
         logger.info("track received")
@@ -730,6 +732,7 @@ async def init_rtc_peer_connection_with_loop(
         if peer_connection.connectionState in {"failed", "closed"}:
             logger.info("Stopping WebRTC peer")
             await peer_connection.close()
+            closed.set()
         logger.info("'connectionstatechange' event handler finished")
 
     await peer_connection.setRemoteDescription(
@@ -749,8 +752,7 @@ async def init_rtc_peer_connection_with_loop(
         }
     )
 
-    while peer_connection.connectionState not in {"failed", "closed"}:
-        await asyncio.sleep(0.2)
+    await closed.wait()
 
 
 def rtc_peer_connection_process(
