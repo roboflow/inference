@@ -175,7 +175,7 @@ def align_instance_segmentation_results(
         masks = masks[
             :,
             padded_mask_offset_top : masks.shape[1] - padded_mask_offset_bottom,
-            padded_mask_offset_left : masks.shape[1] - padded_mask_offset_right,
+            padded_mask_offset_left : masks.shape[2] - padded_mask_offset_right,
         ]
     else:
         masks = masks[
