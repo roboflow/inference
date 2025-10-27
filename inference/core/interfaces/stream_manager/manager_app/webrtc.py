@@ -87,11 +87,12 @@ logging.getLogger("aiortc").setLevel(logging.WARNING)
 
 
 def process_frame(
-    np_image: np.ndarray,
+    frame: VideoFrame,
     frame_id: int,
     inference_pipeline: InferencePipeline,
     stream_output: str,
-) -> np.ndarray:
+) -> VideoFrame:
+    np_image = frame.to_ndarray(format="bgr24")
     try:
         video_frame = InferenceVideoFrame(
             image=np_image,
@@ -137,7 +138,7 @@ def process_frame(
             frame=np_image,
             text=["Workflow error", str(e)],
         )
-    return result_np_image
+    return VideoFrame.from_ndarray(result_np_image, format="bgr24")
 
 
 def overlay_text_on_np_frame(frame: np.ndarray, text: List[str]):
@@ -645,17 +646,16 @@ class VideoTransformTrackWithLoop(VideoStreamTrack):
         self._received_frames += 1
         t_inference = time.time()
         loop = asyncio.get_running_loop()
-        np_image = await loop.run_in_executor(
+        new_frame = await loop.run_in_executor(
             None,
             process_frame,
-            frame.to_ndarray(format="bgr24"),
+            frame,
             self._received_frames,
             self._inference_pipeline,
             self._stream_output,
         )
         print(f"inference: {time.time() - t_inference}")
 
-        new_frame = VideoFrame.from_ndarray(np_image, format="bgr24")
         new_frame.pts = frame.pts
         new_frame.time_base = frame.time_base
         print(f"recv: {time.time() - t_recv}")
