@@ -8,7 +8,11 @@ from inference.core.workflows.core_steps.common.entities import StepExecutionMod
 from inference.core.workflows.core_steps.common.query_language.errors import (
     EvaluationEngineError,
 )
-from inference.core.workflows.errors import RuntimeInputError, StepExecutionError, ClientCausedStepExecutionError
+from inference.core.workflows.errors import (
+    ClientCausedStepExecutionError,
+    RuntimeInputError,
+    StepExecutionError,
+)
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
     add_to_workflows_gallery,
