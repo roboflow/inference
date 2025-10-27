@@ -25,9 +25,6 @@ from inference_exp.models.common.roboflow.model_packages import (
     parse_class_names_file,
     parse_inference_config,
 )
-from inference_exp.models.common.roboflow.post_processing import (
-    align_instance_segmentation_results,
-)
 from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
@@ -145,7 +142,7 @@ class RFDetrForInstanceSegmentationTorch(
     def from_checkpoint_file(
         cls,
         checkpoint_path: str,
-        model_type: Optional[str] = None,
+        model_type: Optional[str] = "rfdetr-seg-preview",
         labels: Optional[Union[str, List[str]]] = None,
         resolution: Optional[int] = None,
         device: torch.device = DEFAULT_DEVICE,
@@ -172,8 +169,9 @@ class RFDetrForInstanceSegmentationTorch(
                 help_url="https://todo",
             )
         model_config = CONFIG_FOR_MODEL_TYPE[model_type](device=device)
+        divisibility = model_config.num_windows * model_config.patch_size
         if resolution is not None:
-            if resolution < 0 or resolution % 56 != 0:
+            if resolution < 0 or resolution % divisibility != 0:
                 raise ModelLoadingError(
                     message=f"Attempted to load RFDetr model (using torch backend) with `resolution` parameter which "
                     f"is invalid - the model required positive value divisible by 56. Make sure you used "
@@ -190,7 +188,7 @@ class RFDetrForInstanceSegmentationTorch(
                 dynamic_spatial_size_supported=True,
                 dynamic_spatial_size_mode=DivisiblePadding(
                     type="pad-to-be-divisible",
-                    value=56,
+                    value=divisibility,
                 ),
                 color_mode=ColorMode.BGR,
                 resize_mode=ResizeMode.STRETCH_TO,

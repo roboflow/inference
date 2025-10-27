@@ -175,8 +175,9 @@ class RFDetrForObjectDetectionTorch(
                 help_url="https://todo",
             )
         model_config = CONFIG_FOR_MODEL_TYPE[model_type](device=device)
+        divisibility = model_config.num_windows * model_config.patch_size
         if resolution is not None:
-            if resolution < 0 or resolution % 56 != 0:
+            if resolution < 0 or resolution % divisibility != 0:
                 raise ModelLoadingError(
                     message=f"Attempted to load RFDetr model (using torch backend) with `resolution` parameter which "
                     f"is invalid - the model required positive value divisible by 56. Make sure you used "
@@ -193,7 +194,7 @@ class RFDetrForObjectDetectionTorch(
                 dynamic_spatial_size_supported=True,
                 dynamic_spatial_size_mode=DivisiblePadding(
                     type="pad-to-be-divisible",
-                    value=56,
+                    value=divisibility,
                 ),
                 color_mode=ColorMode.BGR,
                 resize_mode=ResizeMode.STRETCH_TO,
