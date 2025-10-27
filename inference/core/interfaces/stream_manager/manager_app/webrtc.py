@@ -2,8 +2,8 @@ import asyncio
 import datetime
 import json
 import logging
-import time
 import multiprocessing
+import time
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import cv2 as cv
@@ -639,6 +639,7 @@ class VideoTransformTrackWithLoop(VideoStreamTrack):
             av_logging.set_libav_level(av_logging.ERROR)
             self._av_logging_set = True
 
+        t_recv = time.time()
         frame = None
         while self.track._queue.qsize() > 0:
             frame: VideoFrame = await self.track.recv()
@@ -646,6 +647,7 @@ class VideoTransformTrackWithLoop(VideoStreamTrack):
             frame: VideoFrame = await self.track.recv()
 
         self._received_frames += 1
+        t_inference = time.time()
         loop = asyncio.get_running_loop()
         np_image = await loop.run_in_executor(
             None,
@@ -655,10 +657,12 @@ class VideoTransformTrackWithLoop(VideoStreamTrack):
             self._inference_pipeline,
             self._stream_output,
         )
+        print(f"inference: {time.time() - t_inference}")
 
         new_frame = VideoFrame.from_ndarray(np_image, format="bgr24")
         new_frame.pts = frame.pts
         new_frame.time_base = frame.time_base
+        print(f"recv: {time.time() - t_recv}")
         return new_frame
 
 
@@ -715,9 +719,8 @@ async def init_rtc_peer_connection_with_loop(
     @peer_connection.on("track")
     def on_track(track: RemoteStreamTrack):
         logger.info("track received")
-        # can be called with buffered=False
-        relay.subscribe(track)
-        video_transform_track.set_track(track=track)
+        # `relay.subscribe` can be called with buffered=False
+        video_transform_track.set_track(track=relay.subscribe(track))
         peer_connection.addTrack(video_transform_track)
 
     @peer_connection.on("connectionstatechange")
@@ -761,15 +764,6 @@ def rtc_peer_connection_process(
     data_output: Optional[str] = None,
     stream_output: Optional[str] = None,
 ):
-    import torch
-
-    logger.info("###############################################")
-    logger.info("torch.cuda.is_available(): %s", torch.cuda.is_available())
-    logger.info("torch.cuda.device_count(): %s", torch.cuda.device_count())
-    logger.info("torch.cuda.current_device(): %s", torch.cuda.current_device())
-    logger.info("torch.cuda.get_device_name(0): %s", torch.cuda.get_device_name(0))
-    logger.info("###############################################")
-
     def send_answer(obj):
         answer_conn.send(obj)
         answer_conn.close()
@@ -823,6 +817,11 @@ if modal is not None and WEBRTC_MODAL_TOKEN_ID and WEBRTC_MODAL_TOKEN_SECRET:
         scaledown_window=WEBRTC_MODAL_FUNCTION_SCALEDOWN_WINDOW,
         timeout=WEBRTC_MODAL_FUNCTION_TIME_LIMIT,
         enable_memory_snapshot=WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT,
+        experimental_options=(
+            {"enable_gpu_snapshot": True}
+            if WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT
+            else {}
+        ),
         gpu=WEBRTC_MODAL_FUNCTION_GPU,
         max_inputs=WEBRTC_MODAL_FUNCTION_MAX_INPUTS,
         env={
