@@ -3,7 +3,7 @@ import datetime
 import json
 import logging
 import time
-from multiprocessing import Pipe, Process
+import multiprocessing
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import cv2 as cv
@@ -964,8 +964,9 @@ async def start_worker(
         )
         return result
     else:
-        parent_conn, child_conn = Pipe(duplex=False)
-        p = Process(
+        ctx = multiprocessing.get_context("spawn")
+        parent_conn, child_conn = ctx.Pipe(duplex=False)
+        p = ctx.Process(
             target=rtc_peer_connection_process,
             kwargs={
                 "offer_sdp": webrtc_offer.sdp,
