@@ -640,11 +640,7 @@ class VideoTransformTrackWithLoop(VideoStreamTrack):
             self._av_logging_set = True
 
         t_recv = time.time()
-        frame = None
-        while self.track._queue.qsize() > 0:
-            frame: VideoFrame = await self.track.recv()
-        if frame is None:
-            frame: VideoFrame = await self.track.recv()
+        frame: VideoFrame = await self.track.recv()
 
         self._received_frames += 1
         t_inference = time.time()
@@ -687,6 +683,7 @@ async def init_rtc_peer_connection_with_loop(
     send_answer: Callable[[Any], None],
     workflow_configuration: WorkflowConfiguration,
     api_key: str,
+    realtime_processing: bool,
     webrtc_turn_config: Optional[WebRTCTURNConfig] = None,
     asyncio_loop: Optional[asyncio.AbstractEventLoop] = None,
     data_output: Optional[str] = None,
@@ -720,7 +717,11 @@ async def init_rtc_peer_connection_with_loop(
     def on_track(track: RemoteStreamTrack):
         logger.info("track received")
         # `relay.subscribe` can be called with buffered=False
-        video_transform_track.set_track(track=relay.subscribe(track))
+        video_transform_track.set_track(
+            track=relay.subscribe(
+                track, buffered=False if realtime_processing else True
+            )
+        )
         peer_connection.addTrack(video_transform_track)
 
     @peer_connection.on("connectionstatechange")
@@ -760,6 +761,7 @@ def rtc_peer_connection_process(
     turn_credential: str,
     workflow_configuration: WorkflowConfiguration,
     api_key: str,
+    realtime_processing: bool,
     answer_conn=None,
     data_output: Optional[str] = None,
     stream_output: Optional[str] = None,
@@ -781,6 +783,7 @@ def rtc_peer_connection_process(
             api_key=api_key,
             data_output=data_output,
             stream_output=stream_output,
+            realtime_processing=realtime_processing,
         )
     )
 
@@ -865,6 +868,7 @@ if modal is not None and WEBRTC_MODAL_TOKEN_ID and WEBRTC_MODAL_TOKEN_SECRET:
         q: modal.Queue,
         workflow_configuration_dict: Dict[str, Any],
         api_key: str,
+        realtime_processing: bool,
         data_output: Optional[str] = None,
         stream_output: Optional[str] = None,
     ):
@@ -890,6 +894,7 @@ if modal is not None and WEBRTC_MODAL_TOKEN_ID and WEBRTC_MODAL_TOKEN_SECRET:
                 api_key=api_key,
                 data_output=data_output,
                 stream_output=stream_output,
+                realtime_processing=realtime_processing,
             )
         )
 
@@ -897,6 +902,7 @@ if modal is not None and WEBRTC_MODAL_TOKEN_ID and WEBRTC_MODAL_TOKEN_SECRET:
         webrtc_offer: WebRTCOffer,
         workflow_configuration_dict: Dict[str, Any],
         api_key: str,
+        realtime_processing: bool,
         webrtc_turn_config: Optional[WebRTCTURNConfig] = None,
         data_output: Optional[str] = None,
         stream_output: Optional[str] = None,
@@ -936,6 +942,7 @@ if modal is not None and WEBRTC_MODAL_TOKEN_ID and WEBRTC_MODAL_TOKEN_SECRET:
                 api_key=api_key,
                 data_output=data_output,
                 stream_output=stream_output,
+                realtime_processing=realtime_processing,
             )
             answer = q.get(block=True, timeout=WEBRTC_MODAL_RESPONSE_TIMEOUT)
             return None, answer
@@ -945,6 +952,7 @@ async def start_worker(
     webrtc_offer: WebRTCOffer,
     workflow_configuration: WorkflowConfiguration,
     api_key: str,
+    realtime_processing: bool,
     data_output: Optional[str] = None,
     stream_output: Optional[str] = None,
     webrtc_turn_config: Optional[WebRTCTURNConfig] = None,
@@ -978,6 +986,7 @@ async def start_worker(
                 "api_key": api_key,
                 "data_output": data_output,
                 "stream_output": stream_output,
+                "realtime_processing": realtime_processing,
             },
             daemon=False,
         )

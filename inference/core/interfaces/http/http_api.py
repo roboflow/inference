@@ -1442,6 +1442,7 @@ class HttpInterface(BaseInterface):
                 api_key=request.api_key,
                 data_output=data_output,
                 stream_output=stream_output,
+                realtime_processing=request.webrtc_realtime_processing,
             )
             logger.debug("Returning initialise webrtc inference pipeline response")
             return InitializeWebRTCResponse(
