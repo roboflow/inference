@@ -968,6 +968,7 @@ async def start_worker(
             webrtc_offer,
             workflow_configuration.model_dump(),
             api_key,
+            realtime_processing,
             webrtc_turn_config,
             data_output,
             stream_output,
