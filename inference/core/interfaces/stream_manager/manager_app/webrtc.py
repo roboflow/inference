@@ -825,6 +825,7 @@ if modal is not None and WEBRTC_MODAL_TOKEN_ID and WEBRTC_MODAL_TOKEN_SECRET:
         experimental_options=(
             {"enable_gpu_snapshot": True}
             if WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT
+            and WEBRTC_MODAL_FUNCTION_GPU
             else {}
         ),
         gpu=WEBRTC_MODAL_FUNCTION_GPU,
