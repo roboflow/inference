@@ -4,7 +4,7 @@ from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
-from inference_exp import Detections, ObjectDetectionModel
+from inference_exp import InstanceDetections, InstanceSegmentationModel
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
 from inference_exp.errors import (
@@ -25,6 +25,9 @@ from inference_exp.models.common.roboflow.model_packages import (
     parse_class_names_file,
     parse_inference_config,
 )
+from inference_exp.models.common.roboflow.post_processing import (
+    align_instance_segmentation_results,
+)
 from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
@@ -32,16 +35,15 @@ from inference_exp.models.rfdetr.class_remapping import (
     ClassesReMapping,
     prepare_class_remapping,
 )
-from inference_exp.models.rfdetr.common import parse_model_type
+from inference_exp.models.rfdetr.common import (
+    parse_model_type,
+    post_process_instance_segmentation_results,
+)
 from inference_exp.models.rfdetr.default_labels import resolve_labels
 from inference_exp.models.rfdetr.post_processor import PostProcess
 from inference_exp.models.rfdetr.rfdetr_base_pytorch import (
     LWDETR,
-    RFDETRBaseConfig,
-    RFDETRLargeConfig,
-    RFDETRMediumConfig,
-    RFDETRNanoConfig,
-    RFDETRSmallConfig,
+    RFDETRSegPreviewConfig,
     build_model,
 )
 
@@ -51,21 +53,16 @@ except:
     pass
 
 CONFIG_FOR_MODEL_TYPE = {
-    "rfdetr-nano": RFDETRNanoConfig,
-    "rfdetr-small": RFDETRSmallConfig,
-    "rfdetr-medium": RFDETRMediumConfig,
-    "rfdetr-base": RFDETRBaseConfig,
-    "rfdetr-large": RFDETRLargeConfig,
-}
-
-RESIZE_MODES_TO_REVERT_PADDING = {
-    ResizeMode.LETTERBOX,
-    ResizeMode.LETTERBOX_REFLECT_EDGES,
+    "rfdetr-seg-preview": RFDETRSegPreviewConfig,
 }
 
 
-class RFDetrForObjectDetectionTorch(
-    (ObjectDetectionModel[torch.Tensor, PreProcessingMetadata, dict])
+class RFDetrForInstanceSegmentationTorch(
+    InstanceSegmentationModel[
+        torch.Tensor,
+        PreProcessingMetadata,
+        dict,
+    ]
 ):
 
     @classmethod
@@ -77,7 +74,7 @@ class RFDetrForObjectDetectionTorch(
         labels: Optional[Union[str, List[str]]] = None,
         resolution: Optional[int] = None,
         **kwargs,
-    ) -> "RFDetrForObjectDetectionTorch":
+    ) -> "RFDetrForInstanceSegmentationTorch":
         if os.path.isfile(model_name_or_path):
             return cls.from_checkpoint_file(
                 checkpoint_path=model_name_or_path,
@@ -348,6 +345,7 @@ class RFDetrForObjectDetectionTorch(
                 predictions = {
                     "pred_logits": predictions[1],
                     "pred_boxes": predictions[0],
+                    "pred_masks": predictions[2],
                 }
             return predictions
 
@@ -357,109 +355,17 @@ class RFDetrForObjectDetectionTorch(
         pre_processing_meta: List[PreProcessingMetadata],
         threshold: float = 0.5,
         **kwargs,
-    ) -> List[Detections]:
-        if (
-            self._inference_config.network_input.resize_mode
-            in RESIZE_MODES_TO_REVERT_PADDING
-        ):
-            un_padding_results = []
-            for out_box_tensor, image_metadata in zip(
-                model_results["pred_boxes"], pre_processing_meta
-            ):
-                box_center_offsets = torch.as_tensor(  # bboxes in format cxcywh now, so only cx, cy to be pushed
-                    [
-                        image_metadata.pad_left / image_metadata.inference_size.width,
-                        image_metadata.pad_top / image_metadata.inference_size.height,
-                        0.0,
-                        0.0,
-                    ],
-                    dtype=out_box_tensor.dtype,
-                    device=out_box_tensor.device,
-                )
-                ox_padding = (
-                    image_metadata.pad_left + image_metadata.pad_right
-                ) / image_metadata.inference_size.width
-                oy_padding = (
-                    image_metadata.pad_top + image_metadata.pad_bottom
-                ) / image_metadata.inference_size.height
-                box_wh_offsets = torch.as_tensor(  # bboxes in format cxcywh now, so only cx, cy to be pushed
-                    [
-                        1.0 - ox_padding,
-                        1.0 - oy_padding,
-                        1.0 - ox_padding,
-                        1.0 - oy_padding,
-                    ],
-                    dtype=out_box_tensor.dtype,
-                    device=out_box_tensor.device,
-                )
-                out_box_tensor = (out_box_tensor - box_center_offsets) / box_wh_offsets
-                un_padding_results.append(out_box_tensor)
-            model_results["pred_boxes"] = torch.stack(un_padding_results, dim=0)
-        if self._inference_config.network_input.resize_mode is ResizeMode.CENTER_CROP:
-            orig_sizes = [
-                (
-                    round(e.inference_size.height / e.scale_height),
-                    round(e.inference_size.width / e.scale_width),
-                )
-                for e in pre_processing_meta
-            ]
-        else:
-            orig_sizes = [
-                (e.size_after_pre_processing.height, e.size_after_pre_processing.width)
-                for e in pre_processing_meta
-            ]
-        target_sizes = torch.tensor(orig_sizes, device=self._device)
-        results = self._post_processor(model_results, target_sizes=target_sizes)
-        detections_list = []
-        for image_result, image_metadata in zip(results, pre_processing_meta):
-            scores = image_result["scores"]
-            labels = image_result["labels"]
-            boxes = image_result["boxes"]
-            if self._classes_re_mapping is not None:
-                remapping_mask = torch.isin(
-                    labels, self._classes_re_mapping.remaining_class_ids
-                )
-                scores = scores[remapping_mask]
-                labels = self._classes_re_mapping.class_mapping[labels[remapping_mask]]
-                boxes = boxes[remapping_mask]
-            keep = scores > threshold
-            scores = scores[keep]
-            labels = labels[keep]
-            boxes = boxes[keep]
-            if (
-                self._inference_config.network_input.resize_mode
-                is ResizeMode.CENTER_CROP
-            ):
-                offsets = torch.as_tensor(
-                    [
-                        image_metadata.pad_left,
-                        image_metadata.pad_top,
-                        image_metadata.pad_left,
-                        image_metadata.pad_top,
-                    ],
-                    dtype=boxes.dtype,
-                    device=boxes.device,
-                )
-                boxes[:, :4].sub_(offsets)
-            if (
-                image_metadata.static_crop_offset.offset_x != 0
-                or image_metadata.static_crop_offset.offset_y != 0
-            ):
-                static_crop_offsets = torch.as_tensor(
-                    [
-                        image_metadata.static_crop_offset.offset_x,
-                        image_metadata.static_crop_offset.offset_y,
-                        image_metadata.static_crop_offset.offset_x,
-                        image_metadata.static_crop_offset.offset_y,
-                    ],
-                    dtype=boxes.dtype,
-                    device=boxes.device,
-                )
-                boxes[:, :4].add_(static_crop_offsets)
-            detections = Detections(
-                xyxy=boxes.round().int(),
-                confidence=scores,
-                class_id=labels.int(),
-            )
-            detections_list.append(detections)
-        return detections_list
+    ) -> List[InstanceDetections]:
+        bboxes, logits, masks = (
+            model_results["pred_boxes"],
+            model_results["pred_logits"],
+            model_results["pred_masks"],
+        )
+        return post_process_instance_segmentation_results(
+            bboxes=bboxes,
+            logits=logits,
+            masks=masks,
+            pre_processing_meta=pre_processing_meta,
+            threshold=threshold,
+            classes_re_mapping=self._classes_re_mapping,
+        )
