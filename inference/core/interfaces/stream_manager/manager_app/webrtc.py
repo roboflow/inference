@@ -761,6 +761,15 @@ def rtc_peer_connection_process(
     data_output: Optional[str] = None,
     stream_output: Optional[str] = None,
 ):
+    import torch
+
+    logger.info("###############################################")
+    logger.info("torch.cuda.is_available(): %s", torch.cuda.is_available())
+    logger.info("torch.cuda.device_count(): %s", torch.cuda.device_count())
+    logger.info("torch.cuda.current_device(): %s", torch.cuda.current_device())
+    logger.info("torch.cuda.get_device_name(0): %s", torch.cuda.get_device_name(0))
+    logger.info("###############################################")
+
     def send_answer(obj):
         answer_conn.send(obj)
         answer_conn.close()
@@ -893,14 +902,6 @@ if modal is not None and WEBRTC_MODAL_TOKEN_ID and WEBRTC_MODAL_TOKEN_SECRET:
         data_output: Optional[str] = None,
         stream_output: Optional[str] = None,
     ):
-        import torch
-
-        logger.info("###############################################")
-        logger.info("torch.cuda.is_available(): %s", torch.cuda.is_available())
-        logger.info("torch.cuda.device_count(): %s", torch.cuda.device_count())
-        logger.info("torch.cuda.current_device(): %s", torch.cuda.current_device())
-        logger.info("torch.cuda.get_device_name(0): %s", torch.cuda.get_device_name(0))
-        logger.info("###############################################")
         # https://modal.com/docs/reference/modal.Client#from_credentials
         client = modal.Client.from_credentials(
             token_id=WEBRTC_MODAL_TOKEN_ID,
