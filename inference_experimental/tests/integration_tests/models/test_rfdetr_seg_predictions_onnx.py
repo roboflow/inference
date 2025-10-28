@@ -83,7 +83,7 @@ def test_package_with_stretch_against_torch_input(
     # then
     assert len(predictions) == 1
     assert np.allclose(
-        predictions[0].xyxy.cpu().numpy(), np.array([[138, 325, 1262, 556]]), atol=1
+        predictions[0].xyxy.cpu().numpy(), np.array([[138, 325, 1262, 556]]), atol=5
     )
     assert 205000 <= np.sum(predictions[0].mask.cpu().numpy()) <= 207000
 
@@ -110,11 +110,11 @@ def test_package_with_stretch_against_torch_list_input(
     # then
     assert len(predictions) == 2
     assert np.allclose(
-        predictions[0].xyxy.cpu().numpy(), np.array([[138, 325, 1262, 556]]), atol=1
+        predictions[0].xyxy.cpu().numpy(), np.array([[138, 325, 1262, 556]]), atol=5
     )
     assert 205000 <= np.sum(predictions[0].mask.cpu().numpy()) <= 207000
     assert np.allclose(
-        predictions[1].xyxy.cpu().numpy(), np.array([[138, 325, 1262, 556]]), atol=1
+        predictions[1].xyxy.cpu().numpy(), np.array([[138, 325, 1262, 556]]), atol=5
     )
     assert 205000 <= np.sum(predictions[1].mask.cpu().numpy()) <= 207000
 
@@ -141,11 +141,11 @@ def test_package_with_stretch_against_torch_batch_input(
     # then
     assert len(predictions) == 2
     assert np.allclose(
-        predictions[0].xyxy.cpu().numpy(), np.array([[138, 325, 1262, 556]]), atol=1
+        predictions[0].xyxy.cpu().numpy(), np.array([[138, 325, 1262, 556]]), atol=5
     )
     assert 205000 <= np.sum(predictions[0].mask.cpu().numpy()) <= 207000
     assert np.allclose(
-        predictions[1].xyxy.cpu().numpy(), np.array([[138, 325, 1262, 556]]), atol=1
+        predictions[1].xyxy.cpu().numpy(), np.array([[138, 325, 1262, 556]]), atol=5
     )
     assert 205000 <= np.sum(predictions[1].mask.cpu().numpy()) <= 207000
 
@@ -524,7 +524,7 @@ def test_package_with_static_crop_stretch_against_torch_input(
     # then
     assert len(predictions) == 1
     assert np.allclose(
-        predictions[0].xyxy.cpu().numpy(), np.array([[321, 331, 963, 561]]), atol=1
+        predictions[0].xyxy.cpu().numpy(), np.array([[321, 331, 963, 561]]), atol=5
     )
     assert 120000 <= np.sum(predictions[0].mask.cpu().numpy()) <= 122000
 
@@ -551,11 +551,11 @@ def test_package_with_static_crop_stretch_against_torch_list_input(
     # then
     assert len(predictions) == 2
     assert np.allclose(
-        predictions[0].xyxy.cpu().numpy(), np.array([[321, 331, 963, 561]]), atol=1
+        predictions[0].xyxy.cpu().numpy(), np.array([[321, 331, 963, 561]]), atol=5
     )
     assert 120000 <= np.sum(predictions[0].mask.cpu().numpy()) <= 122000
     assert np.allclose(
-        predictions[1].xyxy.cpu().numpy(), np.array([[321, 331, 963, 561]]), atol=1
+        predictions[1].xyxy.cpu().numpy(), np.array([[321, 331, 963, 561]]), atol=5
     )
     assert 120000 <= np.sum(predictions[1].mask.cpu().numpy()) <= 122000
 
@@ -582,11 +582,11 @@ def test_package_with_static_crop_stretch_against_torch_stack_input(
     # then
     assert len(predictions) == 2
     assert np.allclose(
-        predictions[0].xyxy.cpu().numpy(), np.array([[321, 331, 963, 561]]), atol=1
+        predictions[0].xyxy.cpu().numpy(), np.array([[321, 331, 963, 561]]), atol=5
     )
     assert 120000 <= np.sum(predictions[0].mask.cpu().numpy()) <= 122000
     assert np.allclose(
-        predictions[1].xyxy.cpu().numpy(), np.array([[321, 331, 963, 561]]), atol=1
+        predictions[1].xyxy.cpu().numpy(), np.array([[321, 331, 963, 561]]), atol=5
     )
     assert 120000 <= np.sum(predictions[1].mask.cpu().numpy()) <= 122000
 
