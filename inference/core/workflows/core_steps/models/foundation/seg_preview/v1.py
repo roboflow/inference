@@ -1,20 +1,20 @@
-from typing import List, Literal, Optional, Type, Union, Any
 from types import SimpleNamespace
+from typing import Any, List, Literal, Optional, Type, Union
 
 import numpy as np
-from pydantic import ConfigDict, Field
 import requests
+from pydantic import ConfigDict, Field
 
-from inference.core.env import (
-    SEG_PREVIEW_ENDPOINT,
-    ROBOFLOW_INTERNAL_SERVICE_NAME,
-    ROBOFLOW_INTERNAL_SERVICE_SECRET,
-)
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
     InstanceSegmentationInferenceResponse,
     InstanceSegmentationPrediction,
     Point,
+)
+from inference.core.env import (
+    ROBOFLOW_INTERNAL_SERVICE_NAME,
+    ROBOFLOW_INTERNAL_SERVICE_SECRET,
+    SEG_PREVIEW_ENDPOINT,
 )
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
@@ -41,7 +41,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-
 
 DETECTIONS_CLASS_NAME_FIELD = "class_name"
 DETECTION_ID_FIELD = "detection_id"
