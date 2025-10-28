@@ -401,6 +401,10 @@ DISABLE_SAM2_LOGITS_CACHE = str2bool(os.getenv("DISABLE_SAM2_LOGITS_CACHE", Fals
 SAM_VERSION_ID = os.getenv("SAM_VERSION_ID", "vit_h")
 SAM2_VERSION_ID = os.getenv("SAM2_VERSION_ID", "hiera_large")
 
+SEG_PREVIEW_ENDPOINT = os.getenv(
+    "SEG_PREVIEW_ENDPOINT", "http://127.0.0.1:9001/seg-preview"
+)
+
 # EasyOCR version ID, default is "english_g2"
 EASYOCR_VERSION_ID = os.getenv("EASYOCR_VERSION_ID", "english_g2")
 
