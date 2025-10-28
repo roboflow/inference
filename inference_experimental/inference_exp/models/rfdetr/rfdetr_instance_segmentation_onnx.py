@@ -3,7 +3,7 @@ from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
-from inference_exp import Detections, ObjectDetectionModel
+from inference_exp import InstanceDetections, InstanceSegmentationModel
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
 from inference_exp.errors import EnvironmentConfigurationError, MissingDependencyError
@@ -19,15 +19,15 @@ from inference_exp.models.common.roboflow.model_packages import (
     parse_class_names_file,
     parse_inference_config,
 )
-from inference_exp.models.common.roboflow.post_processing import (
-    rescale_image_detections,
-)
 from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
 from inference_exp.models.rfdetr.class_remapping import (
     ClassesReMapping,
     prepare_class_remapping,
+)
+from inference_exp.models.rfdetr.common import (
+    post_process_instance_segmentation_results,
 )
 from inference_exp.utils.onnx_introspection import get_selected_onnx_execution_providers
 
@@ -48,12 +48,12 @@ except ImportError as import_error:
     ) from import_error
 
 
-class RFDetrForObjectDetectionONNX(
-    (
-        ObjectDetectionModel[
-            torch.Tensor, PreProcessingMetadata, Tuple[torch.Tensor, torch.Tensor]
-        ]
-    )
+class RFDetrForInstanceSegmentationOnnx(
+    InstanceSegmentationModel[
+        torch.Tensor,
+        PreProcessingMetadata,
+        Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+    ]
 ):
 
     @classmethod
@@ -64,7 +64,7 @@ class RFDetrForObjectDetectionONNX(
         default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
         **kwargs,
-    ) -> "RFDetrForObjectDetectionONNX":
+    ) -> "RFDetrForInstanceSegmentationOnnx":
         if onnx_execution_providers is None:
             onnx_execution_providers = get_selected_onnx_execution_providers()
         if not onnx_execution_providers:
@@ -158,6 +158,7 @@ class RFDetrForObjectDetectionONNX(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
+        image_size: Optional[Tuple[int, int]] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         return pre_process_network_input(
@@ -166,73 +167,34 @@ class RFDetrForObjectDetectionONNX(
             network_input=self._inference_config.network_input,
             target_device=self._device,
             input_color_format=input_color_format,
+            image_size_wh=image_size,
         )
 
     def forward(
         self, pre_processed_images: torch.Tensor, **kwargs
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         with self._session_thread_lock:
-            bboxes, logits = run_session_with_batch_size_limit(
+            bboxes, logits, masks = run_session_with_batch_size_limit(
                 session=self._session,
                 inputs={self._input_name: pre_processed_images},
                 min_batch_size=self._min_batch_size,
                 max_batch_size=self._max_batch_size,
             )
-            return bboxes, logits
+            return bboxes, logits, masks
 
     def post_process(
         self,
-        model_results: Tuple[torch.Tensor, torch.Tensor],
+        model_results: Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
         pre_processing_meta: List[PreProcessingMetadata],
         threshold: float = 0.5,
         **kwargs,
-    ) -> List[Detections]:
-        bboxes, logits = model_results
-        logits_sigmoid = torch.nn.functional.sigmoid(logits)
-        results = []
-        for image_bboxes, image_logits, image_meta in zip(
-            bboxes, logits_sigmoid, pre_processing_meta
-        ):
-            confidence, top_classes = image_logits.max(dim=1)
-            confidence_mask = confidence > threshold
-            confidence = confidence[confidence_mask]
-            top_classes = top_classes[confidence_mask]
-            selected_boxes = image_bboxes[confidence_mask]
-            confidence, sorted_indices = torch.sort(confidence, descending=True)
-            top_classes = top_classes[sorted_indices]
-            selected_boxes = selected_boxes[sorted_indices]
-            if self._classes_re_mapping is not None:
-                remapping_mask = torch.isin(
-                    top_classes, self._classes_re_mapping.remaining_class_ids
-                )
-                top_classes = self._classes_re_mapping.class_mapping[
-                    top_classes[remapping_mask]
-                ]
-                selected_boxes = selected_boxes[remapping_mask]
-                confidence = confidence[remapping_mask]
-            cxcy = selected_boxes[:, :2]
-            wh = selected_boxes[:, 2:]
-            xy_min = cxcy - 0.5 * wh
-            xy_max = cxcy + 0.5 * wh
-            selected_boxes_xyxy_pct = torch.cat([xy_min, xy_max], dim=-1)
-            inference_size_hwhw = torch.tensor(
-                [
-                    image_meta.inference_size.height,
-                    image_meta.inference_size.width,
-                    image_meta.inference_size.height,
-                    image_meta.inference_size.width,
-                ],
-                device=self._device,
-            )
-            selected_boxes_xyxy = selected_boxes_xyxy_pct * inference_size_hwhw
-            selected_boxes_xyxy = rescale_image_detections(
-                image_detections=selected_boxes_xyxy,
-                image_metadata=image_meta,
-            )
-            detections = Detections(
-                xyxy=selected_boxes_xyxy.round().int(),
-                confidence=confidence,
-                class_id=top_classes.int(),
-            )
-            results.append(detections)
-        return results
+    ) -> List[InstanceDetections]:
+        bboxes, logits, masks = model_results
+        return post_process_instance_segmentation_results(
+            bboxes=bboxes,
+            logits=logits,
+            masks=masks,
+            pre_processing_meta=pre_processing_meta,
+            threshold=threshold,
+            classes_re_mapping=self._classes_re_mapping,
+        )
