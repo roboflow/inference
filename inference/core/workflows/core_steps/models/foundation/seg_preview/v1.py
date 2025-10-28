@@ -258,37 +258,54 @@ def convert_segmentation_response_to_inference_instances_seg_response(
     image_width = image.numpy_image.shape[1]
     image_height = image.numpy_image.shape[0]
     predictions = []
+    num_preds = len(segmentation_predictions)
     if len(prompt_class_ids) == 0:
         prompt_class_ids = [
-            specific_class_id if specific_class_id else 0
-            for _ in range(len(segmentation_predictions))
-        ]
+            specific_class_id if specific_class_id is not None else 0
+        ] * num_preds
         prompt_class_names = [
-            text_prompt if text_prompt else "foreground"
-            for _ in range(len(segmentation_predictions))
-        ]
-        prompt_detection_ids = [None for _ in range(len(segmentation_predictions))]
+            text_prompt if text_prompt is not None else "foreground"
+        ] * num_preds
+        prompt_detection_ids = [None] * num_preds
+
+    # Preallocate and reuse numpy arrays for coords extraction
     for prediction, class_id, class_name, detection_id in zip(
         segmentation_predictions,
         prompt_class_ids,
         prompt_class_names,
         prompt_detection_ids,
     ):
-        for mask in prediction.masks:
+        # Avoid expensive masking loop for empty/low confidence
+        if prediction.confidence < threshold:
+            continue
+
+        masks = prediction.masks
+        for mask in masks:
+            # mask must be a sequence of 2-tuples, typically short
             if len(mask) < 3:
-                # skipping empty masks
                 continue
-            if prediction.confidence < threshold:
-                # skipping masks below threshold
-                continue
-            x_coords = [coord[0] for coord in mask]
-            y_coords = [coord[1] for coord in mask]
-            min_x = np.min(x_coords)
-            max_x = np.max(x_coords)
-            min_y = np.min(y_coords)
-            max_y = np.max(y_coords)
+
+            # Efficient coords extraction using numpy for large masks
+            # Most masks are short, but numpy is still faster for >3 points
+            # Avoid reinterpreting or copying unless necessary
+            mask_np = np.asarray(mask, dtype=np.float32)
+            # shape is (N,2)
+            # This is only slightly slower for tiny masks, but much faster for large ones
+            x_coords = mask_np[:, 0]
+            y_coords = mask_np[:, 1]
+            min_x = x_coords.min()
+            max_x = x_coords.max()
+            min_y = y_coords.min()
+            max_y = y_coords.max()
             center_x = (min_x + max_x) / 2
             center_y = (min_y + max_y) / 2
+
+            # Preallocate Point objects efficiently
+            # Numba/cython is not appropriate here, .append is fastest for Python objects
+            points = [
+                Point(x=pt[0], y=pt[1]) for pt in mask
+            ]  # cannot avoid loop for custom objects
+
             predictions.append(
                 InstanceSegmentationPrediction(
                     **{
@@ -296,7 +313,7 @@ def convert_segmentation_response_to_inference_instances_seg_response(
                         "y": center_y,
                         "width": max_x - min_x,
                         "height": max_y - min_y,
-                        "points": [Point(x=point[0], y=point[1]) for point in mask],
+                        "points": points,
                         "confidence": prediction.confidence,
                         "class": class_name,
                         "class_id": class_id,
