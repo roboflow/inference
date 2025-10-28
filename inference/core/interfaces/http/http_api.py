@@ -1419,20 +1419,20 @@ class HttpInterface(BaseInterface):
                 return WorkflowValidationStatus(status="ok")
 
         @app.post(
-            "/inference_pipelines/initialise_webrtc",
+            "/initialise_webrtc",
             response_model=InitializeWebRTCResponse,
-            summary="[EXPERIMENTAL] Establishes WebRTC peer connection and starts new InferencePipeline consuming video track",
-            description="[EXPERIMENTAL] Establishes WebRTC peer connection and starts new InferencePipeline consuming video track",
+            summary="[EXPERIMENTAL] Establishes WebRTC peer connection and processes video stream in spawned process or modal function",
+            description="[EXPERIMENTAL] Establishes WebRTC peer connection and processes video stream in spawned process or modal function",
         )
         @with_route_exceptions_async
-        async def initialise_webrtc_inference_pipeline(
+        async def initialise_webrtc(
             request: InitialiseWebRTCPipelinePayload,
         ) -> InitializeWebRTCResponse:
-            logger.debug("Received initialise webrtc inference pipeline request")
+            logger.debug("Received initialise_webrtc request")
             *_, answer = await start_worker(
                 webrtc_request=request,
             )
-            logger.debug("Returning initialise webrtc inference pipeline response")
+            logger.debug("Returning initialise_webrtc response")
             return InitializeWebRTCResponse(
                 context=CommandContext(),
                 status=OperationStatus.SUCCESS,
