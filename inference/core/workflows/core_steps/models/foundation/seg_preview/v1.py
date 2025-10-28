@@ -42,6 +42,13 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
+_OUTPUTS = [
+    OutputDefinition(
+        name="predictions",
+        kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND],
+    ),
+]
+
 
 DETECTIONS_CLASS_NAME_FIELD = "class_name"
 DETECTION_ID_FIELD = "detection_id"
@@ -93,12 +100,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
-        return [
-            OutputDefinition(
-                name="predictions",
-                kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND],
-            ),
-        ]
+        return _OUTPUTS
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
