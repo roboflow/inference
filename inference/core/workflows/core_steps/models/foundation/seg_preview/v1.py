@@ -5,7 +5,11 @@ import numpy as np
 from pydantic import ConfigDict, Field
 import requests
 
-from inference.core.env import SEG_PREVIEW_ENDPOINT
+from inference.core.env import (
+    SEG_PREVIEW_ENDPOINT,
+    ROBOFLOW_INTERNAL_SERVICE_NAME,
+    ROBOFLOW_INTERNAL_SERVICE_SECRET,
+)
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
     InstanceSegmentationInferenceResponse,
@@ -169,10 +173,20 @@ class SegPreviewBlockV1(WorkflowBlock):
             }
 
             try:
+                headers = {"Content-Type": "application/json"}
+                if ROBOFLOW_INTERNAL_SERVICE_NAME:
+                    headers["X-Roboflow-Internal-Service-Name"] = (
+                        ROBOFLOW_INTERNAL_SERVICE_NAME
+                    )
+                if ROBOFLOW_INTERNAL_SERVICE_SECRET:
+                    headers["X-Roboflow-Internal-Service-Secret"] = (
+                        ROBOFLOW_INTERNAL_SERVICE_SECRET
+                    )
+
                 response = requests.post(
                     f"{endpoint}?api_key={api_key}",
                     json=payload,
-                    headers={"Content-Type": "application/json"},
+                    headers=headers,
                     timeout=60,
                 )
                 response.raise_for_status()
