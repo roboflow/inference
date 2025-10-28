@@ -194,6 +194,7 @@ from inference.core.interfaces.stream_manager.api.entities import (
     CommandResponse,
     ConsumePipelineResponse,
     InferencePipelineStatusResponse,
+    InitializeWebRTCPipelineResponse,
     InitializeWebRTCResponse,
     ListPipelinesResponse,
 )
@@ -1428,21 +1429,8 @@ class HttpInterface(BaseInterface):
             request: InitialiseWebRTCPipelinePayload,
         ) -> InitializeWebRTCResponse:
             logger.debug("Received initialise webrtc inference pipeline request")
-            stream_output = None
-            if request.stream_output:
-                # TODO: UI sends None as stream_output for wildcard outputs
-                stream_output = request.stream_output[0] or ""
-            data_output = None
-            if request.data_output:
-                data_output = request.data_output[0]
             *_, answer = await start_worker(
-                webrtc_offer=request.webrtc_offer,
-                webrtc_turn_config=request.webrtc_turn_config,
-                workflow_configuration=request.processing_configuration,
-                api_key=request.api_key,
-                data_output=data_output,
-                stream_output=stream_output,
-                realtime_processing=request.webrtc_realtime_processing,
+                webrtc_request=request,
             )
             logger.debug("Returning initialise webrtc inference pipeline response")
             return InitializeWebRTCResponse(
@@ -1487,6 +1475,23 @@ class HttpInterface(BaseInterface):
                 return await self.stream_manager_client.initialise_pipeline(
                     initialisation_request=request
                 )
+
+            @app.post(
+                "/inference_pipelines/initialise_webrtc",
+                response_model=InitializeWebRTCPipelineResponse,
+                summary="[EXPERIMENTAL] Establishes WebRTC peer connection and starts new InferencePipeline consuming video track",
+                description="[EXPERIMENTAL] Establishes WebRTC peer connection and starts new InferencePipeline consuming video track",
+            )
+            @with_route_exceptions_async
+            async def initialise_webrtc_inference_pipeline(
+                request: InitialiseWebRTCPipelinePayload,
+            ) -> CommandResponse:
+                logger.debug("Received initialise webrtc inference pipeline request")
+                resp = await self.stream_manager_client.initialise_webrtc_pipeline(
+                    initialisation_request=request
+                )
+                logger.debug("Returning initialise webrtc inference pipeline response")
+                return resp
 
             @app.post(
                 "/inference_pipelines/{pipeline_id}/pause",
