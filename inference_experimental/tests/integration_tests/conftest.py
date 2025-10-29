@@ -41,6 +41,8 @@ PEOPLE_WALKING_IMAGE_URL = (
     "https://media.roboflow.com/inference/example-input-images/people-walking.jpg"
 )
 PEOPLE_WALKING_IMAGE_PATH = os.path.join(ASSETS_DIR, "people-walking.jpg")
+SNAKE_IMAGE_URL = "https://media.roboflow.com/inference/example-input-images/snake.jpg"
+SNAKE_IMAGE_PATH = os.path.join(ASSETS_DIR, "snake.jpg")
 
 
 def _download_if_not_exists(file_path: str, url: str, lock_timeout: int = 180) -> None:
@@ -176,3 +178,17 @@ def people_walking_image_torch() -> torch.Tensor:
         file_path=PEOPLE_WALKING_IMAGE_PATH, url=PEOPLE_WALKING_IMAGE_URL
     )
     return torchvision.io.read_image(PEOPLE_WALKING_IMAGE_PATH)
+
+
+@pytest.fixture(scope="function")
+def snake_image_numpy() -> np.ndarray:
+    _download_if_not_exists(file_path=SNAKE_IMAGE_PATH, url=SNAKE_IMAGE_URL)
+    image = cv2.imread(SNAKE_IMAGE_PATH)
+    assert image is not None, "Could not load test image"
+    return image
+
+
+@pytest.fixture(scope="function")
+def snake_image_torch() -> torch.Tensor:
+    _download_if_not_exists(file_path=SNAKE_IMAGE_PATH, url=SNAKE_IMAGE_URL)
+    return torchvision.io.read_image(SNAKE_IMAGE_PATH)

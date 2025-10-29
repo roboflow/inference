@@ -127,6 +127,19 @@ YOLOV8N_POSE_TORCHSCRIPT_STATIC_NMS_FUSED_STATIC_CROP_CENTER_CROP_PACKAGE_URL = 
 
 YOLOV8_CLS_ONNX_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8-cls-onnx-static-bs.zip"
 
+SNAKES_RFDETR_SEG_TORCH_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-seg-torch-stretch.zip"
+SNAKES_RFDETR_SEG_ONNX_STATIC_BS_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-seg-onnx-static-bs-stretch.zip"
+SNAKES_RFDETR_SEG_TORCH_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-seg-torch-letterbox.zip"
+SNAKES_RFDETR_SEG_ONNX_STATIC_BS_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-seg-onnx-static-bs-letterbox.zip"
+SNAKES_RFDETR_SEG_TORCH_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-seg-torch-center-crop.zip"
+SNAKES_RFDETR_SEG_ONNX_STATIC_BS_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-seg-onnx-static-bs-center-crop.zip"
+SNAKES_RFDETR_SEG_TORCH_STATIC_CROP_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-seg-torch-static-crop-stretch.zip"
+SNAKES_RFDETR_SEG_ONNX_STATIC_BS_STATIC_CROP_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-seg-onnx-static-bs-static-crop-stretch.zip"
+SNAKES_RFDETR_SEG_TORCH_STATIC_CROP_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-seg-torch-static-crop-letterbox.zip"
+SNAKES_RFDETR_SEG_ONNX_STATIC_BS_STATIC_CROP_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-seg-onnx-static-bs-static-crop-letterbox.zip"
+SNAKES_RFDETR_SEG_TORCH_STATIC_CROP_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-seg-torch-static-crop-center-crop.zip"
+SNAKES_RFDETR_SEG_ONNX_STATIC_BS_STATIC_CROP_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-seg-onnx-static-bs-static-crop-center-crop.zip"
+
 
 @pytest.fixture(scope="module")
 def original_clip_download_dir() -> str:
@@ -1014,4 +1027,100 @@ def asl_yolact_onnx_seg_static_bs_static_crop_stretch() -> str:
     return download_model_package(
         model_package_zip_url=COIN_COUNTING_YOLACT_ONNX_STATIC_BS_STATIC_CROP_STRETCH_URL,
         package_name="asl-yolact-onnx-static-bs-static_crop-stretch",
+    )
+
+
+@pytest.fixture(scope="module")
+def snakes_rfdetr_seg_torch_stretch_package() -> str:
+    return download_model_package(
+        model_package_zip_url=SNAKES_RFDETR_SEG_TORCH_STRETCH_URL,
+        package_name="snakes-rfdetr-seg-torch-stretch",
+    )
+
+
+@pytest.fixture(scope="module")
+def snakes_rfdetr_seg_onnx_static_bs_stretch_package() -> str:
+    return download_model_package(
+        model_package_zip_url=SNAKES_RFDETR_SEG_ONNX_STATIC_BS_STRETCH_URL,
+        package_name="snakes-rfdetr-seg-onnx-static-bs-stretch",
+    )
+
+
+@pytest.fixture(scope="module")
+def snakes_rfdetr_seg_torch_letterbox_package() -> str:
+    return download_model_package(
+        model_package_zip_url=SNAKES_RFDETR_SEG_TORCH_LETTERBOX_URL,
+        package_name="snakes-rfdetr-seg-torch-letterbox",
+    )
+
+
+@pytest.fixture(scope="module")
+def snakes_rfdetr_seg_onnx_static_bs_letterbox_package() -> str:
+    return download_model_package(
+        model_package_zip_url=SNAKES_RFDETR_SEG_ONNX_STATIC_BS_LETTERBOX_URL,
+        package_name="snakes-rfdetr-seg-onnx-static-bs-letterbox",
+    )
+
+
+@pytest.fixture(scope="module")
+def snakes_rfdetr_seg_torch_center_crop_package() -> str:
+    return download_model_package(
+        model_package_zip_url=SNAKES_RFDETR_SEG_TORCH_CENTER_CROP_URL,
+        package_name="snakes-rfdetr-seg-torch-center-crop",
+    )
+
+
+@pytest.fixture(scope="module")
+def snakes_rfdetr_seg_onnx_static_bs_center_crop_package() -> str:
+    return download_model_package(
+        model_package_zip_url=SNAKES_RFDETR_SEG_ONNX_STATIC_BS_CENTER_CROP_URL,
+        package_name="snakes-rfdetr-seg-onnx-static-bs-center-crop",
+    )
+
+
+@pytest.fixture(scope="module")
+def snakes_rfdetr_seg_torch_static_crop_stretch_package() -> str:
+    return download_model_package(
+        model_package_zip_url=SNAKES_RFDETR_SEG_TORCH_STATIC_CROP_STRETCH_URL,
+        package_name="snakes-rfdetr-seg-torch-static-crop-stretch",
+    )
+
+
+@pytest.fixture(scope="module")
+def snakes_rfdetr_seg_onnx_static_bs_static_crop_stretch_package() -> str:
+    return download_model_package(
+        model_package_zip_url=SNAKES_RFDETR_SEG_ONNX_STATIC_BS_STATIC_CROP_STRETCH_URL,
+        package_name="snakes-rfdetr-seg-onnx-static-bs-static-crop-stretch",
+    )
+
+
+@pytest.fixture(scope="module")
+def snakes_rfdetr_seg_torch_static_crop_letterbox_package() -> str:
+    return download_model_package(
+        model_package_zip_url=SNAKES_RFDETR_SEG_TORCH_STATIC_CROP_LETTERBOX_URL,
+        package_name="snakes-rfdetr-seg-torch-static-crop-letterbox",
+    )
+
+
+@pytest.fixture(scope="module")
+def snakes_rfdetr_seg_onnx_static_bs_static_crop_letterbox_package() -> str:
+    return download_model_package(
+        model_package_zip_url=SNAKES_RFDETR_SEG_ONNX_STATIC_BS_STATIC_CROP_LETTERBOX_URL,
+        package_name="snakes-rfdetr-seg-onnx-static-bs-static-crop-letterbox",
+    )
+
+
+@pytest.fixture(scope="module")
+def snakes_rfdetr_seg_torch_static_crop_center_crop_package() -> str:
+    return download_model_package(
+        model_package_zip_url=SNAKES_RFDETR_SEG_TORCH_STATIC_CROP_CENTER_CROP_URL,
+        package_name="snakes-rfdetr-seg-torch-center-static-crop-crop",
+    )
+
+
+@pytest.fixture(scope="module")
+def snakes_rfdetr_seg_onnx_static_bs_static_crop_center_crop_package() -> str:
+    return download_model_package(
+        model_package_zip_url=SNAKES_RFDETR_SEG_ONNX_STATIC_BS_STATIC_CROP_CENTER_CROP_URL,
+        package_name="snakes-rfdetr-seg-onnx-static-bs-static-crop-center-crop",
     )
