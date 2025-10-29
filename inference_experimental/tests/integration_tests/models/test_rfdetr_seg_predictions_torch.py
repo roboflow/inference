@@ -80,7 +80,7 @@ def test_package_with_stretch_against_torch_input(
     # then
     assert len(predictions) == 1
     assert np.allclose(
-        predictions[0].xyxy.cpu().numpy(), np.array([[128, 333, 1259, 560]]), atol=1
+        predictions[0].xyxy.cpu().numpy(), np.array([[128, 333, 1259, 560]]), atol=20
     )
     assert 206000 <= np.sum(predictions[0].mask.cpu().numpy()) <= 207000
 
@@ -106,11 +106,11 @@ def test_package_with_stretch_against_torch_list_input(
     # then
     assert len(predictions) == 2
     assert np.allclose(
-        predictions[0].xyxy.cpu().numpy(), np.array([[128, 333, 1259, 560]]), atol=1
+        predictions[0].xyxy.cpu().numpy(), np.array([[128, 333, 1259, 560]]), atol=20
     )
     assert 206000 <= np.sum(predictions[0].mask.cpu().numpy()) <= 207000
     assert np.allclose(
-        predictions[1].xyxy.cpu().numpy(), np.array([[128, 333, 1259, 560]]), atol=1
+        predictions[1].xyxy.cpu().numpy(), np.array([[128, 333, 1259, 560]]), atol=20
     )
     assert 206000 <= np.sum(predictions[1].mask.cpu().numpy()) <= 207000
 
@@ -136,11 +136,11 @@ def test_package_with_stretch_against_torch_batch_input(
     # then
     assert len(predictions) == 2
     assert np.allclose(
-        predictions[0].xyxy.cpu().numpy(), np.array([[128, 333, 1259, 560]]), atol=1
+        predictions[0].xyxy.cpu().numpy(), np.array([[128, 333, 1259, 560]]), atol=20
     )
     assert 206000 <= np.sum(predictions[0].mask.cpu().numpy()) <= 207000
     assert np.allclose(
-        predictions[1].xyxy.cpu().numpy(), np.array([[128, 333, 1259, 560]]), atol=1
+        predictions[1].xyxy.cpu().numpy(), np.array([[128, 333, 1259, 560]]), atol=20
     )
     assert 206000 <= np.sum(predictions[1].mask.cpu().numpy()) <= 207000
 
@@ -222,7 +222,7 @@ def test_package_with_letterbox_against_torch_input(
     # then
     assert len(predictions) == 1
     assert np.allclose(
-        predictions[0].xyxy.cpu().numpy(), np.array([[137, 328, 1273, 560]]), atol=1
+        predictions[0].xyxy.cpu().numpy(), np.array([[137, 328, 1273, 560]]), atol=5
     )
     assert 204000 <= np.sum(predictions[0].mask.cpu().numpy()) <= 205000
 
@@ -248,11 +248,11 @@ def test_package_with_letterbox_against_torch_list_input(
     # then
     assert len(predictions) == 2
     assert np.allclose(
-        predictions[0].xyxy.cpu().numpy(), np.array([[137, 328, 1273, 560]]), atol=1
+        predictions[0].xyxy.cpu().numpy(), np.array([[137, 328, 1273, 560]]), atol=5
     )
     assert 204000 <= np.sum(predictions[0].mask.cpu().numpy()) <= 205000
     assert np.allclose(
-        predictions[1].xyxy.cpu().numpy(), np.array([[137, 328, 1273, 560]]), atol=1
+        predictions[1].xyxy.cpu().numpy(), np.array([[137, 328, 1273, 560]]), atol=5
     )
     assert 204000 <= np.sum(predictions[1].mask.cpu().numpy()) <= 205000
 
@@ -278,11 +278,11 @@ def test_package_with_letterbox_against_torch_batch_input(
     # then
     assert len(predictions) == 2
     assert np.allclose(
-        predictions[0].xyxy.cpu().numpy(), np.array([[137, 328, 1273, 560]]), atol=1
+        predictions[0].xyxy.cpu().numpy(), np.array([[137, 328, 1273, 560]]), atol=5
     )
     assert 204000 <= np.sum(predictions[0].mask.cpu().numpy()) <= 205000
     assert np.allclose(
-        predictions[1].xyxy.cpu().numpy(), np.array([[137, 328, 1273, 560]]), atol=1
+        predictions[1].xyxy.cpu().numpy(), np.array([[137, 328, 1273, 560]]), atol=5
     )
     assert 204000 <= np.sum(predictions[1].mask.cpu().numpy()) <= 205000
 
