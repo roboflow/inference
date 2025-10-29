@@ -215,8 +215,18 @@ def manage_crops_metadata(
         detections.data[PARENT_COORDINATES_KEY] -= offset
     if ROOT_PARENT_COORDINATES_KEY in detections.data:
         detections.data[ROOT_PARENT_COORDINATES_KEY] -= offset
-    detections.data[IMAGE_DIMENSIONS_KEY] = np.array([dimensions] * len(detections))
-    detections.data[PARENT_ID_KEY] = np.array([parent_id] * len(detections))
+
+    # PRE-ALLOCATE ARRAYS for efficiency
+    num_detections = len(detections)
+    # np.full avoids creating a list only to pass it to np.array, which is costly for large num_detections
+    detections.data[IMAGE_DIMENSIONS_KEY] = np.full(
+        (num_detections, 2), dimensions, dtype=np.int32
+    )
+    # Use object dtype for non-numeric data, fill directly rather than creating intermediate list
+    arr_parent_ids = np.empty(num_detections, dtype=object)
+    arr_parent_ids.fill(parent_id)
+    detections.data[PARENT_ID_KEY] = arr_parent_ids
+
     return detections
 
 
