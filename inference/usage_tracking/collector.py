@@ -172,10 +172,10 @@ class UsageCollector:
             "category": "",
             "resource_id": "",
             "resource_details": "{}",
-            "hosted": LAMBDA
+            "hosted": bool(LAMBDA)
             or bool(DEDICATED_DEPLOYMENT_ID)
-            or GCP_SERVERLESS
-            or ROBOFLOW_INTERNAL_SERVICE_SECRET,
+            or bool(GCP_SERVERLESS)
+            or bool(ROBOFLOW_INTERNAL_SERVICE_SECRET),
             "api_key_hash": "",
             "is_gpu_available": False,
             "python_version": sys.version.split()[0],
