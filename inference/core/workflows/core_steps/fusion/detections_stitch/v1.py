@@ -6,12 +6,13 @@ import supervision as sv
 from pydantic import ConfigDict, Field
 from supervision import OverlapFilter, move_boxes, move_masks
 
+from inference.core.workflows.core_steps.common.utils import (
+    attach_parents_coordinates_to_sv_detections,
+)
 from inference.core.workflows.execution_engine.constants import (
     IMAGE_DIMENSIONS_KEY,
     PARENT_COORDINATES_KEY,
     PARENT_DIMENSIONS_KEY,
-    PARENT_ID_KEY,
-    ROOT_PARENT_COORDINATES_KEY,
     SCALING_RELATIVE_TO_PARENT_KEY,
 )
 from inference.core.workflows.execution_engine.entities.base import (
@@ -140,10 +141,7 @@ class DetectionsStitchBlockV1(WorkflowBlock):
             resolution_wh = retrieve_crop_wh(detections=detections_copy)
             offset = retrieve_crop_offset(detections=detections_copy)
             detections_copy = manage_crops_metadata(
-                detections=detections_copy,
-                offset=offset,
-                dimensions=reference_image.numpy_image.shape[:2],
-                parent_id=reference_image.parent_metadata.parent_id,
+                detections=detections_copy, image=reference_image
             )
             re_aligned_detections = move_detections(
                 detections=detections_copy,
@@ -191,16 +189,11 @@ def retrieve_crop_offset(detections: sv.Detections) -> Optional[np.ndarray]:
 
 def manage_crops_metadata(
     detections: sv.Detections,
-    offset: Optional[np.ndarray],
-    dimensions: Tuple[int, int],
-    parent_id: str,
+    image: WorkflowImageData,
 ) -> sv.Detections:
     if len(detections) == 0:
         return detections
-    if offset is None:
-        raise ValueError(
-            "To process non-empty detections offset is needed, but not given"
-        )
+
     if SCALING_RELATIVE_TO_PARENT_KEY in detections.data:
         scale = detections[SCALING_RELATIVE_TO_PARENT_KEY][0]
         if abs(scale - 1.0) > 1e-4:
@@ -211,13 +204,14 @@ def manage_crops_metadata(
                 f"scaling cannot be used in the meantime. This error probably indicate "
                 f"wrong step output plugged as input of this step."
             )
-    if PARENT_COORDINATES_KEY in detections.data:
-        detections.data[PARENT_COORDINATES_KEY] -= offset
-    if ROOT_PARENT_COORDINATES_KEY in detections.data:
-        detections.data[ROOT_PARENT_COORDINATES_KEY] -= offset
-    detections.data[IMAGE_DIMENSIONS_KEY] = np.array([dimensions] * len(detections))
-    detections.data[PARENT_ID_KEY] = np.array([parent_id] * len(detections))
-    return detections
+
+    height, width = image.numpy_image.shape[:2]
+    detections[IMAGE_DIMENSIONS_KEY] = np.array([[height, width]] * len(detections))
+
+    return attach_parents_coordinates_to_sv_detections(
+        detections=detections,
+        image=image,
+    )
 
 
 def move_detections(
