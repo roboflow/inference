@@ -446,6 +446,7 @@ class HttpInterface(BaseInterface):
                         "/",
                         "/docs",
                         "/info",
+                        "/healthz",  # health check endpoint for liveness probe
                         "/openapi.json",  # needed for /docs and /redoc
                         "/model/registry",  # dont auth this route, usually not used on serverlerless, but queue based serverless uses it internally (not accessible from outside)
                     ]
@@ -526,6 +527,7 @@ class HttpInterface(BaseInterface):
                         "/docs",
                         "/redoc",
                         "/info",
+                        "/healthz",  # health check endpoint for liveness probe
                         "/openapi.json",  # needed for /docs and /redoc
                     ]
                     or request.url.path.startswith("/static/")
