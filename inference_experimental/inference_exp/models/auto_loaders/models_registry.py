@@ -265,6 +265,18 @@ REGISTERED_MODELS: Dict[
         module_name="inference_exp.models.rfdetr.rfdetr_object_detection_onnx",
         class_name="RFDetrForObjectDetectionONNX",
     ),
+    ("rfdetr", INSTANCE_SEGMENTATION_TASK, BackendType.TORCH): LazyClass(
+        module_name="inference_exp.models.rfdetr.rfdetr_instance_segmentation_pytorch",
+        class_name="RFDetrForInstanceSegmentationTorch",
+    ),
+    ("rfdetr", INSTANCE_SEGMENTATION_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_exp.models.rfdetr.rfdetr_instance_segmentation_onnx",
+        class_name="RFDetrForInstanceSegmentationOnnx",
+    ),
+    ("rfdetr", INSTANCE_SEGMENTATION_TASK, BackendType.TRT): LazyClass(
+        module_name="inference_exp.models.rfdetr.rfdetr_instance_segmentation_trt",
+        class_name="RFDetrForInstanceSegmentationTRT",
+    ),
     ("moondream2", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_exp.models.moondream2.moondream2_hf",
         class_name="MoonDream2HF",

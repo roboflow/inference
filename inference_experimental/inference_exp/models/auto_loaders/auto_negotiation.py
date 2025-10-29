@@ -248,13 +248,19 @@ def remove_packages_not_matching_implementation(
                 f"features {model_package.model_features}.",
                 verbose_requested=verbose,
             )
+            if model_package.model_features:
+                model_features_infix = (
+                    f" (and requested model features {model_package.model_features})"
+                )
+            else:
+                model_features_infix = ""
             discarded.append(
                 DiscardedPackage(
                     package_id=model_package.package_id,
                     reason=f"`inference-exp` does not provide implementation for the model {model_architecture} "
-                    f"({task_type}) with backend {model_package.backend.value} and "
-                    f"requested model features {model_package.model_features}. If new versions of package available, "
-                    f"consider the upgrade - we may already have this package supported.",
+                    f"({task_type}) with backend {model_package.backend.value}{model_features_infix}. "
+                    "If new versions of package available, consider the upgrade - we may already have this "
+                    "package supported.",
                 )
             )
             continue
