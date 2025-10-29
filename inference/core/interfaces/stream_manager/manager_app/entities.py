@@ -129,21 +129,6 @@ class WebRTCData(BaseModel):
     data_output: Optional[str] = None
 
 
-class WebRTCVideoMetadata(BaseModel):
-    frame_id: int
-    frame_timestamp: str
-    pts: Optional[int] = None
-    time_base: Optional[float] = None
-    declared_fps: Optional[float] = None
-
-
-class WebRTCOutput(BaseModel):
-    output_name: Optional[str] = None
-    serialized_output_data: Optional[str] = None
-    video_metadata: Optional[WebRTCVideoMetadata] = None
-    errors: List[str] = Field(default_factory=list)
-
-
 class ConsumeResultsPayload(BaseModel):
     excluded_fields: List[str] = Field(
         default_factory=list,

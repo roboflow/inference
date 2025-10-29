@@ -142,7 +142,6 @@ from inference.core.env import (
     DOCKER_SOCKET_PATH,
     ENABLE_BUILDER,
     ENABLE_DASHBOARD,
-    ENABLE_PROMETHEUS,
     ENABLE_STREAM_API,
     ENABLE_WORKFLOWS_PROFILING,
     GCP_SERVERLESS,
@@ -207,7 +206,7 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
     InitialiseWebRTCPipelinePayload,
     OperationStatus,
 )
-from inference.core.interfaces.stream_manager.manager_app.webrtc import start_worker
+from inference.core.interfaces.webrtc_worker import start_worker
 from inference.core.managers.base import ModelManager
 from inference.core.managers.metrics import get_container_stats
 from inference.core.managers.prometheus import InferenceInstrumentator
@@ -1419,7 +1418,7 @@ class HttpInterface(BaseInterface):
                 return WorkflowValidationStatus(status="ok")
 
         @app.post(
-            "/initialise_webrtc",
+            "/inference_pipelines/initialise_webrtc",
             response_model=InitializeWebRTCResponse,
             summary="[EXPERIMENTAL] Establishes WebRTC peer connection and processes video stream in spawned process or modal function",
             description="[EXPERIMENTAL] Establishes WebRTC peer connection and processes video stream in spawned process or modal function",
