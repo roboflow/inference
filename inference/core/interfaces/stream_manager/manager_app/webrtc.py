@@ -676,7 +676,7 @@ class VideoTransformTrackWithLoop(VideoStreamTrack):
         if self.data_channel and self.data_channel.readyState == "open":
             video_metadata = WebRTCVideoMetadata(
                 frame_id=self._received_frames,
-                frame_timestamp=frame_timestamp,
+                frame_timestamp=frame_timestamp.isoformat(),
                 pts=new_frame.pts,
                 time_base=new_frame.time_base,
                 declared_fps=self._declared_fps,
@@ -835,6 +835,7 @@ async def init_rtc_peer_connection_with_loop(
     )
 
     await closed.wait()
+    logger.info("WebRTC peer connection closed")
 
 
 def rtc_peer_connection_process(
@@ -1006,5 +1007,4 @@ async def start_worker(
         answer = await loop.run_in_executor(None, parent_conn.recv)
         parent_conn.close()
 
-        # answer = json.loads(answer_line.decode("utf-8").strip())
         return p.pid, p, answer

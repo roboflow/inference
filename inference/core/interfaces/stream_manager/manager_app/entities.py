@@ -131,7 +131,7 @@ class WebRTCData(BaseModel):
 
 class WebRTCVideoMetadata(BaseModel):
     frame_id: int
-    frame_timestamp: datetime.datetime
+    frame_timestamp: str
     pts: Optional[int] = None
     time_base: Optional[float] = None
     declared_fps: Optional[float] = None
