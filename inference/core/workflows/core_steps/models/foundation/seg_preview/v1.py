@@ -14,7 +14,7 @@ from inference.core.entities.responses.inference import (
 from inference.core.env import (
     ROBOFLOW_INTERNAL_SERVICE_NAME,
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
-    SEG_PREVIEW_ENDPOINT,
+    API_BASE_URL,
 )
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
@@ -149,7 +149,7 @@ class SegPreviewBlockV1(WorkflowBlock):
         if len(class_names) == 0:
             class_names.append(None)
 
-        endpoint = SEG_PREVIEW_ENDPOINT
+        endpoint = f"{API_BASE_URL}/inferenceproxy/seg-preview"
         api_key = self._api_key
 
         for single_image in images:
