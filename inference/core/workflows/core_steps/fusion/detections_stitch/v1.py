@@ -7,6 +7,7 @@ from pydantic import ConfigDict, Field
 from supervision import OverlapFilter, move_boxes, move_masks
 
 from inference.core.workflows.execution_engine.constants import (
+    IMAGE_DIMENSIONS_KEY,
     PARENT_COORDINATES_KEY,
     PARENT_DIMENSIONS_KEY,
     PARENT_ID_KEY,
@@ -141,6 +142,7 @@ class DetectionsStitchBlockV1(WorkflowBlock):
             detections_copy = manage_crops_metadata(
                 detections=detections_copy,
                 offset=offset,
+                dimensions=reference_image.numpy_image.shape[:2],
                 parent_id=reference_image.parent_metadata.parent_id,
             )
             re_aligned_detections = move_detections(
@@ -190,6 +192,7 @@ def retrieve_crop_offset(detections: sv.Detections) -> Optional[np.ndarray]:
 def manage_crops_metadata(
     detections: sv.Detections,
     offset: Optional[np.ndarray],
+    dimensions: Tuple[int, int],
     parent_id: str,
 ) -> sv.Detections:
     if len(detections) == 0:
@@ -212,6 +215,7 @@ def manage_crops_metadata(
         detections.data[PARENT_COORDINATES_KEY] -= offset
     if ROOT_PARENT_COORDINATES_KEY in detections.data:
         detections.data[ROOT_PARENT_COORDINATES_KEY] -= offset
+    detections.data[IMAGE_DIMENSIONS_KEY] = np.array([dimensions] * len(detections))
     detections.data[PARENT_ID_KEY] = np.array([parent_id] * len(detections))
     return detections
 
