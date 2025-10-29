@@ -18,6 +18,12 @@ def import_class_from_file(file_path, class_name, alias_name=None):
     try:
         spec = importlib.util.spec_from_file_location(module_name, file_path)
         module = importlib.util.module_from_spec(spec)
+        print(
+            f"module_name: {module_name}",
+            f"module: {module}",
+            f"module type: {type(module)}",
+        )
+        sys.modules[module_name] = module
 
         # Manually set the __package__ attribute to the parent package
         module.__package__ = os.path.basename(module_dir)
