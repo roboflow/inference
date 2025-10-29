@@ -87,7 +87,7 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
     )
     perspective_polygons: Union[list, Selector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
         description="Perspective polygons (for each batch at least one must be consisting of 4 vertices)",
-        examples=["$steps.perspect ive_wrap.zones"],
+        examples=["$steps.perspective_wrap.zones"],
     )
     transformed_rect_width: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Transformed rect width", default=1000, examples=[1000]
