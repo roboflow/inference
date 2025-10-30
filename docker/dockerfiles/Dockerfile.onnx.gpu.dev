@@ -49,6 +49,7 @@ RUN python3 -m pip install \
     -r requirements.sdk.http.txt \
     -r requirements.cli.txt \
     -r requirements.easyocr.txt \
+    -r requirements.modal.txt \
     jupyterlab \
     "setuptools<=75.5.0" \
     --upgrade \
