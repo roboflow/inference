@@ -15,14 +15,9 @@ def import_class_from_file(file_path, class_name, alias_name=None):
 
     sys.path.insert(0, parent_dir)
 
-    previous_module = sys.modules.get(module_name)
-    injected = False
     try:
         spec = importlib.util.spec_from_file_location(module_name, file_path)
         module = importlib.util.module_from_spec(spec)
-
-        sys.modules[module_name] = module
-        injected = True
 
         # Manually set the __package__ attribute to the parent package
         module.__package__ = os.path.basename(module_dir)
@@ -32,12 +27,5 @@ def import_class_from_file(file_path, class_name, alias_name=None):
         if alias_name:
             globals()[alias_name] = cls
         return cls
-    except Exception:
-        if injected:
-            if previous_module is not None:
-                sys.modules[module_name] = previous_module
-            else:
-                sys.modules.pop(module_name, None)
-        raise
     finally:
         sys.path.pop(0)
