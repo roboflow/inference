@@ -2,7 +2,7 @@ import asyncio
 import datetime
 import json
 import logging
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 import supervision as sv
 from aiortc import (
@@ -222,7 +222,7 @@ async def init_rtc_peer_connection_with_loop(
     ) as error:
         send_answer(
             WebRTCWorkerResult(
-                exception=error.__class__,
+                exception_type=error.__class__.__name__,
                 error_message="Could not decode InferencePipeline initialisation command payload.",
             )
         )
@@ -230,7 +230,7 @@ async def init_rtc_peer_connection_with_loop(
     except RoboflowAPINotAuthorizedError:
         send_answer(
             WebRTCWorkerResult(
-                exception=RoboflowAPINotAuthorizedError,
+                exception_type=RoboflowAPINotAuthorizedError.__name__,
                 error_message="Invalid API key used or API key is missing. Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key",
             )
         )
@@ -238,14 +238,27 @@ async def init_rtc_peer_connection_with_loop(
     except RoboflowAPINotNotFoundError:
         send_answer(
             WebRTCWorkerResult(
-                exception=RoboflowAPINotNotFoundError,
+                exception_type=RoboflowAPINotNotFoundError.__name__,
                 error_message="Requested Roboflow resources (models / workflows etc.) not available or wrong API key used.",
             )
         )
         return
     except WorkflowSyntaxError as error:
         send_answer(
-            WebRTCWorkerResult(exception=WorkflowSyntaxError, error_message=str(error))
+            WebRTCWorkerResult(
+                exception_type=WorkflowSyntaxError.__name__,
+                error_message=str(error),
+                error_context=error.context,
+                inner_error=error.inner_error,
+            )
+        )
+        return
+    except Exception as error:
+        send_answer(
+            WebRTCWorkerResult(
+                exception_type=error.__class__.__name__,
+                error_message=str(error),
+            )
         )
         return
 

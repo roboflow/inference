@@ -22,6 +22,7 @@ from fastapi import (
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
+from pydantic import ValidationError
 from starlette.datastructures import UploadFile
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -166,8 +167,10 @@ from inference.core.exceptions import (
     ContentTypeInvalid,
     ContentTypeMissing,
     InputImageLoadError,
+    MissingApiKeyError,
     MissingServiceSecretError,
     RoboflowAPINotAuthorizedError,
+    RoboflowAPINotNotFoundError,
     WorkspaceLoadError,
 )
 from inference.core.interfaces.base import BaseInterface
@@ -208,7 +211,10 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
     OperationStatus,
 )
 from inference.core.interfaces.webrtc_worker import start_worker
-from inference.core.interfaces.webrtc_worker.entities import WebRTCWorkerRequest
+from inference.core.interfaces.webrtc_worker.entities import (
+    WebRTCWorkerRequest,
+    WebRTCWorkerResult,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.managers.metrics import get_container_stats
 from inference.core.managers.prometheus import InferenceInstrumentator
@@ -220,6 +226,7 @@ from inference.core.roboflow_api import (
 from inference.core.utils.container import is_docker_socket_mounted
 from inference.core.utils.notebooks import start_notebook
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.errors import WorkflowSyntaxError
 from inference.core.workflows.execution_engine.core import (
     ExecutionEngine,
     get_available_versions,
@@ -1432,15 +1439,40 @@ class HttpInterface(BaseInterface):
                 request: WebRTCWorkerRequest,
             ) -> InitializeWebRTCResponse:
                 logger.debug("Received initialise_webrtc_worker request")
-                *_, answer = await start_worker(
+                worker_result: WebRTCWorkerResult = await start_worker(
                     webrtc_request=request,
                 )
+                if worker_result.exception_type is not None:
+                    if worker_result.exception_type == "WorkflowSyntaxError":
+                        raise WorkflowSyntaxError(
+                            public_message=worker_result.error_message,
+                            context=worker_result.error_context,
+                            inner_error=worker_result.inner_error,
+                        )
+                    expected_exceptions = {
+                        "Exception": Exception,
+                        "KeyError": KeyError,
+                        "MissingApiKeyError": MissingApiKeyError,
+                        "NotImplementedError": NotImplementedError,
+                        "RoboflowAPINotAuthorizedError": RoboflowAPINotAuthorizedError,
+                        "RoboflowAPINotNotFoundError": RoboflowAPINotNotFoundError,
+                        "ValidationError": ValidationError,
+                    }
+                    exc = expected_exceptions.get(
+                        worker_result.exception_type, Exception
+                    )(worker_result.error_message)
+                    logger.error(
+                        f"Initialise webrtc worker failed with %s: %s",
+                        worker_result.exception_type,
+                        worker_result.error_message,
+                    )
+                    raise exc
                 logger.debug("Returning initialise_webrtc_worker response")
                 return InitializeWebRTCResponse(
                     context=CommandContext(),
                     status=OperationStatus.SUCCESS,
-                    sdp=answer["sdp"],
-                    type=answer["type"],
+                    sdp=worker_result.answer.sdp,
+                    type=worker_result.answer.type,
                 )
 
         if ENABLE_STREAM_API:

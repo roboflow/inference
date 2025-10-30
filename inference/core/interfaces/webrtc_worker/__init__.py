@@ -1,14 +1,25 @@
 import asyncio
 import multiprocessing
 
+from pydantic import ValidationError
+
 from inference.core.env import WEBRTC_MODAL_TOKEN_ID, WEBRTC_MODAL_TOKEN_SECRET
+from inference.core.exceptions import (
+    MissingApiKeyError,
+    RoboflowAPINotAuthorizedError,
+    RoboflowAPINotNotFoundError,
+)
 from inference.core.interfaces.webrtc_worker.cpu import rtc_peer_connection_process
-from inference.core.interfaces.webrtc_worker.entities import WebRTCWorkerRequest
+from inference.core.interfaces.webrtc_worker.entities import (
+    WebRTCWorkerRequest,
+    WebRTCWorkerResult,
+)
+from inference.core.workflows.errors import WorkflowSyntaxError
 
 
 async def start_worker(
     webrtc_request: WebRTCWorkerRequest,
-):
+) -> WebRTCWorkerResult:
     if WEBRTC_MODAL_TOKEN_ID and WEBRTC_MODAL_TOKEN_SECRET:
         try:
             from inference.core.interfaces.webrtc_worker.modal import (
@@ -41,7 +52,9 @@ async def start_worker(
         child_conn.close()
 
         loop = asyncio.get_running_loop()
-        answer = await loop.run_in_executor(None, parent_conn.recv)
+        answer = WebRTCWorkerResult.model_validate(
+            await loop.run_in_executor(None, parent_conn.recv)
+        )
         parent_conn.close()
 
-        return p.pid, p, answer
+        return answer

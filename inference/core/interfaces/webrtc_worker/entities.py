@@ -42,5 +42,7 @@ class WebRTCOutput(BaseModel):
 class WebRTCWorkerResult(BaseModel):
     answer: Optional[WebRTCOffer] = None
     process_id: Optional[Union[int, str]] = None
-    exception: Optional[Exception] = None
+    exception_type: Optional[str] = None
     error_message: Optional[str] = None
+    error_context: Optional[str] = None
+    inner_error: Optional[str] = None

@@ -131,7 +131,7 @@ if modal is not None:
 
     def spawn_rtc_peer_connection_modal(
         webrtc_request: WebRTCWorkerRequest,
-    ):
+    ) -> WebRTCWorkerResult:
         # https://modal.com/docs/reference/modal.Client#from_credentials
         client = modal.Client.from_credentials(
             token_id=WEBRTC_MODAL_TOKEN_ID,
@@ -160,5 +160,7 @@ if modal is not None:
                 webrtc_request=webrtc_request,
                 q=q,
             )
-            answer = q.get(block=True, timeout=WEBRTC_MODAL_RESPONSE_TIMEOUT)
-            return None, answer
+            answer = WebRTCWorkerResult.model_validate(
+                q.get(block=True, timeout=WEBRTC_MODAL_RESPONSE_TIMEOUT)
+            )
+            return answer
