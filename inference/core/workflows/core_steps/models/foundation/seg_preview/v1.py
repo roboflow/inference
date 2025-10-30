@@ -1,18 +1,20 @@
-from typing import List, Literal, Optional, Type, Union
+from types import SimpleNamespace
+from typing import Any, List, Literal, Optional, Type, Union
 
 import numpy as np
-import supervision as sv
+import requests
 from pydantic import ConfigDict, Field
 
-from inference.core.entities.requests.sam3 import Sam3SegmentationRequest, Sam3Prompt
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
     InstanceSegmentationInferenceResponse,
     InstanceSegmentationPrediction,
     Point,
 )
-from inference.core.entities.responses.sam3 import (
-    Sam3SegmentationPrediction,
+from inference.core.env import (
+    API_BASE_URL,
+    ROBOFLOW_INTERNAL_SERVICE_NAME,
+    ROBOFLOW_INTERNAL_SERVICE_SECRET,
 )
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
@@ -20,7 +22,6 @@ from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
     attach_prediction_type_info_to_sv_detections_batch,
     convert_inference_detections_batch_to_sv_detections,
-    load_core_model,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -28,16 +29,10 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BOOLEAN_KIND,
     FLOAT_KIND,
     IMAGE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    KEYPOINT_DETECTION_PREDICTION_KIND,
-    OBJECT_DETECTION_PREDICTION_KIND,
     LIST_OF_VALUES_KIND,
-    STRING_KIND,
-    ROBOFLOW_MODEL_ID_KIND,
-    RoboflowModelField,
     ImageInputField,
     Selector,
 )
@@ -47,34 +42,25 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-
 DETECTIONS_CLASS_NAME_FIELD = "class_name"
 DETECTION_ID_FIELD = "detection_id"
 
 
-LONG_DESCRIPTION = """
-Run Segment Anything 3, a zero-shot instance segmentation model, on an image.
-
-You can pass in boxes/predictions from other models as prompts, or use a text prompt for open-vocabulary segmentation.
-If you pass in box detections from another model, the class names of the boxes will be forwarded to the predicted masks.
-"""
+LONG_DESCRIPTION = "Seg Preview"
 
 
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "SAM 3",
+            "name": "Seg Preview",
             "version": "v1",
-            # "short_description": "Convert bounding boxes to polygons, or run SAM3 with optional text prompt to generate masks.",
-            "short_description": "Sam3",
+            "short_description": "Seg Preview",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
-            # "search_keywords": ["SAM3", "META"],
-            "search_keywords": ["Sam3"],
+            "search_keywords": ["Seg Preview"],
             "ui_manifest": {
                 "section": "model",
-                # "icon": "fa-brands fa-meta",
                 "icon": "fa-solid fa-eye",
                 "blockPriority": 9.49,
                 "needsGPU": True,
@@ -84,38 +70,10 @@ class BlockManifest(WorkflowBlockManifest):
         protected_namespaces=(),
     )
 
-    type: Literal["roboflow_core/sam3w@v1"]
-    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
-    # boxes: Optional[
-    #     Selector(
-    #         kind=[
-    #             OBJECT_DETECTION_PREDICTION_KIND,
-    #             INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    #             KEYPOINT_DETECTION_PREDICTION_KIND,
-    #         ]
-    #     )
-    # ] = Field(  # type: ignore
-    #     description="Bounding boxes (from another model) to convert to polygons",
-    #     examples=["$steps.object_detection_model.predictions"],
-    #     default=None,
-    #     json_schema_extra={"always_visible": True},
-    # )
+    type: Literal["roboflow_core/seg-preview@v1"]
 
-    model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), Optional[str]] = Field(
-        default="sam3/sam3_image_model_only",
-        # description="Model variant placeholder (SAM3 local image model).",
-        description="model version",
-        examples=[
-            "sam3/sam3_image_model_only",
-            "$inputs.model_variant",
-        ],
-    )
-    # text: Union[Optional[str], Selector(kind=[STRING_KIND])] = Field(
-    #     title="Prompt",
-    #     default=None,
-    #     description="Optional text prompt for open-vocabulary segmentation.",
-    #     examples=["a cat", "$inputs.text_prompt"],
-    # )
+    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
+
     class_names: Optional[Union[List[str], Selector(kind=[LIST_OF_VALUES_KIND])]] = (
         Field(
             title="Class Names",
@@ -146,7 +104,7 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
 
-class SegmentAnything3BlockV1(WorkflowBlock):
+class SegPreviewBlockV1(WorkflowBlock):
 
     def __init__(
         self,
@@ -169,109 +127,81 @@ class SegmentAnything3BlockV1(WorkflowBlock):
     def run(
         self,
         images: Batch[WorkflowImageData],
-        # boxes: Optional[Batch[sv.Detections]],
-        model_id: str,
-        # text: Optional[str],
         class_names: Optional[List[str]],
         threshold: float,
-        # multimask_output: Optional[bool],
     ) -> BlockResult:
-        if self._step_execution_mode is StepExecutionMode.LOCAL:
-            return self.run_locally(
-                images=images,
-                # boxes=boxes,
-                model_id=model_id,
-                # text=text,
-                class_names=class_names,
-                threshold=threshold,
-            )
-        elif self._step_execution_mode is StepExecutionMode.REMOTE:
-            raise NotImplementedError(
-                "Remote execution is not supported for Segment Anything 3. Run a local/dedicated inference server (GPU recommended)."
-            )
-        else:
-            raise ValueError(
-                f"Unknown step execution mode: {self._step_execution_mode}"
-            )
 
-    def run_locally(
+        return self.run_via_request(
+            images=images,
+            class_names=class_names,
+            threshold=threshold,
+        )
+
+    def run_via_request(
         self,
         images: Batch[WorkflowImageData],
-        # boxes: Optional[Batch[sv.Detections]],
-        model_id: str,
-        # text: Optional[str],
         class_names: Optional[List[str]],
         threshold: float,
     ) -> BlockResult:
         predictions = []
-        # if boxes is None:
-        #     boxes = [None] * len(images)
         if class_names is None:
             class_names = []
-        # if text is not None:
-        #     class_names.append(text)
         if len(class_names) == 0:
             class_names.append(None)
 
-        self._model_manager.add_model(
-            model_id=model_id,
-            api_key=self._api_key,
-        )
+        endpoint = f"{API_BASE_URL}/inferenceproxy/seg-preview"
+        api_key = self._api_key
 
         for single_image in images:
-            # Metadata for visual box prompts (if provided)
             prompt_class_ids: List[Optional[int]] = []
             prompt_class_names: List[Optional[str]] = []
             prompt_detection_ids: List[Optional[str]] = []
 
-            # norm_boxes: List[List[float]] = []
-            # box_labels: List[int] = []
-
-            # if boxes_for_image is not None:
-            #     img_h, img_w = (
-            #         single_image.numpy_image.shape[0],
-            #         single_image.numpy_image.shape[1],
-            #     )
-            #     for xyxy, _, confidence, class_id, _, bbox_data in boxes_for_image:
-            #         x1, y1, x2, y2 = xyxy
-            #         width = max(0.0, x2 - x1)
-            #         height = max(0.0, y2 - y1)
-            #         # Normalize to 0-1 for SAM3 (XYWH)
-            #         nx = float(x1) / img_w
-            #         ny = float(y1) / img_h
-            #         nw = float(width) / img_w
-            #         nh = float(height) / img_h
-            #         norm_boxes.append([nx, ny, nw, nh])
-            #         box_labels.append(1)
-            #         prompt_class_ids.append(class_id)
-            #         prompt_class_names.append(bbox_data[DETECTIONS_CLASS_NAME_FIELD])
-            #         prompt_detection_ids.append(bbox_data[DETECTION_ID_FIELD])
-
-            # Build unified prompt list: one per class name
-            unified_prompts: List[Sam3Prompt] = []
+            # Build unified prompt list payloads for HTTP
+            http_prompts: List[dict] = []
             for class_name in class_names:
-                unified_prompts.append(Sam3Prompt(type="text", text=class_name))
+                http_prompts.append({"type": "text", "text": class_name})
 
-            # Single batched request with all prompts
-            inference_request = Sam3SegmentationRequest(
-                image=single_image.to_inference_format(numpy_preferred=True),
-                model_id=model_id,
-                api_key=self._api_key,
-                prompts=unified_prompts,
-                output_prob_thresh=threshold,
-            )
+            # Prepare image for remote API (base64)
+            http_image = {"type": "base64", "value": single_image.base64_image}
 
-            sam3_response = self._model_manager.infer_from_request_sync(
-                model_id, inference_request
-            )
+            payload = {
+                "image": http_image,
+                "prompts": http_prompts,
+                "output_prob_thresh": threshold,
+            }
 
-            # Unpack unified batch response
-            class_predictions = []
-            for prompt_result in sam3_response.prompt_results:
-                idx = prompt_result.prompt_index
+            try:
+                headers = {"Content-Type": "application/json"}
+                if ROBOFLOW_INTERNAL_SERVICE_NAME:
+                    headers["X-Roboflow-Internal-Service-Name"] = (
+                        ROBOFLOW_INTERNAL_SERVICE_NAME
+                    )
+                if ROBOFLOW_INTERNAL_SERVICE_SECRET:
+                    headers["X-Roboflow-Internal-Service-Secret"] = (
+                        ROBOFLOW_INTERNAL_SERVICE_SECRET
+                    )
+
+                response = requests.post(
+                    f"{endpoint}?api_key={api_key}",
+                    json=payload,
+                    headers=headers,
+                    timeout=60,
+                )
+                response.raise_for_status()
+                resp_json = response.json()
+            except Exception:
+                resp_json = {"prompt_results": []}
+
+            class_predictions: List[InstanceSegmentationPrediction] = []
+            for prompt_result in resp_json.get("prompt_results", []):
+                idx = prompt_result.get("prompt_index", 0)
                 class_name = class_names[idx] if idx < len(class_names) else None
-                class_pred = convert_sam3_segmentation_response_to_inference_instances_seg_response(
-                    sam3_segmentation_predictions=prompt_result.predictions,
+                raw_predictions = prompt_result.get("predictions", [])
+                # Adapt JSON dicts to objects with attribute-style access
+                adapted_predictions = [SimpleNamespace(**p) for p in raw_predictions]
+                class_pred = convert_segmentation_response_to_inference_instances_seg_response(
+                    segmentation_predictions=adapted_predictions,  # type: ignore[arg-type]
                     image=single_image,
                     prompt_class_ids=prompt_class_ids,
                     prompt_class_names=prompt_class_names,
@@ -315,8 +245,8 @@ class SegmentAnything3BlockV1(WorkflowBlock):
         return [{"predictions": prediction} for prediction in predictions]
 
 
-def convert_sam3_segmentation_response_to_inference_instances_seg_response(
-    sam3_segmentation_predictions: List[Sam3SegmentationPrediction],
+def convert_segmentation_response_to_inference_instances_seg_response(
+    segmentation_predictions: List[Any],
     image: WorkflowImageData,
     prompt_class_ids: List[Optional[int]],
     prompt_class_names: List[Optional[str]],
@@ -331,15 +261,15 @@ def convert_sam3_segmentation_response_to_inference_instances_seg_response(
     if len(prompt_class_ids) == 0:
         prompt_class_ids = [
             specific_class_id if specific_class_id else 0
-            for _ in range(len(sam3_segmentation_predictions))
+            for _ in range(len(segmentation_predictions))
         ]
         prompt_class_names = [
             text_prompt if text_prompt else "foreground"
-            for _ in range(len(sam3_segmentation_predictions))
+            for _ in range(len(segmentation_predictions))
         ]
-        prompt_detection_ids = [None for _ in range(len(sam3_segmentation_predictions))]
+        prompt_detection_ids = [None for _ in range(len(segmentation_predictions))]
     for prediction, class_id, class_name, detection_id in zip(
-        sam3_segmentation_predictions,
+        segmentation_predictions,
         prompt_class_ids,
         prompt_class_names,
         prompt_detection_ids,
