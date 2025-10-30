@@ -18,7 +18,7 @@ class TelemetrySettings(BaseSettings):
     )
     api_plan_endpoint_url: str = wrap_url(f"{METRICS_COLLECTOR_BASE_URL}/usage/plan")
     flush_interval: int = Field(default=10, ge=10, le=300)
-    opt_out: Optional[bool] = False
+    use_persistent_queue: Optional[bool] = True
     queue_size: int = Field(default=10, ge=10, le=10000)
 
     @model_validator(mode="after")
