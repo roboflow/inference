@@ -17,8 +17,14 @@ from aiortc.contrib.media import MediaRelay
 from aiortc.rtcrtpreceiver import RemoteStreamTrack
 from av import VideoFrame
 from av import logging as av_logging
+from pydantic import ValidationError
 
 from inference.core import logger
+from inference.core.exceptions import (
+    MissingApiKeyError,
+    RoboflowAPINotAuthorizedError,
+    RoboflowAPINotNotFoundError,
+)
 from inference.core.interfaces.camera.entities import VideoFrameProducer
 from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
 from inference.core.interfaces.stream_manager.manager_app.entities import (
@@ -29,11 +35,13 @@ from inference.core.interfaces.webrtc_worker.entities import (
     WebRTCOutput,
     WebRTCVideoMetadata,
     WebRTCWorkerRequest,
+    WebRTCWorkerResult,
 )
 from inference.core.interfaces.webrtc_worker.utils import process_frame
 from inference.core.workflows.core_steps.common.serializers import (
     serialise_sv_detections,
 )
+from inference.core.workflows.errors import WorkflowSyntaxError
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 
 logging.getLogger("aiortc").setLevel(logging.WARNING)
@@ -185,7 +193,7 @@ async def _wait_ice_complete(peer_connection: RTCPeerConnectionWithLoop, timeout
 
 async def init_rtc_peer_connection_with_loop(
     webrtc_request: WebRTCWorkerRequest,
-    send_answer: Callable[[Any], None],
+    send_answer: Callable[[WebRTCWorkerResult], None],
     asyncio_loop: Optional[asyncio.AbstractEventLoop] = None,
 ) -> RTCPeerConnectionWithLoop:
     stream_output = None
@@ -197,14 +205,49 @@ async def init_rtc_peer_connection_with_loop(
         data_output = webrtc_request.data_output[0]
 
     relay = MediaRelay()
-    video_transform_track = VideoTransformTrackWithLoop(
-        asyncio_loop=asyncio_loop,
-        workflow_configuration=webrtc_request.workflow_configuration,
-        api_key=webrtc_request.api_key,
-        data_output=data_output,
-        stream_output=stream_output,
-        declared_fps=webrtc_request.declared_fps,
-    )
+    try:
+        video_transform_track = VideoTransformTrackWithLoop(
+            asyncio_loop=asyncio_loop,
+            workflow_configuration=webrtc_request.workflow_configuration,
+            api_key=webrtc_request.api_key,
+            data_output=data_output,
+            stream_output=stream_output,
+            declared_fps=webrtc_request.declared_fps,
+        )
+    except (
+        ValidationError,
+        MissingApiKeyError,
+        KeyError,
+        NotImplementedError,
+    ) as error:
+        send_answer(
+            WebRTCWorkerResult(
+                exception=error.__class__,
+                error_message="Could not decode InferencePipeline initialisation command payload.",
+            )
+        )
+        return
+    except RoboflowAPINotAuthorizedError:
+        send_answer(
+            WebRTCWorkerResult(
+                exception=RoboflowAPINotAuthorizedError,
+                error_message="Invalid API key used or API key is missing. Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key",
+            )
+        )
+        return
+    except RoboflowAPINotNotFoundError:
+        send_answer(
+            WebRTCWorkerResult(
+                exception=RoboflowAPINotNotFoundError,
+                error_message="Requested Roboflow resources (models / workflows etc.) not available or wrong API key used.",
+            )
+        )
+        return
+    except WorkflowSyntaxError as error:
+        send_answer(
+            WebRTCWorkerResult(exception=WorkflowSyntaxError, error_message=str(error))
+        )
+        return
 
     if webrtc_request.webrtc_turn_config:
         turn_server = RTCIceServer(
@@ -275,10 +318,12 @@ async def init_rtc_peer_connection_with_loop(
     await _wait_ice_complete(peer_connection, timeout=2.0)
 
     send_answer(
-        {
-            "sdp": peer_connection.localDescription.sdp,
-            "type": peer_connection.localDescription.type,
-        }
+        WebRTCWorkerResult(
+            answer={
+                "type": peer_connection.localDescription.type,
+                "sdp": peer_connection.localDescription.sdp,
+            },
+        )
     )
 
     await closed.wait()

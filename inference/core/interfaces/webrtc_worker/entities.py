@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -37,3 +37,10 @@ class WebRTCOutput(BaseModel):
     serialized_output_data: Optional[str] = None
     video_metadata: Optional[WebRTCVideoMetadata] = None
     errors: List[str] = Field(default_factory=list)
+
+
+class WebRTCWorkerResult(BaseModel):
+    answer: Optional[WebRTCOffer] = None
+    process_id: Optional[Union[int, str]] = None
+    exception: Optional[Exception] = None
+    error_message: Optional[str] = None
