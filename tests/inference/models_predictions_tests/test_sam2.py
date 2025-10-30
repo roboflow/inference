@@ -1,6 +1,7 @@
 import json
 from copy import deepcopy
 from io import BytesIO
+from time import perf_counter
 from typing import Dict
 
 import numpy as np
@@ -23,6 +24,7 @@ try:
     from inference.models.sam2.segment_anything2 import (
         hash_prompt_set,
         maybe_load_low_res_logits_from_cache,
+        turn_segmentation_results_into_rle_response,
     )
 except ModuleNotFoundError:
     # SAM2 is not installed
@@ -264,3 +266,40 @@ def test_model_clears_cache_properly(sam2_small_model, truck_image):
         assert masks is not None
         assert scores is not None
         assert low_res_logits is not None
+
+
+@pytest.mark.slow
+def test_sam2_segment_with_rle_format(sam2_small_model: str, truck_image: np.ndarray):
+    # given
+    model = SegmentAnything2(model_id=sam2_small_model)
+
+    prompt = Sam2PromptSet(
+        prompts=[{"points": [{"x": 500, "y": 375, "positive": True}]}]
+    )
+
+    # when
+    masks, scores, low_res_logits = model.segment_image(
+        truck_image,
+        prompts=prompt,
+    )
+
+    # Convert to RLE response
+    t1 = perf_counter()
+    resp = turn_segmentation_results_into_rle_response(
+        masks=masks,
+        scores=scores,
+        mask_threshold=model.predictor.mask_threshold,
+        inference_start_timestamp=t1,
+    )
+
+    # then
+    assert resp.time >= 0
+    assert hasattr(resp, "predictions")
+    assert len(resp.predictions) > 0
+
+    pred = resp.predictions[0]
+    assert pred.format == "rle"
+    assert isinstance(pred.masks, dict)
+    assert "size" in pred.masks
+    assert "counts" in pred.masks
+    assert isinstance(pred.masks["counts"], str)
