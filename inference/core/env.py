@@ -675,3 +675,49 @@ RFDETR_ONNX_MAX_RESOLUTION = int(os.getenv("RFDETR_ONNX_MAX_RESOLUTION", "1600")
 CONFIDENCE_LOWER_BOUND_OOM_PREVENTION = float(
     os.getenv("CONFIDENCE_LOWER_BOUND_OOM_PREVENTION", "0.01")
 )
+
+WEBRTC_WORKER_ENABLED: bool = str2bool(os.getenv("WEBRTC_WORKER_ENABLED", "True"))
+
+# Strip quotes from Modal WebRTC worker credentials in case users include them
+_webrtc_modal_token_id = os.getenv("WEBRTC_MODAL_TOKEN_ID")
+_webrtc_modal_token_secret = os.getenv("WEBRTC_MODAL_TOKEN_SECRET")
+
+# Remove common quote characters that users might accidentally include
+WEBRTC_MODAL_TOKEN_ID = (
+    _webrtc_modal_token_id.strip("\"'") if _webrtc_modal_token_id else None
+)
+WEBRTC_MODAL_TOKEN_SECRET = (
+    _webrtc_modal_token_secret.strip("\"'") if _webrtc_modal_token_secret else None
+)
+WEBRTC_MODAL_APP_NAME = os.getenv("WEBRTC_MODAL_APP_NAME", "inference-webrtc")
+WEBRTC_MODAL_RESPONSE_TIMEOUT = int(os.getenv("WEBRTC_MODAL_RESPONSE_TIMEOUT", "60"))
+WEBRTC_MODAL_FUNCTION_TIME_LIMIT = int(
+    os.getenv("WEBRTC_MODAL_FUNCTION_TIME_LIMIT", "300")
+)
+WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT = str2bool(
+    os.getenv("WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT", "True")
+)
+# not set (to use CPU), any, or https://modal.com/docs/guide/gpu#specifying-gpu-type
+WEBRTC_MODAL_FUNCTION_GPU = os.getenv("WEBRTC_MODAL_FUNCTION_GPU")
+try:
+    WEBRTC_MODAL_FUNCTION_MAX_INPUTS = int(
+        os.getenv("WEBRTC_MODAL_FUNCTION_MAX_INPUTS")
+    )
+except (ValueError, TypeError):
+    WEBRTC_MODAL_FUNCTION_MAX_INPUTS = None
+WEBRTC_MODAL_FUNCTION_MIN_CONTAINERS = int(
+    os.getenv("WEBRTC_MODAL_FUNCTION_MIN_CONTAINERS", "1")
+)
+WEBRTC_MODAL_FUNCTION_BUFFER_CONTAINERS = int(
+    os.getenv("WEBRTC_MODAL_FUNCTION_BUFFER_CONTAINERS", "1")
+)
+WEBRTC_MODAL_FUNCTION_SCALEDOWN_WINDOW = int(
+    os.getenv("WEBRTC_MODAL_FUNCTION_SCALEDOWN_WINDOW", "300")
+)
+WEBRTC_MODAL_IMAGE_NAME = os.getenv(
+    "WEBRTC_MODAL_IMAGE_NAME", "roboflow/roboflow-inference-server-gpu"
+)
+WEBRTC_MODAL_IMAGE_TAG = os.getenv("WEBRTC_MODAL_IMAGE_TAG")
+WEBRTC_MODAL_ROBOFLOW_INTERNAL_SERVICE_NAME = os.getenv(
+    "WEBRTC_MODAL_ROBOFLOW_INTERNAL_SERVICE_NAME", "webrtc-modal"
+)
