@@ -13,7 +13,7 @@ prometheus-fastapi-instrumentator<=6.0.0
 psutil>=7.0.0
 redis~=5.0.0
 requests>=2.32.0,<3.0.0
-rich>=13.0.0,<15.0.0
+rich>=13.0.0,<13.10.0
 supervision>=0.26
 pybase64~=1.0.0
 scikit-image>=0.19.0,<=0.25.2
@@ -37,7 +37,7 @@ pandas>=2.2.3,<3.0.0
 paho-mqtt~=1.6.1
 pytest>=8.0.0,<9.0.0  # this is not a joke, sam2 requires this as the fork we are using is dependent on that, yet
 # do not mark the dependency: https://github.com/SauravMaheshkar/samv2/blob/main/sam2/utils/download.py
-tokenizers>=0.19.0,<0.23.0
+tokenizers>=0.19.0,<0.22.0
 slack-sdk~=3.33.4
 twilio~=9.3.7
 httpx~=0.28.1
@@ -48,4 +48,3 @@ filelock>=3.12.0,<=3.17.0
 onvif-zeep-async==2.0.0 # versions > 2.0.0 will not work with Python 3.9 despite docs
 simple-pid~=2.0.1
 qrcode~=8.0.0
-inference-exp>=0.15.2
