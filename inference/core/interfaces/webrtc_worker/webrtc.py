@@ -25,13 +25,16 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
     WebRTCData,
     WorkflowConfiguration,
 )
+from inference.core.interfaces.webrtc_worker.entities import (
+    WebRTCOutput,
+    WebRTCVideoMetadata,
+    WebRTCWorkerRequest,
+)
+from inference.core.interfaces.webrtc_worker.utils import process_frame
 from inference.core.workflows.core_steps.common.serializers import (
     serialise_sv_detections,
 )
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
-
-from .entities import WebRTCOutput, WebRTCVideoMetadata, WebRTCWorkerRequest
-from .utils import process_frame
 
 logging.getLogger("aiortc").setLevel(logging.WARNING)
 

@@ -1,8 +1,10 @@
 import asyncio
 from multiprocessing.connection import Connection
 
-from .entities import WebRTCWorkerRequest
-from .webrtc import init_rtc_peer_connection_with_loop
+from inference.core.interfaces.webrtc_worker.entities import WebRTCWorkerRequest
+from inference.core.interfaces.webrtc_worker.webrtc import (
+    init_rtc_peer_connection_with_loop,
+)
 
 
 def rtc_peer_connection_process(

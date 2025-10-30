@@ -31,10 +31,11 @@ from inference.core.env import (
     WEBRTC_MODAL_TOKEN_SECRET,
     WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
 )
+from inference.core.interfaces.webrtc_worker.entities import WebRTCWorkerRequest
+from inference.core.interfaces.webrtc_worker.webrtc import (
+    init_rtc_peer_connection_with_loop,
+)
 from inference.core.version import __version__
-
-from .entities import WebRTCWorkerRequest
-from .webrtc import init_rtc_peer_connection_with_loop
 
 try:
     import modal
@@ -134,7 +135,7 @@ if modal is not None:
             token_secret=WEBRTC_MODAL_TOKEN_SECRET,
         )
         try:
-            mmm = modal.App.lookup(
+            modal.App.lookup(
                 name=WEBRTC_MODAL_APP_NAME, client=client, create_if_missing=False
             )
         except modal.exception.NotFoundError:
