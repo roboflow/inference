@@ -4,15 +4,21 @@ import multiprocessing
 from inference.core.env import WEBRTC_MODAL_TOKEN_ID, WEBRTC_MODAL_TOKEN_SECRET
 from inference.core.interfaces.webrtc_worker.cpu import rtc_peer_connection_process
 from inference.core.interfaces.webrtc_worker.entities import WebRTCWorkerRequest
-from inference.core.interfaces.webrtc_worker.modal import (
-    spawn_rtc_peer_connection_modal,
-)
 
 
 async def start_worker(
     webrtc_request: WebRTCWorkerRequest,
 ):
-    if modal is not None and WEBRTC_MODAL_TOKEN_ID and WEBRTC_MODAL_TOKEN_SECRET:
+    if WEBRTC_MODAL_TOKEN_ID and WEBRTC_MODAL_TOKEN_SECRET:
+        try:
+            from inference.core.interfaces.webrtc_worker.modal import (
+                spawn_rtc_peer_connection_modal,
+            )
+        except ImportError:
+            raise ImportError(
+                "Modal not installed, please install it using 'pip install modal'"
+            )
+
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
             None,
