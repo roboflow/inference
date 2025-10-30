@@ -1,6 +1,7 @@
 from typing import Optional
 
 import torch
+import torch.nn.functional as F
 from torch import nn
 
 
@@ -32,6 +33,7 @@ class PostProcess(nn.Module):
                           For visualization, this should be the image size after data augment, but before padding
         """
         out_logits, out_bbox = outputs["pred_logits"], outputs["pred_boxes"]
+        out_masks = outputs.get("pred_masks", None)
 
         assert len(out_logits) == len(target_sizes)
         assert target_sizes.shape[1] == 2
@@ -51,9 +53,31 @@ class PostProcess(nn.Module):
         scale_fct = torch.stack([img_w, img_h, img_w, img_h], dim=1)
         boxes = boxes * scale_fct[:, None, :]
 
-        results = [
-            {"scores": s, "labels": l, "boxes": b}
-            for s, l, b in zip(scores, labels, boxes)
-        ]
+        results = []
+        if out_masks is not None:
+            for i in range(out_masks.shape[0]):
+                res_i = {"scores": scores[i], "labels": labels[i], "boxes": boxes[i]}
+                k_idx = topk_boxes[i]
+                masks_i = torch.gather(
+                    out_masks[i],
+                    0,
+                    k_idx.unsqueeze(-1)
+                    .unsqueeze(-1)
+                    .repeat(1, out_masks.shape[-2], out_masks.shape[-1]),
+                )  # [K, Hm, Wm]
+                h, w = target_sizes[i].tolist()
+                masks_i = F.interpolate(
+                    masks_i.unsqueeze(1),
+                    size=(int(h), int(w)),
+                    mode="bilinear",
+                    align_corners=False,
+                )  # [K,1,H,W]
+                res_i["masks"] = masks_i > 0.0
+                results.append(res_i)
+        else:
+            results = [
+                {"scores": s, "labels": l, "boxes": b}
+                for s, l, b in zip(scores, labels, boxes)
+            ]
 
         return results
