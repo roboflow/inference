@@ -21,6 +21,7 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.parallel.txt \
     requirements/_requirements.txt \
     requirements/requirements.easyocr.txt \
+    requirements/requirements.modal.txt \
     ./
 
 RUN pip3 install --upgrade pip  && pip3 install \
