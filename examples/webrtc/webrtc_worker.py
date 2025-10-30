@@ -99,10 +99,10 @@ class StreamTrack(VideoStreamTrack):
         self.track = track
         self._recv_task = self._loop.create_task(self._recv_loop(), name="recv_loop")
 
-    def stop_recv_loop(self):
+    async def stop_recv_loop(self):
         if self._recv_task:
             self._recv_task.cancel()
-        self.recv_queue.sync_put(None)
+        await self.recv_queue.async_put(None)
 
     async def _recv_loop(self):
         try:
@@ -132,6 +132,7 @@ class StreamTrack(VideoStreamTrack):
         )
         if np_frame is None:
             logger.info("%s: No more frames", self.__class__.__name__)
+            await self.stop_recv_loop()
             raise MediaStreamError("No more frames")
 
         new_frame = VideoFrame.from_ndarray(np_frame, format="bgr24")
@@ -181,7 +182,7 @@ async def init_rtc_peer_connection_with_local_description(
     async def on_connectionstatechange():
         logger.info("connection state: %s", peer_connection.connectionState)
         if peer_connection.connectionState in {"failed", "closed"}:
-            webcam_stream_track.stop_recv_loop()
+            await webcam_stream_track.stop_recv_loop()
             peer_connection.closed_event.set()
             await peer_connection.close()
 
@@ -313,6 +314,7 @@ def main():
             peer_connection.webcam_stream_track.recv_queue.sync_get()
         )
         if frame is None:
+            logger.info("No more frames")
             break
         cv.imshow("Processed frame", frame.to_ndarray(format="bgr24"))
         key = cv.waitKey(1)
@@ -379,7 +381,14 @@ def main():
             peer_connection.data_channel.send(message)
 
     cv.destroyAllWindows()
-    peer_connection.webcam_stream_track.stop_recv_loop()
+    asyncio.run_coroutine_threadsafe(
+        peer_connection.webcam_stream_track.stop_recv_loop(),
+        asyncio_loop,
+    ).result()
+    asyncio.run_coroutine_threadsafe(
+        peer_connection.close(),
+        asyncio_loop,
+    ).result()
     asyncio_loop.stop()
     loop_thread.join()
 
