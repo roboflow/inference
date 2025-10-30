@@ -22,6 +22,7 @@ COPY requirements/requirements.cpu.txt \
     requirements/requirements.vino.txt \
     requirements/requirements.cli.txt \
     requirements/requirements.sdk.http.txt \
+    requirements/requirements.modal.txt \
     ./
 
 RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then mv requirements.vino.txt requirements.cpu.txt; fi

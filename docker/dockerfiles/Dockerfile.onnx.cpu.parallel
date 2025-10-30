@@ -28,6 +28,7 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.cli.txt \
     requirements/requirements.sdk.http.txt \
     requirements/requirements.easyocr.txt \
+    requirements/requirements.modal.txt \
     ./
 
 RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then mv requirements.vino.txt requirements.cpu.txt; fi
