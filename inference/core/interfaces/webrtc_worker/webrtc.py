@@ -22,7 +22,6 @@ from inference.core import logger
 from inference.core.interfaces.camera.entities import VideoFrameProducer
 from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
 from inference.core.interfaces.stream_manager.manager_app.entities import (
-    InitialiseWebRTCPipelinePayload,
     WebRTCData,
     WorkflowConfiguration,
 )
@@ -31,7 +30,7 @@ from inference.core.workflows.core_steps.common.serializers import (
 )
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 
-from .entities import WebRTCOutput, WebRTCVideoMetadata
+from .entities import WebRTCOutput, WebRTCVideoMetadata, WebRTCWorkerRequest
 from .utils import process_frame
 
 logging.getLogger("aiortc").setLevel(logging.WARNING)
@@ -122,7 +121,7 @@ class VideoTransformTrackWithLoop(VideoStreamTrack):
         if self.data_channel and self.data_channel.readyState == "open":
             video_metadata = WebRTCVideoMetadata(
                 frame_id=self._received_frames,
-                frame_timestamp=frame_timestamp.isoformat(),
+                received_at=frame_timestamp.isoformat(),
                 pts=new_frame.pts,
                 time_base=new_frame.time_base,
                 declared_fps=self._declared_fps,
@@ -182,7 +181,7 @@ async def _wait_ice_complete(peer_connection: RTCPeerConnectionWithLoop, timeout
 
 
 async def init_rtc_peer_connection_with_loop(
-    webrtc_request: InitialiseWebRTCPipelinePayload,
+    webrtc_request: WebRTCWorkerRequest,
     send_answer: Callable[[Any], None],
     asyncio_loop: Optional[asyncio.AbstractEventLoop] = None,
 ) -> RTCPeerConnectionWithLoop:
@@ -197,11 +196,11 @@ async def init_rtc_peer_connection_with_loop(
     relay = MediaRelay()
     video_transform_track = VideoTransformTrackWithLoop(
         asyncio_loop=asyncio_loop,
-        workflow_configuration=webrtc_request.processing_configuration,
+        workflow_configuration=webrtc_request.workflow_configuration,
         api_key=webrtc_request.api_key,
         data_output=data_output,
         stream_output=stream_output,
-        declared_fps=webrtc_request.webcam_fps,
+        declared_fps=webrtc_request.declared_fps,
     )
 
     if webrtc_request.webrtc_turn_config:
@@ -224,7 +223,6 @@ async def init_rtc_peer_connection_with_loop(
     @peer_connection.on("track")
     def on_track(track: RemoteStreamTrack):
         logger.info("track received")
-        # `relay.subscribe` can be called with buffered=False
         video_transform_track.set_track(
             track=relay.subscribe(
                 track,

@@ -2,16 +2,14 @@ import asyncio
 import multiprocessing
 
 from inference.core.env import WEBRTC_MODAL_TOKEN_ID, WEBRTC_MODAL_TOKEN_SECRET
-from inference.core.interfaces.stream_manager.manager_app.entities import (
-    InitialiseWebRTCPipelinePayload,
-)
 
 from .cpu import rtc_peer_connection_process
+from .entities import WebRTCWorkerRequest
 from .modal import spawn_rtc_peer_connection_modal
 
 
 async def start_worker(
-    webrtc_request: InitialiseWebRTCPipelinePayload,
+    webrtc_request: WebRTCWorkerRequest,
 ):
     if modal is not None and WEBRTC_MODAL_TOKEN_ID and WEBRTC_MODAL_TOKEN_SECRET:
         loop = asyncio.get_event_loop()

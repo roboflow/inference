@@ -679,6 +679,8 @@ CONFIDENCE_LOWER_BOUND_OOM_PREVENTION = float(
     os.getenv("CONFIDENCE_LOWER_BOUND_OOM_PREVENTION", "0.01")
 )
 
+WEBRTC_WORKER_ENABLED: bool = str2bool(os.getenv("WEBRTC_WORKER_ENABLED", "True"))
+
 # Strip quotes from Modal WebRTC worker credentials in case users include them
 _webrtc_modal_token_id = os.getenv("WEBRTC_MODAL_TOKEN_ID")
 _webrtc_modal_token_secret = os.getenv("WEBRTC_MODAL_TOKEN_SECRET")

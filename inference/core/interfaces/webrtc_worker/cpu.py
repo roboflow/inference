@@ -1,15 +1,12 @@
 import asyncio
 from multiprocessing.connection import Connection
 
-from inference.core.interfaces.stream_manager.manager_app.entities import (
-    InitialiseWebRTCPipelinePayload,
-)
-
+from .entities import WebRTCWorkerRequest
 from .webrtc import init_rtc_peer_connection_with_loop
 
 
 def rtc_peer_connection_process(
-    webrtc_request: InitialiseWebRTCPipelinePayload,
+    webrtc_request: WebRTCWorkerRequest,
     answer_conn: Connection,
 ):
     def send_answer(obj):

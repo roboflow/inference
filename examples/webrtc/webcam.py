@@ -275,7 +275,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--workflow-id", required=True, type=str)
     parser.add_argument("--workspace-id", required=True, type=str)
     parser.add_argument("--inference-server-url", required=True, type=str)
-    parser.add_argument("--webrtc-endpoint", required=True, type=str, default="initialise_webrtc")
     parser.add_argument("--api-key", required=True, type=str)
     parser.add_argument("--show-camera-preview", required=False, action="store_true")
     return parser.parse_args()
@@ -357,10 +356,9 @@ def main():
 
     response = requests.post(
         urllib.parse.urljoin(
-            args.inference_server_url, args.webrtc_endpoint
+            args.inference_server_url, "inference_pipelines/initialise_webrtc"
         ),
         json=request.model_dump(),
-        verify=False,
     )
     webrtc_answer = response.json()
     if response.status_code != 200:

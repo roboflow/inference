@@ -31,11 +31,9 @@ from inference.core.env import (
     WEBRTC_MODAL_TOKEN_SECRET,
     WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
 )
-from inference.core.interfaces.stream_manager.manager_app.entities import (
-    InitialiseWebRTCPipelinePayload,
-)
 from inference.core.version import __version__
 
+from .entities import WebRTCWorkerRequest
 from .webrtc import init_rtc_peer_connection_with_loop
 
 try:
@@ -111,7 +109,7 @@ if modal is not None:
         volumes={MODEL_CACHE_DIR: rfcache_volume},
     )
     def rtc_peer_connection_modal(
-        webrtc_request: InitialiseWebRTCPipelinePayload,
+        webrtc_request: WebRTCWorkerRequest,
         q: modal.Queue,
     ):
         logger.info("Received webrtc offer")
@@ -128,7 +126,7 @@ if modal is not None:
         )
 
     def spawn_rtc_peer_connection_modal(
-        webrtc_request: InitialiseWebRTCPipelinePayload,
+        webrtc_request: WebRTCWorkerRequest,
     ):
         # https://modal.com/docs/reference/modal.Client#from_credentials
         client = modal.Client.from_credentials(
@@ -136,7 +134,7 @@ if modal is not None:
             token_secret=WEBRTC_MODAL_TOKEN_SECRET,
         )
         try:
-            modal.App.lookup(
+            mmm = modal.App.lookup(
                 name=WEBRTC_MODAL_APP_NAME, client=client, create_if_missing=False
             )
         except modal.exception.NotFoundError:

@@ -157,6 +157,7 @@ from inference.core.env import (
     PRELOAD_MODELS,
     PROFILE,
     ROBOFLOW_SERVICE_SECRET,
+    WEBRTC_WORKER_ENABLED,
     WORKFLOWS_MAX_CONCURRENT_STEPS,
     WORKFLOWS_PROFILER_BUFFER_SIZE,
     WORKFLOWS_STEP_EXECUTION_MODE,
@@ -207,6 +208,7 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
     OperationStatus,
 )
 from inference.core.interfaces.webrtc_worker import start_worker
+from inference.core.interfaces.webrtc_worker.entities import WebRTCWorkerRequest
 from inference.core.managers.base import ModelManager
 from inference.core.managers.metrics import get_container_stats
 from inference.core.managers.prometheus import InferenceInstrumentator
@@ -1417,27 +1419,29 @@ class HttpInterface(BaseInterface):
                 )
                 return WorkflowValidationStatus(status="ok")
 
-        @app.post(
-            "/inference_pipelines/initialise_webrtc",
-            response_model=InitializeWebRTCResponse,
-            summary="[EXPERIMENTAL] Establishes WebRTC peer connection and processes video stream in spawned process or modal function",
-            description="[EXPERIMENTAL] Establishes WebRTC peer connection and processes video stream in spawned process or modal function",
-        )
-        @with_route_exceptions_async
-        async def initialise_webrtc(
-            request: InitialiseWebRTCPipelinePayload,
-        ) -> InitializeWebRTCResponse:
-            logger.debug("Received initialise_webrtc request")
-            *_, answer = await start_worker(
-                webrtc_request=request,
+        if WEBRTC_WORKER_ENABLED:
+
+            @app.post(
+                "/initialise_webrtc_worker",
+                response_model=InitializeWebRTCResponse,
+                summary="[EXPERIMENTAL] Establishes WebRTC peer connection and processes video stream in spawned process or modal function",
+                description="[EXPERIMENTAL] Establishes WebRTC peer connection and processes video stream in spawned process or modal function",
             )
-            logger.debug("Returning initialise_webrtc response")
-            return InitializeWebRTCResponse(
-                context=CommandContext(),
-                status=OperationStatus.SUCCESS,
-                sdp=answer["sdp"],
-                type=answer["type"],
-            )
+            @with_route_exceptions_async
+            async def initialise_webrtc_worker(
+                request: WebRTCWorkerRequest,
+            ) -> InitializeWebRTCResponse:
+                logger.debug("Received initialise_webrtc_worker request")
+                *_, answer = await start_worker(
+                    webrtc_request=request,
+                )
+                logger.debug("Returning initialise_webrtc_worker response")
+                return InitializeWebRTCResponse(
+                    context=CommandContext(),
+                    status=OperationStatus.SUCCESS,
+                    sdp=answer["sdp"],
+                    type=answer["type"],
+                )
 
         if ENABLE_STREAM_API:
 
