@@ -2,7 +2,7 @@ requests>=2.32.0,<3.0.0
 docker>=7.0.0,<8.0.0
 click<8.2.0  # temporary pin until fastapi/typer#1145 is released
 typer>=0.9.0,<=0.16.0
-rich>=13.0.0,<15.0.0
+rich>=13.0.0,<13.10.0
 PyYAML~=6.0.0
 supervision>=0.26
 opencv-python>=4.8.1.78,<=4.10.0.84
