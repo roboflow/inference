@@ -12,9 +12,9 @@ from inference.core.entities.responses.inference import (
     Point,
 )
 from inference.core.env import (
+    API_BASE_URL,
     ROBOFLOW_INTERNAL_SERVICE_NAME,
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
-    API_BASE_URL,
 )
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
