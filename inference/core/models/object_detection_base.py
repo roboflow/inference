@@ -62,8 +62,8 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             image (Any): The input image or a list of images to process.
                 - can be a BGR numpy array, filepath, InferenceRequestImage, PIL Image, byte-string, etc.
             class_agnostic_nms (bool, optional): Whether to use class-agnostic non-maximum suppression. Defaults to False.
-            confidence (float, optional): Confidence threshold for predictions. Defaults to 0.5.
-            iou_threshold (float, optional): IoU threshold for non-maximum suppression. Defaults to 0.5.
+            confidence (float, optional): Confidence threshold for predictions. Defaults to 0.4.
+            iou_threshold (float, optional): IoU threshold for non-maximum suppression. Defaults to 0.3.
             fix_batch_size (bool, optional): If True, fix the batch size for predictions. Useful when the model requires a fixed batch size. Defaults to False.
             max_candidates (int, optional): Maximum number of candidate detections. Defaults to 3000.
             max_detections (int, optional): Maximum number of detections after non-maximum suppression. Defaults to 300.
