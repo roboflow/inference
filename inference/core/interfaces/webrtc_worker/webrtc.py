@@ -248,8 +248,8 @@ async def init_rtc_peer_connection_with_loop(
             WebRTCWorkerResult(
                 exception_type=WorkflowSyntaxError.__name__,
                 error_message=str(error),
-                error_context=error.context,
-                inner_error=error.inner_error,
+                error_context=str(error.context),
+                inner_error=str(error.inner_error),
             )
         )
         return
