@@ -135,10 +135,13 @@ class DetectionsStitchBlockV1(WorkflowBlock):
         overlap_filtering_strategy: Optional[Literal["none", "nms", "nmm"]],
         iou_threshold: Optional[float],
     ) -> BlockResult:
+        # Use reference image to ensure all masks have the same dimensions
+        reference_height, reference_width = reference_image.numpy_image.shape[:2]
+        resolution_wh = (reference_width, reference_height)
+
         re_aligned_predictions = []
         for detections in predictions:
             detections_copy = deepcopy(detections)
-            resolution_wh = retrieve_crop_wh(detections=detections_copy)
             offset = retrieve_crop_offset(detections=detections_copy)
             detections_copy = manage_crops_metadata(
                 detections=detections_copy, image=reference_image
@@ -158,21 +161,6 @@ class DetectionsStitchBlockV1(WorkflowBlock):
         if overlap_filter is OverlapFilter.NON_MAX_SUPPRESSION:
             return {"predictions": merged.with_nms(threshold=iou_threshold)}
         return {"predictions": merged.with_nmm(threshold=iou_threshold)}
-
-
-def retrieve_crop_wh(detections: sv.Detections) -> Optional[Tuple[int, int]]:
-    if len(detections) == 0:
-        return None
-    if PARENT_DIMENSIONS_KEY not in detections.data:
-        raise RuntimeError(
-            f"Dimensions for crops is expected to be saved in data key {PARENT_DIMENSIONS_KEY} "
-            f"of sv.Detections, but could not be found. Probably block producing sv.Detections "
-            f"lack this part of implementation or has a bug."
-        )
-    return (
-        detections.data[PARENT_DIMENSIONS_KEY][0][1].item(),
-        detections.data[PARENT_DIMENSIONS_KEY][0][0].item(),
-    )
 
 
 def retrieve_crop_offset(detections: sv.Detections) -> Optional[np.ndarray]:
