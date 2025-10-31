@@ -325,6 +325,10 @@ REGISTERED_MODELS: Dict[
         module_name="inference_exp.models.deep_lab_v3_plus.deep_lab_v3_plus_segmentation_onnx",
         class_name="DeepLabV3PlusForSemanticSegmentationOnnx",
     ),
+    ("deep-lab-v3-plus", SEMANTIC_SEGMENTATION_TASK, BackendType.TRT): LazyClass(
+        module_name="inference_exp.models.deep_lab_v3_plus.deep_lab_v3_plus_segmentation_trt",
+        class_name="DeepLabV3PlusForSemanticSegmentationTRT",
+    ),
     ("yolact", INSTANCE_SEGMENTATION_TASK, BackendType.ONNX): LazyClass(
         module_name="inference_exp.models.yolact.yolact_instance_segmentation_onnx",
         class_name="YOLOACTForInstanceSegmentationOnnx",
