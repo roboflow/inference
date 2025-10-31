@@ -76,7 +76,8 @@ class DeepLabV3PlusForSemanticSegmentationTRT(
             elements=[
                 "class_names.txt",
                 "inference_config.json",
-                "weights.onnx",
+                "trt_config.json",
+                "engine.plan",
             ],
         )
         class_names = parse_class_names_file(

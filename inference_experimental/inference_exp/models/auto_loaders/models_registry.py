@@ -333,6 +333,10 @@ REGISTERED_MODELS: Dict[
         module_name="inference_exp.models.yolact.yolact_instance_segmentation_onnx",
         class_name="YOLOACTForInstanceSegmentationOnnx",
     ),
+    ("yolact", INSTANCE_SEGMENTATION_TASK, BackendType.TRT): LazyClass(
+        module_name="inference_exp.models.yolact.yolact_instance_segmentation_trt",
+        class_name="YOLOACTForInstanceSegmentationTRT",
+    ),
 }
 
 
