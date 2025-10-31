@@ -140,23 +140,32 @@ def serialise_sv_detections(detections: sv.Detections) -> dict:
                 BOUNDING_RECT_WIDTH_KEY_IN_SV_DETECTIONS
             ]
 
-        _attach_parent_metadata_to_detection_dict(
-            detection_dict=detection_dict,
-            data=data,
-            parent_id_key=PARENT_ID_KEY,
-            coordinates_key=PARENT_COORDINATES_KEY,
-            dimensions_key=PARENT_DIMENSIONS_KEY,
-            origin_key=PARENT_ORIGIN_KEY,
-        )
+        if PARENT_ID_KEY in data:
+            detection_dict[PARENT_ID_KEY] = str(data[PARENT_ID_KEY])
 
-        _attach_parent_metadata_to_detection_dict(
-            detection_dict=detection_dict,
-            data=data,
-            parent_id_key=ROOT_PARENT_ID_KEY,
-            coordinates_key=ROOT_PARENT_COORDINATES_KEY,
-            dimensions_key=ROOT_PARENT_DIMENSIONS_KEY,
-            origin_key=ROOT_PARENT_ORIGIN_KEY,
-        )
+        # Add parent origin metadata if detection is based on a crop/slice
+        if (
+            PARENT_ID_KEY in data
+            and ROOT_PARENT_ID_KEY in data
+            and str(data[PARENT_ID_KEY]) != str(data[ROOT_PARENT_ID_KEY])
+        ):
+            _attach_parent_metadata_to_detection_dict(
+                detection_dict=detection_dict,
+                data=data,
+                coordinates_key=PARENT_COORDINATES_KEY,
+                dimensions_key=PARENT_DIMENSIONS_KEY,
+                origin_key=PARENT_ORIGIN_KEY,
+            )
+
+            detection_dict[ROOT_PARENT_ID_KEY] = str(data[ROOT_PARENT_ID_KEY])
+
+            _attach_parent_metadata_to_detection_dict(
+                detection_dict=detection_dict,
+                data=data,
+                coordinates_key=ROOT_PARENT_COORDINATES_KEY,
+                dimensions_key=ROOT_PARENT_DIMENSIONS_KEY,
+                origin_key=ROOT_PARENT_ORIGIN_KEY,
+            )
 
         if (
             KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS in data
@@ -220,14 +229,10 @@ def serialise_sv_detections(detections: sv.Detections) -> dict:
 def _attach_parent_metadata_to_detection_dict(
     detection_dict: dict,
     data: dict[str, np.ndarray | list],
-    parent_id_key: str,
     coordinates_key: str,
     dimensions_key: str,
     origin_key: str,
 ) -> None:
-    if parent_id_key in data:
-        detection_dict[parent_id_key] = str(data[parent_id_key])
-
     if coordinates_key in data and dimensions_key in data:
         parent_coords = data[coordinates_key]
         parent_dims = data[dimensions_key]
@@ -282,16 +287,19 @@ def serialise_image(image: WorkflowImageData) -> Dict[str, Any]:
     }
 
     parent_metadata = image.parent_metadata
-    result[PARENT_ID_KEY] = parent_metadata.parent_id
-    result[PARENT_ORIGIN_KEY] = ParentOrigin.from_origin_coordinates_system(
-        parent_metadata.origin_coordinates
-    ).model_dump()
-
     root_metadata = image.workflow_root_ancestor_metadata
-    result[ROOT_PARENT_ID_KEY] = root_metadata.parent_id
-    result[ROOT_PARENT_ORIGIN_KEY] = ParentOrigin.from_origin_coordinates_system(
-        root_metadata.origin_coordinates
-    ).model_dump()
+
+    # Add parent origin metadata if image is a crop/slice
+    if parent_metadata.parent_id != root_metadata.parent_id:
+        result[PARENT_ID_KEY] = parent_metadata.parent_id
+        result[PARENT_ORIGIN_KEY] = ParentOrigin.from_origin_coordinates_system(
+            parent_metadata.origin_coordinates
+        ).model_dump()
+
+        result[ROOT_PARENT_ID_KEY] = root_metadata.parent_id
+        result[ROOT_PARENT_ORIGIN_KEY] = ParentOrigin.from_origin_coordinates_system(
+            root_metadata.origin_coordinates
+        ).model_dump()
 
     return result
 
