@@ -1,4 +1,4 @@
-name: Build and Push Jetson 6.X Container
+name: Build and Push Jetson 6.2.0 Container
 permissions:
   contents: read
 on:
