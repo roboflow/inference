@@ -221,6 +221,9 @@ from inference.core.workflows.core_steps.models.foundation.perception_encoder.v1
 from inference.core.workflows.core_steps.models.foundation.qwen.v1 import (
     Qwen25VLBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.seg_preview.v1 import (
+    SegPreviewBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
     SegmentAnything2BlockV1,
 )
@@ -644,6 +647,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         SIFTComparisonBlockV1,
         SIFTComparisonBlockV2,
         SegmentAnything2BlockV1,
+        SegPreviewBlockV1,
         StabilityAIInpaintingBlockV1,
         StabilityAIImageGenBlockV1,
         StabilityAIOutpaintingBlockV1,

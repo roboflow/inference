@@ -19,6 +19,7 @@ COPY requirements/requirements.http.txt \
     requirements/_requirements.txt \
     requirements/requirements.cli.txt \
     requirements/requirements.sdk.http.txt \
+    requirements/requirements.modal.txt \
     ./
 
 RUN pip3 install --upgrade pip  && pip3 install \
@@ -27,6 +28,7 @@ RUN pip3 install --upgrade pip  && pip3 install \
     -r requirements.gpu.txt \
     -r requirements.cli.txt \
     -r requirements.sdk.http.txt \
+    -r requirements.modal.txt \
     "setuptools<=75.5.0" \
     --upgrade \
     && rm -rf ~/.cache/pip
