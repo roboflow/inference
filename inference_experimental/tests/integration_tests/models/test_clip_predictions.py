@@ -1058,6 +1058,9 @@ def reference_clip_model(
         yield original_model, preprocess
 
 
+@pytest.mark.skip(
+    reason="Skipping clip reference model test because openai weights hosted on azure are not available"
+)
 @pytest.mark.slow
 @pytest.mark.torch_models
 def test_clip_torch_image_prediction_for_numpy(
@@ -1100,6 +1103,9 @@ def test_clip_torch_image_prediction_for_torch_tensor(
     )
 
 
+@pytest.mark.skip(
+    reason="Skipping clip reference model test because openai weights hosted on azure are not available"
+)
 @pytest.mark.slow
 @pytest.mark.torch_models
 def test_clip_predictions_for_image_are_comparable_with_reference_implementation(
@@ -1151,6 +1157,9 @@ def test_clip_torch_image_text_embeddings(
     assert tuple(embeddings.shape) == (4, 1024)
 
 
+@pytest.mark.skip(
+    reason="Skipping clip reference model test because openai weights hosted on azure are not available"
+)
 @pytest.mark.slow
 @pytest.mark.torch_models
 def test_clip_torch_image_text_embeddings_on_pair_with_reference_implementation(
@@ -1217,6 +1226,9 @@ def test_clip_onnx_image_prediction_for_torch_tensor(
     assert torch.allclose(embeddings, EXPECTED_DOG_IMAGE_EMBEDDING, atol=1e-3)
 
 
+@pytest.mark.skip(
+    reason="Skipping clip reference model test because openai weights hosted on azure are not available"
+)
 @pytest.mark.slow
 @pytest.mark.onnx_extras
 @pytest.mark.cpu_only
@@ -1275,6 +1287,9 @@ def test_clip_onnx_image_prediction_for_text(
     assert tuple(embeddings.shape) == (1, 1024)
 
 
+@pytest.mark.skip(
+    reason="Skipping clip reference model test because openai weights hosted on azure are not available"
+)
 @pytest.mark.slow
 @pytest.mark.onnx_extras
 @pytest.mark.cpu_only
