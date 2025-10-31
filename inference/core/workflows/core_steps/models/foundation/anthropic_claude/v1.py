@@ -177,7 +177,7 @@ class BlockManifest(WorkflowBlockManifest):
             "claude-3-haiku",
         ],
     ] = Field(
-        default="claude-4-5-sonnet,
+        default="claude-4-5-sonnet",
         description="Model to be used",
         examples=["claude-sonnet-4", "$inputs.claude"],
     )
