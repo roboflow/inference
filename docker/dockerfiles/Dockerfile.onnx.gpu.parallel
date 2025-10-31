@@ -21,6 +21,7 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.parallel.txt \
     requirements/_requirements.txt \
     requirements/requirements.easyocr.txt \
+    requirements/requirements.modal.txt \
     ./
 
 RUN pip3 install --upgrade pip  && pip3 install \
@@ -32,6 +33,7 @@ RUN pip3 install --upgrade pip  && pip3 install \
     -r requirements.gaze.txt \
     -r requirements.parallel.txt \
     -r requirements.easyocr.txt \
+    -r requirements.modal.txt \
     "setuptools<=75.5.0" \
     --upgrade \
     && rm -rf ~/.cache/pip

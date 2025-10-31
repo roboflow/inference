@@ -115,7 +115,7 @@ class UsageCollector:
             logger.debug("Persistence through RedisQueue")
             self._queue: "Queue[UsagePayload]" = RedisQueue()
             self._api_keys_hashing_enabled = False
-        elif (LAMBDA or GCP_SERVERLESS) or self._settings.opt_out:
+        elif (LAMBDA or GCP_SERVERLESS) or not self._settings.use_persistent_queue:
             logger.debug("No persistence")
             self._queue: "Queue[UsagePayload]" = Queue(
                 maxsize=self._settings.queue_size
@@ -172,7 +172,10 @@ class UsageCollector:
             "category": "",
             "resource_id": "",
             "resource_details": "{}",
-            "hosted": LAMBDA or bool(DEDICATED_DEPLOYMENT_ID) or GCP_SERVERLESS,
+            "hosted": bool(LAMBDA)
+            or bool(DEDICATED_DEPLOYMENT_ID)
+            or bool(GCP_SERVERLESS)
+            or bool(ROBOFLOW_INTERNAL_SERVICE_SECRET),
             "api_key_hash": "",
             "is_gpu_available": False,
             "python_version": sys.version.split()[0],

@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple, TypedDict, Union
 import numpy as np
 import sam2.utils.misc
 import torch
+from pycocotools import mask as mask_utils
 from torch.nn.attention import SDPBackend
 
 sam2.utils.misc.get_sdp_backends = lambda z: [
@@ -192,6 +193,13 @@ class SegmentAnything2(RoboflowCoreModel):
                 )
                 if request.format == "json":
                     return turn_segmentation_results_into_api_response(
+                        masks=masks,
+                        scores=scores,
+                        mask_threshold=self.predictor.mask_threshold,
+                        inference_start_timestamp=t1,
+                    )
+                elif request.format == "rle":
+                    return turn_segmentation_results_into_rle_response(
                         masks=masks,
                         scores=scores,
                         mask_threshold=self.predictor.mask_threshold,
@@ -492,8 +500,34 @@ def turn_segmentation_results_into_api_response(
         prediction = Sam2SegmentationPrediction(
             masks=[mask.tolist() for mask in mask_polygon],
             confidence=score.item(),
+            format="polygon",
         )
         predictions.append(prediction)
+    return Sam2SegmentationResponse(
+        time=perf_counter() - inference_start_timestamp,
+        predictions=predictions,
+    )
+
+
+def turn_segmentation_results_into_rle_response(
+    masks: np.ndarray,
+    scores: np.ndarray,
+    mask_threshold: float,
+    inference_start_timestamp: float,
+) -> Sam2SegmentationResponse:
+    predictions = []
+    for mask, score in zip(masks, scores):
+        # Apply same threshold as polygon format
+        mask_binary = (mask >= mask_threshold).astype(np.uint8)
+
+        # Encode mask to RLE format
+        rle = mask_utils.encode(np.asfortranarray(mask_binary))
+        rle["counts"] = rle["counts"].decode("utf-8")
+
+        predictions.append(
+            Sam2SegmentationPrediction(masks=rle, confidence=float(score), format="rle")
+        )
+
     return Sam2SegmentationResponse(
         time=perf_counter() - inference_start_timestamp,
         predictions=predictions,
