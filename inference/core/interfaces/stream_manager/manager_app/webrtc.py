@@ -1,6 +1,5 @@
 import asyncio
 import datetime
-import fractions
 import json
 import logging
 import time

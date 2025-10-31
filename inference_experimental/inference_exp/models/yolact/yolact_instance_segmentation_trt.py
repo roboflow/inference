@@ -8,21 +8,20 @@ from inference_exp import InstanceDetections, InstanceSegmentationModel
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
 from inference_exp.errors import (
-    EnvironmentConfigurationError,
+    CorruptedModelPackageError,
     MissingDependencyError,
     ModelRuntimeError,
 )
+from inference_exp.models.common.cuda import use_cuda_context, use_primary_cuda_context
 from inference_exp.models.common.model_packages import get_model_package_contents
-from inference_exp.models.common.onnx import (
-    run_session_with_batch_size_limit,
-    set_execution_provider_defaults,
-)
 from inference_exp.models.common.roboflow.model_packages import (
     InferenceConfig,
     PreProcessingMetadata,
     ResizeMode,
+    TRTConfig,
     parse_class_names_file,
     parse_inference_config,
+    parse_trt_config,
 )
 from inference_exp.models.common.roboflow.post_processing import (
     align_instance_segmentation_results,
@@ -31,26 +30,35 @@ from inference_exp.models.common.roboflow.post_processing import (
 from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
-from inference_exp.utils.onnx_introspection import get_selected_onnx_execution_providers
+from inference_exp.models.common.trt import (
+    get_engine_inputs_and_outputs,
+    infer_from_trt_engine,
+    load_model,
+)
 
 try:
-    import onnxruntime
+    import tensorrt as trt
 except ImportError as import_error:
     raise MissingDependencyError(
-        message=f"Could not import YOLOv5 model with ONNX backend - this error means that some additional dependencies "
+        message=f"Could not import YOLOv8 model with TRT backend - this error means that some additional dependencies "
         f"are not installed in the environment. If you run the `inference-exp` library directly in your Python "
-        f"program, make sure the following extras of the package are installed: \n"
-        f"\t* `onnx-cpu` - when you wish to use library with CPU support only\n"
-        f"\t* `onnx-cu12` - for running on GPU with Cuda 12 installed\n"
-        f"\t* `onnx-cu118` - for running on GPU with Cuda 11.8 installed\n"
-        f"\t* `onnx-jp6-cu126` - for running on Jetson with Jetpack 6\n"
+        f"program, make sure the following extras of the package are installed: `trt10` - installation can only "
+        f"succeed for Linux and Windows machines with Cuda 12 installed. Jetson devices, should have TRT 10.x "
+        f"installed for all builds with Jetpack 6. "
         f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
         f"You can also contact Roboflow to get support.",
         help_url="https://todo",
     ) from import_error
 
+try:
+    import pycuda.driver as cuda
+except ImportError as import_error:
+    raise MissingDependencyError(
+        message="TODO", help_url="https://todo"
+    ) from import_error
 
-class YOLOACTForInstanceSegmentationOnnx(
+
+class YOLOACTForInstanceSegmentationTRT(
     InstanceSegmentationModel[
         torch.Tensor,
         PreProcessingMetadata,
@@ -62,33 +70,22 @@ class YOLOACTForInstanceSegmentationOnnx(
     def from_pretrained(
         cls,
         model_name_or_path: str,
-        onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
-        default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
+        engine_host_code_allowed: bool = False,
         **kwargs,
-    ) -> "YOLOACTForInstanceSegmentationOnnx":
-        if onnx_execution_providers is None:
-            onnx_execution_providers = get_selected_onnx_execution_providers()
-        if not onnx_execution_providers:
-            raise EnvironmentConfigurationError(
-                message=f"Could not initialize model - selected backend is ONNX which requires execution provider to "
-                f"be specified - explicitly in `from_pretrained(...)` method or via env variable "
-                f"`ONNXRUNTIME_EXECUTION_PROVIDERS`. If you run model locally - adjust your setup, otherwise "
-                f"contact the platform support.",
+    ) -> "YOLOACTForInstanceSegmentationTRT":
+        if device.type != "cuda":
+            raise ModelRuntimeError(
+                message=f"TRT engine only runs on CUDA device - {device} device detected.",
                 help_url="https://todo",
             )
-        onnx_execution_providers = set_execution_provider_defaults(
-            providers=onnx_execution_providers,
-            model_package_path=model_name_or_path,
-            device=device,
-            default_onnx_trt_options=default_onnx_trt_options,
-        )
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
             elements=[
                 "class_names.txt",
                 "inference_config.json",
-                "weights.onnx",
+                "trt_config.json",
+                "engine.plan",
             ],
         )
         class_names = parse_class_names_file(
@@ -103,41 +100,62 @@ class YOLOACTForInstanceSegmentationOnnx(
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
             },
         )
-        session = onnxruntime.InferenceSession(
-            path_or_bytes=model_package_content["weights.onnx"],
-            providers=onnx_execution_providers,
+        trt_config = parse_trt_config(
+            config_path=model_package_content["trt_config.json"]
         )
-        input_batch_size = session.get_inputs()[0].shape[0]
-        if input_batch_size != 1:
-            raise ModelRuntimeError(
-                message="Implementation of YOLOACTForInstanceSegmentationOnnx is adjusted to work correctly with "
-                "onnx models accepting inputs with `batch_size=1`. It can be extended if needed, but we've "
-                "not heard such request so far. If you find that a valueble feature - let us know via "
-                "https://github.com/roboflow/inference/issues"
+        cuda.init()
+        cuda_device = cuda.Device(device.index or 0)
+        with use_primary_cuda_context(cuda_device=cuda_device) as cuda_context:
+            engine = load_model(
+                model_path=model_package_content["engine.plan"],
+                engine_host_code_allowed=engine_host_code_allowed,
             )
-        input_name = session.get_inputs()[0].name
+            execution_context = engine.create_execution_context()
+        inputs, outputs = get_engine_inputs_and_outputs(engine=engine)
+        if len(inputs) != 1:
+            raise CorruptedModelPackageError(
+                message=f"Implementation assume single model input, found: {len(inputs)}.",
+                help_url="https://todo",
+            )
+        if len(outputs) != 5:
+            raise CorruptedModelPackageError(
+                message=f"Implementation assume 5 model outputs, found: {len(outputs)}.",
+                help_url="https://todo",
+            )
         return cls(
-            session=session,
-            input_name=input_name,
+            engine=engine,
+            input_name=inputs[0],
+            output_name=outputs[0],
             class_names=class_names,
             inference_config=inference_config,
+            trt_config=trt_config,
             device=device,
+            cuda_context=cuda_context,
+            execution_context=execution_context,
         )
 
     def __init__(
         self,
-        session: onnxruntime.InferenceSession,
+        engine: trt.ICudaEngine,
         input_name: str,
-        inference_config: InferenceConfig,
+        output_name: str,
         class_names: List[str],
+        inference_config: InferenceConfig,
+        trt_config: TRTConfig,
         device: torch.device,
+        cuda_context: cuda.Context,
+        execution_context: trt.IExecutionContext,
     ):
-        self._session = session
+        self._engine = engine
         self._input_name = input_name
-        self._inference_config = inference_config
+        self._output_names = [output_name]
         self._class_names = class_names
+        self._inference_config = inference_config
+        self._trt_config = trt_config
         self._device = device
-        self._session_thread_lock = Lock()
+        self._cuda_context = cuda_context
+        self._execution_context = execution_context
+        self._lock = Lock()
 
     @property
     def class_names(self) -> List[str]:
@@ -160,33 +178,39 @@ class YOLOACTForInstanceSegmentationOnnx(
     def forward(
         self, pre_processed_images: torch.Tensor, **kwargs
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        with self._session_thread_lock:
-            (
-                all_loc_data,
-                all_conf_data,
-                all_mask_data,
-                all_prior_data,
-                all_proto_data,
-            ) = ([], [], [], [], [])
-            for image in pre_processed_images:
-                loc_data, conf_data, mask_data, prior_data, proto_data = (
-                    run_session_with_batch_size_limit(
-                        session=self._session,
-                        inputs={self._input_name: image.unsqueeze(0).contiguous()},
+        with self._lock:
+            with use_cuda_context(context=self._cuda_context):
+                (
+                    all_loc_data,
+                    all_conf_data,
+                    all_mask_data,
+                    all_prior_data,
+                    all_proto_data,
+                ) = ([], [], [], [], [])
+                for image in pre_processed_images:
+                    loc_data, conf_data, mask_data, prior_data, proto_data = (
+                        infer_from_trt_engine(
+                            pre_processed_images=image.unsqueeze(0).contiguous(),
+                            trt_config=self._trt_config,
+                            engine=self._engine,
+                            context=self._execution_context,
+                            device=self._device,
+                            input_name=self._input_name,
+                            outputs=self._output_names,
+                        )
                     )
+                    all_loc_data.append(loc_data)
+                    all_conf_data.append(conf_data)
+                    all_mask_data.append(mask_data)
+                    all_prior_data.append(prior_data)
+                    all_proto_data.append(proto_data)
+                return (
+                    torch.cat(all_loc_data, dim=0),
+                    torch.cat(all_conf_data, dim=0),
+                    torch.cat(all_mask_data, dim=0),
+                    torch.stack(all_prior_data, dim=0),
+                    torch.cat(all_proto_data, dim=0),
                 )
-                all_loc_data.append(loc_data)
-                all_conf_data.append(conf_data)
-                all_mask_data.append(mask_data)
-                all_prior_data.append(prior_data)
-                all_proto_data.append(proto_data)
-            return (
-                torch.cat(all_loc_data, dim=0),
-                torch.cat(all_conf_data, dim=0),
-                torch.cat(all_mask_data, dim=0),
-                torch.stack(all_prior_data, dim=0),
-                torch.cat(all_proto_data, dim=0),
-            )
 
     def post_process(
         self,
