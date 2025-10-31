@@ -297,6 +297,14 @@ REGISTERED_MODELS: Dict[
         module_name="inference_exp.models.vit.vit_classification_huggingface",
         class_name="VITForMultiLabelClassificationHF",
     ),
+    ("vit", CLASSIFICATION_TASK, BackendType.TRT): LazyClass(
+        module_name="inference_exp.models.vit.vit_classification_trt",
+        class_name="VITForClassificationTRT",
+    ),
+    ("vit", MULTI_LABEL_CLASSIFICATION_TASK, BackendType.TRT): LazyClass(
+        module_name="inference_exp.models.vit.vit_classification_trt",
+        class_name="VITForMultiLabelClassificationTRT",
+    ),
     ("resnet", CLASSIFICATION_TASK, BackendType.ONNX): LazyClass(
         module_name="inference_exp.models.resnet.resnet_classification_onnx",
         class_name="ResNetForClassificationOnnx",
