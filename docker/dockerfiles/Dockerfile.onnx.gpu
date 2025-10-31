@@ -28,6 +28,7 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.transformers.txt \
     requirements/requirements.pali.flash_attn.txt \
     requirements/requirements.easyocr.txt \
+    requirements/requirements.modal.txt \
     ./
 
 RUN python3 -m pip install -U pip
@@ -43,6 +44,7 @@ RUN python3 -m pip install \
     -r requirements.yolo_world.txt \
     -r requirements.transformers.txt \
     -r requirements.easyocr.txt \
+    -r requirements.modal.txt \
     jupyterlab \
     "setuptools<=75.5.0" \
     --upgrade \
