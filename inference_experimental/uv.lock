@@ -543,7 +543,7 @@ wheels = [
 
 [[package]]
 name = "inference-exp"
-version = "0.15.4"
+version = "0.15.5"
 source = { virtual = "." }
 dependencies = [
     { name = "accelerate" },
