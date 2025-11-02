@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import cv2
 import numpy as np
@@ -228,7 +228,7 @@ def serialise_sv_detections(detections: sv.Detections) -> dict:
 
 def _attach_parent_metadata_to_detection_dict(
     detection_dict: dict,
-    data: dict[str, np.ndarray | list],
+    data: Dict[str, Union[np.ndarray, list]],
     coordinates_key: str,
     dimensions_key: str,
     origin_key: str,
