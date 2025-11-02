@@ -282,7 +282,7 @@ def main():
         webrtc_turn_config=webrtc_turn_config,
         stream_output=["video"],
         data_output=["preds"],
-        webrtc_realtime_processing=False if args.source_path is None else True,
+        webrtc_realtime_processing=args.realtime,
     )
 
     https_verify = True
