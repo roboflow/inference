@@ -113,7 +113,7 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_parameters_accepting_batches_and_scalars(cls) -> List[str]:
-        return ["perspective_polygons"]
+        return ["perspective_polygons", "transformed_rect_width", "transformed_rect_height"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -688,8 +688,8 @@ class PerspectiveCorrectionBlockV1(WorkflowBlock):
             List[List[List[int]]],
             List[List[List[List[int]]]],
         ],
-        transformed_rect_width: List[int],
-        transformed_rect_height: List[int],
+        transformed_rect_width: Union[int,List[int],np.ndarray],
+        transformed_rect_height: Union[int,List[int],np.ndarray],
         extend_perspective_polygon_by_detections_anchor: Union[
             sv.Position, Literal[ALL_POSITIONS]
         ],
@@ -723,7 +723,11 @@ class PerspectiveCorrectionBlockV1(WorkflowBlock):
                 raise ValueError(
                     f"Predictions batch size ({batch_size}) does not match number of perspective polygons ({largest_perspective_polygons})"
                 )
-            for polygon, detections, width, height in zip(largest_perspective_polygons, predictions, transformed_rect_width, transformed_rect_height):
+            if type(transformed_rect_height) is int:
+                transformed_rect_height = [transformed_rect_height] * batch_size
+            if type(transformed_rect_width) is int:
+                transformed_rect_width = [transformed_rect_width] * batch_size
+            for polygon, detections, width, height in zip(largest_perspective_polygons, predictions, list(transformed_rect_width), list(transformed_rect_height)):
                 if polygon is None:
                     self.perspective_transformers.append(None)
                     continue
@@ -751,8 +755,8 @@ class PerspectiveCorrectionBlockV1(WorkflowBlock):
                     src=image.numpy_image,
                     M=perspective_transformer,
                     dsize=(
-                        width + int(round(extended_width)),
-                        height + int(round(extended_height)),
+                        int(round(width)) + int(round(extended_width)),
+                        int(round(height)) + int(round(extended_height)),
                     ),
                 )
                 result_image = WorkflowImageData.copy_and_replace(
