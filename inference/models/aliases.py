@@ -17,11 +17,15 @@ PALIGEMMA_ALIASES = {
     "paligemma-3b-ft-docvqa-448": "paligemma-pretrains/18",
     "paligemma-3b-ft-ocrvqa-448": "paligemma-pretrains/19",
 }
-FLORENCE_ALIASES = {
-    "florence-2-base": "florence-pretrains/1",
-    "florence-2-large": "florence-pretrains/2",
+# FLORENCE_ALIASES = {
+#     "florence-2-base": "florence-pretrains/1",
+#     "florence-2-large": "florence-pretrains/2",
 }
-
+#since transformers 0.53.3 need newer version of florence2 weights
+FLORENCE_ALIASES = {
+    "florence-2-base": "florence-pretrains/3",
+    "florence-2-large": "florence-pretrains/4",
+}
 QWEN_ALIASES = {
     "qwen25-vl-7b": "qwen-pretrains/1",
 }
