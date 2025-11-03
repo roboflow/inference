@@ -148,6 +148,23 @@ class WorkflowProcessingJobV1(BaseModel):
     )
 
 
+class CompilationDevice(str, Enum):
+    NVIDIA_L4 = "nvidia-l4"
+    NVIDIA_T4 = "nvidia-t4"
+    NVIDIA_A100 = "nvidia-a100"
+
+
+class TRTCompilationJobV1(BaseModel):
+    type: Literal["trt-compilation-v1"]
+    model_id: str = Field(serialization_alias="modelId")
+    compilation_devices: List[CompilationDevice] = Field(
+        serialization_alias="compilationDevices"
+    )
+    notifications_url: Optional[str] = Field(
+        serialization_alias="notificationsURL", default=None
+    )
+
+
 class LogSeverity(str, Enum):
     INFO = "info"
     ERROR = "error"
