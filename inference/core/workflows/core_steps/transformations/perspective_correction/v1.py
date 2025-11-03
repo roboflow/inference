@@ -727,9 +727,9 @@ class PerspectiveCorrectionBlockV1(WorkflowBlock):
                 raise ValueError(
                     f"Predictions batch size ({batch_size}) does not match number of perspective polygons ({largest_perspective_polygons})"
                 )
-            if type(transformed_rect_height) is int:
+            if isinstance(transformed_rect_height, int):
                 transformed_rect_height = [transformed_rect_height] * batch_size
-            if type(transformed_rect_width) is int:
+            if isinstance(transformed_rect_width, int):
                 transformed_rect_width = [transformed_rect_width] * batch_size
             for polygon, detections, width, height in zip(
                 largest_perspective_polygons,
