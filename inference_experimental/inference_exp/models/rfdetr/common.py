@@ -8,7 +8,9 @@ from inference_exp.models.common.roboflow.model_packages import (
     PreProcessingMetadata,
     StaticCropOffset,
 )
-from inference_exp.models.common.roboflow.post_processing import align_instance_segmentation_results
+from inference_exp.models.common.roboflow.post_processing import (
+    align_instance_segmentation_results,
+)
 from inference_exp.models.rfdetr.class_remapping import ClassesReMapping
 from inference_exp.utils.file_system import read_json
 from torchvision.transforms import functional

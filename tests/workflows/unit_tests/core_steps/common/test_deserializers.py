@@ -16,6 +16,7 @@ from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_list_of_values_kind,
     deserialize_numpy_array,
     deserialize_optional_string_kind,
+    deserialize_parent_origin,
     deserialize_point_kind,
     deserialize_rgb_color_kind,
     deserialize_timestamp,
@@ -24,6 +25,8 @@ from inference.core.workflows.core_steps.common.deserializers import (
 from inference.core.workflows.errors import RuntimeInputError
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
+    OriginCoordinatesSystem,
+    ParentOrigin,
     WorkflowImageData,
 )
 
@@ -799,3 +802,256 @@ def test_deserialize_image_kind_when_parent_id_not_given() -> None:
     assert isinstance(result, WorkflowImageData)
     assert result.parent_metadata.parent_id == "test_param"
     assert np.array_equal(result.numpy_image, image_array)
+
+
+def test_deserialize_parent_origin_when_parent_origin_instance_given() -> None:
+    # given
+    parent_origin = ParentOrigin(
+        offset_x=100,
+        offset_y=200,
+        width=800,
+        height=600,
+    )
+
+    # when
+    result = deserialize_parent_origin(
+        parameter="test_param", parent_origin=parent_origin
+    )
+
+    # then
+    assert result is parent_origin
+
+
+def test_deserialize_parent_origin_when_valid_dict_given() -> None:
+    # given
+    parent_origin_dict = {
+        "offset_x": 100,
+        "offset_y": 200,
+        "width": 800,
+        "height": 600,
+    }
+
+    # when
+    result = deserialize_parent_origin(
+        parameter="test_param", parent_origin=parent_origin_dict
+    )
+
+    # then
+    assert isinstance(result, ParentOrigin)
+    assert result.offset_x == 100
+    assert result.offset_y == 200
+    assert result.width == 800
+    assert result.height == 600
+
+
+def test_deserialize_parent_origin_when_invalid_type_given() -> None:
+    # when
+    with pytest.raises(RuntimeInputError):
+        _ = deserialize_parent_origin(parameter="test_param", parent_origin="invalid")
+
+
+def test_deserialize_parent_origin_when_malformed_dict_given() -> None:
+    # given
+    malformed_dict = {
+        "offset_x": 100,
+        # missing offset_y
+        "width": 800,
+        "height": 600,
+    }
+
+    # when
+    with pytest.raises(RuntimeInputError):
+        _ = deserialize_parent_origin(
+            parameter="test_param", parent_origin=malformed_dict
+        )
+
+
+def test_deserialize_parent_origin_when_dict_with_invalid_values_given() -> None:
+    # given
+    invalid_dict = {
+        "offset_x": 100,
+        "offset_y": 200,
+        "width": 0,  # invalid: must be > 0
+        "height": 600,
+    }
+
+    # when
+    with pytest.raises(RuntimeInputError):
+        _ = deserialize_parent_origin(
+            parameter="test_param", parent_origin=invalid_dict
+        )
+
+
+def test_deserialize_image_kind_with_parent_origin_metadata() -> None:
+    # given
+    image_array = np.zeros((100, 100, 3), dtype=np.uint8)
+    image_dict = {
+        "value": image_array,
+        "parent_id": "crop_id",
+        "parent_origin": {
+            "offset_x": 50,
+            "offset_y": 75,
+            "width": 800,
+            "height": 600,
+        },
+    }
+
+    # when
+    result = deserialize_image_kind(parameter="test_param", image=image_dict)
+
+    # then
+    assert isinstance(result, WorkflowImageData)
+    assert result.parent_metadata.parent_id == "crop_id"
+    assert result.parent_metadata.origin_coordinates == OriginCoordinatesSystem(
+        left_top_x=50,
+        left_top_y=75,
+        origin_width=800,
+        origin_height=600,
+    )
+    assert np.array_equal(result.numpy_image, image_array)
+
+
+def test_deserialize_image_kind_with_root_parent_origin_metadata() -> None:
+    # given
+    image_array = np.zeros((100, 100, 3), dtype=np.uint8)
+    image_dict = {
+        "value": image_array,
+        "parent_id": "crop_id",
+        "parent_origin": {
+            "offset_x": 50,
+            "offset_y": 75,
+            "width": 800,
+            "height": 600,
+        },
+        "root_parent_id": "original_image",
+        "root_parent_origin": {
+            "offset_x": 150,
+            "offset_y": 200,
+            "width": 1920,
+            "height": 1080,
+        },
+    }
+
+    # when
+    result = deserialize_image_kind(parameter="test_param", image=image_dict)
+
+    # then
+    assert isinstance(result, WorkflowImageData)
+    assert result.parent_metadata.parent_id == "crop_id"
+    assert result.parent_metadata.origin_coordinates == OriginCoordinatesSystem(
+        left_top_x=50,
+        left_top_y=75,
+        origin_width=800,
+        origin_height=600,
+    )
+    assert result.workflow_root_ancestor_metadata.parent_id == "original_image"
+    assert (
+        result.workflow_root_ancestor_metadata.origin_coordinates
+        == OriginCoordinatesSystem(
+            left_top_x=150,
+            left_top_y=200,
+            origin_width=1920,
+            origin_height=1080,
+        )
+    )
+    assert np.array_equal(result.numpy_image, image_array)
+
+
+def test_deserialize_detections_kind_with_parent_origin_metadata() -> None:
+    # given
+    detections = {
+        "image": {
+            "width": 1200,
+            "height": 900,
+        },
+        "predictions": [
+            {
+                "width": 10,
+                "height": 20,
+                "x": 150,
+                "y": 200,
+                "confidence": 0.1,
+                "class_id": 1,
+                "class": "cat",
+                "detection_id": "first",
+                "parent_id": "crop_id",
+                "parent_origin": {
+                    "offset_x": 50,
+                    "offset_y": 75,
+                    "width": 800,
+                    "height": 600,
+                },
+            },
+        ],
+    }
+
+    # when
+    result = deserialize_detections_kind(
+        parameter="my_param",
+        detections=detections,
+    )
+
+    # then
+    assert isinstance(result, sv.Detections)
+    assert len(result) == 1
+    assert result.data["parent_id"] == np.array(["crop_id"])
+    assert "parent_coordinates" in result.data
+    assert np.allclose(result.data["parent_coordinates"], np.array([[50, 75]]))
+    assert "parent_dimensions" in result.data
+    assert np.allclose(result.data["parent_dimensions"], np.array([[600, 800]]))
+
+
+def test_deserialize_detections_kind_with_root_parent_origin_metadata() -> None:
+    # given
+    detections = {
+        "image": {
+            "width": 1200,
+            "height": 900,
+        },
+        "predictions": [
+            {
+                "width": 10,
+                "height": 20,
+                "x": 150,
+                "y": 200,
+                "confidence": 0.1,
+                "class_id": 1,
+                "class": "cat",
+                "detection_id": "first",
+                "parent_id": "crop_id",
+                "parent_origin": {
+                    "offset_x": 50,
+                    "offset_y": 75,
+                    "width": 800,
+                    "height": 600,
+                },
+                "root_parent_id": "original_image",
+                "root_parent_origin": {
+                    "offset_x": 150,
+                    "offset_y": 200,
+                    "width": 900,
+                    "height": 400,
+                },
+            },
+        ],
+    }
+
+    # when
+    result = deserialize_detections_kind(
+        parameter="my_param",
+        detections=detections,
+    )
+
+    # then
+    assert isinstance(result, sv.Detections)
+    assert len(result) == 1
+    assert result.data["parent_id"] == np.array(["crop_id"])
+    assert "parent_coordinates" in result.data
+    assert np.allclose(result.data["parent_coordinates"], np.array([[50, 75]]))
+    assert "parent_dimensions" in result.data
+    assert np.allclose(result.data["parent_dimensions"], np.array([[600, 800]]))
+    assert result.data["root_parent_id"] == np.array(["original_image"])
+    assert "root_parent_coordinates" in result.data
+    assert np.allclose(result.data["root_parent_coordinates"], np.array([[150, 200]]))
+    assert "root_parent_dimensions" in result.data
+    assert np.allclose(result.data["root_parent_dimensions"], np.array([[400, 900]]))

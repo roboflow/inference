@@ -28,6 +28,7 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.cli.txt \
     requirements/requirements.sdk.http.txt \
     requirements/requirements.easyocr.txt \
+    requirements/requirements.modal.txt \
     ./
 
 RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then mv requirements.vino.txt requirements.cpu.txt; fi
@@ -45,6 +46,7 @@ RUN pip3 install \
     -r requirements.cli.txt \
     -r requirements.sdk.http.txt \
     -r requirements.easyocr.txt \
+    -r requirements.modal.txt \
     "setuptools<=75.5.0" \
     --upgrade \
     && rm -rf ~/.cache/pip
