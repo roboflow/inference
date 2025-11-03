@@ -372,8 +372,8 @@ def test_correct_detections_with_keypoints():
     corrected_detections = correct_detections(
         detections=detections,
         perspective_transformer=transformer,
-        transformed_rect_width=[100],
-        transformed_rect_height=[100],
+        transformed_rect_width=100,
+        transformed_rect_height=100,
     )
 
     # then
@@ -388,6 +388,34 @@ def test_correct_detections_with_keypoints():
 
 
 def test_warp_image():
+    # given
+    dummy_image = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
+    dummy_predictions = sv.Detections(xyxy=np.array([[10, 10, 20, 20]]))
+    perspective_correction_block = PerspectiveCorrectionBlockV1()
+
+    workflow_image_data = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="test"), numpy_image=dummy_image
+    )
+
+    # when
+    result = perspective_correction_block.run(
+        images=[workflow_image_data],
+        predictions=[dummy_predictions],
+        perspective_polygons=[[[1, 1], [99, 1], [99, 99], [1, 99]]],
+        transformed_rect_width=200,
+        transformed_rect_height=200,
+        extend_perspective_polygon_by_detections_anchor=None,
+        warp_image=True,
+    )
+
+    # then
+    assert "warped_image" in result[0], "warped_image key must be present in the result"
+    assert isinstance(
+        result[0]["warped_image"], WorkflowImageData
+    ), f"warped_image must be of type WorkflowImageData"
+
+
+def test_warp_image_batch_dims():
     # given
     dummy_image = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
     dummy_predictions = sv.Detections(xyxy=np.array([[10, 10, 20, 20]]))
