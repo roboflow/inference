@@ -297,6 +297,14 @@ REGISTERED_MODELS: Dict[
         module_name="inference_exp.models.vit.vit_classification_huggingface",
         class_name="VITForMultiLabelClassificationHF",
     ),
+    ("vit", CLASSIFICATION_TASK, BackendType.TRT): LazyClass(
+        module_name="inference_exp.models.vit.vit_classification_trt",
+        class_name="VITForClassificationTRT",
+    ),
+    ("vit", MULTI_LABEL_CLASSIFICATION_TASK, BackendType.TRT): LazyClass(
+        module_name="inference_exp.models.vit.vit_classification_trt",
+        class_name="VITForMultiLabelClassificationTRT",
+    ),
     ("resnet", CLASSIFICATION_TASK, BackendType.ONNX): LazyClass(
         module_name="inference_exp.models.resnet.resnet_classification_onnx",
         class_name="ResNetForClassificationOnnx",
@@ -313,6 +321,14 @@ REGISTERED_MODELS: Dict[
         module_name="inference_exp.models.resnet.resnet_classification_torch",
         class_name="ResNetForMultiLabelClassificationTorch",
     ),
+    ("resnet", CLASSIFICATION_TASK, BackendType.TRT): LazyClass(
+        module_name="inference_exp.models.resnet.resnet_classification_trt",
+        class_name="ResNetForClassificationTRT",
+    ),
+    ("resnet", MULTI_LABEL_CLASSIFICATION_TASK, BackendType.TRT): LazyClass(
+        module_name="inference_exp.models.resnet.resnet_classification_trt",
+        class_name="ResNetForMultiLabelClassificationTRT",
+    ),
     ("segment-anything-2-rt", INSTANCE_SEGMENTATION_TASK, BackendType.TORCH): LazyClass(
         module_name="inference_exp.models.sam2_rt.sam2_pytorch",
         class_name="SAM2ForStream",
@@ -325,9 +341,17 @@ REGISTERED_MODELS: Dict[
         module_name="inference_exp.models.deep_lab_v3_plus.deep_lab_v3_plus_segmentation_onnx",
         class_name="DeepLabV3PlusForSemanticSegmentationOnnx",
     ),
+    ("deep-lab-v3-plus", SEMANTIC_SEGMENTATION_TASK, BackendType.TRT): LazyClass(
+        module_name="inference_exp.models.deep_lab_v3_plus.deep_lab_v3_plus_segmentation_trt",
+        class_name="DeepLabV3PlusForSemanticSegmentationTRT",
+    ),
     ("yolact", INSTANCE_SEGMENTATION_TASK, BackendType.ONNX): LazyClass(
         module_name="inference_exp.models.yolact.yolact_instance_segmentation_onnx",
         class_name="YOLOACTForInstanceSegmentationOnnx",
+    ),
+    ("yolact", INSTANCE_SEGMENTATION_TASK, BackendType.TRT): LazyClass(
+        module_name="inference_exp.models.yolact.yolact_instance_segmentation_trt",
+        class_name="YOLOACTForInstanceSegmentationTRT",
     ),
 }
 
