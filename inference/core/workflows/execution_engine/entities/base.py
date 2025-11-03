@@ -209,6 +209,42 @@ class VideoMetadata(BaseModel):
     )
 
 
+class ParentOrigin(BaseModel):
+    offset_x: int = Field(
+        description="Offset from the left of the parent image in pixels"
+    )
+    offset_y: int = Field(
+        description="Offset from the top of the parent image in pixels"
+    )
+    width: int = Field(
+        description="Width of the parent image in pixels",
+        gt=0,
+    )
+    height: int = Field(
+        description="Height of the parent image in pixels",
+        gt=0,
+    )
+
+    @classmethod
+    def from_origin_coordinates_system(
+        cls, origin_coordinates_system: "OriginCoordinatesSystem"
+    ) -> "ParentOrigin":
+        return cls(
+            offset_x=origin_coordinates_system.left_top_x,
+            offset_y=origin_coordinates_system.left_top_y,
+            width=origin_coordinates_system.origin_width,
+            height=origin_coordinates_system.origin_height,
+        )
+
+    def to_origin_coordinates_system(self) -> "OriginCoordinatesSystem":
+        return OriginCoordinatesSystem(
+            left_top_x=self.offset_x,
+            left_top_y=self.offset_y,
+            origin_width=self.width,
+            origin_height=self.height,
+        )
+
+
 @dataclass(frozen=True)
 class OriginCoordinatesSystem:
     left_top_x: int
