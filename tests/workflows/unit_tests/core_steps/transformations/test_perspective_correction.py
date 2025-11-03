@@ -414,24 +414,31 @@ def test_warp_image():
         result[0]["warped_image"], WorkflowImageData
     ), f"warped_image must be of type WorkflowImageData"
 
+
 def test_batch_input():
     # given
     batch_size = 3
-    dummy_images = [np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)]*batch_size
-    dummy_predictions = [sv.Detections(xyxy=np.array([[10, 10, 20, 20]]))]*batch_size
+    dummy_images = [
+        np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
+    ] * batch_size
+    dummy_predictions = [sv.Detections(xyxy=np.array([[10, 10, 20, 20]]))] * batch_size
     perspective_correction_block = PerspectiveCorrectionBlockV1()
 
-    workflow_image_data = [WorkflowImageData(
-        parent_metadata=ImageParentMetadata(parent_id="test"), numpy_image=dummy_image
-    ) for dummy_image in dummy_images]
+    workflow_image_data = [
+        WorkflowImageData(
+            parent_metadata=ImageParentMetadata(parent_id="test"),
+            numpy_image=dummy_image,
+        )
+        for dummy_image in dummy_images
+    ]
 
     # when
     result = perspective_correction_block.run(
         images=workflow_image_data,
         predictions=dummy_predictions,
         perspective_polygons=[[[1, 1], [99, 1], [99, 99], [1, 99]]],
-        transformed_rect_width=[200]*batch_size,
-        transformed_rect_height=[200]*batch_size,
+        transformed_rect_width=[200] * batch_size,
+        transformed_rect_height=[200] * batch_size,
         extend_perspective_polygon_by_detections_anchor=None,
         warp_image=True,
     )
