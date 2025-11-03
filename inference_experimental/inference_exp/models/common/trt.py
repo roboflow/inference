@@ -196,8 +196,18 @@ def execute_trt_engine(
         )
         context.set_tensor_address(output, result.data_ptr())
         results.append(result)
-    context.set_input_shape(input_name, tuple(pre_processed_images.shape))
-    context.set_tensor_address(input_name, pre_processed_images.data_ptr())
+    status = context.set_input_shape(input_name, tuple(pre_processed_images.shape))
+    if not status:
+        raise ModelRuntimeError(
+            message="Failed to set TRT model input shape during forward pass from the model.",
+            help_url="https://todo",
+        )
+    status = context.set_tensor_address(input_name, pre_processed_images.data_ptr())
+    if not status:
+        raise ModelRuntimeError(
+            message="Failed to set input tensor data pointer during forward pass from the model.",
+            help_url="https://todo",
+        )
     stream = torch.cuda.Stream(device=device)
     status = context.execute_async_v3(stream_handle=stream.cuda_stream)
     if not status:
