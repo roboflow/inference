@@ -285,14 +285,9 @@ async def init_rtc_peer_connection_with_loop(
         player = MediaPlayer(
             webrtc_request.rtsp_url,
             options={
-                "rtsp_transport": "tcp",  # avoid UDP loss/reorder
-                "stimeout": "2000000",  # 2s socket timeout (microseconds)
-                # "rw_timeout": "2000000",  # (optional) I/O timeout, if supported
-                # "max_delay": "0",         # (optional) may reduce latency on some sources
-                "rtsp_flags": "prefer_tcp",  # alternative to rtsp_transport=tcp
-                # Avoid 'fflags=nobuffer' unless your encoder has NO B-frames
-                # "fflags": "nobuffer",
-                # "flags": "low_delay",
+                "rtsp_transport": "tcp",
+                "rtsp_flags": "prefer_tcp",
+                "stimeout": "2000000",  # 2s socket timeout
             },
         )
         video_transform_track.set_track(
