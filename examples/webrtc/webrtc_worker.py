@@ -316,7 +316,7 @@ def main():
         stream_output=["video"],
         data_output=["preds"],
         webrtc_realtime_processing=args.realtime,
-        rtsp_url=args.source,
+        rtsp_url=args.source if is_rtmp_url(args.source) else None,
     )
 
     https_verify = True
