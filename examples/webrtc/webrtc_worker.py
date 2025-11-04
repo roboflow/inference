@@ -44,13 +44,6 @@ logging.basicConfig(
 logger = logging.getLogger(Path(__file__).stem)
 
 
-class WebcamFrameGrabberState(Enum):
-    STOPPED = "STOPPED"
-    STOPPING = "STOPPING"
-    STARTING = "STARTING"
-    STARTED = "STARTED"
-
-
 class FramesGrabber:
     def __init__(
         self,
@@ -87,7 +80,7 @@ class StreamTrack(VideoStreamTrack):
         if asyncio_loop is None:
             self._loop = asyncio.get_event_loop()
 
-        self._camera = FramesGrabber(source_path=source_path)
+        self._source = FramesGrabber(source_path=source_path)
 
         self.track: Optional[RemoteStreamTrack] = None
         self._recv_task: Optional[asyncio.Task] = None
@@ -128,7 +121,7 @@ class StreamTrack(VideoStreamTrack):
 
         np_frame = await self._loop.run_in_executor(
             None,
-            self._camera.get_frame,
+            self._source.get_frame,
         )
         if np_frame is None:
             logger.info("%s: No more frames", self.__class__.__name__)
@@ -145,7 +138,7 @@ class RTCPeerConnectionWithDataChannel(RTCPeerConnection):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.data_channel: Optional[RTCDataChannel] = None
-        self.webcam_stream_track: Optional[StreamTrack] = None
+        self.stream_track: Optional[StreamTrack] = None
         self.closed_event: Event = Event()
 
 
@@ -154,7 +147,7 @@ async def init_rtc_peer_connection_with_local_description(
     webrtc_turn_config: Optional[WebRTCTURNConfig] = None,
     source_path: Optional[str] = None,
 ) -> RTCPeerConnectionWithDataChannel:
-    webcam_stream_track = StreamTrack(
+    stream_track = StreamTrack(
         asyncio_loop=asyncio_loop,
         source_path=source_path,
     )
@@ -175,14 +168,14 @@ async def init_rtc_peer_connection_with_local_description(
     @peer_connection.on("track")
     def on_track(track: RemoteStreamTrack):
         logger.info("track received")
-        webcam_stream_track.set_track(track=relay.subscribe(track))
-        peer_connection.webcam_stream_track = webcam_stream_track
+        stream_track.set_track(track=relay.subscribe(track))
+        peer_connection.stream_track = stream_track
 
     @peer_connection.on("connectionstatechange")
     async def on_connectionstatechange():
         logger.info("connection state: %s", peer_connection.connectionState)
         if peer_connection.connectionState in {"failed", "closed"}:
-            await webcam_stream_track.stop_recv_loop()
+            await stream_track.stop_recv_loop()
             peer_connection.closed_event.set()
             await peer_connection.close()
 
@@ -193,7 +186,7 @@ async def init_rtc_peer_connection_with_local_description(
         print(message)
 
     peer_connection.data_channel = data_channel
-    peer_connection.addTrack(webcam_stream_track)
+    peer_connection.addTrack(stream_track)
 
     offer: RTCSessionDescription = await peer_connection.createOffer()
     await peer_connection.setLocalDescription(offer)
@@ -311,7 +304,7 @@ def main():
 
     while not peer_connection.closed_event.is_set():
         frame: Optional[VideoFrame] = (
-            peer_connection.webcam_stream_track.recv_queue.sync_get()
+            peer_connection.stream_track.recv_queue.sync_get()
         )
         if frame is None:
             logger.info("No more frames")
@@ -382,7 +375,7 @@ def main():
 
     cv.destroyAllWindows()
     asyncio.run_coroutine_threadsafe(
-        peer_connection.webcam_stream_track.stop_recv_loop(),
+        peer_connection.stream_track.stop_recv_loop(),
         asyncio_loop,
     ).result()
     asyncio.run_coroutine_threadsafe(
