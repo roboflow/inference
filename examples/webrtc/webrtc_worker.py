@@ -4,7 +4,6 @@ import json
 import logging
 import sys
 import urllib.parse
-from enum import Enum
 from pathlib import Path
 from threading import Event, Thread
 from typing import Optional
@@ -94,7 +93,9 @@ class StreamTrack(VideoStreamTrack):
 
     async def stop_recv_loop(self):
         if self._recv_task:
+            logger.info("Cancelling WebRTC recv loop")
             self._recv_task.cancel()
+            self._recv_task = None
         await self.recv_queue.async_put(None)
 
     async def _recv_loop(self):
@@ -383,10 +384,13 @@ def main():
         peer_connection.stream_track.stop_recv_loop(),
         asyncio_loop,
     ).result()
-    asyncio.run_coroutine_threadsafe(
-        peer_connection.close(),
-        asyncio_loop,
-    ).result()
+    if peer_connection.connectionState != "closed":
+        logger.info("Closing WebRTC connection")
+        asyncio.run_coroutine_threadsafe(
+            peer_connection.close(),
+            asyncio_loop,
+        ).result()
+    logger.info("Stopping asyncio loop")
     asyncio_loop.stop()
     loop_thread.join()
 
