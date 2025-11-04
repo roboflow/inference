@@ -98,6 +98,7 @@ class StreamTrack(VideoStreamTrack):
         await self.recv_queue.async_put(None)
 
     async def _recv_loop(self):
+        logger.info("Starting WebRTC recv loop")
         # Silencing swscaler warnings in multi-threading environment
         if not self._av_logging_set:
             set_libav_level(ERROR)
@@ -169,11 +170,17 @@ async def init_rtc_peer_connection_with_local_description(
 
     is_rtmp = is_rtmp_url(url=source)
     if is_rtmp:
+        logger.info("Requesting processing of RTMP/RTSP stream: %s", source)
         stream_track = StreamTrack(
             asyncio_loop=asyncio_loop,
         )
         peer_connection.addTransceiver("video", direction="recvonly")
+        peer_connection.stream_track = stream_track
     else:
+        logger.info(
+            "Requesting processing of local video stream: %s",
+            source if source else "webcam",
+        )
         if source is None:
             source = 0
         stream_track = StreamTrack(
@@ -182,10 +189,11 @@ async def init_rtc_peer_connection_with_local_description(
         )
         peer_connection.addTrack(stream_track)
 
+    relay = MediaRelay()
+
     @peer_connection.on("track")
     def on_track(track: RemoteStreamTrack):
         logger.info("track received")
-        relay = MediaRelay()
         stream_track.set_track(track=relay.subscribe(track))
         peer_connection.stream_track = stream_track
 
@@ -193,8 +201,13 @@ async def init_rtc_peer_connection_with_local_description(
     async def on_connectionstatechange():
         logger.info("connection state: %s", peer_connection.connectionState)
         if peer_connection.connectionState in {"failed", "closed"}:
+            logger.info("Stopping recv loop")
             await stream_track.stop_recv_loop()
+            if stream_track.track:
+                logger.info("Stopping track")
+                stream_track.track.stop()
             peer_connection.closed_event.set()
+            logger.info("Stopping peer connection")
             await peer_connection.close()
 
     data_channel = peer_connection.createDataChannel("inference")
@@ -303,6 +316,7 @@ def main():
         stream_output=["video"],
         data_output=["preds"],
         webrtc_realtime_processing=args.realtime,
+        rtsp_url=args.source,
     )
 
     https_verify = True
@@ -411,8 +425,9 @@ def main():
             asyncio_loop,
         ).result()
     logger.info("Stopping asyncio loop")
-    asyncio_loop.stop()
-    loop_thread.join()
+    asyncio_loop.call_soon_threadsafe(asyncio_loop.stop)
+    loop_thread.join(timeout=5)
+    asyncio_loop.close()
 
 
 if __name__ == "__main__":
