@@ -145,13 +145,8 @@ class RTCPeerConnectionWithDataChannel(RTCPeerConnection):
 async def init_rtc_peer_connection_with_local_description(
     asyncio_loop: asyncio.AbstractEventLoop,
     webrtc_turn_config: Optional[WebRTCTURNConfig] = None,
-    source_path: Optional[str] = None,
+    source: Optional[str] = None,
 ) -> RTCPeerConnectionWithDataChannel:
-    stream_track = StreamTrack(
-        asyncio_loop=asyncio_loop,
-        source_path=source_path,
-    )
-
     if webrtc_turn_config:
         turn_server = RTCIceServer(
             urls=[webrtc_turn_config.urls],
@@ -163,11 +158,17 @@ async def init_rtc_peer_connection_with_local_description(
         )
     else:
         peer_connection = RTCPeerConnectionWithDataChannel()
-    relay = MediaRelay()
+
+    is_rtmp = is_rtmp_url(url=source)
+    stream_track = StreamTrack(
+        asyncio_loop=asyncio_loop,
+        source_path=source,
+    )
 
     @peer_connection.on("track")
     def on_track(track: RemoteStreamTrack):
         logger.info("track received")
+        relay = MediaRelay()
         stream_track.set_track(track=relay.subscribe(track))
         peer_connection.stream_track = stream_track
 
@@ -197,22 +198,26 @@ async def init_rtc_peer_connection_with_local_description(
     return peer_connection
 
 
-class FileMustExist(argparse.Action):
+def is_rtmp_url(url: str) -> bool:
+    return str(url).lower().startswith("rtmp:") or str(url).lower().startswith("rtsp:")
+
+
+class MustBeFileOrRTSP(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
-        if not values.strip() or not Path(values.strip()).exists():
-            raise argparse.ArgumentError(argument=self, message="Incorrect path")
+        if not values.strip() or (not Path(values.strip()).exists() and not is_rtmp_url(values.strip())):
+            raise argparse.ArgumentError(argument=self, message="Expected file path or RTSP/RTMP url")
         setattr(namespace, self.dest, values)
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="WebRTC webcam stream")
+    parser = argparse.ArgumentParser(description="Stream video file or webcam to Roboflow for processing, or request processed RTSP/RTMP stream")
     parser.add_argument(
-        "--source-path",
+        "--source",
         required=False,
         type=str,
         default=None,
-        action=FileMustExist,
-        help="Path to video file, if not provided webcam will be used",
+        action=MustBeFileOrRTSP,
+        help="RTSP/RTMP url or path to video file, if not provided webcam will be used",
     )
     parser.add_argument("--workflow-id", required=True, type=str)
     parser.add_argument("--workspace-id", required=True, type=str)
@@ -250,7 +255,7 @@ def main():
         init_rtc_peer_connection_with_local_description(
             asyncio_loop=asyncio_loop,
             webrtc_turn_config=webrtc_turn_config,
-            source_path=args.source_path,
+            source=args.source,
         ),
         asyncio_loop,
     )
