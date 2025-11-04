@@ -217,6 +217,11 @@ conflicts = [
     { extra = "onnx-jp6-cu126" },
   ],
 ]
+required-environments = [
+  "sys_platform == 'linux' and platform_machine == 'x86_64' and python_version == '3.12'",
+  # for jetson builds we use python 3.10...but it wont resolve onnxruntime-gpu:
+  #"sys_platform == 'linux' and platform_machine == 'aarch64' and python_version == '3.10'", 
+]
 
 [tool.setuptools.package-data]
 inference_exp = [
