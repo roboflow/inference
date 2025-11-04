@@ -233,7 +233,9 @@ class YOLOv8ForKeyPointsDetectionOnnx(
                     confidence=result[:, 4],
                 )
             )
-            key_points_reshaped = result[:, 6:].view(result.shape[0], -1, 3)
+            key_points_reshaped = result[:, 6:].view(
+                result.shape[0], self._key_points_slots_in_prediction, 3
+            )
             xy = key_points_reshaped[:, :, :2]
             confidence = key_points_reshaped[:, :, 2]
             key_points_classes_for_instance_class = (

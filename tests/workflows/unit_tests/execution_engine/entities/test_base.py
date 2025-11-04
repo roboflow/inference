@@ -13,6 +13,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     ImageParentMetadata,
     OriginCoordinatesSystem,
+    ParentOrigin,
     VideoMetadata,
     WorkflowImageData,
 )
@@ -951,3 +952,85 @@ def test_workflow_image_build_create_crop_with_video_metadata_preservation() -> 
         result.video_metadata.video_identifier == "video_id | crop: my_crop"
     ), "Expected preserved metadata with updated id"
     assert result.video_metadata.fps == 40, "Expected preserved metadata"
+
+
+def test_parent_origin_from_origin_coordinates_system() -> None:
+    # given
+    origin_coords = OriginCoordinatesSystem(
+        left_top_x=100,
+        left_top_y=200,
+        origin_width=800,
+        origin_height=600,
+    )
+
+    # when
+    result = ParentOrigin.from_origin_coordinates_system(origin_coords)
+
+    # then
+    assert result.offset_x == 100
+    assert result.offset_y == 200
+    assert result.width == 800
+    assert result.height == 600
+
+
+def test_parent_origin_to_origin_coordinates_system() -> None:
+    # given
+    parent_origin = ParentOrigin(
+        offset_x=100,
+        offset_y=200,
+        width=800,
+        height=600,
+    )
+
+    # when
+    result = parent_origin.to_origin_coordinates_system()
+
+    # then
+    assert result.left_top_x == 100
+    assert result.left_top_y == 200
+    assert result.origin_width == 800
+    assert result.origin_height == 600
+
+
+def test_parent_origin_validation_rejects_zero_width() -> None:
+    # when
+    with pytest.raises(Exception):  # pydantic ValidationError
+        _ = ParentOrigin(
+            offset_x=0,
+            offset_y=0,
+            width=0,
+            height=100,
+        )
+
+
+def test_parent_origin_validation_rejects_zero_height() -> None:
+    # when
+    with pytest.raises(Exception):  # pydantic ValidationError
+        _ = ParentOrigin(
+            offset_x=0,
+            offset_y=0,
+            width=100,
+            height=0,
+        )
+
+
+def test_parent_origin_validation_rejects_negative_width() -> None:
+    # when
+    with pytest.raises(Exception):  # pydantic ValidationError
+        _ = ParentOrigin(
+            offset_x=0,
+            offset_y=0,
+            width=-100,
+            height=100,
+        )
+
+
+def test_parent_origin_validation_rejects_negative_height() -> None:
+    # when
+    with pytest.raises(Exception):  # pydantic ValidationError
+        _ = ParentOrigin(
+            offset_x=0,
+            offset_y=0,
+            width=100,
+            height=-100,
+        )

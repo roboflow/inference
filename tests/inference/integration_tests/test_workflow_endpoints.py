@@ -691,7 +691,7 @@ def test_get_versions_of_execution_engine(server_url: str) -> None:
     # then
     response.raise_for_status()
     response_data = response.json()
-    assert response_data["versions"] == ["1.6.0"]
+    assert response_data["versions"] == ["1.7.0"]
 
 
 def test_getting_block_schema_using_get_endpoint(server_url) -> None:

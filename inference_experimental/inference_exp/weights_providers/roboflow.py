@@ -61,6 +61,7 @@ class RoboflowModelMetadata(BaseModel):
     type: Literal["external-model-metadata-v1"]
     model_id: str = Field(alias="modelId")
     model_architecture: str = Field(alias="modelArchitecture")
+    model_variant: Optional[str] = Field(alias="modelVariant", default=None)
     task_type: Optional[str] = Field(alias="taskType", default=None)
     model_packages: List[Union[RoboflowModelPackageV1, dict]] = Field(
         alias="modelPackages",
@@ -81,6 +82,7 @@ def get_roboflow_model(model_id: str, api_key: Optional[str] = None) -> ModelMet
         model_architecture=model_metadata.model_architecture,
         model_packages=parsed_model_packages,
         task_type=model_metadata.task_type,
+        model_variant=model_metadata.model_variant,
     )
 
 

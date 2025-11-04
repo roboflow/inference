@@ -1,5 +1,5 @@
 import threading
-from typing import Dict, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -33,7 +33,10 @@ from inference_exp.models.common.trt import (
     infer_from_trt_engine,
     load_model,
 )
-from inference_exp.models.rfdetr.class_remapping import prepare_class_remapping
+from inference_exp.models.rfdetr.class_remapping import (
+    ClassesReMapping,
+    prepare_class_remapping,
+)
 
 try:
     import tensorrt as trt
@@ -99,11 +102,12 @@ class RFDetrForObjectDetectionTRT(
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
             },
         )
-        class_id_remapping = None
+        classes_re_mapping = None
         if inference_config.class_names_operations:
-            class_names, class_id_remapping = prepare_class_remapping(
+            class_names, classes_re_mapping = prepare_class_remapping(
                 class_names=class_names,
                 class_names_operations=inference_config.class_names_operations,
+                device=device,
             )
         trt_config = parse_trt_config(
             config_path=model_package_content["trt_config.json"]
@@ -137,7 +141,7 @@ class RFDetrForObjectDetectionTRT(
             input_name=inputs[0],
             output_names=["dets", "labels"],
             class_names=class_names,
-            class_id_remapping=class_id_remapping,
+            classes_re_mapping=classes_re_mapping,
             inference_config=inference_config,
             trt_config=trt_config,
             device=device,
@@ -151,7 +155,7 @@ class RFDetrForObjectDetectionTRT(
         input_name: str,
         output_names: List[str],
         class_names: List[str],
-        class_id_remapping: Optional[Dict[int, int]],
+        classes_re_mapping: Optional[ClassesReMapping],
         inference_config: InferenceConfig,
         trt_config: TRTConfig,
         device: torch.device,
@@ -163,7 +167,7 @@ class RFDetrForObjectDetectionTRT(
         self._output_names = output_names
         self._inference_config = inference_config
         self._class_names = class_names
-        self._class_id_remapping = class_id_remapping
+        self._classes_re_mapping = classes_re_mapping
         self._device = device
         self._cuda_context = cuda_context
         self._execution_context = execution_context
@@ -225,18 +229,13 @@ class RFDetrForObjectDetectionTRT(
             confidence, sorted_indices = torch.sort(confidence, descending=True)
             top_classes = top_classes[sorted_indices]
             selected_boxes = selected_boxes[sorted_indices]
-            if self._class_id_remapping is not None:
-                remapping_mask = [
-                    label not in self._class_id_remapping for label in top_classes
-                ]
-                top_classes = top_classes[remapping_mask]
-                top_classes = torch.tensor(
-                    [
-                        self._class_id_remapping[label]
-                        for label in top_classes[remapping_mask].tolist()
-                    ],
-                    device=top_classes.device,
+            if self._classes_re_mapping is not None:
+                remapping_mask = torch.isin(
+                    top_classes, self._classes_re_mapping.remaining_class_ids
                 )
+                top_classes = self._classes_re_mapping.class_mapping[
+                    top_classes[remapping_mask]
+                ]
                 selected_boxes = selected_boxes[remapping_mask]
                 confidence = confidence[remapping_mask]
             cxcy = selected_boxes[:, :2]

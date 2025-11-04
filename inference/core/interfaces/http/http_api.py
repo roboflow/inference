@@ -22,6 +22,7 @@ from fastapi import (
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
+from pydantic import ValidationError
 from starlette.datastructures import UploadFile
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -142,7 +143,6 @@ from inference.core.env import (
     DOCKER_SOCKET_PATH,
     ENABLE_BUILDER,
     ENABLE_DASHBOARD,
-    ENABLE_PROMETHEUS,
     ENABLE_STREAM_API,
     ENABLE_WORKFLOWS_PROFILING,
     GCP_SERVERLESS,
@@ -158,6 +158,7 @@ from inference.core.env import (
     PRELOAD_MODELS,
     PROFILE,
     ROBOFLOW_SERVICE_SECRET,
+    WEBRTC_WORKER_ENABLED,
     WORKFLOWS_MAX_CONCURRENT_STEPS,
     WORKFLOWS_PROFILER_BUFFER_SIZE,
     WORKFLOWS_STEP_EXECUTION_MODE,
@@ -166,8 +167,10 @@ from inference.core.exceptions import (
     ContentTypeInvalid,
     ContentTypeMissing,
     InputImageLoadError,
+    MissingApiKeyError,
     MissingServiceSecretError,
     RoboflowAPINotAuthorizedError,
+    RoboflowAPINotNotFoundError,
     WorkspaceLoadError,
 )
 from inference.core.interfaces.base import BaseInterface
@@ -190,10 +193,12 @@ from inference.core.interfaces.http.orjson_utils import (
     orjson_response_keeping_parent_id,
 )
 from inference.core.interfaces.stream_manager.api.entities import (
+    CommandContext,
     CommandResponse,
     ConsumePipelineResponse,
     InferencePipelineStatusResponse,
     InitializeWebRTCPipelineResponse,
+    InitializeWebRTCResponse,
     ListPipelinesResponse,
 )
 from inference.core.interfaces.stream_manager.api.stream_manager_client import (
@@ -203,6 +208,12 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
     ConsumeResultsPayload,
     InitialisePipelinePayload,
     InitialiseWebRTCPipelinePayload,
+    OperationStatus,
+)
+from inference.core.interfaces.webrtc_worker import start_worker
+from inference.core.interfaces.webrtc_worker.entities import (
+    WebRTCWorkerRequest,
+    WebRTCWorkerResult,
 )
 from inference.core.managers.base import ModelManager
 from inference.core.managers.metrics import get_container_stats
@@ -215,6 +226,7 @@ from inference.core.roboflow_api import (
 from inference.core.utils.container import is_docker_socket_mounted
 from inference.core.utils.notebooks import start_notebook
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.errors import WorkflowSyntaxError
 from inference.core.workflows.execution_engine.core import (
     ExecutionEngine,
     get_available_versions,
@@ -248,6 +260,11 @@ try:
 except ImportError:
     execution_id = None
     EXECUTION_ID_HEADER = None
+
+
+def get_content_type(request: Request) -> str:
+    content_type = request.headers.get("content-type", "")
+    return content_type.split(";")[0].strip()
 
 
 class LambdaMiddleware(BaseHTTPMiddleware):
@@ -441,6 +458,9 @@ class HttpInterface(BaseInterface):
                         "/",
                         "/docs",
                         "/info",
+                        "/healthz",  # health check endpoint for liveness probe
+                        "/readiness",
+                        "/metrics",
                         "/openapi.json",  # needed for /docs and /redoc
                         "/model/registry",  # dont auth this route, usually not used on serverlerless, but queue based serverless uses it internally (not accessible from outside)
                     ]
@@ -457,7 +477,7 @@ class HttpInterface(BaseInterface):
                         skip_check = True
 
                     elif (
-                        request.headers.get("content-type", None) == "application/json"
+                        get_content_type(request) == "application/json"
                         and int(request.headers.get("content-length", 0)) > 0
                     ):
                         json_params = await request.json()
@@ -484,7 +504,7 @@ class HttpInterface(BaseInterface):
                 api_key = req_params.get("api_key", None)
                 if (
                     api_key is None
-                    and request.headers.get("content-type", None) == "application/json"
+                    and get_content_type(request) == "application/json"
                     and int(request.headers.get("content-length", 0)) > 0
                 ):
                     # have to try catch here, because some legacy endpoints that abuse Content-Type header but dont actually receive json
@@ -521,6 +541,9 @@ class HttpInterface(BaseInterface):
                         "/docs",
                         "/redoc",
                         "/info",
+                        "/healthz",  # health check endpoint for liveness probe
+                        "/readiness",
+                        "/metrics",
                         "/openapi.json",  # needed for /docs and /redoc
                     ]
                     or request.url.path.startswith("/static/")
@@ -544,7 +567,7 @@ class HttpInterface(BaseInterface):
                 api_key = req_params.get("api_key", None)
                 if (
                     api_key is None
-                    and request.headers.get("content-type", None) == "application/json"
+                    and get_content_type(request) == "application/json"
                     and int(request.headers.get("content-length", 0)) > 0
                 ):
                     # have to try catch here, because some legacy endpoints that abuse Content-Type header but dont actually receive json
@@ -1408,6 +1431,55 @@ class HttpInterface(BaseInterface):
                     prevent_local_images_loading=True,
                 )
                 return WorkflowValidationStatus(status="ok")
+
+        if WEBRTC_WORKER_ENABLED:
+
+            @app.post(
+                "/initialise_webrtc_worker",
+                response_model=InitializeWebRTCResponse,
+                summary="[EXPERIMENTAL] Establishes WebRTC peer connection and processes video stream in spawned process or modal function",
+                description="[EXPERIMENTAL] Establishes WebRTC peer connection and processes video stream in spawned process or modal function",
+            )
+            @with_route_exceptions_async
+            async def initialise_webrtc_worker(
+                request: WebRTCWorkerRequest,
+            ) -> InitializeWebRTCResponse:
+                logger.debug("Received initialise_webrtc_worker request")
+                worker_result: WebRTCWorkerResult = await start_worker(
+                    webrtc_request=request,
+                )
+                if worker_result.exception_type is not None:
+                    if worker_result.exception_type == "WorkflowSyntaxError":
+                        raise WorkflowSyntaxError(
+                            public_message=worker_result.error_message,
+                            context=worker_result.error_context,
+                            inner_error=worker_result.inner_error,
+                        )
+                    expected_exceptions = {
+                        "Exception": Exception,
+                        "KeyError": KeyError,
+                        "MissingApiKeyError": MissingApiKeyError,
+                        "NotImplementedError": NotImplementedError,
+                        "RoboflowAPINotAuthorizedError": RoboflowAPINotAuthorizedError,
+                        "RoboflowAPINotNotFoundError": RoboflowAPINotNotFoundError,
+                        "ValidationError": ValidationError,
+                    }
+                    exc = expected_exceptions.get(
+                        worker_result.exception_type, Exception
+                    )(worker_result.error_message)
+                    logger.error(
+                        f"Initialise webrtc worker failed with %s: %s",
+                        worker_result.exception_type,
+                        worker_result.error_message,
+                    )
+                    raise exc
+                logger.debug("Returning initialise_webrtc_worker response")
+                return InitializeWebRTCResponse(
+                    context=CommandContext(),
+                    status=OperationStatus.SUCCESS,
+                    sdp=worker_result.answer.sdp,
+                    type=worker_result.answer.type,
+                )
 
         if ENABLE_STREAM_API:
 

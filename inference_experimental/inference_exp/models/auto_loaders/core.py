@@ -1,6 +1,8 @@
+import hashlib
 import importlib
 import importlib.util
 import os.path
+import re
 from datetime import datetime
 from functools import partial
 from typing import Callable, Dict, List, Optional, Set, Tuple, Union
@@ -11,6 +13,7 @@ from inference_exp.configuration import DEFAULT_DEVICE, INFERENCE_HOME
 from inference_exp.errors import (
     CorruptedModelPackageError,
     DirectLocalStorageAccessError,
+    InsecureModelIdentifierError,
     ModelLoadingError,
     NoModelPackagesAvailableError,
     UnauthorizedModelAccessError,
@@ -32,6 +35,7 @@ from inference_exp.models.auto_loaders.entities import (
     TaskType,
 )
 from inference_exp.models.auto_loaders.models_registry import (
+    INSTANCE_SEGMENTATION_TASK,
     OBJECT_DETECTION_TASK,
     resolve_model_class,
 )
@@ -89,6 +93,7 @@ MODEL_TYPES_TO_LOAD_FROM_CHECKPOINT = {
     "rfdetr-medium",
     "rfdetr-nano",
     "rfdetr-large",
+    "rfdetr-seg-preview",
 }
 
 
@@ -117,6 +122,7 @@ class AutoModel:
             model_id=model_metadata.model_id,
             requested_model_id=model_id,
             model_architecture=model_metadata.model_architecture,
+            model_variant=model_metadata.model_variant,
             task_type=model_metadata.task_type,
             weights_provider=weights_provider,
             registered_packages=len(model_metadata.model_packages),
@@ -739,7 +745,35 @@ def generate_shared_blobs_path() -> str:
 
 
 def generate_model_package_cache_path(model_id: str, package_id: str) -> str:
-    return os.path.join(INFERENCE_HOME, "models-cache", model_id, package_id)
+    ensure_package_id_is_os_safe(model_id=model_id, package_id=package_id)
+    model_id_slug = slugify_model_id_to_os_safe_format(model_id=model_id)
+    return os.path.join(INFERENCE_HOME, "models-cache", model_id_slug, package_id)
+
+
+def ensure_package_id_is_os_safe(model_id: str, package_id: str) -> None:
+    if re.search(r"[^A-Za-z0-9]", package_id):
+        raise InsecureModelIdentifierError(
+            message=f"Attempted to load model: {model_id} using package ID: {package_id} which "
+            f"has invalid format. ID is expected to contain only ASCII characters and numbers to "
+            f"ensure safety of local cache. If you see this error running your model on Roboflow platform, "
+            f"raise the issue: https://github.com/roboflow/inference/issues. If you are running `inference` "
+            f"outside of the platform, verify that your weights provider keeps the model packages identifiers "
+            f"in the expected format.",
+            help_url="https://TODO",
+        )
+
+
+def slugify_model_id_to_os_safe_format(model_id: str) -> str:
+    # Only ASCII
+    model_id_slug = re.sub(r"[^A-Za-z0-9_-]+", "-", model_id)
+    # Collapse multiple underscores/dashes
+    model_id_slug = re.sub(r"[_-]{2,}", "-", model_id_slug)
+    if not model_id_slug:
+        model_id_slug = "special-char-only-model-id"
+    if len(model_id_slug) > 48:
+        model_id_slug = model_id_slug[:48]
+    digest = hashlib.blake2s(model_id.encode("utf-8"), digest_size=4).hexdigest()
+    return f"{model_id_slug}-{digest}"
 
 
 def attempt_loading_model_from_local_storage(
@@ -831,8 +865,11 @@ def resolve_models_registry_entry(
     # a bit of hard coding here, over time we must maintain
     model_architecture = "rfdetr"
     if task_type is None:
-        task_type = OBJECT_DETECTION_TASK
-    if task_type != OBJECT_DETECTION_TASK:
+        if model_type == "rfdetr-seg-preview":
+            task_type = INSTANCE_SEGMENTATION_TASK
+        else:
+            task_type = OBJECT_DETECTION_TASK
+    if task_type not in {OBJECT_DETECTION_TASK, INSTANCE_SEGMENTATION_TASK}:
         raise ModelLoadingError(
             message=f"When loading model directly from checkpoint path, set `model_type` as {model_type} and "
             f"`task_type` as {task_type}, whereas selected model do only support `{OBJECT_DETECTION_TASK}` "

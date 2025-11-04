@@ -129,7 +129,7 @@ def test_get_versions_of_execution_engine(object_detection_service_url: str) -> 
     # then
     response.raise_for_status()
     response_data = response.json()
-    assert response_data["versions"] == ["1.6.0"]
+    assert response_data["versions"] == ["1.7.0"]
 
 
 FUNCTION = """
@@ -484,8 +484,7 @@ def test_simple_workflow_run_when_api_key_is_invalid(
 
     # then
     assert (
-        response.status_code == 500
-        or response.status_code == 401  # serverless will return 401
+        response.status_code == 401 or response.status_code == 403
     ), "Auth error is expected to be manifested as runtime error for one of the step"
 
 

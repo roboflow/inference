@@ -136,7 +136,7 @@ class Sam2SegmentationRequest(Sam2InferenceRequest):
     format: Optional[str] = Field(
         default="json",
         examples=["json"],
-        description="The format of the response. Must be one of json or binary. If binary, masks are returned as binary numpy arrays. If json, masks are converted to polygons, then returned as json.",
+        description="The format of the response. Must be one of 'json', 'rle', or 'binary'. If binary, masks are returned as binary numpy arrays. If json, masks are converted to polygons. If rle, masks are converted to RLE format.",
     )
     image: InferenceRequestImage = Field(
         description="The image to be segmented.",

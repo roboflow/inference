@@ -1,5 +1,5 @@
 import threading
-from typing import Dict, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -25,7 +25,10 @@ from inference_exp.models.common.roboflow.post_processing import (
 from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
-from inference_exp.models.rfdetr.class_remapping import prepare_class_remapping
+from inference_exp.models.rfdetr.class_remapping import (
+    ClassesReMapping,
+    prepare_class_remapping,
+)
 from inference_exp.utils.onnx_introspection import get_selected_onnx_execution_providers
 
 try:
@@ -98,11 +101,12 @@ class RFDetrForObjectDetectionONNX(
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
             },
         )
-        class_id_remapping = None
+        classes_re_mapping = None
         if inference_config.class_names_operations:
-            class_names, class_id_remapping = prepare_class_remapping(
+            class_names, classes_re_mapping = prepare_class_remapping(
                 class_names=class_names,
                 class_names_operations=inference_config.class_names_operations,
+                device=device,
             )
         session = onnxruntime.InferenceSession(
             path_or_bytes=model_package_content["weights.onnx"],
@@ -116,7 +120,7 @@ class RFDetrForObjectDetectionONNX(
             session=session,
             input_name=input_name,
             class_names=class_names,
-            class_id_remapping=class_id_remapping,
+            classes_re_mapping=classes_re_mapping,
             inference_config=inference_config,
             device=device,
             input_batch_size=input_batch_size,
@@ -127,7 +131,7 @@ class RFDetrForObjectDetectionONNX(
         session: onnxruntime.InferenceSession,
         input_name: str,
         class_names: List[str],
-        class_id_remapping: Optional[Dict[int, int]],
+        classes_re_mapping: Optional[ClassesReMapping],
         inference_config: InferenceConfig,
         device: torch.device,
         input_batch_size: Optional[int],
@@ -136,7 +140,7 @@ class RFDetrForObjectDetectionONNX(
         self._input_name = input_name
         self._inference_config = inference_config
         self._class_names = class_names
-        self._class_id_remapping = class_id_remapping
+        self._classes_re_mapping = classes_re_mapping
         self._device = device
         self._min_batch_size = input_batch_size
         self._max_batch_size = (
@@ -197,18 +201,13 @@ class RFDetrForObjectDetectionONNX(
             confidence, sorted_indices = torch.sort(confidence, descending=True)
             top_classes = top_classes[sorted_indices]
             selected_boxes = selected_boxes[sorted_indices]
-            if self._class_id_remapping is not None:
-                remapping_mask = [
-                    label not in self._class_id_remapping for label in top_classes
-                ]
-                top_classes = top_classes[remapping_mask]
-                top_classes = torch.tensor(
-                    [
-                        self._class_id_remapping[label]
-                        for label in top_classes[remapping_mask].tolist()
-                    ],
-                    device=top_classes.device,
+            if self._classes_re_mapping is not None:
+                remapping_mask = torch.isin(
+                    top_classes, self._classes_re_mapping.remaining_class_ids
                 )
+                top_classes = self._classes_re_mapping.class_mapping[
+                    top_classes[remapping_mask]
+                ]
                 selected_boxes = selected_boxes[remapping_mask]
                 confidence = confidence[remapping_mask]
             cxcy = selected_boxes[:, :2]
