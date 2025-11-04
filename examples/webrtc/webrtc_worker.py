@@ -6,7 +6,7 @@ import sys
 import urllib.parse
 from pathlib import Path
 from threading import Event, Thread
-from typing import Optional
+from typing import Optional, Union
 
 import cv2 as cv
 import numpy as np
@@ -46,12 +46,9 @@ logger = logging.getLogger(Path(__file__).stem)
 class FramesGrabber:
     def __init__(
         self,
-        source_path: Optional[str] = None,
+        source_path: Union[int, str],
     ):
-        if source_path:
-            self._cap = cv.VideoCapture(source_path)
-        else:
-            self._cap = cv.VideoCapture(0)
+        self._cap = cv.VideoCapture(source_path)
         if not self._cap.isOpened():
             raise RuntimeError("Could not open webcam")
         self._fps = self._cap.get(cv.CAP_PROP_FPS)
@@ -70,7 +67,7 @@ class StreamTrack(VideoStreamTrack):
     def __init__(
         self,
         asyncio_loop: Optional[asyncio.AbstractEventLoop] = None,
-        source_path: Optional[str] = None,
+        source_path: Optional[Union[int, str]] = None,
         *args,
         **kwargs,
     ):
@@ -79,7 +76,9 @@ class StreamTrack(VideoStreamTrack):
         if asyncio_loop is None:
             self._loop = asyncio.get_event_loop()
 
-        self._source = FramesGrabber(source_path=source_path)
+        self._source: Optional[FramesGrabber] = None
+        if source_path is not None:
+            self._source = FramesGrabber(source_path=source_path)
 
         self.track: Optional[RemoteStreamTrack] = None
         self._recv_task: Optional[asyncio.Task] = None
@@ -99,6 +98,11 @@ class StreamTrack(VideoStreamTrack):
         await self.recv_queue.async_put(None)
 
     async def _recv_loop(self):
+        # Silencing swscaler warnings in multi-threading environment
+        if not self._av_logging_set:
+            set_libav_level(ERROR)
+            self._av_logging_set = True
+
         try:
             while self.track.readyState != "ended":
                 frame: VideoFrame = await self.track.recv()
@@ -119,6 +123,9 @@ class StreamTrack(VideoStreamTrack):
         if not self._av_logging_set:
             set_libav_level(ERROR)
             self._av_logging_set = True
+
+        if self._source is None:
+            return
 
         np_frame = await self._loop.run_in_executor(
             None,
@@ -161,10 +168,19 @@ async def init_rtc_peer_connection_with_local_description(
         peer_connection = RTCPeerConnectionWithDataChannel()
 
     is_rtmp = is_rtmp_url(url=source)
-    stream_track = StreamTrack(
-        asyncio_loop=asyncio_loop,
-        source_path=source,
-    )
+    if is_rtmp:
+        stream_track = StreamTrack(
+            asyncio_loop=asyncio_loop,
+        )
+        peer_connection.addTransceiver("video", direction="recvonly")
+    else:
+        if source is None:
+            source = 0
+        stream_track = StreamTrack(
+            asyncio_loop=asyncio_loop,
+            source_path=source,
+        )
+        peer_connection.addTrack(stream_track)
 
     @peer_connection.on("track")
     def on_track(track: RemoteStreamTrack):
@@ -188,7 +204,6 @@ async def init_rtc_peer_connection_with_local_description(
         print(message)
 
     peer_connection.data_channel = data_channel
-    peer_connection.addTrack(stream_track)
 
     offer: RTCSessionDescription = await peer_connection.createOffer()
     await peer_connection.setLocalDescription(offer)
@@ -205,13 +220,19 @@ def is_rtmp_url(url: str) -> bool:
 
 class MustBeFileOrRTSP(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
-        if not values.strip() or (not Path(values.strip()).exists() and not is_rtmp_url(values.strip())):
-            raise argparse.ArgumentError(argument=self, message="Expected file path or RTSP/RTMP url")
+        if not values.strip() or (
+            not Path(values.strip()).exists() and not is_rtmp_url(values.strip())
+        ):
+            raise argparse.ArgumentError(
+                argument=self, message="Expected file path or RTSP/RTMP url"
+            )
         setattr(namespace, self.dest, values)
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Stream video file or webcam to Roboflow for processing, or request processed RTSP/RTMP stream")
+    parser = argparse.ArgumentParser(
+        description="Stream video file or webcam to Roboflow for processing, or request processed RTSP/RTMP stream"
+    )
     parser.add_argument(
         "--source",
         required=False,
@@ -309,9 +330,7 @@ def main():
     future.result()
 
     while not peer_connection.closed_event.is_set():
-        frame: Optional[VideoFrame] = (
-            peer_connection.stream_track.recv_queue.sync_get()
-        )
+        frame: Optional[VideoFrame] = peer_connection.stream_track.recv_queue.sync_get()
         if frame is None:
             logger.info("No more frames")
             break
@@ -322,6 +341,7 @@ def main():
             continue
 
         if key == ord("q"):
+            logger.info("Quitting")
             break
 
         if chr(key) in "1234567890abcdefghijkz" and (
