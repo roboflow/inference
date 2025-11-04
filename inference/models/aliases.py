@@ -20,8 +20,8 @@ PALIGEMMA_ALIASES = {
 # FLORENCE_ALIASES = {
 #     "florence-2-base": "florence-pretrains/1",
 #     "florence-2-large": "florence-pretrains/2",
-}
-#since transformers 0.53.3 need newer version of florence2 weights
+# }
+# since transformers 0.53.3 need newer version of florence2 weights
 FLORENCE_ALIASES = {
     "florence-2-base": "florence-pretrains/3",
     "florence-2-large": "florence-pretrains/4",
