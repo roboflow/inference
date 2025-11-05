@@ -3,6 +3,7 @@ from typing import List, Optional, Union
 from unittest import mock
 from unittest.mock import MagicMock
 
+import numpy as np
 import pytest
 
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
@@ -14,6 +15,12 @@ from inference.core.workflows.core_steps.sinks.email_notification.v2 import (
     EmailNotificationBlockV2,
     format_email_message,
     send_email_via_roboflow_proxy,
+    serialize_image_data,
+    serialize_message_parameters,
+)
+from inference.core.workflows.execution_engine.entities.base import (
+    ImageParentMetadata,
+    WorkflowImageData,
 )
 
 
@@ -569,3 +576,218 @@ def test_v2_message_parameters_not_flattened_in_roboflow_mode() -> None:
     call_args = thread_pool_executor.submit.call_args[0][0]
     # The partial function should have the raw message template, not flattened
     assert "{{ $parameters.count }}" in call_args.keywords["message"]
+
+
+def test_v2_serialize_image_data_with_base64_image() -> None:
+    # given
+    parent_metadata = ImageParentMetadata(parent_id="test")
+    image_data = WorkflowImageData(
+        parent_metadata=parent_metadata,
+        base64_image="/9j/4AAQSkZJRgABAQAASABIAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAAA//EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AH//Z",
+    )
+
+    # when
+    result = serialize_image_data(image_data)
+
+    # then
+    assert isinstance(result, str)
+    assert result.startswith("/9j/")  # JPEG signature
+
+
+def test_v2_serialize_image_data_with_numpy_array() -> None:
+    # given
+    parent_metadata = ImageParentMetadata(parent_id="test")
+    numpy_array = np.zeros((100, 100, 3), dtype=np.uint8)
+    image_data = WorkflowImageData(
+        parent_metadata=parent_metadata,
+        numpy_image=numpy_array,
+    )
+
+    # when
+    result = serialize_image_data(image_data)
+
+    # then
+    assert isinstance(result, str)
+    assert len(result) > 0
+    # Should be valid base64
+    import base64
+    try:
+        base64.b64decode(result)
+        valid_base64 = True
+    except Exception:
+        valid_base64 = False
+    assert valid_base64
+
+
+def test_v2_serialize_image_data_with_non_image_value() -> None:
+    # given
+    value = "plain string"
+
+    # when
+    result = serialize_image_data(value)
+
+    # then
+    assert result == "plain string"
+
+
+def test_v2_serialize_image_data_with_dict() -> None:
+    # given
+    parent_metadata = ImageParentMetadata(parent_id="test")
+    image_data = WorkflowImageData(
+        parent_metadata=parent_metadata,
+        base64_image="/9j/test",
+    )
+    value = {
+        "image": image_data,
+        "text": "some text",
+        "number": 42,
+    }
+
+    # when
+    result = serialize_image_data(value)
+
+    # then
+    assert isinstance(result, dict)
+    assert result["image"] == "/9j/test"
+    assert result["text"] == "some text"
+    assert result["number"] == 42
+
+
+def test_v2_serialize_image_data_with_list() -> None:
+    # given
+    parent_metadata = ImageParentMetadata(parent_id="test")
+    image_data1 = WorkflowImageData(
+        parent_metadata=parent_metadata,
+        base64_image="/9j/first",
+    )
+    image_data2 = WorkflowImageData(
+        parent_metadata=parent_metadata,
+        base64_image="/9j/second",
+    )
+    value = [image_data1, "text", image_data2]
+
+    # when
+    result = serialize_image_data(value)
+
+    # then
+    assert isinstance(result, list)
+    assert result[0] == "/9j/first"
+    assert result[1] == "text"
+    assert result[2] == "/9j/second"
+
+
+def test_v2_serialize_message_parameters() -> None:
+    # given
+    parent_metadata = ImageParentMetadata(parent_id="test")
+    image_data = WorkflowImageData(
+        parent_metadata=parent_metadata,
+        base64_image="/9j/image_content",
+    )
+    message_parameters = {
+        "image": image_data,
+        "count": 5,
+        "text": "detection",
+    }
+
+    # when
+    result = serialize_message_parameters(message_parameters)
+
+    # then
+    assert result["image"] == "/9j/image_content"
+    assert result["count"] == 5
+    assert result["text"] == "detection"
+
+
+def test_v2_serialize_message_parameters_with_nested_structures() -> None:
+    # given
+    parent_metadata = ImageParentMetadata(parent_id="test")
+    image_data = WorkflowImageData(
+        parent_metadata=parent_metadata,
+        base64_image="/9j/nested",
+    )
+    message_parameters = {
+        "data": {
+            "image": image_data,
+            "metadata": {"count": 10},
+        },
+        "images": [image_data, image_data],
+    }
+
+    # when
+    result = serialize_message_parameters(message_parameters)
+
+    # then
+    assert result["data"]["image"] == "/9j/nested"
+    assert result["data"]["metadata"]["count"] == 10
+    assert result["images"][0] == "/9j/nested"
+    assert result["images"][1] == "/9j/nested"
+
+
+@mock.patch.object(v2, "post_to_roboflow_api")
+def test_v2_send_email_via_roboflow_proxy_serializes_images(
+    post_to_roboflow_api_mock: MagicMock,
+) -> None:
+    # given
+    post_to_roboflow_api_mock.return_value = {"status": "success"}
+    parent_metadata = ImageParentMetadata(parent_id="test")
+    image_data = WorkflowImageData(
+        parent_metadata=parent_metadata,
+        base64_image="/9j/4AAQSkZJRgABAQAASABIAAD/test",
+    )
+
+    # when
+    result = send_email_via_roboflow_proxy(
+        roboflow_api_key="test_api_key",
+        receiver_email=["receiver@gmail.com"],
+        cc_receiver_email=None,
+        bcc_receiver_email=None,
+        subject="Test with Image",
+        message="Image: {{ $parameters.image }}",
+        message_parameters={"image": image_data},
+        message_parameters_operations={},
+        attachments={},
+    )
+
+    # then
+    assert result == (False, "Notification sent successfully via Roboflow proxy")
+    post_to_roboflow_api_mock.assert_called_once()
+    payload = post_to_roboflow_api_mock.call_args[1]["payload"]
+    # Verify that WorkflowImageData was serialized to base64 string
+    assert payload["message_parameters"]["image"] == "/9j/4AAQSkZJRgABAQAASABIAAD/test"
+    assert isinstance(payload["message_parameters"]["image"], str)
+
+
+@mock.patch.object(v2, "post_to_roboflow_api")
+def test_v2_send_email_via_roboflow_proxy_with_multiple_images(
+    post_to_roboflow_api_mock: MagicMock,
+) -> None:
+    # given
+    post_to_roboflow_api_mock.return_value = {"status": "success"}
+    parent_metadata = ImageParentMetadata(parent_id="test")
+    image1 = WorkflowImageData(
+        parent_metadata=parent_metadata,
+        base64_image="/9j/first_image",
+    )
+    image2 = WorkflowImageData(
+        parent_metadata=parent_metadata,
+        base64_image="/9j/second_image",
+    )
+
+    # when
+    result = send_email_via_roboflow_proxy(
+        roboflow_api_key="test_api_key",
+        receiver_email=["receiver@gmail.com"],
+        cc_receiver_email=None,
+        bcc_receiver_email=None,
+        subject="Test with Multiple Images",
+        message="Images: {{ $parameters.images }}",
+        message_parameters={"images": [image1, image2]},
+        message_parameters_operations={},
+        attachments={},
+    )
+
+    # then
+    assert result == (False, "Notification sent successfully via Roboflow proxy")
+    payload = post_to_roboflow_api_mock.call_args[1]["payload"]
+    assert payload["message_parameters"]["images"] == ["/9j/first_image", "/9j/second_image"]
+    assert all(isinstance(img, str) for img in payload["message_parameters"]["images"])
