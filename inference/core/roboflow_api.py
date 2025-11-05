@@ -40,6 +40,7 @@ from inference.core.env import (
     RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API,
     ROBOFLOW_API_EXTRA_HEADERS,
     ROBOFLOW_API_REQUEST_TIMEOUT,
+    ROBOFLOW_API_VERIFY_SSL,
     ROBOFLOW_SERVICE_SECRET,
     TRANSIENT_ROBOFLOW_API_ERRORS,
     TRANSIENT_ROBOFLOW_API_ERRORS_RETRIES,
@@ -279,6 +280,7 @@ def add_custom_metadata(
         },
         headers=build_roboflow_api_headers(),
         timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
+        verify=ROBOFLOW_API_VERIFY_SSL,
     )
     api_key_safe_raise_for_status(response=response)
 
@@ -521,6 +523,7 @@ def register_image_at_roboflow(
         data=m,
         headers=headers,
         timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
+        verify=ROBOFLOW_API_VERIFY_SSL,
     )
     api_key_safe_raise_for_status(response=response)
     parsed_response = response.json()
@@ -564,6 +567,7 @@ def annotate_image_at_roboflow(
         data=annotation_content,
         headers=headers,
         timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
+        verify=ROBOFLOW_API_VERIFY_SSL,
     )
     api_key_safe_raise_for_status(response=response)
     parsed_response = response.json()
@@ -839,6 +843,7 @@ def _get_from_url(
             wrap_url(url),
             headers=build_roboflow_api_headers(),
             timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
+            verify=ROBOFLOW_API_VERIFY_SSL,
         )
 
     except (ConnectionError, Timeout, requests.exceptions.ConnectionError) as error:
@@ -913,6 +918,7 @@ def send_inference_results_to_model_monitoring(
         json=inference_data,
         headers=build_roboflow_api_headers(),
         timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
+        verify=ROBOFLOW_API_VERIFY_SSL,
     )
     api_key_safe_raise_for_status(response=response)
 
@@ -958,6 +964,7 @@ def post_to_roboflow_api(
         json=payload,
         headers=headers,
         timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
+        verify=ROBOFLOW_API_VERIFY_SSL,
     )
     api_key_safe_raise_for_status(response=response)
     return response.json()
