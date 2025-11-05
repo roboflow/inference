@@ -407,12 +407,6 @@ class RoboflowInferenceModel(Model):
         except Exception as e:
             logger.error(f"Error downloading model artifacts: {e}")
             raise
-        finally:
-            try:
-                if os.path.exists(lock_file):
-                    os.unlink(lock_file)  # Clean up lock file
-            except OSError:
-                pass  # Best effort cleanup
 
     def load_model_artifacts_from_cache(self) -> None:
         logger.debug("Model artifacts already downloaded, loading model from cache")
@@ -722,12 +716,6 @@ class RoboflowCoreModel(RoboflowInferenceModel):
         except Exception as e:
             logger.error(f"Error downloading model artifacts: {e}")
             raise
-        finally:
-            try:
-                if os.path.exists(lock_file):
-                    os.unlink(lock_file)  # Clean up lock file
-            except OSError:
-                pass  # Best effort cleanup
 
     def get_device_id(self) -> str:
         """Returns the device ID associated with this model.
