@@ -4,6 +4,7 @@ from typing import Any, Callable, Dict, List, Optional, Union
 
 from inference.core.env import (
     CLASS_AGNOSTIC_NMS_ENV,
+    CONFIDENCE_ENV,
     DEFAULT_CLASS_AGNOSTIC_NMS,
     DEFAULT_CONFIDENCE,
     DEFAULT_IOU_THRESHOLD,
@@ -50,7 +51,7 @@ class ModelConfig:
             )
         if confidence is None:
             confidence = safe_env_to_type(
-                variable_name=CLASS_AGNOSTIC_NMS_ENV,
+                variable_name=CONFIDENCE_ENV,
                 default_value=DEFAULT_CONFIDENCE,
                 type_constructor=float,
             )
