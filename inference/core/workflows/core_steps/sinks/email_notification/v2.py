@@ -19,7 +19,7 @@ from inference.core.workflows.core_steps.common.query_language.operations.core i
 from inference.core.workflows.core_steps.sinks.email_notification.v1 import (
     send_email_using_smtp_server,
 )
-from inference.core.workflows.execution_engine.entities.base import OutputDefinition
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition, WorkflowImageData
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     BYTES_KIND,
@@ -577,6 +577,38 @@ def format_email_message(
     return message
 
 
+def serialize_image_data(value: Any) -> Any:
+    """
+    Serialize WorkflowImageData objects to base64 strings for JSON transmission.
+    Returns the value unchanged if it's not a WorkflowImageData object.
+    """
+    if isinstance(value, WorkflowImageData):
+        # Get the base64 representation of the image
+        base64_image = value.base64_image
+        if base64_image:
+            return base64_image
+        # If no base64 available, try to convert numpy array
+        numpy_image = value.numpy_image
+        if numpy_image is not None:
+            import cv2
+            _, buffer = cv2.imencode('.jpg', numpy_image)
+            import base64
+            return base64.b64encode(buffer).decode('utf-8')
+    elif isinstance(value, dict):
+        return {k: serialize_image_data(v) for k, v in value.items()}
+    elif isinstance(value, list):
+        return [serialize_image_data(item) for item in value]
+    return value
+
+
+def serialize_message_parameters(message_parameters: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Convert any WorkflowImageData objects in message_parameters to base64 strings
+    so they can be serialized to JSON for the API call.
+    """
+    return {k: serialize_image_data(v) for k, v in message_parameters.items()}
+
+
 def send_email_via_roboflow_proxy(
     roboflow_api_key: str,
     receiver_email: List[str],
@@ -590,11 +622,14 @@ def send_email_via_roboflow_proxy(
 ) -> Tuple[bool, str]:
     """Send email through Roboflow's proxy service."""
     try:
+        # Serialize any WorkflowImageData objects to base64 strings
+        serialized_parameters = serialize_message_parameters(message_parameters)
+        
         payload = {
             "receiver_email": receiver_email,
             "subject": subject,
             "message": message,
-            "message_parameters": message_parameters,
+            "message_parameters": serialized_parameters,
             "message_parameters_operations": message_parameters_operations,
         }
         
