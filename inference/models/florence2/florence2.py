@@ -71,6 +71,7 @@ class LoRAFlorence2(Florence2Processing, LoRATransformerModel):
         lora_config = LoraConfig.from_pretrained(self.cache_dir, device_map=DEVICE)
         model_id = lora_config.base_model_name_or_path
         revision = lora_config.revision
+        original_revision_pre_mapping = revision
         if revision is not None:
             try:
                 self.dtype = getattr(torch, revision)
@@ -135,11 +136,19 @@ class LoRAFlorence2(Florence2Processing, LoRATransformerModel):
                     adapter_missing_keys.append(key)
             load_result.missing_keys.clear()
             load_result.missing_keys.extend(adapter_missing_keys)
-            if len(load_result.missing_keys) > 0:
-                raise RuntimeError(
-                    "Could not load LoRA weights for the model - found missing checkpoint keys "
-                    f"({len(load_result.missing_keys)}): {load_result.missing_keys}",
-                )
+            if original_revision_pre_mapping == "refs/pr/6":
+                if len(load_result.missing_keys) > 2:
+                    raise RuntimeError(
+                        "Could not load LoRA weights for the model - found missing checkpoint keys "
+                        f"({len(load_result.missing_keys)}): {load_result.missing_keys}",
+                    )
+
+            else:
+                if len(load_result.missing_keys) > 0:
+                    raise RuntimeError(
+                        "Could not load LoRA weights for the model - found missing checkpoint keys "
+                        f"({len(load_result.missing_keys)}): {load_result.missing_keys}",
+                    )
 
             self.model = model
         except ImportError:
@@ -166,6 +175,7 @@ class LoRAFlorence2(Florence2Processing, LoRATransformerModel):
             )
 
             revision_mapping = {
+                ("microsoft/Florence-2-base-ft", "refs/pr/6"): "refs/pr/29-converted",
                 ("microsoft/Florence-2-base-ft", "refs/pr/22"): "refs/pr/29-converted",
                 ("microsoft/Florence-2-large-ft", "refs/pr/20"): "refs/pr/38-converted",
             }

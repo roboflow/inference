@@ -13,7 +13,7 @@ from aiortc import (
     RTCSessionDescription,
     VideoStreamTrack,
 )
-from aiortc.contrib.media import MediaRelay
+from aiortc.contrib.media import MediaPlayer, MediaRelay
 from aiortc.rtcrtpreceiver import RemoteStreamTrack
 from av import VideoFrame
 from av import logging as av_logging
@@ -204,7 +204,6 @@ async def init_rtc_peer_connection_with_loop(
     if webrtc_request.data_output:
         data_output = webrtc_request.data_output[0]
 
-    relay = MediaRelay()
     try:
         video_transform_track = VideoTransformTrackWithLoop(
             asyncio_loop=asyncio_loop,
@@ -278,6 +277,26 @@ async def init_rtc_peer_connection_with_loop(
         )
 
     closed = asyncio.Event()
+    relay = MediaRelay()
+
+    player: Optional[MediaPlayer] = None
+    if webrtc_request.rtsp_url:
+        logger.info("Processing RTSP URL: %s", webrtc_request.rtsp_url)
+        player = MediaPlayer(
+            webrtc_request.rtsp_url,
+            options={
+                "rtsp_transport": "tcp",
+                "rtsp_flags": "prefer_tcp",
+                "stimeout": "2000000",  # 2s socket timeout
+            },
+        )
+        video_transform_track.set_track(
+            track=relay.subscribe(
+                player.video,
+                buffered=False if webrtc_request.webrtc_realtime_processing else True,
+            )
+        )
+        peer_connection.addTrack(video_transform_track)
 
     @peer_connection.on("track")
     def on_track(track: RemoteStreamTrack):
@@ -294,6 +313,9 @@ async def init_rtc_peer_connection_with_loop(
     async def on_connectionstatechange():
         logger.info("Connection state is %s", peer_connection.connectionState)
         if peer_connection.connectionState in {"failed", "closed"}:
+            if video_transform_track.track:
+                logger.info("Stopping video transform track")
+                video_transform_track.track.stop()
             logger.info("Stopping WebRTC peer")
             await peer_connection.close()
             closed.set()
@@ -301,7 +323,7 @@ async def init_rtc_peer_connection_with_loop(
 
     @peer_connection.on("datachannel")
     def on_datachannel(channel: RTCDataChannel):
-        logger.info("Data channel %s received", channel.label)
+        logger.info("Data channel '%s' received", channel.label)
 
         @channel.on("message")
         def on_message(message):
@@ -340,4 +362,13 @@ async def init_rtc_peer_connection_with_loop(
     )
 
     await closed.wait()
+    if player:
+        logger.info("Stopping player")
+        player.video.stop()
+    if peer_connection.connectionState != "closed":
+        logger.info("Closing WebRTC connection")
+        await peer_connection.close()
+    if video_transform_track.track:
+        logger.info("Stopping video transform track")
+        video_transform_track.track.stop()
     logger.info("WebRTC peer connection closed")
