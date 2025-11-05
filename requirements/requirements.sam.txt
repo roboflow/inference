@@ -1,6 +1,6 @@
 rf-segment-anything==1.0
 samv2==0.0.4
-rasterio~=1.4.0
+rasterio~=1.3.0
 pycocotools>=2.0.10
 # TODO: update to 2.8.0 once pre-built flashattn is available
 torch>=2.0.1,<2.7.0
