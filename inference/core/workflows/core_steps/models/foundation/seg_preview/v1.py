@@ -87,15 +87,15 @@ class BlockManifest(WorkflowBlockManifest):
     threshold: Union[Selector(kind=[FLOAT_KIND]), float] = Field(
         default=0.5, description="Threshold for predicted mask scores", examples=[0.3]
     )
-    run_nms: Union[Selector(kind=[FLOAT_KIND]), bool] = Field(
-        default=False,
+    apply_nms: Union[Selector(kind=[FLOAT_KIND]), bool] = Field(
+        default=True,
         description="Whether to apply Non-Maximum Suppression to remove duplicate detections",
         examples=[True, False],
     )
     iou_threshold: Union[Selector(kind=[FLOAT_KIND]), float] = Field(
-        default=0.5,
+        default=0.9,
         description="IoU threshold for NMS. Detections with IoU > threshold are considered duplicates",
-        examples=[0.5, 0.3, 0.7],
+        examples=[0.9, 0.5, 0.7],
     )
 
     @classmethod
@@ -141,7 +141,7 @@ class SegPreviewBlockV1(WorkflowBlock):
         images: Batch[WorkflowImageData],
         class_names: Optional[List[str]],
         threshold: float,
-        run_nms: bool,
+        apply_nms: bool,
         iou_threshold: float,
     ) -> BlockResult:
 
@@ -149,7 +149,7 @@ class SegPreviewBlockV1(WorkflowBlock):
             images=images,
             class_names=class_names,
             threshold=threshold,
-            run_nms=run_nms,
+            apply_nms=apply_nms,
             iou_threshold=iou_threshold,
         )
 
@@ -158,7 +158,7 @@ class SegPreviewBlockV1(WorkflowBlock):
         images: Batch[WorkflowImageData],
         class_names: Optional[List[str]],
         threshold: float,
-        run_nms: bool,
+        apply_nms: bool,
         iou_threshold: float,
     ) -> BlockResult:
         predictions = []
@@ -244,7 +244,7 @@ class SegPreviewBlockV1(WorkflowBlock):
         return self._post_process_result(
             images=images,
             predictions=predictions,
-            run_nms=run_nms,
+            apply_nms=apply_nms,
             iou_threshold=iou_threshold,
         )
 
@@ -252,10 +252,10 @@ class SegPreviewBlockV1(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         predictions: List[dict],
-        run_nms: bool,
+        apply_nms: bool,
         iou_threshold: float,
     ) -> BlockResult:
-        if run_nms:
+        if apply_nms:
             predictions = [
                 apply_nms_to_prediction_dict(pred_dict, iou_threshold)
                 for pred_dict in predictions
