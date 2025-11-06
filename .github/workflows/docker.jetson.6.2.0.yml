@@ -41,6 +41,6 @@ jobs:
         with:
           push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true')}}
           project: grl7ffzxd7
-          tags: roboflow/roboflow-inference-server-jetson:jetpack-6.2.0,roboflow/roboflow-inference-server-jetson:jetpack-6.2.0-${{ env.VERSION}}
+          tags: roboflow/roboflow-inference-server-jetson-6.2.0:latest,roboflow/roboflow-inference-server-jetson-6.2.0:${{ env.VERSION}}
           platforms: linux/arm64
           file: ./docker/dockerfiles/Dockerfile.onnx.jetson.6.2.0
