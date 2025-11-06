@@ -362,9 +362,10 @@ async def init_rtc_peer_connection_with_loop(
         )
     )
 
-    loop = asyncio.get_running_loop()
+    if asyncio_loop is None:
+        asyncio_loop = asyncio.get_running_loop()
 
-    async def _graceful_shutdown(sig: Optional[int] = None):
+    def _graceful_shutdown(sig: Optional[int] = None):
         if sig:
             logger.info("Received signal: %s", sig)
         if player:
@@ -372,7 +373,10 @@ async def init_rtc_peer_connection_with_loop(
             player.video.stop()
         if peer_connection.connectionState != "closed":
             logger.info("Closing WebRTC connection")
-            await peer_connection.close()
+            asyncio.run_coroutine_threadsafe(
+                peer_connection.close(),
+                asyncio_loop,
+            ).result()
         if video_transform_track.track:
             logger.info("Stopping video transform track")
             video_transform_track.track.stop()
@@ -385,7 +389,7 @@ async def init_rtc_peer_connection_with_loop(
         signal.SIGQUIT,
     ):
         try:
-            loop.add_signal_handler(_sig, _graceful_shutdown, _sig)
+            asyncio_loop.add_signal_handler(_sig, _graceful_shutdown, _sig)
         except (NotImplementedError, RuntimeError):
             logger.warning("Failed to add signal handler for %s", _sig)
 
