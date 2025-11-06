@@ -299,13 +299,13 @@ def test_v2_smtp_mode_with_inline_and_attachment_images(
     assert call_kwargs["attachments"]["full_resolution.jpg"][:2] == b'\xff\xd8'
 
 
-@mock.patch.object(v2, "send_email_using_smtp_server")
-def test_v2_smtp_backward_compatibility_no_images(
-    send_email_using_smtp_server_mock: MagicMock,
+@mock.patch.object(v2, "send_email_using_smtp_server_v2")
+def test_v2_smtp_html_support_without_images(
+    send_email_using_smtp_server_v2_mock: MagicMock,
 ) -> None:
-    """Test backward compatibility: no images should use plain text."""
+    """Test that SMTP pathway uses HTML even without images (feature parity with Resend)."""
     # given
-    send_email_using_smtp_server_mock.return_value = (False, "success")
+    send_email_using_smtp_server_v2_mock.return_value = (False, "success")
     
     block = EmailNotificationBlockV2(
         background_tasks=None,
@@ -335,15 +335,16 @@ def test_v2_smtp_backward_compatibility_no_images(
 
     # then
     assert result["error_status"] is False
-    call_kwargs = send_email_using_smtp_server_mock.call_args[1]
+    call_kwargs = send_email_using_smtp_server_v2_mock.call_args[1]
     
-    # Should be plain text (no is_html parameter in v1 function)
-    assert "inline_images" not in call_kwargs
-    assert "is_html" not in call_kwargs
+    # Should be HTML for feature parity with Resend pathway
+    assert call_kwargs["is_html"] is True
     
-    # Message should be plain text (no HTML tags)
+    # Message should be plain text wrapped in HTML formatting
     assert "Count: 42" in call_kwargs["message"]
-    assert "<img" not in call_kwargs["message"]
+    
+    # inline_images should be empty dict (no images)
+    assert call_kwargs["inline_images"] == {}
 
 
 @mock.patch.object(v2, "send_email_using_smtp_server_v2")
@@ -402,3 +403,49 @@ def test_v2_smtp_mode_with_multiple_inline_images(
     # Message should contain both img tags
     assert '<img src="cid:image_img1"' in call_kwargs["message"]
     assert '<img src="cid:image_img2"' in call_kwargs["message"]
+
+
+@mock.patch.object(v2, "send_email_using_smtp_server_v2")
+def test_v2_smtp_mode_preserves_html_formatting(
+    send_email_using_smtp_server_v2_mock: MagicMock,
+) -> None:
+    """Test that HTML formatting like <b>bold</b> is preserved in SMTP emails."""
+    # given
+    send_email_using_smtp_server_v2_mock.return_value = (False, "success")
+    
+    block = EmailNotificationBlockV2(
+        background_tasks=None,
+        thread_pool_executor=None,
+        api_key="test_roboflow_key",
+    )
+
+    # when
+    result = block.run(
+        subject="HTML Formatting Test",
+        message="With <b>bold</b> and {{ $parameters.value }}.",
+        receiver_email="receiver@gmail.com",
+        email_provider="Custom SMTP",
+        sender_email="sender@gmail.com",
+        cc_receiver_email=None,
+        bcc_receiver_email=None,
+        message_parameters={"value": "attachment"},
+        message_parameters_operations={},
+        attachments={},
+        smtp_server="smtp.gmail.com",
+        sender_email_password="password",
+        smtp_port=465,
+        fire_and_forget=False,
+        disable_sink=False,
+        cooldown_seconds=0,
+    )
+
+    # then
+    assert result["error_status"] is False
+    call_kwargs = send_email_using_smtp_server_v2_mock.call_args[1]
+    
+    # Should be HTML
+    assert call_kwargs["is_html"] is True
+    
+    # HTML tags should be preserved (not escaped)
+    assert "<b>bold</b>" in call_kwargs["message"]
+    assert "With <b>bold</b> and attachment." in call_kwargs["message"]

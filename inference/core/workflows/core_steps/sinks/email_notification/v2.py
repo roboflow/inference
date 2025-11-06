@@ -510,28 +510,13 @@ class EmailNotificationBlockV2(WorkflowBlock):
                     "message": "Custom SMTP requires sender_email, smtp_server, and sender_email_password",
                 }
             
-            # Detect if message_parameters has inline images
-            has_inline_images = any(
-                isinstance(v, WorkflowImageData) for v in message_parameters.values()
+            # Always format as HTML for SMTP to match Resend pathway behavior
+            formatted_message, inline_images = format_email_message_html_with_images(
+                message=message,
+                message_parameters=message_parameters,
+                message_parameters_operations=message_parameters_operations,
             )
-            
-            if has_inline_images:
-                # Format message as HTML with inline images
-                formatted_message, inline_images = format_email_message_html_with_images(
-                    message=message,
-                    message_parameters=message_parameters,
-                    message_parameters_operations=message_parameters_operations,
-                )
-                is_html = True
-            else:
-                # Use plain text formatting
-                formatted_message = format_email_message(
-                    message=message,
-                    message_parameters=message_parameters,
-                    message_parameters_operations=message_parameters_operations,
-                )
-                inline_images = None
-                is_html = False
+            is_html = True
             
             # Process attachments: convert images to bytes for SMTP
             processed_attachments = {}
@@ -553,38 +538,22 @@ class EmailNotificationBlockV2(WorkflowBlock):
                     # Fallback: convert to string then bytes
                     processed_attachments[filename] = str(value).encode('utf-8')
             
-            if has_inline_images:
-                # Use v2-specific function for inline images
-                send_email_handler = partial(
-                    send_email_using_smtp_server_v2,
-                    sender_email=sender_email,
-                    receiver_email=receiver_email,
-                    cc_receiver_email=cc_receiver_email,
-                    bcc_receiver_email=bcc_receiver_email,
-                    subject=subject,
-                    message=formatted_message,
-                    attachments=processed_attachments,
-                    smtp_server=smtp_server,
-                    smtp_port=smtp_port,
-                    sender_email_password=sender_email_password,
-                    inline_images=inline_images,
-                    is_html=is_html,
-                )
-            else:
-                # Use v1 function for backward compatibility
-                send_email_handler = partial(
-                    send_email_using_smtp_server,
-                    sender_email=sender_email,
-                    receiver_email=receiver_email,
-                    cc_receiver_email=cc_receiver_email,
-                    bcc_receiver_email=bcc_receiver_email,
-                    subject=subject,
-                    message=formatted_message,
-                    attachments=processed_attachments,
-                    smtp_server=smtp_server,
-                    smtp_port=smtp_port,
-                    sender_email_password=sender_email_password,
-                )
+            # Always use v2 SMTP function for HTML support (matches Resend behavior)
+            send_email_handler = partial(
+                send_email_using_smtp_server_v2,
+                sender_email=sender_email,
+                receiver_email=receiver_email,
+                cc_receiver_email=cc_receiver_email,
+                bcc_receiver_email=bcc_receiver_email,
+                subject=subject,
+                message=formatted_message,
+                attachments=processed_attachments,
+                smtp_server=smtp_server,
+                smtp_port=smtp_port,
+                sender_email_password=sender_email_password,
+                inline_images=inline_images,
+                is_html=is_html,
+            )
         
         self._last_notification_fired = datetime.now()
         if fire_and_forget and self._background_tasks:
