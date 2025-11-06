@@ -323,9 +323,17 @@ async def init_rtc_peer_connection_with_loop(
                 "stimeout": "2000000",  # 2s socket timeout
             },
         )
-        video_transform_track.set_track(
-            track=player.video,
-        )
+        if webrtc_request.webrtc_realtime_processing:
+            video_transform_track.set_track(
+                track=relay.subscribe(
+                    player.video,
+                    buffered=False if webrtc_request.webrtc_realtime_processing else True,
+                )
+            )
+        else:
+            video_transform_track.set_track(
+                track=player.video,
+            )
         peer_connection.addTrack(video_transform_track)
 
     @peer_connection.on("track")
