@@ -324,10 +324,7 @@ async def init_rtc_peer_connection_with_loop(
             },
         )
         video_transform_track.set_track(
-            track=relay.subscribe(
-                player.video,
-                buffered=False if webrtc_request.webrtc_realtime_processing else True,
-            )
+            track=player.video,
         )
         peer_connection.addTrack(video_transform_track)
 
