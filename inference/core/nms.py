@@ -238,8 +238,8 @@ def nms_rle(
     keep = np.ones(num_detections, dtype=bool)
     for i in range(num_detections):
         if keep[i]:
-            condition = ious[i, :] > iou_threshold
-            keep[i + 1 :] = np.where(condition[i + 1 :], False, keep[i + 1 :])
+            suppress = (ious[i, i+1:] > iou_threshold)
+            keep[i+1:][suppress] = False
 
     # Return indices in original order
     return keep[np.argsort(sort_index)]

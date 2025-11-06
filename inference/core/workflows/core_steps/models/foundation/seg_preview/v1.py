@@ -349,13 +349,13 @@ def apply_nms_to_polygon(
 
     confidences = np.array([item["confidence"] for item in polygon_list])
 
-    rles = []
-    for item in polygon_list:
-        polygon_flat = []
-        for point in item["points"]:
-            polygon_flat.extend([point["x"], point["y"]])
-        rle = mask_utils.frPyObjects([polygon_flat], image_height, image_width)[0]
-        rles.append(rle)
+    # Flatten all polygons efficiently using list comprehensions
+    polygons = [
+        [coord for point in item["points"] for coord in (point["x"], point["y"])]
+        for item in polygon_list
+    ]
+    # Batch RLE encoding (faster than per-item frPyObjects)
+    rles = mask_utils.frPyObjects(polygons, image_height, image_width)
 
     keep_indices = nms_rle(rles, confidences, iou_threshold)
 
