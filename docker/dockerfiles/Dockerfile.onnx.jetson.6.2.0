@@ -1,176 +1,49 @@
-FROM nvcr.io/nvidia/l4t-jetpack:r36.4.0 AS builder
+FROM roboflow/l4t-ml:r36.4.tegra-aarch64-cu126-22.04
+# Base image includes: PyTorch 2.8, torchvision, ONNXRuntime w/ TensorRT,
+# OpenCV w/ CUDA, cupy, pycuda, NumPy, SciPy, scikit-learn, pandas, scikit-image
 
 ARG DEBIAN_FRONTEND=noninteractive
 ENV LANG=en_US.UTF-8
 
-WORKDIR /app
-
+# Install minimal system dependencies
 RUN apt-get update -y && \
-    apt-get install -y --no-install-recommends \
-    libxext6 \
-    libopencv-dev \
-    uvicorn \
-    python3-pip \
-    git \
-    libgdal-dev \
-    libvips-dev \
-    wget \
-    rustc \
-    cargo \
-    curl \
-    cmake \
-    ninja-build \
-    && rm -rf /var/lib/apt/lists/*
+    apt-get install -y --no-install-recommends lshw git && \
+    rm -rf /var/lib/apt/lists/*
 
-RUN wget -q https://github.com/Kitware/CMake/releases/download/v3.30.5/cmake-3.30.5-linux-aarch64.sh && \
-    chmod +x cmake-3.30.5-linux-aarch64.sh && \
-    ./cmake-3.30.5-linux-aarch64.sh --prefix=/usr/local --skip-license && \
-    rm cmake-3.30.5-linux-aarch64.sh
-
-RUN curl -LsSf https://astral.sh/uv/install.sh | env INSTALLER_NO_MODIFY_PATH=1 sh && \
-    ln -s /root/.local/bin/uv /usr/local/bin/uv
-
-COPY requirements/requirements.sam.txt \
-    requirements/requirements.clip.txt \
-    requirements/requirements.http.txt \
-    requirements/requirements.gpu.txt \
-    requirements/requirements.gaze.txt \
-    requirements/requirements.doctr.txt \
-    requirements/requirements.groundingdino.txt \
-    requirements/requirements.yolo_world.txt \
-    requirements/_requirements.txt \
-    requirements/requirements.transformers.txt \
-    requirements/requirements.jetson.txt \
-    requirements/requirements.sdk.http.txt \
-    requirements/requirements.easyocr.txt \
-    ./
-
-RUN python3 -m pip install --upgrade pip && \
-    python3 -m pip install "torch>=2.8.0" "torchvision>=0.15.2" \
-    --index-url https://pypi.jetson-ai-lab.io/jp6/cu126
-
-RUN uv pip install --system --break-system-packages --index-strategy unsafe-best-match \
-    --extra-index-url https://pypi.jetson-ai-lab.io/jp6/cu126 \
-    -r _requirements.txt \
-    -r requirements.sam.txt \
-    -r requirements.clip.txt \
-    -r requirements.http.txt \
-    -r requirements.gaze.txt \
-    -r requirements.groundingdino.txt \
-    -r requirements.doctr.txt \
-    -r requirements.yolo_world.txt \
-    -r requirements.transformers.txt \
-    -r requirements.jetson.txt \
-    -r requirements.sdk.http.txt \
-    -r requirements.easyocr.txt \
-    jupyterlab \
-    "setuptools<=75.5.0" \
-    packaging \
-    numpy \
-    && rm -rf ~/.cache/uv
-
-WORKDIR /tmp
-RUN git clone --recursive --branch v1.20.0 https://github.com/microsoft/onnxruntime.git /tmp/onnxruntime
-
-WORKDIR /tmp/onnxruntime
-
-RUN sed -i 's/be8be39fdbc6e60e94fa7870b280707069b5b81a/32b145f525a8308d7ab1c09388b2e288312d8eba/g' cmake/deps.txt
-
-RUN ./build.sh \
-    --config Release \
-    --build_dir build/cuda12 \
-    --parallel 4 \
-    --use_cuda \
-    --cuda_version 12.6 \
-    --cuda_home /usr/local/cuda \
-    --cudnn_home /usr/lib/aarch64-linux-gnu \
-    --use_tensorrt \
-    --tensorrt_home /usr/lib/aarch64-linux-gnu \
-    --build_wheel \
-    --build_shared_lib \
-    --skip_tests \
-    --cmake_generator Ninja \
-    --compile_no_warning_as_error \
-    --allow_running_as_root \
-    --cmake_extra_defines CMAKE_CUDA_ARCHITECTURES="87" \
-    --cmake_extra_defines onnxruntime_BUILD_UNIT_TESTS=OFF
-
-RUN uv pip install --system --break-system-packages /tmp/onnxruntime/build/cuda12/Release/dist/onnxruntime_gpu-*.whl
-
-FROM nvcr.io/nvidia/l4t-jetpack:r36.4.0 AS runtime
-
-ARG DEBIAN_FRONTEND=noninteractive
-ENV LANG=en_US.UTF-8
-
+# Set up application first (minimal layers)
 WORKDIR /app
+COPY inference/ ./inference/
+COPY inference_cli/ ./inference_cli/
+COPY inference_sdk/ ./inference_sdk/
+COPY docker/config/gpu_http.py ./gpu_http.py
+COPY .release .release
+COPY requirements requirements
+COPY Makefile Makefile
 
-COPY --from=builder /usr/local/lib/python3.10 /usr/local/lib/python3.10
-COPY --from=builder /usr/local/bin /usr/local/bin
+# Build and install inference CLI - this will pull in required dependencies
+RUN make create_inference_cli_whl PYTHON=python3 && \
+    pip3 install --index-url https://pypi.jetson-ai-lab.io/jp6/cu126 dist/inference_cli*.whl
 
-RUN apt-get update -y && \
-    apt-get install -y --no-install-recommends \
-    libxext6 \
-    libopencv-dev \
-    uvicorn \
-    python3-pip \
-    git \
-    libgdal-dev \
-    libvips-dev \
-    wget \
-    rustc \
-    cargo \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /build
-COPY . .
-RUN ln -sf /usr/bin/python3 /usr/bin/python || true
-
-RUN python -m pip install --break-system-packages wheel twine requests && \
-    rm -f dist/* && \
-    python .release/pypi/inference.core.setup.py bdist_wheel && \
-    python .release/pypi/inference.gpu.setup.py bdist_wheel && \
-    python .release/pypi/inference.cli.setup.py bdist_wheel && \
-    python .release/pypi/inference.sdk.setup.py bdist_wheel
-
-RUN python -m pip install --break-system-packages --no-deps dist/inference_gpu*.whl && \
-    python -m pip install --break-system-packages \
-    dist/inference_core*.whl \
-    dist/inference_cli*.whl \
-    dist/inference_sdk*.whl \
-    "setuptools<=75.5.0"
-
-WORKDIR /notebooks
-COPY examples/notebooks .
-
-WORKDIR /app/
-COPY inference inference
-COPY docker/config/gpu_http.py gpu_http.py
-
+# Set environment variables
 ENV VERSION_CHECK_MODE=continuous \
     PROJECT=roboflow-platform \
+    ORT_TENSORRT_FP16_ENABLE=1 \
+    ORT_TENSORRT_ENGINE_CACHE_ENABLE=1 \
+    CORE_MODEL_SAM_ENABLED=False \
     NUM_WORKERS=1 \
     HOST=0.0.0.0 \
     PORT=9001 \
-    ORT_TENSORRT_FP16_ENABLE=1 \
-    ORT_TENSORRT_ENGINE_CACHE_ENABLE=1 \
-    ORT_TENSORRT_ENGINE_CACHE_PATH=/tmp/ort_cache \
     OPENBLAS_CORETYPE=ARMV8 \
     LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libgomp.so.1 \
     WORKFLOWS_STEP_EXECUTION_MODE=local \
-    WORKFLOWS_MAX_CONCURRENT_STEPS=4 \
+    WORKFLOWS_MAX_CONCURRENT_STEPS=2 \
     API_LOGGING_ENABLED=True \
-    LMM_ENABLED=True \
-    CORE_MODEL_SAM2_ENABLED=True \
-    CORE_MODEL_OWLV2_ENABLED=True \
-    ENABLE_STREAM_API=True \
-    ENABLE_PROMETHEUS=True \
-    STREAM_API_PRELOADED_PROCESSES=2 \
+    CORE_MODEL_TROCR_ENABLED=false \
     RUNS_ON_JETSON=True \
+    ENABLE_PROMETHEUS=True \
+    ENABLE_STREAM_API=True \
+    STREAM_API_PRELOADED_PROCESSES=2 \
     PYTHONPATH=/app:$PYTHONPATH
 
-RUN mkdir -p /tmp/ort_cache
-
 EXPOSE 9001
-
 ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT
