@@ -20,6 +20,11 @@ from av import logging as av_logging
 from pydantic import ValidationError
 
 from inference.core import logger
+from inference.core.env import (
+    WEBRTC_MODAL_FUNCTION_TIME_LIMIT,
+    WEBRTC_MODAL_RTSP_PLACEHOLDER,
+    WEBRTC_MODAL_RTSP_PLACEHOLDER_URL,
+)
 from inference.core.exceptions import (
     MissingApiKeyError,
     RoboflowAPINotAuthorizedError,
@@ -43,6 +48,7 @@ from inference.core.workflows.core_steps.common.serializers import (
 )
 from inference.core.workflows.errors import WorkflowSyntaxError
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
+from inference.usage_tracking.collector import usage_collector
 
 logging.getLogger("aiortc").setLevel(logging.WARNING)
 
@@ -67,12 +73,15 @@ class VideoTransformTrackWithLoop(VideoStreamTrack):
         data_output: Optional[str] = None,
         stream_output: Optional[str] = None,
         declared_fps: float = 30,
+        termination_date: Optional[datetime.datetime] = None,
+        terminate_event: Optional[asyncio.Event] = None,
         *args,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self._loop = asyncio_loop
-
+        self._termination_date = termination_date
+        self._terminate_event = terminate_event
         self.track: Optional[RemoteStreamTrack] = None
         self._track_active: bool = False
 
@@ -111,6 +120,15 @@ class VideoTransformTrackWithLoop(VideoStreamTrack):
         if not self._av_logging_set:
             av_logging.set_libav_level(av_logging.ERROR)
             self._av_logging_set = True
+
+        if (
+            self._termination_date
+            and self._termination_date < datetime.datetime.now()
+            and self._terminate_event
+            and not self._terminate_event.is_set()
+        ):
+            logger.info("Timeout reached, terminating inference pipeline")
+            self._terminate_event.set()
 
         frame: VideoFrame = await self.track.recv()
 
@@ -196,6 +214,18 @@ async def init_rtc_peer_connection_with_loop(
     send_answer: Callable[[WebRTCWorkerResult], None],
     asyncio_loop: Optional[asyncio.AbstractEventLoop] = None,
 ) -> RTCPeerConnectionWithLoop:
+    termination_date = None
+    terminate_event = asyncio.Event()
+
+    if WEBRTC_MODAL_FUNCTION_TIME_LIMIT is not None:
+        try:
+            time_limit_seconds = int(WEBRTC_MODAL_FUNCTION_TIME_LIMIT)
+            termination_date = datetime.datetime.now() + datetime.timedelta(
+                seconds=time_limit_seconds - 1
+            )
+            logger.info("Setting termination date to %s", termination_date)
+        except (TypeError, ValueError):
+            pass
     stream_output = None
     if webrtc_request.stream_output:
         # TODO: UI sends None as stream_output for wildcard outputs
@@ -212,6 +242,8 @@ async def init_rtc_peer_connection_with_loop(
             data_output=data_output,
             stream_output=stream_output,
             declared_fps=webrtc_request.declared_fps,
+            termination_date=termination_date,
+            terminate_event=terminate_event,
         )
     except (
         ValidationError,
@@ -276,11 +308,12 @@ async def init_rtc_peer_connection_with_loop(
             asyncio_loop=asyncio_loop,
         )
 
-    closed = asyncio.Event()
     relay = MediaRelay()
 
     player: Optional[MediaPlayer] = None
     if webrtc_request.rtsp_url:
+        if webrtc_request.rtsp_url == WEBRTC_MODAL_RTSP_PLACEHOLDER:
+            webrtc_request.rtsp_url = WEBRTC_MODAL_RTSP_PLACEHOLDER_URL
         logger.info("Processing RTSP URL: %s", webrtc_request.rtsp_url)
         player = MediaPlayer(
             webrtc_request.rtsp_url,
@@ -318,7 +351,7 @@ async def init_rtc_peer_connection_with_loop(
                 video_transform_track.track.stop()
             logger.info("Stopping WebRTC peer")
             await peer_connection.close()
-            closed.set()
+            terminate_event.set()
         logger.info("'connectionstatechange' event handler finished")
 
     @peer_connection.on("datachannel")
@@ -361,7 +394,7 @@ async def init_rtc_peer_connection_with_loop(
         )
     )
 
-    await closed.wait()
+    await terminate_event.wait()
     if player:
         logger.info("Stopping player")
         player.video.stop()
@@ -371,4 +404,5 @@ async def init_rtc_peer_connection_with_loop(
     if video_transform_track.track:
         logger.info("Stopping video transform track")
         video_transform_track.track.stop()
+    await usage_collector.async_push_usage_payloads()
     logger.info("WebRTC peer connection closed")
