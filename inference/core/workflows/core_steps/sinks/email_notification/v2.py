@@ -20,7 +20,10 @@ from inference.core.workflows.core_steps.common.query_language.operations.core i
 from inference.core.workflows.core_steps.sinks.email_notification.v1 import (
     send_email_using_smtp_server,
 )
-from inference.core.workflows.execution_engine.entities.base import OutputDefinition, WorkflowImageData
+from inference.core.workflows.execution_engine.entities.base import (
+    OutputDefinition,
+    WorkflowImageData,
+)
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     BYTES_KIND,
@@ -201,7 +204,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/email_notification@v2"]
-    
+
     email_provider: Literal["Roboflow Managed API Key", "Custom SMTP"] = Field(
         default="Roboflow Managed API Key",
         description="Choose email delivery method: use Roboflow's managed service or configure your own SMTP server.",
@@ -210,7 +213,7 @@ class BlockManifest(WorkflowBlockManifest):
             "always_visible": True,
         },
     )
-    
+
     subject: str = Field(
         description="Subject of the message.",
         examples=["Workflow alert"],
@@ -219,7 +222,7 @@ class BlockManifest(WorkflowBlockManifest):
             "always_visible": True,
         },
     )
-    
+
     receiver_email: Union[
         str,
         List[str],
@@ -232,7 +235,7 @@ class BlockManifest(WorkflowBlockManifest):
             "always_visible": True,
         },
     )
-    
+
     message: str = Field(
         description="Content of the message to be send.",
         examples=[
@@ -244,7 +247,7 @@ class BlockManifest(WorkflowBlockManifest):
             "always_visible": True,
         },
     )
-    
+
     message_parameters: Dict[
         str,
         Union[Selector(), Selector(), str, int, float, bool],
@@ -261,7 +264,7 @@ class BlockManifest(WorkflowBlockManifest):
             "always_visible": True,
         },
     )
-    
+
     message_parameters_operations: Dict[str, List[AllOperationsType]] = Field(
         description="Preprocessing operations to be performed on message parameters.",
         examples=[
@@ -273,7 +276,7 @@ class BlockManifest(WorkflowBlockManifest):
         ],
         default_factory=dict,
     )
-    
+
     # SMTP fields - hidden when using Roboflow Managed API Key
     sender_email: Optional[Union[str, Selector(kind=[STRING_KIND])]] = Field(
         default=None,
@@ -286,7 +289,7 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
-    
+
     smtp_server: Optional[Union[str, Selector(kind=[STRING_KIND])]] = Field(
         default=None,
         description="Custom SMTP server to be used.",
@@ -297,8 +300,10 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
-    
-    sender_email_password: Optional[Union[str, Selector(kind=[STRING_KIND, SECRET_KIND])]] = Field(
+
+    sender_email_password: Optional[
+        Union[str, Selector(kind=[STRING_KIND, SECRET_KIND])]
+    ] = Field(
         default=None,
         description="Sender e-mail password be used when authenticating to SMTP server.",
         private=True,
@@ -309,7 +314,7 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
-    
+
     cc_receiver_email: Optional[
         Union[
             str,
@@ -327,7 +332,7 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
-    
+
     bcc_receiver_email: Optional[
         Union[
             str,
@@ -345,7 +350,7 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
-    
+
     smtp_port: int = Field(
         default=465,
         description="SMTP server port.",
@@ -356,29 +361,31 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
-    
-    attachments: Dict[str, Selector(kind=[STRING_KIND, BYTES_KIND, IMAGE_KIND])] = Field(
-        description="Attachments",
-        default_factory=dict,
-        examples=[{"report.cvs": "$steps.csv_formatter.csv_content"}],
-        json_schema_extra={
-            "hide_description": True,
-        },
+
+    attachments: Dict[str, Selector(kind=[STRING_KIND, BYTES_KIND, IMAGE_KIND])] = (
+        Field(
+            description="Attachments",
+            default_factory=dict,
+            examples=[{"report.cvs": "$steps.csv_formatter.csv_content"}],
+            json_schema_extra={
+                "hide_description": True,
+            },
+        )
     )
-    
+
     fire_and_forget: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
         description="Boolean flag to run the block asynchronously (True) for faster workflows or  "
         "synchronously (False) for debugging and error handling.",
         examples=["$inputs.fire_and_forget", False],
     )
-    
+
     disable_sink: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=False,
         description="Boolean flag to disable block execution.",
         examples=[False, "$inputs.disable_email_notifications"],
     )
-    
+
     cooldown_seconds: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
         default=5,
         description="Number of seconds until a follow-up notification can be sent. ",
@@ -468,7 +475,7 @@ class EmailNotificationBlockV2(WorkflowBlock):
                 "throttling_status": True,
                 "message": "Sink cooldown applies",
             }
-        
+
         receiver_email = (
             receiver_email if isinstance(receiver_email, list) else [receiver_email]
         )
@@ -484,10 +491,10 @@ class EmailNotificationBlockV2(WorkflowBlock):
                 if isinstance(bcc_receiver_email, list)
                 else [bcc_receiver_email]
             )
-        
+
         # Check if using Roboflow Managed API Key
         use_managed_service = email_provider == "Roboflow Managed API Key"
-        
+
         if use_managed_service:
             send_email_handler = partial(
                 send_email_via_roboflow_proxy,
@@ -509,7 +516,7 @@ class EmailNotificationBlockV2(WorkflowBlock):
                     "throttling_status": False,
                     "message": "Custom SMTP requires sender_email, smtp_server, and sender_email_password",
                 }
-            
+
             # Always format as HTML for SMTP to match Resend pathway behavior
             formatted_message, inline_images = format_email_message_html_with_images(
                 message=message,
@@ -517,7 +524,7 @@ class EmailNotificationBlockV2(WorkflowBlock):
                 message_parameters_operations=message_parameters_operations,
             )
             is_html = True
-            
+
             # Process attachments: convert images to bytes for SMTP
             processed_attachments = {}
             for filename, value in attachments.items():
@@ -526,18 +533,18 @@ class EmailNotificationBlockV2(WorkflowBlock):
                     numpy_image = value.numpy_image
                     jpeg_bytes = encode_image_to_jpeg_bytes(numpy_image)
                     # Ensure filename has .jpg extension
-                    if not filename.lower().endswith(('.jpg', '.jpeg')):
+                    if not filename.lower().endswith((".jpg", ".jpeg")):
                         filename = f"{filename}.jpg"
                     processed_attachments[filename] = jpeg_bytes
                 elif isinstance(value, bytes):
                     processed_attachments[filename] = value
                 elif isinstance(value, str):
                     # String content (e.g., CSV)
-                    processed_attachments[filename] = value.encode('utf-8')
+                    processed_attachments[filename] = value.encode("utf-8")
                 else:
                     # Fallback: convert to string then bytes
-                    processed_attachments[filename] = str(value).encode('utf-8')
-            
+                    processed_attachments[filename] = str(value).encode("utf-8")
+
             # Always use v2 SMTP function for HTML support (matches Resend behavior)
             send_email_handler = partial(
                 send_email_using_smtp_server_v2,
@@ -554,7 +561,7 @@ class EmailNotificationBlockV2(WorkflowBlock):
                 inline_images=inline_images,
                 is_html=is_html,
             )
-        
+
         self._last_notification_fired = datetime.now()
         if fire_and_forget and self._background_tasks:
             self._background_tasks.add_task(send_email_handler)
@@ -622,19 +629,19 @@ def format_email_message_html_with_images(
     parameters_to_get_values = {
         p[1] for p in matching_parameters if p[1] in message_parameters
     }
-    
+
     parameters_values = {}
     image_attachments = {}
-    
+
     for parameter_name in parameters_to_get_values:
         parameter_value = message_parameters[parameter_name]
-        
+
         # Apply operations if any
         operations = message_parameters_operations.get(parameter_name)
         if operations:
             operations_chain = build_operations_chain(operations=operations)
             parameter_value = operations_chain(parameter_value, global_parameters={})
-        
+
         if isinstance(parameter_value, WorkflowImageData):
             # Convert to JPEG and create CID
             jpeg_bytes = encode_image_to_jpeg_bytes(parameter_value.numpy_image)
@@ -645,22 +652,25 @@ def format_email_message_html_with_images(
             )
         else:
             import html
+
             parameters_values[parameter_name] = html.escape(str(parameter_value))
-    
+
     # Replace placeholders
     parameter_to_placeholders = defaultdict(list)
     for placeholder, parameter_name in matching_parameters:
         if parameter_name in parameters_to_get_values:
             parameter_to_placeholders[parameter_name].append(placeholder)
-    
+
     html_message = message
     for parameter_name, placeholders in parameter_to_placeholders.items():
         for placeholder in placeholders:
-            html_message = html_message.replace(placeholder, str(parameters_values[parameter_name]))
-    
+            html_message = html_message.replace(
+                placeholder, str(parameters_values[parameter_name])
+            )
+
     # Convert newlines to <br> tags for HTML
-    html_message = html_message.replace('\n', '<br>\n')
-    
+    html_message = html_message.replace("\n", "<br>\n")
+
     return html_message, image_attachments
 
 
@@ -678,9 +688,11 @@ def serialize_image_data(value: Any) -> Any:
         numpy_image = value.numpy_image
         if numpy_image is not None:
             import cv2
-            _, buffer = cv2.imencode('.jpg', numpy_image)
+
+            _, buffer = cv2.imencode(".jpg", numpy_image)
             import base64
-            return base64.b64encode(buffer).decode('utf-8')
+
+            return base64.b64encode(buffer).decode("utf-8")
     elif isinstance(value, dict):
         return {k: serialize_image_data(v) for k, v in value.items()}
     elif isinstance(value, list):
@@ -713,10 +725,10 @@ def process_attachments(attachments: Dict[str, Any]) -> Dict[str, bytes]:
             processed[filename] = value
         elif isinstance(value, str):
             # String data (e.g., CSV content)
-            processed[filename] = value.encode('utf-8')
+            processed[filename] = value.encode("utf-8")
         else:
             # Fallback: convert to string then bytes
-            processed[filename] = str(value).encode('utf-8')
+            processed[filename] = str(value).encode("utf-8")
     return processed
 
 
@@ -735,7 +747,7 @@ def send_email_via_roboflow_proxy(
     try:
         # Serialize any WorkflowImageData objects to base64 strings
         serialized_parameters = serialize_message_parameters(message_parameters)
-        
+
         payload = {
             "receiver_email": receiver_email,
             "subject": subject,
@@ -743,7 +755,7 @@ def send_email_via_roboflow_proxy(
             "message_parameters": serialized_parameters,
             "message_parameters_operations": message_parameters_operations,
         }
-        
+
         if cc_receiver_email:
             payload["cc_receiver_email"] = cc_receiver_email
         if bcc_receiver_email:
@@ -751,6 +763,7 @@ def send_email_via_roboflow_proxy(
         if attachments:
             # Process attachments: convert images to JPEG bytes, then base64 encode
             import base64
+
             processed_attachments = {}
             for filename, value in attachments.items():
                 if isinstance(value, WorkflowImageData):
@@ -758,36 +771,43 @@ def send_email_via_roboflow_proxy(
                     numpy_image = value.numpy_image
                     jpeg_bytes = encode_image_to_jpeg_bytes(numpy_image)
                     # Ensure filename has .jpg extension
-                    if not filename.lower().endswith(('.jpg', '.jpeg')):
+                    if not filename.lower().endswith((".jpg", ".jpeg")):
                         filename = f"{filename}.jpg"
                     # Base64 encode for JSON transmission
-                    processed_attachments[filename] = base64.b64encode(jpeg_bytes).decode('utf-8')
+                    processed_attachments[filename] = base64.b64encode(
+                        jpeg_bytes
+                    ).decode("utf-8")
                 elif isinstance(value, bytes):
                     # Already bytes, base64 encode
-                    processed_attachments[filename] = base64.b64encode(value).decode('utf-8')
+                    processed_attachments[filename] = base64.b64encode(value).decode(
+                        "utf-8"
+                    )
                 elif isinstance(value, str):
                     # String data (e.g., CSV content), base64 encode
-                    processed_attachments[filename] = base64.b64encode(value.encode('utf-8')).decode('utf-8')
+                    processed_attachments[filename] = base64.b64encode(
+                        value.encode("utf-8")
+                    ).decode("utf-8")
                 else:
                     # Fallback: convert to string then bytes then base64
-                    processed_attachments[filename] = base64.b64encode(str(value).encode('utf-8')).decode('utf-8')
+                    processed_attachments[filename] = base64.b64encode(
+                        str(value).encode("utf-8")
+                    ).decode("utf-8")
             payload["attachments"] = processed_attachments
-        
+
         endpoint = "apiproxy/email"
-        
+
         response_data = post_to_roboflow_api(
             endpoint=endpoint,
             api_key=roboflow_api_key,
             payload=payload,
         )
-        
+
         return False, "Notification sent successfully via Roboflow proxy"
     except Exception as error:
         logging.warning(
             f"Could not send e-mail via Roboflow proxy. Error: {str(error)}"
         )
         return True, f"Failed to send e-mail via proxy. Internal error details: {error}"
-
 
 
 def send_email_using_smtp_server_v2(
@@ -858,10 +878,10 @@ def _send_email_using_smtp_server_v2(
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
     from typing import Generator
-    
+
     # Use multipart/related for inline images
-    e_mail_message = MIMEMultipart('related')
-    
+    e_mail_message = MIMEMultipart("related")
+
     e_mail_message["From"] = sender_email
     e_mail_message["To"] = ",".join(receiver_email)
     if cc_receiver_email:
@@ -869,18 +889,18 @@ def _send_email_using_smtp_server_v2(
     if bcc_receiver_email:
         e_mail_message["Bcc"] = ",".join(bcc_receiver_email)
     e_mail_message["Subject"] = subject
-    
+
     # Attach message as HTML
     message_type = "html" if is_html else "plain"
     e_mail_message.attach(MIMEText(message, message_type))
-    
+
     # Attach inline images with Content-ID
     for cid, image_bytes in inline_images.items():
         image_part = MIMEImage(image_bytes)
-        image_part.add_header('Content-ID', f'<{cid}>')
-        image_part.add_header('Content-Disposition', 'inline')
+        image_part.add_header("Content-ID", f"<{cid}>")
+        image_part.add_header("Content-Disposition", "inline")
         e_mail_message.attach(image_part)
-    
+
     # Attach regular attachments
     for attachment_name, attachment_content in attachments.items():
         part = MIMEBase("application", "octet-stream")
@@ -894,9 +914,9 @@ def _send_email_using_smtp_server_v2(
             f"attachment; filename= {attachment_name}",
         )
         e_mail_message.attach(part)
-    
+
     to_sent = e_mail_message.as_string()
-    
+
     # Establish SMTP connection
     @contextmanager
     def establish_smtp_connection(
@@ -905,7 +925,7 @@ def _send_email_using_smtp_server_v2(
         context = ssl.create_default_context()
         with smtplib.SMTP_SSL(smtp_server, smtp_port, context=context) as server:
             yield server
-    
+
     with establish_smtp_connection(
         smtp_server=smtp_server, smtp_port=smtp_port
     ) as server:

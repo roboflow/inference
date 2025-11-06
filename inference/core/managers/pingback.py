@@ -10,8 +10,8 @@ from inference.core.env import (
     METRICS_ENABLED,
     METRICS_INTERVAL,
     METRICS_URL,
-    TAGS,
     ROBOFLOW_API_VERIFY_SSL,
+    TAGS,
 )
 from inference.core.logger import logger
 from inference.core.managers.metrics import (
@@ -124,7 +124,10 @@ class PingbackInfo:
                 )
                 all_data["inference_results"] = all_data["inference_results"] + results
             res = requests.post(
-                wrap_url(METRICS_URL), json=all_data, timeout=10, verify=ROBOFLOW_API_VERIFY_SSL
+                wrap_url(METRICS_URL),
+                json=all_data,
+                timeout=10,
+                verify=ROBOFLOW_API_VERIFY_SSL,
             )
             try:
                 api_key_safe_raise_for_status(response=res)
