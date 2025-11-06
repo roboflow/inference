@@ -510,12 +510,28 @@ class EmailNotificationBlockV2(WorkflowBlock):
                     "message": "Custom SMTP requires sender_email, smtp_server, and sender_email_password",
                 }
             
-            # Format message with parameters before sending via SMTP
-            formatted_message = format_email_message(
-                message=message,
-                message_parameters=message_parameters,
-                message_parameters_operations=message_parameters_operations,
+            # Detect if message_parameters has inline images
+            has_inline_images = any(
+                isinstance(v, WorkflowImageData) for v in message_parameters.values()
             )
+            
+            if has_inline_images:
+                # Format message as HTML with inline images
+                formatted_message, inline_images = format_email_message_html_with_images(
+                    message=message,
+                    message_parameters=message_parameters,
+                    message_parameters_operations=message_parameters_operations,
+                )
+                is_html = True
+            else:
+                # Use plain text formatting
+                formatted_message = format_email_message(
+                    message=message,
+                    message_parameters=message_parameters,
+                    message_parameters_operations=message_parameters_operations,
+                )
+                inline_images = None
+                is_html = False
             
             # Process attachments: convert images to bytes for SMTP
             processed_attachments = {}
@@ -537,19 +553,38 @@ class EmailNotificationBlockV2(WorkflowBlock):
                     # Fallback: convert to string then bytes
                     processed_attachments[filename] = str(value).encode('utf-8')
             
-            send_email_handler = partial(
-                send_email_using_smtp_server,
-                sender_email=sender_email,
-                receiver_email=receiver_email,
-                cc_receiver_email=cc_receiver_email,
-                bcc_receiver_email=bcc_receiver_email,
-                subject=subject,
-                message=formatted_message,
-                attachments=processed_attachments,
-                smtp_server=smtp_server,
-                smtp_port=smtp_port,
-                sender_email_password=sender_email_password,
-            )
+            if has_inline_images:
+                # Use v2-specific function for inline images
+                send_email_handler = partial(
+                    send_email_using_smtp_server_v2,
+                    sender_email=sender_email,
+                    receiver_email=receiver_email,
+                    cc_receiver_email=cc_receiver_email,
+                    bcc_receiver_email=bcc_receiver_email,
+                    subject=subject,
+                    message=formatted_message,
+                    attachments=processed_attachments,
+                    smtp_server=smtp_server,
+                    smtp_port=smtp_port,
+                    sender_email_password=sender_email_password,
+                    inline_images=inline_images,
+                    is_html=is_html,
+                )
+            else:
+                # Use v1 function for backward compatibility
+                send_email_handler = partial(
+                    send_email_using_smtp_server,
+                    sender_email=sender_email,
+                    receiver_email=receiver_email,
+                    cc_receiver_email=cc_receiver_email,
+                    bcc_receiver_email=bcc_receiver_email,
+                    subject=subject,
+                    message=formatted_message,
+                    attachments=processed_attachments,
+                    smtp_server=smtp_server,
+                    smtp_port=smtp_port,
+                    sender_email_password=sender_email_password,
+                )
         
         self._last_notification_fired = datetime.now()
         if fire_and_forget and self._background_tasks:
@@ -606,6 +641,58 @@ def format_email_message(
                 placeholder, str(parameters_values[parameter_name])
             )
     return message
+
+
+def format_email_message_html_with_images(
+    message: str,
+    message_parameters: Dict[str, Any],
+    message_parameters_operations: Dict[str, List[AllOperationsType]],
+) -> Tuple[str, Dict[str, bytes]]:
+    """Format email message as HTML with inline images."""
+    matching_parameters = PARAMETER_REGEX.findall(message)
+    parameters_to_get_values = {
+        p[1] for p in matching_parameters if p[1] in message_parameters
+    }
+    
+    parameters_values = {}
+    image_attachments = {}
+    
+    for parameter_name in parameters_to_get_values:
+        parameter_value = message_parameters[parameter_name]
+        
+        # Apply operations if any
+        operations = message_parameters_operations.get(parameter_name)
+        if operations:
+            operations_chain = build_operations_chain(operations=operations)
+            parameter_value = operations_chain(parameter_value, global_parameters={})
+        
+        if isinstance(parameter_value, WorkflowImageData):
+            # Convert to JPEG and create CID
+            jpeg_bytes = encode_image_to_jpeg_bytes(parameter_value.numpy_image)
+            cid = f"image_{parameter_name}"
+            image_attachments[cid] = jpeg_bytes
+            parameters_values[parameter_name] = (
+                f'<img src="cid:{cid}" alt="{parameter_name}" style="max-width: 600px; height: auto;">'
+            )
+        else:
+            import html
+            parameters_values[parameter_name] = html.escape(str(parameter_value))
+    
+    # Replace placeholders
+    parameter_to_placeholders = defaultdict(list)
+    for placeholder, parameter_name in matching_parameters:
+        if parameter_name in parameters_to_get_values:
+            parameter_to_placeholders[parameter_name].append(placeholder)
+    
+    html_message = message
+    for parameter_name, placeholders in parameter_to_placeholders.items():
+        for placeholder in placeholders:
+            html_message = html_message.replace(placeholder, str(parameters_values[parameter_name]))
+    
+    # Convert newlines to <br> tags for HTML
+    html_message = html_message.replace('\n', '<br>\n')
+    
+    return html_message, image_attachments
 
 
 def serialize_image_data(value: Any) -> Any:
@@ -731,3 +818,127 @@ def send_email_via_roboflow_proxy(
             f"Could not send e-mail via Roboflow proxy. Error: {str(error)}"
         )
         return True, f"Failed to send e-mail via proxy. Internal error details: {error}"
+
+
+
+def send_email_using_smtp_server_v2(
+    sender_email: str,
+    receiver_email: List[str],
+    cc_receiver_email: Optional[List[str]],
+    bcc_receiver_email: Optional[List[str]],
+    subject: str,
+    message: str,
+    attachments: Dict[str, bytes],
+    smtp_server: str,
+    smtp_port: int,
+    sender_email_password: str,
+    inline_images: Dict[str, bytes],
+    is_html: bool,
+) -> Tuple[bool, str]:
+    """
+    V2-specific SMTP email sender with inline image support.
+    This function is used only by v2 block and does not modify v1 behavior.
+    """
+    try:
+        _send_email_using_smtp_server_v2(
+            sender_email=sender_email,
+            receiver_email=receiver_email,
+            cc_receiver_email=cc_receiver_email,
+            bcc_receiver_email=bcc_receiver_email,
+            subject=subject,
+            message=message,
+            attachments=attachments,
+            smtp_server=smtp_server,
+            smtp_port=smtp_port,
+            sender_email_password=sender_email_password,
+            inline_images=inline_images,
+            is_html=is_html,
+        )
+        return False, "Notification sent successfully"
+    except Exception as error:
+        logging.warning(
+            f"Could not send e-mail using custom SMTP server. Error: {str(error)}"
+        )
+        return True, f"Failed to send e-mail. Internal error details: {error}"
+
+
+def _send_email_using_smtp_server_v2(
+    sender_email: str,
+    receiver_email: List[str],
+    cc_receiver_email: Optional[List[str]],
+    bcc_receiver_email: Optional[List[str]],
+    subject: str,
+    message: str,
+    attachments: Dict[str, bytes],
+    smtp_server: str,
+    smtp_port: int,
+    sender_email_password: str,
+    inline_images: Dict[str, bytes],
+    is_html: bool,
+) -> None:
+    """
+    Internal function to send email with inline images via SMTP.
+    V2-specific - does not modify v1 block behavior.
+    """
+    import smtplib
+    import ssl
+    from contextlib import contextmanager
+    from email import encoders
+    from email.mime.base import MIMEBase
+    from email.mime.image import MIMEImage
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+    from typing import Generator
+    
+    # Use multipart/related for inline images
+    e_mail_message = MIMEMultipart('related')
+    
+    e_mail_message["From"] = sender_email
+    e_mail_message["To"] = ",".join(receiver_email)
+    if cc_receiver_email:
+        e_mail_message["Cc"] = ",".join(cc_receiver_email)
+    if bcc_receiver_email:
+        e_mail_message["Bcc"] = ",".join(bcc_receiver_email)
+    e_mail_message["Subject"] = subject
+    
+    # Attach message as HTML
+    message_type = "html" if is_html else "plain"
+    e_mail_message.attach(MIMEText(message, message_type))
+    
+    # Attach inline images with Content-ID
+    for cid, image_bytes in inline_images.items():
+        image_part = MIMEImage(image_bytes)
+        image_part.add_header('Content-ID', f'<{cid}>')
+        image_part.add_header('Content-Disposition', 'inline')
+        e_mail_message.attach(image_part)
+    
+    # Attach regular attachments
+    for attachment_name, attachment_content in attachments.items():
+        part = MIMEBase("application", "octet-stream")
+        binary_payload = attachment_content
+        if not isinstance(binary_payload, bytes):
+            binary_payload = binary_payload.encode("utf-8")
+        part.set_payload(binary_payload)
+        encoders.encode_base64(part)
+        part.add_header(
+            "Content-Disposition",
+            f"attachment; filename= {attachment_name}",
+        )
+        e_mail_message.attach(part)
+    
+    to_sent = e_mail_message.as_string()
+    
+    # Establish SMTP connection
+    @contextmanager
+    def establish_smtp_connection(
+        smtp_server: str, smtp_port: int
+    ) -> Generator[smtplib.SMTP_SSL, None, None]:
+        context = ssl.create_default_context()
+        with smtplib.SMTP_SSL(smtp_server, smtp_port, context=context) as server:
+            yield server
+    
+    with establish_smtp_connection(
+        smtp_server=smtp_server, smtp_port=smtp_port
+    ) as server:
+        server.login(sender_email, sender_email_password)
+        server.sendmail(sender_email, receiver_email, to_sent)
