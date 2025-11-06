@@ -1,13 +1,4 @@
-FROM roboflow/l4t-ml:r36.4.tegra-aarch64-cu126-22.04 AS base
-
-# Flatten the base image to avoid max layer depth issues
-# Copy the entire filesystem into a fresh layer
-FROM scratch AS flattened
-COPY --from=base / /
-
-# Start fresh with flattened filesystem
-FROM flattened
-
+FROM roboflow/l4t-ml:r36.4.tegra-aarch64-cu126-22.04
 # Base image includes: PyTorch 2.8, torchvision, ONNXRuntime w/ TensorRT,
 # OpenCV w/ CUDA, cupy, pycuda, NumPy, SciPy, scikit-learn, pandas, scikit-image
 
@@ -18,9 +9,6 @@ ENV LANG=en_US.UTF-8
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends lshw git && \
     rm -rf /var/lib/apt/lists/*
-
-# Install required Python dependencies for building
-RUN pip3 install python-dotenv
 
 # Set up application first (minimal layers)
 WORKDIR /app

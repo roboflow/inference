@@ -1,26 +1,24 @@
-name: Build and Push Jetson 6.2.0 Container
+name: Retag Jetson 6.2.0 Container
 permissions:
   contents: read
 on:
-  release:
-    types: [created]
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       force_push:
         type: boolean
-        description: "Do you want to push image after build?"
+        description: "Do you want to push retagged image?"
         default: false
 
 env:
+  SOURCE_IMAGE: "roboflow/roboflow-inference-server-jetson:jetpack-6.2.0"
+  TARGET_IMAGE: "roboflow/roboflow-inference-server-jetson-6.2.0"
   VERSION: "0.0.0" # Default version, will be overwritten
 
 jobs:
-  docker:
+  retag:
     runs-on:
       labels: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 30
     permissions:
       id-token: write
       contents: read
@@ -30,17 +28,23 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: 🛎️ Checkout
         uses: actions/checkout@v4
+
       - name: Read version from file
         run: echo "VERSION=$(DISABLE_VERSION_CHECK=true python ./inference/core/version.py)" >> $GITHUB_ENV
-      - name: Set up Depot CLI
-        uses: depot/setup-action@v1
-      - name: Build and Push
-        uses: depot/build-push-action@v1
-        with:
-          push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true')}}
-          project: grl7ffzxd7
-          tags: roboflow/roboflow-inference-server-jetson-6.2.0:latest,roboflow/roboflow-inference-server-jetson-6.2.0:${{ env.VERSION}}
-          platforms: linux/arm64
-          file: ./docker/dockerfiles/Dockerfile.onnx.jetson.6.2.0
+
+      - name: Pull source image
+        run: docker pull ${{ env.SOURCE_IMAGE }}
+
+      - name: Retag image
+        run: |
+          docker tag ${{ env.SOURCE_IMAGE }} ${{ env.TARGET_IMAGE }}:latest
+          docker tag ${{ env.SOURCE_IMAGE }} ${{ env.TARGET_IMAGE }}:${{ env.VERSION }}
+
+      - name: Push retagged images
+        if: ${{ github.event.inputs.force_push == 'true' }}
+        run: |
+          docker push ${{ env.TARGET_IMAGE }}:latest
+          docker push ${{ env.TARGET_IMAGE }}:${{ env.VERSION }}
