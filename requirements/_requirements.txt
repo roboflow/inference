@@ -21,6 +21,7 @@ requests-toolbelt~=1.0.0
 wheel>=0.38.1,<=0.45.1
 setuptools>=70.0.0  # lack of upper-bound to ensure compatibility with Google Colab (builds to define one if needed)
 networkx>=3.0.0,<4.0.0
+pycocotools>=2.0.10
 pydantic>=2.8.0,<2.12.0
 pydantic-settings<2.8
 openai>=1.12.0,<2.0.0
