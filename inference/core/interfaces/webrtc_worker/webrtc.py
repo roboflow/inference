@@ -20,7 +20,11 @@ from av import logging as av_logging
 from pydantic import ValidationError
 
 from inference.core import logger
-from inference.core.env import WEBRTC_MODAL_FUNCTION_TIME_LIMIT
+from inference.core.env import (
+    WEBRTC_MODAL_FUNCTION_TIME_LIMIT,
+    WEBRTC_MODAL_RTSP_PLACEHOLDER,
+    WEBRTC_MODAL_RTSP_PLACEHOLDER_URL,
+)
 from inference.core.exceptions import (
     MissingApiKeyError,
     RoboflowAPINotAuthorizedError,
@@ -308,6 +312,8 @@ async def init_rtc_peer_connection_with_loop(
 
     player: Optional[MediaPlayer] = None
     if webrtc_request.rtsp_url:
+        if webrtc_request.rtsp_url == WEBRTC_MODAL_RTSP_PLACEHOLDER:
+            webrtc_request.rtsp_url = WEBRTC_MODAL_RTSP_PLACEHOLDER_URL
         logger.info("Processing RTSP URL: %s", webrtc_request.rtsp_url)
         player = MediaPlayer(
             webrtc_request.rtsp_url,
