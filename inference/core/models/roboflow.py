@@ -407,12 +407,6 @@ class RoboflowInferenceModel(Model):
         except Exception as e:
             logger.error(f"Error downloading model artifacts: {e}")
             raise
-        finally:
-            try:
-                if os.path.exists(lock_file):
-                    os.unlink(lock_file)  # Clean up lock file
-            except OSError:
-                pass  # Best effort cleanup
 
     def load_model_artifacts_from_cache(self) -> None:
         logger.debug("Model artifacts already downloaded, loading model from cache")
@@ -679,36 +673,49 @@ class RoboflowCoreModel(RoboflowInferenceModel):
         self.download_model_from_roboflow_api()
 
     def download_model_from_roboflow_api(self) -> None:
-        api_data = get_roboflow_model_data(
-            api_key=self.api_key,
-            model_id=self.endpoint,
-            endpoint_type=ModelEndpointType.CORE_MODEL,
-            device_id=self.device_id,
-        )
-        if "weights" not in api_data:
-            raise ModelArtefactError(
-                f"`weights` key not available in Roboflow API response while downloading model weights."
-            )
-        for weights_url_key in api_data["weights"]:
-            weights_url = api_data["weights"][weights_url_key]
-            t1 = perf_counter()
-            model_weights_response = get_from_url(weights_url, json_response=False)
-            filename = weights_url.split("?")[0].split("/")[-1]
-            save_bytes_in_cache(
-                content=model_weights_response.content,
-                file=filename,
-                model_id=self.endpoint,
-            )
-            if perf_counter() - t1 > 120:
-                logger.debug(
-                    "Weights download took longer than 120 seconds, refreshing API request"
-                )
+
+        # Use the same lock file pattern as in clear_cache
+        lock_dir = MODEL_CACHE_DIR + "/_file_locks"  # Dedicated lock directory
+        os.makedirs(lock_dir, exist_ok=True)  # Ensure lock directory exists.
+        lock_file = os.path.join(lock_dir, f"{os.path.basename(self.cache_dir)}.lock")
+        try:
+            lock = FileLock(lock_file, timeout=120)  # 120 second timeout for downloads
+            with lock:
                 api_data = get_roboflow_model_data(
                     api_key=self.api_key,
                     model_id=self.endpoint,
                     endpoint_type=ModelEndpointType.CORE_MODEL,
                     device_id=self.device_id,
                 )
+                if "weights" not in api_data:
+                    raise ModelArtefactError(
+                        f"`weights` key not available in Roboflow API response while downloading model weights."
+                    )
+                for weights_url_key in api_data["weights"]:
+                    weights_url = api_data["weights"][weights_url_key]
+                    t1 = perf_counter()
+                    model_weights_response = get_from_url(
+                        weights_url, json_response=False
+                    )
+                    filename = weights_url.split("?")[0].split("/")[-1]
+                    save_bytes_in_cache(
+                        content=model_weights_response.content,
+                        file=filename,
+                        model_id=self.endpoint,
+                    )
+                    if perf_counter() - t1 > 120:
+                        logger.debug(
+                            "Weights download took longer than 120 seconds, refreshing API request"
+                        )
+                        api_data = get_roboflow_model_data(
+                            api_key=self.api_key,
+                            model_id=self.endpoint,
+                            endpoint_type=ModelEndpointType.CORE_MODEL,
+                            device_id=self.device_id,
+                        )
+        except Exception as e:
+            logger.error(f"Error downloading model artifacts: {e}")
+            raise
 
     def get_device_id(self) -> str:
         """Returns the device ID associated with this model.

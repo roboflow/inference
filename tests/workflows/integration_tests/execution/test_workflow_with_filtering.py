@@ -8,7 +8,11 @@ from inference.core.workflows.core_steps.common.entities import StepExecutionMod
 from inference.core.workflows.core_steps.common.query_language.errors import (
     EvaluationEngineError,
 )
-from inference.core.workflows.errors import RuntimeInputError, StepExecutionError
+from inference.core.workflows.errors import (
+    ClientCausedStepExecutionError,
+    RuntimeInputError,
+    StepExecutionError,
+)
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
     add_to_workflows_gallery,
@@ -310,7 +314,7 @@ def test_filtering_workflow_when_model_id_cannot_be_resolved_to_valid_model(
     )
 
     # when
-    with pytest.raises(StepExecutionError):
+    with pytest.raises(ClientCausedStepExecutionError):
         _ = execution_engine.run(
             runtime_parameters={
                 "image": crowd_image,

@@ -1,9 +1,9 @@
 [project]
 name = "inference-exp"
-version = "0.15.1"
+version = "0.16.2"
 description = "Experimental vresion of inference package which is supposed to evolve into inference 1.0"
 readme = "README.md"
-requires-python = ">=3.10,<3.13"
+requires-python = ">=3.9,<3.13"
 dependencies = [
   "numpy",
   "torch>=2.0.0,<3.0.0",
@@ -28,7 +28,7 @@ dependencies = [
   "filelock>=3.12.0,<4.0.0",
   "rich>=14.1.0,<15.0.0",
   "segmentation-models-pytorch>=0.5.0,<1.0.0",
-  "scikit-image~=0.25.0"
+  "scikit-image>=0.24.0,<0.26.0"
 ]
 
 [project.optional-dependencies]
@@ -39,28 +39,28 @@ torch-cpu = [
 torch-cu118 = [
   "torch>=2.0.0,<3.0.0",
   "torchvision",
-  "pycuda>=2025.0.0,<2026.0.0",
+  "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin' and python_version >= '3.10'",
 ]
 torch-cu124 = [
   "torch>=2.0.0,<3.0.0",
   "torchvision",
-  "pycuda>=2025.0.0,<2026.0.0",
+  "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin' and python_version >= '3.10'",
 ]
 torch-cu126 = [
   "torch>=2.0.0,<3.0.0",
   "torchvision",
-  "pycuda>=2025.0.0,<2026.0.0",
+  "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin' and python_version >= '3.10'",
 ]
 torch-cu128 = [
   "torch>=2.0.0,<3.0.0",
   "torchvision",
-  "pycuda>=2025.0.0,<2026.0.0",
+  "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin' and python_version >= '3.10'",
 ]
 torch-jp6-cu126 = [
-  "numpy<2.0.0",
-  "torch>=2.0.0,<3.0.0",
-  "torchvision",
-  "pycuda>=2025.0.0,<2026.0.0",
+  "numpy<2.0.0; platform_system == 'Linux' and platform_machine == 'aarch64' and python_version >= '3.10'",
+  "torch>=2.0.0,<3.0.0; platform_system == 'Linux' and platform_machine == 'aarch64' and python_version >= '3.10'",
+  "torchvision; platform_system == 'Linux' and platform_machine == 'aarch64' and python_version >= '3.10'",
+  "pycuda>=2025.0.0,<2026.0.0; platform_system == 'Linux' and platform_machine == 'aarch64' and python_version >= '3.10'",
 ]
 onnx-cpu = [
   "onnxruntime>=1.15.1,<1.23.0"
@@ -74,9 +74,9 @@ onnx-cu12 = [
   "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin'",
 ]
 onnx-jp6-cu126 = [
-  "numpy<2.0.0",
-  "onnxruntime-gpu>=1.17.0,<1.24.0; platform_system != 'darwin'",
-  "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin'",
+  "numpy<2.0.0; platform_system == 'Linux' and platform_machine == 'aarch64' and python_version >= '3.10'",
+  "onnxruntime-gpu>=1.17.0,<1.24.0; platform_system == 'Linux' and platform_machine == 'aarch64' and python_version >= '3.10'",
+  "pycuda>=2025.0.0,<2026.0.0; platform_system == 'Linux' and platform_machine == 'aarch64' and python_version >= '3.10'",
 ]
 mediapipe = [
   "mediapipe>=0.9,<0.11"
@@ -89,7 +89,7 @@ trt10 = [
   "tensorrt-cu12>=10.0.0,<11.0.0; platform_system == 'Linux' or platform_system == 'Windows'",
   "tensorrt-lean>=10.0.0,<11.0.0; platform_system == 'Linux' or platform_system == 'Windows'",
   "tensorrt-lean-cu12>=10.0.0,<11.0.0; platform_system == 'Linux' or platform_system == 'Windows'",
-   "pycuda>=2025.0.0,<2026.0.0",
+   "pycuda>=2025.0.0,<2026.0.0; platform_system != 'darwin' and python_version >= '3.10'",
 ]
 test = [
   "pytest>=8.0.0",
@@ -179,6 +179,26 @@ name = "tensorrt-cu12-bindings"
 [[tool.uv.dependency-metadata]]
 name = "tensorrt-lean-cu12-bindings"
 
+[[tool.uv.dependency-metadata]]
+name = "tensorrt"
+requires-dist = [
+  "tensorrt-cu12; platform_system == 'Linux' or platform_system == 'Windows'",
+  "tensorrt-cu13; platform_system == 'Linux' or platform_system == 'Windows'",
+]
+
+[[tool.uv.dependency-metadata]]
+name = "tensorrt-cu13"
+
+[[tool.uv.dependency-metadata]]
+name = "tensorrt-lean"
+requires-dist = [
+  "tensorrt-lean-cu12; platform_system == 'Linux' or platform_system == 'Windows'",
+  "tensorrt-lean-cu13; platform_system == 'Linux' or platform_system == 'Windows'",
+]
+
+[[tool.uv.dependency-metadata]]
+name = "tensorrt-lean-cu13"
+
 
 [tool.uv]
 conflicts = [
@@ -196,6 +216,11 @@ conflicts = [
     { extra = "onnx-cu12" },
     { extra = "onnx-jp6-cu126" },
   ],
+]
+required-environments = [
+  "sys_platform == 'linux' and platform_machine == 'x86_64' and python_version == '3.12'",
+  # for jetson builds we use python 3.10...but it wont resolve onnxruntime-gpu:
+  #"sys_platform == 'linux' and platform_machine == 'aarch64' and python_version == '3.10'", 
 ]
 
 [tool.setuptools.package-data]

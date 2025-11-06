@@ -151,6 +151,10 @@ class RoboflowAPINotAuthorizedError(RoboflowAPIUnsuccessfulRequestError):
     pass
 
 
+class RoboflowAPIForbiddenError(RoboflowAPIUnsuccessfulRequestError):
+    pass
+
+
 class RoboflowAPINotNotFoundError(RoboflowAPIUnsuccessfulRequestError):
     pass
 

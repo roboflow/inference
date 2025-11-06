@@ -1,5 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Callable, Dict, List, Optional, Type, Union
 
 from packaging.specifiers import SpecifierSet
 from packaging.version import Version
@@ -14,6 +14,7 @@ from inference.core.workflows.execution_engine.entities.engine import (
 )
 from inference.core.workflows.execution_engine.profiling.core import WorkflowsProfiler
 from inference.core.workflows.execution_engine.v1.core import (
+    DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER,
     EXECUTION_ENGINE_V1_VERSION,
     ExecutionEngineV1,
 )
@@ -39,6 +40,9 @@ class ExecutionEngine(BaseExecutionEngine):
         workflow_id: Optional[str] = None,
         profiler: Optional[WorkflowsProfiler] = None,
         executor: Optional[ThreadPoolExecutor] = None,
+        step_error_handler: Optional[
+            Union[str, Callable[[str, Exception], None]]
+        ] = DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER,
     ) -> "ExecutionEngine":
         requested_engine_version = retrieve_requested_execution_engine_version(
             workflow_definition=workflow_definition,
@@ -54,6 +58,7 @@ class ExecutionEngine(BaseExecutionEngine):
             workflow_id=workflow_id,
             profiler=profiler,
             executor=executor,
+            step_error_handler=step_error_handler,
         )
         return cls(engine=engine)
 

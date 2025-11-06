@@ -115,7 +115,7 @@ class UsageCollector:
             logger.debug("Persistence through RedisQueue")
             self._queue: "Queue[UsagePayload]" = RedisQueue()
             self._api_keys_hashing_enabled = False
-        elif (LAMBDA or GCP_SERVERLESS) or self._settings.opt_out:
+        elif (LAMBDA or GCP_SERVERLESS) or not self._settings.use_persistent_queue:
             logger.debug("No persistence")
             self._queue: "Queue[UsagePayload]" = Queue(
                 maxsize=self._settings.queue_size
@@ -172,7 +172,10 @@ class UsageCollector:
             "category": "",
             "resource_id": "",
             "resource_details": "{}",
-            "hosted": LAMBDA or bool(DEDICATED_DEPLOYMENT_ID) or GCP_SERVERLESS,
+            "hosted": bool(LAMBDA)
+            or bool(DEDICATED_DEPLOYMENT_ID)
+            or bool(GCP_SERVERLESS)
+            or bool(ROBOFLOW_INTERNAL_SERVICE_SECRET),
             "api_key_hash": "",
             "is_gpu_available": False,
             "python_version": sys.version.split()[0],
@@ -728,25 +731,31 @@ class UsageCollector:
                         )
                     )
                 except Exception as exc:
+                    t2 = time.time()
                     if GCP_SERVERLESS is True:
-                        t2 = time.time()
                         execution_duration = max(t2 - t1, 0.1)
-                        self.record_usage(
-                            **self._extract_usage_params_from_func_kwargs(
-                                usage_fps=usage_fps,
-                                usage_api_key=usage_api_key,
-                                usage_workflow_id=usage_workflow_id,
-                                usage_workflow_preview=usage_workflow_preview,
-                                usage_inference_test_run=usage_inference_test_run,
-                                usage_billable=usage_billable,
-                                execution_duration=execution_duration,
-                                func=func,
-                                category=category,
-                                exc=str(exc),
-                                args=args,
-                                kwargs=kwargs,
-                            )
+                    else:
+                        execution_duration = t2 - t1
+                    exc_type = type(exc).__name__
+                    if hasattr(exc, "inner_error_type"):
+                        exc_type = exc.inner_error_type
+                    exc_str = f"{exc_type}: {str(exc)}"
+                    self.record_usage(
+                        **self._extract_usage_params_from_func_kwargs(
+                            usage_fps=usage_fps,
+                            usage_api_key=usage_api_key,
+                            usage_workflow_id=usage_workflow_id,
+                            usage_workflow_preview=usage_workflow_preview,
+                            usage_inference_test_run=usage_inference_test_run,
+                            usage_billable=usage_billable,
+                            execution_duration=execution_duration,
+                            func=func,
+                            category=category,
+                            exc=exc_str,
+                            args=args,
+                            kwargs=kwargs,
                         )
+                    )
                     raise
                 return res
 
@@ -786,25 +795,31 @@ class UsageCollector:
                         )
                     )
                 except Exception as exc:
+                    t2 = time.time()
                     if GCP_SERVERLESS is True:
-                        t2 = time.time()
                         execution_duration = max(t2 - t1, 0.1)
-                        await self.async_record_usage(
-                            **self._extract_usage_params_from_func_kwargs(
-                                usage_fps=usage_fps,
-                                usage_api_key=usage_api_key,
-                                usage_workflow_id=usage_workflow_id,
-                                usage_workflow_preview=usage_workflow_preview,
-                                usage_inference_test_run=usage_inference_test_run,
-                                usage_billable=usage_billable,
-                                execution_duration=execution_duration,
-                                func=func,
-                                category=category,
-                                exc=str(exc),
-                                args=args,
-                                kwargs=kwargs,
-                            )
+                    else:
+                        execution_duration = t2 - t1
+                    exc_type = type(exc).__name__
+                    if hasattr(exc, "inner_error_type"):
+                        exc_type = exc.inner_error_type
+                    exc_str = f"{exc_type}: {str(exc)}"
+                    await self.async_record_usage(
+                        **self._extract_usage_params_from_func_kwargs(
+                            usage_fps=usage_fps,
+                            usage_api_key=usage_api_key,
+                            usage_workflow_id=usage_workflow_id,
+                            usage_workflow_preview=usage_workflow_preview,
+                            usage_inference_test_run=usage_inference_test_run,
+                            usage_billable=usage_billable,
+                            execution_duration=execution_duration,
+                            func=func,
+                            category=category,
+                            exc=exc_str,
+                            args=args,
+                            kwargs=kwargs,
                         )
+                    )
                     raise
                 return res
 

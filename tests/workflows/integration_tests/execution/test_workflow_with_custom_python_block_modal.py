@@ -11,20 +11,19 @@ To run these tests:
 2. Run: pytest tests/workflows/integration_tests/execution/test_workflow_with_custom_python_block_modal.py
 """
 
+import base64
 import os
 import subprocess
 import sys
-import base64
 from typing import Any, Dict
 
+import cv2
 import numpy as np
 import pytest
-import cv2
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
-
 
 # Skip all tests if Modal credentials are not present
 MODAL_TOKEN_ID = os.getenv("MODAL_TOKEN_ID")

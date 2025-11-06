@@ -1,7 +1,7 @@
 import gc
 import os
-from unittest.mock import MagicMock
 from threading import RLock
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest

@@ -31,6 +31,7 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.sdk.http.txt \
     requirements/requirements.cli.txt \
     requirements/requirements.easyocr.txt \
+    requirements/requirements.modal.txt \
     ./
 
 RUN python3 -m pip install -U pip
@@ -48,6 +49,7 @@ RUN python3 -m pip install \
     -r requirements.sdk.http.txt \
     -r requirements.cli.txt \
     -r requirements.easyocr.txt \
+    -r requirements.modal.txt \
     jupyterlab \
     "setuptools<=75.5.0" \
     --upgrade \

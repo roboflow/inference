@@ -5,7 +5,7 @@ import aiohttp
 import numpy as np
 import requests
 from aiohttp import ClientConnectionError, ClientResponseError
-from requests import HTTPError
+from requests import HTTPError, Response
 
 from inference_sdk.config import EXECUTION_ID_HEADER, execution_id
 from inference_sdk.http.entities import (
@@ -63,6 +63,7 @@ from inference_sdk.http.utils.post_processing import (
 from inference_sdk.http.utils.profilling import save_workflows_profiler_trace
 from inference_sdk.http.utils.request_building import (
     ImagePlacement,
+    RequestData,
     prepare_requests_data,
 )
 from inference_sdk.http.utils.requests import (
@@ -468,6 +469,51 @@ class InferenceHTTPClient:
             APIKeyNotProvided: If API key is required but not provided.
             InvalidModelIdentifier: If the model identifier format is invalid.
         """
+        requests_data = self._prepare_infer_from_api_v0_request_data(
+            inference_input=inference_input,
+            model_id=model_id,
+        )
+        responses = self._execute_infer_from_api_request(
+            requests_data=requests_data,
+        )
+        results = []
+        for request_data, response in zip(requests_data, responses):
+            if response_contains_jpeg_image(response=response):
+                visualisation = transform_visualisation_bytes(
+                    visualisation=response.content,
+                    expected_format=self.__inference_configuration.output_visualisation_format,
+                )
+                parsed_response = {"visualization": visualisation}
+            else:
+                parsed_response = response.json()
+                if parsed_response.get("visualization") is not None:
+                    parsed_response["visualization"] = transform_base64_visualisation(
+                        visualisation=parsed_response["visualization"],
+                        expected_format=self.__inference_configuration.output_visualisation_format,
+                    )
+            parsed_response = adjust_prediction_to_client_scaling_factor(
+                prediction=parsed_response,
+                scaling_factor=request_data.image_scaling_factors[0],
+            )
+            results.append(parsed_response)
+        return unwrap_single_element_list(sequence=results)
+
+    def _execute_infer_from_api_request(
+        self,
+        requests_data: List[RequestData],
+    ) -> List[Response]:
+        responses = execute_requests_packages(
+            requests_data=requests_data,
+            request_method=RequestMethod.POST,
+            max_concurrent_requests=self.__inference_configuration.max_concurrent_requests,
+        )
+        return responses
+
+    def _prepare_infer_from_api_v0_request_data(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        model_id: Optional[str] = None,
+    ) -> List[RequestData]:
         model_id_to_be_used = model_id or self.__selected_model
         _ensure_model_is_selected(model_id=model_id_to_be_used)
         _ensure_api_key_provided(api_key=self.__api_key)
@@ -507,32 +553,7 @@ class InferenceHTTPClient:
             max_batch_size=1,
             image_placement=ImagePlacement.DATA,
         )
-        responses = execute_requests_packages(
-            requests_data=requests_data,
-            request_method=RequestMethod.POST,
-            max_concurrent_requests=self.__inference_configuration.max_concurrent_requests,
-        )
-        results = []
-        for request_data, response in zip(requests_data, responses):
-            if response_contains_jpeg_image(response=response):
-                visualisation = transform_visualisation_bytes(
-                    visualisation=response.content,
-                    expected_format=self.__inference_configuration.output_visualisation_format,
-                )
-                parsed_response = {"visualization": visualisation}
-            else:
-                parsed_response = response.json()
-                if parsed_response.get("visualization") is not None:
-                    parsed_response["visualization"] = transform_base64_visualisation(
-                        visualisation=parsed_response["visualization"],
-                        expected_format=self.__inference_configuration.output_visualisation_format,
-                    )
-            parsed_response = adjust_prediction_to_client_scaling_factor(
-                prediction=parsed_response,
-                scaling_factor=request_data.image_scaling_factors[0],
-            )
-            results.append(parsed_response)
-        return unwrap_single_element_list(sequence=results)
+        return requests_data
 
     async def infer_from_api_v0_async(
         self,
@@ -624,6 +645,40 @@ class InferenceHTTPClient:
         inference_input: Union[ImagesReference, List[ImagesReference]],
         model_id: Optional[str] = None,
     ) -> Union[dict, List[dict]]:
+        requests_data = self._prepare_infer_from_api_v1_request_data(
+            inference_input=inference_input,
+            model_id=model_id,
+        )
+        responses = self._execute_infer_from_api_request(
+            requests_data=requests_data,
+        )
+        results = []
+        for request_data, response in zip(requests_data, responses):
+            parsed_response = response.json()
+            if not issubclass(type(parsed_response), list):
+                parsed_response = [parsed_response]
+            for parsed_response_element, scaling_factor in zip(
+                parsed_response, request_data.image_scaling_factors
+            ):
+                if parsed_response_element.get("visualization") is not None:
+                    parsed_response_element["visualization"] = (
+                        transform_base64_visualisation(
+                            visualisation=parsed_response_element["visualization"],
+                            expected_format=self.__inference_configuration.output_visualisation_format,
+                        )
+                    )
+                parsed_response_element = adjust_prediction_to_client_scaling_factor(
+                    prediction=parsed_response_element,
+                    scaling_factor=scaling_factor,
+                )
+                results.append(parsed_response_element)
+        return unwrap_single_element_list(sequence=results)
+
+    def _prepare_infer_from_api_v1_request_data(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        model_id: Optional[str] = None,
+    ) -> List[RequestData]:
         self.__ensure_v1_client_mode()
         model_id_to_be_used = model_id or self.__selected_model
         _ensure_model_is_selected(model_id=model_id_to_be_used)
@@ -663,32 +718,7 @@ class InferenceHTTPClient:
             max_batch_size=self.__inference_configuration.max_batch_size,
             image_placement=ImagePlacement.JSON,
         )
-        responses = execute_requests_packages(
-            requests_data=requests_data,
-            request_method=RequestMethod.POST,
-            max_concurrent_requests=self.__inference_configuration.max_concurrent_requests,
-        )
-        results = []
-        for request_data, response in zip(requests_data, responses):
-            parsed_response = response.json()
-            if not issubclass(type(parsed_response), list):
-                parsed_response = [parsed_response]
-            for parsed_response_element, scaling_factor in zip(
-                parsed_response, request_data.image_scaling_factors
-            ):
-                if parsed_response_element.get("visualization") is not None:
-                    parsed_response_element["visualization"] = (
-                        transform_base64_visualisation(
-                            visualisation=parsed_response_element["visualization"],
-                            expected_format=self.__inference_configuration.output_visualisation_format,
-                        )
-                    )
-                parsed_response_element = adjust_prediction_to_client_scaling_factor(
-                    prediction=parsed_response_element,
-                    scaling_factor=scaling_factor,
-                )
-                results.append(parsed_response_element)
-        return unwrap_single_element_list(sequence=results)
+        return requests_data
 
     async def infer_from_api_v1_async(
         self,
@@ -1635,6 +1665,42 @@ class InferenceHTTPClient:
         use_cache: bool = True,
         enable_profiling: bool = False,
     ) -> List[Dict[str, Any]]:
+        response = self._execute_workflow_request(
+            workspace_name=workspace_name,
+            workflow_id=workflow_id,
+            specification=specification,
+            images=images,
+            parameters=parameters,
+            excluded_fields=excluded_fields,
+            legacy_endpoints=legacy_endpoints,
+            use_cache=use_cache,
+            enable_profiling=enable_profiling,
+        )
+        response_data = response.json()
+        workflow_outputs = response_data["outputs"]
+        profiler_trace = response_data.get("profiler_trace", [])
+        if enable_profiling:
+            save_workflows_profiler_trace(
+                directory=self.__inference_configuration.profiling_directory,
+                profiler_trace=profiler_trace,
+            )
+        return decode_workflow_outputs(
+            workflow_outputs=workflow_outputs,
+            expected_format=self.__inference_configuration.output_visualisation_format,
+        )
+
+    def _execute_workflow_request(
+        self,
+        workspace_name: Optional[str] = None,
+        workflow_id: Optional[str] = None,
+        specification: Optional[dict] = None,
+        images: Optional[Dict[str, Any]] = None,
+        parameters: Optional[Dict[str, Any]] = None,
+        excluded_fields: Optional[List[str]] = None,
+        legacy_endpoints: bool = False,
+        use_cache: bool = True,
+        enable_profiling: bool = False,
+    ) -> Response:
         named_workflow_specified = (workspace_name is not None) and (
             workflow_id is not None
         )
@@ -1684,18 +1750,7 @@ class InferenceHTTPClient:
             headers=DEFAULT_HEADERS,
             enable_retries=self.__inference_configuration.workflow_run_retries_enabled,
         )
-        response_data = response.json()
-        workflow_outputs = response_data["outputs"]
-        profiler_trace = response_data.get("profiler_trace", [])
-        if enable_profiling:
-            save_workflows_profiler_trace(
-                directory=self.__inference_configuration.profiling_directory,
-                profiler_trace=profiler_trace,
-            )
-        return decode_workflow_outputs(
-            workflow_outputs=workflow_outputs,
-            expected_format=self.__inference_configuration.output_visualisation_format,
-        )
+        return response
 
     @wrap_errors
     def infer_from_yolo_world(
