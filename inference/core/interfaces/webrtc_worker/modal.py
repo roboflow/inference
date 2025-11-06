@@ -1,4 +1,5 @@
 import asyncio
+from pathlib import Path
 
 from inference.core import logger
 from inference.core.env import (
@@ -86,8 +87,8 @@ if modal is not None:
             "ROBOFLOW_INTERNAL_SERVICE_SECRET": ROBOFLOW_INTERNAL_SERVICE_SECRET,
             "ROBOFLOW_INTERNAL_SERVICE_NAME": WEBRTC_MODAL_ROBOFLOW_INTERNAL_SERVICE_NAME,
             "PROJECT": PROJECT,
-            "INTERNAL_WEIGHTS_URL_SUFFIX": INTERNAL_WEIGHTS_URL_SUFFIX,
             "LOG_LEVEL": LOG_LEVEL,
+            "INTERNAL_WEIGHTS_URL_SUFFIX": INTERNAL_WEIGHTS_URL_SUFFIX,
             "MODELS_CACHE_AUTH_ENABLED": str(MODELS_CACHE_AUTH_ENABLED),
             "MODELS_CACHE_AUTH_CACHE_TTL": str(MODELS_CACHE_AUTH_CACHE_TTL),
             "MODELS_CACHE_AUTH_CACHE_MAX_SIZE": str(MODELS_CACHE_AUTH_CACHE_MAX_SIZE),
@@ -102,7 +103,9 @@ if modal is not None:
             "ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES": "False",
             "DISABLE_VERSION_CHECK": "True",
             "MODEL_CACHE_DIR": MODEL_CACHE_DIR,
+            "HF_HOME": Path(MODEL_CACHE_DIR).joinpath("hf_home").as_posix(),
             "TELEMETRY_USE_PERSISTENT_QUEUE": "False",
+            "DISABLE_INFERENCE_CACHE": "True",
             "WEBRTC_MODAL_FUNCTION_GPU": WEBRTC_MODAL_FUNCTION_GPU,
             "WEBRTC_MODAL_FUNCTION_SCALEDOWN_WINDOW": str(
                 WEBRTC_MODAL_FUNCTION_SCALEDOWN_WINDOW
@@ -123,7 +126,6 @@ if modal is not None:
                 if WEBRTC_MODAL_FUNCTION_GPU
                 else "CPUExecutionProvider"
             ),
-            "DISABLE_INFERENCE_CACHE": "True",
         },
         volumes={MODEL_CACHE_DIR: rfcache_volume},
     )
