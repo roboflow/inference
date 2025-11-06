@@ -1,6 +1,7 @@
-from typing import Optional
+from typing import Dict, List, Optional
 
 import numpy as np
+from pycocotools import mask as mask_utils
 
 
 def w_np_non_max_suppression(
@@ -204,3 +205,45 @@ def non_max_suppression_fast(boxes, overlapThresh):
     # return only the bounding boxes that were picked using the
     # integer data type
     return boxes[pick].astype("float")
+
+
+def nms_rle(
+    rles: List[Dict],
+    confidences: np.ndarray,
+    iou_threshold: float = 0.5
+) -> np.ndarray:
+    """
+    NMS (Non-Maximum Suppression) for RLE-encoded masks.
+    Removes duplicate detections by keeping only the highest confidence detection
+    when multiple detections overlap the same object.
+
+    Args:
+        rles: List of RLE-encoded masks from pycocotools
+        confidences: Array of confidence scores for each mask
+        iou_threshold: IoU threshold above which detections are considered duplicates
+
+    Returns:
+        Boolean array indicating which detections to keep (True) or suppress (False)
+    """
+    num_detections = len(rles)
+    if num_detections == 0:
+        return np.array([], dtype=bool)
+
+    # Sort by confidence descending
+    sort_index = np.argsort(confidences)[::-1]
+    sorted_rles = [rles[i] for i in sort_index]
+
+    # Calculate IoU matrix: ious[i,j] = overlap between detection i and j
+    ious = mask_utils.iou(sorted_rles, sorted_rles, [0] * num_detections)
+
+    # Greedy NMS: keep highest confidence, suppress overlaps
+    keep = np.ones(num_detections, dtype=bool)
+    for i in range(num_detections):
+        if keep[i]:
+            condition = ious[i, :] > iou_threshold
+            keep[i + 1:] = np.where(condition[i + 1:], False, keep[i + 1:])
+
+    # Return indices in original order
+    return keep[np.argsort(sort_index)]
+
+

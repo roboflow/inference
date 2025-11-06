@@ -1,9 +1,10 @@
 from types import SimpleNamespace
-from typing import Any, List, Literal, Optional, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 import numpy as np
 import requests
 from pydantic import ConfigDict, Field
+from pycocotools import mask as mask_utils
 
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
@@ -17,6 +18,7 @@ from inference.core.env import (
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
 )
 from inference.core.managers.base import ModelManager
+from inference.core.nms import nms_rle
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
@@ -85,6 +87,16 @@ class BlockManifest(WorkflowBlockManifest):
     threshold: Union[Selector(kind=[FLOAT_KIND]), float] = Field(
         default=0.5, description="Threshold for predicted mask scores", examples=[0.3]
     )
+    run_nms: Union[Selector(kind=[FLOAT_KIND]), bool] = Field(
+        default=False,
+        description="Whether to apply Non-Maximum Suppression to remove duplicate detections",
+        examples=[True, False]
+    )
+    iou_threshold: Union[Selector(kind=[FLOAT_KIND]), float] = Field(
+        default=0.5,
+        description="IoU threshold for NMS. Detections with IoU > threshold are considered duplicates",
+        examples=[0.5, 0.3, 0.7]
+    )
 
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
@@ -129,12 +141,16 @@ class SegPreviewBlockV1(WorkflowBlock):
         images: Batch[WorkflowImageData],
         class_names: Optional[List[str]],
         threshold: float,
+        run_nms: bool,
+        iou_threshold: float,
     ) -> BlockResult:
 
         return self.run_via_request(
             images=images,
             class_names=class_names,
             threshold=threshold,
+            run_nms=run_nms,
+            iou_threshold=iou_threshold,
         )
 
     def run_via_request(
@@ -142,6 +158,8 @@ class SegPreviewBlockV1(WorkflowBlock):
         images: Batch[WorkflowImageData],
         class_names: Optional[List[str]],
         threshold: float,
+        run_nms: bool,
+        iou_threshold: float,
     ) -> BlockResult:
         predictions = []
         if class_names is None:
@@ -226,13 +244,23 @@ class SegPreviewBlockV1(WorkflowBlock):
         return self._post_process_result(
             images=images,
             predictions=predictions,
+            run_nms=run_nms,
+            iou_threshold=iou_threshold,
         )
 
     def _post_process_result(
         self,
         images: Batch[WorkflowImageData],
         predictions: List[dict],
+        run_nms: bool,
+        iou_threshold: float,
     ) -> BlockResult:
+        if run_nms:
+            predictions = [
+                apply_nms_to_prediction_dict(pred_dict, iou_threshold)
+                for pred_dict in predictions
+            ]
+
         predictions = convert_inference_detections_batch_to_sv_detections(predictions)
         predictions = attach_prediction_type_info_to_sv_detections_batch(
             predictions=predictions,
@@ -308,3 +336,50 @@ def convert_segmentation_response_to_inference_instances_seg_response(
         predictions=predictions,
         image=InferenceResponseImage(width=image_width, height=image_height),
     )
+
+def apply_nms_to_polygon(
+    polygon_list: List[Dict],
+    image_width: int,
+    image_height: int,
+    iou_threshold: float = 0.5
+) -> List[Dict]:
+    if not polygon_list:
+        return []
+
+    confidences = np.array([item["confidence"] for item in polygon_list])
+
+    rles = []
+    for item in polygon_list:
+        polygon_flat = []
+        for point in item["points"]:
+            polygon_flat.extend([point["x"], point["y"]])
+        rle = mask_utils.frPyObjects([polygon_flat], image_height, image_width)[0]
+        rles.append(rle)
+
+    keep_indices = nms_rle(rles, confidences, iou_threshold)
+
+    return [polygon_list[i] for i in range(len(polygon_list)) if keep_indices[i]]
+
+
+def apply_nms_to_prediction_dict(
+    prediction_dict: dict,
+    iou_threshold: float,
+) -> dict:
+    if not prediction_dict or "predictions" not in prediction_dict:
+        return prediction_dict
+
+    predictions = prediction_dict["predictions"]
+    if not predictions:
+        return prediction_dict
+
+    image_height = prediction_dict["image"]["height"]
+    image_width = prediction_dict["image"]["width"]
+
+    filtered_predictions = apply_nms_to_polygon(
+        predictions, image_width, image_height, iou_threshold
+    )
+
+    return {
+        **prediction_dict,
+        "predictions": filtered_predictions
+    }
