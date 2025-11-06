@@ -10,6 +10,7 @@ from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field, field_validator
 
 from inference.core.roboflow_api import post_to_roboflow_api
+from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
     AllOperationsType,
 )
@@ -23,6 +24,7 @@ from inference.core.workflows.execution_engine.entities.base import OutputDefini
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     BYTES_KIND,
+    IMAGE_KIND,
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
     ROBOFLOW_MANAGED_KEY,
@@ -144,16 +146,25 @@ and no notification will be sent.
 
 ### Attachments
 
-You may specify attachment files to be send with your e-mail. Attachments can only be generated 
-in runtime by dedicated blocks (for instance [CSV Formatter](https://inference.roboflow.com/workflows/csv_formatter/))
+You may specify attachment files to be sent with your e-mail. Attachments can be generated 
+in runtime by dedicated blocks or from image outputs.
 
-To include attachments, simply provide the attachment name and refer to other block outputs:
+**Supported attachment types:**
+- **CSV/Text files**: From blocks like [CSV Formatter](https://inference.roboflow.com/workflows/csv_formatter/)
+- **Images**: Any image output from visualization blocks (automatically converted to JPEG)
+- **Binary data**: Any bytes output from compatible blocks
+
+To include attachments, provide the attachment filename as the key and reference the block output:
 
 ```
 attachments = {
-    "report.pdf": "$steps.report_generator.output"
+    "report.csv": "$steps.csv_formatter.csv_content",
+    "detection.jpg": "$steps.bounding_box_visualization.image"
 }
 ```
+
+**Note:** Image attachments are automatically converted to JPEG format. If the filename doesn't 
+include a `.jpg` or `.jpeg` extension, it will be added automatically.
 
 ### Async execution
 
@@ -346,7 +357,7 @@ class BlockManifest(WorkflowBlockManifest):
         },
     )
     
-    attachments: Dict[str, Selector(kind=[STRING_KIND, BYTES_KIND])] = Field(
+    attachments: Dict[str, Selector(kind=[STRING_KIND, BYTES_KIND, IMAGE_KIND])] = Field(
         description="Attachments",
         default_factory=dict,
         examples=[{"report.cvs": "$steps.csv_formatter.csv_content"}],
@@ -506,6 +517,26 @@ class EmailNotificationBlockV2(WorkflowBlock):
                 message_parameters_operations=message_parameters_operations,
             )
             
+            # Process attachments: convert images to bytes for SMTP
+            processed_attachments = {}
+            for filename, value in attachments.items():
+                if isinstance(value, WorkflowImageData):
+                    # Convert image to JPEG bytes
+                    numpy_image = value.numpy_image
+                    jpeg_bytes = encode_image_to_jpeg_bytes(numpy_image)
+                    # Ensure filename has .jpg extension
+                    if not filename.lower().endswith(('.jpg', '.jpeg')):
+                        filename = f"{filename}.jpg"
+                    processed_attachments[filename] = jpeg_bytes
+                elif isinstance(value, bytes):
+                    processed_attachments[filename] = value
+                elif isinstance(value, str):
+                    # String content (e.g., CSV)
+                    processed_attachments[filename] = value.encode('utf-8')
+                else:
+                    # Fallback: convert to string then bytes
+                    processed_attachments[filename] = str(value).encode('utf-8')
+            
             send_email_handler = partial(
                 send_email_using_smtp_server,
                 sender_email=sender_email,
@@ -514,7 +545,7 @@ class EmailNotificationBlockV2(WorkflowBlock):
                 bcc_receiver_email=bcc_receiver_email,
                 subject=subject,
                 message=formatted_message,
-                attachments=attachments,
+                attachments=processed_attachments,
                 smtp_server=smtp_server,
                 smtp_port=smtp_port,
                 sender_email_password=sender_email_password,
@@ -609,6 +640,30 @@ def serialize_message_parameters(message_parameters: Dict[str, Any]) -> Dict[str
     return {k: serialize_image_data(v) for k, v in message_parameters.items()}
 
 
+def process_attachments(attachments: Dict[str, Any]) -> Dict[str, bytes]:
+    """
+    Process attachments dict to convert WorkflowImageData to JPEG bytes.
+    Returns a dict with filename -> bytes mapping.
+    """
+    processed = {}
+    for filename, value in attachments.items():
+        if isinstance(value, WorkflowImageData):
+            # Convert image to JPEG bytes
+            numpy_image = value.numpy_image
+            jpeg_bytes = encode_image_to_jpeg_bytes(numpy_image)
+            processed[filename] = jpeg_bytes
+        elif isinstance(value, bytes):
+            # Already bytes, use as-is
+            processed[filename] = value
+        elif isinstance(value, str):
+            # String data (e.g., CSV content)
+            processed[filename] = value.encode('utf-8')
+        else:
+            # Fallback: convert to string then bytes
+            processed[filename] = str(value).encode('utf-8')
+    return processed
+
+
 def send_email_via_roboflow_proxy(
     roboflow_api_key: str,
     receiver_email: List[str],
@@ -618,7 +673,7 @@ def send_email_via_roboflow_proxy(
     message: str,
     message_parameters: Dict[str, Any],
     message_parameters_operations: Dict[str, List[AllOperationsType]],
-    attachments: Dict[str, str],
+    attachments: Dict[str, Any],
 ) -> Tuple[bool, str]:
     """Send email through Roboflow's proxy service."""
     try:
@@ -638,7 +693,29 @@ def send_email_via_roboflow_proxy(
         if bcc_receiver_email:
             payload["bcc_receiver_email"] = bcc_receiver_email
         if attachments:
-            payload["attachments"] = attachments
+            # Process attachments: convert images to JPEG bytes, then base64 encode
+            import base64
+            processed_attachments = {}
+            for filename, value in attachments.items():
+                if isinstance(value, WorkflowImageData):
+                    # Convert image to JPEG bytes
+                    numpy_image = value.numpy_image
+                    jpeg_bytes = encode_image_to_jpeg_bytes(numpy_image)
+                    # Ensure filename has .jpg extension
+                    if not filename.lower().endswith(('.jpg', '.jpeg')):
+                        filename = f"{filename}.jpg"
+                    # Base64 encode for JSON transmission
+                    processed_attachments[filename] = base64.b64encode(jpeg_bytes).decode('utf-8')
+                elif isinstance(value, bytes):
+                    # Already bytes, base64 encode
+                    processed_attachments[filename] = base64.b64encode(value).decode('utf-8')
+                elif isinstance(value, str):
+                    # String data (e.g., CSV content), base64 encode
+                    processed_attachments[filename] = base64.b64encode(value.encode('utf-8')).decode('utf-8')
+                else:
+                    # Fallback: convert to string then bytes then base64
+                    processed_attachments[filename] = base64.b64encode(str(value).encode('utf-8')).decode('utf-8')
+            payload["attachments"] = processed_attachments
         
         endpoint = "apiproxy/email"
         
