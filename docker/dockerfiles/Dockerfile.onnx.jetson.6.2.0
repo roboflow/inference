@@ -1,4 +1,13 @@
-FROM roboflow/l4t-ml:r36.4.tegra-aarch64-cu126-22.04
+FROM roboflow/l4t-ml:r36.4.tegra-aarch64-cu126-22.04 AS base
+
+# Flatten the base image to avoid max layer depth issues
+# Copy the entire filesystem into a fresh layer
+FROM scratch AS flattened
+COPY --from=base / /
+
+# Start fresh with flattened filesystem
+FROM flattened
+
 # Base image includes: PyTorch 2.8, torchvision, ONNXRuntime w/ TensorRT,
 # OpenCV w/ CUDA, cupy, pycuda, NumPy, SciPy, scikit-learn, pandas, scikit-image
 
