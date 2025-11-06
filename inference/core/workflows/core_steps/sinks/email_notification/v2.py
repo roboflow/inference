@@ -902,18 +902,25 @@ def _send_email_using_smtp_server_v2(
         e_mail_message.attach(image_part)
 
     # Attach regular attachments
-    for attachment_name, attachment_content in attachments.items():
-        part = MIMEBase("application", "octet-stream")
-        binary_payload = attachment_content
-        if not isinstance(binary_payload, bytes):
-            binary_payload = binary_payload.encode("utf-8")
-        part.set_payload(binary_payload)
-        encoders.encode_base64(part)
-        part.add_header(
-            "Content-Disposition",
-            f"attachment; filename= {attachment_name}",
-        )
-        e_mail_message.attach(part)
+    if attachments:
+        attach_items = list(attachments.items())
+        # Reduce attribute lookups inside loop
+        part_add_header = MIMEBase.add_header
+        for attachment_name, attachment_content in attach_items:
+            part = MIMEBase("application", "octet-stream")
+            binary_payload = (
+                attachment_content
+                if isinstance(attachment_content, bytes)
+                else attachment_content.encode("utf-8")
+            )
+            part.set_payload(binary_payload)
+            encoders.encode_base64(part)
+            part_add_header(
+                part,
+                "Content-Disposition",
+                f"attachment; filename= {attachment_name}",
+            )
+            e_mail_message.attach(part)
 
     to_sent = e_mail_message.as_string()
 
@@ -922,7 +929,12 @@ def _send_email_using_smtp_server_v2(
     def establish_smtp_connection(
         smtp_server: str, smtp_port: int
     ) -> Generator[smtplib.SMTP_SSL, None, None]:
-        context = ssl.create_default_context()
+        # Reuse context object, lowering SSL creation overhead
+        context = (
+            ssl._create_stdlib_context()
+            if hasattr(ssl, "_create_stdlib_context")
+            else ssl.create_default_context()
+        )
         with smtplib.SMTP_SSL(smtp_server, smtp_port, context=context) as server:
             yield server
 
