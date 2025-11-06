@@ -19,6 +19,9 @@ RUN apt-get update -y && \
     apt-get install -y --no-install-recommends lshw git && \
     rm -rf /var/lib/apt/lists/*
 
+# Install required Python dependencies for building
+RUN pip3 install python-dotenv
+
 # Set up application first (minimal layers)
 WORKDIR /app
 COPY inference/ ./inference/
