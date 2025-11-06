@@ -275,12 +275,12 @@ def test_v2_roboflow_managed_mode_sends_via_proxy() -> None:
     thread_pool_executor.submit.assert_called_once()
 
 
-@mock.patch.object(v2, "send_email_using_smtp_server")
+@mock.patch.object(v2, "_send_email_using_smtp_server_v2")
 def test_v2_custom_smtp_mode_sends_via_smtp(
-    send_email_using_smtp_server_mock: MagicMock,
+    send_email_using_smtp_server_v2_mock: MagicMock,
 ) -> None:
     # given
-    send_email_using_smtp_server_mock.return_value = (False, "success")
+    send_email_using_smtp_server_v2_mock.return_value = None  # void return
     thread_pool_executor = MagicMock()
     block = EmailNotificationBlockV2(
         background_tasks=None,
@@ -914,12 +914,12 @@ def test_v2_send_email_with_mixed_attachments(
     assert "name,count" in csv_decoded
 
 
-@mock.patch.object(v2, "send_email_using_smtp_server")
+@mock.patch.object(v2, "_send_email_using_smtp_server_v2")
 def test_v2_smtp_mode_with_image_attachment(
-    send_email_using_smtp_server_mock: MagicMock,
+    send_email_using_smtp_server_v2_mock: MagicMock,
 ) -> None:
     # given
-    send_email_using_smtp_server_mock.return_value = (False, "success")
+    send_email_using_smtp_server_v2_mock.return_value = None  # void return
     parent_metadata = ImageParentMetadata(parent_id="test")
     numpy_array = np.zeros((100, 100, 3), dtype=np.uint8)
     image_data = WorkflowImageData(
@@ -954,8 +954,8 @@ def test_v2_smtp_mode_with_image_attachment(
 
     # then
     assert result["error_status"] is False
-    send_email_using_smtp_server_mock.assert_called_once()
-    call_kwargs = send_email_using_smtp_server_mock.call_args[1]
+    send_email_using_smtp_server_v2_mock.assert_called_once()
+    call_kwargs = send_email_using_smtp_server_v2_mock.call_args[1]
     # Verify image was converted to bytes
     assert "detection.jpg" in call_kwargs["attachments"]
     attachment_data = call_kwargs["attachments"]["detection.jpg"]
@@ -964,12 +964,12 @@ def test_v2_smtp_mode_with_image_attachment(
     assert attachment_data[:2] == b'\xff\xd8'
 
 
-@mock.patch.object(v2, "send_email_using_smtp_server")
+@mock.patch.object(v2, "_send_email_using_smtp_server_v2")
 def test_v2_smtp_mode_with_mixed_attachments(
-    send_email_using_smtp_server_mock: MagicMock,
+    send_email_using_smtp_server_v2_mock: MagicMock,
 ) -> None:
     # given
-    send_email_using_smtp_server_mock.return_value = (False, "success")
+    send_email_using_smtp_server_v2_mock.return_value = None  # void return
     parent_metadata = ImageParentMetadata(parent_id="test")
     numpy_array = np.zeros((50, 50, 3), dtype=np.uint8)
     image_data = WorkflowImageData(
@@ -1007,7 +1007,7 @@ def test_v2_smtp_mode_with_mixed_attachments(
 
     # then
     assert result["error_status"] is False
-    call_kwargs = send_email_using_smtp_server_mock.call_args[1]
+    call_kwargs = send_email_using_smtp_server_v2_mock.call_args[1]
     # Both attachments should be present
     assert "detection.jpg" in call_kwargs["attachments"]
     assert "report.csv" in call_kwargs["attachments"]
@@ -1135,12 +1135,12 @@ def test_v2_send_email_with_bytes_attachment_via_proxy(
     assert decoded == binary_data
 
 
-@mock.patch.object(v2, "send_email_using_smtp_server")
+@mock.patch.object(v2, "_send_email_using_smtp_server_v2")
 def test_v2_smtp_mode_with_bytes_attachment(
-    send_email_using_smtp_server_mock: MagicMock,
+    send_email_using_smtp_server_v2_mock: MagicMock,
 ) -> None:
     # given
-    send_email_using_smtp_server_mock.return_value = (False, "success")
+    send_email_using_smtp_server_v2_mock.return_value = None  # void return
     binary_data = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00'
     block = EmailNotificationBlockV2(
         background_tasks=None,
@@ -1170,18 +1170,18 @@ def test_v2_smtp_mode_with_bytes_attachment(
 
     # then
     assert result["error_status"] is False
-    call_kwargs = send_email_using_smtp_server_mock.call_args[1]
+    call_kwargs = send_email_using_smtp_server_v2_mock.call_args[1]
     assert "data.bin" in call_kwargs["attachments"]
     assert call_kwargs["attachments"]["data.bin"] == binary_data
     assert isinstance(call_kwargs["attachments"]["data.bin"], bytes)
 
 
-@mock.patch.object(v2, "send_email_using_smtp_server")
+@mock.patch.object(v2, "_send_email_using_smtp_server_v2")
 def test_v2_smtp_mode_with_multiple_image_attachments(
-    send_email_using_smtp_server_mock: MagicMock,
+    send_email_using_smtp_server_v2_mock: MagicMock,
 ) -> None:
     # given
-    send_email_using_smtp_server_mock.return_value = (False, "success")
+    send_email_using_smtp_server_v2_mock.return_value = None  # void return
     parent_metadata = ImageParentMetadata(parent_id="test")
     
     image1 = WorkflowImageData(
@@ -1224,7 +1224,7 @@ def test_v2_smtp_mode_with_multiple_image_attachments(
 
     # then
     assert result["error_status"] is False
-    call_kwargs = send_email_using_smtp_server_mock.call_args[1]
+    call_kwargs = send_email_using_smtp_server_v2_mock.call_args[1]
     assert "detection1.jpg" in call_kwargs["attachments"]
     assert "detection2.jpg" in call_kwargs["attachments"]
     # Both should be JPEG bytes
