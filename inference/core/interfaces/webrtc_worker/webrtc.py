@@ -2,6 +2,7 @@ import asyncio
 import datetime
 import json
 import logging
+import signal
 from typing import Callable, Optional
 
 import supervision as sv
@@ -361,14 +362,33 @@ async def init_rtc_peer_connection_with_loop(
         )
     )
 
+    loop = asyncio.get_running_loop()
+
+    async def _graceful_shutdown(sig: Optional[int] = None):
+        if sig:
+            logger.info("Received signal: %s", sig)
+        if player:
+            logger.info("Stopping player")
+            player.video.stop()
+        if peer_connection.connectionState != "closed":
+            logger.info("Closing WebRTC connection")
+            await peer_connection.close()
+        if video_transform_track.track:
+            logger.info("Stopping video transform track")
+            video_transform_track.track.stop()
+
+    for _sig in (
+        signal.SIGINT,
+        signal.SIGTERM,
+        signal.SIGHUP,
+        signal.SIGKILL,
+        signal.SIGQUIT,
+    ):
+        try:
+            loop.add_signal_handler(_sig, _graceful_shutdown, _sig)
+        except (NotImplementedError, RuntimeError):
+            logger.warning("Failed to add signal handler for %s", _sig)
+
     await closed.wait()
-    if player:
-        logger.info("Stopping player")
-        player.video.stop()
-    if peer_connection.connectionState != "closed":
-        logger.info("Closing WebRTC connection")
-        await peer_connection.close()
-    if video_transform_track.track:
-        logger.info("Stopping video transform track")
-        video_transform_track.track.stop()
+    await _graceful_shutdown()
     logger.info("WebRTC peer connection closed")
