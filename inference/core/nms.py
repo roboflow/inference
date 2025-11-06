@@ -208,9 +208,7 @@ def non_max_suppression_fast(boxes, overlapThresh):
 
 
 def nms_rle(
-    rles: List[Dict],
-    confidences: np.ndarray,
-    iou_threshold: float = 0.5
+    rles: List[Dict], confidences: np.ndarray, iou_threshold: float = 0.5
 ) -> np.ndarray:
     """
     NMS (Non-Maximum Suppression) for RLE-encoded masks.
@@ -241,9 +239,7 @@ def nms_rle(
     for i in range(num_detections):
         if keep[i]:
             condition = ious[i, :] > iou_threshold
-            keep[i + 1:] = np.where(condition[i + 1:], False, keep[i + 1:])
+            keep[i + 1 :] = np.where(condition[i + 1 :], False, keep[i + 1 :])
 
     # Return indices in original order
     return keep[np.argsort(sort_index)]
-
-

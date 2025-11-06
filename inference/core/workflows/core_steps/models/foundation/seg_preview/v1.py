@@ -3,8 +3,8 @@ from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 import numpy as np
 import requests
-from pydantic import ConfigDict, Field
 from pycocotools import mask as mask_utils
+from pydantic import ConfigDict, Field
 
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
@@ -90,12 +90,12 @@ class BlockManifest(WorkflowBlockManifest):
     run_nms: Union[Selector(kind=[FLOAT_KIND]), bool] = Field(
         default=False,
         description="Whether to apply Non-Maximum Suppression to remove duplicate detections",
-        examples=[True, False]
+        examples=[True, False],
     )
     iou_threshold: Union[Selector(kind=[FLOAT_KIND]), float] = Field(
         default=0.5,
         description="IoU threshold for NMS. Detections with IoU > threshold are considered duplicates",
-        examples=[0.5, 0.3, 0.7]
+        examples=[0.5, 0.3, 0.7],
     )
 
     @classmethod
@@ -337,11 +337,12 @@ def convert_segmentation_response_to_inference_instances_seg_response(
         image=InferenceResponseImage(width=image_width, height=image_height),
     )
 
+
 def apply_nms_to_polygon(
     polygon_list: List[Dict],
     image_width: int,
     image_height: int,
-    iou_threshold: float = 0.5
+    iou_threshold: float = 0.5,
 ) -> List[Dict]:
     if not polygon_list:
         return []
@@ -379,7 +380,4 @@ def apply_nms_to_prediction_dict(
         predictions, image_width, image_height, iou_threshold
     )
 
-    return {
-        **prediction_dict,
-        "predictions": filtered_predictions
-    }
+    return {**prediction_dict, "predictions": filtered_predictions}
