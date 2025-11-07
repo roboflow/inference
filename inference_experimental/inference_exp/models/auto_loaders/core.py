@@ -35,6 +35,7 @@ from inference_exp.models.auto_loaders.entities import (
     TaskType,
 )
 from inference_exp.models.auto_loaders.models_registry import (
+    INSTANCE_SEGMENTATION_TASK,
     OBJECT_DETECTION_TASK,
     resolve_model_class,
 )
@@ -92,6 +93,7 @@ MODEL_TYPES_TO_LOAD_FROM_CHECKPOINT = {
     "rfdetr-medium",
     "rfdetr-nano",
     "rfdetr-large",
+    "rfdetr-seg-preview",
 }
 
 
@@ -120,6 +122,7 @@ class AutoModel:
             model_id=model_metadata.model_id,
             requested_model_id=model_id,
             model_architecture=model_metadata.model_architecture,
+            model_variant=model_metadata.model_variant,
             task_type=model_metadata.task_type,
             weights_provider=weights_provider,
             registered_packages=len(model_metadata.model_packages),
@@ -862,8 +865,11 @@ def resolve_models_registry_entry(
     # a bit of hard coding here, over time we must maintain
     model_architecture = "rfdetr"
     if task_type is None:
-        task_type = OBJECT_DETECTION_TASK
-    if task_type != OBJECT_DETECTION_TASK:
+        if model_type == "rfdetr-seg-preview":
+            task_type = INSTANCE_SEGMENTATION_TASK
+        else:
+            task_type = OBJECT_DETECTION_TASK
+    if task_type not in {OBJECT_DETECTION_TASK, INSTANCE_SEGMENTATION_TASK}:
         raise ModelLoadingError(
             message=f"When loading model directly from checkpoint path, set `model_type` as {model_type} and "
             f"`task_type` as {task_type}, whereas selected model do only support `{OBJECT_DETECTION_TASK}` "

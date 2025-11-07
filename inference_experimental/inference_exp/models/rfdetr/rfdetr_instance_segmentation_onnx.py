@@ -1,16 +1,12 @@
-from threading import Lock
+import threading
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
-from inference_exp import Detections, KeyPoints, KeyPointsDetectionModel
+from inference_exp import InstanceDetections, InstanceSegmentationModel
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
-from inference_exp.errors import (
-    CorruptedModelPackageError,
-    EnvironmentConfigurationError,
-    MissingDependencyError,
-)
+from inference_exp.errors import EnvironmentConfigurationError, MissingDependencyError
 from inference_exp.models.common.model_packages import get_model_package_contents
 from inference_exp.models.common.onnx import (
     run_session_with_batch_size_limit,
@@ -22,15 +18,16 @@ from inference_exp.models.common.roboflow.model_packages import (
     ResizeMode,
     parse_class_names_file,
     parse_inference_config,
-    parse_key_points_metadata,
-)
-from inference_exp.models.common.roboflow.post_processing import (
-    post_process_nms_fused_model_output,
-    rescale_key_points_detections,
-    run_nms_for_key_points_detection,
 )
 from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
+)
+from inference_exp.models.rfdetr.class_remapping import (
+    ClassesReMapping,
+    prepare_class_remapping,
+)
+from inference_exp.models.rfdetr.common import (
+    post_process_instance_segmentation_results,
 )
 from inference_exp.utils.onnx_introspection import get_selected_onnx_execution_providers
 
@@ -51,8 +48,12 @@ except ImportError as import_error:
     ) from import_error
 
 
-class YOLOv8ForKeyPointsDetectionOnnx(
-    KeyPointsDetectionModel[torch.Tensor, PreProcessingMetadata, torch.Tensor]
+class RFDetrForInstanceSegmentationOnnx(
+    InstanceSegmentationModel[
+        torch.Tensor,
+        PreProcessingMetadata,
+        Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+    ]
 ):
 
     @classmethod
@@ -63,7 +64,7 @@ class YOLOv8ForKeyPointsDetectionOnnx(
         default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
         **kwargs,
-    ) -> "YOLOv8ForKeyPointsDetectionOnnx":
+    ) -> "RFDetrForInstanceSegmentationOnnx":
         if onnx_execution_providers is None:
             onnx_execution_providers = get_selected_onnx_execution_providers()
         if not onnx_execution_providers:
@@ -86,7 +87,6 @@ class YOLOv8ForKeyPointsDetectionOnnx(
                 "class_names.txt",
                 "inference_config.json",
                 "weights.onnx",
-                "keypoints_metadata.json",
             ],
         )
         class_names = parse_class_names_file(
@@ -101,14 +101,13 @@ class YOLOv8ForKeyPointsDetectionOnnx(
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
             },
         )
-        if inference_config.post_processing.type != "nms":
-            raise CorruptedModelPackageError(
-                message="Expected NMS to be the post-processing",
-                help_url="https://todo",
+        classes_re_mapping = None
+        if inference_config.class_names_operations:
+            class_names, classes_re_mapping = prepare_class_remapping(
+                class_names=class_names,
+                class_names_operations=inference_config.class_names_operations,
+                device=device,
             )
-        parsed_key_points_metadata, skeletons = parse_key_points_metadata(
-            key_points_metadata_path=model_package_content["keypoints_metadata.json"]
-        )
         session = onnxruntime.InferenceSession(
             path_or_bytes=model_package_content["weights.onnx"],
             providers=onnx_execution_providers,
@@ -121,51 +120,39 @@ class YOLOv8ForKeyPointsDetectionOnnx(
             session=session,
             input_name=input_name,
             class_names=class_names,
+            classes_re_mapping=classes_re_mapping,
             inference_config=inference_config,
             device=device,
             input_batch_size=input_batch_size,
-            parsed_key_points_metadata=parsed_key_points_metadata,
-            skeletons=skeletons,
         )
 
     def __init__(
         self,
         session: onnxruntime.InferenceSession,
         input_name: str,
-        inference_config: InferenceConfig,
         class_names: List[str],
+        classes_re_mapping: Optional[ClassesReMapping],
+        inference_config: InferenceConfig,
         device: torch.device,
         input_batch_size: Optional[int],
-        parsed_key_points_metadata: List[List[str]],
-        skeletons: List[List[Tuple[int, int]]],
     ):
         self._session = session
         self._input_name = input_name
         self._inference_config = inference_config
         self._class_names = class_names
-        self._skeletons = skeletons
+        self._classes_re_mapping = classes_re_mapping
         self._device = device
-        self._input_batch_size = input_batch_size
-        self._session_thread_lock = Lock()
-        self._parsed_key_points_metadata = parsed_key_points_metadata
-        self._key_points_classes_for_instances = torch.tensor(
-            [len(e) for e in self._parsed_key_points_metadata], device=device
+        self._min_batch_size = input_batch_size
+        self._max_batch_size = (
+            input_batch_size
+            if input_batch_size is not None
+            else inference_config.forward_pass.max_dynamic_batch_size
         )
-        self._key_points_slots_in_prediction = max(
-            len(e) for e in parsed_key_points_metadata
-        )
+        self._session_thread_lock = threading.Lock()
 
     @property
     def class_names(self) -> List[str]:
         return self._class_names
-
-    @property
-    def key_points_classes(self) -> List[List[str]]:
-        return self._parsed_key_points_metadata
-
-    @property
-    def skeletons(self) -> List[List[Tuple[int, int]]]:
-        return self._skeletons
 
     def pre_process(
         self,
@@ -183,78 +170,31 @@ class YOLOv8ForKeyPointsDetectionOnnx(
             image_size_wh=image_size,
         )
 
-    def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
+    def forward(
+        self, pre_processed_images: torch.Tensor, **kwargs
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         with self._session_thread_lock:
-            return run_session_with_batch_size_limit(
+            bboxes, logits, masks = run_session_with_batch_size_limit(
                 session=self._session,
                 inputs={self._input_name: pre_processed_images},
-                min_batch_size=self._input_batch_size,
-                max_batch_size=self._input_batch_size,
-            )[0]
+                min_batch_size=self._min_batch_size,
+                max_batch_size=self._max_batch_size,
+            )
+            return bboxes, logits, masks
 
     def post_process(
         self,
-        model_results: torch.Tensor,
+        model_results: Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
         pre_processing_meta: List[PreProcessingMetadata],
-        conf_thresh: float = 0.25,
-        iou_thresh: float = 0.45,
-        max_detections: int = 100,
-        class_agnostic: bool = False,
-        key_points_threshold: float = 0.3,
+        threshold: float = 0.5,
         **kwargs,
-    ) -> Tuple[List[KeyPoints], Optional[List[Detections]]]:
-        if self._inference_config.post_processing.fused:
-            nms_results = post_process_nms_fused_model_output(
-                output=model_results, conf_thresh=conf_thresh
-            )
-        else:
-            nms_results = run_nms_for_key_points_detection(
-                output=model_results,
-                num_classes=len(self._class_names),
-                key_points_slots_in_prediction=self._key_points_slots_in_prediction,
-                conf_thresh=conf_thresh,
-                iou_thresh=iou_thresh,
-                max_detections=max_detections,
-                class_agnostic=class_agnostic,
-            )
-        rescaled_results = rescale_key_points_detections(
-            detections=nms_results,
-            images_metadata=pre_processing_meta,
-            num_classes=len(self._class_names),
-            key_points_slots_in_prediction=self._key_points_slots_in_prediction,
+    ) -> List[InstanceDetections]:
+        bboxes, logits, masks = model_results
+        return post_process_instance_segmentation_results(
+            bboxes=bboxes,
+            logits=logits,
+            masks=masks,
+            pre_processing_meta=pre_processing_meta,
+            threshold=threshold,
+            classes_re_mapping=self._classes_re_mapping,
         )
-        detections, all_key_points = [], []
-        for result in rescaled_results:
-            class_id = result[:, 5].int()
-            detections.append(
-                Detections(
-                    xyxy=result[:, :4].round().int(),
-                    class_id=class_id,
-                    confidence=result[:, 4],
-                )
-            )
-            key_points_reshaped = result[:, 6:].view(
-                result.shape[0], self._key_points_slots_in_prediction, 3
-            )
-            xy = key_points_reshaped[:, :, :2]
-            confidence = key_points_reshaped[:, :, 2]
-            key_points_classes_for_instance_class = (
-                (self._key_points_classes_for_instances[class_id])
-                .unsqueeze(1)
-                .to(device=result.device)
-            )
-            instances_class_mask = (
-                torch.arange(self._key_points_slots_in_prediction, device=result.device)
-                .unsqueeze(0)
-                .repeat(result.shape[0], 1)
-                < key_points_classes_for_instance_class
-            )
-
-            confidence_mask = confidence < key_points_threshold
-            mask = instances_class_mask & confidence_mask
-            xy[mask] = 0.0
-            confidence[mask] = 0.0
-            all_key_points.append(
-                KeyPoints(xy=xy.round().int(), class_id=class_id, confidence=confidence)
-            )
-        return all_key_points, detections

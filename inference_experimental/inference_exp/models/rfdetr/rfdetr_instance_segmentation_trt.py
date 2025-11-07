@@ -1,9 +1,9 @@
-from threading import Lock
+import threading
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
-from inference_exp import Detections, KeyPoints, KeyPointsDetectionModel
+from inference_exp import InstanceDetections, InstanceSegmentationModel
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
 from inference_exp.errors import (
@@ -20,13 +20,7 @@ from inference_exp.models.common.roboflow.model_packages import (
     TRTConfig,
     parse_class_names_file,
     parse_inference_config,
-    parse_key_points_metadata,
     parse_trt_config,
-)
-from inference_exp.models.common.roboflow.post_processing import (
-    post_process_nms_fused_model_output,
-    rescale_key_points_detections,
-    run_nms_for_key_points_detection,
 )
 from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
@@ -36,12 +30,19 @@ from inference_exp.models.common.trt import (
     infer_from_trt_engine,
     load_model,
 )
+from inference_exp.models.rfdetr.class_remapping import (
+    ClassesReMapping,
+    prepare_class_remapping,
+)
+from inference_exp.models.rfdetr.common import (
+    post_process_instance_segmentation_results,
+)
 
 try:
     import tensorrt as trt
 except ImportError as import_error:
     raise MissingDependencyError(
-        message=f"Could not import YOLOv8 model with TRT backend - this error means that some additional dependencies "
+        message=f"Could not import RFDetr model with TRT backend - this error means that some additional dependencies "
         f"are not installed in the environment. If you run the `inference-exp` library directly in your Python "
         f"program, make sure the following extras of the package are installed: `trt10` - installation can only "
         f"succeed for Linux and Windows machines with Cuda 12 installed. Jetson devices, should have TRT 10.x "
@@ -55,13 +56,16 @@ try:
     import pycuda.driver as cuda
 except ImportError as import_error:
     raise MissingDependencyError(
-        message="TODO",
-        help_url="https://todo",
+        message="TODO", help_url="https://todo"
     ) from import_error
 
 
-class YOLOv8ForKeyPointsDetectionTRT(
-    KeyPointsDetectionModel[torch.Tensor, PreProcessingMetadata, torch.Tensor]
+class RFDetrForInstanceSegmentationTRT(
+    InstanceSegmentationModel[
+        torch.Tensor,
+        PreProcessingMetadata,
+        Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+    ]
 ):
 
     @classmethod
@@ -71,10 +75,10 @@ class YOLOv8ForKeyPointsDetectionTRT(
         device: torch.device = DEFAULT_DEVICE,
         engine_host_code_allowed: bool = False,
         **kwargs,
-    ) -> "YOLOv8ForKeyPointsDetectionTRT":
+    ) -> "RFDetrForInstanceSegmentationTRT":
         if device.type != "cuda":
             raise ModelRuntimeError(
-                message=f"TRT engine only runs on CUDA device - {device} device detected.",
+                message="TRT engine only runs on CUDA device - {device} device detected.",
                 help_url="https://todo",
             )
         model_package_content = get_model_package_contents(
@@ -84,7 +88,6 @@ class YOLOv8ForKeyPointsDetectionTRT(
                 "inference_config.json",
                 "trt_config.json",
                 "engine.plan",
-                "keypoints_metadata.json",
             ],
         )
         class_names = parse_class_names_file(
@@ -99,16 +102,15 @@ class YOLOv8ForKeyPointsDetectionTRT(
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
             },
         )
-        if inference_config.post_processing.type != "nms":
-            raise CorruptedModelPackageError(
-                message="Expected NMS to be the post-processing",
-                help_url="https://todo",
+        classes_re_mapping = None
+        if inference_config.class_names_operations:
+            class_names, classes_re_mapping = prepare_class_remapping(
+                class_names=class_names,
+                class_names_operations=inference_config.class_names_operations,
+                device=device,
             )
         trt_config = parse_trt_config(
             config_path=model_package_content["trt_config.json"]
-        )
-        parsed_key_points_metadata, skeletons = parse_key_points_metadata(
-            key_points_metadata_path=model_package_content["keypoints_metadata.json"]
         )
         cuda.init()
         cuda_device = cuda.Device(device.index or 0)
@@ -124,19 +126,18 @@ class YOLOv8ForKeyPointsDetectionTRT(
                 message=f"Implementation assume single model input, found: {len(inputs)}.",
                 help_url="https://todo",
             )
-        if len(outputs) != 1:
+        if len(outputs) != 3:
             raise CorruptedModelPackageError(
-                message=f"Implementation assume single model output, found: {len(outputs)}.",
+                message=f"Implementation assume 3 model outputs, found: {len(outputs)}.",
                 help_url="https://todo",
             )
         return cls(
             engine=engine,
             input_name=inputs[0],
-            output_name=outputs[0],
+            output_names=outputs,
             class_names=class_names,
-            skeletons=skeletons,
+            classes_re_mapping=classes_re_mapping,
             inference_config=inference_config,
-            parsed_key_points_metadata=parsed_key_points_metadata,
             trt_config=trt_config,
             device=device,
             cuda_context=cuda_context,
@@ -147,11 +148,10 @@ class YOLOv8ForKeyPointsDetectionTRT(
         self,
         engine: trt.ICudaEngine,
         input_name: str,
-        output_name: str,
+        output_names: List[str],
         class_names: List[str],
-        skeletons: List[List[Tuple[int, int]]],
+        classes_re_mapping: Optional[ClassesReMapping],
         inference_config: InferenceConfig,
-        parsed_key_points_metadata: List[List[str]],
         trt_config: TRTConfig,
         device: torch.device,
         cuda_context: cuda.Context,
@@ -159,40 +159,25 @@ class YOLOv8ForKeyPointsDetectionTRT(
     ):
         self._engine = engine
         self._input_name = input_name
-        self._output_names = [output_name]
+        self._output_names = output_names
+        self._inference_config = inference_config
+        self._class_names = class_names
+        self._classes_re_mapping = classes_re_mapping
+        self._device = device
         self._cuda_context = cuda_context
         self._execution_context = execution_context
-        self._class_names = class_names
-        self._skeletons = skeletons
-        self._inference_config = inference_config
-        self._parsed_key_points_metadata = parsed_key_points_metadata
         self._trt_config = trt_config
-        self._device = device
-        self._session_thread_lock = Lock()
-        self._parsed_key_points_metadata = parsed_key_points_metadata
-        self._key_points_classes_for_instances = torch.tensor(
-            [len(e) for e in self._parsed_key_points_metadata], device=device
-        )
-        self._key_points_slots_in_prediction = max(
-            len(e) for e in parsed_key_points_metadata
-        )
+        self._lock = threading.Lock()
 
     @property
     def class_names(self) -> List[str]:
         return self._class_names
 
-    @property
-    def key_points_classes(self) -> List[List[str]]:
-        return self._parsed_key_points_metadata
-
-    @property
-    def skeletons(self) -> List[List[Tuple[int, int]]]:
-        return self._skeletons
-
     def pre_process(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
+        image_size: Optional[Tuple[int, int]] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         return pre_process_network_input(
@@ -201,12 +186,15 @@ class YOLOv8ForKeyPointsDetectionTRT(
             network_input=self._inference_config.network_input,
             target_device=self._device,
             input_color_format=input_color_format,
+            image_size_wh=image_size,
         )
 
-    def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
-        with self._session_thread_lock:
+    def forward(
+        self, pre_processed_images: torch.Tensor, **kwargs
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        with self._lock:
             with use_cuda_context(context=self._cuda_context):
-                return infer_from_trt_engine(
+                detections, labels, masks = infer_from_trt_engine(
                     pre_processed_images=pre_processed_images,
                     trt_config=self._trt_config,
                     engine=self._engine,
@@ -214,70 +202,22 @@ class YOLOv8ForKeyPointsDetectionTRT(
                     device=self._device,
                     input_name=self._input_name,
                     outputs=self._output_names,
-                )[0]
+                )
+                return detections, labels, masks
 
     def post_process(
         self,
-        model_results: torch.Tensor,
+        model_results: Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
         pre_processing_meta: List[PreProcessingMetadata],
-        conf_thresh: float = 0.25,
-        iou_thresh: float = 0.45,
-        max_detections: int = 100,
-        class_agnostic: bool = False,
-        key_points_threshold: float = 0.3,
+        threshold: float = 0.5,
         **kwargs,
-    ) -> Tuple[List[KeyPoints], Optional[List[Detections]]]:
-        if self._inference_config.post_processing.fused:
-            nms_results = post_process_nms_fused_model_output(
-                output=model_results, conf_thresh=conf_thresh
-            )
-        else:
-            nms_results = run_nms_for_key_points_detection(
-                output=model_results,
-                num_classes=len(self._class_names),
-                key_points_slots_in_prediction=self._key_points_slots_in_prediction,
-                conf_thresh=conf_thresh,
-                iou_thresh=iou_thresh,
-                max_detections=max_detections,
-                class_agnostic=class_agnostic,
-            )
-        rescaled_results = rescale_key_points_detections(
-            detections=nms_results,
-            images_metadata=pre_processing_meta,
-            num_classes=len(self._class_names),
-            key_points_slots_in_prediction=self._key_points_slots_in_prediction,
+    ) -> List[InstanceDetections]:
+        bboxes, logits, masks = model_results
+        return post_process_instance_segmentation_results(
+            bboxes=bboxes,
+            logits=logits,
+            masks=masks,
+            pre_processing_meta=pre_processing_meta,
+            threshold=threshold,
+            classes_re_mapping=self._classes_re_mapping,
         )
-        detections, all_key_points = [], []
-        for result in rescaled_results:
-            class_id = result[:, 5].int()
-            detections.append(
-                Detections(
-                    xyxy=result[:, :4].round().int(),
-                    class_id=class_id,
-                    confidence=result[:, 4],
-                )
-            )
-            key_points_reshaped = result[:, 6:].view(
-                result.shape[0], self._key_points_slots_in_prediction, 3
-            )
-            xy = key_points_reshaped[:, :, :2]
-            confidence = key_points_reshaped[:, :, 2]
-            key_points_classes_for_instance_class = (
-                (self._key_points_classes_for_instances[class_id])
-                .unsqueeze(1)
-                .to(device=result.device)
-            )
-            instances_class_mask = (
-                torch.arange(self._key_points_slots_in_prediction, device=result.device)
-                .unsqueeze(0)
-                .repeat(result.shape[0], 1)
-                < key_points_classes_for_instance_class
-            )
-            confidence_mask = confidence < key_points_threshold
-            mask = instances_class_mask & confidence_mask
-            xy[mask] = 0.0
-            confidence[mask] = 0.0
-            all_key_points.append(
-                KeyPoints(xy=xy.round().int(), class_id=class_id, confidence=confidence)
-            )
-        return all_key_points, detections

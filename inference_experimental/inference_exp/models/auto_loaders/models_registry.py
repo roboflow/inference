@@ -57,6 +57,12 @@ REGISTERED_MODELS: Dict[
         module_name="inference_exp.models.yolov7.yolov7_instance_segmentation_trt",
         class_name="YOLOv7ForInstanceSegmentationTRT",
     ),
+    ("yolov8", CLASSIFICATION_TASK, BackendType.ONNX): RegistryEntry(
+        model_class=LazyClass(
+            module_name="inference_exp.models.yolov8.yolov8_classification_onnx",
+            class_name="YOLOv8ForClassificationOnnx",
+        ),
+    ),
     ("yolov8", OBJECT_DETECTION_TASK, BackendType.ONNX): RegistryEntry(
         model_class=LazyClass(
             module_name="inference_exp.models.yolov8.yolov8_object_detection_onnx",
@@ -137,6 +143,12 @@ REGISTERED_MODELS: Dict[
         module_name="inference_exp.models.yolov10.yolov10_object_detection_trt",
         class_name="YOLOv10ForObjectDetectionTRT",
     ),
+    ("yolov11", CLASSIFICATION_TASK, BackendType.ONNX): RegistryEntry(
+        model_class=LazyClass(
+            module_name="inference_exp.models.yolov11.yolov11_onnx",
+            class_name="YOLOv11ForClassificationOnnx",
+        ),
+    ),
     ("yolov11", OBJECT_DETECTION_TASK, BackendType.ONNX): RegistryEntry(
         model_class=LazyClass(
             module_name="inference_exp.models.yolov11.yolov11_onnx",
@@ -213,6 +225,10 @@ REGISTERED_MODELS: Dict[
         module_name="inference_exp.models.paligemma.paligemma_hf",
         class_name="PaliGemmaHF",
     ),
+    ("paligemma", VLM_TASK, BackendType.HF): LazyClass(
+        module_name="inference_exp.models.paligemma.paligemma_hf",
+        class_name="PaliGemmaHF",
+    ),
     ("smolvlm-v2", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_exp.models.smolvlm.smolvlm_hf",
         class_name="SmolVLMHF",
@@ -248,6 +264,18 @@ REGISTERED_MODELS: Dict[
     ("rfdetr", OBJECT_DETECTION_TASK, BackendType.ONNX): LazyClass(
         module_name="inference_exp.models.rfdetr.rfdetr_object_detection_onnx",
         class_name="RFDetrForObjectDetectionONNX",
+    ),
+    ("rfdetr", INSTANCE_SEGMENTATION_TASK, BackendType.TORCH): LazyClass(
+        module_name="inference_exp.models.rfdetr.rfdetr_instance_segmentation_pytorch",
+        class_name="RFDetrForInstanceSegmentationTorch",
+    ),
+    ("rfdetr", INSTANCE_SEGMENTATION_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_exp.models.rfdetr.rfdetr_instance_segmentation_onnx",
+        class_name="RFDetrForInstanceSegmentationOnnx",
+    ),
+    ("rfdetr", INSTANCE_SEGMENTATION_TASK, BackendType.TRT): LazyClass(
+        module_name="inference_exp.models.rfdetr.rfdetr_instance_segmentation_trt",
+        class_name="RFDetrForInstanceSegmentationTRT",
     ),
     ("moondream2", VLM_TASK, BackendType.HF): LazyClass(
         module_name="inference_exp.models.moondream2.moondream2_hf",
@@ -296,6 +324,10 @@ REGISTERED_MODELS: Dict[
     ("deep-lab-v3-plus", SEMANTIC_SEGMENTATION_TASK, BackendType.ONNX): LazyClass(
         module_name="inference_exp.models.deep_lab_v3_plus.deep_lab_v3_plus_segmentation_onnx",
         class_name="DeepLabV3PlusForSemanticSegmentationOnnx",
+    ),
+    ("yolact", INSTANCE_SEGMENTATION_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_exp.models.yolact.yolact_instance_segmentation_onnx",
+        class_name="YOLOACTForInstanceSegmentationOnnx",
     ),
 }
 

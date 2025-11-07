@@ -263,20 +263,18 @@ def rescale_key_points_detections(
             dtype=image_detections.dtype,
             device=image_detections.device,
         ).repeat(key_points_slots_in_prediction)
-        image_detections[:, 5 + num_classes :].sub_(key_points_offsets)
+        image_detections[:, 6:].sub_(key_points_offsets)
         key_points_scale = torch.as_tensor(
             [metadata.scale_width, metadata.scale_height, 1.0],
             dtype=image_detections.dtype,
             device=image_detections.device,
         ).repeat(key_points_slots_in_prediction)
-        image_detections[:, 5 + num_classes :].div_(key_points_scale)
+        image_detections[:, 6:].div_(key_points_scale)
         if (
             metadata.static_crop_offset.offset_x != 0
             or metadata.static_crop_offset.offset_y != 0
         ):
-            static_crop_offset_length = (
-                image_detections.shape[1] - 5 - num_classes
-            ) // 3
+            static_crop_offset_length = (image_detections.shape[1] - 6) // 3
             static_crop_offsets = torch.as_tensor(
                 [
                     metadata.static_crop_offset.offset_x,
@@ -287,7 +285,7 @@ def rescale_key_points_detections(
                 dtype=image_detections.dtype,
                 device=image_detections.device,
             )
-            image_detections[:, 5 + num_classes :].add_(static_crop_offsets)
+            image_detections[:, 6:].add_(static_crop_offsets)
             static_crop_offsets = torch.as_tensor(
                 [
                     metadata.static_crop_offset.offset_x,
@@ -338,6 +336,7 @@ def align_instance_segmentation_results(
     size_after_pre_processing: ImageDimensions,
     inference_size: ImageDimensions,
     static_crop_offset: StaticCropOffset,
+    binarization_threshold: float = 0.0,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     if image_bboxes.shape[0] == 0:
         empty_masks = torch.empty(
@@ -391,7 +390,7 @@ def align_instance_segmentation_results(
         masks = masks[
             :,
             padded_mask_offset_top : masks.shape[1] - padded_mask_offset_bottom,
-            padded_mask_offset_left : masks.shape[1] - padded_mask_offset_right,
+            padded_mask_offset_left : masks.shape[2] - padded_mask_offset_right,
         ]
     else:
         masks = masks[
@@ -403,7 +402,7 @@ def align_instance_segmentation_results(
             [size_after_pre_processing.height, size_after_pre_processing.width],
             interpolation=functional.InterpolationMode.BILINEAR,
         )
-        .gt_(0.0)
+        .gt_(binarization_threshold)
         .to(dtype=torch.bool)
     )
     if static_crop_offset.offset_x > 0 or static_crop_offset.offset_y > 0:
