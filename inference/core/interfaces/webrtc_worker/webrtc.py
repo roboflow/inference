@@ -323,7 +323,6 @@ async def init_rtc_peer_connection_with_loop(
                 "avioflags": "direct",
                 "analyzeduration": "0",
                 "probesize": "32",
-                "framedrop": None,
             }
         if "ffopts2" in webrtc_request.opt:
             options = {
