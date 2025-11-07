@@ -131,7 +131,7 @@ class VideoTransformTrackWithLoop(VideoStreamTrack):
             self._terminate_event.set()
 
         if isinstance(self.track, PlayerStreamTrack):
-            if self.track._queue.qsize() > 30:
+            while self.track._queue.qsize() > 30:
                 self.track._queue.get_nowait()
         frame: VideoFrame = await self.track.recv()
 
