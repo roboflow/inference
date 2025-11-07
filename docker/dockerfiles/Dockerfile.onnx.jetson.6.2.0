@@ -160,7 +160,7 @@ RUN apt-get update -y && \
     rustc \
     cargo \
     curl \
-    libproj25 \
+    libproj22 \
     libsqlite3-0 \
     libtiff5 \
     libcurl4 \
