@@ -42,14 +42,15 @@ RUN wget https://github.com/OSGeo/gdal/releases/download/v3.8.5/gdal-3.8.5.tar.g
     mkdir build && \
     cd build && \
     cmake .. \
+        -GNinja \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=/usr/local \
         -DBUILD_PYTHON_BINDINGS=OFF \
         -DBUILD_JAVA_BINDINGS=OFF \
         -DBUILD_CSHARP_BINDINGS=OFF \
     && \
-    make -j$(nproc) && \
-    make install && \
+    ninja && \
+    ninja install && \
     ldconfig && \
     cd ../.. && \
     rm -rf gdal-3.8.5.tar.gz gdal-3.8.5
