@@ -12,7 +12,6 @@ RUN apt-get update -y && \
     uvicorn \
     python3-pip \
     git \
-    libgdal-dev \
     libvips-dev \
     wget \
     rustc \
@@ -20,7 +19,45 @@ RUN apt-get update -y && \
     curl \
     cmake \
     ninja-build \
+    libproj-dev \
+    libsqlite3-dev \
+    libtiff-dev \
+    libcurl4-openssl-dev \
+    libexpat1-dev \
+    libxerces-c-dev \
+    libnetcdf-dev \
+    libhdf5-dev \
+    libpng-dev \
+    libjpeg-dev \
+    libgif-dev \
+    libwebp-dev \
+    libzstd-dev \
+    liblzma-dev \
     && rm -rf /var/lib/apt/lists/*
+
+# Compile GDAL from source to get version >= 3.5 for rasterio 1.4.0 compatibility
+RUN wget https://github.com/OSGeo/gdal/releases/download/v3.8.5/gdal-3.8.5.tar.gz && \
+    tar -xzf gdal-3.8.5.tar.gz && \
+    cd gdal-3.8.5 && \
+    mkdir build && \
+    cd build && \
+    cmake .. \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr/local \
+        -DBUILD_PYTHON_BINDINGS=OFF \
+        -DBUILD_JAVA_BINDINGS=OFF \
+        -DBUILD_CSHARP_BINDINGS=OFF \
+    && \
+    make -j$(nproc) && \
+    make install && \
+    ldconfig && \
+    cd ../.. && \
+    rm -rf gdal-3.8.5.tar.gz gdal-3.8.5
+
+ENV GDAL_CONFIG=/usr/local/bin/gdal-config \
+    GDAL_DATA=/usr/local/share/gdal \
+    LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH \
+    PATH=/usr/local/bin:$PATH
 
 RUN wget -q https://github.com/Kitware/CMake/releases/download/v3.30.5/cmake-3.30.5-linux-aarch64.sh && \
     chmod +x cmake-3.30.5-linux-aarch64.sh && \
@@ -106,6 +143,9 @@ WORKDIR /app
 
 COPY --from=builder /usr/local/lib/python3.10 /usr/local/lib/python3.10
 COPY --from=builder /usr/local/bin /usr/local/bin
+COPY --from=builder /usr/local/lib/libgdal* /usr/local/lib/
+COPY --from=builder /usr/local/include/gdal* /usr/local/include/
+COPY --from=builder /usr/local/share/gdal /usr/local/share/gdal
 
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \
@@ -114,13 +154,32 @@ RUN apt-get update -y && \
     uvicorn \
     python3-pip \
     git \
-    libgdal-dev \
     libvips-dev \
     wget \
     rustc \
     cargo \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    libproj-dev \
+    libsqlite3-dev \
+    libtiff-dev \
+    libcurl4-openssl-dev \
+    libexpat1-dev \
+    libxerces-c-dev \
+    libnetcdf-dev \
+    libhdf5-dev \
+    libpng-dev \
+    libjpeg-dev \
+    libgif-dev \
+    libwebp-dev \
+    libzstd-dev \
+    liblzma-dev \
+    && rm -rf /var/lib/apt/lists/* && \
+    ldconfig
+
+ENV GDAL_CONFIG=/usr/local/bin/gdal-config \
+    GDAL_DATA=/usr/local/share/gdal \
+    LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH \
+    PATH=/usr/local/bin:$PATH
 
 WORKDIR /build
 COPY . .
