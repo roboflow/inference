@@ -36,9 +36,9 @@ RUN apt-get update -y && \
     && rm -rf /var/lib/apt/lists/*
 
 # Compile GDAL from source to get version >= 3.5 for rasterio 1.4.0 compatibility
-RUN wget https://github.com/OSGeo/gdal/releases/download/v3.8.5/gdal-3.8.5.tar.gz && \
-    tar -xzf gdal-3.8.5.tar.gz && \
-    cd gdal-3.8.5 && \
+RUN wget https://github.com/OSGeo/gdal/releases/download/v3.11.5/gdal-3.11.5.tar.gz && \
+    tar -xzf gdal-3.11.5.tar.gz && \
+    cd gdal-3.11.5 && \
     mkdir build && \
     cd build && \
     cmake .. \
@@ -53,7 +53,7 @@ RUN wget https://github.com/OSGeo/gdal/releases/download/v3.8.5/gdal-3.8.5.tar.g
     ninja install && \
     ldconfig && \
     cd ../.. && \
-    rm -rf gdal-3.8.5.tar.gz gdal-3.8.5
+    rm -rf gdal-3.11.5.tar.gz gdal-3.11.5
 
 ENV GDAL_CONFIG=/usr/local/bin/gdal-config \
     GDAL_DATA=/usr/local/share/gdal \
