@@ -159,20 +159,20 @@ RUN apt-get update -y && \
     rustc \
     cargo \
     curl \
-    libproj-dev \
-    libsqlite3-dev \
-    libtiff-dev \
-    libcurl4-openssl-dev \
-    libexpat1-dev \
-    libxerces-c-dev \
-    libnetcdf-dev \
-    libhdf5-dev \
-    libpng-dev \
-    libjpeg-dev \
-    libgif-dev \
-    libwebp-dev \
-    libzstd-dev \
-    liblzma-dev \
+    libproj25 \
+    libsqlite3-0 \
+    libtiff5 \
+    libcurl4 \
+    libexpat1 \
+    libxerces-c3.2 \
+    libnetcdf19 \
+    libhdf5-103 \
+    libpng16-16 \
+    libjpeg8 \
+    libgif7 \
+    libwebp7 \
+    libzstd1 \
+    liblzma5 \
     && rm -rf /var/lib/apt/lists/* && \
     ldconfig
 
