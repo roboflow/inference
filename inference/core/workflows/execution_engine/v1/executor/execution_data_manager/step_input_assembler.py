@@ -136,6 +136,9 @@ def construct_non_simd_step_compound_list_input(
     runtime_parameters: Dict[str, Any],
     execution_cache: ExecutionCache,
 ) -> Tuple[List[Any], bool]:
+    # Validate mixed array patterns before processing elements
+    _validate_mixed_array_selectors(step_node, parameter_spec)
+
     result = []
     contains_empty_step_output_selector = False
     for nested_definition in parameter_spec.iterate_through_definitions():
@@ -990,3 +993,54 @@ def iterate_over_batches(
         index += 1
         if not end:
             yield result
+
+
+def _validate_mixed_array_selectors(
+    step_node: StepNode,
+    parameter_spec: CompoundStepInputDefinition,
+) -> None:
+    """
+    Validate that mixed arrays don't contain LIST_OF_VALUES_KIND selectors with other elements.
+
+    According to the tech specification:
+    - STRING_KIND selectors are allowed in mixed arrays
+    - LIST_OF_VALUES_KIND selectors in mixed arrays should trigger clear error messages
+    - Pure LIST_OF_VALUES_KIND selectors (not mixed) should work normally
+
+    Args:
+        step_node: The step node being processed
+        parameter_spec: The compound input definition for the array
+
+    Raises:
+        ExecutionEngineRuntimeError: If invalid mixed array patterns are detected
+    """
+    nested_definitions = list(parameter_spec.iterate_through_definitions())
+
+    # If there's only one element, it's not a mixed array - allow it
+    if len(nested_definitions) <= 1:
+        return
+
+    # Check for LIST_OF_VALUES_KIND selectors in mixed arrays
+    has_literal_elements = False
+    has_batch_oriented_selectors = False
+    list_selectors = []
+
+    for nested_definition in nested_definitions:
+        if isinstance(nested_definition, StaticStepInputDefinition):
+            has_literal_elements = True
+        elif isinstance(nested_definition, DynamicStepInputDefinition):
+            if nested_definition.is_batch_oriented():
+                has_batch_oriented_selectors = True
+                list_selectors.append(nested_definition.selector)
+
+    # If we have a mixed array with batch-oriented selectors (LIST_OF_VALUES_KIND), that's invalid
+    if has_literal_elements and has_batch_oriented_selectors:
+        selector_list = ", ".join(f"'{s}'" for s in list_selectors)
+        raise ExecutionEngineRuntimeError(
+            public_message=f"Invalid mixed array in step '{step_node.name}': "
+            f"Array elements can only contain string literals or STRING_KIND selectors. "
+            f"Found LIST_OF_VALUES_KIND selector(s): {selector_list}. "
+            f"Use either all literals with string selectors: ['literal', '$inputs.string_tag'] "
+            f"or a pure list selector: '$inputs.list_tags'",
+            context="workflow_execution | step_input_assembling",
+        )

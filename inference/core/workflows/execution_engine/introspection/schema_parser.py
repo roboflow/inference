@@ -368,6 +368,7 @@ def retrieve_selectors_from_simple_property(
         if is_list_element or is_dict_element:
             # ignoring nested references above first level of depth
             return None
+        # Allow processing of first-level array items
         return retrieve_selectors_from_simple_property(
             property_name=property_name,
             property_description=property_description,
