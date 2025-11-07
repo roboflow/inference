@@ -1,6 +1,7 @@
 import asyncio
 from multiprocessing.connection import Connection
 
+from inference.core import logger
 from inference.core.interfaces.webrtc_worker.entities import (
     WebRTCWorkerRequest,
     WebRTCWorkerResult,
@@ -24,3 +25,4 @@ def rtc_peer_connection_process(
             send_answer=send_answer,
         )
     )
+    logger.info("WebRTC process terminated")

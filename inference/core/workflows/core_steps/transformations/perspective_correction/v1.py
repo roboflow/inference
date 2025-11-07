@@ -113,7 +113,11 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_parameters_accepting_batches_and_scalars(cls) -> List[str]:
-        return ["perspective_polygons"]
+        return [
+            "perspective_polygons",
+            "transformed_rect_width",
+            "transformed_rect_height",
+        ]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -688,8 +692,8 @@ class PerspectiveCorrectionBlockV1(WorkflowBlock):
             List[List[List[int]]],
             List[List[List[List[int]]]],
         ],
-        transformed_rect_width: int,
-        transformed_rect_height: int,
+        transformed_rect_width: Union[int, List[int], np.ndarray],
+        transformed_rect_height: Union[int, List[int], np.ndarray],
         extend_perspective_polygon_by_detections_anchor: Union[
             sv.Position, Literal[ALL_POSITIONS]
         ],
@@ -723,7 +727,16 @@ class PerspectiveCorrectionBlockV1(WorkflowBlock):
                 raise ValueError(
                     f"Predictions batch size ({batch_size}) does not match number of perspective polygons ({largest_perspective_polygons})"
                 )
-            for polygon, detections in zip(largest_perspective_polygons, predictions):
+            if isinstance(transformed_rect_height, int):
+                transformed_rect_height = [transformed_rect_height] * batch_size
+            if isinstance(transformed_rect_width, int):
+                transformed_rect_width = [transformed_rect_width] * batch_size
+            for polygon, detections, width, height in zip(
+                largest_perspective_polygons,
+                predictions,
+                list(transformed_rect_width),
+                list(transformed_rect_height),
+            ):
                 if polygon is None:
                     self.perspective_transformers.append(None)
                     continue
@@ -731,15 +744,19 @@ class PerspectiveCorrectionBlockV1(WorkflowBlock):
                     generate_transformation_matrix(
                         src_polygon=polygon,
                         detections=detections,
-                        transformed_rect_width=transformed_rect_width,
-                        transformed_rect_height=transformed_rect_height,
+                        transformed_rect_width=width,
+                        transformed_rect_height=height,
                         detections_anchor=extend_perspective_polygon_by_detections_anchor,
                     )
                 )
 
         result = []
-        for detections, perspective_transformer_w_h, image in zip(
-            predictions, self.perspective_transformers, images
+        for detections, perspective_transformer_w_h, image, width, height in zip(
+            predictions,
+            self.perspective_transformers,
+            images,
+            transformed_rect_width,
+            transformed_rect_height,
         ):
             perspective_transformer, extended_width, extended_height = (
                 perspective_transformer_w_h
@@ -751,8 +768,8 @@ class PerspectiveCorrectionBlockV1(WorkflowBlock):
                     src=image.numpy_image,
                     M=perspective_transformer,
                     dsize=(
-                        transformed_rect_width + int(round(extended_width)),
-                        transformed_rect_height + int(round(extended_height)),
+                        int(round(width)) + int(round(extended_width)),
+                        int(round(height)) + int(round(extended_height)),
                     ),
                 )
                 result_image = WorkflowImageData.copy_and_replace(
@@ -765,9 +782,9 @@ class PerspectiveCorrectionBlockV1(WorkflowBlock):
                     {
                         OUTPUT_DETECTIONS_KEY: None,
                         OUTPUT_IMAGE_KEY: result_image,
-                        OUTPUT_EXTENDED_TRANSFORMED_RECT_WIDTH_KEY: transformed_rect_width
+                        OUTPUT_EXTENDED_TRANSFORMED_RECT_WIDTH_KEY: width
                         + int(round(extended_width)),
-                        OUTPUT_EXTENDED_TRANSFORMED_RECT_HEIGHT_KEY: transformed_rect_height
+                        OUTPUT_EXTENDED_TRANSFORMED_RECT_HEIGHT_KEY: height
                         + int(round(extended_height)),
                     }
                 )
@@ -776,19 +793,17 @@ class PerspectiveCorrectionBlockV1(WorkflowBlock):
             corrected_detections = correct_detections(
                 detections=detections,
                 perspective_transformer=perspective_transformer,
-                transformed_rect_width=transformed_rect_width
-                + int(round(extended_width)),
-                transformed_rect_height=transformed_rect_height
-                + int(round(extended_height)),
+                transformed_rect_width=width + int(round(extended_width)),
+                transformed_rect_height=height + int(round(extended_height)),
             )
 
             result.append(
                 {
                     OUTPUT_DETECTIONS_KEY: corrected_detections,
                     OUTPUT_IMAGE_KEY: result_image,
-                    OUTPUT_EXTENDED_TRANSFORMED_RECT_WIDTH_KEY: transformed_rect_width
+                    OUTPUT_EXTENDED_TRANSFORMED_RECT_WIDTH_KEY: width
                     + int(round(extended_width)),
-                    OUTPUT_EXTENDED_TRANSFORMED_RECT_HEIGHT_KEY: transformed_rect_height
+                    OUTPUT_EXTENDED_TRANSFORMED_RECT_HEIGHT_KEY: height
                     + int(round(extended_height)),
                 }
             )
