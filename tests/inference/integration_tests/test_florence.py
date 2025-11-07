@@ -8,8 +8,8 @@ from tests.inference.integration_tests.regression_test import bool_env
 # Keep up to date with inference.models.aliases.FLORENCE_ALIASES
 # Can't import because adds a lot of requirements to testing environment
 FLORENCE_ALIASES = {
-    "florence-2-base": "florence-pretrains/1",
-    "florence-2-large": "florence-pretrains/2",
+    "florence-2-base": "florence-pretrains/3",  # since transformers 0.53.3 need newer version of florence2 weights
+    "florence-2-large": "florence-pretrains/4",
 }
 
 api_key = os.environ.get("melee_API_KEY")

@@ -1,0 +1,46 @@
+name: Build and Push Jetson 6.2.0 Container
+permissions:
+  contents: read
+on:
+  release:
+    types: [created]
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      force_push:
+        type: boolean
+        description: "Do you want to push image after build?"
+        default: false
+
+env:
+  VERSION: "0.0.0" # Default version, will be overwritten
+
+jobs:
+  docker:
+    runs-on:
+      labels: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: 🛎️ Checkout
+        uses: actions/checkout@v4
+      - name: Read version from file
+        run: echo "VERSION=$(DISABLE_VERSION_CHECK=true python ./inference/core/version.py)" >> $GITHUB_ENV
+      - name: Set up Depot CLI
+        uses: depot/setup-action@v1
+      - name: Build and Push
+        uses: depot/build-push-action@v1
+        with:
+          push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true')}}
+          project: grl7ffzxd7
+          tags: roboflow/roboflow-inference-server-jetson-6.2.0:latest,roboflow/roboflow-inference-server-jetson-6.2.0:${{ env.VERSION}}
+          platforms: linux/arm64
+          file: ./docker/dockerfiles/Dockerfile.onnx.jetson.6.2.0

@@ -20,6 +20,7 @@ from inference.core.env import (
     PALIGEMMA_ENABLED,
     QWEN_2_5_ENABLED,
     SMOLVLM2_ENABLED,
+    USE_INFERENCE_EXP_MODELS,
 )
 from inference.core.models.base import Model
 from inference.core.models.stubs import (
@@ -572,3 +573,30 @@ def get_model(model_id, api_key=API_KEY, **kwargs) -> Model:
 
 def get_roboflow_model(*args, **kwargs):
     return get_model(*args, **kwargs)
+
+
+# Prefer inference_exp backend for RF-DETR variants when enabled and available
+try:
+    if USE_INFERENCE_EXP_MODELS:
+        # Ensure experimental package is importable before swapping
+        __import__("inference_exp")
+        from inference.models.rfdetr.rfdetr_exp import RFDetrExperimentalModel
+        from inference.models.yolov8.yolov8_object_detection_exp import (
+            Yolo8ODExperimentalModel,
+        )
+
+        for task, variant in ROBOFLOW_MODEL_TYPES.keys():
+            if task == "object-detection" and variant.startswith("rfdetr-"):
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = RFDetrExperimentalModel
+
+        # iterate over ROBOFLOW_MODEL_TYPES and replace all valuses where the model variatn starts with yolov8 with the experimental model
+        for task, variant in ROBOFLOW_MODEL_TYPES.keys():
+            if task == "object-detection" and variant.startswith("yolov8"):
+                ROBOFLOW_MODEL_TYPES[(task, variant)] = Yolo8ODExperimentalModel
+
+
+except Exception:
+    # Fallback silently to legacy ONNX RFDETR when experimental stack is unavailable
+    warnings.warn(
+        "Inference experimental stack is unavailable, falling back to regular model inference stack"
+    )
