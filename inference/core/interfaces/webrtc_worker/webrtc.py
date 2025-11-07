@@ -206,6 +206,9 @@ async def _wait_ice_complete(peer_connection: RTCPeerConnectionWithLoop, timeout
         pass
 
 
+relay = MediaRelay()
+
+
 async def init_rtc_peer_connection_with_loop(
     webrtc_request: WebRTCWorkerRequest,
     send_answer: Callable[[WebRTCWorkerResult], None],
@@ -304,8 +307,6 @@ async def init_rtc_peer_connection_with_loop(
         peer_connection = RTCPeerConnectionWithLoop(
             asyncio_loop=asyncio_loop,
         )
-
-    relay = MediaRelay()
 
     player: Optional[MediaPlayer] = None
     if webrtc_request.rtsp_url:
