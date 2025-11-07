@@ -4,10 +4,9 @@ import json
 import logging
 import sys
 import urllib.parse
-from enum import Enum
 from pathlib import Path
 from threading import Event, Thread
-from typing import Optional
+from typing import Optional, Union
 
 import cv2 as cv
 import numpy as np
@@ -44,22 +43,12 @@ logging.basicConfig(
 logger = logging.getLogger(Path(__file__).stem)
 
 
-class WebcamFrameGrabberState(Enum):
-    STOPPED = "STOPPED"
-    STOPPING = "STOPPING"
-    STARTING = "STARTING"
-    STARTED = "STARTED"
-
-
 class FramesGrabber:
     def __init__(
         self,
-        source_path: Optional[str] = None,
+        source_path: Union[int, str],
     ):
-        if source_path:
-            self._cap = cv.VideoCapture(source_path)
-        else:
-            self._cap = cv.VideoCapture(0)
+        self._cap = cv.VideoCapture(source_path)
         if not self._cap.isOpened():
             raise RuntimeError("Could not open webcam")
         self._fps = self._cap.get(cv.CAP_PROP_FPS)
@@ -78,7 +67,7 @@ class StreamTrack(VideoStreamTrack):
     def __init__(
         self,
         asyncio_loop: Optional[asyncio.AbstractEventLoop] = None,
-        source_path: Optional[str] = None,
+        source_path: Optional[Union[int, str]] = None,
         *args,
         **kwargs,
     ):
@@ -87,7 +76,9 @@ class StreamTrack(VideoStreamTrack):
         if asyncio_loop is None:
             self._loop = asyncio.get_event_loop()
 
-        self._camera = FramesGrabber(source_path=source_path)
+        self._source: Optional[FramesGrabber] = None
+        if source_path is not None:
+            self._source = FramesGrabber(source_path=source_path)
 
         self.track: Optional[RemoteStreamTrack] = None
         self._recv_task: Optional[asyncio.Task] = None
@@ -101,10 +92,18 @@ class StreamTrack(VideoStreamTrack):
 
     async def stop_recv_loop(self):
         if self._recv_task:
+            logger.info("Cancelling WebRTC recv loop")
             self._recv_task.cancel()
+            self._recv_task = None
         await self.recv_queue.async_put(None)
 
     async def _recv_loop(self):
+        logger.info("Starting WebRTC recv loop")
+        # Silencing swscaler warnings in multi-threading environment
+        if not self._av_logging_set:
+            set_libav_level(ERROR)
+            self._av_logging_set = True
+
         try:
             while self.track.readyState != "ended":
                 frame: VideoFrame = await self.track.recv()
@@ -126,9 +125,12 @@ class StreamTrack(VideoStreamTrack):
             set_libav_level(ERROR)
             self._av_logging_set = True
 
+        if self._source is None:
+            return
+
         np_frame = await self._loop.run_in_executor(
             None,
-            self._camera.get_frame,
+            self._source.get_frame,
         )
         if np_frame is None:
             logger.info("%s: No more frames", self.__class__.__name__)
@@ -145,20 +147,15 @@ class RTCPeerConnectionWithDataChannel(RTCPeerConnection):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.data_channel: Optional[RTCDataChannel] = None
-        self.webcam_stream_track: Optional[StreamTrack] = None
+        self.stream_track: Optional[StreamTrack] = None
         self.closed_event: Event = Event()
 
 
 async def init_rtc_peer_connection_with_local_description(
     asyncio_loop: asyncio.AbstractEventLoop,
     webrtc_turn_config: Optional[WebRTCTURNConfig] = None,
-    source_path: Optional[str] = None,
+    source: Optional[str] = None,
 ) -> RTCPeerConnectionWithDataChannel:
-    webcam_stream_track = StreamTrack(
-        asyncio_loop=asyncio_loop,
-        source_path=source_path,
-    )
-
     if webrtc_turn_config:
         turn_server = RTCIceServer(
             urls=[webrtc_turn_config.urls],
@@ -170,20 +167,47 @@ async def init_rtc_peer_connection_with_local_description(
         )
     else:
         peer_connection = RTCPeerConnectionWithDataChannel()
+
+    is_rtmp = is_rtmp_url(url=source)
+    if is_rtmp:
+        logger.info("Requesting processing of RTMP/RTSP stream: %s", source)
+        stream_track = StreamTrack(
+            asyncio_loop=asyncio_loop,
+        )
+        peer_connection.addTransceiver("video", direction="recvonly")
+        peer_connection.stream_track = stream_track
+    else:
+        logger.info(
+            "Requesting processing of local video stream: %s",
+            source if source else "webcam",
+        )
+        if source is None:
+            source = 0
+        stream_track = StreamTrack(
+            asyncio_loop=asyncio_loop,
+            source_path=source,
+        )
+        peer_connection.addTrack(stream_track)
+
     relay = MediaRelay()
 
     @peer_connection.on("track")
     def on_track(track: RemoteStreamTrack):
         logger.info("track received")
-        webcam_stream_track.set_track(track=relay.subscribe(track))
-        peer_connection.webcam_stream_track = webcam_stream_track
+        stream_track.set_track(track=relay.subscribe(track))
+        peer_connection.stream_track = stream_track
 
     @peer_connection.on("connectionstatechange")
     async def on_connectionstatechange():
         logger.info("connection state: %s", peer_connection.connectionState)
         if peer_connection.connectionState in {"failed", "closed"}:
-            await webcam_stream_track.stop_recv_loop()
+            logger.info("Stopping recv loop")
+            await stream_track.stop_recv_loop()
+            if stream_track.track:
+                logger.info("Stopping track")
+                stream_track.track.stop()
             peer_connection.closed_event.set()
+            logger.info("Stopping peer connection")
             await peer_connection.close()
 
     data_channel = peer_connection.createDataChannel("inference")
@@ -193,7 +217,6 @@ async def init_rtc_peer_connection_with_local_description(
         print(message)
 
     peer_connection.data_channel = data_channel
-    peer_connection.addTrack(webcam_stream_track)
 
     offer: RTCSessionDescription = await peer_connection.createOffer()
     await peer_connection.setLocalDescription(offer)
@@ -204,22 +227,32 @@ async def init_rtc_peer_connection_with_local_description(
     return peer_connection
 
 
-class FileMustExist(argparse.Action):
+def is_rtmp_url(url: str) -> bool:
+    return str(url).lower().startswith("rtmp:") or str(url).lower().startswith("rtsp:")
+
+
+class MustBeFileOrRTSP(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
-        if not values.strip() or not Path(values.strip()).exists():
-            raise argparse.ArgumentError(argument=self, message="Incorrect path")
+        if not values.strip() or (
+            not Path(values.strip()).exists() and not is_rtmp_url(values.strip())
+        ):
+            raise argparse.ArgumentError(
+                argument=self, message="Expected file path or RTSP/RTMP url"
+            )
         setattr(namespace, self.dest, values)
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="WebRTC webcam stream")
+    parser = argparse.ArgumentParser(
+        description="Stream video file or webcam to Roboflow for processing, or request processed RTSP/RTMP stream"
+    )
     parser.add_argument(
-        "--source-path",
+        "--source",
         required=False,
         type=str,
         default=None,
-        action=FileMustExist,
-        help="Path to video file, if not provided webcam will be used",
+        action=MustBeFileOrRTSP,
+        help="RTSP/RTMP url or path to video file, if not provided webcam will be used",
     )
     parser.add_argument("--workflow-id", required=True, type=str)
     parser.add_argument("--workspace-id", required=True, type=str)
@@ -257,7 +290,7 @@ def main():
         init_rtc_peer_connection_with_local_description(
             asyncio_loop=asyncio_loop,
             webrtc_turn_config=webrtc_turn_config,
-            source_path=args.source_path,
+            source=args.source,
         ),
         asyncio_loop,
     )
@@ -283,6 +316,7 @@ def main():
         stream_output=["video"],
         data_output=["preds"],
         webrtc_realtime_processing=args.realtime,
+        rtsp_url=args.source if is_rtmp_url(args.source) else None,
     )
 
     https_verify = True
@@ -310,9 +344,7 @@ def main():
     future.result()
 
     while not peer_connection.closed_event.is_set():
-        frame: Optional[VideoFrame] = (
-            peer_connection.webcam_stream_track.recv_queue.sync_get()
-        )
+        frame: Optional[VideoFrame] = peer_connection.stream_track.recv_queue.sync_get()
         if frame is None:
             logger.info("No more frames")
             break
@@ -323,6 +355,7 @@ def main():
             continue
 
         if key == ord("q"):
+            logger.info("Quitting")
             break
 
         if chr(key) in "1234567890abcdefghijkz" and (
@@ -382,15 +415,19 @@ def main():
 
     cv.destroyAllWindows()
     asyncio.run_coroutine_threadsafe(
-        peer_connection.webcam_stream_track.stop_recv_loop(),
+        peer_connection.stream_track.stop_recv_loop(),
         asyncio_loop,
     ).result()
-    asyncio.run_coroutine_threadsafe(
-        peer_connection.close(),
-        asyncio_loop,
-    ).result()
-    asyncio_loop.stop()
-    loop_thread.join()
+    if peer_connection.connectionState != "closed":
+        logger.info("Closing WebRTC connection")
+        asyncio.run_coroutine_threadsafe(
+            peer_connection.close(),
+            asyncio_loop,
+        ).result()
+    logger.info("Stopping asyncio loop")
+    asyncio_loop.call_soon_threadsafe(asyncio_loop.stop)
+    loop_thread.join(timeout=5)
+    asyncio_loop.close()
 
 
 if __name__ == "__main__":

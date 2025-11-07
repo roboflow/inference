@@ -13,9 +13,11 @@ from inference_cli.lib.roboflow_cloud.batch_processing.api_operations import (
     restart_batch_job,
     trigger_job_with_workflows_images_processing,
     trigger_job_with_workflows_videos_processing,
+    trigger_trt_compilation_job,
 )
 from inference_cli.lib.roboflow_cloud.batch_processing.entities import (
     AggregationFormat,
+    CompilationDevice,
     LogSeverity,
     MachineSize,
     MachineType,
@@ -408,6 +410,69 @@ def process_videos_with_workflow(
             aggregation_format=aggregation_format,
             max_video_fps=max_video_fps,
             job_id=job_id,
+            notifications_url=notifications_url,
+            api_key=api_key,
+        )
+        print(f"Triggered job with ID: {job_id}")
+    except KeyboardInterrupt:
+        print("Command interrupted.")
+        return
+    except Exception as error:
+        if debug_mode:
+            raise error
+        typer.echo(f"Command failed. Cause: {error}")
+        raise typer.Exit(code=1)
+
+
+@batch_processing_app.command(help="Trigger TRT compilation of a model")
+def trt_compile(
+    model_id: Annotated[
+        str,
+        typer.Option("--model-id", "-m", help="Model to be compiled"),
+    ],
+    compilation_devices: Annotated[
+        Optional[List[CompilationDevice]],
+        typer.Option("--device", "-d", help="Target compilation devices"),
+    ],
+    job_id: Annotated[
+        Optional[str],
+        typer.Option(
+            "--job-id",
+            "-j",
+            help="Identifier of job (if not given - will be generated)",
+        ),
+    ] = None,
+    api_key: Annotated[
+        Optional[str],
+        typer.Option(
+            "--api-key",
+            "-a",
+            help="Roboflow API key for your workspace. If not given - env variable `ROBOFLOW_API_KEY` will be used",
+        ),
+    ] = None,
+    debug_mode: Annotated[
+        bool,
+        typer.Option(
+            "--debug-mode/--no-debug-mode",
+            help="Flag enabling errors stack traces to be displayed (helpful for debugging)",
+        ),
+    ] = False,
+    notifications_url: Annotated[
+        Optional[str],
+        typer.Option(
+            "--notifications-url",
+            help="URL of the Webhook to be used for job state notifications.",
+        ),
+    ] = None,
+) -> None:
+    if api_key is None:
+        api_key = ROBOFLOW_API_KEY
+    try:
+        ensure_api_key_is_set(api_key=api_key)
+        job_id = trigger_trt_compilation_job(
+            model_id=model_id,
+            job_id=job_id,
+            compilation_devices=compilation_devices,
             notifications_url=notifications_url,
             api_key=api_key,
         )

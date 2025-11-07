@@ -83,8 +83,11 @@ REGISTERED_ALIASES = {
     "paligemma-3b-ft-tallyqa-448": "paligemma-pretrains/17",
     "paligemma-3b-ft-docvqa-448": "paligemma-pretrains/18",
     "paligemma-3b-ft-ocrvqa-448": "paligemma-pretrains/19",
-    "florence-2-base": "florence-pretrains/1",
-    "florence-2-large": "florence-pretrains/2",
+    # "florence-2-base": "florence-pretrains/1",
+    # "florence-2-large": "florence-pretrains/2",
+    # since transformers 0.53.3 need newer version of florence2 weights
+    "florence-2-base": "florence-pretrains/3",
+    "florence-2-large": "florence-pretrains/4",
     **YOLOV11_ALIASES,
     **QWEN_ALIASES,
     **RFDETR_ALIASES,
