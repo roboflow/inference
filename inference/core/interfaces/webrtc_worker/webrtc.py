@@ -140,8 +140,9 @@ class VideoTransformTrackWithLoop(VideoStreamTrack):
             self.stream_output,
         )
 
-        new_frame.pts = frame.pts
-        new_frame.time_base = frame.time_base
+        pts, time_base = await self.next_timestamp()
+        new_frame.pts = pts
+        new_frame.time_base = time_base
 
         if self.data_channel and self.data_channel.readyState == "open":
             video_metadata = WebRTCVideoMetadata(
