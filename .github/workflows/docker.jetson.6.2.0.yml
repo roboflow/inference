@@ -1,4 +1,4 @@
-name: Retag Jetson 6.2.0 Container
+name: Build and Push Jetson 6.2.0 Container
 permissions:
   contents: read
 on:
@@ -6,19 +6,18 @@ on:
     inputs:
       force_push:
         type: boolean
-        description: "Do you want to push retagged image?"
+        description: "Do you want to push built image?"
         default: false
 
 env:
-  SOURCE_IMAGE: "roboflow/roboflow-inference-server-jetson:jetpack-6.2.0"
   TARGET_IMAGE: "roboflow/roboflow-inference-server-jetson-6.2.0"
   VERSION: "0.0.0" # Default version, will be overwritten
 
 jobs:
-  retag:
+  build:
     runs-on:
       labels: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     permissions:
       id-token: write
       contents: read
@@ -35,15 +34,23 @@ jobs:
       - name: Read version from file
         run: echo "VERSION=$(DISABLE_VERSION_CHECK=true python ./inference/core/version.py)" >> $GITHUB_ENV
 
-      - name: Pull source image
-        run: docker pull ${{ env.SOURCE_IMAGE }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Retag image
-        run: |
-          docker tag ${{ env.SOURCE_IMAGE }} ${{ env.TARGET_IMAGE }}:latest
-          docker tag ${{ env.SOURCE_IMAGE }} ${{ env.TARGET_IMAGE }}:${{ env.VERSION }}
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/dockerfiles/Dockerfile.onnx.jetson.6.2.0
+          push: false
+          load: true
+          tags: |
+            ${{ env.TARGET_IMAGE }}:latest
+            ${{ env.TARGET_IMAGE }}:${{ env.VERSION }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      - name: Push retagged images
+      - name: Push built images
         if: ${{ github.event.inputs.force_push == 'true' }}
         run: |
           docker push ${{ env.TARGET_IMAGE }}:latest

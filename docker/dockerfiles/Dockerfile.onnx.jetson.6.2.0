@@ -1,49 +1,24 @@
-FROM roboflow/l4t-ml:r36.4.tegra-aarch64-cu126-22.04
-# Base image includes: PyTorch 2.8, torchvision, ONNXRuntime w/ TensorRT,
-# OpenCV w/ CUDA, cupy, pycuda, NumPy, SciPy, scikit-learn, pandas, scikit-image
+# Build from existing working Jetson 6.2.0 image
+# This avoids layer depth issues with the large l4t-ml base image (186 layers)
+FROM roboflow/roboflow-inference-server-jetson:jetpack-6.2.0
 
-ARG DEBIAN_FRONTEND=noninteractive
-ENV LANG=en_US.UTF-8
+# Update with latest inference code
+COPY inference/ /app/inference/
+COPY inference_cli/ /app/inference_cli/
+COPY inference_sdk/ /app/inference_sdk/
+COPY .release /app/.release
+COPY requirements /app/requirements
+COPY Makefile /app/Makefile
 
-# Install minimal system dependencies
-RUN apt-get update -y && \
-    apt-get install -y --no-install-recommends lshw git && \
-    rm -rf /var/lib/apt/lists/*
-
-# Set up application first (minimal layers)
 WORKDIR /app
-COPY inference/ ./inference/
-COPY inference_cli/ ./inference_cli/
-COPY inference_sdk/ ./inference_sdk/
-COPY docker/config/gpu_http.py ./gpu_http.py
-COPY .release .release
-COPY requirements requirements
-COPY Makefile Makefile
 
-# Build and install inference CLI - this will pull in required dependencies
+# Rebuild and reinstall inference packages
 RUN make create_inference_cli_whl PYTHON=python3 && \
-    pip3 install --index-url https://pypi.jetson-ai-lab.io/jp6/cu126 dist/inference_cli*.whl
+    pip3 install --index-url https://pypi.jetson-ai-lab.io/jp6/cu126 --force-reinstall dist/inference_cli*.whl
 
-# Set environment variables
-ENV VERSION_CHECK_MODE=continuous \
-    PROJECT=roboflow-platform \
-    ORT_TENSORRT_FP16_ENABLE=1 \
-    ORT_TENSORRT_ENGINE_CACHE_ENABLE=1 \
-    CORE_MODEL_SAM_ENABLED=False \
-    NUM_WORKERS=1 \
-    HOST=0.0.0.0 \
-    PORT=9001 \
-    OPENBLAS_CORETYPE=ARMV8 \
-    LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libgomp.so.1 \
-    WORKFLOWS_STEP_EXECUTION_MODE=local \
-    WORKFLOWS_MAX_CONCURRENT_STEPS=2 \
-    API_LOGGING_ENABLED=True \
-    CORE_MODEL_TROCR_ENABLED=false \
-    RUNS_ON_JETSON=True \
-    ENABLE_PROMETHEUS=True \
-    ENABLE_STREAM_API=True \
-    STREAM_API_PRELOADED_PROCESSES=2 \
-    PYTHONPATH=/app:$PYTHONPATH
+# Environment variables are already set in base image
+# Just ensure VERSION_CHECK_MODE is set correctly
+ENV VERSION_CHECK_MODE=continuous
 
 EXPOSE 9001
-ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT
+ENTRYPOINT ["sh", "-c", "uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT"]
