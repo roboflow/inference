@@ -22,6 +22,7 @@ class WebRTCWorkerRequest(BaseModel):
     data_output: Optional[List[Optional[str]]] = Field(default_factory=list)
     declared_fps: Optional[float] = None
     rtsp_url: Optional[str] = None
+    opt: Optional[str] = None
 
 
 class WebRTCVideoMetadata(BaseModel):

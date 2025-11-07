@@ -83,7 +83,6 @@ class VideoTransformTrackWithLoop(VideoStreamTrack):
         self._termination_date = termination_date
         self._terminate_event = terminate_event
         self.track: Optional[RemoteStreamTrack] = None
-        self._track_active: bool = False
 
         self._av_logging_set: bool = False
 
@@ -111,9 +110,6 @@ class VideoTransformTrackWithLoop(VideoStreamTrack):
     ):
         if not self.track:
             self.track = track
-
-    def close(self):
-        self._track_active = False
 
     async def recv(self):
         # Silencing swscaler warnings in multi-threading environment
@@ -315,26 +311,54 @@ async def init_rtc_peer_connection_with_loop(
         if webrtc_request.rtsp_url == WEBRTC_MODAL_RTSP_PLACEHOLDER:
             webrtc_request.rtsp_url = WEBRTC_MODAL_RTSP_PLACEHOLDER_URL
         logger.info("Processing RTSP URL: %s", webrtc_request.rtsp_url)
+        options = {
+            "rtsp_transport": "tcp",
+            "rtsp_flags": "prefer_tcp",
+            "stimeout": "2000000",  # 2s socket timeout
+        }
+        if "ffopts1" in webrtc_request.opt:
+            options = {
+                **options,
+                "fflags": "nobuffer",
+                "flags": "low_delay",
+                "max_delay": "0",
+                "reorder_queue_size": "0",
+                "avioflags": "direct",
+                "use_wallclock_as_timestamps": "1",
+                "analyzeduration": "0",
+                "probesize": "32",
+            }
+        if "ffopts2" in webrtc_request.opt:
+            options["vf"] = "fps=30"
+        if "ffopts3" in webrtc_request.opt:
+            options["vf"] = "fps=1"
+        if "ffopts4" in webrtc_request.opt:
+            options["vf"] = "scale=1280:-2,fps=30"
+
         player = MediaPlayer(
             webrtc_request.rtsp_url,
-            options={
-                "rtsp_transport": "tcp",
-                "rtsp_flags": "prefer_tcp",
-                "stimeout": "2000000",  # 2s socket timeout
-            },
+            options=options,
         )
-        if webrtc_request.webrtc_realtime_processing:
-            video_transform_track.set_track(
-                track=relay.subscribe(
-                    player.video,
-                    buffered=False if webrtc_request.webrtc_realtime_processing else True,
-                )
-            )
-        else:
+        if "player.video" in webrtc_request.opt:
             video_transform_track.set_track(
                 track=player.video,
             )
-        peer_connection.addTrack(video_transform_track)
+            peer_connection.addTrack(video_transform_track)
+        elif "relay" in webrtc_request.opt:
+            video_transform_track.set_track(
+                track=relay.subscribe(
+                    player.video,
+                )
+            )
+            peer_connection.addTrack(video_transform_track)
+        elif "realtime" in webrtc_request.opt:
+            video_transform_track.set_track(
+                track=relay.subscribe(
+                    player.video,
+                    buffered=False,
+                )
+            )
+            peer_connection.addTrack(video_transform_track)
 
     @peer_connection.on("track")
     def on_track(track: RemoteStreamTrack):
