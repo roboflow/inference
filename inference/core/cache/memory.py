@@ -5,6 +5,7 @@ from typing import Any, Optional
 
 from inference.core.cache.base import BaseCache
 from inference.core.env import MEMORY_CACHE_EXPIRE_INTERVAL
+from inference.core.logger import logger
 
 
 class MemoryCache(BaseCache):
@@ -158,9 +159,25 @@ class MemoryCache(BaseCache):
             self.set(key, lock, expire=expire)
         if expire is None:
             expire = -1
+
+        logger.debug(f"Thread {threading.current_thread().name} attempting to acquire cache lock: key='{key}', timeout={expire}s")
+        start_time = time.time()
         acquired = lock.acquire(timeout=expire)
+        elapsed = time.time() - start_time
+
         if not acquired:
-            raise TimeoutError()
+            logger.error(
+                f"Thread {threading.current_thread().name} FAILED to acquire cache lock after {elapsed:.2f}s. "
+                f"Key: '{key}', Timeout: {expire}s. "
+                f"Another thread is likely holding this lock."
+            )
+            raise TimeoutError(
+                f"Failed to acquire lock for cache key '{key}' after {expire} seconds. "
+                f"This suggests another thread/process is holding the lock. "
+                f"Lock key: {key}, Timeout: {expire}s"
+            )
+
+        logger.debug(f"Thread {threading.current_thread().name} acquired cache lock '{key}' after {elapsed:.2f}s")
         # refresh the lock
         self.set(key, lock, expire=expire)
         return lock

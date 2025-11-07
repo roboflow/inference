@@ -1,3 +1,4 @@
+import threading
 import time
 from contextlib import contextmanager
 from threading import Lock
@@ -87,6 +88,9 @@ class ModelManager:
         )
         resolved_identifier = model_id if model_id_alias is None else model_id_alias
         model_lock = self._get_lock_for_a_model(model_id=resolved_identifier)
+        logger.debug(
+            f"Thread {threading.current_thread().name} attempting to acquire model lock for '{resolved_identifier}'"
+        )
         with acquire_with_timeout(lock=model_lock) as acquired:
             if not acquired:
                 # if failed to acquire - then in use, no need to purge lock
