@@ -39,8 +39,8 @@ class InferenceExpObjectDetectionModelAdapter(Model):
         self._exp_model: ObjectDetectionModel = AutoModel.from_pretrained(
             model_id_or_path=model_id, api_key=self.api_key
         )
-        if hasattr(self._exp_model, "optimize_for_inference"):
-            self._exp_model.optimize_for_inference()
+        # if hasattr(self._exp_model, "optimize_for_inference"):
+        #     self._exp_model.optimize_for_inference()
 
         self.class_names = list(self._exp_model.class_names)
 
