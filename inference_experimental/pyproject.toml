@@ -1,6 +1,6 @@
 [project]
 name = "inference-exp"
-version = "0.15.5"
+version = "0.15.6"
 description = "Experimental vresion of inference package which is supposed to evolve into inference 1.0"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
@@ -85,9 +85,7 @@ grounding-dino = [
   "rf_groundingdino==0.2.0"
 ]
 trt10 = [
-  "tensorrt>=10.0.0,<11.0.0; platform_system == 'Linux' or platform_system == 'Windows'",
   "tensorrt-cu12>=10.0.0,<11.0.0; platform_system == 'Linux' or platform_system == 'Windows'",
-  "tensorrt-lean>=10.0.0,<11.0.0; platform_system == 'Linux' or platform_system == 'Windows'",
   "tensorrt-lean-cu12>=10.0.0,<11.0.0; platform_system == 'Linux' or platform_system == 'Windows'",
    "pycuda>=2025.0.0,<2026.0.0",
 ]
