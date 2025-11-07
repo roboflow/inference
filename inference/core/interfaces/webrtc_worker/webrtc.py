@@ -314,30 +314,27 @@ async def init_rtc_peer_connection_with_loop(
         logger.info("Processing RTSP URL: %s", webrtc_request.rtsp_url)
         options = {
             "rtsp_transport": "tcp",
-            "rtsp_flags": "prefer_tcp",
-            "stimeout": "2000000",  # 2s socket timeout
         }
         if "ffopts1" in webrtc_request.opt:
             options = {
                 **options,
                 "fflags": "nobuffer",
                 "flags": "low_delay",
-                "max_delay": "0",
-                "reorder_queue_size": "0",
                 "avioflags": "direct",
-                "use_wallclock_as_timestamps": "1",
                 "analyzeduration": "0",
                 "probesize": "32",
+                "framedrop": None,
             }
         if "ffopts2" in webrtc_request.opt:
-            options["vf"] = "fps=30"
-        if "ffopts3" in webrtc_request.opt:
-            options["vf"] = "fps=1"
-        if "ffopts4" in webrtc_request.opt:
-            options["vf"] = "scale=1280:-2,fps=30"
+            options = {
+                **options,
+                "rtsp_flags": "prefer_tcp",
+                "stimeout": "2000000",  # 2s socket timeout
+            }
 
         player = MediaPlayer(
             webrtc_request.rtsp_url,
+            format="rtsp",
             options=options,
         )
         if "player.video" in webrtc_request.opt:
