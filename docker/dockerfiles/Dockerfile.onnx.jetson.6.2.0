@@ -19,6 +19,7 @@ RUN apt-get update -y && \
     curl \
     cmake \
     ninja-build \
+    file \
     libproj-dev \
     libsqlite3-dev \
     libtiff-dev \
@@ -160,6 +161,7 @@ RUN apt-get update -y && \
     rustc \
     cargo \
     curl \
+    file \
     libproj22 \
     libsqlite3-0 \
     libtiff5 \
