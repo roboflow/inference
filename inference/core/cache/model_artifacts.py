@@ -230,12 +230,6 @@ def clear_cache(model_id: Optional[str] = None, delete_from_disk: bool = True) -
             cache_dir,
             e,
         )
-    finally:
-        try:
-            if os.path.exists(lock_file):
-                os.unlink(lock_file)  # Clean up lock file
-        except OSError:
-            pass  # Best effort cleanup
 
 
 def get_cache_dir(model_id: Optional[str] = None) -> str:
