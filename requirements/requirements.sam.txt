@@ -4,4 +4,4 @@ rasterio~=1.4.0
 pycocotools>=2.0.10
 torch>=2.8.0
 torchvision>=0.23.0
-flash-attn>=2.8.2
+flash-attn==2.8.2

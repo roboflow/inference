@@ -34,7 +34,9 @@ RUN apt-get update -y && \
     libwebp-dev \
     libzstd-dev \
     liblzma-dev \
-    && rm -rf /var/lib/apt/lists/*
+    && \
+    apt-get remove -y libgdal-dev gdal-bin libgdal30 2>/dev/null || true && \
+    rm -rf /var/lib/apt/lists/*
 
 # Compile GDAL from source to get version >= 3.5 for rasterio 1.4.0 compatibility
 RUN wget https://github.com/OSGeo/gdal/releases/download/v3.11.5/gdal-3.11.5.tar.gz && \
@@ -60,6 +62,10 @@ ENV GDAL_CONFIG=/usr/local/bin/gdal-config \
     GDAL_DATA=/usr/local/share/gdal \
     LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH \
     PATH=/usr/local/bin:$PATH
+
+# Verify GDAL installation
+RUN gdal-config --version && \
+    test "$(gdal-config --version | cut -d. -f1,2)" = "3.11" || (echo "GDAL version mismatch!" && exit 1)
 
 RUN wget -q https://github.com/Kitware/CMake/releases/download/v3.30.5/cmake-3.30.5-linux-aarch64.sh && \
     chmod +x cmake-3.30.5-linux-aarch64.sh && \
