@@ -85,7 +85,7 @@ COPY requirements/requirements.sam.txt \
     ./
 
 RUN python3 -m pip install --upgrade pip && \
-    python3 -m pip install "torch>=2.0.1,<2.7.0" "torchvision>=0.15.2" \
+    python3 -m pip install "torch>=2.8.0" "torchvision>=0.23.0" \
     --index-url https://pypi.jetson-ai-lab.io/jp6/cu126
 
 RUN uv pip install --system --break-system-packages --index-strategy unsafe-best-match \
