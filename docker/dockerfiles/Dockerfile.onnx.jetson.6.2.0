@@ -20,6 +20,7 @@ RUN apt-get update -y && \
     cmake \
     ninja-build \
     file \
+    libopenblas0 \
     libproj-dev \
     libsqlite3-dev \
     libtiff-dev \
