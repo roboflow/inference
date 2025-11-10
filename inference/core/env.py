@@ -731,3 +731,13 @@ WEBRTC_MODAL_ROBOFLOW_INTERNAL_SERVICE_NAME = os.getenv(
 )
 WEBRTC_MODAL_RTSP_PLACEHOLDER = os.getenv("WEBRTC_MODAL_RTSP_PLACEHOLDER")
 WEBRTC_MODAL_RTSP_PLACEHOLDER_URL = os.getenv("WEBRTC_MODAL_RTSP_PLACEHOLDER_URL")
+
+# Comma-separated list of supported regions for Modal WebRTC workers
+# e.g., "us-east-1,us-west-2,eu-west-1"
+WEBRTC_MODAL_SUPPORTED_REGIONS = os.getenv(
+    "WEBRTC_MODAL_SUPPORTED_REGIONS", "us-east-1"
+).split(",")
+# Default region to use when none is specified in request
+WEBRTC_MODAL_DEFAULT_REGION = os.getenv("WEBRTC_MODAL_DEFAULT_REGION", "us-east-1")
+# Default cloud provider (aws or gcp)
+WEBRTC_MODAL_CLOUD = os.getenv("WEBRTC_MODAL_CLOUD", "aws")
