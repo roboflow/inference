@@ -112,7 +112,6 @@ RUN uv pip install --system --break-system-packages --index-strategy unsafe-best
     jupyterlab \
     "setuptools<=75.5.0" \
     packaging \
-    numpy \
     && rm -rf ~/.cache/uv
 
 WORKDIR /tmp
