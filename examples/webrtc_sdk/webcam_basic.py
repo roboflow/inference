@@ -9,7 +9,8 @@ Usage:
       --workflow-id <your_workflow_id> \
       --image-input-name image \
       [--api-key <ROBOFLOW_API_KEY>] \
-      [--stream-output <output_name>]
+      [--stream-output <output_name>] \
+      [--data-output <output_name>]
 
 Press 'q' in the preview window to exit.
 """
@@ -19,6 +20,7 @@ import cv2
 
 from inference_sdk import InferenceHTTPClient
 from inference_sdk.webrtc.config import WebcamConfig
+import json
 
 
 def parse_args() -> argparse.Namespace:
@@ -31,10 +33,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--width", type=int, default=None)
     p.add_argument("--height", type=int, default=None)
     p.add_argument("--stream-output", default=None, help="Name of the workflow output to stream (e.g., 'image_output')")
+    p.add_argument("--data-output", default=None, help="Name of the workflow output to receive via data channel")
+    p.add_argument("--verbose", action="store_true", help="Print WebRTC connection and data channel events")
     return p.parse_args()
 
 
 def main() -> None:
+    import sys
     args = parse_args()
     client = InferenceHTTPClient.init(api_url=args.api_url, api_key=args.api_key)
 
@@ -43,7 +48,8 @@ def main() -> None:
         resolution = (args.width, args.height)
 
     stream_output = [args.stream_output] if args.stream_output else []
-    cfg = WebcamConfig(resolution=resolution, stream_output=stream_output)
+    data_output = [args.data_output] if args.data_output else []
+    cfg = WebcamConfig(resolution=resolution, stream_output=stream_output, data_output=data_output)
 
     with client.webrtc.use_webcam(
         image_input_name=args.image_input_name,
