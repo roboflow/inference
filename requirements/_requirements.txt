@@ -5,7 +5,7 @@ cachetools<6.0.0
 cython~=3.0.0
 python-dotenv~=1.0.0
 fastapi>=0.100,<0.116  # be careful with upper pin - fastapi might remove support for on_event
-numpy>=2.0.0,<2.3.0
+numpy>=1.26.0,<2.3.0
 opencv-python>=4.8.1.78,<=4.10.0.84
 opencv-contrib-python>=4.8.1.78,<=4.10.0.84  # Note: opencv-python considers this as a bad practice, but since our dependencies rely on both we pin both here
 pillow>=11.0,<12.0
