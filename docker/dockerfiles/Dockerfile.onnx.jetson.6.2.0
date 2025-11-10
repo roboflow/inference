@@ -169,6 +169,7 @@ RUN apt-get update -y && \
     cargo \
     curl \
     file \
+    libopenblas0 \
     libproj22 \
     libsqlite3-0 \
     libtiff5 \
