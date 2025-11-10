@@ -615,6 +615,12 @@ class HttpInterface(BaseInterface):
                 operations_timeout=operations_timeout,
             )
 
+        # Register v1 API endpoints
+        from inference.core.interfaces.http.v1.router import create_v1_router
+        logger.info("Registering v1 API endpoints")
+        v1_router = create_v1_router(model_manager)
+        app.include_router(v1_router)
+
         def process_inference_request(
             inference_request: InferenceRequest,
             countinference: Optional[bool] = None,
