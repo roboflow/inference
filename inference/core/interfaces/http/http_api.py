@@ -688,6 +688,22 @@ class HttpInterface(BaseInterface):
             )
             return orjson_response(response=response)
 
+        # Include new v1 router with header auth and multipart endpoints
+        try:
+            from inference.core.interfaces.http.v1 import create_v1_router
+
+            app.include_router(
+                create_v1_router(
+                    process_inference_request=process_inference_request,
+                    process_workflow_inference_request=process_workflow_inference_request,
+                ),
+                prefix="/v1",
+                tags=["v1"],
+            )
+        except Exception as _v1_router_error:
+            # Do not fail server startup if v1 router cannot be mounted
+            logger.warning(f"Could not mount /v1 router. Details: {_v1_router_error}")
+
         def load_core_model(
             inference_request: InferenceRequest,
             api_key: Optional[str] = None,
