@@ -13,7 +13,7 @@ from aiortc import (
     RTCSessionDescription,
     VideoStreamTrack,
 )
-from aiortc.contrib.media import MediaPlayer, MediaRelay
+from aiortc.contrib.media import MediaPlayer, MediaRelay, PlayerStreamTrack
 from aiortc.rtcrtpreceiver import RemoteStreamTrack
 from av import VideoFrame
 from av import logging as av_logging
@@ -130,6 +130,9 @@ class VideoTransformTrackWithLoop(VideoStreamTrack):
             logger.info("Timeout reached, terminating inference pipeline")
             self._terminate_event.set()
 
+        if isinstance(self.track, PlayerStreamTrack):
+            while self.track._queue.qsize() > 30:
+                self.track._queue.get_nowait()
         frame: VideoFrame = await self.track.recv()
 
         self._received_frames += 1
@@ -317,6 +320,7 @@ async def init_rtc_peer_connection_with_loop(
         logger.info("Processing RTSP URL: %s", webrtc_request.rtsp_url)
         player = MediaPlayer(
             webrtc_request.rtsp_url,
+            format="rtsp",
             options={
                 "rtsp_transport": "tcp",
                 "rtsp_flags": "prefer_tcp",
@@ -324,10 +328,7 @@ async def init_rtc_peer_connection_with_loop(
             },
         )
         video_transform_track.set_track(
-            track=relay.subscribe(
-                player.video,
-                buffered=False if webrtc_request.webrtc_realtime_processing else True,
-            )
+            track=player.video,
         )
         peer_connection.addTrack(video_transform_track)
 
