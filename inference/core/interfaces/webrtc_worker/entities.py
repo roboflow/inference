@@ -22,12 +22,8 @@ class WebRTCWorkerRequest(BaseModel):
     data_output: Optional[List[Optional[str]]] = Field(default_factory=list)
     declared_fps: Optional[float] = None
     rtsp_url: Optional[str] = None
-    region: Optional[str] = Field(
-        default=None,
-        description="Modal region to run the function in (e.g., 'us-east-1', 'us-west-2', 'eu-west-1')",
-    )
     instance_type: Optional[str] = Field(
-        default=None,
+        default="gpu",
         description="Instance type: 'cpu' or 'gpu'",
     )
 
