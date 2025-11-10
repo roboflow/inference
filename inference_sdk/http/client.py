@@ -244,6 +244,22 @@ class InferenceHTTPClient:
         """
         return self.__selected_model
 
+    @property
+    def webrtc(self):
+        """Lazy accessor for the WebRTC client namespace.
+
+        Returns:
+            WebRTCClient: Namespaced WebRTC API bound to this HTTP client.
+        """
+        try:
+            return self.__webrtc_client  # type: ignore[attr-defined]
+        except AttributeError:
+            # Lazy import to avoid optional dependency cost if unused
+            from inference_sdk.webrtc.client import WebRTCClient  # noqa: WPS433
+
+            self.__webrtc_client = WebRTCClient(self)  # type: ignore[attr-defined]
+            return self.__webrtc_client  # type: ignore[attr-defined]
+
     @contextmanager
     def use_configuration(
         self, inference_configuration: InferenceConfiguration
