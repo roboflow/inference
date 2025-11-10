@@ -304,8 +304,27 @@ def load_image_from_buffer(
     Returns:
         Image.Image: The loaded PIL image.
     """
-    value.seek(0)
-    image_np = np.frombuffer(value.read(), np.uint8)
+    # Accept seekable file-like objects, raw bytes/bytearray, or iterables of bytes
+    try:
+        if hasattr(value, "read"):
+            try:
+                if hasattr(value, "seek"):
+                    value.seek(0)
+            except Exception:
+                # Some inputs may not be seekable; ignore
+                pass
+            raw_bytes = value.read()
+        elif isinstance(value, (bytes, bytearray)):
+            raw_bytes = bytes(value)
+        else:
+            # Handle non-seekable iterators like pydantic SerializationIterator
+            raw_bytes = b"".join(value)
+    except Exception as error:
+        raise InputImageLoadError(
+            message="Could not load valid image from buffer.",
+            public_message="Could not decode bytes into image.",
+        ) from error
+    image_np = np.frombuffer(raw_bytes, np.uint8)
     result = cv2.imdecode(image_np, cv_imread_flags)
     if result is None:
         raise InputImageLoadError(

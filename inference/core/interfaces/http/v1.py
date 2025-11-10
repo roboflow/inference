@@ -77,24 +77,38 @@ def create_v1_router(
         class_filter_list = (
             [c.strip() for c in class_filter.split(",")] if class_filter else None
         )
-        req = ObjectDetectionInferenceRequest(
-            api_key=api_key,
-            model_id=model_id,
-            image=image_payload,
-            confidence=confidence,
-            iou_threshold=iou_threshold,
-            max_detections=max_detections,
-            class_agnostic_nms=class_agnostic_nms,
-            class_filter=class_filter_list,
-            fix_batch_size=fix_batch_size,
-            visualize_predictions=visualize_predictions,
-            visualization_labels=visualization_labels,
-            visualization_stroke_width=visualization_stroke_width,
-            disable_preproc_auto_orient=disable_preproc_auto_orient,
-            disable_preproc_contrast=disable_preproc_contrast,
-            disable_preproc_grayscale=disable_preproc_grayscale,
-            disable_preproc_static_crop=disable_preproc_static_crop,
-        )
+        req_kwargs = {
+            "api_key": api_key,
+            "model_id": model_id,
+            "image": image_payload,
+        }
+        if confidence is not None:
+            req_kwargs["confidence"] = confidence
+        if iou_threshold is not None:
+            req_kwargs["iou_threshold"] = iou_threshold
+        if max_detections is not None:
+            req_kwargs["max_detections"] = max_detections
+        if class_agnostic_nms is not None:
+            req_kwargs["class_agnostic_nms"] = class_agnostic_nms
+        if class_filter_list is not None:
+            req_kwargs["class_filter"] = class_filter_list
+        if fix_batch_size is not None:
+            req_kwargs["fix_batch_size"] = fix_batch_size
+        if visualize_predictions is not None:
+            req_kwargs["visualize_predictions"] = visualize_predictions
+        if visualization_labels is not None:
+            req_kwargs["visualization_labels"] = visualization_labels
+        if visualization_stroke_width is not None:
+            req_kwargs["visualization_stroke_width"] = visualization_stroke_width
+        if disable_preproc_auto_orient is not None:
+            req_kwargs["disable_preproc_auto_orient"] = disable_preproc_auto_orient
+        if disable_preproc_contrast is not None:
+            req_kwargs["disable_preproc_contrast"] = disable_preproc_contrast
+        if disable_preproc_grayscale is not None:
+            req_kwargs["disable_preproc_grayscale"] = disable_preproc_grayscale
+        if disable_preproc_static_crop is not None:
+            req_kwargs["disable_preproc_static_crop"] = disable_preproc_static_crop
+        req = ObjectDetectionInferenceRequest(**req_kwargs)
         return process_inference_request(req)
 
     @router.post(
@@ -115,18 +129,26 @@ def create_v1_router(
         api_key: Optional[str] = Depends(_extract_api_key),
     ):
         image_payload = _files_to_image_payloads(image)
-        req = ClassificationInferenceRequest(
-            api_key=api_key,
-            model_id=model_id,
-            image=image_payload,
-            confidence=confidence,
-            visualize_predictions=visualize_predictions,
-            visualization_stroke_width=visualization_stroke_width,
-            disable_preproc_auto_orient=disable_preproc_auto_orient,
-            disable_preproc_contrast=disable_preproc_contrast,
-            disable_preproc_grayscale=disable_preproc_grayscale,
-            disable_preproc_static_crop=disable_preproc_static_crop,
-        )
+        req_kwargs = {
+            "api_key": api_key,
+            "model_id": model_id,
+            "image": image_payload,
+        }
+        if confidence is not None:
+            req_kwargs["confidence"] = confidence
+        if visualize_predictions is not None:
+            req_kwargs["visualize_predictions"] = visualize_predictions
+        if visualization_stroke_width is not None:
+            req_kwargs["visualization_stroke_width"] = visualization_stroke_width
+        if disable_preproc_auto_orient is not None:
+            req_kwargs["disable_preproc_auto_orient"] = disable_preproc_auto_orient
+        if disable_preproc_contrast is not None:
+            req_kwargs["disable_preproc_contrast"] = disable_preproc_contrast
+        if disable_preproc_grayscale is not None:
+            req_kwargs["disable_preproc_grayscale"] = disable_preproc_grayscale
+        if disable_preproc_static_crop is not None:
+            req_kwargs["disable_preproc_static_crop"] = disable_preproc_static_crop
+        req = ClassificationInferenceRequest(**req_kwargs)
         return process_inference_request(req)
 
     @router.post(
@@ -154,11 +176,7 @@ def create_v1_router(
         if image:
             # Convention: map to 'image' workflow input name
             image_payload = _files_to_image_payloads(image)
-            resolved_inputs["image"] = (
-                image_payload
-                if isinstance(image_payload, list)
-                else {"type": "multipart", "value": image[0].file}
-            )
+            resolved_inputs["image"] = image_payload
         req = WorkflowSpecificationInferenceRequest(
             api_key=api_key, specification=specification, inputs=resolved_inputs
         )
@@ -172,5 +190,3 @@ def create_v1_router(
         )
 
     return router
-
-
