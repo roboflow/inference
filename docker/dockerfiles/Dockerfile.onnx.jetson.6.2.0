@@ -76,6 +76,7 @@ RUN wget -q https://github.com/Kitware/CMake/releases/download/v3.30.5/cmake-3.3
 RUN curl -LsSf https://astral.sh/uv/install.sh | env INSTALLER_NO_MODIFY_PATH=1 sh && \
     ln -s /root/.local/bin/uv /usr/local/bin/uv
 
+# Cache bust: NumPy compatibility fix for PyTorch 2.8.0 - 2025-11-10
 COPY requirements/requirements.sam.txt \
     requirements/requirements.clip.txt \
     requirements/requirements.http.txt \
