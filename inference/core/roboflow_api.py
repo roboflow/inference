@@ -948,7 +948,7 @@ def post_to_roboflow_api(
     ] = None,
 ) -> dict:
     """Generic function to make a POST request to the Roboflow API.
-    
+
     Args:
         endpoint: API endpoint path
         api_key: Roboflow API key
@@ -956,6 +956,7 @@ def post_to_roboflow_api(
         params: Additional URL parameters
         http_errors_handlers: Optional custom HTTP error handlers by status code
     """
+
     @wrap_roboflow_api_errors(http_errors_handlers=http_errors_handlers)
     def _make_request():
         url_params = []
@@ -980,5 +981,5 @@ def post_to_roboflow_api(
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
-    
+
     return _make_request()

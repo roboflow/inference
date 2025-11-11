@@ -757,10 +757,12 @@ def send_email_via_roboflow_proxy(
             error_data = response.json()
             # API returns 'details' field with the actual message, 'error' is generic
             # Prioritize 'details' over 'error' for more specific messages
-            api_error_message = error_data.get("details") or error_data.get("error") or str(http_error)
+            api_error_message = (
+                error_data.get("details") or error_data.get("error") or str(http_error)
+            )
         except Exception:
             api_error_message = str(http_error)
-        
+
         # Raise appropriate exception with the actual API error message
         if status_code == 403:
             raise RoboflowAPIForbiddenError(api_error_message) from http_error
@@ -841,8 +843,10 @@ def send_email_via_roboflow_proxy(
     except RoboflowAPIForbiddenError as error:
         # Handle 403 errors (whitelist violations)
         error_message = str(error)
-        logging.warning(f"Email rejected by proxy due to access restrictions: {error_message}")
-        
+        logging.warning(
+            f"Email rejected by proxy due to access restrictions: {error_message}"
+        )
+
         # Check if it's a workspace member restriction
         # The API returns detailed error messages about non-workspace members
         if "non-workspace members" in error_message.lower():
@@ -856,9 +860,13 @@ def send_email_via_roboflow_proxy(
         # Handle rate limiting (429) and other API errors
         error_message = str(error)
         logging.warning(f"Email proxy API error: {error_message}")
-        
+
         # Check for payload too large (413)
-        if "413" in error_message or "payload too large" in error_message.lower() or "too large" in error_message.lower():
+        if (
+            "413" in error_message
+            or "payload too large" in error_message.lower()
+            or "too large" in error_message.lower()
+        ):
             return True, (
                 "Failed to send email: attachment size exceeds the 5MB limit. "
                 "For image attachments, use the Image Preprocessing block to resize images before sending. "
