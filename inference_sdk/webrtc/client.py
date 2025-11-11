@@ -1,58 +1,144 @@
+"""WebRTC client for the Inference SDK."""
+
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Union
 
 from inference_sdk.http.client import InferenceHTTPClient
-from inference_sdk.webrtc.config import WebcamConfig
+from inference_sdk.webrtc.config import StreamConfig
 from inference_sdk.webrtc.session import WebRTCSession
+from inference_sdk.webrtc.sources import StreamSource
 
 
 class WebRTCClient:
-    """Namespaced WebRTC API bound to an InferenceHTTPClient instance."""
+    """Namespaced WebRTC API bound to an InferenceHTTPClient instance.
+
+    Provides a unified streaming interface for different video sources
+    (webcam, RTSP, video files, manual frames).
+    """
 
     def __init__(self, http_client: InferenceHTTPClient) -> None:
+        """Initialize WebRTC client.
+
+        Args:
+            http_client: Parent HTTP client instance
+        """
         self._client = http_client
 
-    def use_webcam(
+    def stream(
         self,
+        source: StreamSource,
         *,
-        image_input_name: str,
-        workspace_name: Optional[str] = None,
-        workflow_id: Optional[str] = None,
-        workflow_specification: Optional[dict] = None,
-        config: Optional[WebcamConfig] = None,
+        workflow: Union[str, dict],
+        image_input: str = "image",
+        workspace: Optional[str] = None,
+        config: Optional[StreamConfig] = None,
     ) -> WebRTCSession:
-        """Open a WebRTC webcam session.
+        """Create a WebRTC streaming session.
 
-        Provide either (workspace_name + workflow_id) or workflow_specification.
-        image_input_name is required.
+        Args:
+            source: Stream source (WebcamSource, RTSPSource, VideoFileSource, or ManualSource)
+            workflow: Either a workflow ID (str) or workflow specification (dict)
+            image_input: Name of the image input in the workflow
+            workspace: Workspace name (required if workflow is an ID string)
+            config: Stream configuration (output routing, FPS, TURN server, etc.)
+
+        Returns:
+            WebRTCSession context manager
+
+        Raises:
+            ValueError: If workflow/workspace parameters are invalid
+
+        Examples:
+            # Webcam streaming
+            from inference_sdk.webrtc import WebcamSource
+
+            with client.webrtc.stream(
+                source=WebcamSource(resolution=(1920, 1080)),
+                workflow="object-detection",
+                workspace="my-workspace"
+            ) as session:
+                for frame in session.video():
+                    cv2.imshow("Frame", frame)
+
+            # RTSP streaming
+            from inference_sdk.webrtc import RTSPSource
+
+            with client.webrtc.stream(
+                source=RTSPSource("rtsp://camera.local/stream"),
+                workflow=workflow_spec_dict
+            ) as session:
+                @session.on_data("predictions")
+                def handle_predictions(data):
+                    print("Got predictions:", data)
+
+                session.wait()
+
+            # Manual frame sending
+            from inference_sdk.webrtc import ManualSource
+
+            manual = ManualSource()
+            with client.webrtc.stream(source=manual, ...) as session:
+                for frame in my_frames:
+                    manual.send(frame)
         """
-        if not image_input_name:
-            raise ValueError("image_input_name is required")
-        spec_mode = workflow_specification is not None
-        id_mode = workspace_name is not None and workflow_id is not None
-        if not (spec_mode ^ id_mode):
-            raise ValueError(
-                "Provide exactly one of: (workspace_name + workflow_id) or workflow_specification"
-            )
+        # Validate workflow configuration
+        workflow_config = self._parse_workflow_config(workflow, workspace)
 
-        cfg = config or WebcamConfig()
-        # Access base url and api key from client (private fields)
-        api_url = getattr(self._client, f"_{self._client.__class__.__name__}__api_url")
-        api_key = getattr(self._client, f"_{self._client.__class__.__name__}__api_key")
+        # Use default config if not provided
+        if config is None:
+            config = StreamConfig()
 
+        # Get API credentials from parent client
+        api_url = self._get_api_url()
+        api_key = self._get_api_key()
+
+        # Create session
         return WebRTCSession(
             api_url=api_url,
             api_key=api_key,
-            workspace_name=workspace_name,
-            workflow_id=workflow_id,
-            workflow_specification=workflow_specification,
-            image_input_name=image_input_name,
-            resolution=cfg.resolution,
-            webrtc_realtime_processing=cfg.webrtc_realtime_processing,
-            webrtc_turn_config=cfg.webrtc_turn_config,
-            stream_output=cfg.stream_output,
-            data_output=cfg.data_output,
-            declared_fps=cfg.declared_fps,
-            workflows_parameters=cfg.workflows_parameters,
+            source=source,
+            image_input_name=image_input,
+            workflow_config=workflow_config,
+            stream_config=config,
         )
+
+    def _parse_workflow_config(
+        self, workflow: Union[str, dict], workspace: Optional[str]
+    ) -> dict:
+        """Parse workflow configuration from inputs.
+
+        Args:
+            workflow: Either workflow ID (str) or specification (dict)
+            workspace: Workspace name (required for ID mode)
+
+        Returns:
+            Dictionary with workflow configuration
+
+        Raises:
+            ValueError: If configuration is invalid
+        """
+        if isinstance(workflow, str):
+            # Workflow ID mode - requires workspace
+            if not workspace:
+                raise ValueError(
+                    "workspace parameter required when workflow is an ID string"
+                )
+            return {"workflow_id": workflow, "workspace_name": workspace}
+        elif isinstance(workflow, dict):
+            # Workflow specification mode
+            return {"workflow_specification": workflow}
+        else:
+            raise ValueError(
+                f"workflow must be a string (ID) or dict (specification), got {type(workflow)}"
+            )
+
+    def _get_api_url(self) -> str:
+        """Get API URL from parent client."""
+        # Access private field using name mangling
+        return getattr(self._client, f"_{self._client.__class__.__name__}__api_url")
+
+    def _get_api_key(self) -> Optional[str]:
+        """Get API key from parent client."""
+        # Access private field using name mangling
+        return getattr(self._client, f"_{self._client.__class__.__name__}__api_key")

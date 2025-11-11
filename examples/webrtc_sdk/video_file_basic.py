@@ -1,15 +1,14 @@
 """
-Minimal sample using the SDK's WebRTC namespace to stream webcam frames
+Minimal sample using the SDK's WebRTC namespace to stream video file frames
 to a running inference server with WebRTC worker enabled.
 
 Usage:
-  python examples/webrtc_sdk/webcam_basic.py \\
+  python examples/webrtc_sdk/video_file_basic.py \\
+      --video-path /path/to/video.mp4 \\
       --workspace-name <your_workspace> \\
       --workflow-id <your_workflow_id> \\
       [--api-url http://localhost:9001] \\
       [--api-key <ROBOFLOW_API_KEY>] \\
-      [--width 1920] \\
-      [--height 1080] \\
       [--stream-output <output_name>] \\
       [--data-output <output_name>]
 
@@ -20,18 +19,19 @@ import argparse
 import cv2
 
 from inference_sdk import InferenceHTTPClient
-from inference_sdk.webrtc import WebcamSource, StreamConfig
+from inference_sdk.webrtc import VideoFileSource, StreamConfig
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser("WebRTC SDK webcam_basic")
+    p = argparse.ArgumentParser("WebRTC SDK video_file_basic")
+    p.add_argument(
+        "--video-path", required=True, help="Path to video file to process"
+    )
     p.add_argument("--api-url", default="https://serverless.roboflow.com")
     p.add_argument("--workspace-name", required=True)
     p.add_argument("--workflow-id", required=True)
     p.add_argument("--image-input-name", default="image")
     p.add_argument("--api-key", default=None)
-    p.add_argument("--width", type=int, default=None)
-    p.add_argument("--height", type=int, default=None)
     p.add_argument(
         "--stream-output",
         default=None,
@@ -50,10 +50,7 @@ def main() -> None:
     client = InferenceHTTPClient.init(api_url=args.api_url, api_key=args.api_key)
 
     # Prepare source
-    resolution = None
-    if args.width and args.height:
-        resolution = (args.width, args.height)
-    source = WebcamSource(resolution=resolution)
+    source = VideoFileSource(args.video_path)
 
     # Prepare config
     stream_output = [args.stream_output] if args.stream_output else []
@@ -73,9 +70,9 @@ def main() -> None:
         def on_message(msg):  # noqa: ANN001
             print(msg)
 
-        # Stream video frames
+        # Stream video from the server (if stream_output is configured)
         for frame in session.video():
-            cv2.imshow("WebRTC SDK - Webcam", frame)
+            cv2.imshow("WebRTC SDK - Video File", frame)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
 

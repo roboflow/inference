@@ -1,11 +1,14 @@
+"""WebRTC session management."""
+
 import asyncio
+import json
+import logging
 import threading
 from contextlib import AbstractContextManager
-from dataclasses import dataclass
+from queue import Queue
 from typing import Any, Callable, Iterator, List, Optional
 
 import av
-import cv2
 import numpy as np
 import requests
 from aiortc import (
@@ -14,54 +17,29 @@ from aiortc import (
     RTCIceServer,
     RTCPeerConnection,
     RTCSessionDescription,
-    VideoStreamTrack,
 )
 from aiortc.contrib.media import MediaRelay
 from av import VideoFrame
-from queue import Queue
 
+from inference_sdk.webrtc.config import StreamConfig
+from inference_sdk.webrtc.sources import StreamSource
+
+logger = logging.getLogger(__name__)
 # Suppress FFmpeg colorspace conversion warnings
 av.logging.set_level(av.logging.ERROR)
 
 
-class _WebcamVideoTrack(VideoStreamTrack):
-    """A VideoStreamTrack that pulls frames from OpenCV in the event loop."""
-
-    def __init__(self, camera_index: int = 0, resolution: Optional[tuple[int, int]] = None):
-        super().__init__()
-        self._cap = cv2.VideoCapture(camera_index)
-        if not self._cap.isOpened():
-            raise RuntimeError("Could not open webcam")
-        if resolution:
-            w, h = resolution
-            self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, w)
-            self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, h)
-
-    def get_declared_fps(self) -> Optional[float]:
-        fps = self._cap.get(cv2.CAP_PROP_FPS)
-        return float(fps) if fps and fps > 0 else None
-
-    async def recv(self) -> VideoFrame:  # type: ignore[override]
-        # Blocking read from webcam
-        ok, frame = self._cap.read()
-        if not ok or frame is None:
-            raise RuntimeError("Failed to read from webcam")
-        vf = VideoFrame.from_ndarray(frame, format="bgr24")
-        vf.pts, vf.time_base = await self.next_timestamp()
-        return vf
-
-    def release(self) -> None:
-        try:
-            self._cap.release()
-        except Exception:
-            pass
-
-
-@dataclass
 class _VideoStream:
-    _frames: "Queue[Optional[np.ndarray]]"
+    """Wrapper for video frame queue providing iterator interface."""
 
-    def stream(self) -> Iterator[np.ndarray]:
+    def __init__(self, frames: "Queue[Optional[np.ndarray]]"):
+        self._frames = frames
+
+    def __call__(self) -> Iterator[np.ndarray]:
+        """Iterate over video frames.
+
+        Yields BGR numpy arrays until the stream ends (None received).
+        """
         while True:
             frame = self._frames.get()
             if frame is None:
@@ -70,70 +48,128 @@ class _VideoStream:
 
 
 class _DataChannel:
+    """Data channel handler managing event-based callbacks."""
+
     def __init__(self) -> None:
-        self._handlers: dict[str, List[Callable[[Any], None]]] = {"message": []}
+        self._handlers: dict[str, List[Callable[[Any], None]]] = {}
+        self._global_handler: Optional[Callable[[Any], None]] = None
 
     def bind(self, channel: RTCDataChannel) -> None:
+        """Bind to an RTCDataChannel and register message handler.
+
+        Args:
+            channel: The data channel to bind to
+        """
+
         @channel.on("message")
         def _on_message(message: Any) -> None:  # noqa: ANN401
-            for cb in list(self._handlers.get("message", [])):
+            # Call global handler if registered (receives raw message)
+            if self._global_handler:
                 try:
-                    cb(message if isinstance(message, dict) else message)
+                    self._global_handler(message)
                 except Exception:
-                    # best-effort; do not crash
-                    pass
+                    logger.warning(
+                        "Error calling global data channel handler", exc_info=True
+                    )
 
-    def on(self, event: str) -> Callable[[Callable[[Any], None]], Callable[[Any], None]]:
+            # Parse message and route to specific handlers
+            try:
+                parsed_message = json.loads(message)
+                output_name = parsed_message.get("output_name")
+                if output_name and output_name in self._handlers:
+                    serialized_data = parsed_message.get("serialized_output_data")
+                    for cb in list(self._handlers[output_name]):
+                        try:
+                            cb(serialized_data)
+                        except Exception:
+                            logger.warning(
+                                f"Error calling handler for output '{output_name}'",
+                                exc_info=True,
+                            )
+            except json.JSONDecodeError:
+                logger.warning("Failed to parse data channel message as JSON")
+
+    def on_data(
+        self, output_name: Optional[str] = None
+    ) -> Callable[[Callable[[Any], None]], Callable[[Any], None]]:
+        """Decorator to register data handlers.
+
+        Args:
+            output_name: If provided, handler is called only for this output.
+                        If None, handler receives all raw messages.
+
+        Returns:
+            Decorator function
+
+        Examples:
+            # Handle specific output
+            @session.on_data("predictions")
+            def handle_predictions(data):
+                print("Predictions:", data)
+
+            # Handle all messages
+            @session.on_data()
+            def handle_all(raw_message):
+                print("Raw message:", raw_message)
+        """
+
         def decorator(fn: Callable[[Any], None]) -> Callable[[Any], None]:
-            self._handlers.setdefault(event, []).append(fn)
+            if output_name is None:
+                self._global_handler = fn
+            else:
+                if output_name not in self._handlers:
+                    self._handlers[output_name] = []
+                self._handlers[output_name].append(fn)
             return fn
 
         return decorator
 
 
 class WebRTCSession(AbstractContextManager["WebRTCSession"]):
-    """Minimal WebRTC session supporting webcam streaming and results display."""
+    """WebRTC session for streaming video and receiving inference results.
+
+    This class manages the WebRTC peer connection, video streaming,
+    and data channel communication with the inference server.
+    """
 
     def __init__(
         self,
         api_url: str,
         api_key: Optional[str],
-        *,
-        workspace_name: Optional[str] = None,
-        workflow_id: Optional[str] = None,
-        workflow_specification: Optional[dict] = None,
-        image_input_name: str = "image",
-        resolution: Optional[tuple[int, int]] = None,
-        webrtc_realtime_processing: bool = True,
-        webrtc_turn_config: Optional[dict] = None,
-        stream_output: Optional[List[Optional[str]]] = None,
-        data_output: Optional[List[Optional[str]]] = None,
-        declared_fps: Optional[float] = None,
-        workflows_parameters: Optional[dict] = None,
+        source: StreamSource,
+        image_input_name: str,
+        workflow_config: dict,
+        stream_config: StreamConfig,
     ) -> None:
+        """Initialize WebRTC session.
+
+        Args:
+            api_url: Inference server API URL
+            api_key: API key for authentication
+            source: Stream source instance
+            image_input_name: Name of image input in workflow
+            workflow_config: Workflow configuration dict
+            stream_config: Stream configuration
+        """
         self._api_url = api_url.rstrip("/")
         self._api_key = api_key
-        self._workspace_name = workspace_name
-        self._workflow_id = workflow_id
-        self._workflow_specification = workflow_specification
+        self._source = source
         self._image_input_name = image_input_name
-        self._resolution = resolution
-        self._webrtc_realtime_processing = webrtc_realtime_processing
-        self._webrtc_turn_config = webrtc_turn_config
-        self._stream_output = stream_output or []
-        self._data_output = data_output or []
-        self._declared_fps = declared_fps
-        self._workflows_parameters = workflows_parameters or {}
+        self._workflow_config = workflow_config
+        self._config = stream_config
 
+        # Internal state
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._loop_thread: Optional[threading.Thread] = None
         self._pc: Optional[RTCPeerConnection] = None
-        self._video_queue_sync: "Queue[Optional[np.ndarray]]" = Queue(maxsize=8)
-        self.video = _VideoStream(self._video_queue_sync)
+        self._video_queue: "Queue[Optional[np.ndarray]]" = Queue(maxsize=8)
+
+        # Public APIs
+        self.video = _VideoStream(self._video_queue)
         self.data = _DataChannel()
-        self._track: Optional[_WebcamVideoTrack] = None
 
     def __enter__(self) -> "WebRTCSession":
+        """Enter context manager - start event loop and initialize connection."""
         # Start event loop in background thread
         self._loop = asyncio.new_event_loop()
 
@@ -141,56 +177,71 @@ class WebRTCSession(AbstractContextManager["WebRTCSession"]):
             asyncio.set_event_loop(loop)
             loop.run_forever()
 
-        self._loop_thread = threading.Thread(target=_run, args=(self._loop,), daemon=True)
+        self._loop_thread = threading.Thread(
+            target=_run, args=(self._loop,), daemon=True
+        )
         self._loop_thread.start()
-        # Build peer connection and initialize
+
+        # Initialize WebRTC connection
         fut = asyncio.run_coroutine_threadsafe(self._init(), self._loop)
         fut.result()
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:  # type: ignore[override]
+        """Exit context manager - cleanup resources."""
         try:
+            # Close peer connection
             if self._loop and self._pc:
                 asyncio.run_coroutine_threadsafe(self._pc.close(), self._loop).result()
         finally:
             try:
-                if self._track:
-                    self._track.release()
+                # Cleanup source
+                if self._loop and self._source:
+                    asyncio.run_coroutine_threadsafe(
+                        self._source.cleanup(), self._loop
+                    ).result()
             finally:
+                # Stop event loop
                 if self._loop:
                     self._loop.call_soon_threadsafe(self._loop.stop)
                 if self._loop_thread:
                     self._loop_thread.join(timeout=2)
 
-    def wait_for_disconnect(self, timeout: Optional[float] = None) -> None:
-        # Simple wait by draining the loop until the queue receives None (not used here)
+    def wait(self, timeout: Optional[float] = None) -> None:
+        """Wait for session to complete.
+
+        Blocks until the video stream ends (None received) or timeout expires.
+
+        Args:
+            timeout: Maximum time to wait in seconds (None for indefinite)
+        """
         try:
             while True:
-                frame = self.video._frames.get(timeout=timeout)
+                frame = self._video_queue.get(timeout=timeout)
                 if frame is None:
                     break
         except Exception:
             pass
 
     async def _init(self) -> None:
-        # Create local track
-        self._track = _WebcamVideoTrack(resolution=self._resolution)
-        if self._declared_fps is None:
-            self._declared_fps = self._track.get_declared_fps()
+        """Initialize WebRTC connection.
 
-        # Peer connection
+        Sets up peer connection, configures source, negotiates with server.
+        """
+        # Create peer connection with optional TURN config
         configuration = None
-        if self._webrtc_turn_config:
+        if self._config.turn_server:
             ice = RTCIceServer(
-                urls=[self._webrtc_turn_config.get("urls")],
-                username=self._webrtc_turn_config.get("username"),
-                credential=self._webrtc_turn_config.get("credential"),
+                urls=[self._config.turn_server.get("urls")],
+                username=self._config.turn_server.get("username"),
+                credential=self._config.turn_server.get("credential"),
             )
             configuration = RTCConfiguration(iceServers=[ice])
 
         pc = RTCPeerConnection(configuration=configuration)
         relay = MediaRelay()
 
+        # Setup video receiver for frames from server
         @pc.on("track")
         def _on_track(track):  # noqa: ANN001
             subscribed = relay.subscribe(track)
@@ -200,48 +251,49 @@ class WebRTCSession(AbstractContextManager["WebRTCSession"]):
                     try:
                         f: VideoFrame = await subscribed.recv()
                     except Exception:
-                        # connection closed or track ended
+                        # Connection closed or track ended
                         try:
-                            self._video_queue_sync.put_nowait(None)
+                            self._video_queue.put_nowait(None)
                         except Exception:
                             pass
                         break
                     img = f.to_ndarray(format="bgr24")
-                    # backpressure: drop oldest
-                    if self._video_queue_sync.full():
+                    # Backpressure: drop oldest frame if queue full
+                    if self._video_queue.full():
                         try:
-                            _ = self._video_queue_sync.get_nowait()
+                            _ = self._video_queue.get_nowait()
                         except Exception:
                             pass
                     try:
-                        self._video_queue_sync.put_nowait(img)
+                        self._video_queue.put_nowait(img)
                     except Exception:
                         pass
 
             asyncio.ensure_future(_reader())
 
+        # Setup data channel
         ch = pc.createDataChannel("inference")
         self.data.bind(ch)
 
-        pc.addTrack(self._track)
+        # Let source configure the peer connection
+        # (adds tracks for webcam/video/manual, or recvonly transceiver for RTSP)
+        await self._source.configure_peer_connection(pc)
+
+        # Create offer and wait for ICE gathering
         offer = await pc.createOffer()
         await pc.setLocalDescription(offer)
+
         # Wait for ICE gathering to complete
         while pc.iceGatheringState != "complete":
             await asyncio.sleep(0.1)
 
-        # Call server to initialize worker
+        # Build server initialization payload
         wf_conf: dict[str, Any] = {
             "type": "WorkflowConfiguration",
             "image_input_name": self._image_input_name,
-            "workflows_parameters": self._workflows_parameters,
+            "workflows_parameters": self._config.workflow_parameters,
         }
-        if self._workflow_specification is not None:
-            wf_conf["workflow_specification"] = self._workflow_specification
-        else:
-            # workspace_name + workflow_id path
-            wf_conf["workflow_id"] = self._workflow_id
-            wf_conf["workspace_name"] = self._workspace_name
+        wf_conf.update(self._workflow_config)
 
         payload = {
             "api_key": self._api_key,
@@ -250,19 +302,31 @@ class WebRTCSession(AbstractContextManager["WebRTCSession"]):
                 "type": pc.localDescription.type,
                 "sdp": pc.localDescription.sdp,
             },
-            "webrtc_turn_config": self._webrtc_turn_config,
-            "webrtc_realtime_processing": self._webrtc_realtime_processing,
-            "stream_output": self._stream_output,
-            "data_output": self._data_output,
-            "declared_fps": self._declared_fps,
-            "rtsp_url": None,
+            "webrtc_realtime_processing": self._config.realtime_processing,
+            "stream_output": self._config.stream_output,
+            "data_output": self._config.data_output,
         }
 
+        # Add TURN config if provided
+        if self._config.turn_server:
+            payload["webrtc_turn_config"] = self._config.turn_server
+
+        # Add FPS if provided
+        if self._config.declared_fps:
+            payload["declared_fps"] = self._config.declared_fps
+
+        # Merge source-specific parameters
+        # (rtsp_url for RTSP, declared_fps for webcam, etc.)
+        payload.update(self._source.get_initialization_params())
+
+        # Call server to initialize worker
         url = f"{self._api_url}/initialise_webrtc_worker"
         headers = {"Content-Type": "application/json"}
-        resp = requests.post(url, json=payload, headers=headers, timeout=30)
+        resp = requests.post(url, json=payload, headers=headers, timeout=90)
         resp.raise_for_status()
         ans = resp.json()
+
+        # Set remote description
         answer = RTCSessionDescription(sdp=ans["sdp"], type=ans["type"])  # type: ignore[index]
         await pc.setRemoteDescription(answer)
 
