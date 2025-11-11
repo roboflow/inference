@@ -5,7 +5,7 @@ import json
 import logging
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-import cv2 as cv
+import cv2
 import numpy as np
 import supervision as sv
 from aiortc import (
@@ -480,7 +480,7 @@ class VideoFrameProcessor:
             # Decode base64 → JPEG bytes → numpy array
             image_bytes = base64.b64decode(image_b64)
             nparr = np.frombuffer(image_bytes, np.uint8)
-            np_image = cv.imdecode(nparr, cv.IMREAD_COLOR)
+            np_image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
             
             if np_image is None:
                 logger.error(f"Failed to decode frame {frame_id}")
