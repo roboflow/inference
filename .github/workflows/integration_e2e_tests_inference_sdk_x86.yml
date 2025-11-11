@@ -86,6 +86,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install --upgrade setuptools
           pip install -r requirements/_requirements.txt \
+                      -r requirements/requirements.cpu.txt \
                       -r requirements/requirements.http.txt \
                       -r requirements/requirements.sdk.http.txt \
                       -r requirements/requirements.test.unit.txt
