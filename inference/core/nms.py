@@ -1,6 +1,7 @@
-from typing import Optional
+from typing import Dict, List, Optional
 
 import numpy as np
+from pycocotools import mask as mask_utils
 
 
 def w_np_non_max_suppression(
@@ -100,7 +101,11 @@ def w_np_non_max_suppression(
                 axis=1,
             )
         filtered_predictions = []
-        if class_agnostic:
+        if iou_thresh >= 1.0:
+            # IoU threshold >= 1.0 means no NMS needed, just sort and limit
+            sorted_indices = np.argsort(-np_detections[:, 4])
+            filtered_predictions = list(np_detections[sorted_indices])
+        elif class_agnostic:
             # Sort by confidence directly
             sorted_indices = np.argsort(-np_detections[:, 4])
             np_detections_sorted = np_detections[sorted_indices]
@@ -204,3 +209,105 @@ def non_max_suppression_fast(boxes, overlapThresh):
     # return only the bounding boxes that were picked using the
     # integer data type
     return boxes[pick].astype("float")
+
+
+def nms_rle(rles: List[Dict], iou_threshold: float = 0.5) -> np.ndarray:
+    """
+    NMS (Non-Maximum Suppression) for RLE-encoded masks.
+    Removes duplicate detections by keeping only the highest confidence detection
+    when detections overlap.
+
+    Args:
+        rles: List of RLE-encoded masks from pycocotools (assumed already sorted by confidence descending)
+        iou_threshold: IoU threshold above which detections are considered duplicates
+
+    Returns:
+        Boolean array indicating which detections to keep (True) or suppress (False)
+    """
+    num_detections = len(rles)
+    if num_detections == 0:
+        return np.array([], dtype=bool)
+
+    # Calculate IoU matrix: ious[i,j] = overlap between detection i and j
+    ious = mask_utils.iou(rles, rles, [0] * num_detections)
+
+    # Greedy NMS: keep highest confidence, suppress overlaps
+    keep = np.ones(num_detections, dtype=bool)
+    for i in range(num_detections):
+        if keep[i]:
+            condition = ious[i, :] > iou_threshold
+            keep[i + 1 :] = np.where(condition[i + 1 :], False, keep[i + 1 :])
+
+    return keep
+
+
+def non_max_suppression_with_polygons(
+    predictions: List[np.ndarray],
+    polygons: List[List[List]],
+    image_dims: List[tuple],
+    iou_threshold: float = 0.5,
+    class_agnostic: bool = False,
+    max_detections: int = 300,
+) -> tuple:
+    """
+    Applies NMS using polygon IoU
+
+    Args:
+        predictions: List of prediction arrays per image [bbox x 4, conf, conf, class_id, mask_coeffs]
+        polygons: List of decoded polygon lists per image
+        image_dims: List of (height, width) tuples per image
+        iou_threshold: IoU threshold for NMS
+        class_agnostic: Whether to ignore class labels
+        max_detections: Maximum number of detections
+
+    Returns:
+        Tuple of (filtered_predictions, filtered_polygons)
+    """
+    filtered_predictions = []
+    filtered_polygons = []
+
+    for pred, polys, (img_h, img_w) in zip(predictions, polygons, image_dims):
+        if len(pred) == 0 or len(polys) == 0:
+            filtered_predictions.append(pred)
+            filtered_polygons.append(polys)
+            continue
+
+        rles = []
+        for poly in polys:
+            polygon_flat = []
+            for point in poly:
+                polygon_flat.extend([point[0], point[1]])
+            if len(polygon_flat) >= 6:
+                rle = mask_utils.frPyObjects([polygon_flat], img_h, img_w)[0]
+                rles.append(rle)
+            else:
+                rles.append({"size": [img_h, img_w], "counts": []})
+
+        if class_agnostic:
+            keep_indices = nms_rle(rles, iou_threshold)
+        else:
+            class_ids = pred[:, 6]
+            unique_classes = np.unique(class_ids)
+            keep_mask = np.zeros(len(pred), dtype=bool)
+
+            for c in unique_classes:
+                class_mask = class_ids == c
+                class_indices = np.where(class_mask)[0]
+                class_rles = [rles[i] for i in class_indices]
+                class_keep = nms_rle(class_rles, iou_threshold)
+                keep_mask[class_indices[class_keep]] = True
+
+            keep_indices = keep_mask
+
+        # Filter and limit to max_detections
+        filtered_pred = pred[keep_indices]
+        filtered_poly = [polys[i] for i in range(len(polys)) if keep_indices[i]]
+
+        if len(filtered_pred) > max_detections:
+            filtered_pred = filtered_pred[:max_detections]
+            filtered_poly = filtered_poly[:max_detections]
+
+        filtered_predictions.append(filtered_pred)
+        filtered_polygons.append(filtered_poly)
+
+    return filtered_predictions, filtered_polygons

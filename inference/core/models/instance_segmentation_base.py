@@ -14,7 +14,7 @@ from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.models.utils.validate import (
     get_num_classes_from_model_prediction_shape,
 )
-from inference.core.nms import w_np_non_max_suppression
+from inference.core.nms import w_np_non_max_suppression, non_max_suppression_with_polygons
 from inference.core.utils.postprocess import (
     masks2poly,
     post_process_bboxes,
@@ -31,6 +31,7 @@ DEFAUlT_MAX_DETECTIONS = 300
 DEFAULT_MAX_CANDIDATES = 3000
 DEFAULT_MASK_DECODE_MODE = "accurate"
 DEFAULT_TRADEOFF_FACTOR = 0.0
+DEFAULT_BOX_NMS = False
 
 PREDICTIONS_TYPE = List[List[List[float]]]
 
@@ -48,6 +49,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
     def infer(
         self,
         image: Any,
+        box_nms: bool = DEFAULT_BOX_NMS,
         class_agnostic_nms: bool = False,
         confidence: float = DEFAULT_CONFIDENCE,
         disable_preproc_auto_orient: bool = False,
@@ -68,6 +70,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
         Args:
             image (Any): An image or a list of images for processing.
                 - can be a BGR numpy array, filepath, InferenceRequestImage, PIL Image, byte-string, etc.
+            box_nms (bool, optional): Whether to use box IoU for NMS. If False, uses polygon IoU. Defaults to False.
             class_agnostic_nms (bool, optional): Whether to use class-agnostic non-maximum suppression. Defaults to False.
             confidence (float, optional): Confidence threshold for predictions. Defaults to 0.4.
             iou_threshold (float, optional): IoU threshold for non-maximum suppression. Defaults to 0.3.
@@ -96,6 +99,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
         """
         return super().infer(
             image,
+            box_nms=box_nms,
             class_agnostic_nms=class_agnostic_nms,
             confidence=confidence,
             disable_preproc_auto_orient=disable_preproc_auto_orient,
@@ -121,15 +125,18 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
         List[InstanceSegmentationInferenceResponse],
     ]:
         predictions, protos = predictions
+        use_box_nms = kwargs.get("box_nms", DEFAULT_BOX_NMS)
+
         predictions = w_np_non_max_suppression(
             predictions,
             conf_thresh=kwargs["confidence"],
-            iou_thresh=kwargs["iou_threshold"],
+            iou_thresh=kwargs["iou_threshold"] if use_box_nms else 1.0,
             class_agnostic=kwargs["class_agnostic_nms"],
-            max_detections=kwargs["max_detections"],
+            max_detections=kwargs["max_detections"] if use_box_nms else kwargs["max_candidates"],
             max_candidate_detections=kwargs["max_candidates"],
             num_masks=self.num_masks,
         )
+
         infer_shape = (self.img_size_h, self.img_size_w)
         masks = []
         mask_decode_mode = kwargs["mask_decode_mode"]
@@ -190,6 +197,17 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
                 resize_method=self.resize_method,
             )
             masks.append(polys)
+
+        if not use_box_nms:
+            predictions, masks = non_max_suppression_with_polygons(
+                predictions=predictions,
+                polygons=masks,
+                image_dims=preprocess_return_metadata["img_dims"],
+                iou_threshold=kwargs["iou_threshold"],
+                class_agnostic=kwargs["class_agnostic_nms"],
+                max_detections=kwargs["max_detections"],
+            )
+
         return self.make_response(
             predictions, masks, preprocess_return_metadata["img_dims"], **kwargs
         )
