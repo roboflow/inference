@@ -317,24 +317,6 @@ def main():
     else:
         logger.info(f"Available workflow outputs: {available_output_names}")
 
-    # Determine stream_output
-    stream_output_to_use = None
-    if args.output_mode in ["both", "video_only"]:
-        if args.stream_output:
-            # User specified stream output - validate it exists
-            if args.stream_output not in available_output_names:
-                raise ValueError(
-                    f"❌ stream_output '{args.stream_output}' not found in workflow outputs. "
-                    f"Available: {available_output_names}"
-                )
-            stream_output_to_use = args.stream_output
-            logger.info(f"Using specified stream_output: {stream_output_to_use}")
-        else:
-            # Let backend auto-detect first valid image output
-            logger.info(
-                "stream_output not specified, backend will auto-detect first valid image output"
-            )
-
     # Determine data_output
     data_output_to_use = None
     if args.data_outputs:
@@ -345,19 +327,7 @@ def main():
             data_output_to_use = []  # Empty = no data
             logger.info("data_output: NO outputs ([])")
         else:
-            # Parse comma-separated list
             requested_fields = [f.strip() for f in args.data_outputs.split(",")]
-
-            # Validate all requested fields exist
-            invalid_fields = [
-                f for f in requested_fields if f not in available_output_names
-            ]
-            if invalid_fields:
-                raise ValueError(
-                    f"❌ data_output fields {invalid_fields} not found in workflow outputs. "
-                    f"Available: {available_output_names}"
-                )
-
             data_output_to_use = requested_fields
             logger.info(f"data_output: {data_output_to_use}")
     else:
@@ -405,7 +375,7 @@ def main():
         ),
         webrtc_turn_config=webrtc_turn_config,
         output_mode=args.output_mode,
-        stream_output=[stream_output_to_use] if stream_output_to_use else [],
+        stream_output=args.stream_output if args.stream_output else None,
         data_output=data_output_to_use,
         webrtc_realtime_processing=args.realtime,
         rtsp_url=args.source if is_rtmp_url(args.source) else None,
