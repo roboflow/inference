@@ -16,10 +16,14 @@ Press 'q' in the preview window to exit.
 """
 import argparse
 
+import av
 import cv2
 
 from inference_sdk import InferenceHTTPClient
-from inference_sdk.webrtc import VideoFileSource, StreamConfig
+from inference_sdk.webrtc import StreamConfig, VideoFileSource
+
+# Suppress FFmpeg warnings from PyAV
+av.logging.set_level(av.logging.ERROR)
 
 
 def parse_args() -> argparse.Namespace:
