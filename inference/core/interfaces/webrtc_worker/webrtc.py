@@ -219,9 +219,16 @@ class VideoFrameProcessor:
         self._stop_processing = False
 
         self.output_mode = output_mode
-        self.data_output = data_output
         self.stream_output = stream_output
         self.data_channel: Optional[RTCDataChannel] = None
+
+        # Normalize data_output to avoid edge cases
+        if data_output is None:
+            self.data_output = None
+        elif isinstance(data_output, list):
+            self.data_output = [f for f in data_output if f]
+        else:
+            self.data_output = data_output
 
         self._inference_pipeline = InferencePipeline.init_with_workflow(
             video_reference=VideoFrameProducer,
@@ -313,22 +320,14 @@ class VideoFrameProcessor:
         )
 
         # Determine which fields to send
-        fields_to_send = []
-
         if self.data_output is None:
             # Send ALL workflow outputs
             fields_to_send = list(workflow_output.keys())
-
-        elif len(self.data_output) == 0 or self.data_output == [""]:
-            # Send NOTHING (empty list or empty string)
+        elif len(self.data_output) == 0:
             self.data_channel.send(json.dumps(webrtc_output.model_dump()))
             return
-
         else:
-            # Send only specified fields
-            fields_to_send = [
-                f for f in self.data_output if f
-            ]  # Filter out empty strings
+            fields_to_send = self.data_output
 
         # Serialize each field
         serialized_outputs = {}
