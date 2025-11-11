@@ -287,6 +287,121 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def handle_keyboard_input(
+    key: int,
+    active_data_mode: list,
+    active_data_fields: list,
+    workflow_outputs: list,
+    workflow_specification: dict,
+    peer_connection,
+) -> bool:
+    if key == -1:
+        return True
+
+    if key == ord("q"):
+        logger.info("Quitting")
+        return False
+
+    # Check data channel status for all commands except quit
+    if not peer_connection.data_channel or peer_connection.data_channel.readyState != "open":
+        logger.error("Data channel not open")
+        return True
+
+    # Handle + key (all outputs)
+    if key == ord("+") or key == ord("="):
+        logger.info("Setting data_output to ALL (None)")
+        active_data_mode[0] = "all"
+        message = json.dumps(
+            WebRTCData(
+                stream_output=None,
+                data_output=None,
+            ).model_dump()
+        )
+        peer_connection.data_channel.send(message)
+        return True
+
+    # Handle - key (no outputs)
+    if key == ord("-"):
+        logger.info("Setting data_output to NONE ([])")
+        active_data_mode[0] = "none"
+        message = json.dumps(
+            WebRTCData(
+                stream_output=None,
+                data_output=[],
+            ).model_dump()
+        )
+        peer_connection.data_channel.send(message)
+        return True
+
+    # Handle 0-9 keys (stream output selection)
+    if chr(key) in "1234567890":
+        if chr(key) == "0":
+            message = json.dumps(
+                WebRTCData(
+                    stream_output="",
+                    data_output=None,
+                ).model_dump()
+            )
+            logger.info("Turning off stream output via data channel")
+        else:
+            max_ind = max(0, len(workflow_specification.get("outputs", [])) - 1)
+            output_ind = min(key - ord("1"), max_ind)
+            output_name = workflow_specification.get("outputs")[output_ind].get(
+                "name", ""
+            )
+            message = json.dumps(
+                WebRTCData(
+                    stream_output=output_name,
+                    data_output=None,
+                ).model_dump()
+            )
+            logger.info("Setting stream output via data channel: %s", output_name)
+        peer_connection.data_channel.send(message)
+        return True
+
+    # Handle a-z toggle (individual field toggle)
+    if chr(key).isalpha() and chr(key).lower() in "abcdefghijklmnopqrstuvwxyz":
+        key_index = ord(chr(key).lower()) - ord("a")
+        if key_index < len(workflow_outputs):
+            output_name = workflow_outputs[key_index].get("name", "")
+
+            # Toggle logic
+            if active_data_mode[0] == "all":
+                # Was "all", switch to custom with all except this one
+                active_data_mode[0] = "custom"
+                active_data_fields.clear()
+                active_data_fields.extend([o.get("name") for o in workflow_outputs])
+                active_data_fields.remove(output_name)
+                logger.info(f"Toggled OFF '{output_name}' (was ALL)")
+            elif active_data_mode[0] == "none":
+                # Was "none", enable only this field
+                active_data_mode[0] = "custom"
+                active_data_fields.clear()
+                active_data_fields.append(output_name)
+                logger.info(f"Toggled ON '{output_name}' (was NONE)")
+            else:
+                # Custom mode - toggle
+                if output_name in active_data_fields:
+                    active_data_fields.remove(output_name)
+                    logger.info(f"Toggled OFF '{output_name}'")
+                else:
+                    active_data_fields.append(output_name)
+                    logger.info(f"Toggled ON '{output_name}'")
+
+            # Send updated list directly as array
+            logger.info(f"Active fields: {active_data_fields}")
+            message = json.dumps(
+                WebRTCData(
+                    stream_output=None,
+                    data_output=active_data_fields if active_data_fields else [],
+                ).model_dump()
+            )
+            peer_connection.data_channel.send(message)
+        return True
+
+    return True
+
+
 def main():
     args = parse_args()
 
@@ -607,84 +722,17 @@ def main():
                 cv.imshow("WebRTC Worker - Interactive Mode", frame)
                 key = cv.waitKey(100)  # 100ms delay to keep UI responsive
 
-                if key == -1:
-                    continue
-
-                if key == ord("q"):
-                    logger.info("Quitting")
+                # Handle keyboard input
+                should_continue = handle_keyboard_input(
+                    key=key,
+                    active_data_mode=active_data_mode,
+                    active_data_fields=active_data_fields,
+                    workflow_outputs=workflow_outputs,
+                    workflow_specification=workflow_specification,
+                    peer_connection=peer_connection,
+                )
+                if not should_continue:
                     break
-
-                # Check data channel status
-                if not peer_connection.data_channel or peer_connection.data_channel.readyState != "open":
-                    if key != -1 and key != ord("q"):
-                        logger.error("Data channel not open")
-                    continue
-
-                # Handle + key (all outputs)
-                if key == ord("+") or key == ord("="):
-                    logger.info("Setting data_output to ALL (None)")
-                    active_data_mode[0] = "all"
-                    message = json.dumps(
-                        WebRTCData(
-                            stream_output=None,
-                            data_output=None,
-                        ).model_dump()
-                    )
-                    peer_connection.data_channel.send(message)
-                    continue
-
-                # Handle - key (no outputs)
-                if key == ord("-"):
-                    logger.info("Setting data_output to NONE ([])")
-                    active_data_mode[0] = "none"
-                    message = json.dumps(
-                        WebRTCData(
-                            stream_output=None,
-                            data_output=[],
-                        ).model_dump()
-                    )
-                    peer_connection.data_channel.send(message)
-                    continue
-
-                # Handle a-z toggle (individual field toggle)
-                if chr(key).isalpha() and chr(key).lower() in "abcdefghijklmnopqrstuvwxyz":
-                    key_index = ord(chr(key).lower()) - ord("a")
-                    if key_index < len(workflow_outputs):
-                        output_name = workflow_outputs[key_index].get("name", "")
-
-                        # Toggle logic
-                        if active_data_mode[0] == "all":
-                            # Was "all", switch to custom with all except this one
-                            active_data_mode[0] = "custom"
-                            active_data_fields.clear()
-                            active_data_fields.extend([o.get("name") for o in workflow_outputs])
-                            active_data_fields.remove(output_name)
-                            logger.info(f"Toggled OFF '{output_name}' (was ALL)")
-                        elif active_data_mode[0] == "none":
-                            # Was "none", enable only this field
-                            active_data_mode[0] = "custom"
-                            active_data_fields.clear()
-                            active_data_fields.append(output_name)
-                            logger.info(f"Toggled ON '{output_name}' (was NONE)")
-                        else:
-                            # Custom mode - toggle
-                            if output_name in active_data_fields:
-                                active_data_fields.remove(output_name)
-                                logger.info(f"Toggled OFF '{output_name}'")
-                            else:
-                                active_data_fields.append(output_name)
-                                logger.info(f"Toggled ON '{output_name}'")
-
-
-                        logger.info(f"Active fields: {active_data_fields}")
-                        message = json.dumps(
-                            WebRTCData(
-                                stream_output=None,
-                                data_output=active_data_fields if active_data_fields else [],
-                            ).model_dump()
-                        )
-                        peer_connection.data_channel.send(message)
-                    continue
 
         except KeyboardInterrupt:
             logger.info("Interrupted by user")
@@ -714,103 +762,17 @@ def main():
             cv.imshow("WebRTC Worker - Interactive Mode", np_frame)
             key = cv.waitKey(1)
 
-            if key == -1:
-                continue
-
-            if key == ord("q"):
-                logger.info("Quitting")
+            # Handle keyboard input
+            should_continue = handle_keyboard_input(
+                key=key,
+                active_data_mode=active_data_mode,
+                active_data_fields=active_data_fields,
+                workflow_outputs=workflow_outputs,
+                workflow_specification=workflow_specification,
+                peer_connection=peer_connection,
+            )
+            if not should_continue:
                 break
-
-            # Check data channel status for output changes
-            if not peer_connection.data_channel or peer_connection.data_channel.readyState != "open":
-                if key not in [-1, ord("q")]:
-                    logger.error("Data channel not open")
-                continue
-
-            # Handle + key (all outputs)
-            if key == ord("+") or key == ord("="):
-                logger.info("Setting data_output to ALL (None)")
-                active_data_mode[0] = "all"
-                message = json.dumps(
-                    WebRTCData(
-                        stream_output=None,
-                        data_output=None,
-                    ).model_dump()
-                )
-                peer_connection.data_channel.send(message)
-                continue
-
-            # Handle - key (no outputs)
-            if key == ord("-"):
-                logger.info("Setting data_output to NONE ([])")
-                active_data_mode[0] = "none"
-                message = json.dumps(
-                    WebRTCData(
-                        stream_output=None,
-                        data_output=[],
-                    ).model_dump()
-                )
-                peer_connection.data_channel.send(message)
-                continue
-
-            if chr(key) in "1234567890":
-                if chr(key) == "0":
-                    message = json.dumps(
-                        WebRTCData(
-                            stream_output="",
-                            data_output=None,
-                        ).model_dump()
-                    )
-                    logger.info("Turning off stream output via data channel")
-                else:
-                    max_ind = max(0, len(workflow_specification.get("outputs", [])) - 1)
-                    output_ind = min(key - ord("1"), max_ind)
-                    output_name = workflow_specification.get("outputs")[output_ind].get(
-                        "name", ""
-                    )
-                    message = json.dumps(
-                        WebRTCData(
-                            stream_output=output_name,
-                            data_output=None,
-                        ).model_dump()
-                    )
-                    logger.info("Setting stream output via data channel: %s", output_name)
-                peer_connection.data_channel.send(message)
-
-            # Handle a-z toggle (individual field toggle)
-            if chr(key).isalpha() and chr(key).lower() in "abcdefghijklmnopqrstuvwxyz":
-                key_index = ord(chr(key).lower()) - ord("a")
-                if key_index < len(workflow_outputs):
-                    output_name = workflow_outputs[key_index].get("name", "")
-
-                    # Toggle logic (same as data_only mode)
-                    if active_data_mode[0] == "all":
-                        active_data_mode[0] = "custom"
-                        active_data_fields.clear()
-                        active_data_fields.extend([o.get("name") for o in workflow_outputs])
-                        active_data_fields.remove(output_name)
-                        logger.info(f"Toggled OFF '{output_name}' (was ALL)")
-                    elif active_data_mode[0] == "none":
-                        active_data_mode[0] = "custom"
-                        active_data_fields.clear()
-                        active_data_fields.append(output_name)
-                        logger.info(f"Toggled ON '{output_name}' (was NONE)")
-                    else:
-                        if output_name in active_data_fields:
-                            active_data_fields.remove(output_name)
-                            logger.info(f"Toggled OFF '{output_name}'")
-                        else:
-                            active_data_fields.append(output_name)
-                            logger.info(f"Toggled ON '{output_name}'")
-
-                    logger.info(f"Active fields: {active_data_fields}")
-                    message = json.dumps(
-                        WebRTCData(
-                            stream_output=None,
-                            data_output=active_data_fields if active_data_fields else [],
-                        ).model_dump()
-                    )
-                    peer_connection.data_channel.send(message)
 
     # Cleanup
     cv.destroyAllWindows()  # Close OpenCV windows (works for all modes now)
