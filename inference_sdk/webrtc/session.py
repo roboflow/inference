@@ -11,7 +11,6 @@ from queue import Queue
 from types import TracebackType
 from typing import Any, Callable, Iterator, List, Optional, Type
 
-import av
 import numpy as np
 import requests
 from aiortc import (
