@@ -1,9 +1,12 @@
 import asyncio
+import base64
 import datetime
 import json
 import logging
-from typing import Callable, Optional
+from typing import Any, Callable, List, Optional, Tuple
 
+import cv2
+import numpy as np
 import supervision as sv
 from aiortc import (
     RTCConfiguration,
@@ -14,6 +17,7 @@ from aiortc import (
     VideoStreamTrack,
 )
 from aiortc.contrib.media import MediaPlayer, MediaRelay, PlayerStreamTrack
+from aiortc.mediastreams import MediaStreamError
 from aiortc.rtcrtpreceiver import RemoteStreamTrack
 from av import VideoFrame
 from av import logging as av_logging
@@ -30,7 +34,10 @@ from inference.core.exceptions import (
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
 )
-from inference.core.interfaces.camera.entities import VideoFrameProducer
+from inference.core.interfaces.camera.entities import (
+    VideoFrame as InferenceVideoFrame,
+    VideoFrameProducer,
+)
 from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
 from inference.core.interfaces.stream_manager.manager_app.entities import (
     WebRTCData,
@@ -38,6 +45,7 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
 )
 from inference.core.interfaces.webrtc_worker.entities import (
     WebRTCOutput,
+    WebRTCOutputMode,
     WebRTCVideoMetadata,
     WebRTCWorkerRequest,
     WebRTCWorkerResult,
@@ -53,6 +61,79 @@ from inference.usage_tracking.collector import usage_collector
 logging.getLogger("aiortc").setLevel(logging.WARNING)
 
 
+def serialize_workflow_output(
+    output_data: Any,
+    field_name: str,
+    is_explicit_request: bool
+) -> Tuple[Any, Optional[str]]:
+    """Serialize a single workflow output value.
+
+    Args:
+        output_data: The workflow output value to serialize
+        field_name: The name of the field being serialized
+        is_explicit_request: True if field was explicitly requested in data_output
+
+    Returns (serialized_value, error_message)
+    - serialized_value: The value ready for JSON serialization, or None if skipped/failed
+    - error_message: Error string if serialization failed, None otherwise
+
+    Image serialization rules:
+    - Images are NEVER serialized UNLESS explicitly requested in data_output list
+    - If explicit: serialize to base64
+    - If implicit (data_output=None): skip images
+    """
+    try:
+        # Handle WorkflowImageData (convert to base64 only if explicit)
+        if isinstance(output_data, WorkflowImageData):
+            if not is_explicit_request:
+                # Skip images when listing all outputs (data_output=None)
+                return None, None  # Skip without error
+
+            # Explicitly requested - serialize to base64
+            try:
+                np_image = output_data.numpy_image
+                # Encode as PNG
+                success, buffer = cv2.imencode('.png', np_image)
+                if success:
+                    base64_image = base64.b64encode(buffer).decode('utf-8')
+                    return f"data:image/png;base64,{base64_image}", None
+                else:
+                    return None, "Failed to encode image as PNG"
+            except Exception as e:
+                return None, f"Failed to serialize image: {str(e)}"
+
+        # Handle sv.Detections (use existing serializer)
+        elif isinstance(output_data, sv.Detections):
+            try:
+                parsed_detections = serialise_sv_detections(output_data)
+                return parsed_detections, None
+            except Exception as e:
+                return None, f"Failed to serialize detections: {str(e)}"
+
+        # Handle dict (return as-is, will be JSON serialized)
+        elif isinstance(output_data, dict):
+            return output_data, None
+
+        # Handle list (return as-is)
+        elif isinstance(output_data, list):
+            return output_data, None
+
+        # Handle primitives (str, int, float, bool)
+        elif isinstance(output_data, (str, int, float, bool, type(None))):
+            return output_data, None
+
+        # Handle numpy types
+        elif isinstance(output_data, (np.integer, np.floating)):
+            return output_data.item(), None
+
+        # Unknown type - convert to string as fallback
+        else:
+            return str(output_data), None
+
+    except Exception as e:
+        return None, f"Unexpected error serializing output: {str(e)}"
+
+
 class RTCPeerConnectionWithLoop(RTCPeerConnection):
     def __init__(
         self,
@@ -64,28 +145,39 @@ class RTCPeerConnectionWithLoop(RTCPeerConnection):
         self._loop = asyncio_loop
 
 
-class VideoTransformTrackWithLoop(VideoStreamTrack):
+class VideoFrameProcessor:
+    """Base class for processing video frames through workflow.
+
+    Can be used independently for data-only processing (no video track output)
+    or as a base for VideoTransformTrackWithLoop when video output is needed.
+    """
+
     def __init__(
         self,
         asyncio_loop: asyncio.AbstractEventLoop,
         workflow_configuration: WorkflowConfiguration,
         api_key: str,
-        data_output: Optional[str] = None,
+        data_output: Optional[List[str]] = None,
         stream_output: Optional[str] = None,
+        output_mode: WebRTCOutputMode = WebRTCOutputMode.BOTH,
         declared_fps: float = 30,
         termination_date: Optional[datetime.datetime] = None,
         terminate_event: Optional[asyncio.Event] = None,
-        *args,
-        **kwargs,
     ):
-        super().__init__(*args, **kwargs)
         self._loop = asyncio_loop
         self._termination_date = termination_date
         self._terminate_event = terminate_event
         self.track: Optional[RemoteStreamTrack] = None
         self._track_active: bool = False
-
         self._av_logging_set: bool = False
+        self._received_frames = 0
+        self._declared_fps = declared_fps
+        self._stop_processing = False
+
+        self.output_mode = output_mode
+        self.data_output = data_output
+        self.stream_output = stream_output
+        self.data_channel: Optional[RTCDataChannel] = None
 
         self._inference_pipeline = InferencePipeline.init_with_workflow(
             video_reference=VideoFrameProducer,
@@ -99,28 +191,17 @@ class VideoTransformTrackWithLoop(VideoStreamTrack):
             cancel_thread_pool_tasks_on_exit=workflow_configuration.cancel_thread_pool_tasks_on_exit,
             video_metadata_input_name=workflow_configuration.video_metadata_input_name,
         )
-        self.data_output = data_output
-        self.stream_output = stream_output
-        self.data_channel: Optional[RTCDataChannel] = None
-        self._received_frames = 0
-        self._declared_fps = declared_fps
 
-    def set_track(
-        self,
-        track: RemoteStreamTrack,
-    ):
+    def set_track(self, track: RemoteStreamTrack):
         if not self.track:
             self.track = track
 
     def close(self):
         self._track_active = False
+        self._stop_processing = True
 
-    async def recv(self):
-        # Silencing swscaler warnings in multi-threading environment
-        if not self._av_logging_set:
-            av_logging.set_libav_level(av_logging.ERROR)
-            self._av_logging_set = True
-
+    def _check_termination(self):
+        """Check if we should terminate based on timeout"""
         if (
             self._termination_date
             and self._termination_date < datetime.datetime.now()
@@ -129,16 +210,242 @@ class VideoTransformTrackWithLoop(VideoStreamTrack):
         ):
             logger.info("Timeout reached, terminating inference pipeline")
             self._terminate_event.set()
+            return True
+        return False
 
+    def _process_frame_data_only(
+        self,
+        frame: VideoFrame,
+        frame_id: int
+    ) -> tuple:
+        """Process frame through workflow without rendering visuals.
+
+        Returns (workflow_output, errors)
+        """
+        np_image = frame.to_ndarray(format="bgr24")
+        workflow_output = {}
+        errors = []
+
+        try:
+            video_frame = InferenceVideoFrame(
+                image=np_image,
+                frame_id=frame_id,
+                frame_timestamp=datetime.datetime.now(),
+                comes_from_video_file=False,
+                fps=self._declared_fps,
+                measured_fps=self._declared_fps,
+            )
+            workflow_output = self._inference_pipeline._on_video_frame([video_frame])[0]
+        except Exception as e:
+            logger.exception("Error in workflow processing")
+            errors.append(str(e))
+
+        return workflow_output, errors
+
+    async def _send_data_output(
+        self,
+        workflow_output: dict,
+        frame_timestamp: datetime.datetime,
+        frame: VideoFrame,
+        errors: list
+    ):
+        """Send data via data channel based on data_output configuration.
+
+        - data_output = None: Send all workflow outputs
+        - data_output = []: Don't send any data (only metadata)
+        - data_output = ["field1", "field2"]: Send only specified fields
+        """
+        if not self.data_channel or self.data_channel.readyState != "open":
+            return
+
+        video_metadata = WebRTCVideoMetadata(
+            frame_id=self._received_frames,
+            received_at=frame_timestamp.isoformat(),
+            pts=frame.pts,
+            time_base=frame.time_base,
+            declared_fps=self._declared_fps,
+        )
+
+        webrtc_output = WebRTCOutput(
+            serialized_output_data=None,
+            video_metadata=video_metadata,
+            errors=list(errors),  # Copy errors list
+        )
+
+        # Determine which fields to send
+        fields_to_send = []
+
+        if self.data_output is None:
+            # Send ALL workflow outputs
+            fields_to_send = list(workflow_output.keys())
+
+        elif len(self.data_output) == 0 or self.data_output == [""]:
+            # Send NOTHING (empty list or empty string)
+            self.data_channel.send(json.dumps(webrtc_output.model_dump()))
+            return
+
+        else:
+            # Send only specified fields
+            fields_to_send = [f for f in self.data_output if f]  # Filter out empty strings
+
+        # Serialize each field
+        serialized_outputs = {}
+
+        # Determine if this is an explicit request (fields listed) or implicit (all fields)
+        is_all_outputs = self.data_output is None
+
+        for field_name in fields_to_send:
+            if field_name not in workflow_output:
+                webrtc_output.errors.append(
+                    f"Requested output '{field_name}' not found in workflow outputs"
+                )
+                continue
+
+            output_data = workflow_output[field_name]
+
+            # Determine if this field was explicitly requested
+            if is_all_outputs:
+                # data_output=None means listing all, so not explicit for individual fields
+                is_explicit_request = False
+            else:
+                # Field is in the data_output list, so it's explicit
+                is_explicit_request = True
+
+            serialized_value, error = serialize_workflow_output(
+                output_data=output_data,
+                field_name=field_name,
+                is_explicit_request=is_explicit_request
+            )
+
+            if error:
+                webrtc_output.errors.append(f"{field_name}: {error}")
+            elif serialized_value is not None:
+                serialized_outputs[field_name] = serialized_value
+            # else: serialized_value is None and no error = field was skipped (e.g., image in video track)
+
+        # Only set serialized_output_data if we have data to send
+        if serialized_outputs:
+            webrtc_output.serialized_output_data = serialized_outputs
+
+        self.data_channel.send(json.dumps(webrtc_output.model_dump()))
+
+    async def process_frames_data_only(self):
+        """Process frames for data extraction only, without video track output.
+
+        This is used when output_mode is DATA_ONLY and no video track is needed.
+        """
+        # Silencing swscaler warnings in multi-threading environment
+        if not self._av_logging_set:
+            av_logging.set_libav_level(av_logging.ERROR)
+            self._av_logging_set = True
+
+        logger.info("Starting data-only frame processing")
+
+        try:
+            while (
+                self.track
+                and self.track.readyState != "ended"
+                and not self._stop_processing
+            ):
+                if self._check_termination():
+                    break
+
+                # Drain queue if using PlayerStreamTrack (RTSP)
+                if isinstance(self.track, PlayerStreamTrack):
+                    while self.track._queue.qsize() > 30:
+                        self.track._queue.get_nowait()
+
+                frame: VideoFrame = await self.track.recv()
+                self._received_frames += 1
+                frame_timestamp = datetime.datetime.now()
+
+                # Process workflow without rendering
+                loop = asyncio.get_running_loop()
+                workflow_output, errors = await loop.run_in_executor(
+                    None,
+                    self._process_frame_data_only,
+                    frame,
+                    self._received_frames,
+                )
+
+                # Send data via data channel
+                await self._send_data_output(
+                    workflow_output,
+                    frame_timestamp,
+                    frame,
+                    errors
+                )
+
+        except asyncio.CancelledError:
+            logger.info("Data-only processing cancelled")
+        except MediaStreamError:
+            logger.info("Stream ended in data-only processing")
+        except Exception as exc:
+            logger.error("Error in data-only processing: %s", exc)
+
+
+class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
+    """Video track that processes frames through workflow and sends video back.
+
+    Inherits from both VideoStreamTrack (for WebRTC video track functionality)
+    and VideoFrameProcessor (for workflow processing logic).
+    """
+
+    def __init__(
+        self,
+        asyncio_loop: asyncio.AbstractEventLoop,
+        workflow_configuration: WorkflowConfiguration,
+        api_key: str,
+        data_output: Optional[List[str]] = None,
+        stream_output: Optional[str] = None,
+        output_mode: WebRTCOutputMode = WebRTCOutputMode.BOTH,
+        declared_fps: float = 30,
+        termination_date: Optional[datetime.datetime] = None,
+        terminate_event: Optional[asyncio.Event] = None,
+        *args,
+        **kwargs,
+    ):
+        VideoStreamTrack.__init__(self, *args, **kwargs)
+        VideoFrameProcessor.__init__(
+            self,
+            asyncio_loop=asyncio_loop,
+            workflow_configuration=workflow_configuration,
+            api_key=api_key,
+            data_output=data_output,
+            stream_output=stream_output,
+            output_mode=output_mode,
+            declared_fps=declared_fps,
+            termination_date=termination_date,
+            terminate_event=terminate_event,
+        )
+
+    async def recv(self):
+        """Called by WebRTC to get the next frame to send.
+
+        This method processes frames through the workflow and returns
+        the processed video frame for transmission.
+        """
+        # Silencing swscaler warnings in multi-threading environment
+        if not self._av_logging_set:
+            av_logging.set_libav_level(av_logging.ERROR)
+            self._av_logging_set = True
+
+        # Check if we should terminate
+        if self._check_termination():
+            raise MediaStreamError("Processing terminated due to timeout")
+
+        # Drain queue if using PlayerStreamTrack (RTSP)
         if isinstance(self.track, PlayerStreamTrack):
             while self.track._queue.qsize() > 30:
                 self.track._queue.get_nowait()
-        frame: VideoFrame = await self.track.recv()
 
+        frame: VideoFrame = await self.track.recv()
         self._received_frames += 1
         frame_timestamp = datetime.datetime.now()
+
+        # Process frame through workflow WITH rendering (for video output)
         loop = asyncio.get_running_loop()
-        workflow_output, new_frame, errors = await loop.run_in_executor(
+        workflow_output, new_frame, errors, detected_output = await loop.run_in_executor(
             None,
             process_frame,
             frame,
@@ -147,51 +454,22 @@ class VideoTransformTrackWithLoop(VideoStreamTrack):
             self.stream_output,
         )
 
+        # Update stream_output if it was auto-detected (only when None)
+        if self.stream_output is None and detected_output is not None:
+            self.stream_output = detected_output
+            logger.info(f"Auto-detected and set stream_output to: {detected_output}")
+
         new_frame.pts = frame.pts
         new_frame.time_base = frame.time_base
 
-        if self.data_channel and self.data_channel.readyState == "open":
-            video_metadata = WebRTCVideoMetadata(
-                frame_id=self._received_frames,
-                received_at=frame_timestamp.isoformat(),
-                pts=new_frame.pts,
-                time_base=new_frame.time_base,
-                declared_fps=self._declared_fps,
+        # Send data via data channel if needed (BOTH or DATA_ONLY modes)
+        if self.output_mode in [WebRTCOutputMode.BOTH, WebRTCOutputMode.DATA_ONLY]:
+            await self._send_data_output(
+                workflow_output,
+                frame_timestamp,
+                frame,
+                errors
             )
-            webrtc_output = WebRTCOutput(
-                output_name=None,
-                serialized_output_data=None,
-                video_metadata=video_metadata,
-                errors=errors,
-            )
-            if self.data_output and self.data_output in workflow_output:
-                workflow_output = workflow_output[self.data_output]
-                serialized_data = None
-                if isinstance(workflow_output, WorkflowImageData):
-                    webrtc_output.errors.append(
-                        f"Selected data output '{self.data_output}' contains image, please use video output instead"
-                    )
-                elif isinstance(workflow_output, sv.Detections):
-                    try:
-                        parsed_detections = serialise_sv_detections(workflow_output)
-                        serialized_data = json.dumps(parsed_detections)
-                    except Exception:
-                        webrtc_output.errors.append(
-                            f"Failed to serialise output: {self.data_output}"
-                        )
-                elif isinstance(workflow_output, dict):
-                    try:
-                        serialized_data = json.dumps(workflow_output)
-                    except Exception:
-                        webrtc_output.errors.append(
-                            f"Failed to serialise output: {self.data_output}"
-                        )
-                else:
-                    serialized_data = str(workflow_output)
-                if serialized_data is not None:
-                    webrtc_output.output_name = self.data_output
-                    webrtc_output.serialized_output_data = serialized_data
-                    self.data_channel.send(json.dumps(webrtc_output.model_dump()))
 
         return new_frame
 
@@ -229,25 +507,49 @@ async def init_rtc_peer_connection_with_loop(
             logger.info("Setting termination date to %s", termination_date)
         except (TypeError, ValueError):
             pass
+    output_mode = webrtc_request.output_mode
     stream_output = None
     if webrtc_request.stream_output:
         # TODO: UI sends None as stream_output for wildcard outputs
         stream_output = webrtc_request.stream_output[0] or ""
-    data_output = None
-    if webrtc_request.data_output:
-        data_output = webrtc_request.data_output[0]
+
+    # Handle data_output as list
+    # - None or not provided: send all outputs
+    # - []: send nothing
+    # - ["field1", "field2"]: send only those fields
+    data_output = webrtc_request.data_output if webrtc_request.data_output is not None else None
+
+    # Determine if we should send video back based on output mode
+    should_send_video = output_mode in [WebRTCOutputMode.VIDEO_ONLY, WebRTCOutputMode.BOTH]
 
     try:
-        video_transform_track = VideoTransformTrackWithLoop(
-            asyncio_loop=asyncio_loop,
-            workflow_configuration=webrtc_request.workflow_configuration,
-            api_key=webrtc_request.api_key,
-            data_output=data_output,
-            stream_output=stream_output,
-            declared_fps=webrtc_request.declared_fps,
-            termination_date=termination_date,
-            terminate_event=terminate_event,
-        )
+        # For DATA_ONLY mode, we use VideoFrameProcessor directly (no video track)
+        # For other modes, we use VideoTransformTrackWithLoop (includes video track)
+        if should_send_video:
+            video_processor = VideoTransformTrackWithLoop(
+                asyncio_loop=asyncio_loop,
+                workflow_configuration=webrtc_request.workflow_configuration,
+                api_key=webrtc_request.api_key,
+                data_output=data_output,
+                stream_output=stream_output,
+                output_mode=output_mode,
+                declared_fps=webrtc_request.declared_fps,
+                termination_date=termination_date,
+                terminate_event=terminate_event,
+            )
+        else:
+            # DATA_ONLY or OFF mode - use base VideoFrameProcessor
+            video_processor = VideoFrameProcessor(
+                asyncio_loop=asyncio_loop,
+                workflow_configuration=webrtc_request.workflow_configuration,
+                api_key=webrtc_request.api_key,
+                data_output=data_output,
+                stream_output=stream_output,
+                output_mode=output_mode,
+                declared_fps=webrtc_request.declared_fps,
+                termination_date=termination_date,
+                terminate_event=terminate_event,
+            )
     except (
         ValidationError,
         MissingApiKeyError,
@@ -327,29 +629,42 @@ async def init_rtc_peer_connection_with_loop(
                 "stimeout": "2000000",  # 2s socket timeout
             },
         )
-        video_transform_track.set_track(
-            track=player.video,
-        )
-        peer_connection.addTrack(video_transform_track)
+        video_processor.set_track(track=player.video)
+
+        # Only add video track if we should send video back
+        if should_send_video:
+            peer_connection.addTrack(video_processor)
+        else:
+            # For DATA_ONLY, start data-only processing task
+            logger.info("Starting data-only processing for RTSP stream")
+            asyncio.create_task(video_processor.process_frames_data_only())
 
     @peer_connection.on("track")
     def on_track(track: RemoteStreamTrack):
-        logger.info("track received")
-        video_transform_track.set_track(
-            track=relay.subscribe(
-                track,
-                buffered=False if webrtc_request.webrtc_realtime_processing else True,
-            )
+        logger.info("Track received from client")
+        relayed_track = relay.subscribe(
+            track,
+            buffered=False if webrtc_request.webrtc_realtime_processing else True,
         )
-        peer_connection.addTrack(video_transform_track)
+        video_processor.set_track(track=relayed_track)
+
+        # Only add video track back if we should send video
+        if should_send_video:
+            logger.info(f"Output mode: {output_mode} - Adding video track to send back")
+            peer_connection.addTrack(video_processor)
+        else:
+            # For DATA_ONLY, start data-only processing task
+            logger.info(f"Output mode: {output_mode} - Starting data-only processing (no video track)")
+            asyncio.create_task(video_processor.process_frames_data_only())
 
     @peer_connection.on("connectionstatechange")
     async def on_connectionstatechange():
         logger.info("Connection state is %s", peer_connection.connectionState)
         if peer_connection.connectionState in {"failed", "closed"}:
-            if video_transform_track.track:
-                logger.info("Stopping video transform track")
-                video_transform_track.track.stop()
+            if video_processor.track:
+                logger.info("Stopping video processor track")
+                video_processor.track.stop()
+            video_processor.close()
             logger.info("Stopping WebRTC peer")
             await peer_connection.close()
             terminate_event.set()
@@ -363,16 +678,28 @@ async def init_rtc_peer_connection_with_loop(
         def on_message(message):
             logger.info("Data channel message received: %s", message)
             try:
-                message = WebRTCData(**json.loads(message))
+                message_data = WebRTCData(**json.loads(message))
             except json.JSONDecodeError:
                 logger.error("Failed to decode webrtc data payload: %s", message)
                 return
-            if message.stream_output is not None:
-                video_transform_track.stream_output = message.stream_output or None
-            if message.data_output is not None:
-                video_transform_track.data_output = message.data_output or None
 
-        video_transform_track.data_channel = channel
+            # Handle output changes (which workflow output to send)
+            if message_data.stream_output is not None:
+                video_processor.stream_output = message_data.stream_output or None
+
+            if message_data.data_output is not None:
+                # Convert string data_output to list format
+                if message_data.data_output == "":
+                    video_processor.data_output = []  # Empty string = send nothing
+                elif message_data.data_output == "*":
+                    video_processor.data_output = None  # Asterisk = send all outputs
+                elif "," in message_data.data_output:
+                    # Comma-separated list of fields
+                    video_processor.data_output = [f.strip() for f in message_data.data_output.split(",") if f.strip()]
+                else:
+                    video_processor.data_output = [message_data.data_output]  # Single field
+
+        video_processor.data_channel = channel
 
     await peer_connection.setRemoteDescription(
         RTCSessionDescription(
@@ -402,8 +729,9 @@ async def init_rtc_peer_connection_with_loop(
     if peer_connection.connectionState != "closed":
         logger.info("Closing WebRTC connection")
         await peer_connection.close()
-    if video_transform_track.track:
-        logger.info("Stopping video transform track")
-        video_transform_track.track.stop()
+    if video_processor.track:
+        logger.info("Stopping video processor track")
+        video_processor.track.stop()
+    video_processor.close()
     await usage_collector.async_push_usage_payloads()
     logger.info("WebRTC peer connection closed")
