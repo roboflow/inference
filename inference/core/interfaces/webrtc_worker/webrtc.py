@@ -157,6 +157,14 @@ def _serialize_collection(
         as_dict: True to return dict, False to return list
 
     Returns (serialized_collection, error_message)
+
+    Note: If serialization fails for some fields, those fields are replaced with
+    error placeholders and the collection is still returned with valid fields.
+    The error message lists which fields failed.
+
+    Error placeholder format:
+    - For dicts: {"__serialization_error__": "error message"} (key identifies field)
+    - For lists: {"__serialization_error__": "error message", "__field__": "index"}
     """
     result = {} if as_dict else []
     errors = []
@@ -165,7 +173,17 @@ def _serialize_collection(
         serialized_value, error = serialize_workflow_output(value, is_explicit_request)
 
         if error:
+            # Store error info and add placeholder
             errors.append(f"{key_or_idx}: {error}")
+
+            if as_dict:
+                # For dict: key already identifies the field
+                result[key_or_idx] = {"__serialization_error__": error}
+            else:
+                # For list: include index in placeholder
+                result.append(
+                    {"__serialization_error__": error, "__field__": str(key_or_idx)}
+                )
         elif serialized_value is not None:
             if as_dict:
                 result[key_or_idx] = serialized_value
@@ -173,8 +191,10 @@ def _serialize_collection(
                 result.append(serialized_value)
         # else: skip None values (e.g., images when not explicit)
 
+    # Return result with placeholders + error message listing failed fields
     if errors:
-        return None, "; ".join(errors)
+        error_message = f"Partial serialization - errors in: {'; '.join(errors)}"
+        return result, error_message
     return result, None
 
 
@@ -360,7 +380,9 @@ class VideoFrameProcessor:
             )
 
             if error:
+                # Add error to errors list and include placeholder in output
                 webrtc_output.errors.append(f"{field_name}: {error}")
+                serialized_outputs[field_name] = {"__serialization_error__": error}
             elif serialized_value is not None:
                 serialized_outputs[field_name] = serialized_value
             # else: serialized_value is None and no error = field was skipped (e.g., image in video track)
