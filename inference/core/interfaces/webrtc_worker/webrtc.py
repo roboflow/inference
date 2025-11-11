@@ -596,9 +596,11 @@ async def init_rtc_peer_connection_with_loop(
             pass
     output_mode = webrtc_request.output_mode
     stream_output = None
+
+    # Normalize stream_output
     if webrtc_request.stream_output:
-        # TODO: UI sends None as stream_output for wildcard outputs
-        stream_output = webrtc_request.stream_output[0] or ""
+        filtered = [s for s in webrtc_request.stream_output if s]
+        stream_output = filtered[0] if filtered else None
 
     # Handle data_output as list
     # - None or not provided: send all outputs
