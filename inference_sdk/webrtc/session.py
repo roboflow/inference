@@ -3,6 +3,8 @@
 import asyncio
 import json
 import logging
+import queue
+import sys
 import threading
 from contextlib import AbstractContextManager
 from queue import Queue
@@ -25,6 +27,18 @@ from inference_sdk.webrtc.config import StreamConfig
 from inference_sdk.webrtc.sources import StreamSource
 
 logger = logging.getLogger(__name__)
+
+# Configure basic logging if root logger has no handlers
+# This ensures users see important errors even without explicit logging setup
+if not logging.root.handlers:
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(
+        logging.Formatter("%(levelname)s [%(name)s] %(message)s")
+    )
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+
 # Suppress FFmpeg colorspace conversion warnings
 av.logging.set_level(av.logging.ERROR)
 
@@ -32,18 +46,43 @@ av.logging.set_level(av.logging.ERROR)
 class _VideoStream:
     """Wrapper for video frame queue providing iterator interface."""
 
-    def __init__(self, frames: "Queue[Optional[np.ndarray]]"):
+    def __init__(
+        self, frames: "Queue[Optional[np.ndarray]]", initial_frame_timeout: float = 30.0
+    ):
         self._frames = frames
+        self._initial_frame_timeout = initial_frame_timeout
+        self._first_frame_received = False
 
     def __call__(self) -> Iterator[np.ndarray]:
         """Iterate over video frames.
 
         Yields BGR numpy arrays until the stream ends (None received).
+
+        Raises:
+            TimeoutError: If first frame not received within timeout period
         """
         while True:
-            frame = self._frames.get()
+            # Use timeout only for first frame to detect server not sending
+            timeout = (
+                self._initial_frame_timeout if not self._first_frame_received else None
+            )
+
+            try:
+                frame = self._frames.get(timeout=timeout)
+            except queue.Empty:
+                raise TimeoutError(
+                    f"No video frames received within {self._initial_frame_timeout}s timeout.\n"
+                    "This likely means the server is not sending video.\n"
+                    "Troubleshooting:\n"
+                    "  - Check that stream_output is configured in your StreamConfig\n"
+                    "  - Verify the workflow outputs match your configuration\n"
+                    "  - Ensure the server has WebRTC enabled and is processing frames"
+                )
+
             if frame is None:
                 break
+
+            self._first_frame_received = True
             yield frame
 
 
@@ -184,7 +223,29 @@ class WebRTCSession(AbstractContextManager["WebRTCSession"]):
 
         # Initialize WebRTC connection
         fut = asyncio.run_coroutine_threadsafe(self._init(), self._loop)
-        fut.result()
+        try:
+            fut.result()
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 404:
+                raise RuntimeError(
+                    f"WebRTC endpoint not found at {self._api_url}/initialise_webrtc_worker.\n"
+                    f"This API URL may not support WebRTC streaming.\n"
+                    f"Troubleshooting:\n"
+                    f"  - For self-hosted inference, ensure the server is started with WebRTC enabled\n"
+                    f"  - For Roboflow Cloud, use a dedicated inference server URL (not serverless.roboflow.com)\n"
+                    f"  - Verify the --api-url parameter points to the correct server"
+                ) from e
+            else:
+                raise RuntimeError(
+                    f"Failed to initialize WebRTC session (HTTP {e.response.status_code}).\n"
+                    f"API URL: {self._api_url}\n"
+                    f"Error: {e}"
+                ) from e
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to initialize WebRTC session: {e.__class__.__name__}: {e}\n"
+                f"API URL: {self._api_url}"
+            ) from e
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:  # type: ignore[override]
@@ -214,14 +275,21 @@ class WebRTCSession(AbstractContextManager["WebRTCSession"]):
 
         Args:
             timeout: Maximum time to wait in seconds (None for indefinite)
+
+        Raises:
+            TimeoutError: If timeout expires before stream ends
         """
         try:
             while True:
                 frame = self._video_queue.get(timeout=timeout)
                 if frame is None:
                     break
-        except Exception:
-            pass
+        except queue.Empty:
+            if timeout is not None:
+                raise TimeoutError(
+                    f"WebRTC session wait() timed out after {timeout}s.\n"
+                    "The video stream did not end within the timeout period."
+                )
 
     async def _get_turn_config(self) -> Optional[dict]:
         """Fetch TURN configuration from server or use user-provided config.
@@ -265,7 +333,7 @@ class WebRTCSession(AbstractContextManager["WebRTCSession"]):
             # 4. Graceful fallback - proceed without TURN
             logger.info(
                 f"TURN configuration not available ({e.__class__.__name__}), "
-                "proceeding without TURN server"
+                "proceeding without TURN server",exc_info=True
             )
             return None
 
@@ -299,8 +367,12 @@ class WebRTCSession(AbstractContextManager["WebRTCSession"]):
                 while True:
                     try:
                         f: VideoFrame = await subscribed.recv()
-                    except Exception:
+                    except Exception as e:
                         # Connection closed or track ended
+                        logger.error(
+                            f"WebRTC video track ended: {e.__class__.__name__}: {e}",
+                            exc_info=True,
+                        )
                         try:
                             self._video_queue.put_nowait(None)
                         except Exception:

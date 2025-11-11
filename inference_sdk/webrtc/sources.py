@@ -8,6 +8,7 @@ import asyncio
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 
+import av
 import cv2
 import numpy as np
 from aiortc import RTCPeerConnection, VideoStreamTrack
@@ -203,20 +204,52 @@ class RTSPSource(StreamSource):
         return {"rtsp_url": self.url}
 
 
-class _VideoFileTrack(_OpenCVVideoTrack):
-    """aiortc VideoStreamTrack that reads frames from a video file."""
+class _VideoFileTrack(VideoStreamTrack):
+    """aiortc VideoStreamTrack that reads frames from a video file using PyAV.
+
+    Uses PyAV instead of OpenCV to preserve original video timestamps and time_base.
+    """
 
     def __init__(self, path: str):
-        super().__init__(path, "video file")
+        super().__init__()
+        try:
+            self._container = av.open(path)
+        except Exception as e:
+            raise RuntimeError(f"Could not open video file: {path}") from e
+
+        if not self._container.streams.video:
+            raise RuntimeError(f"No video stream found in: {path}")
+
+        self._stream = self._container.streams.video[0]
+        self._stream.thread_type = "AUTO"  # Enable multi-threaded decoding
+        self._decoder = self._container.decode(self._stream)
 
     async def recv(self) -> VideoFrame:  # type: ignore[override]
-        """Read next frame from video file."""
-        ret, frame = self._cap.read()
-        if not ret or frame is None:
+        """Read next frame from video file with aiortc pacing."""
+        try:
+            frame = next(self._decoder)
+            # Call next_timestamp() for pacing (asyncio.sleep), but keep original timing
+            # This preserves the video's original pts/time_base while preventing frames
+            # from decoding too fast
+            await self.next_timestamp()
+            return frame
+        except StopIteration:
             # End of file - use Exception (not RuntimeError) for EOF
             raise Exception("End of video file")
 
-        return await self._frame_to_video(frame)
+    def get_declared_fps(self) -> Optional[float]:
+        """Get the FPS from the video stream."""
+        if self._stream.average_rate:
+            return float(self._stream.average_rate)
+        return None
+
+    def release(self) -> None:
+        """Release the PyAV container."""
+        try:
+            if hasattr(self, "_container") and self._container:
+                self._container.close()
+        except Exception:
+            pass
 
 
 class VideoFileSource(StreamSource):
@@ -230,23 +263,29 @@ class VideoFileSource(StreamSource):
         """Initialize video file source.
 
         Args:
-            path: Path to video file (any format supported by OpenCV)
+            path: Path to video file (any format supported by PyAV/FFmpeg)
         """
         self.path = path
         self._track: Optional[_VideoFileTrack] = None
+        self._declared_fps: Optional[float] = None
 
     async def configure_peer_connection(self, pc: RTCPeerConnection) -> None:
         """Create video file track and add it to the peer connection."""
         # Create track that reads from video file
         self._track = _VideoFileTrack(self.path)
 
+        # Capture FPS for server
+        self._declared_fps = self._track.get_declared_fps()
+
         # Add track to send video
         pc.addTrack(self._track)
 
     def get_initialization_params(self) -> Dict[str, Any]:
         """Return metadata about video source."""
-        # Optionally pass source type for logging/metadata
-        return {"video_source": "file"}
+        params = {"video_source": "file"}
+        if self._declared_fps:
+            params["declared_fps"] = self._declared_fps
+        return params
 
     async def cleanup(self) -> None:
         """Release video file resources."""
