@@ -938,33 +938,47 @@ def build_roboflow_api_headers(
         return explicit_headers
 
 
-@wrap_roboflow_api_errors()
 def post_to_roboflow_api(
     endpoint: str,
     api_key: Optional[str],
     payload: Optional[dict] = None,
     params: Optional[List[Tuple[str, str]]] = None,
+    http_errors_handlers: Optional[
+        Dict[int, Callable[[Union[requests.exceptions.HTTPError]], None]]
+    ] = None,
 ) -> dict:
-    """Generic function to make a POST request to the Roboflow API."""
-    url_params = []
-    if api_key:
-        url_params.append(("api_key", api_key))
-    if params:
-        url_params.extend(params)
+    """Generic function to make a POST request to the Roboflow API.
+    
+    Args:
+        endpoint: API endpoint path
+        api_key: Roboflow API key
+        payload: JSON payload
+        params: Additional URL parameters
+        http_errors_handlers: Optional custom HTTP error handlers by status code
+    """
+    @wrap_roboflow_api_errors(http_errors_handlers=http_errors_handlers)
+    def _make_request():
+        url_params = []
+        if api_key:
+            url_params.append(("api_key", api_key))
+        if params:
+            url_params.extend(params)
 
-    full_url = _add_params_to_url(
-        url=f"{API_BASE_URL}/{endpoint.strip('/')}", params=url_params
-    )
-    wrapped_url = wrap_url(full_url)
+        full_url = _add_params_to_url(
+            url=f"{API_BASE_URL}/{endpoint.strip('/')}", params=url_params
+        )
+        wrapped_url = wrap_url(full_url)
 
-    headers = build_roboflow_api_headers()
+        headers = build_roboflow_api_headers()
 
-    response = requests.post(
-        url=wrapped_url,
-        json=payload,
-        headers=headers,
-        timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
-        verify=ROBOFLOW_API_VERIFY_SSL,
-    )
-    api_key_safe_raise_for_status(response=response)
-    return response.json()
+        response = requests.post(
+            url=wrapped_url,
+            json=payload,
+            headers=headers,
+            timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
+            verify=ROBOFLOW_API_VERIFY_SSL,
+        )
+        api_key_safe_raise_for_status(response=response)
+        return response.json()
+    
+    return _make_request()

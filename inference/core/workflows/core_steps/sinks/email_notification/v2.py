@@ -744,6 +744,40 @@ def send_email_via_roboflow_proxy(
     attachments: Dict[str, Any],
 ) -> Tuple[bool, str]:
     """Send email through Roboflow's proxy service."""
+    from inference.core.exceptions import (
+        RoboflowAPIForbiddenError,
+        RoboflowAPIUnsuccessfulRequestError,
+    )
+
+    # Custom error handler that preserves the API's error message
+    def handle_email_proxy_error(status_code: int, http_error: Exception) -> None:
+        """Extract and preserve the actual error message from the API response."""
+        try:
+            response = http_error.response
+            error_data = response.json()
+            # API returns 'details' field with the actual message, 'error' is generic
+            # Prioritize 'details' over 'error' for more specific messages
+            api_error_message = error_data.get("details") or error_data.get("error") or str(http_error)
+        except Exception:
+            api_error_message = str(http_error)
+        
+        # Raise appropriate exception with the actual API error message
+        if status_code == 403:
+            raise RoboflowAPIForbiddenError(api_error_message) from http_error
+        elif status_code == 413:
+            raise RoboflowAPIUnsuccessfulRequestError(api_error_message) from http_error
+        elif status_code == 429:
+            raise RoboflowAPIUnsuccessfulRequestError(api_error_message) from http_error
+        else:
+            raise RoboflowAPIUnsuccessfulRequestError(api_error_message) from http_error
+
+    # Map status codes to our custom handler
+    custom_error_handlers = {
+        403: lambda e: handle_email_proxy_error(403, e),
+        413: lambda e: handle_email_proxy_error(413, e),
+        429: lambda e: handle_email_proxy_error(429, e),
+    }
+
     try:
         # Serialize any WorkflowImageData objects to base64 strings
         serialized_parameters = serialize_message_parameters(message_parameters)
@@ -800,9 +834,50 @@ def send_email_via_roboflow_proxy(
             endpoint=endpoint,
             api_key=roboflow_api_key,
             payload=payload,
+            http_errors_handlers=custom_error_handlers,
         )
 
         return False, "Notification sent successfully via Roboflow proxy"
+    except RoboflowAPIForbiddenError as error:
+        # Handle 403 errors (whitelist violations)
+        error_message = str(error)
+        logging.warning(f"Email rejected by proxy due to access restrictions: {error_message}")
+        
+        # Check if it's a workspace member restriction
+        # The API returns detailed error messages about non-workspace members
+        if "non-workspace members" in error_message.lower():
+            return True, (
+                "To prevent spam, you can only send emails to members of your Roboflow Workspace via the Roboflow Managed API Key. "
+                "Add this email to your Workspace or switch to sending via your own SMTP server."
+            )
+        else:
+            return True, f"Failed to send email: access forbidden. {error_message}"
+    except RoboflowAPIUnsuccessfulRequestError as error:
+        # Handle rate limiting (429) and other API errors
+        error_message = str(error)
+        logging.warning(f"Email proxy API error: {error_message}")
+        
+        # Check for payload too large (413)
+        if "413" in error_message or "payload too large" in error_message.lower() or "too large" in error_message.lower():
+            return True, (
+                "Failed to send email: attachment size exceeds the 5MB limit. "
+                "For image attachments, use the Image Preprocessing block to resize images before sending. "
+                "For other attachments (like CSV files), reduce the file size or send smaller data."
+            )
+        # Check if it's a rate limit error
+        elif "rate limit" in error_message.lower():
+            return True, (
+                "Failed to send email: rate limit exceeded. "
+                "The workspace has exceeded its email sending limits. "
+                "Please wait before sending more emails or contact support to increase your limits."
+            )
+        elif "credits exceeded" in error_message.lower():
+            return True, (
+                "Failed to send email: workspace credits exceeded. "
+                "Please add more credits to your workspace to continue sending emails."
+            )
+        else:
+            return True, f"Failed to send email via proxy. {error_message}"
     except Exception as error:
         logging.warning(
             f"Could not send e-mail via Roboflow proxy. Error: {str(error)}"
