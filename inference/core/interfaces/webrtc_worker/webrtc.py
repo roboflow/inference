@@ -250,6 +250,33 @@ class VideoFrameProcessor:
         else:
             self.data_output = data_output
 
+        # Validate data_output and stream_output against workflow specification
+        workflow_outputs = workflow_configuration.workflow_specification.get(
+            "outputs", []
+        )
+        available_output_names = [o.get("name") for o in workflow_outputs]
+
+        # Validate data_output fields
+        if self.data_output is not None and len(self.data_output) > 0:
+            invalid_fields = [
+                field
+                for field in self.data_output
+                if field not in available_output_names
+            ]
+
+            if invalid_fields:
+                raise ValueError(
+                    f"Invalid data_output fields: {invalid_fields}. "
+                    f"Available workflow outputs: {available_output_names}"
+                )
+
+        # Validate stream_output field (if explicitly specified and not empty)
+        if self.stream_output and self.stream_output not in available_output_names:
+            raise ValueError(
+                f"Invalid stream_output field: '{self.stream_output}'. "
+                f"Available workflow outputs: {available_output_names}"
+            )
+
         self._inference_pipeline = InferencePipeline.init_with_workflow(
             video_reference=VideoFrameProducer,
             workflow_specification=workflow_configuration.workflow_specification,
