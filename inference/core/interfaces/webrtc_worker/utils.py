@@ -21,7 +21,9 @@ def process_frame(
     inference_pipeline: InferencePipeline,
     stream_output: str,
     include_errors_on_frame: bool = True,
-) -> Tuple[Dict[str, Union[WorkflowImageData, Any]], VideoFrame, List[str], Optional[str]]:
+) -> Tuple[
+    Dict[str, Union[WorkflowImageData, Any]], VideoFrame, List[str], Optional[str]
+]:
     np_image = frame.to_ndarray(format="bgr24")
     workflow_output: Dict[str, Union[WorkflowImageData, Any]] = {}
     errors = []
