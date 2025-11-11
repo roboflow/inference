@@ -1,4 +1,4 @@
-from typing import List, Optional, Union
+from typing import List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -22,7 +22,7 @@ class WebRTCWorkerRequest(BaseModel):
     data_output: Optional[List[Optional[str]]] = Field(default_factory=list)
     declared_fps: Optional[float] = None
     rtsp_url: Optional[str] = None
-    instance_type: Optional[str] = Field(
+    instance_type: Optional[Literal["cpu", "gpu"]] = Field(
         default="gpu",
         description="Instance type: 'cpu' or 'gpu'",
     )
