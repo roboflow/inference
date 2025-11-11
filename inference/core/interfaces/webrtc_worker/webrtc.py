@@ -33,6 +33,7 @@ from inference.core.exceptions import (
     MissingApiKeyError,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
+    WebRTCConfigurationError,
 )
 from inference.core.interfaces.camera.entities import VideoFrame as InferenceVideoFrame
 from inference.core.interfaces.camera.entities import VideoFrameProducer
@@ -49,6 +50,7 @@ from inference.core.interfaces.webrtc_worker.entities import (
     WebRTCWorkerResult,
 )
 from inference.core.interfaces.webrtc_worker.utils import process_frame
+from inference.core.roboflow_api import get_workflow_specification
 from inference.core.workflows.core_steps.common.serializers import (
     serialise_sv_detections,
 )
@@ -248,36 +250,72 @@ class VideoFrameProcessor:
         elif isinstance(data_output, list):
             self.data_output = [f for f in data_output if f]
         else:
-            raise TypeError(
+            raise WebRTCConfigurationError(
                 f"data_output must be list or None, got {type(data_output).__name__}"
             )
 
-        # Validate data_output and stream_output against workflow specification
-        workflow_outputs = workflow_configuration.workflow_specification.get(
-            "outputs", []
+        # Validate that workflow is specified either by specification or workspace/workflow_id
+        has_specification = workflow_configuration.workflow_specification is not None
+        has_workspace_and_id = (
+            workflow_configuration.workspace_name is not None
+            and workflow_configuration.workflow_id is not None
         )
-        available_output_names = [o.get("name") for o in workflow_outputs]
 
-        # Validate data_output fields
-        if self.data_output is not None and len(self.data_output) > 0:
-            invalid_fields = [
-                field
-                for field in self.data_output
-                if field not in available_output_names
-            ]
+        if not has_specification and not has_workspace_and_id:
+            raise WebRTCConfigurationError(
+                "Either 'workflow_specification' or both 'workspace_name' and 'workflow_id' must be provided"
+            )
 
-            if invalid_fields:
-                raise ValueError(
-                    f"Invalid data_output fields: {invalid_fields}. "
-                    f"Available workflow outputs: {available_output_names}"
+        # Fetch workflow_specification from API if not provided directly
+        if not has_specification and has_workspace_and_id:
+            try:
+                logger.info(
+                    f"Fetching workflow specification for workspace={workflow_configuration.workspace_name}, "
+                    f"workflow_id={workflow_configuration.workflow_id}"
+                )
+                workflow_configuration.workflow_specification = (
+                    get_workflow_specification(
+                        api_key=api_key,
+                        workspace_id=workflow_configuration.workspace_name,
+                        workflow_id=workflow_configuration.workflow_id,
+                    )
+                )
+                # Clear workspace_name and workflow_id after fetch to avoid conflicts
+                # InferencePipeline requires these to be mutually exclusive with workflow_specification
+                workflow_configuration.workspace_name = None
+                workflow_configuration.workflow_id = None
+            except Exception as e:
+                raise WebRTCConfigurationError(
+                    f"Failed to fetch workflow specification from API: {str(e)}"
                 )
 
-        # Validate stream_output field (if explicitly specified and not empty)
-        if self.stream_output and self.stream_output not in available_output_names:
-            raise ValueError(
-                f"Invalid stream_output field: '{self.stream_output}'. "
-                f"Available workflow outputs: {available_output_names}"
+        # Validate data_output and stream_output against workflow specification
+        if workflow_configuration.workflow_specification is not None:
+            workflow_outputs = workflow_configuration.workflow_specification.get(
+                "outputs", []
             )
+            available_output_names = [o.get("name") for o in workflow_outputs]
+
+            # Validate data_output fields
+            if self.data_output is not None and len(self.data_output) > 0:
+                invalid_fields = [
+                    field
+                    for field in self.data_output
+                    if field not in available_output_names
+                ]
+
+                if invalid_fields:
+                    raise WebRTCConfigurationError(
+                        f"Invalid data_output fields: {invalid_fields}. "
+                        f"Available workflow outputs: {available_output_names}"
+                    )
+
+            # Validate stream_output field (if explicitly specified and not empty)
+            if self.stream_output and self.stream_output not in available_output_names:
+                raise WebRTCConfigurationError(
+                    f"Invalid stream_output field: '{self.stream_output}'. "
+                    f"Available workflow outputs: {available_output_names}"
+                )
 
         self._inference_pipeline = InferencePipeline.init_with_workflow(
             video_reference=VideoFrameProducer,
@@ -656,6 +694,14 @@ async def init_rtc_peer_connection_with_loop(
             WebRTCWorkerResult(
                 exception_type=error.__class__.__name__,
                 error_message="Could not decode InferencePipeline initialisation command payload.",
+            )
+        )
+        return
+    except WebRTCConfigurationError as error:
+        send_answer(
+            WebRTCWorkerResult(
+                exception_type=error.__class__.__name__,
+                error_message=str(error),
             )
         )
         return
