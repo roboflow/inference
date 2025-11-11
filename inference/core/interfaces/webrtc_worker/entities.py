@@ -17,12 +17,10 @@ class WebRTCOutputMode(str, Enum):
     - DATA_ONLY: Only send JSON data via data channel (no video track sent back)
     - VIDEO_ONLY: Only send processed video via video track (no data channel messages)
     - BOTH: Send both video and data (default behavior)
-    - OFF: Disable both outputs (useful for pausing processing)
     """
     DATA_ONLY = "data_only"
     VIDEO_ONLY = "video_only"
     BOTH = "both"
-    OFF = "off"
 
 
 class WebRTCWorkerRequest(BaseModel):

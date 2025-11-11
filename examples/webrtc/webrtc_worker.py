@@ -267,8 +267,8 @@ def parse_args() -> argparse.Namespace:
         required=False,
         type=str,
         default="both",
-        choices=["data_only", "video_only", "both", "off"],
-        help="Output mode: data_only (JSON only), video_only (video only), both (default), off (no output)",
+        choices=["data_only", "video_only", "both"],
+        help="Output mode: data_only (JSON only), video_only (video only), both (default)",
     )
     parser.add_argument(
         "--stream-output",
@@ -412,8 +412,6 @@ def main():
         logger.info("VIDEO_ONLY mode: Server will send processed video only (no data channel messages)")
     elif args.output_mode == "both":
         logger.info("BOTH mode: Server will send both video and JSON data")
-    else:
-        logger.info("OFF mode: No outputs (useful for debugging)")
 
     workflow_specification = get_workflow_specification(
         api_key=args.api_key,
