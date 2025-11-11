@@ -3,7 +3,7 @@ import base64
 import datetime
 import json
 import logging
-from typing import Any, Callable, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -264,7 +264,9 @@ class VideoFrameProcessor:
             return True
         return False
 
-    def _process_frame_data_only(self, frame: VideoFrame, frame_id: int) -> tuple:
+    def _process_frame_data_only(
+        self, frame: VideoFrame, frame_id: int
+    ) -> Tuple[Dict[str, Any], List[str]]:
         """Process frame through workflow without rendering visuals.
 
         Returns (workflow_output, errors)
@@ -291,10 +293,10 @@ class VideoFrameProcessor:
 
     async def _send_data_output(
         self,
-        workflow_output: dict,
+        workflow_output: Dict[str, Any],
         frame_timestamp: datetime.datetime,
         frame: VideoFrame,
-        errors: list,
+        errors: List[str],
     ):
         """Send data via data channel based on data_output configuration.
 
