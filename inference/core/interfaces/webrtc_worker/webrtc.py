@@ -60,23 +60,26 @@ logging.getLogger("aiortc").setLevel(logging.WARNING)
 
 
 def serialize_workflow_output(
-    output_data: Any, field_name: str, is_explicit_request: bool
+    output_data: Any, is_explicit_request: bool
 ) -> Tuple[Any, Optional[str]]:
-    """Serialize a single workflow output value.
+    """Serialize a workflow output value recursively.
 
     Args:
         output_data: The workflow output value to serialize
-        field_name: The name of the field being serialized
         is_explicit_request: True if field was explicitly requested in data_output
 
     Returns (serialized_value, error_message)
-    - serialized_value: The value ready for JSON serialization, or None if skipped/failed
+    - serialized_value: The value ready for JSON serialization, or None if
+      skipped/failed
     - error_message: Error string if serialization failed, None otherwise
 
     Image serialization rules:
     - Images are NEVER serialized UNLESS explicitly requested in data_output list
     - If explicit: serialize to base64
     - If implicit (data_output=None): skip images
+
+    Handles nested structures recursively (dicts, lists) to ensure all complex
+    types are properly serialized.
     """
     try:
         # Handle WorkflowImageData (convert to base64 only if explicit)
@@ -106,13 +109,17 @@ def serialize_workflow_output(
             except Exception as e:
                 return None, f"Failed to serialize detections: {str(e)}"
 
-        # Handle dict (return as-is, will be JSON serialized)
+        # Handle dict (serialize recursively)
         elif isinstance(output_data, dict):
-            return output_data, None
+            return _serialize_collection(
+                output_data.items(), is_explicit_request, as_dict=True
+            )
 
-        # Handle list (return as-is)
+        # Handle list (serialize recursively)
         elif isinstance(output_data, list):
-            return output_data, None
+            return _serialize_collection(
+                enumerate(output_data), is_explicit_request, as_dict=False
+            )
 
         # Handle primitives (str, int, float, bool)
         elif isinstance(output_data, (str, int, float, bool, type(None))):
@@ -122,12 +129,51 @@ def serialize_workflow_output(
         elif isinstance(output_data, (np.integer, np.floating)):
             return output_data.item(), None
 
+        # Handle numpy arrays
+        elif isinstance(output_data, np.ndarray):
+            try:
+                return output_data.tolist(), None
+            except Exception as e:
+                return None, f"Failed to serialize numpy array: {str(e)}"
+
         # Unknown type - convert to string as fallback
         else:
             return str(output_data), None
 
     except Exception as e:
         return None, f"Unexpected error serializing output: {str(e)}"
+
+
+def _serialize_collection(
+    items, is_explicit_request: bool, as_dict: bool
+) -> Tuple[Any, Optional[str]]:
+    """Helper to serialize dict or list collections recursively.
+
+    Args:
+        items: Iterator of (key, value) pairs for dict or (index, value) for list
+        is_explicit_request: Whether the parent field was explicitly requested
+        as_dict: True to return dict, False to return list
+
+    Returns (serialized_collection, error_message)
+    """
+    result = {} if as_dict else []
+    errors = []
+
+    for key_or_idx, value in items:
+        serialized_value, error = serialize_workflow_output(value, is_explicit_request)
+
+        if error:
+            errors.append(f"{key_or_idx}: {error}")
+        elif serialized_value is not None:
+            if as_dict:
+                result[key_or_idx] = serialized_value
+            else:
+                result.append(serialized_value)
+        # else: skip None values (e.g., images when not explicit)
+
+    if errors:
+        return None, "; ".join(errors)
+    return result, None
 
 
 class RTCPeerConnectionWithLoop(RTCPeerConnection):
@@ -307,7 +353,6 @@ class VideoFrameProcessor:
 
             serialized_value, error = serialize_workflow_output(
                 output_data=output_data,
-                field_name=field_name,
                 is_explicit_request=is_explicit_request,
             )
 
