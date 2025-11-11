@@ -5,7 +5,7 @@ import json
 import logging
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-import cv2
+import cv2 as cv
 import numpy as np
 import supervision as sv
 from aiortc import (
@@ -229,6 +229,7 @@ class VideoFrameProcessor:
         declared_fps: float = 30,
         termination_date: Optional[datetime.datetime] = None,
         terminate_event: Optional[asyncio.Event] = None,
+        use_data_channel_frames: bool = False,
     ):
         self._loop = asyncio_loop
         self._termination_date = termination_date
@@ -239,6 +240,8 @@ class VideoFrameProcessor:
         self._received_frames = 0
         self._declared_fps = declared_fps
         self._stop_processing = False
+        self.use_data_channel_frames = use_data_channel_frames
+        self._data_frame_queue: "asyncio.Queue[Optional[VideoFrame]]" = asyncio.Queue()
 
         self.output_mode = output_mode
         self.stream_output = stream_output
@@ -460,6 +463,39 @@ class VideoFrameProcessor:
 
         self.data_channel.send(json.dumps(webrtc_output.model_dump()))
 
+    async def _handle_data_channel_frame(self, message: str) -> None:
+        """Handle incoming frame from upstream_frames data channel."""
+        try:
+            payload = json.loads(message)
+            if payload.get("type") != "frame":
+                logger.warning(f"Unknown message type: {payload.get('type')}")
+                return
+            
+            frame_id = payload.get("frame_id", 0)
+            image_b64 = payload.get("image", "")
+            
+            if frame_id % 100 == 1:
+                logger.info(f"Received frame {frame_id} via data channel")
+            
+            # Decode base64 → JPEG bytes → numpy array
+            image_bytes = base64.b64decode(image_b64)
+            nparr = np.frombuffer(image_bytes, np.uint8)
+            np_image = cv.imdecode(nparr, cv.IMREAD_COLOR)
+            
+            if np_image is None:
+                logger.error(f"Failed to decode frame {frame_id}")
+                return
+            
+            # Convert to VideoFrame and queue
+            video_frame = VideoFrame.from_ndarray(np_image, format="bgr24")
+            await self._data_frame_queue.put((frame_id, video_frame))
+            
+            if frame_id % 100 == 1:
+                logger.info(f"Queued frame {frame_id}, queue size: {self._data_frame_queue.qsize()}")
+            
+        except Exception as e:
+            logger.error(f"Error handling data channel frame: {e}", exc_info=True)
+
     async def process_frames_data_only(self):
         """Process frames for data extraction only, without video track output.
 
@@ -470,24 +506,35 @@ class VideoFrameProcessor:
             av_logging.set_libav_level(av_logging.ERROR)
             self._av_logging_set = True
 
-        logger.info("Starting data-only frame processing")
+        logger.info(f"Starting data-only frame processing (use_data_channel_frames={self.use_data_channel_frames})")
 
         try:
-            while (
-                self.track
-                and self.track.readyState != "ended"
-                and not self._stop_processing
-            ):
+            while not self._stop_processing:
                 if self._check_termination():
                     break
 
-                # Drain queue if using PlayerStreamTrack (RTSP)
-                if isinstance(self.track, PlayerStreamTrack):
-                    while self.track._queue.qsize() > 30:
-                        self.track._queue.get_nowait()
+                # Get frame from appropriate source
+                if self.use_data_channel_frames:
+                    # Wait for frame from data channel queue
+                    item = await self._data_frame_queue.get()
+                    if item is None:
+                        logger.info("Received stop signal from data channel")
+                        break
+                    frame_id, frame = item
+                    self._received_frames = frame_id
+                else:
+                    # Get frame from media track (existing behavior)
+                    if not self.track or self.track.readyState == "ended":
+                        break
+                    
+                    # Drain queue if using PlayerStreamTrack (RTSP)
+                    if isinstance(self.track, PlayerStreamTrack):
+                        while self.track._queue.qsize() > 30:
+                            self.track._queue.get_nowait()
 
-                frame: VideoFrame = await self.track.recv()
-                self._received_frames += 1
+                    frame = await self.track.recv()
+                    self._received_frames += 1
+
                 frame_timestamp = datetime.datetime.now()
 
                 # Process workflow without rendering
@@ -530,6 +577,7 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
         declared_fps: float = 30,
         termination_date: Optional[datetime.datetime] = None,
         terminate_event: Optional[asyncio.Event] = None,
+        use_data_channel_frames: bool = False,
         *args,
         **kwargs,
     ):
@@ -545,6 +593,7 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
             declared_fps=declared_fps,
             termination_date=termination_date,
             terminate_event=terminate_event,
+            use_data_channel_frames=use_data_channel_frames,
         )
 
     async def recv(self):
@@ -670,6 +719,7 @@ async def init_rtc_peer_connection_with_loop(
                 declared_fps=webrtc_request.declared_fps,
                 termination_date=termination_date,
                 terminate_event=terminate_event,
+                use_data_channel_frames=webrtc_request.use_data_channel_frames,
             )
         else:
             # DATA_ONLY or OFF mode - use base VideoFrameProcessor
@@ -683,6 +733,7 @@ async def init_rtc_peer_connection_with_loop(
                 declared_fps=webrtc_request.declared_fps,
                 termination_date=termination_date,
                 terminate_event=terminate_event,
+                use_data_channel_frames=webrtc_request.use_data_channel_frames,
             )
     except (
         ValidationError,
@@ -818,6 +869,21 @@ async def init_rtc_peer_connection_with_loop(
     def on_datachannel(channel: RTCDataChannel):
         logger.info("Data channel '%s' received", channel.label)
 
+        # Handle upstream frames channel (client sending frames to server)
+        if channel.label == "upstream_frames":
+            logger.info("Upstream frames channel established, starting data-only processing")
+            
+            @channel.on("message")
+            def on_frame_message(message):
+                asyncio.create_task(video_processor._handle_data_channel_frame(message))
+            
+            # Start processing immediately since we won't get a media track
+            if webrtc_request.use_data_channel_frames and not should_send_video:
+                asyncio.create_task(video_processor.process_frames_data_only())
+            
+            return
+
+        # Handle inference control channel (bidirectional communication)
         @channel.on("message")
         def on_message(message):
             logger.info("Data channel message received: %s", message)
