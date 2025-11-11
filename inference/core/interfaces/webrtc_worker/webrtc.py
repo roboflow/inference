@@ -34,10 +34,8 @@ from inference.core.exceptions import (
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
 )
-from inference.core.interfaces.camera.entities import (
-    VideoFrame as InferenceVideoFrame,
-    VideoFrameProducer,
-)
+from inference.core.interfaces.camera.entities import VideoFrame as InferenceVideoFrame
+from inference.core.interfaces.camera.entities import VideoFrameProducer
 from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
 from inference.core.interfaces.stream_manager.manager_app.entities import (
     WebRTCData,
@@ -62,9 +60,7 @@ logging.getLogger("aiortc").setLevel(logging.WARNING)
 
 
 def serialize_workflow_output(
-    output_data: Any,
-    field_name: str,
-    is_explicit_request: bool
+    output_data: Any, field_name: str, is_explicit_request: bool
 ) -> Tuple[Any, Optional[str]]:
     """Serialize a single workflow output value.
 
@@ -93,9 +89,9 @@ def serialize_workflow_output(
             try:
                 np_image = output_data.numpy_image
                 # Encode as PNG
-                success, buffer = cv2.imencode('.png', np_image)
+                success, buffer = cv2.imencode(".png", np_image)
                 if success:
-                    base64_image = base64.b64encode(buffer).decode('utf-8')
+                    base64_image = base64.b64encode(buffer).decode("utf-8")
                     return f"data:image/png;base64,{base64_image}", None
                 else:
                     return None, "Failed to encode image as PNG"
@@ -213,11 +209,7 @@ class VideoFrameProcessor:
             return True
         return False
 
-    def _process_frame_data_only(
-        self,
-        frame: VideoFrame,
-        frame_id: int
-    ) -> tuple:
+    def _process_frame_data_only(self, frame: VideoFrame, frame_id: int) -> tuple:
         """Process frame through workflow without rendering visuals.
 
         Returns (workflow_output, errors)
@@ -247,7 +239,7 @@ class VideoFrameProcessor:
         workflow_output: dict,
         frame_timestamp: datetime.datetime,
         frame: VideoFrame,
-        errors: list
+        errors: list,
     ):
         """Send data via data channel based on data_output configuration.
 
@@ -286,7 +278,9 @@ class VideoFrameProcessor:
 
         else:
             # Send only specified fields
-            fields_to_send = [f for f in self.data_output if f]  # Filter out empty strings
+            fields_to_send = [
+                f for f in self.data_output if f
+            ]  # Filter out empty strings
 
         # Serialize each field
         serialized_outputs = {}
@@ -314,7 +308,7 @@ class VideoFrameProcessor:
             serialized_value, error = serialize_workflow_output(
                 output_data=output_data,
                 field_name=field_name,
-                is_explicit_request=is_explicit_request
+                is_explicit_request=is_explicit_request,
             )
 
             if error:
@@ -370,10 +364,7 @@ class VideoFrameProcessor:
 
                 # Send data via data channel
                 await self._send_data_output(
-                    workflow_output,
-                    frame_timestamp,
-                    frame,
-                    errors
+                    workflow_output, frame_timestamp, frame, errors
                 )
 
         except asyncio.CancelledError:
@@ -445,13 +436,15 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
 
         # Process frame through workflow WITH rendering (for video output)
         loop = asyncio.get_running_loop()
-        workflow_output, new_frame, errors, detected_output = await loop.run_in_executor(
-            None,
-            process_frame,
-            frame,
-            self._received_frames,
-            self._inference_pipeline,
-            self.stream_output,
+        workflow_output, new_frame, errors, detected_output = (
+            await loop.run_in_executor(
+                None,
+                process_frame,
+                frame,
+                self._received_frames,
+                self._inference_pipeline,
+                self.stream_output,
+            )
         )
 
         # Update stream_output if it was auto-detected (only when None)
@@ -465,10 +458,7 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
         # Send data via data channel if needed (BOTH or DATA_ONLY modes)
         if self.output_mode in [WebRTCOutputMode.BOTH, WebRTCOutputMode.DATA_ONLY]:
             await self._send_data_output(
-                workflow_output,
-                frame_timestamp,
-                frame,
-                errors
+                workflow_output, frame_timestamp, frame, errors
             )
 
         return new_frame
@@ -517,10 +507,15 @@ async def init_rtc_peer_connection_with_loop(
     # - None or not provided: send all outputs
     # - []: send nothing
     # - ["field1", "field2"]: send only those fields
-    data_output = webrtc_request.data_output if webrtc_request.data_output is not None else None
+    data_output = (
+        webrtc_request.data_output if webrtc_request.data_output is not None else None
+    )
 
     # Determine if we should send video back based on output mode
-    should_send_video = output_mode in [WebRTCOutputMode.VIDEO_ONLY, WebRTCOutputMode.BOTH]
+    should_send_video = output_mode in [
+        WebRTCOutputMode.VIDEO_ONLY,
+        WebRTCOutputMode.BOTH,
+    ]
 
     try:
         # For DATA_ONLY mode, we use VideoFrameProcessor directly (no video track)
@@ -654,7 +649,9 @@ async def init_rtc_peer_connection_with_loop(
             peer_connection.addTrack(video_processor)
         else:
             # For DATA_ONLY, start data-only processing task
-            logger.info(f"Output mode: {output_mode} - Starting data-only processing (no video track)")
+            logger.info(
+                f"Output mode: {output_mode} - Starting data-only processing (no video track)"
+            )
             asyncio.create_task(video_processor.process_frames_data_only())
 
     @peer_connection.on("connectionstatechange")

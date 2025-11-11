@@ -292,9 +292,13 @@ def main():
 
     logger.info(f"Starting WebRTC worker with output_mode: {args.output_mode}")
     if args.output_mode == "data_only":
-        logger.info("DATA_ONLY mode: Server will send JSON data via data channel only (no video track)")
+        logger.info(
+            "DATA_ONLY mode: Server will send JSON data via data channel only (no video track)"
+        )
     elif args.output_mode == "video_only":
-        logger.info("VIDEO_ONLY mode: Server will send processed video only (no data channel messages)")
+        logger.info(
+            "VIDEO_ONLY mode: Server will send processed video only (no data channel messages)"
+        )
     elif args.output_mode == "both":
         logger.info("BOTH mode: Server will send both video and JSON data")
 
@@ -327,7 +331,9 @@ def main():
             logger.info(f"Using specified stream_output: {stream_output_to_use}")
         else:
             # Let backend auto-detect first valid image output
-            logger.info("stream_output not specified, backend will auto-detect first valid image output")
+            logger.info(
+                "stream_output not specified, backend will auto-detect first valid image output"
+            )
 
     # Determine data_output
     data_output_to_use = None
@@ -343,7 +349,9 @@ def main():
             requested_fields = [f.strip() for f in args.data_outputs.split(",")]
 
             # Validate all requested fields exist
-            invalid_fields = [f for f in requested_fields if f not in available_output_names]
+            invalid_fields = [
+                f for f in requested_fields if f not in available_output_names
+            ]
             if invalid_fields:
                 raise ValueError(
                     f"❌ data_output fields {invalid_fields} not found in workflow outputs. "
@@ -422,27 +430,38 @@ def main():
     # Set up data channel listener for JSON data
     data_channel_message_count = [0]  # Use list for closure
     if peer_connection.data_channel:
+
         @peer_connection.data_channel.on("message")
         def on_data_message(message):
             data_channel_message_count[0] += 1
             try:
                 data = json.loads(message)
-                logger.info(f"=== Data Channel Message #{data_channel_message_count[0]} ===")
-                logger.info(f"Frame ID: {data.get('video_metadata', {}).get('frame_id')}")
+                logger.info(
+                    f"=== Data Channel Message #{data_channel_message_count[0]} ==="
+                )
+                logger.info(
+                    f"Frame ID: {data.get('video_metadata', {}).get('frame_id')}"
+                )
 
-                if data.get('serialized_output_data'):
-                    logger.info(f"Output fields: {list(data['serialized_output_data'].keys())}")
-                    for field, value in data['serialized_output_data'].items():
-                        if isinstance(value, str) and value.startswith('data:image'):
-                            logger.info(f"  {field}: <base64 image, {len(value)} bytes>")
-                        elif isinstance(value, dict) and 'predictions' in value:
-                            logger.info(f"  {field}: {len(value.get('predictions', []))} detections")
+                if data.get("serialized_output_data"):
+                    logger.info(
+                        f"Output fields: {list(data['serialized_output_data'].keys())}"
+                    )
+                    for field, value in data["serialized_output_data"].items():
+                        if isinstance(value, str) and value.startswith("data:image"):
+                            logger.info(
+                                f"  {field}: <base64 image, {len(value)} bytes>"
+                            )
+                        elif isinstance(value, dict) and "predictions" in value:
+                            logger.info(
+                                f"  {field}: {len(value.get('predictions', []))} detections"
+                            )
                         else:
                             logger.info(f"  {field}: {value}")
                 else:
                     logger.info("  No output data")
 
-                if data.get('errors'):
+                if data.get("errors"):
                     logger.warning(f"Errors: {data['errors']}")
 
             except json.JSONDecodeError:
@@ -473,7 +492,9 @@ def main():
         font_thickness = 2
 
         # Get text size to draw proper background
-        (text_width, text_height), baseline = cv.getTextSize(mode_text, font, font_scale, font_thickness)
+        (text_width, text_height), baseline = cv.getTextSize(
+            mode_text, font, font_scale, font_thickness
+        )
 
         # Draw background rectangle
         padding = 10
@@ -493,7 +514,7 @@ def main():
             font_scale,
             (100, 255, 100),  # Brighter green
             font_thickness,
-            cv.LINE_AA
+            cv.LINE_AA,
         )
 
         return frame
@@ -517,7 +538,9 @@ def main():
         ctrl_bg_x2 = ctrl_bg_x1 + ctrl_width + ctrl_padding * 2
         ctrl_bg_y2 = h - 10
 
-        cv.rectangle(frame, (ctrl_bg_x1, ctrl_bg_y1), (ctrl_bg_x2, ctrl_bg_y2), (0, 0, 0), -1)
+        cv.rectangle(
+            frame, (ctrl_bg_x1, ctrl_bg_y1), (ctrl_bg_x2, ctrl_bg_y2), (0, 0, 0), -1
+        )
 
         # Draw controls text
         ctrl_text_x = ctrl_bg_x1 + ctrl_padding
@@ -530,7 +553,7 @@ def main():
             controls_font_scale,
             (200, 200, 200),  # Light gray
             controls_thickness,
-            cv.LINE_AA
+            cv.LINE_AA,
         )
 
         return frame
@@ -553,13 +576,15 @@ def main():
             title = f"Data Outputs ({len(active_fields)} active)"
             title_color = (100, 200, 255)
 
-        cv.putText(frame, title, (x_start, y_start), font, 0.5, title_color, 1, cv.LINE_AA)
+        cv.putText(
+            frame, title, (x_start, y_start), font, 0.5, title_color, 1, cv.LINE_AA
+        )
         y_start += line_height + 5
 
         # Draw each output
         for i, output in enumerate(available_outputs):
-            key_letter = chr(ord('a') + i) if i < 26 else '?'
-            output_name = output.get('name', 'unnamed')
+            key_letter = chr(ord("a") + i) if i < 26 else "?"
+            output_name = output.get("name", "unnamed")
 
             # Determine if active
             if current_mode == "all":
@@ -574,11 +599,29 @@ def main():
             color = (100, 255, 100) if is_active else (100, 100, 100)
             text = f"  [{key_letter}] {indicator} {output_name}"
 
-            cv.putText(frame, text, (x_start, y_start + i * line_height), font, 0.45, color, 1, cv.LINE_AA)
+            cv.putText(
+                frame,
+                text,
+                (x_start, y_start + i * line_height),
+                font,
+                0.45,
+                color,
+                1,
+                cv.LINE_AA,
+            )
 
         # Controls
         y_controls = y_start + len(available_outputs) * line_height + 10
-        cv.putText(frame, "  [+] All  [-] None", (x_start, y_controls), font, 0.45, (200, 200, 200), 1, cv.LINE_AA)
+        cv.putText(
+            frame,
+            "  [+] All  [-] None",
+            (x_start, y_controls),
+            font,
+            0.45,
+            (200, 200, 200),
+            1,
+            cv.LINE_AA,
+        )
 
         return frame
 
@@ -593,7 +636,10 @@ def main():
             return False
 
         # Check data channel status for all commands except quit
-        if not peer_connection.data_channel or peer_connection.data_channel.readyState != "open":
+        if (
+            not peer_connection.data_channel
+            or peer_connection.data_channel.readyState != "open"
+        ):
             logger.error("Data channel not open")
             return True
 
@@ -704,9 +750,13 @@ def main():
                 frame = draw_mode_indicator(frame, mode_text)
 
                 if active_data_mode == "custom":
-                    frame = draw_output_list(frame, workflow_outputs, active_data_mode, active_data_fields)
+                    frame = draw_output_list(
+                        frame, workflow_outputs, active_data_mode, active_data_fields
+                    )
                 else:
-                    frame = draw_output_list(frame, workflow_outputs, active_data_mode, None)
+                    frame = draw_output_list(
+                        frame, workflow_outputs, active_data_mode, None
+                    )
 
                 controls_text = "+ = all | - = none | a-z = data | q = quit"
                 frame = draw_controls_hint(frame, controls_text)
@@ -724,7 +774,9 @@ def main():
     else:
         # For modes with video, use the video frame loop
         while not peer_connection.closed_event.is_set():
-            frame: Optional[VideoFrame] = peer_connection.stream_track.recv_queue.sync_get()
+            frame: Optional[VideoFrame] = (
+                peer_connection.stream_track.recv_queue.sync_get()
+            )
             if frame is None:
                 logger.info("No more frames")
                 break
@@ -737,11 +789,17 @@ def main():
             np_frame = draw_mode_indicator(np_frame, mode_text)
 
             if active_data_mode == "custom":
-                np_frame = draw_output_list(np_frame, workflow_outputs, active_data_mode, active_data_fields)
+                np_frame = draw_output_list(
+                    np_frame, workflow_outputs, active_data_mode, active_data_fields
+                )
             else:
-                np_frame = draw_output_list(np_frame, workflow_outputs, active_data_mode, None)
+                np_frame = draw_output_list(
+                    np_frame, workflow_outputs, active_data_mode, None
+                )
 
-            controls_text = "+ = all data | - = no data | 0-9 = stream | a-z = data | q = quit"
+            controls_text = (
+                "+ = all data | - = no data | 0-9 = stream | a-z = data | q = quit"
+            )
             np_frame = draw_controls_hint(np_frame, controls_text)
 
             cv.imshow("WebRTC Worker - Interactive Mode", np_frame)

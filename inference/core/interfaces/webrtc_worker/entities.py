@@ -18,6 +18,7 @@ class WebRTCOutputMode(str, Enum):
     - VIDEO_ONLY: Only send processed video via video track (no data channel messages)
     - BOTH: Send both video and data (default behavior)
     """
+
     DATA_ONLY = "data_only"
     VIDEO_ONLY = "video_only"
     BOTH = "both"
@@ -55,6 +56,7 @@ class WebRTCOutput(BaseModel):
     - If data_output is []: None (no data sent)
     - If data_output is ["field1", "field2"]: only those fields
     """
+
     serialized_output_data: Optional[Dict[str, Any]] = None
     video_metadata: Optional[WebRTCVideoMetadata] = None
     errors: List[str] = Field(default_factory=list)
