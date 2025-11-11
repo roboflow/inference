@@ -223,18 +223,67 @@ class WebRTCSession(AbstractContextManager["WebRTCSession"]):
         except Exception:
             pass
 
+    async def _get_turn_config(self) -> Optional[dict]:
+        """Fetch TURN configuration from server or use user-provided config.
+
+        Priority order:
+        1. User-provided config via StreamConfig.turn_server (highest priority)
+        2. Auto-fetch from server endpoint /query/webrtc_turn_config
+        3. Skip TURN for localhost connections
+        4. Graceful fallback to None if unavailable
+
+        Returns:
+            TURN configuration dict or None
+        """
+        # 1. Use user-provided config if available
+        if self._config.turn_server:
+            logger.debug("Using user-provided TURN configuration")
+            return self._config.turn_server
+
+        # 2. Skip TURN for localhost connections
+        if self._api_url.startswith(("http://localhost", "http://127.0.0.1")):
+            logger.debug("Skipping TURN for localhost connection")
+            return None
+
+        # 3. Try to auto-fetch from server
+        try:
+            logger.debug("Attempting to fetch TURN config from server")
+            response = requests.get(
+                f"{self._api_url}/query/webrtc_turn_config", timeout=5
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            turn_config = {
+                "urls": data["urls"],
+                "username": data["username"],
+                "credential": data["credential"],
+            }
+            logger.info("Successfully fetched TURN configuration from server")
+            return turn_config
+        except Exception as e:
+            # 4. Graceful fallback - proceed without TURN
+            logger.info(
+                f"TURN configuration not available ({e.__class__.__name__}), "
+                "proceeding without TURN server"
+            )
+            return None
+
     async def _init(self) -> None:
         """Initialize WebRTC connection.
 
         Sets up peer connection, configures source, negotiates with server.
         """
-        # Create peer connection with optional TURN config
+        # Fetch TURN configuration (auto-fetch or user-provided)
+        turn_config = await self._get_turn_config()
+
+        # Create peer connection with TURN config if available
         configuration = None
-        if self._config.turn_server:
+        if turn_config:
             ice = RTCIceServer(
-                urls=[self._config.turn_server.get("urls")],
-                username=self._config.turn_server.get("username"),
-                credential=self._config.turn_server.get("credential"),
+                urls=[turn_config.get("urls")],
+                username=turn_config.get("username"),
+                credential=turn_config.get("credential"),
             )
             configuration = RTCConfiguration(iceServers=[ice])
 
@@ -307,9 +356,9 @@ class WebRTCSession(AbstractContextManager["WebRTCSession"]):
             "data_output": self._config.data_output,
         }
 
-        # Add TURN config if provided
-        if self._config.turn_server:
-            payload["webrtc_turn_config"] = self._config.turn_server
+        # Add TURN config if available (auto-fetched or user-provided)
+        if turn_config:
+            payload["webrtc_turn_config"] = turn_config
 
         # Add FPS if provided
         if self._config.declared_fps:

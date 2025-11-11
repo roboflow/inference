@@ -24,11 +24,20 @@ class StreamConfig:
     """Whether to process frames in realtime (drop if can't keep up) or queue all frames"""
 
     declared_fps: Optional[float] = None
-    """Optional FPS declaration (auto-detected for webcam if not provided)"""
+    """Optional FPS declaration for the stream.
+
+    Note: Some sources (like WebcamSource) auto-detect FPS from the video device and will
+    override this value. The source's detected FPS takes precedence over this configuration.
+    For sources without auto-detection (like ManualSource), this value will be used if provided.
+    """
 
     # Network configuration
     turn_server: Optional[Dict[str, str]] = None
-    """TURN server configuration: {"urls": "turn:...", "username": "...", "credential": "..."}"""
+    """TURN server configuration: {"urls": "turn:...", "username": "...", "credential": "..."}
+
+    If not provided, the SDK will automatically attempt to fetch TURN configuration
+    from the server endpoint. TURN is automatically skipped for localhost connections.
+    """
 
     # Workflow parameters
     workflow_parameters: Dict[str, Any] = field(default_factory=dict)

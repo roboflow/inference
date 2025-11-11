@@ -257,7 +257,7 @@ class InferenceHTTPClient:
             # Lazy import to avoid optional dependency cost if unused
             from inference_sdk.webrtc.client import WebRTCClient  # noqa: WPS433
 
-            self.__webrtc_client = WebRTCClient(self)  # type: ignore[attr-defined]
+            self.__webrtc_client = WebRTCClient(self.__api_url, self.__api_key)  # type: ignore[attr-defined]
             return self.__webrtc_client  # type: ignore[attr-defined]
 
     @contextmanager

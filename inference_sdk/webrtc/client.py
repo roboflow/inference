@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Optional, Union
 
-from inference_sdk.http.client import InferenceHTTPClient
 from inference_sdk.webrtc.config import StreamConfig
 from inference_sdk.webrtc.session import WebRTCSession
 from inference_sdk.webrtc.sources import StreamSource
@@ -17,13 +16,15 @@ class WebRTCClient:
     (webcam, RTSP, video files, manual frames).
     """
 
-    def __init__(self, http_client: InferenceHTTPClient) -> None:
+    def __init__(self, api_url: str, api_key: Optional[str]) -> None:
         """Initialize WebRTC client.
 
         Args:
-            http_client: Parent HTTP client instance
+            api_url: Base URL for the inference API
+            api_key: API key for authentication (optional)
         """
-        self._client = http_client
+        self._api_url = api_url
+        self._api_key = api_key
 
     def stream(
         self,
@@ -89,14 +90,10 @@ class WebRTCClient:
         if config is None:
             config = StreamConfig()
 
-        # Get API credentials from parent client
-        api_url = self._get_api_url()
-        api_key = self._get_api_key()
-
         # Create session
         return WebRTCSession(
-            api_url=api_url,
-            api_key=api_key,
+            api_url=self._api_url,
+            api_key=self._api_key,
             source=source,
             image_input_name=image_input,
             workflow_config=workflow_config,
@@ -132,13 +129,3 @@ class WebRTCClient:
             raise ValueError(
                 f"workflow must be a string (ID) or dict (specification), got {type(workflow)}"
             )
-
-    def _get_api_url(self) -> str:
-        """Get API URL from parent client."""
-        # Access private field using name mangling
-        return getattr(self._client, f"_{self._client.__class__.__name__}__api_url")
-
-    def _get_api_key(self) -> Optional[str]:
-        """Get API key from parent client."""
-        # Access private field using name mangling
-        return getattr(self._client, f"_{self._client.__class__.__name__}__api_key")

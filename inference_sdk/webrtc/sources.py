@@ -58,6 +58,70 @@ class StreamSource(ABC):
         pass
 
 
+class _OpenCVVideoTrack(VideoStreamTrack):
+    """Base class for video tracks that use OpenCV capture.
+
+    This consolidates common logic for webcam and video file tracks.
+    """
+
+    def __init__(self, source: Any, error_name: str):
+        """Initialize OpenCV video track.
+
+        Args:
+            source: OpenCV VideoCapture source (int for webcam, str for file)
+            error_name: Human-readable name for error messages
+        """
+        super().__init__()
+        self._cap = cv2.VideoCapture(source)
+        if not self._cap.isOpened():
+            raise RuntimeError(f"Could not open {error_name}: {source}")
+        self._error_name = error_name
+
+    async def recv(self) -> VideoFrame:  # type: ignore[override]
+        """Read next frame from OpenCV capture."""
+        ret, frame = self._cap.read()
+        if not ret or frame is None:
+            raise RuntimeError(f"Failed to read from {self._error_name}")
+
+        return await self._frame_to_video(frame)
+
+    async def _frame_to_video(self, frame: np.ndarray) -> VideoFrame:
+        """Convert numpy frame to VideoFrame with timestamp.
+
+        Args:
+            frame: BGR numpy array (H, W, 3) uint8
+
+        Returns:
+            VideoFrame with proper timestamp
+        """
+        vf = VideoFrame.from_ndarray(frame, format="bgr24")
+        vf.pts, vf.time_base = await self.next_timestamp()
+        return vf
+
+    def get_declared_fps(self) -> Optional[float]:
+        """Get the declared FPS from the OpenCV capture."""
+        fps = self._cap.get(cv2.CAP_PROP_FPS)
+        return float(fps) if fps and fps > 0 else None
+
+    def release(self) -> None:
+        """Release the OpenCV capture."""
+        try:
+            self._cap.release()
+        except Exception:
+            pass
+
+
+class _WebcamVideoTrack(_OpenCVVideoTrack):
+    """aiortc VideoStreamTrack that reads frames from OpenCV webcam."""
+
+    def __init__(self, device_id: int, resolution: Optional[tuple[int, int]]):
+        super().__init__(device_id, "webcam device")
+
+        if resolution:
+            self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, resolution[0])
+            self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, resolution[1])
+
+
 class WebcamSource(StreamSource):
     """Stream source for local webcam/USB camera.
 
@@ -103,44 +167,6 @@ class WebcamSource(StreamSource):
             self._track.release()
 
 
-class _WebcamVideoTrack(VideoStreamTrack):
-    """aiortc VideoStreamTrack that reads frames from OpenCV webcam."""
-
-    def __init__(self, device_id: int, resolution: Optional[tuple[int, int]]):
-        super().__init__()
-        self._cap = cv2.VideoCapture(device_id)
-        if not self._cap.isOpened():
-            raise RuntimeError(f"Could not open webcam device {device_id}")
-
-        if resolution:
-            self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, resolution[0])
-            self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, resolution[1])
-
-    async def recv(self) -> VideoFrame:  # type: ignore[override]
-        """Read next frame from webcam."""
-        # Read frame from OpenCV in async context
-        ret, frame = self._cap.read()
-        if not ret or frame is None:
-            raise RuntimeError("Failed to read from webcam")
-
-        # Convert to VideoFrame
-        vf = VideoFrame.from_ndarray(frame, format="bgr24")
-        vf.pts, vf.time_base = await self.next_timestamp()
-        return vf
-
-    def get_declared_fps(self) -> Optional[float]:
-        """Get the camera's declared FPS."""
-        fps = self._cap.get(cv2.CAP_PROP_FPS)
-        return float(fps) if fps and fps > 0 else None
-
-    def release(self) -> None:
-        """Release the camera."""
-        try:
-            self._cap.release()
-        except Exception:
-            pass
-
-
 class RTSPSource(StreamSource):
     """Stream source for RTSP camera streams.
 
@@ -177,6 +203,22 @@ class RTSPSource(StreamSource):
         return {"rtsp_url": self.url}
 
 
+class _VideoFileTrack(_OpenCVVideoTrack):
+    """aiortc VideoStreamTrack that reads frames from a video file."""
+
+    def __init__(self, path: str):
+        super().__init__(path, "video file")
+
+    async def recv(self) -> VideoFrame:  # type: ignore[override]
+        """Read next frame from video file."""
+        ret, frame = self._cap.read()
+        if not ret or frame is None:
+            # End of file - use Exception (not RuntimeError) for EOF
+            raise Exception("End of video file")
+
+        return await self._frame_to_video(frame)
+
+
 class VideoFileSource(StreamSource):
     """Stream source for video files.
 
@@ -210,38 +252,6 @@ class VideoFileSource(StreamSource):
         """Release video file resources."""
         if self._track:
             self._track.release()
-
-
-class _VideoFileTrack(VideoStreamTrack):
-    """aiortc VideoStreamTrack that reads frames from a video file."""
-
-    def __init__(self, path: str):
-        super().__init__()
-        self._cap = cv2.VideoCapture(path)
-        if not self._cap.isOpened():
-            raise RuntimeError(f"Could not open video file: {path}")
-
-        # Get video properties
-        self._fps = self._cap.get(cv2.CAP_PROP_FPS)
-        self._frame_time = 1.0 / self._fps if self._fps > 0 else 1.0 / 30.0
-
-    async def recv(self) -> VideoFrame:  # type: ignore[override]
-        """Read next frame from video file."""
-        ret, frame = self._cap.read()
-        if not ret or frame is None:
-            # End of file
-            raise Exception("End of video file")
-
-        vf = VideoFrame.from_ndarray(frame, format="bgr24")
-        vf.pts, vf.time_base = await self.next_timestamp()
-        return vf
-
-    def release(self) -> None:
-        """Release the video file."""
-        try:
-            self._cap.release()
-        except Exception:
-            pass
 
 
 class ManualSource(StreamSource):
@@ -293,6 +303,17 @@ class _ManualTrack(VideoStreamTrack):
         if frame is None:
             raise Exception("Manual track stopped")
 
+        return await self._frame_to_video(frame)
+
+    async def _frame_to_video(self, frame: np.ndarray) -> VideoFrame:
+        """Convert numpy frame to VideoFrame with timestamp.
+
+        Args:
+            frame: BGR numpy array (H, W, 3) uint8
+
+        Returns:
+            VideoFrame with proper timestamp
+        """
         vf = VideoFrame.from_ndarray(frame, format="bgr24")
         vf.pts, vf.time_base = await self.next_timestamp()
         return vf
