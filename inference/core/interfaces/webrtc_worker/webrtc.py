@@ -75,7 +75,7 @@ def serialize_workflow_output(
 
     Image serialization rules:
     - Images are NEVER serialized UNLESS explicitly requested in data_output list
-    - If explicit: serialize to base64
+    - If explicit: serialize to base64 JPEG (quality 95)
     - If implicit (data_output=None): skip images
 
     Handles nested structures recursively (dicts, lists) to ensure all complex
@@ -88,16 +88,18 @@ def serialize_workflow_output(
                 # Skip images when listing all outputs (data_output=None)
                 return None, None  # Skip without error
 
-            # Explicitly requested - serialize to base64
+            # Explicitly requested - serialize to base64 JPEG
             try:
                 np_image = output_data.numpy_image
-                # Encode as PNG
-                success, buffer = cv2.imencode(".png", np_image)
+                # Encode as JPEG with quality 95 (good quality, much smaller than PNG)
+                success, buffer = cv2.imencode(
+                    ".jpg", np_image, [cv2.IMWRITE_JPEG_QUALITY, 95]
+                )
                 if success:
                     base64_image = base64.b64encode(buffer).decode("utf-8")
-                    return f"data:image/png;base64,{base64_image}", None
+                    return f"data:image/jpeg;base64,{base64_image}", None
                 else:
-                    return None, "Failed to encode image as PNG"
+                    return None, "Failed to encode image as JPEG"
             except Exception as e:
                 return None, f"Failed to serialize image: {str(e)}"
 
