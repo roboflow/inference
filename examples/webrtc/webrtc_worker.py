@@ -627,7 +627,7 @@ def main():
                     message = json.dumps(
                         WebRTCData(
                             stream_output=None,
-                            data_output="*",  # Asterisk = all outputs (None)
+                            data_output=None,
                         ).model_dump()
                     )
                     peer_connection.data_channel.send(message)
@@ -640,7 +640,7 @@ def main():
                     message = json.dumps(
                         WebRTCData(
                             stream_output=None,
-                            data_output="",  # Empty string = []
+                            data_output=[],
                         ).model_dump()
                     )
                     peer_connection.data_channel.send(message)
@@ -675,17 +675,12 @@ def main():
                                 active_data_fields.append(output_name)
                                 logger.info(f"Toggled ON '{output_name}'")
 
-                        # Send updated list as comma-separated string
-                        if not active_data_fields:
-                            data_output_str = ""  # Empty list
-                        else:
-                            data_output_str = ",".join(active_data_fields)
 
                         logger.info(f"Active fields: {active_data_fields}")
                         message = json.dumps(
                             WebRTCData(
                                 stream_output=None,
-                                data_output=data_output_str,
+                                data_output=active_data_fields if active_data_fields else [],
                             ).model_dump()
                         )
                         peer_connection.data_channel.send(message)
@@ -739,7 +734,7 @@ def main():
                 message = json.dumps(
                     WebRTCData(
                         stream_output=None,
-                        data_output="*",  # Asterisk = all outputs (None)
+                        data_output=None,
                     ).model_dump()
                 )
                 peer_connection.data_channel.send(message)
@@ -752,7 +747,7 @@ def main():
                 message = json.dumps(
                     WebRTCData(
                         stream_output=None,
-                        data_output="",  # Empty string = []
+                        data_output=[],
                     ).model_dump()
                 )
                 peer_connection.data_channel.send(message)
@@ -808,17 +803,11 @@ def main():
                             active_data_fields.append(output_name)
                             logger.info(f"Toggled ON '{output_name}'")
 
-                    # Send updated list
-                    if not active_data_fields:
-                        data_output_str = ""
-                    else:
-                        data_output_str = ",".join(active_data_fields)
-
                     logger.info(f"Active fields: {active_data_fields}")
                     message = json.dumps(
                         WebRTCData(
                             stream_output=None,
-                            data_output=data_output_str,
+                            data_output=active_data_fields if active_data_fields else [],
                         ).model_dump()
                     )
                     peer_connection.data_channel.send(message)

@@ -688,16 +688,7 @@ async def init_rtc_peer_connection_with_loop(
                 video_processor.stream_output = message_data.stream_output or None
 
             if message_data.data_output is not None:
-                # Convert string data_output to list format
-                if message_data.data_output == "":
-                    video_processor.data_output = []  # Empty string = send nothing
-                elif message_data.data_output == "*":
-                    video_processor.data_output = None  # Asterisk = send all outputs
-                elif "," in message_data.data_output:
-                    # Comma-separated list of fields
-                    video_processor.data_output = [f.strip() for f in message_data.data_output.split(",") if f.strip()]
-                else:
-                    video_processor.data_output = [message_data.data_output]  # Single field
+                video_processor.data_output = message_data.data_output
 
         video_processor.data_channel = channel
 

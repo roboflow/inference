@@ -423,7 +423,7 @@ def main():
                 message = json.dumps(
                     WebRTCData(
                         stream_output=None,
-                        data_output="",
+                        data_output=[],
                     ).model_dump()
                 )
                 logger.info("Turning off data output via data channel")
@@ -436,7 +436,7 @@ def main():
                 message = json.dumps(
                     WebRTCData(
                         stream_output=None,
-                        data_output=output_name,
+                        data_output=[output_name],
                     ).model_dump()
                 )
                 logger.info("Setting data output via data channel: %s", output_name)
