@@ -293,6 +293,10 @@ class VideoFileSource(StreamSource):
             self._track.release()
 
 
+# Configuration constants for manual source
+MANUAL_SOURCE_QUEUE_MAX_SIZE = 10  # maximum number of queued frames for manual source
+
+
 class ManualSource(StreamSource):
     """Stream source for manually sent frames.
 
@@ -333,7 +337,9 @@ class _ManualTrack(VideoStreamTrack):
 
     def __init__(self):
         super().__init__()
-        self._queue: asyncio.Queue[Optional[np.ndarray]] = asyncio.Queue(maxsize=10)
+        self._queue: asyncio.Queue[Optional[np.ndarray]] = asyncio.Queue(
+            maxsize=MANUAL_SOURCE_QUEUE_MAX_SIZE
+        )
 
     async def recv(self) -> VideoFrame:  # type: ignore[override]
         """Wait for next frame to be queued."""

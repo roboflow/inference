@@ -8,7 +8,8 @@ import sys
 import threading
 from contextlib import AbstractContextManager
 from queue import Queue
-from typing import Any, Callable, Iterator, List, Optional
+from types import TracebackType
+from typing import Any, Callable, Iterator, List, Optional, Type
 
 import av
 import numpy as np
@@ -28,6 +29,11 @@ from inference_sdk.webrtc.sources import StreamSource
 
 logger = logging.getLogger(__name__)
 
+# Configuration constants
+DEFAULT_INITIAL_FRAME_TIMEOUT = 30.0  # seconds to wait for first video frame
+VIDEO_QUEUE_MAX_SIZE = 8  # maximum number of frames to buffer
+EVENT_LOOP_SHUTDOWN_TIMEOUT = 2.0  # seconds to wait for event loop thread to stop
+
 # Configure basic logging if root logger has no handlers
 # This ensures users see important errors even without explicit logging setup
 if not logging.root.handlers:
@@ -39,15 +45,14 @@ if not logging.root.handlers:
     logger.setLevel(logging.INFO)
     logger.propagate = False
 
-# Suppress FFmpeg colorspace conversion warnings
-av.logging.set_level(av.logging.ERROR)
-
 
 class _VideoStream:
     """Wrapper for video frame queue providing iterator interface."""
 
     def __init__(
-        self, frames: "Queue[Optional[np.ndarray]]", initial_frame_timeout: float = 30.0
+        self,
+        frames: "Queue[Optional[np.ndarray]]",
+        initial_frame_timeout: float = DEFAULT_INITIAL_FRAME_TIMEOUT,
     ):
         self._frames = frames
         self._initial_frame_timeout = initial_frame_timeout
@@ -201,7 +206,9 @@ class WebRTCSession(AbstractContextManager["WebRTCSession"]):
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._loop_thread: Optional[threading.Thread] = None
         self._pc: Optional[RTCPeerConnection] = None
-        self._video_queue: "Queue[Optional[np.ndarray]]" = Queue(maxsize=8)
+        self._video_queue: "Queue[Optional[np.ndarray]]" = Queue(
+            maxsize=VIDEO_QUEUE_MAX_SIZE
+        )
 
         # Public APIs
         self.video = _VideoStream(self._video_queue)
@@ -248,7 +255,12 @@ class WebRTCSession(AbstractContextManager["WebRTCSession"]):
             ) from e
         return self
 
-    def __exit__(self, exc_type, exc, tb) -> None:  # type: ignore[override]
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
         """Exit context manager - cleanup resources."""
         try:
             # Close peer connection
@@ -266,7 +278,7 @@ class WebRTCSession(AbstractContextManager["WebRTCSession"]):
                 if self._loop:
                     self._loop.call_soon_threadsafe(self._loop.stop)
                 if self._loop_thread:
-                    self._loop_thread.join(timeout=2)
+                    self._loop_thread.join(timeout=EVENT_LOOP_SHUTDOWN_TIMEOUT)
 
     def wait(self, timeout: Optional[float] = None) -> None:
         """Wait for session to complete.
@@ -445,10 +457,10 @@ class WebRTCSession(AbstractContextManager["WebRTCSession"]):
         headers = {"Content-Type": "application/json"}
         resp = requests.post(url, json=payload, headers=headers, timeout=90)
         resp.raise_for_status()
-        ans = resp.json()
+        ans: dict[str, Any] = resp.json()
 
         # Set remote description
-        answer = RTCSessionDescription(sdp=ans["sdp"], type=ans["type"])  # type: ignore[index]
+        answer = RTCSessionDescription(sdp=ans["sdp"], type=ans["type"])
         await pc.setRemoteDescription(answer)
 
         self._pc = pc
