@@ -20,7 +20,7 @@ import av
 import cv2
 
 from inference_sdk import InferenceHTTPClient
-from inference_sdk.webrtc import StreamConfig, VideoFileSource
+from inference_sdk.webrtc import StreamConfig, VideoFileSource, VideoMetadata
 
 # Suppress FFmpeg warnings from PyAV
 av.logging.set_level(av.logging.ERROR)
@@ -69,10 +69,19 @@ def main() -> None:
         image_input=args.image_input_name,
         config=config,
     ) as session:
-        # Register data handler to print messages
+        # Register data handlers
+        # NEW: Field-specific handler with metadata
+        # This will be called for each field in serialized_output_data
+        # Uncomment and customize based on your workflow outputs:
+        #
+        # @session.data.on_data("predictions")
+        # def on_predictions(predictions: dict, metadata: VideoMetadata):
+        #     print(f"Frame {metadata.frame_id} @ {metadata.received_at}: {predictions}")
+
+        # Global handler (receives entire serialized_output_data dict + metadata)
         @session.data.on_data()
-        def on_message(msg):  # noqa: ANN001
-            print(msg)
+        def on_message(data: dict, metadata: VideoMetadata):  # noqa: ANN001
+            print(f"Frame {metadata.frame_id}: {data}")
 
         # Stream video from the server (if stream_output is configured)
         for frame in session.video():

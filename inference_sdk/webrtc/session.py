@@ -1,12 +1,15 @@
 """WebRTC session management."""
 
 import asyncio
+import inspect
 import json
 import logging
 import queue
 import sys
 import threading
 from contextlib import AbstractContextManager
+from dataclasses import dataclass
+from datetime import datetime
 from queue import Queue
 from types import TracebackType
 from typing import Any, Callable, Iterator, List, Optional, Type
@@ -27,6 +30,30 @@ from inference_sdk.webrtc.config import StreamConfig
 from inference_sdk.webrtc.sources import StreamSource
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class VideoMetadata:
+    """Metadata about a video frame received from WebRTC stream.
+
+    This metadata is attached to each frame processed by the server
+    and can be used to track frame timing, synchronization, and
+    processing information.
+
+    Attributes:
+        frame_id: Unique identifier for this frame in the stream
+        received_at: Timestamp when the server received the frame
+        pts: Presentation timestamp from the video stream (optional)
+        time_base: Time base for interpreting pts values (optional)
+        declared_fps: Declared/expected frames per second (optional)
+        measured_fps: Measured actual frames per second (optional)
+    """
+    frame_id: int
+    received_at: datetime
+    pts: Optional[int] = None
+    time_base: Optional[float] = None
+    declared_fps: Optional[float] = None
+    measured_fps: Optional[float] = None
 
 # Configuration constants
 DEFAULT_INITIAL_FRAME_TIMEOUT = 30.0  # seconds to wait for first video frame
@@ -91,10 +118,15 @@ class _VideoStream:
 
 
 class _DataChannel:
-    """Data channel handler managing event-based callbacks."""
+    """Data channel handler managing event-based callbacks.
+
+    Supports two types of handlers:
+    1. Global handlers: Receive entire serialized_output_data dict + metadata
+    2. Field-specific handlers: Receive individual field values + metadata
+    """
 
     def __init__(self) -> None:
-        self._handlers: dict[str, List[Callable[[Any], None]]] = {}
+        self._field_handlers: dict[str, List[Callable]] = {}  # Field-specific handlers
         self._global_handler: Optional[Callable[[Any], None]] = None
 
     def bind(self, channel: RTCDataChannel) -> None:
@@ -106,63 +138,134 @@ class _DataChannel:
 
         @channel.on("message")
         def _on_message(message: Any) -> None:  # noqa: ANN401
-            # Call global handler if registered (receives raw message)
-            if self._global_handler:
-                try:
-                    self._global_handler(message)
-                except Exception:
-                    logger.warning(
-                        "Error calling global data channel handler", exc_info=True
-                    )
-
-            # Parse message and route to specific handlers
+            # Parse message and route to handlers
             try:
                 parsed_message = json.loads(message)
-                output_name = parsed_message.get("output_name")
-                if output_name and output_name in self._handlers:
-                    serialized_data = parsed_message.get("serialized_output_data")
-                    for cb in list(self._handlers[output_name]):
-                        try:
-                            cb(serialized_data)
-                        except Exception:
-                            logger.warning(
-                                f"Error calling handler for output '{output_name}'",
-                                exc_info=True,
-                            )
+
+                # Extract video metadata if present
+                metadata = None
+                video_metadata_dict = parsed_message.get("video_metadata")
+                if video_metadata_dict:
+                    try:
+                        metadata = VideoMetadata(
+                            frame_id=video_metadata_dict["frame_id"],
+                            received_at=datetime.fromisoformat(video_metadata_dict["received_at"]),
+                            pts=video_metadata_dict.get("pts"),
+                            time_base=video_metadata_dict.get("time_base"),
+                            declared_fps=video_metadata_dict.get("declared_fps"),
+                            measured_fps=video_metadata_dict.get("measured_fps"),
+                        )
+                    except (KeyError, ValueError, TypeError) as e:
+                        logger.warning(f"Failed to parse video_metadata: {e}")
+
+                # Get serialized output data
+                serialized_data = parsed_message.get("serialized_output_data")
+
+                # Call global handler if registered (receives full serialized_data dict + metadata)
+                if self._global_handler:
+                    try:
+                        self._invoke_handler(self._global_handler, serialized_data, metadata)
+                    except Exception:
+                        logger.warning(
+                            "Error calling global data channel handler", exc_info=True
+                        )
+
+                # Route to field-specific handlers if data is a dict
+                if isinstance(serialized_data, dict):
+                    for field_name, field_value in serialized_data.items():
+                        if field_name in self._field_handlers:
+                            for handler in list(self._field_handlers[field_name]):
+                                try:
+                                    self._invoke_handler(handler, field_value, metadata)
+                                except Exception:
+                                    logger.warning(
+                                        f"Error calling handler for field '{field_name}'",
+                                        exc_info=True,
+                                    )
             except json.JSONDecodeError:
                 logger.warning("Failed to parse data channel message as JSON")
 
+    def _invoke_handler(self, handler: Callable, value: Any, metadata: Optional[VideoMetadata]) -> None:  # noqa: ANN401
+        """Invoke handler with appropriate signature (auto-detect via introspection).
+
+        Supports two signatures:
+        - handler(value, metadata) - receives both value and metadata
+        - handler(value) - receives only value (backward compatible)
+
+        Args:
+            handler: The handler callable to invoke
+            value: The field value to pass
+            metadata: Optional video metadata to pass
+        """
+        try:
+            sig = inspect.signature(handler)
+            params = list(sig.parameters.values())
+
+            # Check number of parameters (excluding *args, **kwargs)
+            positional_params = [p for p in params if p.kind in (
+                inspect.Parameter.POSITIONAL_ONLY,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            )]
+
+            if len(positional_params) >= 2:
+                # Handler expects both value and metadata (even if metadata is None)
+                handler(value, metadata)
+            else:
+                # Handler expects only value
+                handler(value)
+        except Exception:
+            # Fallback: try calling with just the value
+            try:
+                handler(value)
+            except Exception:
+                # If that also fails, log and re-raise
+                logger.exception(f"Failed to invoke handler {handler}")
+                raise
+
     def on_data(
-        self, output_name: Optional[str] = None
-    ) -> Callable[[Callable[[Any], None]], Callable[[Any], None]]:
+        self, field_name: Optional[str] = None
+    ) -> Callable[[Callable], Callable]:
         """Decorator to register data handlers.
 
         Args:
-            output_name: If provided, handler is called only for this output.
-                        If None, handler receives all raw messages.
+            field_name: If provided, registers a field-specific handler that receives
+                       the field value and optional metadata. If None, registers a
+                       global handler that receives the entire serialized_output_data dict.
 
         Returns:
             Decorator function
 
         Examples:
-            # Handle specific output
-            @session.on_data("predictions")
-            def handle_predictions(data):
-                print("Predictions:", data)
+            # Handle specific field with metadata
+            @session.data.on_data("property_definition")
+            def handle_property(value: int, metadata: VideoMetadata):
+                print(f"Frame {metadata.frame_id}: property={value}")
 
-            # Handle all messages
-            @session.on_data()
-            def handle_all(raw_message):
-                print("Raw message:", raw_message)
+            # Handle specific field without metadata
+            @session.data.on_data("property_definition")
+            def handle_property(value: int):
+                print(f"Property: {value}")
+
+            # Handle entire output dict with metadata (global handler)
+            @session.data.on_data()
+            def handle_all(data: dict, metadata: VideoMetadata):
+                print(f"Frame {metadata.frame_id}: {data}")
+
+            # Handle entire output dict without metadata
+            @session.data.on_data()
+            def handle_all(data: dict):
+                print(f"Data: {data}")
         """
 
-        def decorator(fn: Callable[[Any], None]) -> Callable[[Any], None]:
-            if output_name is None:
+        def decorator(fn: Callable) -> Callable:
+            if field_name is None:
+                # Global handler - receives entire serialized_output_data dict
                 self._global_handler = fn
             else:
-                if output_name not in self._handlers:
-                    self._handlers[output_name] = []
-                self._handlers[output_name].append(fn)
+                # Field-specific handler
+                if field_name not in self._field_handlers:
+                    self._field_handlers[field_name] = []
+                self._field_handlers[field_name].append(fn)
             return fn
 
         return decorator

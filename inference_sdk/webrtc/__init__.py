@@ -2,7 +2,7 @@
 
 from .client import WebRTCClient  # noqa: F401
 from .config import StreamConfig  # noqa: F401
-from .session import WebRTCSession  # noqa: F401
+from .session import VideoMetadata, WebRTCSession  # noqa: F401
 from .sources import (  # noqa: F401
     ManualSource,
     RTSPSource,
@@ -16,6 +16,7 @@ __all__ = [
     "WebRTCClient",
     "WebRTCSession",
     "StreamConfig",
+    "VideoMetadata",
     # Source classes
     "StreamSource",
     "WebcamSource",
