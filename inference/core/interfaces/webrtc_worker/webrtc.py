@@ -248,7 +248,9 @@ class VideoFrameProcessor:
         elif isinstance(data_output, list):
             self.data_output = [f for f in data_output if f]
         else:
-            self.data_output = data_output
+            raise TypeError(
+                f"data_output must be list or None, got {type(data_output).__name__}"
+            )
 
         # Validate data_output and stream_output against workflow specification
         workflow_outputs = workflow_configuration.workflow_specification.get(
