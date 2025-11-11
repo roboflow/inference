@@ -48,12 +48,14 @@ class VideoMetadata:
         declared_fps: Declared/expected frames per second (optional)
         measured_fps: Measured actual frames per second (optional)
     """
+
     frame_id: int
     received_at: datetime
     pts: Optional[int] = None
     time_base: Optional[float] = None
     declared_fps: Optional[float] = None
     measured_fps: Optional[float] = None
+
 
 # Configuration constants
 DEFAULT_INITIAL_FRAME_TIMEOUT = 30.0  # seconds to wait for first video frame
@@ -64,9 +66,7 @@ EVENT_LOOP_SHUTDOWN_TIMEOUT = 2.0  # seconds to wait for event loop thread to st
 # This ensures users see important errors even without explicit logging setup
 if not logging.root.handlers:
     handler = logging.StreamHandler(sys.stderr)
-    handler.setFormatter(
-        logging.Formatter("%(levelname)s [%(name)s] %(message)s")
-    )
+    handler.setFormatter(logging.Formatter("%(levelname)s [%(name)s] %(message)s"))
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
     logger.propagate = False
@@ -149,7 +149,9 @@ class _DataChannel:
                     try:
                         metadata = VideoMetadata(
                             frame_id=video_metadata_dict["frame_id"],
-                            received_at=datetime.fromisoformat(video_metadata_dict["received_at"]),
+                            received_at=datetime.fromisoformat(
+                                video_metadata_dict["received_at"]
+                            ),
                             pts=video_metadata_dict.get("pts"),
                             time_base=video_metadata_dict.get("time_base"),
                             declared_fps=video_metadata_dict.get("declared_fps"),
@@ -164,7 +166,9 @@ class _DataChannel:
                 # Call global handler if registered (receives full serialized_data dict + metadata)
                 if self._global_handler:
                     try:
-                        self._invoke_handler(self._global_handler, serialized_data, metadata)
+                        self._invoke_handler(
+                            self._global_handler, serialized_data, metadata
+                        )
                     except Exception:
                         logger.warning(
                             "Error calling global data channel handler", exc_info=True
@@ -185,7 +189,9 @@ class _DataChannel:
             except json.JSONDecodeError:
                 logger.warning("Failed to parse data channel message as JSON")
 
-    def _invoke_handler(self, handler: Callable, value: Any, metadata: Optional[VideoMetadata]) -> None:  # noqa: ANN401
+    def _invoke_handler(
+        self, handler: Callable, value: Any, metadata: Optional[VideoMetadata]
+    ) -> None:  # noqa: ANN401
         """Invoke handler with appropriate signature (auto-detect via introspection).
 
         Supports two signatures:
@@ -202,10 +208,15 @@ class _DataChannel:
             params = list(sig.parameters.values())
 
             # Check number of parameters (excluding *args, **kwargs)
-            positional_params = [p for p in params if p.kind in (
-                inspect.Parameter.POSITIONAL_ONLY,
-                inspect.Parameter.POSITIONAL_OR_KEYWORD,
-            )]
+            positional_params = [
+                p
+                for p in params
+                if p.kind
+                in (
+                    inspect.Parameter.POSITIONAL_ONLY,
+                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                )
+            ]
 
             if len(positional_params) >= 2:
                 # Handler expects both value and metadata (even if metadata is None)
@@ -447,7 +458,8 @@ class WebRTCSession(AbstractContextManager["WebRTCSession"]):
             # 4. Graceful fallback - proceed without TURN
             logger.info(
                 f"TURN configuration not available ({e.__class__.__name__}), "
-                "proceeding without TURN server",exc_info=True
+                "proceeding without TURN server",
+                exc_info=True,
             )
             return None
 
