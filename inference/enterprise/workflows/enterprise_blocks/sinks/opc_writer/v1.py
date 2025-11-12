@@ -47,6 +47,20 @@ This block supports writing the following data types to OPC UA server variables:
 
 **Note:** The data type you send must match the expected type of the target OPC UA variable.
 
+### Node Lookup Mode
+The block supports two methods for locating OPC UA nodes via the `node_lookup_mode` parameter:
+
+- **`hierarchical` (default)**: Uses standard OPC UA hierarchical path navigation. The block navigates
+  through the address space using `get_child()`. Each component in the `object_name` path is
+  automatically prefixed with the namespace index.
+  - **Example**: `object_name="Roboflow/Crane_11"` → path `0:Objects/2:Roboflow/2:Crane_11/2:Variable`
+  - **Best for**: Traditional OPC UA servers with hierarchical address spaces
+
+- **`direct`**: Uses direct NodeId string access. The block constructs a NodeId as
+  `ns={namespace};s={object_name}/{variable_name}` and accesses it directly via `get_node()`.
+  - **Example**: `object_name="[Sample_Tags]/Ramp"` → NodeId `ns=2;s=[Sample_Tags]/Ramp/South_Person_Count`
+  - **Best for**: Ignition SCADA systems and other servers using string-based NodeId identifiers
+
 ### Cooldown
 To prevent excessive traffic to the OPC UA server, the block includes a `cooldown_seconds` parameter, 
 which defaults to **5 seconds**. During the cooldown period:
