@@ -27,8 +27,6 @@ if TYPE_CHECKING:
     )
 
 
-
-
 def _check_webrtc_dependencies():
     """Check if WebRTC dependencies are installed and provide helpful error message."""
     try:
@@ -40,6 +38,7 @@ def _check_webrtc_dependencies():
             "Install them with: pip install inference-sdk[webrtc]\n"
             "Or if installing from source: pip install aiortc>=1.9.0"
         ) from e
+
 
 logger = logging.getLogger(__name__)
 
