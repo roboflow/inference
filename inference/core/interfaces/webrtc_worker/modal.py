@@ -68,22 +68,14 @@ if modal is not None:
         image=video_processing_image,
     )
 
-    # https://modal.com/docs/reference/modal.App#cls
-    @app.cls(
-        min_containers=WEBRTC_MODAL_FUNCTION_MIN_CONTAINERS,
-        buffer_containers=WEBRTC_MODAL_FUNCTION_BUFFER_CONTAINERS,
-        scaledown_window=WEBRTC_MODAL_FUNCTION_SCALEDOWN_WINDOW,
-        timeout=WEBRTC_MODAL_FUNCTION_TIME_LIMIT,
-        enable_memory_snapshot=WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT,
-        experimental_options=(
-            {"enable_gpu_snapshot": True}
-            if WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT
-            and WEBRTC_MODAL_FUNCTION_GPU
-            else {}
-        ),
-        gpu=WEBRTC_MODAL_FUNCTION_GPU,
-        max_inputs=WEBRTC_MODAL_FUNCTION_MAX_INPUTS,
-        env={
+    decorator_kwargs = {
+        "min_containers": WEBRTC_MODAL_FUNCTION_MIN_CONTAINERS,
+        "buffer_containers": WEBRTC_MODAL_FUNCTION_BUFFER_CONTAINERS,
+        "scaledown_window": WEBRTC_MODAL_FUNCTION_SCALEDOWN_WINDOW,
+        "timeout": WEBRTC_MODAL_FUNCTION_TIME_LIMIT,
+        "enable_memory_snapshot": WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT,
+        "max_inputs": WEBRTC_MODAL_FUNCTION_MAX_INPUTS,
+        "env": {
             "ROBOFLOW_INTERNAL_SERVICE_SECRET": ROBOFLOW_INTERNAL_SERVICE_SECRET,
             "ROBOFLOW_INTERNAL_SERVICE_NAME": WEBRTC_MODAL_ROBOFLOW_INTERNAL_SERVICE_NAME,
             "PROJECT": PROJECT,
@@ -127,8 +119,24 @@ if modal is not None:
                 else "CPUExecutionProvider"
             ),
         },
-        volumes={MODEL_CACHE_DIR: rfcache_volume},
+        "volumes": {MODEL_CACHE_DIR: rfcache_volume},
+    }
+
+    # https://modal.com/docs/reference/modal.App#cls
+    modal_cpu_decorator = app.cls(
+        {
+            **decorator_kwargs,
+            "enable_memory_snapshot": True,
+        }
     )
+    modal_gpu_decorator = app.cls(
+        {
+            **decorator_kwargs,
+            "gpu": True,
+            "experimental_options": {"enable_gpu_snapshot": True},
+        }
+    )
+
     class RTCPeerConnectionModal:
         @modal.method()
         def rtc_peer_connection_modal(
@@ -149,6 +157,9 @@ if modal is not None:
                 )
             )
 
+    RTCPeerConnectionModalCPU = modal_cpu_decorator(RTCPeerConnectionModal)
+    RTCPeerConnectionModalGPU = modal_gpu_decorator(RTCPeerConnectionModal)
+
     def spawn_rtc_peer_connection_modal(
         webrtc_request: WebRTCWorkerRequest,
     ) -> WebRTCWorkerResult:
@@ -164,6 +175,12 @@ if modal is not None:
         except modal.exception.NotFoundError:
             logger.info("Deploying webrtc modal app %s", WEBRTC_MODAL_APP_NAME)
             app.deploy(name=WEBRTC_MODAL_APP_NAME, client=client)
+
+        if webrtc_request.requested_gpu:
+            RTCPeerConnectionModal = RTCPeerConnectionModalGPU
+        else:
+            RTCPeerConnectionModal = RTCPeerConnectionModalCPU
+
         # https://modal.com/docs/reference/modal.Cls#from_name
         deployed_cls = modal.Cls.from_name(
             app_name=app.name,
@@ -181,7 +198,10 @@ if modal is not None:
         cls_with_options = deployed_cls.with_options(
             timeout=webrtc_request.processing_timeout,
         )
-        if webrtc_request.requested_gpu != WEBRTC_MODAL_FUNCTION_GPU:
+        if (
+            webrtc_request.requested_gpu is not None
+            and webrtc_request.requested_gpu != WEBRTC_MODAL_FUNCTION_GPU
+        ):
             logger.warning(
                 "Spawning webrtc modal function with custom gpu %s",
                 webrtc_request.requested_gpu,
