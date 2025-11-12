@@ -26,6 +26,8 @@ from inference.core.env import (
     WEBRTC_MODAL_FUNCTION_TIME_LIMIT,
     WEBRTC_MODAL_IMAGE_NAME,
     WEBRTC_MODAL_IMAGE_TAG,
+    WEBRTC_MODAL_CPU_IMAGE_NAME,
+    WEBRTC_MODAL_CPU_IMAGE_TAG,
     WEBRTC_MODAL_RESPONSE_TIMEOUT,
     WEBRTC_MODAL_ROBOFLOW_INTERNAL_SERVICE_NAME,
     WEBRTC_MODAL_RTSP_PLACEHOLDER,
@@ -103,6 +105,8 @@ def webrtc_modal_function(app, instance_type, rfcache_volume):
             "WEBRTC_MODAL_FUNCTION_TIME_LIMIT": str(WEBRTC_MODAL_FUNCTION_TIME_LIMIT),
             "WEBRTC_MODAL_IMAGE_NAME": WEBRTC_MODAL_IMAGE_NAME,
             "WEBRTC_MODAL_IMAGE_TAG": WEBRTC_MODAL_IMAGE_TAG,
+            "WEBRTC_MODAL_CPU_IMAGE_NAME": WEBRTC_MODAL_CPU_IMAGE_NAME,
+            "WEBRTC_MODAL_CPU_IMAGE_TAG": WEBRTC_MODAL_CPU_IMAGE_TAG,
             "WEBRTC_MODAL_RTSP_PLACEHOLDER": WEBRTC_MODAL_RTSP_PLACEHOLDER,
             "WEBRTC_MODAL_RTSP_PLACEHOLDER_URL": WEBRTC_MODAL_RTSP_PLACEHOLDER_URL,
             "ONNXRUNTIME_EXECUTION_PROVIDERS": (
@@ -120,7 +124,7 @@ if modal is not None:
     # https://modal.com/docs/reference/modal.Image
     video_processing_image = (
         modal.Image.from_registry(
-            f"{WEBRTC_MODAL_IMAGE_NAME}:{WEBRTC_MODAL_IMAGE_TAG if WEBRTC_MODAL_IMAGE_TAG else __version__}"
+            f"{WEBRTC_MODAL_CPU_IMAGE_NAME}:{WEBRTC_MODAL_CPU_IMAGE_TAG or __version__}"
         )
         .pip_install("modal")
         .entrypoint([])
