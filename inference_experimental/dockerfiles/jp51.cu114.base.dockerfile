@@ -31,6 +31,7 @@ RUN git clone https://github.com/pybind/pybind11.git
 WORKDIR /build/tensorrt/extenral/pybind11
 RUN git checkout v3.0.1
 WORKDIR  /build/tensorrt/TensorRT/python
+RUN python3.12 -m pip --upgrade pip setuptools distutils
 RUN  PYTHON_MAJOR_VERSION=3 PYTHON_MINOR_VERSION=12 TARGET_ARCHITECTURE=aarch64 bash ./build.sh
 RUN python3.12 -m pip install build/dist/tensorrt-*.whl
 
