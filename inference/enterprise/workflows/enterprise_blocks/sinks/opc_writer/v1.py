@@ -516,7 +516,9 @@ def _opc_connect_and_write_value(
     try:
         logging.debug(f"OPC Writer writing value '{value}' to variable")
         var.write_value(value)
-        logging.info(f"OPC Writer successfully wrote  '{value}'  to variable at {object_name}/{variable_name}")
+        logging.info(
+            f"OPC Writer successfully wrote  '{value}'  to variable at {object_name}/{variable_name}"
+        )
     except BadTypeMismatch as exc:
         logging.error(f"OPC Writer type mismatch error: {exc}")
         safe_disconnect(client)
