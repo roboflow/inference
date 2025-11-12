@@ -64,32 +64,35 @@ def main() -> None:
     config = StreamConfig(stream_output=stream_output, data_output=data_output)
 
     # Start streaming session
-    with client.webrtc.stream(
+    session = client.webrtc.stream(
         source=source,
         workflow=args.workflow_id,
         workspace=args.workspace_name,
         image_input=args.image_input_name,
         config=config,
-    ) as session:
-        # Register data handlers
-        # NEW: Field-specific handler with metadata
-        # This will be called for each field in serialized_output_data
-        # Uncomment and customize based on your workflow outputs:
-        #
-        # @session.data.on_data("predictions")
-        # def on_predictions(predictions: dict, metadata: VideoMetadata):
-        #     print(f"Frame {metadata.frame_id} @ {metadata.received_at}: {predictions}")
+    )
 
-        # Global handler (receives entire serialized_output_data dict + metadata)
-        @session.data.on_data()
-        def on_message(data: dict, metadata: VideoMetadata):  # noqa: ANN001
-            print(f"Frame {metadata.frame_id}: {data}")
-
-        # Stream video from the server (if stream_output is configured)
-        for frame in session.video():
+    with session:
+        # Register frame handler
+        @session.on_frame
+        def show_frame(frame, metadata):
             cv2.imshow("WebRTC SDK - RTSP", frame)
             if cv2.waitKey(1) & 0xFF == ord("q"):
-                break
+                session.stop()
+
+        # Register data handlers
+        # Global handler (receives entire serialized_output_data dict + metadata)
+        @session.on_data()
+        def on_message(data: dict, metadata: VideoMetadata):
+            print(f"Frame {metadata.frame_id}: {data}")
+
+        # Field-specific handler example (uncomment and customize based on your workflow):
+        # @session.on_data("predictions")
+        # def on_predictions(predictions: dict, metadata: VideoMetadata):
+        #     print(f"Frame {metadata.frame_id} predictions: {predictions}")
+
+        # Run the session (blocks until stop() is called or stream ends)
+        session.run()
 
 
 if __name__ == "__main__":

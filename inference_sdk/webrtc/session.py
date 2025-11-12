@@ -12,22 +12,34 @@ from dataclasses import dataclass
 from datetime import datetime
 from queue import Queue
 from types import TracebackType
-from typing import Any, Callable, Iterator, List, Optional, Type
+from typing import TYPE_CHECKING, Any, Callable, Iterator, List, Optional, Type
 
 import numpy as np
 import requests
-from aiortc import (
-    RTCConfiguration,
-    RTCDataChannel,
-    RTCIceServer,
-    RTCPeerConnection,
-    RTCSessionDescription,
-)
-from aiortc.contrib.media import MediaRelay
-from av import VideoFrame
 
 from inference_sdk.webrtc.config import StreamConfig
 from inference_sdk.webrtc.sources import StreamSource
+
+if TYPE_CHECKING:
+    from aiortc import (
+        RTCDataChannel,
+        RTCPeerConnection,
+    )
+
+
+
+
+def _check_webrtc_dependencies():
+    """Check if WebRTC dependencies are installed and provide helpful error message."""
+    try:
+        import aiortc  # noqa: F401
+        import av  # noqa: F401
+    except ImportError as e:
+        raise ImportError(
+            "WebRTC dependencies are not installed.\n"
+            "Install them with: pip install inference-sdk[webrtc]\n"
+            "Or if installing from source: pip install aiortc>=1.9.0"
+        ) from e
 
 logger = logging.getLogger(__name__)
 
@@ -77,17 +89,18 @@ class _VideoStream:
 
     def __init__(
         self,
-        frames: "Queue[Optional[np.ndarray]]",
+        frames: "Queue[Optional[tuple[np.ndarray, VideoMetadata]]]",
         initial_frame_timeout: float = DEFAULT_INITIAL_FRAME_TIMEOUT,
     ):
         self._frames = frames
         self._initial_frame_timeout = initial_frame_timeout
         self._first_frame_received = False
 
-    def __call__(self) -> Iterator[np.ndarray]:
-        """Iterate over video frames.
+    def __call__(self) -> Iterator[tuple[np.ndarray, VideoMetadata]]:
+        """Iterate over video frames with metadata.
 
-        Yields BGR numpy arrays until the stream ends (None received).
+        Yields tuples of (BGR numpy array, VideoMetadata) until the stream ends (None received).
+        The metadata is extracted directly from the video frame (pts, time_base, etc.).
 
         Raises:
             TimeoutError: If first frame not received within timeout period
@@ -99,7 +112,7 @@ class _VideoStream:
             )
 
             try:
-                frame = self._frames.get(timeout=timeout)
+                frame_data = self._frames.get(timeout=timeout)
             except queue.Empty:
                 raise TimeoutError(
                     f"No video frames received within {self._initial_frame_timeout}s timeout.\n"
@@ -110,11 +123,11 @@ class _VideoStream:
                     "  - Ensure the server has WebRTC enabled and is processing frames"
                 )
 
-            if frame is None:
+            if frame_data is None:
                 break
 
             self._first_frame_received = True
-            yield frame
+            yield frame_data
 
 
 class _DataChannel:
@@ -129,7 +142,7 @@ class _DataChannel:
         self._field_handlers: dict[str, List[Callable]] = {}  # Field-specific handlers
         self._global_handler: Optional[Callable[[Any], None]] = None
 
-    def bind(self, channel: RTCDataChannel) -> None:
+    def bind(self, channel: "RTCDataChannel") -> None:
         """Bind to an RTCDataChannel and register message handler.
 
         Args:
@@ -318,14 +331,20 @@ class WebRTCSession(AbstractContextManager["WebRTCSession"]):
         # Internal state
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._loop_thread: Optional[threading.Thread] = None
-        self._pc: Optional[RTCPeerConnection] = None
-        self._video_queue: "Queue[Optional[np.ndarray]]" = Queue(
+        self._pc: Optional["RTCPeerConnection"] = None
+        self._video_queue: "Queue[Optional[tuple[np.ndarray, VideoMetadata]]]" = Queue(
             maxsize=VIDEO_QUEUE_MAX_SIZE
         )
 
+        # Callback handlers
+        self._frame_handlers: List[Callable] = []
+        self._data_field_handlers: dict[str, List[Callable]] = {}
+        self._data_global_handler: Optional[Callable] = None
+        self._stop_event: threading.Event = threading.Event()
+
         # Public APIs
         self.video = _VideoStream(self._video_queue)
-        self.data = _DataChannel()
+        self.data = _DataChannel()  # Keep for now for compatibility
 
     def __enter__(self) -> "WebRTCSession":
         """Enter context manager - start event loop and initialize connection."""
@@ -406,8 +425,8 @@ class WebRTCSession(AbstractContextManager["WebRTCSession"]):
         """
         try:
             while True:
-                frame = self._video_queue.get(timeout=timeout)
-                if frame is None:
+                frame_data = self._video_queue.get(timeout=timeout)
+                if frame_data is None:
                     break
         except queue.Empty:
             if timeout is not None:
@@ -415,6 +434,173 @@ class WebRTCSession(AbstractContextManager["WebRTCSession"]):
                     f"WebRTC session wait() timed out after {timeout}s.\n"
                     "The video stream did not end within the timeout period."
                 )
+
+    def on_frame(self, callback: Callable) -> Callable:
+        """Decorator to register frame callback handlers.
+
+        The registered handlers will be called for each video frame received
+        when using the run() method. Handlers must accept two parameters:
+        - frame: BGR numpy array (np.ndarray)
+        - metadata: Video metadata (VideoMetadata) extracted from the video frame
+
+        Args:
+            callback: Callback function that accepts (frame, metadata)
+
+        Returns:
+            The callback itself
+
+        Examples:
+            @session.on_frame
+            def process_frame(frame: np.ndarray, metadata: VideoMetadata):
+                print(f"Frame {metadata.frame_id} - PTS: {metadata.pts}")
+                cv2.imshow("Frame", frame)
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    session.stop()
+        """
+        self._frame_handlers.append(callback)
+        return callback
+
+    def on_data(self, field_name: Optional[str] = None) -> Callable:
+        """Decorator to register data channel callback handlers.
+
+        Can be used with or without parentheses:
+            @session.on_data          # without parentheses (global handler)
+            @session.on_data()        # with parentheses (global handler)
+            @session.on_data("field") # with field name (field-specific handler)
+
+        Args:
+            field_name: If provided, handler receives only that field's value.
+                       If None, handler receives entire serialized_output_data dict.
+
+        Returns:
+            Decorator function or decorated function
+
+        Examples:
+            # Global handler without parentheses
+            @session.on_data
+            def handle_all(data: dict, metadata: VideoMetadata):
+                print(f"All data: {data}")
+
+            # Field-specific handler
+            @session.on_data("predictions")
+            def handle_predictions(data: dict, metadata: VideoMetadata):
+                print(f"Frame {metadata.frame_id}: {data}")
+
+            # Field-specific handler (no metadata)
+            @session.on_data("predictions")
+            def handle_predictions(data: dict):
+                print(data)
+
+            # Global handler with parentheses
+            @session.on_data()
+            def handle_all(data: dict, metadata: VideoMetadata):
+                print(f"All data: {data}")
+        """
+        # Check if being used without parentheses: @session.on_data
+        # In this case, field_name is actually the function being decorated
+        if callable(field_name):
+            fn = field_name
+            self._data_global_handler = fn
+            return fn
+
+        # Being used with parentheses: @session.on_data() or @session.on_data("field")
+        def decorator(fn: Callable) -> Callable:
+            if field_name is None:
+                self._data_global_handler = fn
+            else:
+                if field_name not in self._data_field_handlers:
+                    self._data_field_handlers[field_name] = []
+                self._data_field_handlers[field_name].append(fn)
+            return fn
+
+        return decorator
+
+    def stop(self) -> None:
+        """Stop the blocking run() loop.
+
+        Can be called from within frame or data callbacks to terminate
+        the run() loop gracefully.
+        """
+        self._stop_event.set()
+
+    def run(self) -> None:
+        """Block and process frames until stop() is called or stream ends.
+
+        This method iterates over incoming video frames and invokes all
+        registered frame handlers for each frame. It blocks until either:
+        - stop() is called (from a callback or another thread)
+        - The video stream ends naturally
+
+        Data channel handlers are invoked automatically when data arrives,
+        independent of this method.
+
+        Must be called within the context manager (after __enter__).
+
+        Example:
+            with session:
+                @session.on_frame
+                def process(frame, metadata):
+                    print(f"Frame {metadata.frame_id} - PTS: {metadata.pts}")
+                    cv2.imshow("Frame", frame)
+                    if cv2.waitKey(1) & 0xFF == ord('q'):
+                        session.stop()
+
+                session.run()  # blocks here
+        """
+        for frame, metadata in self.video():
+            # Invoke all registered frame handlers with both parameters
+            for handler in self._frame_handlers:
+                try:
+                    handler(frame, metadata)
+                except Exception:
+                    logger.warning("Error in frame handler", exc_info=True)
+
+            # Check if stop requested
+            if self._stop_event.is_set():
+                break
+
+    def _invoke_data_handler(
+        self, handler: Callable, value: Any, metadata: Optional[VideoMetadata]
+    ) -> None:  # noqa: ANN401
+        """Invoke data handler with appropriate signature (auto-detect via introspection).
+
+        Supports two signatures:
+        - handler(value, metadata) - receives both value and metadata
+        - handler(value) - receives only value
+
+        Args:
+            handler: The handler callable to invoke
+            value: The data value to pass
+            metadata: Optional video metadata to pass
+        """
+        try:
+            sig = inspect.signature(handler)
+            params = list(sig.parameters.values())
+
+            # Check number of parameters (excluding *args, **kwargs)
+            positional_params = [
+                p
+                for p in params
+                if p.kind
+                in (
+                    inspect.Parameter.POSITIONAL_ONLY,
+                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                )
+            ]
+
+            if len(positional_params) >= 2:
+                # Handler expects both value and metadata
+                handler(value, metadata)
+            else:
+                # Handler expects only value
+                handler(value)
+        except Exception:
+            # Fallback: try calling with just the value
+            try:
+                handler(value)
+            except Exception:
+                logger.exception(f"Failed to invoke handler {handler}")
+                raise
 
     async def _get_turn_config(self) -> Optional[dict]:
         """Fetch TURN configuration from server or use user-provided config.
@@ -468,6 +654,17 @@ class WebRTCSession(AbstractContextManager["WebRTCSession"]):
 
         Sets up peer connection, configures source, negotiates with server.
         """
+        # Check dependencies and import them
+        _check_webrtc_dependencies()
+        from aiortc import (
+            RTCConfiguration,
+            RTCIceServer,
+            RTCPeerConnection,
+            RTCSessionDescription,
+        )
+        from aiortc.contrib.media import MediaRelay
+        from av import VideoFrame
+
         # Fetch TURN configuration (auto-fetch or user-provided)
         turn_config = await self._get_turn_config()
 
@@ -505,6 +702,14 @@ class WebRTCSession(AbstractContextManager["WebRTCSession"]):
                             pass
                         break
                     img = f.to_ndarray(format="bgr24")
+                    current_metadata = VideoMetadata(
+                        frame_id=f.pts,
+                        received_at=datetime.now(),
+                        pts=f.pts,
+                        time_base=f.time_base,
+                        declared_fps=None,
+                        measured_fps=None,
+                    )
                     # Backpressure: drop oldest frame if queue full
                     if self._video_queue.full():
                         try:
@@ -512,15 +717,72 @@ class WebRTCSession(AbstractContextManager["WebRTCSession"]):
                         except Exception:
                             pass
                     try:
-                        self._video_queue.put_nowait(img)
+                        self._video_queue.put_nowait((img, current_metadata))
                     except Exception:
                         pass
 
             asyncio.ensure_future(_reader())
 
-        # Setup data channel
+        # Setup data channel with new handler infrastructure
         ch = pc.createDataChannel("inference")
+
+        # Keep old binding for tests that still use session.data
         self.data.bind(ch)
+
+        # Setup new data channel message handler
+        @ch.on("message")
+        def _on_data_message(message: Any) -> None:  # noqa: ANN401
+            try:
+                parsed_message = json.loads(message)
+
+                # Extract video metadata if present (for data handlers)
+                metadata = None
+                video_metadata_dict = parsed_message.get("video_metadata")
+                if video_metadata_dict:
+                    try:
+                        metadata = VideoMetadata(
+                            frame_id=video_metadata_dict["frame_id"],
+                            received_at=datetime.fromisoformat(
+                                video_metadata_dict["received_at"]
+                            ),
+                            pts=video_metadata_dict.get("pts"),
+                            time_base=video_metadata_dict.get("time_base"),
+                            declared_fps=video_metadata_dict.get("declared_fps"),
+                            measured_fps=video_metadata_dict.get("measured_fps"),
+                        )
+                    except (KeyError, ValueError, TypeError) as e:
+                        logger.warning(f"Failed to parse video_metadata: {e}")
+
+                # Get serialized output data
+                serialized_data = parsed_message.get("serialized_output_data")
+
+                # Call global handler if registered
+                if self._data_global_handler:
+                    try:
+                        self._invoke_data_handler(
+                            self._data_global_handler, serialized_data, metadata
+                        )
+                    except Exception:
+                        logger.warning(
+                            "Error calling global data handler", exc_info=True
+                        )
+
+                # Route to field-specific handlers
+                if isinstance(serialized_data, dict):
+                    for field_name, field_value in serialized_data.items():
+                        if field_name in self._data_field_handlers:
+                            for handler in list(self._data_field_handlers[field_name]):
+                                try:
+                                    self._invoke_data_handler(
+                                        handler, field_value, metadata
+                                    )
+                                except Exception:
+                                    logger.warning(
+                                        f"Error calling handler for field '{field_name}'",
+                                        exc_info=True,
+                                    )
+            except json.JSONDecodeError:
+                logger.warning("Failed to parse data channel message as JSON")
 
         # Let source configure the peer connection
         # (adds tracks for webcam/video/manual, or recvonly transceiver for RTSP)

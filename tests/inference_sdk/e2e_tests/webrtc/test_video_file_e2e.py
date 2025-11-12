@@ -158,7 +158,7 @@ def test_video_file_e2e_with_data_channel(inference_server):
         config=config,
     ) as session:
         # Register data channel handler
-        @session.data.on_data("image_output")
+        @session.on_data("image_output")
         def handle_image_data(data):
             data_messages_received.append(data)
 
