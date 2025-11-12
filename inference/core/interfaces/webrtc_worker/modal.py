@@ -173,7 +173,10 @@ if modal is not None:
         if webrtc_request.processing_timeout is None:
             logger.warning("Spawning webrtc modal function without timeout")
         else:
-            logger.info("Spawning webrtc modal function with timeout %s", webrtc_request.processing_timeout)
+            logger.info(
+                "Spawning webrtc modal function with timeout %s",
+                webrtc_request.processing_timeout,
+            )
         # https://modal.com/docs/reference/modal.Cls#with_options
         cls_with_timeout = deployed_cls.with_options(
             timeout=webrtc_request.processing_timeout,
