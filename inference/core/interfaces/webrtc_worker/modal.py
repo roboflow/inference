@@ -120,13 +120,13 @@ if modal is not None:
 
     # https://modal.com/docs/reference/modal.App#cls
     modal_cpu_decorator = app.cls(
-        {
+        **{
             **decorator_kwargs,
             "enable_memory_snapshot": True,
         }
     )
     modal_gpu_decorator = app.cls(
-        {
+        **{
             **decorator_kwargs,
             "gpu": True,
             "experimental_options": {"enable_gpu_snapshot": True},
