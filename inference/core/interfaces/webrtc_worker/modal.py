@@ -68,8 +68,8 @@ if modal is not None:
         image=video_processing_image,
     )
 
-    # https://modal.com/docs/reference/modal.App#function
-    @app.function(
+    # https://modal.com/docs/reference/modal.App#cls
+    @app.cls(
         min_containers=WEBRTC_MODAL_FUNCTION_MIN_CONTAINERS,
         buffer_containers=WEBRTC_MODAL_FUNCTION_BUFFER_CONTAINERS,
         scaledown_window=WEBRTC_MODAL_FUNCTION_SCALEDOWN_WINDOW,
@@ -129,22 +129,25 @@ if modal is not None:
         },
         volumes={MODEL_CACHE_DIR: rfcache_volume},
     )
-    def rtc_peer_connection_modal(
-        webrtc_request: WebRTCWorkerRequest,
-        q: modal.Queue,
-    ):
-        logger.info("Received webrtc offer")
+    class RTCPeerConnectionModal:
+        @modal.method()
+        def rtc_peer_connection_modal(
+            self,
+            webrtc_request: WebRTCWorkerRequest,
+            q: modal.Queue,
+        ):
+            logger.info("Received webrtc offer")
 
-        def send_answer(obj: WebRTCWorkerResult):
-            logger.info("Sending webrtc answer")
-            q.put(obj)
+            def send_answer(obj: WebRTCWorkerResult):
+                logger.info("Sending webrtc answer")
+                q.put(obj)
 
-        asyncio.run(
-            init_rtc_peer_connection_with_loop(
-                webrtc_request=webrtc_request,
-                send_answer=send_answer,
+            asyncio.run(
+                init_rtc_peer_connection_with_loop(
+                    webrtc_request=webrtc_request,
+                    send_answer=send_answer,
+                )
             )
-        )
 
     def spawn_rtc_peer_connection_modal(
         webrtc_request: WebRTCWorkerRequest,
@@ -161,19 +164,22 @@ if modal is not None:
         except modal.exception.NotFoundError:
             logger.info("Deploying webrtc modal app %s", WEBRTC_MODAL_APP_NAME)
             app.deploy(name=WEBRTC_MODAL_APP_NAME, client=client)
-        deployed_func = modal.Function.from_name(
-            app_name=app.name, name=rtc_peer_connection_modal.info.function_name
+        # https://modal.com/docs/reference/modal.Cls#from_name
+        deployed_cls = modal.Cls.from_name(
+            app_name=app.name,
+            name=RTCPeerConnectionModal.__name__,
         )
-        deployed_func.hydrate(client=client)
+        deployed_cls.hydrate(client=client)
+        rtc_modal_obj: RTCPeerConnectionModal = deployed_cls()
         # https://modal.com/docs/reference/modal.Queue#ephemeral
         with modal.Queue.ephemeral(client=client) as q:
             logger.info(
-                "Spawning webrtc modal function %s into modal app %s",
-                rtc_peer_connection_modal.info.function_name,
+                "Spawning webrtc modal function from %s into modal app %s",
+                RTCPeerConnectionModal.__name__,
                 app.name,
             )
             # https://modal.com/docs/reference/modal.Function#spawn
-            deployed_func.spawn(
+            rtc_modal_obj.rtc_peer_connection_modal.spawn(
                 webrtc_request=webrtc_request,
                 q=q,
             )
