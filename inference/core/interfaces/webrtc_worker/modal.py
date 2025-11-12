@@ -132,6 +132,7 @@ if modal is not None:
     class RTCPeerConnectionModal:
         @modal.method()
         def rtc_peer_connection_modal(
+            self,
             webrtc_request: WebRTCWorkerRequest,
             q: modal.Queue,
         ):
@@ -163,19 +164,21 @@ if modal is not None:
         except modal.exception.NotFoundError:
             logger.info("Deploying webrtc modal app %s", WEBRTC_MODAL_APP_NAME)
             app.deploy(name=WEBRTC_MODAL_APP_NAME, client=client)
-        deployed_func = modal.Function.from_name(
-            app_name=app.name, name=rtc_peer_connection_modal.info.function_name
+        # https://modal.com/docs/reference/modal.Cls#from_name
+        deployed_cls = modal.Cls.from_name(
+            app_name=app.name, name=RTCPeerConnectionModal.__name__,
         )
-        deployed_func.hydrate(client=client)
+        deployed_cls.hydrate(client=client)
+        rtc_modal_obj: RTCPeerConnectionModal = deployed_cls()
         # https://modal.com/docs/reference/modal.Queue#ephemeral
         with modal.Queue.ephemeral(client=client) as q:
             logger.info(
-                "Spawning webrtc modal function %s into modal app %s",
-                rtc_peer_connection_modal.info.function_name,
+                "Spawning webrtc modal function from %s into modal app %s",
+                RTCPeerConnectionModal.__name__,
                 app.name,
             )
             # https://modal.com/docs/reference/modal.Function#spawn
-            deployed_func.spawn(
+            rtc_modal_obj.rtc_peer_connection_modal.spawn(
                 webrtc_request=webrtc_request,
                 q=q,
             )
