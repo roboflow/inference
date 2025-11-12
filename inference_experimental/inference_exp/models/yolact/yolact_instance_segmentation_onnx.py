@@ -289,14 +289,6 @@ def decode_predicted_bboxes(
     return boxes
 
 
-def decode_masks(
-    boxes: torch.Tensor, masks: torch.Tensor, proto: torch.Tensor, img_dim
-):
-    ret_mask = proto @ boxes[:, 6:].T
-    ret_mask = 1 / (1 + torch.exp(-ret_mask))
-    ret_mask = crop_masks_to_boxes(boxes=boxes[:, 4], masks=ret_mask)
-
-
 def run_nms_for_instance_segmentation(
     output: torch.Tensor,
     conf_thresh: float = 0.25,

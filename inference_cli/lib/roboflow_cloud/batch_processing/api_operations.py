@@ -4,7 +4,7 @@ import random
 import string
 from collections import Counter
 from datetime import datetime, timezone
-from typing import Generator, List, Optional, Union
+from typing import Generator, List, Optional, Set, Union
 
 import backoff
 import requests
@@ -19,6 +19,7 @@ from rich.text import Text
 from inference_cli.lib.env import API_BASE_URL
 from inference_cli.lib.roboflow_cloud.batch_processing.entities import (
     AggregationFormat,
+    CompilationDevice,
     ComputeConfigurationV2,
     GetJobMetadataResponse,
     JobLog,
@@ -32,6 +33,7 @@ from inference_cli.lib.roboflow_cloud.batch_processing.entities import (
     MachineType,
     StagingBatchInputV1,
     TaskStatus,
+    TRTCompilationJobV1,
     WorkflowProcessingJobV1,
     WorkflowsProcessingSpecificationV1,
 )
@@ -247,7 +249,10 @@ def display_batch_job_details(job_id: str, api_key: str) -> None:
         ]
         error_reports_str = "\n".join(error_reports)
         if not error_reports_str:
-            error_reports_str = "All Good 😃"
+            if not job_metadata.error:
+                error_reports_str = "All Good 😃"
+            else:
+                error_reports_str = "Nothing found 🕵"
         expected_tasks = stage.tasks_number
         registered_tasks = len([t for t in job_tasks if t.progress is not None])
         tasks_waiting_for_processing = expected_tasks - registered_tasks
@@ -477,6 +482,33 @@ def trigger_job_with_workflows_videos_processing(
     return job_id
 
 
+def trigger_trt_compilation_job(
+    model_id: str,
+    job_id: Optional[str],
+    compilation_devices: Optional[List[CompilationDevice]],
+    notifications_url: Optional[str],
+    api_key: str,
+) -> str:
+    if not job_id:
+        job_id = f"trt-{_generate_random_string(length=12)}"
+    workspace = get_workspace(api_key=api_key)
+    if compilation_devices:
+        compilation_devices = list(set(compilation_devices))
+    compilation_specification = TRTCompilationJobV1(
+        type="trt-compilation-v1",
+        model_id=model_id,
+        compilation_devices=compilation_devices,
+        notifications_url=notifications_url,
+    )
+    create_batch_job(
+        workspace=workspace,
+        job_id=job_id,
+        job_configuration=compilation_specification,
+        api_key=api_key,
+    )
+    return job_id
+
+
 @backoff.on_exception(
     backoff.constant,
     exception=RetryError,
@@ -486,7 +518,7 @@ def trigger_job_with_workflows_videos_processing(
 def create_batch_job(
     workspace: str,
     job_id: str,
-    job_configuration: WorkflowProcessingJobV1,
+    job_configuration: Union[WorkflowProcessingJobV1, TRTCompilationJobV1],
     api_key: str,
 ) -> None:
     params = {"api_key": api_key}

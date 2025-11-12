@@ -13,6 +13,7 @@ from inference.core.workflows.core_steps.common.serializers import (
 )
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
+    OriginCoordinatesSystem,
     WorkflowImageData,
 )
 
@@ -455,6 +456,75 @@ def test_mask_to_polygon_when_mask_contains_multiple_shapes() -> None:
     ) or np.allclose(result, np.array([[50, 40], [50, 49], [59, 49], [59, 40]]))
 
 
+def test_serialise_image_with_parent_origin_when_crop() -> None:
+    # given
+    np_image = np.zeros((100, 100, 3), dtype=np.uint8)
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(
+            parent_id="crop_id",
+            origin_coordinates=OriginCoordinatesSystem(
+                left_top_x=50,
+                left_top_y=75,
+                origin_width=800,
+                origin_height=600,
+            ),
+        ),
+        workflow_root_ancestor_metadata=ImageParentMetadata(
+            parent_id="original_image",
+            origin_coordinates=OriginCoordinatesSystem(
+                left_top_x=150,
+                left_top_y=200,
+                origin_width=1920,
+                origin_height=1080,
+            ),
+        ),
+        numpy_image=np_image,
+    )
+
+    # when
+    result = serialise_image(image=image)
+
+    # then
+    assert result["type"] == "base64"
+    assert "parent_id" in result
+    assert result["parent_id"] == "crop_id"
+    assert "parent_origin" in result
+    assert result["parent_origin"] == {
+        "offset_x": 50,
+        "offset_y": 75,
+        "width": 800,
+        "height": 600,
+    }
+    assert "root_parent_id" in result
+    assert result["root_parent_id"] == "original_image"
+    assert "root_parent_origin" in result
+    assert result["root_parent_origin"] == {
+        "offset_x": 150,
+        "offset_y": 200,
+        "width": 1920,
+        "height": 1080,
+    }
+
+
+def test_serialise_image_without_parent_origin_when_not_crop() -> None:
+    # given
+    np_image = np.zeros((100, 100, 3), dtype=np.uint8)
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="original_image"),
+        numpy_image=np_image,
+    )
+
+    # when
+    result = serialise_image(image=image)
+
+    # then
+    assert result["type"] == "base64"
+    assert "parent_id" not in result
+    assert "parent_origin" not in result
+    assert "root_parent_id" not in result
+    assert "root_parent_origin" not in result
+
+
 def test_mask_to_polygon_output_reconstruction_when_output_was_padded() -> None:
     # given
     mask = np.zeros((128, 128), dtype=np.uint8)
@@ -644,6 +714,107 @@ def test_serialise_sv_detections_when_mask_with_single_point_detected_present() 
                         "y": 19.0,
                     },
                 ],
+            },
+        ],
+    }
+
+
+def test_serialise_sv_detections_with_parent_origin_when_crop() -> None:
+    # given
+    detections = sv.Detections(
+        xyxy=np.array([[1, 1, 2, 2]], dtype=np.float64),
+        class_id=np.array([1]),
+        confidence=np.array([0.1], dtype=np.float64),
+        data={
+            "class_name": np.array(["cat"]),
+            "detection_id": np.array(["first"]),
+            "parent_id": np.array(["crop_id"]),
+            "root_parent_id": np.array(["original_image"]),
+            "parent_coordinates": np.array([[50, 75]]),
+            "parent_dimensions": np.array([[600, 800]]),
+            "root_parent_coordinates": np.array([[150, 200]]),
+            "root_parent_dimensions": np.array([[1080, 1920]]),
+            "image_dimensions": np.array([[192, 168]]),
+        },
+    )
+
+    # when
+    result = serialise_sv_detections(detections=detections)
+
+    # then
+    assert result == {
+        "image": {
+            "width": 168,
+            "height": 192,
+        },
+        "predictions": [
+            {
+                "width": 1.0,
+                "height": 1.0,
+                "x": 1.5,
+                "y": 1.5,
+                "confidence": 0.1,
+                "class_id": 1,
+                "class": "cat",
+                "detection_id": "first",
+                "parent_id": "crop_id",
+                "parent_origin": {
+                    "offset_x": 50,
+                    "offset_y": 75,
+                    "width": 800,
+                    "height": 600,
+                },
+                "root_parent_id": "original_image",
+                "root_parent_origin": {
+                    "offset_x": 150,
+                    "offset_y": 200,
+                    "width": 1920,
+                    "height": 1080,
+                },
+            },
+        ],
+    }
+
+
+def test_serialise_sv_detections_without_parent_origin_when_not_crop() -> None:
+    # given
+    detections = sv.Detections(
+        xyxy=np.array([[1, 1, 2, 2]], dtype=np.float64),
+        class_id=np.array([1]),
+        confidence=np.array([0.1], dtype=np.float64),
+        data={
+            "class_name": np.array(["cat"]),
+            "detection_id": np.array(["first"]),
+            "parent_id": np.array(["original_image"]),
+            "root_parent_id": np.array(["original_image"]),
+            "parent_coordinates": np.array([[50, 75]]),
+            "parent_dimensions": np.array([[600, 800]]),
+            "root_parent_coordinates": np.array([[50, 75]]),
+            "root_parent_dimensions": np.array([[600, 800]]),
+            "image_dimensions": np.array([[192, 168]]),
+        },
+    )
+
+    # when
+    result = serialise_sv_detections(detections=detections)
+
+    # then
+    assert result == {
+        "image": {
+            "width": 168,
+            "height": 192,
+        },
+        "predictions": [
+            {
+                "width": 1.0,
+                "height": 1.0,
+                "x": 1.5,
+                "y": 1.5,
+                "confidence": 0.1,
+                "class_id": 1,
+                "class": "cat",
+                "detection_id": "first",
+                "parent_id": "original_image",
             },
         ],
     }

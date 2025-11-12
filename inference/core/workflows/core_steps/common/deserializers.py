@@ -30,11 +30,18 @@ from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
     IMAGE_DIMENSIONS_KEY,
     KEYPOINTS_KEY_IN_INFERENCE_RESPONSE,
+    PARENT_COORDINATES_KEY,
+    PARENT_DIMENSIONS_KEY,
     PARENT_ID_KEY,
+    PARENT_ORIGIN_KEY,
     PATH_DEVIATION_KEY_IN_INFERENCE_RESPONSE,
     PATH_DEVIATION_KEY_IN_SV_DETECTIONS,
     POLYGON_KEY_IN_INFERENCE_RESPONSE,
     POLYGON_KEY_IN_SV_DETECTIONS,
+    ROOT_PARENT_COORDINATES_KEY,
+    ROOT_PARENT_DIMENSIONS_KEY,
+    ROOT_PARENT_ID_KEY,
+    ROOT_PARENT_ORIGIN_KEY,
     SMOOTHED_SPEED_KEY_IN_INFERENCE_RESPONSE,
     SMOOTHED_SPEED_KEY_IN_SV_DETECTIONS,
     SMOOTHED_VELOCITY_KEY_IN_INFERENCE_RESPONSE,
@@ -48,6 +55,7 @@ from inference.core.workflows.execution_engine.constants import (
 )
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
+    ParentOrigin,
     VideoMetadata,
     WorkflowImageData,
 )
@@ -62,25 +70,41 @@ def deserialize_image_kind(
 ) -> WorkflowImageData:
     if isinstance(image, WorkflowImageData):
         return image
-    parent_id = parameter
-    if isinstance(image, dict) and "parent_id" in image:
-        parent_id = image["parent_id"]
+
+    is_image_dict = isinstance(image, dict)
+
+    parent_id = image.get(PARENT_ID_KEY, parameter) if is_image_dict else parameter
+    parent_origin = image.get(PARENT_ORIGIN_KEY) if is_image_dict else None
+    parent_metadata = _parse_optional_parent_metadata(
+        parameter=parameter,
+        parent_id=parent_id,
+        parent_origin=parent_origin,
+    )
+
+    root_parent_id = image.get(ROOT_PARENT_ID_KEY) if is_image_dict else None
+    root_parent_origin = image.get(ROOT_PARENT_ORIGIN_KEY) if is_image_dict else None
+    workflow_root_ancestor_metadata = _parse_optional_parent_metadata(
+        parameter=parameter,
+        parent_id=root_parent_id,
+        parent_origin=root_parent_origin,
+    )
+
     video_metadata = None
-    if isinstance(image, dict) and "video_metadata" in image:
+    if is_image_dict and "video_metadata" in image:
         video_metadata = deserialize_video_metadata_kind(
             parameter=parameter, video_metadata=image["video_metadata"]
         )
-    if isinstance(image, dict) and isinstance(image.get("value"), np.ndarray):
+    if is_image_dict and isinstance(image.get("value"), np.ndarray):
         image = image["value"]
     if isinstance(image, np.ndarray):
-        parent_metadata = ImageParentMetadata(parent_id=parent_id)
         return WorkflowImageData(
             parent_metadata=parent_metadata,
+            workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
             numpy_image=image,
             video_metadata=video_metadata,
         )
     try:
-        if isinstance(image, dict):
+        if is_image_dict:
             image = image["value"]
         if isinstance(image, str):
             base64_image = None
@@ -97,9 +121,9 @@ def deserialize_image_kind(
             else:
                 base64_image = image
                 image = attempt_loading_image_from_string(image)[0]
-            parent_metadata = ImageParentMetadata(parent_id=parent_id)
             return WorkflowImageData(
                 parent_metadata=parent_metadata,
+                workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
                 numpy_image=image,
                 base64_image=base64_image,
                 image_reference=image_reference,
@@ -117,6 +141,45 @@ def deserialize_image_kind(
         f"and dicts with keys `type` and `value` compatible with `inference` (or list of them).",
         context="workflow_execution | runtime_input_validation",
     )
+
+
+def _parse_optional_parent_metadata(
+    parameter: str,
+    parent_id: Optional[str],
+    parent_origin: Optional[Any],
+) -> Optional[ImageParentMetadata]:
+    if not parent_id:
+        return None
+
+    if not parent_origin:
+        return ImageParentMetadata(parent_id=parent_id)
+
+    parsed_origin = deserialize_parent_origin(parameter, parent_origin)
+    return ImageParentMetadata(
+        parent_id=parent_id,
+        origin_coordinates=parsed_origin.to_origin_coordinates_system(),
+    )
+
+
+def deserialize_parent_origin(parameter: str, parent_origin: Any) -> ParentOrigin:
+    if isinstance(parent_origin, ParentOrigin):
+        return parent_origin
+    if not isinstance(parent_origin, dict):
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` holding "
+            f"`ParentOrigin`, but provided value is not a dict.",
+            context="workflow_execution | runtime_input_validation",
+        )
+    try:
+        return ParentOrigin.model_validate(parent_origin)
+    except ValidationError as error:
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` holding "
+            f"`ParentOrigin`, but provided value is malformed. "
+            f"See details in inner error.",
+            context="workflow_execution | runtime_input_validation",
+            inner_error=error,
+        )
 
 
 def deserialize_video_metadata_kind(
@@ -172,11 +235,38 @@ def deserialize_detections_kind(
         for detection in detections["predictions"]
     ]
     parsed_detections.data[DETECTION_ID_KEY] = np.array(detection_ids)
+
     parent_ids = [
         detection.get(PARENT_ID_KEY, parameter)
         for detection in detections["predictions"]
     ]
     parsed_detections[PARENT_ID_KEY] = np.array(parent_ids)
+
+    _attach_parent_coordinates_and_dimensions(
+        parameter=parameter,
+        raw_detections=detections["predictions"],
+        parsed_detections=parsed_detections,
+        origin_key=PARENT_ORIGIN_KEY,
+        coordinates_key=PARENT_COORDINATES_KEY,
+        dimensions_key=PARENT_DIMENSIONS_KEY,
+    )
+
+    root_parent_ids = [
+        detection.get(ROOT_PARENT_ID_KEY, parameter)
+        for detection in detections["predictions"]
+    ]
+    if root_parent_ids:
+        parsed_detections.data[ROOT_PARENT_ID_KEY] = np.array(root_parent_ids)
+
+        _attach_parent_coordinates_and_dimensions(
+            parameter=parameter,
+            raw_detections=detections["predictions"],
+            parsed_detections=parsed_detections,
+            origin_key=ROOT_PARENT_ORIGIN_KEY,
+            coordinates_key=ROOT_PARENT_COORDINATES_KEY,
+            dimensions_key=ROOT_PARENT_DIMENSIONS_KEY,
+        )
+
     optional_elements_keys = [
         (PATH_DEVIATION_KEY_IN_INFERENCE_RESPONSE, PATH_DEVIATION_KEY_IN_SV_DETECTIONS),
         (TIME_IN_ZONE_KEY_IN_INFERENCE_RESPONSE, TIME_IN_ZONE_KEY_IN_SV_DETECTIONS),
@@ -217,6 +307,29 @@ def deserialize_detections_kind(
         raw_detections=detections["predictions"],
         parsed_detections=parsed_detections,
     )
+
+
+def _attach_parent_coordinates_and_dimensions(
+    parameter: str,
+    raw_detections: List[dict],
+    parsed_detections: sv.Detections,
+    origin_key: str,
+    coordinates_key: str,
+    dimensions_key: str,
+) -> None:
+    coordinates = []
+    dimensions = []
+    for detection in raw_detections:
+        parent_origin = detection.get(origin_key)
+        if parent_origin:
+            parsed_origin = deserialize_parent_origin(parameter, parent_origin)
+            coordinates.append([parsed_origin.offset_x, parsed_origin.offset_y])
+            dimensions.append([parsed_origin.height, parsed_origin.width])
+        else:
+            return
+    if coordinates and dimensions:
+        parsed_detections.data[coordinates_key] = np.array(coordinates)
+        parsed_detections.data[dimensions_key] = np.array(dimensions)
 
 
 def _attach_optional_detection_element(
