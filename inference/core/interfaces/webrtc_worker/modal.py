@@ -68,8 +68,8 @@ if modal is not None:
         image=video_processing_image,
     )
 
-    # https://modal.com/docs/reference/modal.App#function
-    @app.function(
+    # https://modal.com/docs/reference/modal.App#cls
+    @app.cls(
         min_containers=WEBRTC_MODAL_FUNCTION_MIN_CONTAINERS,
         buffer_containers=WEBRTC_MODAL_FUNCTION_BUFFER_CONTAINERS,
         scaledown_window=WEBRTC_MODAL_FUNCTION_SCALEDOWN_WINDOW,
@@ -129,22 +129,24 @@ if modal is not None:
         },
         volumes={MODEL_CACHE_DIR: rfcache_volume},
     )
-    def rtc_peer_connection_modal(
-        webrtc_request: WebRTCWorkerRequest,
-        q: modal.Queue,
-    ):
-        logger.info("Received webrtc offer")
+    class RTCPeerConnectionModal:
+        @modal.method()
+        def rtc_peer_connection_modal(
+            webrtc_request: WebRTCWorkerRequest,
+            q: modal.Queue,
+        ):
+            logger.info("Received webrtc offer")
 
-        def send_answer(obj: WebRTCWorkerResult):
-            logger.info("Sending webrtc answer")
-            q.put(obj)
+            def send_answer(obj: WebRTCWorkerResult):
+                logger.info("Sending webrtc answer")
+                q.put(obj)
 
-        asyncio.run(
-            init_rtc_peer_connection_with_loop(
-                webrtc_request=webrtc_request,
-                send_answer=send_answer,
+            asyncio.run(
+                init_rtc_peer_connection_with_loop(
+                    webrtc_request=webrtc_request,
+                    send_answer=send_answer,
+                )
             )
-        )
 
     def spawn_rtc_peer_connection_modal(
         webrtc_request: WebRTCWorkerRequest,
