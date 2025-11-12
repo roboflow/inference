@@ -1,12 +1,9 @@
 import asyncio
-import base64
 import datetime
 import json
 import logging
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-import cv2
-import numpy as np
 import supervision as sv
 from aiortc import (
     RTCConfiguration,
@@ -52,152 +49,13 @@ from inference.core.interfaces.webrtc_worker.entities import (
 from inference.core.interfaces.webrtc_worker.utils import process_frame
 from inference.core.roboflow_api import get_workflow_specification
 from inference.core.workflows.core_steps.common.serializers import (
-    serialise_sv_detections,
+    serialize_wildcard_kind,
 )
 from inference.core.workflows.errors import WorkflowSyntaxError
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.usage_tracking.collector import usage_collector
 
 logging.getLogger("aiortc").setLevel(logging.WARNING)
-
-
-def serialize_workflow_output(
-    output_data: Any, is_explicit_request: bool
-) -> Tuple[Any, Optional[str]]:
-    """Serialize a workflow output value recursively.
-
-    Args:
-        output_data: The workflow output value to serialize
-        is_explicit_request: True if field was explicitly requested in data_output
-
-    Returns (serialized_value, error_message)
-    - serialized_value: The value ready for JSON serialization, or None if
-      skipped/failed
-    - error_message: Error string if serialization failed, None otherwise
-
-    Image serialization rules:
-    - Images are NEVER serialized UNLESS explicitly requested in data_output list
-    - If explicit: serialize to base64 JPEG (quality 85)
-    - If implicit (data_output=None): skip images
-
-    Handles nested structures recursively (dicts, lists) to ensure all complex
-    types are properly serialized.
-    """
-    try:
-        # Handle WorkflowImageData (convert to base64 only if explicit)
-        if isinstance(output_data, WorkflowImageData):
-            if not is_explicit_request:
-                # Skip images when listing all outputs (data_output=None)
-                return None, None  # Skip without error
-
-            # Explicitly requested - serialize to base64 JPEG
-            try:
-                np_image = output_data.numpy_image
-                # Encode as JPEG with quality 85 (good quality, much smaller than PNG)
-                success, buffer = cv2.imencode(
-                    ".jpg", np_image, [cv2.IMWRITE_JPEG_QUALITY, 85]
-                )
-                if success:
-                    base64_image = base64.b64encode(buffer).decode("utf-8")
-                    return f"data:image/jpeg;base64,{base64_image}", None
-                else:
-                    return None, "Failed to encode image as JPEG"
-            except Exception as e:
-                return None, f"Failed to serialize image: {str(e)}"
-
-        # Handle sv.Detections (use existing serializer)
-        elif isinstance(output_data, sv.Detections):
-            try:
-                parsed_detections = serialise_sv_detections(output_data)
-                return parsed_detections, None
-            except Exception as e:
-                return None, f"Failed to serialize detections: {str(e)}"
-
-        # Handle dict (serialize recursively)
-        elif isinstance(output_data, dict):
-            return _serialize_collection(
-                output_data.items(), is_explicit_request, as_dict=True
-            )
-
-        # Handle list (serialize recursively)
-        elif isinstance(output_data, list):
-            return _serialize_collection(
-                enumerate(output_data), is_explicit_request, as_dict=False
-            )
-
-        # Handle primitives (str, int, float, bool)
-        elif isinstance(output_data, (str, int, float, bool, type(None))):
-            return output_data, None
-
-        # Handle numpy types
-        elif isinstance(output_data, (np.integer, np.floating)):
-            return output_data.item(), None
-
-        # Handle numpy arrays
-        elif isinstance(output_data, np.ndarray):
-            try:
-                return output_data.tolist(), None
-            except Exception as e:
-                return None, f"Failed to serialize numpy array: {str(e)}"
-
-        # Unknown type - convert to string as fallback
-        else:
-            return str(output_data), None
-
-    except Exception as e:
-        return None, f"Unexpected error serializing output: {str(e)}"
-
-
-def _serialize_collection(
-    items, is_explicit_request: bool, as_dict: bool
-) -> Tuple[Any, Optional[str]]:
-    """Helper to serialize dict or list collections recursively.
-
-    Args:
-        items: Iterator of (key, value) pairs for dict or (index, value) for list
-        is_explicit_request: Whether the parent field was explicitly requested
-        as_dict: True to return dict, False to return list
-
-    Returns (serialized_collection, error_message)
-
-    Note: If serialization fails for some fields, those fields are replaced with
-    error placeholders and the collection is still returned with valid fields.
-    The error message lists which fields failed.
-
-    Error placeholder format:
-    - For dicts: {"__serialization_error__": "error message"} (key identifies field)
-    - For lists: {"__serialization_error__": "error message", "__field__": "index"}
-    """
-    result = {} if as_dict else []
-    errors = []
-
-    for key_or_idx, value in items:
-        serialized_value, error = serialize_workflow_output(value, is_explicit_request)
-
-        if error:
-            # Store error info and add placeholder
-            errors.append(f"{key_or_idx}: {error}")
-
-            if as_dict:
-                # For dict: key already identifies the field
-                result[key_or_idx] = {"__serialization_error__": error}
-            else:
-                # For list: include index in placeholder
-                result.append(
-                    {"__serialization_error__": error, "__field__": str(key_or_idx)}
-                )
-        elif serialized_value is not None:
-            if as_dict:
-                result[key_or_idx] = serialized_value
-            else:
-                result.append(serialized_value)
-        # else: skip None values (e.g., images when not explicit)
-
-    # Return result with placeholders + error message listing failed fields
-    if errors:
-        error_message = f"Partial serialization - errors in: {'; '.join(errors)}"
-        return result, error_message
-    return result, None
 
 
 class RTCPeerConnectionWithLoop(RTCPeerConnection):
@@ -425,40 +283,30 @@ class VideoFrameProcessor:
         is_all_outputs = self.data_output is None
 
         for field_name in fields_to_send:
+            # If the field is not in the workflow output, add an error
             if field_name not in workflow_output:
                 webrtc_output.errors.append(
                     f"Requested output '{field_name}' not found in workflow outputs"
                 )
                 continue
 
+            # If the field is an image and we are not listing all outputs, skip it
             output_data = workflow_output[field_name]
+            if is_all_outputs and isinstance(output_data, WorkflowImageData):
+                continue
 
-            # Determine if this field was explicitly requested
-            if is_all_outputs:
-                # data_output=None means listing all, so not explicit for individual fields
-                is_explicit_request = False
-            else:
-                # Field is in the data_output list, so it's explicit
-                is_explicit_request = True
-
-            serialized_value, error = serialize_workflow_output(
-                output_data=output_data,
-                is_explicit_request=is_explicit_request,
-            )
-
-            if error:
-                # Add error to errors list and include placeholder in output
-                webrtc_output.errors.append(f"{field_name}: {error}")
-                serialized_outputs[field_name] = {"__serialization_error__": error}
-            elif serialized_value is not None:
+            try:
+                serialized_value = serialize_wildcard_kind(output_data)
                 serialized_outputs[field_name] = serialized_value
-            # else: serialized_value is None and no error = field was skipped (e.g., image in video track)
+            except Exception as e:
+                webrtc_output.errors.append(f"{field_name}: {e}")
+                serialized_outputs[field_name] = {"__serialization_error__": str(e)}
 
         # Only set serialized_output_data if we have data to send
         if serialized_outputs:
             webrtc_output.serialized_output_data = serialized_outputs
 
-        self.data_channel.send(json.dumps(webrtc_output.model_dump()))
+        self.data_channel.send(json.dumps(webrtc_output.model_dump(mode="json")))
 
     async def process_frames_data_only(self):
         """Process frames for data extraction only, without video track output.
