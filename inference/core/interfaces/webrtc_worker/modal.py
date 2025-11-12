@@ -170,7 +170,15 @@ if modal is not None:
             name=RTCPeerConnectionModal.__name__,
         )
         deployed_cls.hydrate(client=client)
-        rtc_modal_obj: RTCPeerConnectionModal = deployed_cls()
+        if webrtc_request.processing_timeout is None:
+            logger.warning("Spawning webrtc modal function without timeout")
+        else:
+            logger.info("Spawning webrtc modal function with timeout %s", webrtc_request.processing_timeout)
+        # https://modal.com/docs/reference/modal.Cls#with_options
+        cls_with_timeout = deployed_cls.with_options(
+            timeout=webrtc_request.processing_timeout,
+        )
+        rtc_modal_obj: RTCPeerConnectionModal = cls_with_timeout()
         # https://modal.com/docs/reference/modal.Queue#ephemeral
         with modal.Queue.ephemeral(client=client) as q:
             logger.info(

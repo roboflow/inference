@@ -262,6 +262,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--turn-url", required=False, type=str)
     parser.add_argument("--turn-username", required=False, type=str)
     parser.add_argument("--turn-credential", required=False, type=str)
+    parser.add_argument("--processing-timeout", required=False, type=int, default=60)
+
     return parser.parse_args()
 
 
@@ -317,6 +319,7 @@ def main():
         data_output=["preds"],
         webrtc_realtime_processing=args.realtime,
         rtsp_url=args.source if is_rtmp_url(args.source) else None,
+        processing_timeout=args.processing_timeout,
     )
 
     https_verify = True
