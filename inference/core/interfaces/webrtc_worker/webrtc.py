@@ -21,7 +21,6 @@ from pydantic import ValidationError
 
 from inference.core import logger
 from inference.core.env import (
-    WEBRTC_MODAL_FUNCTION_TIME_LIMIT,
     WEBRTC_MODAL_RTSP_PLACEHOLDER,
     WEBRTC_MODAL_RTSP_PLACEHOLDER_URL,
 )
@@ -220,9 +219,9 @@ async def init_rtc_peer_connection_with_loop(
     termination_date = None
     terminate_event = asyncio.Event()
 
-    if WEBRTC_MODAL_FUNCTION_TIME_LIMIT is not None:
+    if webrtc_request.processing_timeout is not None:
         try:
-            time_limit_seconds = int(WEBRTC_MODAL_FUNCTION_TIME_LIMIT)
+            time_limit_seconds = int(webrtc_request.processing_timeout)
             termination_date = datetime.datetime.now() + datetime.timedelta(
                 seconds=time_limit_seconds - 1
             )
