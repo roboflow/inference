@@ -38,6 +38,9 @@ from inference.core.interfaces.webrtc_worker.entities import (
     WebRTCWorkerRequest,
     WebRTCWorkerResult,
 )
+from inference.core.interfaces.webrtc_worker.webrtc import (
+    init_rtc_peer_connection_with_loop,
+)
 from inference.core.version import __version__
 
 try:
@@ -133,10 +136,6 @@ if modal is not None:
             webrtc_request: WebRTCWorkerRequest,
             q: modal.Queue,
         ):
-            from inference.core.interfaces.webrtc_worker.webrtc import (
-                init_rtc_peer_connection_with_loop,
-            )
-
             logger.info("Received webrtc offer")
 
             def send_answer(obj: WebRTCWorkerResult):
