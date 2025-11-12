@@ -20,6 +20,9 @@ import requests
 from inference_sdk.webrtc.config import StreamConfig
 from inference_sdk.webrtc.sources import StreamSource
 
+# Sentinel value to distinguish "not provided" from "None"
+_UNSET = object()
+
 if TYPE_CHECKING:
     from aiortc import RTCDataChannel, RTCPeerConnection
 
@@ -337,6 +340,7 @@ class WebRTCSession(AbstractContextManager["WebRTCSession"]):
         self._data_field_handlers: dict[str, List[Callable]] = {}
         self._data_global_handler: Optional[Callable] = None
         self._stop_event: threading.Event = threading.Event()
+        self._data_channel: Optional["RTCDataChannel"] = None
 
         # Public APIs
         self.video = _VideoStream(self._video_queue)
@@ -555,6 +559,122 @@ class WebRTCSession(AbstractContextManager["WebRTCSession"]):
             if self._stop_event.is_set():
                 break
 
+    def _send_config_message(
+        self,
+        stream_output: Any = _UNSET,  # noqa: ANN401
+        data_output: Any = _UNSET,  # noqa: ANN401
+    ) -> None:
+        """Send configuration message to server via data channel.
+
+        Args:
+            stream_output: Value to set for stream_output field (_UNSET = don't change)
+            data_output: Value to set for data_output field (_UNSET = don't change)
+
+        Raises:
+            RuntimeError: If data channel is not open or not initialized
+        """
+        if not self._data_channel:
+            raise RuntimeError(
+                "Data channel not initialized. This method can only be called "
+                "within the WebRTCSession context (after __enter__)."
+            )
+
+        if self._data_channel.readyState != "open":
+            raise RuntimeError(
+                f"Data channel is not open (state: {self._data_channel.readyState}). "
+                "Wait for the connection to be established before changing configuration."
+            )
+
+        # Build message dict with only the fields to change
+        message_dict = {}
+        if stream_output is not _UNSET:
+            message_dict["stream_output"] = stream_output
+        if data_output is not _UNSET:
+            message_dict["data_output"] = data_output
+
+        if not message_dict:
+            # Nothing to send
+            return
+
+        # Serialize and send
+        message_json = json.dumps(message_dict)
+
+        # Send from the async event loop thread
+        def _send():
+            self._data_channel.send(message_json)
+
+        self._loop.call_soon_threadsafe(_send)
+
+    def set_stream_output(self, output_name: Optional[str]) -> None:
+        """Change which workflow output is rendered on the video track.
+
+        This allows dynamically switching which workflow output is used for
+        the video stream without reconnecting. Useful for workflows with
+        multiple visualization outputs.
+
+        Args:
+            output_name: Name of workflow output to use for video rendering.
+                        - None: Disable rendering / trigger auto-detection
+                        - "" (empty string): Disable rendering / trigger auto-detection
+                        - "output_name": Use specific workflow output
+
+        Raises:
+            RuntimeError: If data channel is not open or not initialized
+
+        Examples:
+            # Switch to specific output
+            session.set_stream_output("visualization")
+
+            # Disable video rendering
+            session.set_stream_output(None)
+
+            # Let server auto-detect best output
+            session.set_stream_output("")
+
+        Note:
+            The server does not validate the output name. If you specify an
+            invalid output, errors will appear in the data channel responses.
+        """
+        self._send_config_message(stream_output=output_name)
+
+    def set_data_outputs(self, output_names: Optional[List[str]]) -> None:
+        """Change which workflow outputs are sent via data channel.
+
+        This allows dynamically controlling which workflow outputs are sent
+        over the data channel without reconnecting. Useful for reducing
+        bandwidth or focusing on specific outputs.
+
+        Args:
+            output_names: List of workflow output names to send.
+                         - None: Send ALL workflow outputs
+                         - []: Send NO outputs (metadata only)
+                         - ["field1", "field2"]: Send only specified fields
+
+        Raises:
+            RuntimeError: If data channel is not open or not initialized
+
+        Examples:
+            # Send all outputs
+            session.set_data_outputs(None)
+
+            # Send only metadata (no workflow outputs)
+            session.set_data_outputs([])
+
+            # Send specific fields
+            session.set_data_outputs(["predictions", "visualization"])
+
+            # Send single field
+            session.set_data_outputs(["predictions"])
+
+        Note:
+            - The server does not validate output names. Invalid names will
+              result in errors in the data channel responses.
+            - Images are only serialized when explicitly requested in the list.
+            - Using None (all outputs) will skip image serialization to save
+              bandwidth.
+        """
+        self._send_config_message(data_output=output_names)
+
     def _invoke_data_handler(
         self, handler: Callable, value: Any, metadata: Optional[VideoMetadata]
     ) -> None:  # noqa: ANN401
@@ -725,6 +845,9 @@ class WebRTCSession(AbstractContextManager["WebRTCSession"]):
         # Keep old binding for tests that still use session.data
         self.data.bind(ch)
 
+        # Store reference for dynamic configuration
+        self._data_channel = ch
+
         # Setup new data channel message handler
         @ch.on("message")
         def _on_data_message(message: Any) -> None:  # noqa: ANN401
@@ -810,6 +933,7 @@ class WebRTCSession(AbstractContextManager["WebRTCSession"]):
             "webrtc_realtime_processing": self._config.realtime_processing,
             "stream_output": self._config.stream_output,
             "data_output": self._config.data_output,
+            "output_mode": self._config.output_mode.value,
         }
 
         # Add TURN config if available (auto-fetched or user-provided)
@@ -828,7 +952,16 @@ class WebRTCSession(AbstractContextManager["WebRTCSession"]):
         url = f"{self._api_url}/initialise_webrtc_worker"
         headers = {"Content-Type": "application/json"}
         resp = requests.post(url, json=payload, headers=headers, timeout=90)
-        resp.raise_for_status()
+        try:
+            resp.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            # Try to get more details from the response
+            try:
+                error_detail = resp.json()
+                logger.error(f"Server returned error: {error_detail}")
+            except Exception:
+                logger.error(f"Server response body: {resp.text}")
+            raise
         ans: dict[str, Any] = resp.json()
 
         # Set remote description
