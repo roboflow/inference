@@ -117,21 +117,6 @@ if modal is not None:
         "volumes": {MODEL_CACHE_DIR: rfcache_volume},
     }
 
-    # https://modal.com/docs/reference/modal.App#cls
-    modal_cpu_decorator = app.cls(
-        **{
-            **decorator_kwargs,
-            "enable_memory_snapshot": True,
-        }
-    )
-    modal_gpu_decorator = app.cls(
-        **{
-            **decorator_kwargs,
-            "gpu": WEBRTC_MODAL_FUNCTION_GPU,
-            "experimental_options": {"enable_gpu_snapshot": True},
-        }
-    )
-
     class RTCPeerConnectionModal:
         @modal.method()
         def rtc_peer_connection_modal(
@@ -153,11 +138,23 @@ if modal is not None:
             )
 
     # Modal derives function name from class name
-    @modal_cpu_decorator
+    # https://modal.com/docs/reference/modal.App#cls
+    @app.cls(
+        **{
+            **decorator_kwargs,
+            "enable_memory_snapshot": True,
+        }
+    )
     class RTCPeerConnectionModalCPU(RTCPeerConnectionModal):
         pass
 
-    @modal_gpu_decorator
+    @app.cls(
+        **{
+            **decorator_kwargs,
+            "gpu": WEBRTC_MODAL_FUNCTION_GPU,
+            "experimental_options": {"enable_gpu_snapshot": True},
+        }
+    )
     class RTCPeerConnectionModalGPU(RTCPeerConnectionModal):
         pass
 
