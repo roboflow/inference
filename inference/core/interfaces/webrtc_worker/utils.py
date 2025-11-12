@@ -21,7 +21,9 @@ def process_frame(
     inference_pipeline: InferencePipeline,
     stream_output: str,
     include_errors_on_frame: bool = True,
-) -> Tuple[Dict[str, Union[WorkflowImageData, Any]], VideoFrame, List[str]]:
+) -> Tuple[
+    Dict[str, Union[WorkflowImageData, Any]], VideoFrame, List[str], Optional[str]
+]:
     np_image = frame.to_ndarray(format="bgr24")
     workflow_output: Dict[str, Union[WorkflowImageData, Any]] = {}
     errors = []
@@ -41,6 +43,7 @@ def process_frame(
             workflow_output=workflow_output,
             frame_output_key=stream_output,
         )
+        detected_output = None
         if result_np_image is None:
             for k in workflow_output.keys():
                 result_np_image = get_frame_from_workflow_output(
@@ -48,9 +51,12 @@ def process_frame(
                     frame_output_key=k,
                 )
                 if result_np_image is not None:
-                    errors.append(
-                        f"'{stream_output}' not found in workflow outputs, using '{k}' instead"
-                    )
+                    detected_output = k  # Store detected output name
+                    # Only show error if user explicitly specified an output that wasn't found
+                    if stream_output is not None and stream_output != "":
+                        errors.append(
+                            f"'{stream_output}' not found in workflow outputs, using '{k}' instead"
+                        )
                     break
         if result_np_image is None:
             errors.append("Visualisation blocks were not executed")
@@ -72,6 +78,7 @@ def process_frame(
         workflow_output,
         VideoFrame.from_ndarray(result_np_image, format="bgr24"),
         errors,
+        detected_output,  # Return the auto-detected output name (or None)
     )
 
 
