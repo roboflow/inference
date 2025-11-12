@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -37,6 +37,19 @@ class WebRTCWorkerRequest(BaseModel):
     data_output: Optional[List[Optional[str]]] = Field(default_factory=list)
     declared_fps: Optional[float] = None
     rtsp_url: Optional[str] = None
+    processing_timeout: Optional[int] = 60
+    # https://modal.com/docs/guide/gpu#specifying-gpu-type
+    requested_gpu: Literal[
+        "T4",
+        "L4",
+        "A10",
+        "A100",
+        "A100-40GB",
+        "A100-80GB",
+        "L40S" "H100/H100!",
+        "H200",
+        "B200",
+    ] = "T4"
 
 
 class WebRTCVideoMetadata(BaseModel):
