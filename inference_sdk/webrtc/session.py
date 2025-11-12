@@ -21,10 +21,7 @@ from inference_sdk.webrtc.config import StreamConfig
 from inference_sdk.webrtc.sources import StreamSource
 
 if TYPE_CHECKING:
-    from aiortc import (
-        RTCDataChannel,
-        RTCPeerConnection,
-    )
+    from aiortc import RTCDataChannel, RTCPeerConnection
 
 
 def _check_webrtc_dependencies():
