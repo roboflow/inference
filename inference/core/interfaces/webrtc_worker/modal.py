@@ -166,7 +166,8 @@ if modal is not None:
             app.deploy(name=WEBRTC_MODAL_APP_NAME, client=client)
         # https://modal.com/docs/reference/modal.Cls#from_name
         deployed_cls = modal.Cls.from_name(
-            app_name=app.name, name=RTCPeerConnectionModal.__name__,
+            app_name=app.name,
+            name=RTCPeerConnectionModal.__name__,
         )
         deployed_cls.hydrate(client=client)
         rtc_modal_obj: RTCPeerConnectionModal = deployed_cls()
