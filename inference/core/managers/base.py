@@ -86,6 +86,16 @@ class ModelManager:
             f"ModelManager - Adding model with model_id={model_id}, model_id_alias={model_id_alias}"
         )
         resolved_identifier = model_id if model_id_alias is None else model_id_alias
+
+        # Fast path: check if model is already loaded without acquiring lock
+        # This prevents unnecessary lock contention when model is already loaded
+        if resolved_identifier in self._models:
+            logger.debug(
+                f"ModelManager - model with model_id={resolved_identifier} is already loaded."
+            )
+            return
+
+        # Slow path: model needs to be loaded, acquire lock
         model_lock = self._get_lock_for_a_model(model_id=resolved_identifier)
         with acquire_with_timeout(lock=model_lock) as acquired:
             if not acquired:
@@ -93,6 +103,7 @@ class ModelManager:
                 raise ModelManagerLockAcquisitionError(
                     f"Could not acquire lock for model with id={resolved_identifier}."
                 )
+            # Double-check: another thread might have loaded the model while we were waiting for the lock
             if resolved_identifier in self._models:
                 logger.debug(
                     f"ModelManager - model with model_id={resolved_identifier} is already loaded."
