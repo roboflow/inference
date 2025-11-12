@@ -152,8 +152,14 @@ if modal is not None:
                 )
             )
 
-    RTCPeerConnectionModalCPU = modal_cpu_decorator(RTCPeerConnectionModal)
-    RTCPeerConnectionModalGPU = modal_gpu_decorator(RTCPeerConnectionModal)
+    # Modal derives function name from class name
+    @modal_cpu_decorator
+    class RTCPeerConnectionModalCPU(RTCPeerConnectionModal):
+        pass
+
+    @modal_gpu_decorator
+    class RTCPeerConnectionModalGPU(RTCPeerConnectionModal):
+        pass
 
     def spawn_rtc_peer_connection_modal(
         webrtc_request: WebRTCWorkerRequest,
