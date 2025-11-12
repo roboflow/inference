@@ -725,6 +725,9 @@ WEBRTC_MODAL_FUNCTION_SCALEDOWN_WINDOW = int(
 WEBRTC_MODAL_IMAGE_NAME = os.getenv(
     "WEBRTC_MODAL_IMAGE_NAME", "roboflow/roboflow-inference-server-gpu"
 )
+WEBRTC_MODAL_CPU_IMAGE_NAME = os.getenv(
+    "WEBRTC_MODAL_CPU_IMAGE_NAME", "roboflow/roboflow-inference-server-cpu"
+)
 WEBRTC_MODAL_IMAGE_TAG = os.getenv("WEBRTC_MODAL_IMAGE_TAG")
 WEBRTC_MODAL_ROBOFLOW_INTERNAL_SERVICE_NAME = os.getenv(
     "WEBRTC_MODAL_ROBOFLOW_INTERNAL_SERVICE_NAME", "webrtc-modal"
