@@ -264,7 +264,7 @@ class OPCWriterSinkBlockV1(WorkflowBlock):
         node_lookup_mode: Literal["hierarchical", "direct"] = "hierarchical",
     ) -> BlockResult:
         if disable_sink:
-            logging.info("OPC Writer disabled by disable_sink parameter")
+            logging.debug("OPC Writer disabled by disable_sink parameter")
             return {
                 "disabled": True,
                 "throttling_status": False,
@@ -286,7 +286,7 @@ class OPCWriterSinkBlockV1(WorkflowBlock):
             }
 
         value_str = str(value)
-        logging.info(f"OPC Writer converting value '{value_str}' to type {value_type}")
+        logging.debug(f"OPC Writer converting value '{value_str}' to type {value_type}")
         try:
             if value_type in [BOOLEAN_KIND, "Boolean"]:
                 decoded_value = value_str.strip().lower() in ("true", "1")
@@ -298,7 +298,7 @@ class OPCWriterSinkBlockV1(WorkflowBlock):
                 decoded_value = value_str
             else:
                 raise ValueError(f"Unsupported value type: {value_type}")
-            logging.info(f"OPC Writer successfully converted value to {decoded_value}")
+            logging.debug(f"OPC Writer successfully converted value to {decoded_value}")
         except ValueError as exc:
             logging.error(f"OPC Writer failed to convert value: {exc}")
             return {
@@ -322,7 +322,7 @@ class OPCWriterSinkBlockV1(WorkflowBlock):
         )
         self._last_notification_fired = datetime.now()
         if fire_and_forget and self._background_tasks:
-            logging.info("OPC Writer submitting write task to background tasks")
+            logging.debug("OPC Writer submitting write task to background tasks")
             self._background_tasks.add_task(opc_writer_handler)
             return {
                 "disabled": False,
@@ -331,7 +331,7 @@ class OPCWriterSinkBlockV1(WorkflowBlock):
                 "message": "Writing to the OPC UA server in the background task",
             }
         if fire_and_forget and self._thread_pool_executor:
-            logging.info("OPC Writer submitting write task to thread pool executor")
+            logging.debug("OPC Writer submitting write task to thread pool executor")
             self._thread_pool_executor.submit(opc_writer_handler)
             return {
                 "disabled": False,
@@ -339,9 +339,9 @@ class OPCWriterSinkBlockV1(WorkflowBlock):
                 "throttling_status": False,
                 "message": "Writing to the OPC UA server in the background task",
             }
-        logging.info("OPC Writer executing synchronous write")
+        logging.debug("OPC Writer executing synchronous write")
         error_status, message = opc_writer_handler()
-        logging.info(
+        logging.debug(
             f"OPC Writer write completed: error_status={error_status}, message={message}"
         )
         return {
@@ -370,7 +370,7 @@ def get_available_namespaces(client: Client) -> List[str]:
 def safe_disconnect(client: Client) -> None:
     """Safely disconnect from OPC UA server, swallowing any errors"""
     try:
-        logging.info("OPC Writer disconnecting from server")
+        logging.debug("OPC Writer disconnecting from server")
         client.disconnect()
     except Exception as exc:
         logging.debug(f"OPC Writer disconnect error (non-fatal): {exc}")
@@ -387,7 +387,7 @@ def opc_connect_and_write_value(
     timeout: int,
     node_lookup_mode: Literal["hierarchical", "direct"] = "hierarchical",
 ) -> Tuple[bool, str]:
-    logging.info(
+    logging.debug(
         f"OPC Writer attempting to connect and write value={value} to {url}/{object_name}/{variable_name}"
     )
     try:
@@ -402,7 +402,7 @@ def opc_connect_and_write_value(
             timeout=timeout,
             node_lookup_mode=node_lookup_mode,
         )
-        logging.info(
+        logging.debug(
             f"OPC Writer successfully wrote value to {url}/{object_name}/{variable_name}"
         )
         return False, "Value set successfully"
@@ -425,15 +425,15 @@ def _opc_connect_and_write_value(
     timeout: int,
     node_lookup_mode: Literal["hierarchical", "direct"] = "hierarchical",
 ):
-    logging.info(f"OPC Writer creating client for {url} with timeout={timeout}")
+    logging.debug(f"OPC Writer creating client for {url} with timeout={timeout}")
     client = Client(url=url, sync_wrapper_timeout=timeout)
     if user_name and password:
         client.set_user(user_name)
         client.set_password(password)
     try:
-        logging.info(f"OPC Writer connecting to {url}")
+        logging.debug(f"OPC Writer connecting to {url}")
         client.connect()
-        logging.info("OPC Writer successfully connected to server")
+        logging.debug("OPC Writer successfully connected to server")
     except BadUserAccessDenied as exc:
         logging.error(f"OPC Writer authentication failed: {exc}")
         safe_disconnect(client)
@@ -477,11 +477,11 @@ def _opc_connect_and_write_value(
         # Direct NodeId access for Ignition-style string identifiers
         try:
             node_id = f"ns={nsidx};s={object_name}/{variable_name}"
-            logging.info(f"OPC Writer using direct NodeId access: {node_id}")
+            logging.debug(f"OPC Writer using direct NodeId access: {node_id}")
             var = client.get_node(node_id)
             # Verify the node exists by reading its attributes
             var.read_browse_name()
-            logging.info(
+            logging.debug(
                 f"OPC Writer successfully found variable node using direct NodeId"
             )
         except Exception as exc:
@@ -497,9 +497,9 @@ def _opc_connect_and_write_value(
             object_components = object_name.split("/")
             object_path = "/".join([f"{nsidx}:{comp}" for comp in object_components])
             node_path = f"0:Objects/{object_path}/{nsidx}:{variable_name}"
-            logging.info(f"OPC Writer using hierarchical path: {node_path}")
+            logging.debug(f"OPC Writer using hierarchical path: {node_path}")
             var = client.nodes.root.get_child(node_path)
-            logging.info(
+            logging.debug(
                 f"OPC Writer successfully found variable node using hierarchical path"
             )
         except BadNoMatch as exc:
@@ -514,9 +514,9 @@ def _opc_connect_and_write_value(
             raise Exception(f"UNHANDLED ERROR: {type(exc)} {exc}")
 
     try:
-        logging.info(f"OPC Writer writing value '{value}' to variable")
+        logging.debug(f"OPC Writer writing value '{value}' to variable")
         var.write_value(value)
-        logging.info("OPC Writer successfully wrote value to variable")
+        logging.info(f"OPC Writer successfully wrote  '{value}'  to variable at {object_name}/{variable_name}")
     except BadTypeMismatch as exc:
         logging.error(f"OPC Writer type mismatch error: {exc}")
         safe_disconnect(client)
