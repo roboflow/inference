@@ -4,7 +4,6 @@ from pathlib import Path
 from inference.core import logger
 from inference.core.env import (
     ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
-    API_KEY,
     INTERNAL_WEIGHTS_URL_SUFFIX,
     LOG_LEVEL,
     MODAL_TOKEN_ID,
@@ -128,7 +127,7 @@ if modal is not None:
     modal_gpu_decorator = app.cls(
         **{
             **decorator_kwargs,
-            "gpu": True,
+            "gpu": WEBRTC_MODAL_FUNCTION_GPU,
             "experimental_options": {"enable_gpu_snapshot": True},
         }
     )
