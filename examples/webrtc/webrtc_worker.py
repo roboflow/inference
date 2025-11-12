@@ -263,6 +263,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--turn-username", required=False, type=str)
     parser.add_argument("--turn-credential", required=False, type=str)
     parser.add_argument("--processing-timeout", required=False, type=int, default=60)
+    parser.add_argument("--gpu", required=False, type=str, default="T4")
 
     return parser.parse_args()
 
@@ -320,6 +321,7 @@ def main():
         webrtc_realtime_processing=args.realtime,
         rtsp_url=args.source if is_rtmp_url(args.source) else None,
         processing_timeout=args.processing_timeout,
+        requested_gpu=args.gpu,
     )
 
     https_verify = True
