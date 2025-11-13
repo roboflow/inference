@@ -94,7 +94,6 @@ def process_frame(
             frame=result_np_image,
             text=errors,
         )
-
     return (
         workflow_output,
         VideoFrame.from_ndarray(result_np_image, format="bgr24"),
