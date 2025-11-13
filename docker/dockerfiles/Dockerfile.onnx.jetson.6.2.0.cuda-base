@@ -238,4 +238,4 @@ LABEL org.opencontainers.image.description="Inference Server - Jetson 6.2.0 (CUD
       gdal.version="3.11.5" \
       pytorch.version="2.8.0"
 
-ENTRYPOINT ["python3", "gpu_http.py"]
+ENTRYPOINT ["/bin/sh", "-c", "uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT"]
