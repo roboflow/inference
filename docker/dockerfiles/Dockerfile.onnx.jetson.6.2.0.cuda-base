@@ -23,6 +23,7 @@ RUN apt-get update -y && \
     libssl-dev \
     zlib1g-dev \
     wget \
+    curl \
     ca-certificates \
     git \
     python3-dev \
@@ -65,7 +66,8 @@ RUN wget -q https://github.com/Kitware/CMake/releases/download/v3.30.5/cmake-3.3
 
 # Install uv for fast package installation
 RUN curl -LsSf https://astral.sh/uv/install.sh | env INSTALLER_NO_MODIFY_PATH=1 sh && \
-    ln -s /root/.local/bin/uv /usr/local/bin/uv
+    ln -s /root/.local/bin/uv /usr/local/bin/uv && \
+    uv --version
 
 # Copy requirements files
 COPY requirements/requirements.sam.txt \
