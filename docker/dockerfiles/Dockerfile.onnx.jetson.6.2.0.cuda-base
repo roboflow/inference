@@ -1,6 +1,10 @@
 # Prototype: Minimal CUDA base image instead of full L4T JetPack
 # Comparing l4t-cuda vs l4t-jetpack for size and maintainability
 
+# Stage 1: Extract cuDNN from JetPack (for compatibility)
+FROM nvcr.io/nvidia/l4t-jetpack:r36.4.0 AS cudnn-source
+
+# Stage 2: Builder
 FROM nvcr.io/nvidia/l4t-cuda:12.6.11-runtime AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -159,7 +163,12 @@ COPY --from=builder /usr/local/share/gdal /usr/local/share/gdal
 ENV GDAL_DATA=/usr/local/share/gdal
 ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 
-# Update shared library cache
+# Copy cuDNN from JetPack (for PyTorch compatibility)
+COPY --from=cudnn-source /usr/lib/aarch64-linux-gnu/libcudnn*.so* /usr/local/cuda/lib64/
+COPY --from=cudnn-source /usr/include/aarch64-linux-gnu/cudnn*.h /usr/local/cuda/include/
+
+# Update library paths and cache
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 RUN ldconfig
 
 # Copy Python packages from builder
@@ -189,6 +198,7 @@ ENV DISABLE_WORKFLOW_ENDPOINTS=false
 LABEL org.opencontainers.image.description="Inference Server - Jetson 6.2.0 (CUDA base prototype)" \
       org.opencontainers.image.base.name="nvcr.io/nvidia/l4t-cuda:12.6.11-runtime" \
       cuda.version="12.6.11" \
+      cudnn.source="l4t-jetpack:r36.4.0" \
       gdal.version="3.11.5" \
       pytorch.version="2.8.0"
 
