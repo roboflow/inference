@@ -3,7 +3,8 @@ FROM nvcr.io/nvidia/l4t-ml:r35.2.1-py3
 # install Python 3.12
 RUN apt-get update -y && apt-get install -y \
     libssl-dev \
-    git
+    git \
+    unzip
 
 RUN mkdir -p /build/python-3.12
 WORKDIR /build/python-3.12
@@ -37,7 +38,6 @@ RUN python3.12 -m pip install build/dist/tensorrt-*.whl
 
 # Install OpenCV
 RUN python3.12 -m pip install "numpy~=2.3.4"
-RUN apt-get install unzip
 RUN mkdir -p /build/opencv
 WORKDIR  /build/opencv
 RUN curl -L https://github.com/opencv/opencv/archive/4.12.0.zip -o opencv-4.12.0.zip
@@ -79,29 +79,43 @@ WORKDIR /build/gcc
 #RUN ldconfig
 
 # hoping that version 11 will be fine :)
-RUN wget https://ftp.gnu.org/gnu/gcc/gcc-11.1.0/gcc-11.1.0.tar.gz
-RUN tar xzf gcc-11.1.0.tar.gz
-WORKDIR /build/gcc/gcc-11.1.0
-RUN ./contrib/download_prerequisites
-WORKDIR /build/gcc/
-RUN mkdir objdir
-WORKDIR /build/gcc/objdir
-RUN $PWD/../gcc-11.1.0/configure --prefix=$HOME/GCC-11 --enable-languages=c,c++
-RUN make -j$(nproc)
-RUN make install
-RUN export PATH=/root/GCC-14/bin:$PATH
-RUN export LD_LIBRARY_PATH=/root/GCC-11/lib64/:$LD_LIBRARY_PATH
-RUN ldconfig
+#RUN wget https://ftp.gnu.org/gnu/gcc/gcc-11.1.0/gcc-11.1.0.tar.gz
+#RUN tar xzf gcc-11.1.0.tar.gz
+#WORKDIR /build/gcc/gcc-11.1.0
+#RUN ./contrib/download_prerequisites
+#WORKDIR /build/gcc/
+#RUN mkdir objdir
+#WORKDIR /build/gcc/objdir
+#RUN $PWD/../gcc-11.1.0/configure --prefix=$HOME/GCC-11 --enable-languages=c,c++
+#RUN make -j$(nproc)
+#RUN make install
+#RUN export PATH=/root/GCC-11/bin:$PATH
+#RUN export LD_LIBRARY_PATH=/root/GCC-11/lib64/:$LD_LIBRARY_PATH
+#RUN ldconfig
+
+RUN mkdir -p /build/eigen3
+WORKDIR /build/eigen3
+RUN wget https://gitlab.com/libeigen/eigen/-/archive/3.4.1/eigen-3.4.1.tar.gz
+RUN tar xzf eigen-3.4.1.tar.gz
+WORKDIR /build/eigen3/eigen-3.4.1
 
 # Install ONNX-runtime GPU
 RUN mkdir -p /build/onnxruntime
 WORKDIR /build/onnxruntime
 RUN git clone https://github.com/microsoft/onnxruntime.git
 WORKDIR /build/onnxruntime/onnxruntime
-RUN git checkout v1.23.2
-RUN CC=/root/GCC-11/bin/gcc CXX=/root/GCC-11/bin/g++ ./build.sh --update --config Release --build --build_wheel --use_cuda --cuda_home /usr/local/cuda --cudnn_home /usr/lib/aarch64-linux-gnu --use_tensorrt --tensorrt_home /usr/lib/aarch64-linux-gnu --allow_running_as_root
+RUN git checkout v1.16.3
+RUN python3.12 -m pip install packaging
+RUN CMAKE_POLICY_VERSION_MINIMUM=3.5 ./build.sh --update --config Release --build --build_wheel --use_cuda --cuda_home /usr/local/cuda --cudnn_home /usr/lib/aarch64-linux-gnu --use_tensorrt --tensorrt_home /usr/lib/aarch64-linux-gnu --allow_running_as_root --parallel 0 --use_preinstalled_eigen --eigen_path /build/eigen3/eigen-3.4.1
 
 # Install PyTorch
-
+RUN mkdir -p /build/torch
+WORKDIR /build/torch
+RUN git clone https://github.com/pytorch/pytorch.git
+WORKDIR /build/torch/pytorch
+RUN git checkout v2.4.1
+RUN git submodule sync && git submodule update --init --recursive
+RUN python3.12 -m pip install --group dev
+RUN USE_PRIORITIZED_TEXT_FOR_LD=1 PYTORCH_BUILD_VERSION=2.4.1 PYTORCH_BUILD_NUMBER=1 MAX_JOBS=4 CUDA_HOME=/usr/local/cuda CUDACXX=/usr/local/cuda/bin/nvcc TORCH_CUDA_ARCH_LIST="8.7" USE_NCCL=0 USE_DISTRIBUTED=0 USE_MKLDNN=0 BUILD_TEST=0 CMAKE_POLICY_VERSION_MINIMUM=3.5 python3.12 setup.py bdist_wheel
 
 # Install flash-attention
