@@ -178,13 +178,14 @@ class VideoFrameProcessor:
         webrtc_output = WebRTCOutput(
             serialized_output_data=None,
             video_metadata=video_metadata,
-            errors=list(errors),  # Copy errors list
+            errors=errors.copy(),
         )
 
         if self._data_mode == DataOutputMode.NONE:
             self.data_channel.send(json.dumps(webrtc_output.model_dump()))
             return
-        elif self._data_mode == DataOutputMode.ALL:
+
+        if self._data_mode == DataOutputMode.ALL:
             fields_to_send = list(workflow_output.keys())
         else:
             fields_to_send = self.data_output
