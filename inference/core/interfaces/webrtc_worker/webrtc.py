@@ -190,11 +190,9 @@ class VideoFrameProcessor:
         else:
             fields_to_send = self.data_output
 
-        # Serialize each field
         serialized_outputs = {}
 
         for field_name in fields_to_send:
-            # If the field is not in the workflow output, add an error
             if field_name not in workflow_output:
                 webrtc_output.errors.append(
                     f"Requested output '{field_name}' not found in workflow outputs"
@@ -674,18 +672,12 @@ async def init_rtc_peer_connection_with_loop(
                         "stream_output must be set at initialization to enable video."
                     )
                 else:
-                    # stream_output must be a list
-                    if isinstance(message_data.stream_output, list):
-                        if len(message_data.stream_output) == 0:
-                            video_processor.stream_output = None
-                        else:
-                            filtered = [s for s in message_data.stream_output if s]
-                            video_processor.stream_output = (
-                                filtered[0] if filtered else None
-                            )
+                    if len(message_data.stream_output) == 0:
+                        video_processor.stream_output = None
                     else:
-                        logger.error(
-                            f"stream_output must be a list, got {type(message_data.stream_output).__name__}"
+                        filtered = [s for s in message_data.stream_output if s]
+                        video_processor.stream_output = (
+                            filtered[0] if filtered else None
                         )
 
             # Handle data_output changes (always allowed)
