@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Optional, Union
 
+from inference_sdk.utils.decorators import experimental
 from inference_sdk.webrtc.config import StreamConfig
 from inference_sdk.webrtc.session import WebRTCSession
 from inference_sdk.webrtc.sources import StreamSource
@@ -16,6 +17,11 @@ class WebRTCClient:
     (webcam, RTSP, video files, manual frames).
     """
 
+    @experimental(
+        info="WebRTC SDK is experimental and under active development. "
+        "API may change in future releases. Please report issues at "
+        "https://github.com/roboflow/inference/issues"
+    )
     def __init__(self, api_url: str, api_key: Optional[str]) -> None:
         """Initialize WebRTC client.
 
