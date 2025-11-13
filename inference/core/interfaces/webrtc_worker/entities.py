@@ -1,4 +1,3 @@
-from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
@@ -11,19 +10,6 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
 )
 
 
-class WebRTCOutputMode(str, Enum):
-    """Defines the output mode for WebRTC worker processing.
-
-    - DATA_ONLY: Only send JSON data via data channel (no video track sent back)
-    - VIDEO_ONLY: Only send processed video via video track (no data channel messages)
-    - BOTH: Send both video and data (default behavior)
-    """
-
-    DATA_ONLY = "data_only"
-    VIDEO_ONLY = "video_only"
-    BOTH = "both"
-
-
 class WebRTCWorkerRequest(BaseModel):
     api_key: Optional[str] = None
     workflow_configuration: WorkflowConfiguration
@@ -32,9 +18,8 @@ class WebRTCWorkerRequest(BaseModel):
     webrtc_realtime_processing: bool = (
         WEBRTC_REALTIME_PROCESSING  # when set to True, MediaRelay.subscribe will be called with buffered=False
     )
-    output_mode: WebRTCOutputMode = WebRTCOutputMode.BOTH
-    stream_output: Optional[List[Optional[str]]] = Field(default_factory=list)
-    data_output: Optional[List[Optional[str]]] = Field(default_factory=list)
+    stream_output: Optional[List[str]] = Field(default=None)
+    data_output: Optional[List[str]] = Field(default=None)
     declared_fps: Optional[float] = None
     rtsp_url: Optional[str] = None
     processing_timeout: Optional[int] = 60
@@ -65,9 +50,9 @@ class WebRTCOutput(BaseModel):
     """Output sent via WebRTC data channel.
 
     serialized_output_data contains a dictionary with workflow outputs:
-    - If data_output is None: all workflow outputs
-    - If data_output is []: None (no data sent)
-    - If data_output is ["field1", "field2"]: only those fields
+    - If data_output is None or []: no data sent (only metadata)
+    - If data_output is ["*"]: all workflow outputs (excluding images, unless explicitly named)
+    - If data_output is ["field1", "field2"]: only those fields (including images if explicitly named)
     """
 
     serialized_output_data: Optional[Dict[str, Any]] = None

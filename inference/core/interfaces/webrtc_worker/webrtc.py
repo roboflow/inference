@@ -2,6 +2,7 @@ import asyncio
 import datetime
 import json
 import logging
+from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import supervision as sv
@@ -41,7 +42,6 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
 )
 from inference.core.interfaces.webrtc_worker.entities import (
     WebRTCOutput,
-    WebRTCOutputMode,
     WebRTCVideoMetadata,
     WebRTCWorkerRequest,
     WebRTCWorkerResult,
@@ -56,6 +56,18 @@ from inference.core.workflows.execution_engine.entities.base import WorkflowImag
 from inference.usage_tracking.collector import usage_collector
 
 logging.getLogger("aiortc").setLevel(logging.WARNING)
+
+
+class StreamOutputMode(str, Enum):
+    AUTO_DETECT = "auto_detect"  # None -> auto-detect first image
+    NO_VIDEO = "no_video"  # [] -> no video track
+    SPECIFIC_FIELD = "specific"  # ["field"] -> use specific field
+
+
+class DataOutputMode(str, Enum):
+    NONE = "none"  # None or [] -> no data sent
+    ALL = "all"  # ["*"] -> send all (skip images)
+    SPECIFIC = "specific"  # ["field1", "field2"] -> send only these
 
 
 class RTCPeerConnectionWithLoop(RTCPeerConnection):
@@ -83,7 +95,7 @@ class VideoFrameProcessor:
         api_key: str,
         data_output: Optional[List[str]] = None,
         stream_output: Optional[str] = None,
-        output_mode: WebRTCOutputMode = WebRTCOutputMode.BOTH,
+        has_video_track: bool = True,
         declared_fps: float = 30,
         termination_date: Optional[datetime.datetime] = None,
         terminate_event: Optional[asyncio.Event] = None,
@@ -98,15 +110,21 @@ class VideoFrameProcessor:
         self._declared_fps = declared_fps
         self._stop_processing = False
 
-        self.output_mode = output_mode
+        self.has_video_track = has_video_track
         self.stream_output = stream_output
         self.data_channel: Optional[RTCDataChannel] = None
 
-        # Normalize data_output to avoid edge cases
         if data_output is None:
             self.data_output = None
+            self._data_mode = DataOutputMode.NONE
         elif isinstance(data_output, list):
             self.data_output = [f for f in data_output if f]
+            if self.data_output == ["*"]:
+                self._data_mode = DataOutputMode.ALL
+            elif len(self.data_output) == 0:
+                self._data_mode = DataOutputMode.NONE
+            else:
+                self._data_mode = DataOutputMode.SPECIFIC
         else:
             raise WebRTCConfigurationError(
                 f"data_output must be list or None, got {type(data_output).__name__}"
@@ -154,8 +172,7 @@ class VideoFrameProcessor:
             )
             available_output_names = [o.get("name") for o in workflow_outputs]
 
-            # Validate data_output fields
-            if self.data_output is not None and len(self.data_output) > 0:
+            if self._data_mode == DataOutputMode.SPECIFIC:
                 invalid_fields = [
                     field
                     for field in self.data_output
@@ -245,9 +262,9 @@ class VideoFrameProcessor:
     ):
         """Send data via data channel based on data_output configuration.
 
-        - data_output = None: Send all workflow outputs
-        - data_output = []: Don't send any data (only metadata)
-        - data_output = ["field1", "field2"]: Send only specified fields
+        - data_output = None or []: Don't send any data (only metadata)
+        - data_output = ["*"]: Send all workflow outputs (excluding images unless explicitly named)
+        - data_output = ["field1", "field2"]: Send only specified fields (including images if named)
         """
         if not self.data_channel or self.data_channel.readyState != "open":
             return
@@ -266,21 +283,16 @@ class VideoFrameProcessor:
             errors=list(errors),  # Copy errors list
         )
 
-        # Determine which fields to send
-        if self.data_output is None:
-            # Send ALL workflow outputs
-            fields_to_send = list(workflow_output.keys())
-        elif len(self.data_output) == 0:
+        if self._data_mode == DataOutputMode.NONE:
             self.data_channel.send(json.dumps(webrtc_output.model_dump()))
             return
+        elif self._data_mode == DataOutputMode.ALL:
+            fields_to_send = list(workflow_output.keys())
         else:
             fields_to_send = self.data_output
 
         # Serialize each field
         serialized_outputs = {}
-
-        # Determine if this is an explicit request (fields listed) or implicit (all fields)
-        is_all_outputs = self.data_output is None
 
         for field_name in fields_to_send:
             # If the field is not in the workflow output, add an error
@@ -290,9 +302,11 @@ class VideoFrameProcessor:
                 )
                 continue
 
-            # If the field is an image and we are not listing all outputs, skip it
             output_data = workflow_output[field_name]
-            if is_all_outputs and isinstance(output_data, WorkflowImageData):
+
+            if self._data_mode == DataOutputMode.ALL and isinstance(
+                output_data, WorkflowImageData
+            ):
                 continue
 
             try:
@@ -311,7 +325,7 @@ class VideoFrameProcessor:
     async def process_frames_data_only(self):
         """Process frames for data extraction only, without video track output.
 
-        This is used when output_mode is DATA_ONLY and no video track is needed.
+        This is used when stream_output=[] and no video track is needed.
         """
         # Silencing swscaler warnings in multi-threading environment
         if not self._av_logging_set:
@@ -374,7 +388,7 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
         api_key: str,
         data_output: Optional[List[str]] = None,
         stream_output: Optional[str] = None,
-        output_mode: WebRTCOutputMode = WebRTCOutputMode.BOTH,
+        has_video_track: bool = True,
         declared_fps: float = 30,
         termination_date: Optional[datetime.datetime] = None,
         terminate_event: Optional[asyncio.Event] = None,
@@ -389,7 +403,7 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
             api_key=api_key,
             data_output=data_output,
             stream_output=stream_output,
-            output_mode=output_mode,
+            has_video_track=has_video_track,
             declared_fps=declared_fps,
             termination_date=termination_date,
             terminate_event=terminate_event,
@@ -440,11 +454,7 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
         new_frame.pts = frame.pts
         new_frame.time_base = frame.time_base
 
-        # Send data via data channel if needed (BOTH or DATA_ONLY modes)
-        if self.output_mode in [WebRTCOutputMode.BOTH, WebRTCOutputMode.DATA_ONLY]:
-            await self._send_data_output(
-                workflow_output, frame_timestamp, frame, errors
-            )
+        await self._send_data_output(workflow_output, frame_timestamp, frame, errors)
 
         return new_frame
 
@@ -482,52 +492,55 @@ async def init_rtc_peer_connection_with_loop(
             logger.info("Setting termination date to %s", termination_date)
         except (TypeError, ValueError):
             pass
-    output_mode = webrtc_request.output_mode
-    stream_output = None
-
-    # Normalize stream_output
-    if webrtc_request.stream_output:
+    if webrtc_request.stream_output is None:
+        stream_mode = StreamOutputMode.AUTO_DETECT
+        stream_field = None
+    elif len(webrtc_request.stream_output) == 0:
+        stream_mode = StreamOutputMode.NO_VIDEO
+        stream_field = None
+    else:
         filtered = [s for s in webrtc_request.stream_output if s]
-        stream_output = filtered[0] if filtered else None
+        if filtered:
+            stream_mode = StreamOutputMode.SPECIFIC_FIELD
+            stream_field = filtered[0]
+        else:
+            stream_mode = StreamOutputMode.NO_VIDEO
+            stream_field = None
 
-    # Handle data_output as list
-    # - None or not provided: send all outputs
-    # - []: send nothing
-    # - ["field1", "field2"]: send only those fields
-    data_output = (
-        webrtc_request.data_output if webrtc_request.data_output is not None else None
-    )
-
-    # Determine if we should send video back based on output mode
-    should_send_video = output_mode in [
-        WebRTCOutputMode.VIDEO_ONLY,
-        WebRTCOutputMode.BOTH,
-    ]
+    if webrtc_request.data_output is None or len(webrtc_request.data_output) == 0:
+        data_mode = DataOutputMode.NONE
+        data_fields = None
+    elif webrtc_request.data_output == ["*"]:
+        data_mode = DataOutputMode.ALL
+        data_fields = ["*"]
+    else:
+        data_mode = DataOutputMode.SPECIFIC
+        data_fields = webrtc_request.data_output
 
     try:
-        # For DATA_ONLY mode, we use VideoFrameProcessor directly (no video track)
-        # For other modes, we use VideoTransformTrackWithLoop (includes video track)
+        should_send_video = stream_mode != StreamOutputMode.NO_VIDEO
+
         if should_send_video:
             video_processor = VideoTransformTrackWithLoop(
                 asyncio_loop=asyncio_loop,
                 workflow_configuration=webrtc_request.workflow_configuration,
                 api_key=webrtc_request.api_key,
-                data_output=data_output,
-                stream_output=stream_output,
-                output_mode=output_mode,
+                data_output=data_fields,
+                stream_output=stream_field,
+                has_video_track=True,
                 declared_fps=webrtc_request.declared_fps,
                 termination_date=termination_date,
                 terminate_event=terminate_event,
             )
         else:
-            # DATA_ONLY or OFF mode - use base VideoFrameProcessor
+            # No video track - use base VideoFrameProcessor
             video_processor = VideoFrameProcessor(
                 asyncio_loop=asyncio_loop,
                 workflow_configuration=webrtc_request.workflow_configuration,
                 api_key=webrtc_request.api_key,
-                data_output=data_output,
-                stream_output=stream_output,
-                output_mode=output_mode,
+                data_output=data_fields,
+                stream_output=None,
+                has_video_track=False,
                 declared_fps=webrtc_request.declared_fps,
                 termination_date=termination_date,
                 terminate_event=terminate_event,
@@ -640,13 +653,11 @@ async def init_rtc_peer_connection_with_loop(
 
         # Only add video track back if we should send video
         if should_send_video:
-            logger.info(f"Output mode: {output_mode} - Adding video track to send back")
+            logger.info("Adding video track to send back")
             peer_connection.addTrack(video_processor)
         else:
-            # For DATA_ONLY, start data-only processing task
-            logger.info(
-                f"Output mode: {output_mode} - Starting data-only processing (no video track)"
-            )
+            # No video track - start data-only processing task
+            logger.info("Starting data-only processing (no video track)")
             asyncio.create_task(video_processor.process_frames_data_only())
 
     @peer_connection.on("connectionstatechange")
@@ -675,12 +686,40 @@ async def init_rtc_peer_connection_with_loop(
                 logger.error("Failed to decode webrtc data payload: %s", message)
                 return
 
-            # Handle output changes (which workflow output to send)
+            # Handle stream_output changes
             if message_data.stream_output is not None:
-                video_processor.stream_output = message_data.stream_output or None
+                if not video_processor.has_video_track:
+                    logger.warning(
+                        "Cannot change stream_output: video track was not initialized. "
+                        "stream_output must be set at initialization to enable video."
+                    )
+                else:
+                    # stream_output must be a list
+                    if isinstance(message_data.stream_output, list):
+                        if len(message_data.stream_output) == 0:
+                            video_processor.stream_output = None
+                        else:
+                            filtered = [s for s in message_data.stream_output if s]
+                            video_processor.stream_output = (
+                                filtered[0] if filtered else None
+                            )
+                    else:
+                        logger.error(
+                            f"stream_output must be a list, got {type(message_data.stream_output).__name__}"
+                        )
 
+            # Handle data_output changes (always allowed)
             if message_data.data_output is not None:
                 video_processor.data_output = message_data.data_output
+                if (
+                    message_data.data_output is None
+                    or len(message_data.data_output) == 0
+                ):
+                    video_processor._data_mode = DataOutputMode.NONE
+                elif message_data.data_output == ["*"]:
+                    video_processor._data_mode = DataOutputMode.ALL
+                else:
+                    video_processor._data_mode = DataOutputMode.SPECIFIC
 
         video_processor.data_channel = channel
 
