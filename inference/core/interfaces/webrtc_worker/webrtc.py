@@ -402,11 +402,6 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
             self.stream_output = ""
 
     async def recv(self):
-        """Called by WebRTC to get the next frame to send.
-
-        This method processes frames through the workflow and returns
-        the processed video frame for transmission.
-        """
         # Silencing swscaler warnings in multi-threading environment
         if not self._av_logging_set:
             av_logging.set_libav_level(av_logging.ERROR)
