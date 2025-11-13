@@ -27,16 +27,19 @@ class WebRTCWorkerRequest(BaseModel):
     rtsp_url: Optional[str] = None
     processing_timeout: Optional[int] = WEBRTC_MODAL_FUNCTION_TIME_LIMIT
     # https://modal.com/docs/guide/gpu#specifying-gpu-type
-    requested_gpu: Literal[
-        "T4",
-        "L4",
-        "A10",
-        "A100",
-        "A100-40GB",
-        "A100-80GB",
-        "L40S" "H100/H100!",
-        "H200",
-        "B200",
+    requested_gpu: Optional[
+        Literal[
+            "T4",
+            "L4",
+            "A10",
+            "A100",
+            "A100-40GB",
+            "A100-80GB",
+            "L40S",
+            "H100/H100!",
+            "H200",
+            "B200",
+        ]
     ] = "T4"
 
 
