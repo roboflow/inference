@@ -57,7 +57,6 @@ RUN mkdir -p /build/cmake
 WORKDIR /build/cmake
 RUN wget https://github.com/Kitware/CMake/releases/download/v4.1.2/cmake-4.1.2-linux-aarch64.sh
 RUN mkdir build && chmod ugo+x cmake-4.1.2-linux-aarch64.sh && bash cmake-4.1.2-linux-aarch64.sh --skip-license --prefix=./build
-RUN export PATH=/build/cmake/build/bin:$PATH
 
 # version 14 turned out to be to new :)
 #RUN wget https://ftp.gnu.org/gnu/gcc/gcc-14.2.0/gcc-14.2.0.tar.gz
@@ -102,7 +101,7 @@ RUN git clone https://github.com/microsoft/onnxruntime.git
 WORKDIR /build/onnxruntime/onnxruntime
 RUN git checkout v1.16.3
 RUN python3.12 -m pip install packaging
-RUN CMAKE_POLICY_VERSION_MINIMUM=3.5 ./build.sh --update --config Release --build --build_wheel --use_cuda --cuda_home /usr/local/cuda --cudnn_home /usr/lib/aarch64-linux-gnu --use_tensorrt --tensorrt_home /usr/lib/aarch64-linux-gnu --allow_running_as_root --parallel 0 --use_preinstalled_eigen --eigen_path /build/eigen3/eigen-3.4.1
+RUN PATH=/build/cmake/build/bin:$PATH CMAKE_POLICY_VERSION_MINIMUM=3.5 ./build.sh --update --config Release --build --build_wheel --use_cuda --cuda_home /usr/local/cuda --cudnn_home /usr/lib/aarch64-linux-gnu --use_tensorrt --tensorrt_home /usr/lib/aarch64-linux-gnu --allow_running_as_root --parallel 0 --use_preinstalled_eigen --eigen_path /build/eigen3/eigen-3.4.1
 
 # Install PyTorch
 RUN mkdir -p /build/torch
