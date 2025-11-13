@@ -68,6 +68,8 @@ DEFAULT_INITIAL_FRAME_TIMEOUT = 30.0  # seconds to wait for first video frame
 VIDEO_QUEUE_MAX_SIZE = 8  # maximum number of frames to buffer
 EVENT_LOOP_SHUTDOWN_TIMEOUT = 2.0  # seconds to wait for event loop thread to stop
 
+_RF_API_BASE_URL = "https://api.roboflow.com"
+
 # Configure basic logging if root logger has no handlers
 # This ensures users see important errors even without explicit logging setup
 if not logging.root.handlers:
@@ -525,7 +527,7 @@ class WebRTCSession:
 
         Priority order:
         1. User-provided config via StreamConfig.turn_server (highest priority)
-        2. Auto-fetch from server endpoint /query/webrtc_turn_config
+        2. Auto-fetch from server endpoint /webrtc_turn_config
         3. Skip TURN for localhost connections
         4. Graceful fallback to None if unavailable
 
@@ -538,7 +540,7 @@ class WebRTCSession:
             return self._config.turn_server
 
         # 2. Skip TURN for localhost connections
-        if self._api_url.startswith(("http://localhost", "http://127.0.0.1")):
+        if not self._api_url.startswith(("https://serverless.roboflow.com")):
             logger.debug("Skipping TURN for localhost connection")
             return None
 
@@ -546,7 +548,7 @@ class WebRTCSession:
         try:
             logger.debug("Attempting to fetch TURN config from server")
             response = requests.get(
-                f"{self._api_url}/query/webrtc_turn_config", timeout=5
+                f"{_RF_API_BASE_URL}/webrtc_turn_config", params={"api_key": self._api_key}, timeout=5
             )
             response.raise_for_status()
             data = response.json()
