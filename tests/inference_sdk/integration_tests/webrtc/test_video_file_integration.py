@@ -223,18 +223,21 @@ def test_video_file_with_data_channel(
     source = VideoFileSource(str(test_video_path))
     results = []
 
-    with WebRTCSession(
+    session = WebRTCSession(
         api_url="http://test-server.com",
         api_key="test-key",
         source=source,
         image_input_name="image",
         workflow_config=sample_workflow_config,
         stream_config=config
-    ) as session:
-        # Register handler to collect results
-        @session.data.on_data("analysis_results")
-        def collect_results(data):
-            results.append(data)
+    )
+
+    # Register handler to collect results
+    @session.on_data("analysis_results")
+    def collect_results(data):
+        results.append(data)
+
+    try:
 
         # Get the data channel
         data_channel = session._pc._data_channels["inference"]
@@ -252,3 +255,5 @@ def test_video_file_with_data_channel(
         assert len(results) == 5
         for i, result in enumerate(results):
             assert result["frame"] == i
+    finally:
+        session.close()
