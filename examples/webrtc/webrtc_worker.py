@@ -263,7 +263,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--turn-username", required=False, type=str)
     parser.add_argument("--turn-credential", required=False, type=str)
     parser.add_argument("--processing-timeout", required=False, type=int, default=60)
-    parser.add_argument("--gpu", required=False, type=str, default="T4")
+    parser.add_argument("--gpu", required=False, type=str)
     parser.add_argument(
         "--stream-output",
         required=False,
