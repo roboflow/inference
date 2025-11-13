@@ -171,6 +171,9 @@ ENV LANG=en_US.UTF-8
 
 WORKDIR /app
 
+# Create python symlink for inference CLI compatibility
+RUN ln -sf /usr/bin/python3 /usr/bin/python
+
 # Install runtime dependencies only (no -dev packages)
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \
