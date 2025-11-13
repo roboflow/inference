@@ -226,8 +226,9 @@ COPY --from=builder /usr/lib/aarch64-linux-gnu/libnvparsers*.so* /usr/local/cuda
 ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 RUN ldconfig
 
-# Copy Python packages from builder
+# Copy Python packages and CLI tools from builder
 COPY --from=builder /usr/local/lib/python3.10/dist-packages /usr/local/lib/python3.10/dist-packages
+COPY --from=builder /usr/local/bin/inference /usr/local/bin/inference
 
 # Set Python path
 ENV PYTHONPATH=/usr/local/lib/python3.10/dist-packages:$PYTHONPATH
