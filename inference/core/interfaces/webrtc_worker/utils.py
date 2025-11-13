@@ -27,6 +27,7 @@ def process_frame(
     np_image = frame.to_ndarray(format="bgr24")
     workflow_output: Dict[str, Union[WorkflowImageData, Any]] = {}
     errors = []
+    detected_output = None
     try:
         video_frame = InferenceVideoFrame(
             image=np_image,
@@ -43,7 +44,6 @@ def process_frame(
             workflow_output=workflow_output,
             frame_output_key=stream_output,
         )
-        detected_output = None
         if result_np_image is None:
             for k in workflow_output.keys():
                 result_np_image = get_frame_from_workflow_output(
