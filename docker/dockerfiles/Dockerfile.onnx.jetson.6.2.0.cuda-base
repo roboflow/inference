@@ -1,11 +1,9 @@
 # Prototype: Minimal CUDA base image instead of full L4T JetPack
 # Comparing l4t-cuda vs l4t-jetpack for size and maintainability
 
-# Stage 1: Extract cuDNN from JetPack (for compatibility)
-FROM nvcr.io/nvidia/l4t-jetpack:r36.4.0 AS cudnn-source
-
-# Stage 2: Builder (use -devel for CUDA development tools like nvcc)
-FROM nvcr.io/nvidia/l4t-cuda:12.6.11-devel AS builder
+# Stage 1: Builder (use JetPack for CUDA development tools like nvcc)
+# JetPack includes CUDA 12.6, nvcc, cuDNN, TensorRT - everything needed for compilation
+FROM nvcr.io/nvidia/l4t-jetpack:r36.4.0 AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
 ENV LANG=en_US.UTF-8
@@ -121,19 +119,7 @@ RUN git clone --recursive --branch v1.20.0 https://github.com/microsoft/onnxrunt
 WORKDIR /tmp/onnxruntime
 RUN sed -i 's/be8be39fdbc6e60e94fa7870b280707069b5b81a/32b145f525a8308d7ab1c09388b2e288312d8eba/g' cmake/deps.txt
 
-# Copy TensorRT, cuDNN, and CUDA profiling libs from jetpack for onnxruntime build
-COPY --from=cudnn-source /usr/lib/aarch64-linux-gnu/libnvinfer* /usr/lib/aarch64-linux-gnu/
-COPY --from=cudnn-source /usr/lib/aarch64-linux-gnu/libnvonnxparser* /usr/lib/aarch64-linux-gnu/
-COPY --from=cudnn-source /usr/lib/aarch64-linux-gnu/libcudnn* /usr/lib/aarch64-linux-gnu/
-COPY --from=cudnn-source /usr/include/aarch64-linux-gnu/NvInfer*.h /usr/include/aarch64-linux-gnu/
-COPY --from=cudnn-source /usr/include/aarch64-linux-gnu/cudnn*.h /usr/include/aarch64-linux-gnu/
-COPY --from=cudnn-source /usr/local/cuda/targets/aarch64-linux/lib/libcupti*.so* /usr/local/cuda/lib64/
-COPY --from=cudnn-source /usr/local/cuda/targets/aarch64-linux/lib/libnvToolsExt*.so* /usr/local/cuda/lib64/
-
-# Set library path so PyTorch can find CUDA libs (needed by onnxruntime build script)
-ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/lib/aarch64-linux-gnu:$LD_LIBRARY_PATH
-RUN ldconfig
-
+# JetPack already has all CUDA, cuDNN, and TensorRT libs - no need to copy
 RUN ./build.sh \
     --config Release \
     --build_dir build/cuda12 \
@@ -205,17 +191,17 @@ COPY --from=builder /usr/local/share/gdal /usr/local/share/gdal
 ENV GDAL_DATA=/usr/local/share/gdal
 ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 
-# Copy cuDNN, CUDA, and TensorRT libraries from JetPack
+# Copy cuDNN, CUDA, and TensorRT libraries from builder (JetPack)
 # For PyTorch and onnxruntime compatibility
-COPY --from=cudnn-source /usr/lib/aarch64-linux-gnu/libcudnn*.so* /usr/local/cuda/lib64/
-COPY --from=cudnn-source /usr/include/aarch64-linux-gnu/cudnn*.h /usr/local/cuda/include/
-COPY --from=cudnn-source /usr/local/cuda/targets/aarch64-linux/lib/libcupti*.so* /usr/local/cuda/lib64/
-COPY --from=cudnn-source /usr/local/cuda/targets/aarch64-linux/lib/libnvToolsExt*.so* /usr/local/cuda/lib64/
+COPY --from=builder /usr/lib/aarch64-linux-gnu/libcudnn*.so* /usr/local/cuda/lib64/
+COPY --from=builder /usr/include/aarch64-linux-gnu/cudnn*.h /usr/local/cuda/include/
+COPY --from=builder /usr/local/cuda/targets/aarch64-linux/lib/libcupti*.so* /usr/local/cuda/lib64/
+COPY --from=builder /usr/local/cuda/targets/aarch64-linux/lib/libnvToolsExt*.so* /usr/local/cuda/lib64/
 
 # TensorRT libraries (for onnxruntime)
-COPY --from=cudnn-source /usr/lib/aarch64-linux-gnu/libnvinfer*.so* /usr/local/cuda/lib64/
-COPY --from=cudnn-source /usr/lib/aarch64-linux-gnu/libnvonnxparser*.so* /usr/local/cuda/lib64/
-COPY --from=cudnn-source /usr/lib/aarch64-linux-gnu/libnvparsers*.so* /usr/local/cuda/lib64/
+COPY --from=builder /usr/lib/aarch64-linux-gnu/libnvinfer*.so* /usr/local/cuda/lib64/
+COPY --from=builder /usr/lib/aarch64-linux-gnu/libnvonnxparser*.so* /usr/local/cuda/lib64/
+COPY --from=builder /usr/lib/aarch64-linux-gnu/libnvparsers*.so* /usr/local/cuda/lib64/
 
 # Update library paths and cache
 ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
