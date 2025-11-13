@@ -44,7 +44,10 @@ from inference.core.interfaces.webrtc_worker.entities import (
     WebRTCWorkerRequest,
     WebRTCWorkerResult,
 )
-from inference.core.interfaces.webrtc_worker.utils import process_frame
+from inference.core.interfaces.webrtc_worker.utils import (
+    detect_image_output,
+    process_frame,
+)
 from inference.core.roboflow_api import get_workflow_specification
 from inference.core.workflows.core_steps.common.serializers import (
     serialize_wildcard_kind,
@@ -324,16 +327,14 @@ class VideoFrameProcessor:
                 frame_timestamp = datetime.datetime.now()
 
                 loop = asyncio.get_running_loop()
-                workflow_output, _, errors, _ = await loop.run_in_executor(
+                workflow_output, _, errors = await loop.run_in_executor(
                     None,
                     process_frame,
                     frame=frame,
                     frame_id=self._received_frames,
                     inference_pipeline=self._inference_pipeline,
-                    stream_output=None,
                     render_output=False,
                     include_errors_on_frame=False,
-                    declared_fps=self._declared_fps,
                 )
 
                 # Send data via data channel
@@ -384,6 +385,27 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
             terminate_event=terminate_event,
         )
 
+    async def _auto_detect_stream_output(
+        self, frame: VideoFrame, frame_id: int
+    ) -> None:
+        loop = asyncio.get_running_loop()
+        workflow_output_for_detect, _, _ = await loop.run_in_executor(
+            None,
+            process_frame,
+            frame=frame,
+            frame_id=frame_id,
+            inference_pipeline=self._inference_pipeline,
+            render_output=False,
+            include_errors_on_frame=False,
+        )
+        detected_output = detect_image_output(workflow_output_for_detect)
+        if detected_output:
+            self.stream_output = detected_output
+            logger.info(f"Auto-detected stream_output: {detected_output}")
+        else:
+            logger.warning("No image output detected, will use fallback")
+            self.stream_output = ""
+
     async def recv(self):
         """Called by WebRTC to get the next frame to send.
 
@@ -408,25 +430,20 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
         self._received_frames += 1
         frame_timestamp = datetime.datetime.now()
 
-        loop = asyncio.get_running_loop()
-        workflow_output, new_frame, errors, detected_output = (
-            await loop.run_in_executor(
-                None,
-                process_frame,
-                frame=frame,
-                frame_id=self._received_frames,
-                inference_pipeline=self._inference_pipeline,
-                stream_output=self.stream_output,
-                render_output=True,
-                include_errors_on_frame=True,
-                declared_fps=self._declared_fps,
-            )
-        )
+        if self.stream_output is None and self._received_frames == 1:
+            await self._auto_detect_stream_output(frame, self._received_frames)
 
-        # Update stream_output if it was auto-detected (only when None)
-        if self.stream_output is None and detected_output is not None:
-            self.stream_output = detected_output
-            logger.info(f"Auto-detected and set stream_output to: {detected_output}")
+        loop = asyncio.get_running_loop()
+        workflow_output, new_frame, errors = await loop.run_in_executor(
+            None,
+            process_frame,
+            frame=frame,
+            frame_id=self._received_frames,
+            inference_pipeline=self._inference_pipeline,
+            stream_output=self.stream_output,
+            render_output=True,
+            include_errors_on_frame=True,
+        )
 
         new_frame.pts = frame.pts
         new_frame.time_base = frame.time_base

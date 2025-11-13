@@ -15,6 +15,22 @@ from inference.core.workflows.execution_engine.entities.base import WorkflowImag
 logging.getLogger("aiortc").setLevel(logging.WARNING)
 
 
+def detect_image_output(
+    workflow_output: Dict[str, Union[WorkflowImageData, Any]],
+) -> Optional[str]:
+    """Detect the first available image output field in workflow output."""
+    for output_name in workflow_output.keys():
+        if (
+            get_frame_from_workflow_output(
+                workflow_output=workflow_output,
+                frame_output_key=output_name,
+            )
+            is not None
+        ):
+            return output_name
+    return None
+
+
 def process_frame(
     frame: VideoFrame,
     frame_id: int,
@@ -22,17 +38,14 @@ def process_frame(
     stream_output: Optional[str] = None,
     render_output: bool = True,
     include_errors_on_frame: bool = True,
-    declared_fps: float = 30.0,
 ) -> Tuple[
     Dict[str, Union[WorkflowImageData, Any]],
     Optional[VideoFrame],
     List[str],
-    Optional[str],
 ]:
     np_image = frame.to_ndarray(format="bgr24")
     workflow_output: Dict[str, Union[WorkflowImageData, Any]] = {}
     errors = []
-    detected_output = None
 
     try:
         video_frame = InferenceVideoFrame(
@@ -40,38 +53,31 @@ def process_frame(
             frame_id=frame_id,
             frame_timestamp=datetime.datetime.now(),
             comes_from_video_file=False,
-            fps=declared_fps,
-            measured_fps=declared_fps,
+            fps=30,  # placeholder
+            measured_fps=30,  # placeholder
         )
         workflow_output = inference_pipeline._on_video_frame([video_frame])[0]
     except Exception as e:
         logger.exception("Error in workflow processing")
         errors.append(str(e))
 
-    # If render_output is False, return early without rendering (data-only mode)
     if not render_output:
-        return workflow_output, None, errors, None
+        return workflow_output, None, errors
 
-    # Extract visual output for rendering
+    if stream_output is None:
+        errors.append("stream_output is required when render_output=True")
+        return (
+            workflow_output,
+            VideoFrame.from_ndarray(np_image, format="bgr24"),
+            errors,
+        )
+
     result_np_image: Optional[np.ndarray] = None
     try:
         result_np_image = get_frame_from_workflow_output(
             workflow_output=workflow_output,
             frame_output_key=stream_output,
         )
-        if result_np_image is None:
-            for k in workflow_output.keys():
-                result_np_image = get_frame_from_workflow_output(
-                    workflow_output=workflow_output,
-                    frame_output_key=k,
-                )
-                if result_np_image is not None:
-                    detected_output = k
-                    if stream_output is not None and stream_output != "":
-                        errors.append(
-                            f"'{stream_output}' not found in workflow outputs, using '{k}' instead"
-                        )
-                    break
         if result_np_image is None:
             errors.append("Visualisation blocks were not executed")
             errors.append("or workflow was not configured to output visuals.")
@@ -93,7 +99,6 @@ def process_frame(
         workflow_output,
         VideoFrame.from_ndarray(result_np_image, format="bgr24"),
         errors,
-        detected_output,
     )
 
 
