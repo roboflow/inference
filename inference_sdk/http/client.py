@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from typing import Any, Dict, Generator, List, Literal, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Generator, List, Literal, Optional, Tuple, Union
 
 import aiohttp
 import numpy as np
@@ -1976,6 +1976,162 @@ class InferenceHTTPClient:
         )
         response.raise_for_status()
         return response.json()
+
+    def start_inference_pipeline_with_workflow_webrtc(
+        self,
+        video_reference: Union[str, int],
+        workspace_name: str,
+        workflow_id: str,
+        on_prediction: "Callable[[dict, Any], None]",
+        image_input_name: str = "image",
+        image_output_name: str = "image",
+        workflows_parameters: Optional[Dict[str, Any]] = None,
+        max_fps: Optional[float] = None,
+        stream_output: Optional[List[str]] = None,
+    ) -> "WebRTCPipelineWrapper":
+        """Start WebRTC-based workflow pipeline with callback interface.
+
+        This method provides a callback-based interface for WebRTC streaming,
+        similar to the traditional InferencePipeline API. It automatically:
+        - Maps video_reference to appropriate StreamSource
+        - Configures data channel to include image output
+        - Decodes base64 images from data channel
+        - Bridges to callback pattern via on_prediction
+
+        Args:
+            video_reference: Video source - int for webcam (e.g., 0), str for file
+                path or RTSP URL (e.g., "video.mp4" or "rtsp://...")
+            workspace_name: Roboflow workspace name containing the workflow
+            workflow_id: ID of the workflow to execute
+            on_prediction: Callback function(data: dict, metadata: VideoMetadata)
+                Called for each processed frame with decoded image + workflow outputs
+            image_input_name: Name of the image input parameter in the workflow.
+                Defaults to "image".
+            image_output_name: Name of the image output in the workflow data.
+                This image will be automatically decoded from base64. Defaults to "image".
+            workflows_parameters: Optional parameters to pass to the workflow
+            max_fps: Maximum frames per second for processing. If None, processes
+                at source frame rate.
+            stream_output: Optional list of workflow output names to stream back
+                via video channel in addition to data channel.
+
+        Returns:
+            WebRTCPipelineWrapper: Pipeline controller with start()/terminate() methods.
+                Call .start() to begin processing in background thread.
+
+        Raises:
+            ValueError: If video_reference format is not supported
+            InvalidParameterError: If workspace_name or workflow_id is missing
+
+        Example:
+            ```python
+            client = InferenceHTTPClient(api_url="...", api_key="...")
+
+            def my_callback(data, metadata):
+                # data["image"] is decoded numpy array
+                # data contains all workflow outputs
+                print(f"Frame {metadata.frame_id}")
+                cv2.imshow("Frame", data["image"])
+
+            pipeline = client.start_inference_pipeline_with_workflow_webrtc(
+                video_reference=0,  # webcam
+                workspace_name="my-workspace",
+                workflow_id="my-workflow",
+                on_prediction=my_callback,
+            )
+
+            pipeline.start()  # Non-blocking, runs in background
+            # ... do other work ...
+            pipeline.terminate()  # Stop when done
+            ```
+        """
+        from inference_sdk.webrtc import StreamConfig, WebcamSource, VideoFileSource
+        from inference_sdk.webrtc.pipeline_wrapper import WebRTCPipelineWrapper
+
+        # Validate required parameters
+        if not workspace_name:
+            raise InvalidParameterError("workspace_name is required")
+        if not workflow_id:
+            raise InvalidParameterError("workflow_id is required")
+
+        # Map video_reference to appropriate StreamSource
+        source = self._create_stream_source(video_reference)
+
+        # Configure data channel to always include image output
+        data_outputs = [image_output_name]
+        # Add any additional outputs from stream_output to data channel as well
+        # This ensures they're available in the callback
+        if stream_output:
+            for output in stream_output:
+                if output not in data_outputs:
+                    data_outputs.append(output)
+
+        # Create stream configuration
+        config = StreamConfig(
+            stream_output=stream_output or [],
+            data_output=data_outputs,
+            workflow_parameters=workflows_parameters,
+            realtime_processing=(max_fps is not None),
+        )
+
+        # Create WebRTC session
+        session = self.webrtc.stream(
+            source=source,
+            workflow=workflow_id,
+            workspace=workspace_name,
+            image_input=image_input_name,
+            config=config,
+        )
+
+        # Wrap in callback-based interface
+        wrapper = WebRTCPipelineWrapper(
+            session=session,
+            on_prediction=on_prediction,
+            image_output_key=image_output_name,
+        )
+
+        return wrapper
+
+    def _create_stream_source(
+        self, video_reference: Union[str, int]
+    ) -> "StreamSource":
+        """Map video_reference to appropriate StreamSource.
+
+        Args:
+            video_reference: Int for webcam, str for file path or RTSP URL
+
+        Returns:
+            Appropriate StreamSource instance
+
+        Raises:
+            ValueError: If video_reference format is not supported
+        """
+        from inference_sdk.webrtc import VideoFileSource, WebcamSource
+
+        if isinstance(video_reference, int):
+            # Webcam device ID
+            return WebcamSource(device_id=video_reference)
+
+        if isinstance(video_reference, str):
+            # Check for RTSP URL
+            if video_reference.startswith("rtsp://"):
+                # Try to import RTSPSource if available
+                try:
+                    from inference_sdk.webrtc import RTSPSource
+
+                    return RTSPSource(url=video_reference)
+                except ImportError:
+                    raise ValueError(
+                        "RTSP source is not available. Please install required dependencies."
+                    )
+
+            # Assume file path
+            return VideoFileSource(path=video_reference)
+
+        raise ValueError(
+            f"Unsupported video_reference type: {type(video_reference)}. "
+            "Expected int (webcam) or str (file path/RTSP URL)"
+        )
 
     @experimental(
         info="Video processing in inference server is under development. Breaking changes are possible."
