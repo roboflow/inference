@@ -51,8 +51,7 @@ def process_frame(
                     frame_output_key=k,
                 )
                 if result_np_image is not None:
-                    detected_output = k  # Store detected output name
-                    # Only show error if user explicitly specified an output that wasn't found
+                    detected_output = k
                     if stream_output is not None and stream_output != "":
                         errors.append(
                             f"'{stream_output}' not found in workflow outputs, using '{k}' instead"
@@ -78,7 +77,7 @@ def process_frame(
         workflow_output,
         VideoFrame.from_ndarray(result_np_image, format="bgr24"),
         errors,
-        detected_output,  # Return the auto-detected output name (or None)
+        detected_output,
     )
 
 
