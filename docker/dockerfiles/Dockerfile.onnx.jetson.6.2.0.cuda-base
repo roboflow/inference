@@ -141,6 +141,25 @@ RUN ./build.sh \
 
 RUN uv pip install --system --break-system-packages /tmp/onnxruntime/build/cuda12/Release/dist/onnxruntime_gpu-*.whl
 
+# Build and install inference packages (core, gpu, cli, sdk)
+WORKDIR /build
+COPY . .
+RUN ln -sf /usr/bin/python3 /usr/bin/python || true
+
+RUN python -m pip install --break-system-packages wheel twine requests && \
+    rm -f dist/* && \
+    python .release/pypi/inference.core.setup.py bdist_wheel && \
+    python .release/pypi/inference.gpu.setup.py bdist_wheel && \
+    python .release/pypi/inference.cli.setup.py bdist_wheel && \
+    python .release/pypi/inference.sdk.setup.py bdist_wheel
+
+RUN python -m pip install --break-system-packages --no-deps dist/inference_gpu*.whl && \
+    python -m pip install --break-system-packages \
+    dist/inference_core*.whl \
+    dist/inference_cli*.whl \
+    dist/inference_sdk*.whl \
+    "setuptools<=75.5.0"
+
 WORKDIR /app
 COPY requirements/requirements.http.txt requirements.txt
 
