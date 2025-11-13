@@ -633,12 +633,12 @@ def main():
 
         # Handle - key (no outputs)
         if key == ord("-"):
-            logger.info("Setting data_output to NONE (None)")
+            logger.info("Setting data_output to NONE ([])")
             active_data_mode = "none"
             message = json.dumps(
                 WebRTCData(
                     stream_output=None,
-                    data_output=None,
+                    data_output=[],
                 ).model_dump()
             )
             peer_connection.data_channel.send(message)
