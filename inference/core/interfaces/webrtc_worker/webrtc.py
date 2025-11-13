@@ -2,7 +2,6 @@ import asyncio
 import datetime
 import json
 import logging
-from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from aiortc import (
@@ -328,6 +327,27 @@ class VideoFrameProcessor:
                 f"Available workflow outputs: {available_output_names}"
             )
 
+    async def _process_frame_async(
+        self,
+        frame: VideoFrame,
+        frame_id: int,
+        stream_output: Optional[str] = None,
+        render_output: bool = True,
+        include_errors_on_frame: bool = True,
+    ) -> Tuple[Dict[str, Any], Optional[VideoFrame], List[str]]:
+        """Async wrapper for process_frame using executor."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None,
+            process_frame,
+            frame,
+            frame_id,
+            self._inference_pipeline,
+            stream_output,
+            render_output,
+            include_errors_on_frame,
+        )
+
 
 class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
     """Video track that processes frames through workflow and sends video back.
@@ -362,27 +382,6 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
             declared_fps=declared_fps,
             termination_date=termination_date,
             terminate_event=terminate_event,
-        )
-
-    async def _process_frame_async(
-        self,
-        frame: VideoFrame,
-        frame_id: int,
-        stream_output: Optional[str] = None,
-        render_output: bool = True,
-        include_errors_on_frame: bool = True,
-    ) -> Tuple[Dict[str, Any], Optional[VideoFrame], List[str]]:
-        """Async wrapper for process_frame using executor."""
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
-            None,
-            process_frame,
-            frame,
-            frame_id,
-            self._inference_pipeline,
-            stream_output,
-            render_output,
-            include_errors_on_frame,
         )
 
     async def _auto_detect_stream_output(
