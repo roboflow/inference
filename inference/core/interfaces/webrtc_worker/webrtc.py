@@ -3,9 +3,8 @@ import datetime
 import json
 import logging
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional
 
-import supervision as sv
 from aiortc import (
     RTCConfiguration,
     RTCDataChannel,
@@ -33,7 +32,6 @@ from inference.core.exceptions import (
     RoboflowAPINotNotFoundError,
     WebRTCConfigurationError,
 )
-from inference.core.interfaces.camera.entities import VideoFrame as InferenceVideoFrame
 from inference.core.interfaces.camera.entities import VideoFrameProducer
 from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
 from inference.core.interfaces.stream_manager.manager_app.entities import (
@@ -226,33 +224,6 @@ class VideoFrameProcessor:
             return True
         return False
 
-    def _process_frame_data_only(
-        self, frame: VideoFrame, frame_id: int
-    ) -> Tuple[Dict[str, Any], List[str]]:
-        """Process frame through workflow without rendering visuals.
-
-        Returns (workflow_output, errors)
-        """
-        np_image = frame.to_ndarray(format="bgr24")
-        workflow_output = {}
-        errors = []
-
-        try:
-            video_frame = InferenceVideoFrame(
-                image=np_image,
-                frame_id=frame_id,
-                frame_timestamp=datetime.datetime.now(),
-                comes_from_video_file=False,
-                fps=self._declared_fps,
-                measured_fps=self._declared_fps,
-            )
-            workflow_output = self._inference_pipeline._on_video_frame([video_frame])[0]
-        except Exception as e:
-            logger.exception("Error in workflow processing")
-            errors.append(str(e))
-
-        return workflow_output, errors
-
     async def _send_data_output(
         self,
         workflow_output: Dict[str, Any],
@@ -352,13 +323,17 @@ class VideoFrameProcessor:
                 self._received_frames += 1
                 frame_timestamp = datetime.datetime.now()
 
-                # Process workflow without rendering
                 loop = asyncio.get_running_loop()
-                workflow_output, errors = await loop.run_in_executor(
+                workflow_output, _, errors, _ = await loop.run_in_executor(
                     None,
-                    self._process_frame_data_only,
-                    frame,
-                    self._received_frames,
+                    process_frame,
+                    frame=frame,
+                    frame_id=self._received_frames,
+                    inference_pipeline=self._inference_pipeline,
+                    stream_output=None,
+                    render_output=False,
+                    include_errors_on_frame=False,
+                    declared_fps=self._declared_fps,
                 )
 
                 # Send data via data channel
@@ -433,16 +408,18 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
         self._received_frames += 1
         frame_timestamp = datetime.datetime.now()
 
-        # Process frame through workflow WITH rendering (for video output)
         loop = asyncio.get_running_loop()
         workflow_output, new_frame, errors, detected_output = (
             await loop.run_in_executor(
                 None,
                 process_frame,
-                frame,
-                self._received_frames,
-                self._inference_pipeline,
-                self.stream_output,
+                frame=frame,
+                frame_id=self._received_frames,
+                inference_pipeline=self._inference_pipeline,
+                stream_output=self.stream_output,
+                render_output=True,
+                include_errors_on_frame=True,
+                declared_fps=self._declared_fps,
             )
         )
 
@@ -508,13 +485,10 @@ async def init_rtc_peer_connection_with_loop(
             stream_field = None
 
     if webrtc_request.data_output is None or len(webrtc_request.data_output) == 0:
-        data_mode = DataOutputMode.NONE
         data_fields = None
     elif webrtc_request.data_output == ["*"]:
-        data_mode = DataOutputMode.ALL
         data_fields = ["*"]
     else:
-        data_mode = DataOutputMode.SPECIFIC
         data_fields = webrtc_request.data_output
 
     try:

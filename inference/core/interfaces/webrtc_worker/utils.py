@@ -19,28 +19,43 @@ def process_frame(
     frame: VideoFrame,
     frame_id: int,
     inference_pipeline: InferencePipeline,
-    stream_output: str,
+    stream_output: Optional[str] = None,
+    render_output: bool = True,
     include_errors_on_frame: bool = True,
+    declared_fps: float = 30.0,
 ) -> Tuple[
-    Dict[str, Union[WorkflowImageData, Any]], VideoFrame, List[str], Optional[str]
+    Dict[str, Union[WorkflowImageData, Any]],
+    Optional[VideoFrame],
+    List[str],
+    Optional[str],
 ]:
     np_image = frame.to_ndarray(format="bgr24")
     workflow_output: Dict[str, Union[WorkflowImageData, Any]] = {}
     errors = []
     detected_output = None
+
     try:
         video_frame = InferenceVideoFrame(
             image=np_image,
             frame_id=frame_id,
             frame_timestamp=datetime.datetime.now(),
             comes_from_video_file=False,
-            fps=30,  # placeholder
-            measured_fps=30,  # placeholder
+            fps=declared_fps,
+            measured_fps=declared_fps,
         )
-        workflow_output: Dict[str, Union[WorkflowImageData, Any]] = (
-            inference_pipeline._on_video_frame([video_frame])[0]
-        )
-        result_np_image: Optional[np.ndarray] = get_frame_from_workflow_output(
+        workflow_output = inference_pipeline._on_video_frame([video_frame])[0]
+    except Exception as e:
+        logger.exception("Error in workflow processing")
+        errors.append(str(e))
+
+    # If render_output is False, return early without rendering (data-only mode)
+    if not render_output:
+        return workflow_output, None, errors, None
+
+    # Extract visual output for rendering
+    result_np_image: Optional[np.ndarray] = None
+    try:
+        result_np_image = get_frame_from_workflow_output(
             workflow_output=workflow_output,
             frame_output_key=stream_output,
         )
@@ -64,15 +79,16 @@ def process_frame(
             errors.append("or stop preview, update workflow and try again.")
             result_np_image = np_image
     except Exception as e:
-        logger.exception("Error in inference pipeline")
+        logger.exception("Error extracting visual output")
         result_np_image = np_image
         errors.append(str(e))
 
-    if include_errors_on_frame:
+    if include_errors_on_frame and errors:
         result_np_image = overlay_text_on_np_frame(
             frame=result_np_image,
             text=errors,
         )
+
     return (
         workflow_output,
         VideoFrame.from_ndarray(result_np_image, format="bgr24"),
