@@ -3,7 +3,7 @@ import datetime
 import json
 import logging
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from aiortc import (
     RTCConfiguration,
@@ -261,13 +261,9 @@ class VideoFrameProcessor:
                 self._received_frames += 1
                 frame_timestamp = datetime.datetime.now()
 
-                loop = asyncio.get_running_loop()
-                workflow_output, _, errors = await loop.run_in_executor(
-                    None,
-                    process_frame,
+                workflow_output, _, errors = await self._process_frame_async(
                     frame=frame,
                     frame_id=self._received_frames,
-                    inference_pipeline=self._inference_pipeline,
                     render_output=False,
                     include_errors_on_frame=False,
                 )
@@ -380,16 +376,33 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
             terminate_event=terminate_event,
         )
 
+    async def _process_frame_async(
+        self,
+        frame: VideoFrame,
+        frame_id: int,
+        stream_output: Optional[str] = None,
+        render_output: bool = True,
+        include_errors_on_frame: bool = True,
+    ) -> Tuple[Dict[str, Any], Optional[VideoFrame], List[str]]:
+        """Async wrapper for process_frame using executor."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None,
+            process_frame,
+            frame,
+            frame_id,
+            self._inference_pipeline,
+            stream_output,
+            render_output,
+            include_errors_on_frame,
+        )
+
     async def _auto_detect_stream_output(
         self, frame: VideoFrame, frame_id: int
     ) -> None:
-        loop = asyncio.get_running_loop()
-        workflow_output_for_detect, _, _ = await loop.run_in_executor(
-            None,
-            process_frame,
+        workflow_output_for_detect, _, _ = await self._process_frame_async(
             frame=frame,
             frame_id=frame_id,
-            inference_pipeline=self._inference_pipeline,
             render_output=False,
             include_errors_on_frame=False,
         )
@@ -423,13 +436,9 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
         if self.stream_output is None and self._received_frames == 1:
             await self._auto_detect_stream_output(frame, self._received_frames)
 
-        loop = asyncio.get_running_loop()
-        workflow_output, new_frame, errors = await loop.run_in_executor(
-            None,
-            process_frame,
+        workflow_output, new_frame, errors = await self._process_frame_async(
             frame=frame,
             frame_id=self._received_frames,
-            inference_pipeline=self._inference_pipeline,
             stream_output=self.stream_output,
             render_output=True,
             include_errors_on_frame=True,
