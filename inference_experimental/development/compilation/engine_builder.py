@@ -4,7 +4,7 @@ from typing import Literal, Optional, Tuple
 
 import tensorrt as trt
 from inference_exp.logger import LOGGER
-from inference_exp.models.common.trt import InferenceTRTLogger
+from inference_exp.models.common.trt.common import InferenceTRTLogger
 
 LOGGER.setLevel(logging.INFO)
 
