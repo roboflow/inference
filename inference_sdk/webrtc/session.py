@@ -605,11 +605,21 @@ class WebRTCSession:
             subscribed = relay.subscribe(track)
 
             async def _reader():
+                from aiortc.mediastreams import MediaStreamError
+
                 while True:
                     try:
                         f: VideoFrame = await subscribed.recv()
+                    except MediaStreamError:
+                        # Remote stream finished normally
+                        logger.info("Remote stream finished")
+                        try:
+                            self._video_queue.put_nowait(None)
+                        except Exception:
+                            pass
+                        break
                     except Exception as e:
-                        # Connection closed or track ended
+                        # Connection closed or track ended unexpectedly
                         logger.error(
                             f"WebRTC video track ended: {e.__class__.__name__}: {e}",
                             exc_info=True,
