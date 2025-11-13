@@ -32,7 +32,8 @@ class WebRTCWorkerRequest(BaseModel):
             "A100",
             "A100-40GB",
             "A100-80GB",
-            "L40S" "H100/H100!",
+            "L40S",
+            "H100/H100!",
             "H200",
             "B200",
         ]
