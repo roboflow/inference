@@ -262,28 +262,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--turn-url", required=False, type=str)
     parser.add_argument("--turn-username", required=False, type=str)
     parser.add_argument("--turn-credential", required=False, type=str)
-    parser.add_argument(
-        "--output-mode",
-        required=False,
-        type=str,
-        default="both",
-        choices=["data_only", "video_only", "both"],
-        help="Output mode: data_only (JSON only), video_only (video only), both (default)",
-    )
-    parser.add_argument(
-        "--stream-output",
-        required=False,
-        type=str,
-        default=None,
-        help="Which workflow output to use for video stream (auto-detected if not specified)",
-    )
-    parser.add_argument(
-        "--data-outputs",
-        required=False,
-        type=str,
-        default=None,
-        help="Comma-separated list of workflow outputs for data channel (e.g., 'predictions,count'). Use 'all' for all outputs, or omit for all outputs",
-    )
+    parser.add_argument("--processing-timeout", required=False, type=int, default=60)
+    parser.add_argument("--gpu", required=False, type=str, default="T4")
+
     return parser.parse_args()
 
 
@@ -379,6 +360,8 @@ def main():
         data_output=data_output_to_use,
         webrtc_realtime_processing=args.realtime,
         rtsp_url=args.source if is_rtmp_url(args.source) else None,
+        processing_timeout=args.processing_timeout,
+        requested_gpu=args.gpu,
     )
 
     https_verify = True

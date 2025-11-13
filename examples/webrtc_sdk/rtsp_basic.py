@@ -63,7 +63,7 @@ def main() -> None:
     data_output = [args.data_output] if args.data_output else []
     config = StreamConfig(stream_output=stream_output, data_output=data_output)
 
-    # Start streaming session
+    # Create streaming session
     session = client.webrtc.stream(
         source=source,
         workflow=args.workflow_id,
@@ -72,27 +72,27 @@ def main() -> None:
         config=config,
     )
 
-    with session:
-        # Register frame handler
-        @session.on_frame
-        def show_frame(frame, metadata):
-            cv2.imshow("WebRTC SDK - RTSP", frame)
-            if cv2.waitKey(1) & 0xFF == ord("q"):
-                session.stop()
+    # Register frame handler
+    @session.on_frame
+    def show_frame(frame, metadata):
+        cv2.imshow("WebRTC SDK - RTSP", frame)
+        if cv2.waitKey(1) & 0xFF == ord("q"):
+            session.close()  # Close session and cleanup resources
 
-        # Register data handlers
-        # Global handler (receives entire serialized_output_data dict + metadata)
-        @session.on_data()
-        def on_message(data: dict, metadata: VideoMetadata):
-            print(f"Frame {metadata.frame_id}: {data}")
+    # Register data handlers
+    # Global handler (receives entire serialized_output_data dict + metadata)
+    @session.on_data()
+    def on_message(data: dict, metadata: VideoMetadata):
+        print(f"Frame {metadata.frame_id}: {data}")
 
-        # Field-specific handler example (uncomment and customize based on your workflow):
-        # @session.on_data("predictions")
-        # def on_predictions(predictions: dict, metadata: VideoMetadata):
-        #     print(f"Frame {metadata.frame_id} predictions: {predictions}")
+    # Field-specific handler example (uncomment and customize based on your workflow):
+    # @session.on_data("predictions")
+    # def on_predictions(predictions: dict, metadata: VideoMetadata):
+    #     print(f"Frame {metadata.frame_id} predictions: {predictions}")
 
-        # Run the session (blocks until stop() is called or stream ends)
-        session.run()
+    # Run the session (auto-starts, blocks until close() is called or stream ends)
+    # Session automatically closes on exception
+    session.run()
 
 
 if __name__ == "__main__":
