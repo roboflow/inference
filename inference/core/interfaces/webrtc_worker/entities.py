@@ -73,3 +73,15 @@ class WebRTCWorkerResult(BaseModel):
     error_message: Optional[str] = None
     error_context: Optional[str] = None
     inner_error: Optional[str] = None
+
+
+class StreamOutputMode(str, Enum):
+    AUTO_DETECT = "auto_detect"  # None -> auto-detect first image
+    NO_VIDEO = "no_video"  # [] -> no video track
+    SPECIFIC_FIELD = "specific"  # ["field"] -> use specific field
+
+
+class DataOutputMode(str, Enum):
+    NONE = "none"  # None or [] -> no data sent
+    ALL = "all"  # ["*"] -> send all (skip images)
+    SPECIFIC = "specific"  # ["field1", "field2"] -> send only these

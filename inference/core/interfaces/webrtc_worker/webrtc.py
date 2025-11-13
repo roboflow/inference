@@ -42,6 +42,8 @@ from inference.core.interfaces.webrtc_worker.entities import (
     WebRTCVideoMetadata,
     WebRTCWorkerRequest,
     WebRTCWorkerResult,
+    StreamOutputMode,
+    DataOutputMode,
 )
 from inference.core.interfaces.webrtc_worker.utils import (
     detect_image_output,
@@ -56,18 +58,6 @@ from inference.core.workflows.execution_engine.entities.base import WorkflowImag
 from inference.usage_tracking.collector import usage_collector
 
 logging.getLogger("aiortc").setLevel(logging.WARNING)
-
-
-class StreamOutputMode(str, Enum):
-    AUTO_DETECT = "auto_detect"  # None -> auto-detect first image
-    NO_VIDEO = "no_video"  # [] -> no video track
-    SPECIFIC_FIELD = "specific"  # ["field"] -> use specific field
-
-
-class DataOutputMode(str, Enum):
-    NONE = "none"  # None or [] -> no data sent
-    ALL = "all"  # ["*"] -> send all (skip images)
-    SPECIFIC = "specific"  # ["field1", "field2"] -> send only these
 
 
 class RTCPeerConnectionWithLoop(RTCPeerConnection):
