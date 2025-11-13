@@ -38,12 +38,12 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
     WorkflowConfiguration,
 )
 from inference.core.interfaces.webrtc_worker.entities import (
+    DataOutputMode,
+    StreamOutputMode,
     WebRTCOutput,
     WebRTCVideoMetadata,
     WebRTCWorkerRequest,
     WebRTCWorkerResult,
-    StreamOutputMode,
-    DataOutputMode,
 )
 from inference.core.interfaces.webrtc_worker.utils import (
     detect_image_output,
