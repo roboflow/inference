@@ -376,6 +376,18 @@ def safe_disconnect(client: Client) -> None:
         logging.debug(f"OPC Writer disconnect error (non-fatal): {exc}")
 
 
+def get_node_data_type(var) -> str:
+    """
+    Get the data type of an OPC UA node.
+    Returns a string representation of the type, or "Unknown" if unable to read.
+    """
+    try:
+        return str(var.read_data_type_as_variant_type())
+    except Exception as exc:
+        logging.info(f"Unable to read node data type: {exc}")
+        return "Unknown"
+
+
 def opc_connect_and_write_value(
     url: str,
     namespace: str,
@@ -520,9 +532,14 @@ def _opc_connect_and_write_value(
             f"OPC Writer successfully wrote  '{value}'  to variable at {object_name}/{variable_name}"
         )
     except BadTypeMismatch as exc:
-        logging.error(f"OPC Writer type mismatch error: {exc}")
+        node_type = get_node_data_type(var)
+        logging.error(
+            f"OPC Writer type mismatch: tried to write value '{value}' (type: {type(value).__name__}) to node with data type {node_type}. Error: {exc}"
+        )
         safe_disconnect(client)
-        raise Exception(f"WRONG TYPE ERROR: {exc}")
+        raise Exception(
+            f"WRONG TYPE ERROR: Tried to write value '{value}' (type: {type(value).__name__}) but node expects type {node_type}. {exc}"
+        )
     except Exception as exc:
         logging.error(f"OPC Writer unhandled write error: {type(exc)} {exc}")
         safe_disconnect(client)
