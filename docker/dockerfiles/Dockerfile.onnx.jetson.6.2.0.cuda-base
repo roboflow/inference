@@ -163,9 +163,11 @@ COPY --from=builder /usr/local/share/gdal /usr/local/share/gdal
 ENV GDAL_DATA=/usr/local/share/gdal
 ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 
-# Copy cuDNN from JetPack (for PyTorch compatibility)
+# Copy cuDNN and CUDA libraries from JetPack (for PyTorch compatibility)
 COPY --from=cudnn-source /usr/lib/aarch64-linux-gnu/libcudnn*.so* /usr/local/cuda/lib64/
 COPY --from=cudnn-source /usr/include/aarch64-linux-gnu/cudnn*.h /usr/local/cuda/include/
+COPY --from=cudnn-source /usr/local/cuda/targets/aarch64-linux/lib/libcupti*.so* /usr/local/cuda/lib64/
+COPY --from=cudnn-source /usr/local/cuda/targets/aarch64-linux/lib/libnvToolsExt*.so* /usr/local/cuda/lib64/
 
 # Update library paths and cache
 ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
