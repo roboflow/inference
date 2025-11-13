@@ -10,6 +10,19 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
 )
 
 
+class WebRTCOutputMode(str, Enum):
+    """Defines the output mode for WebRTC worker processing.
+
+    - DATA_ONLY: Only send JSON data via data channel (no video track sent back)
+    - VIDEO_ONLY: Only send processed video via video track (no data channel messages)
+    - BOTH: Send both video and data (default behavior)
+    """
+
+    DATA_ONLY = "data_only"
+    VIDEO_ONLY = "video_only"
+    BOTH = "both"
+
+
 class WebRTCWorkerRequest(BaseModel):
     api_key: Optional[str] = None
     workflow_configuration: WorkflowConfiguration
@@ -18,6 +31,7 @@ class WebRTCWorkerRequest(BaseModel):
     webrtc_realtime_processing: bool = (
         WEBRTC_REALTIME_PROCESSING  # when set to True, MediaRelay.subscribe will be called with buffered=False
     )
+    output_mode: WebRTCOutputMode = WebRTCOutputMode.BOTH
     stream_output: Optional[List[Optional[str]]] = Field(default_factory=list)
     data_output: Optional[List[Optional[str]]] = Field(default_factory=list)
     declared_fps: Optional[float] = None
@@ -47,8 +61,15 @@ class WebRTCVideoMetadata(BaseModel):
 
 
 class WebRTCOutput(BaseModel):
-    output_name: Optional[str] = None
-    serialized_output_data: Optional[str] = None
+    """Output sent via WebRTC data channel.
+
+    serialized_output_data contains a dictionary with workflow outputs:
+    - If data_output is None: all workflow outputs
+    - If data_output is []: None (no data sent)
+    - If data_output is ["field1", "field2"]: only those fields
+    """
+
+    serialized_output_data: Optional[Dict[str, Any]] = None
     video_metadata: Optional[WebRTCVideoMetadata] = None
     errors: List[str] = Field(default_factory=list)
 

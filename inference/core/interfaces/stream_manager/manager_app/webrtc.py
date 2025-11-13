@@ -338,7 +338,7 @@ class RTCPeerConnectionWithFPS(RTCPeerConnection):
         video_transform_track: VideoTransformTrack,
         asyncio_loop: asyncio.AbstractEventLoop,
         stream_output: Optional[str] = None,
-        data_output: Optional[str] = None,
+        data_output: Optional[List[str]] = None,
         *args,
         **kwargs,
     ):
@@ -347,7 +347,7 @@ class RTCPeerConnectionWithFPS(RTCPeerConnection):
         self.video_transform_track: VideoTransformTrack = video_transform_track
         self._consumers_signalled: bool = False
         self.stream_output: Optional[str] = stream_output
-        self.data_output: Optional[str] = data_output
+        self.data_output: Optional[List[str]] = data_output
         self.data_channel: Optional[RTCDataChannel] = None
 
 
@@ -384,7 +384,7 @@ async def init_rtc_peer_connection(
     webrtc_realtime_processing: bool = True,
     webcam_fps: Optional[float] = None,
     stream_output: Optional[str] = None,
-    data_output: Optional[str] = None,
+    data_output: Optional[List[str]] = None,
 ) -> RTCPeerConnectionWithFPS:
     relay = MediaRelay()
     video_transform_track = VideoTransformTrack(

@@ -171,6 +171,7 @@ from inference.core.exceptions import (
     MissingServiceSecretError,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
+    WebRTCConfigurationError,
     WorkspaceLoadError,
 )
 from inference.core.interfaces.base import BaseInterface
@@ -1467,6 +1468,7 @@ class HttpInterface(BaseInterface):
                         "RoboflowAPINotAuthorizedError": RoboflowAPINotAuthorizedError,
                         "RoboflowAPINotNotFoundError": RoboflowAPINotNotFoundError,
                         "ValidationError": ValidationError,
+                        "WebRTCConfigurationError": WebRTCConfigurationError,
                     }
                     exc = expected_exceptions.get(
                         worker_result.exception_type, Exception

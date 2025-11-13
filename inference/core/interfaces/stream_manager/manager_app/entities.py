@@ -125,7 +125,7 @@ class InitialiseWebRTCPipelinePayload(InitialisePipelinePayload):
 
 class WebRTCData(BaseModel):
     stream_output: Optional[str] = None
-    data_output: Optional[str] = None
+    data_output: Optional[List[str]] = None
 
 
 class ConsumeResultsPayload(BaseModel):

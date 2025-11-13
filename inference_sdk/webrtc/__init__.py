@@ -1,7 +1,7 @@
 """WebRTC SDK for Inference - Unified streaming API."""
 
 from .client import WebRTCClient  # noqa: F401
-from .config import StreamConfig  # noqa: F401
+from .config import OutputMode, StreamConfig  # noqa: F401
 from .session import VideoMetadata, WebRTCSession  # noqa: F401
 from .sources import (  # noqa: F401
     ManualSource,
@@ -17,6 +17,7 @@ __all__ = [
     "WebRTCSession",
     "StreamConfig",
     "VideoMetadata",
+    "OutputMode",
     # Source classes
     "StreamSource",
     "WebcamSource",
