@@ -243,15 +243,20 @@ COPY inference_sdk inference_sdk
 COPY docker/config/gpu_http.py gpu_http.py
 
 # Environment variables for inference server
-ENV VERSION_CHECK_MODE=once
-ENV CORE_MODEL_SAM2_ENABLED=True
-ENV NUM_WORKERS=1
-ENV HOST=0.0.0.0
-ENV PORT=9001
-ENV WORKFLOWS_STEP_EXECUTION_MODE=local
-ENV WORKFLOWS_MAX_CONCURRENT_STEPS=1
-ENV API_LOGGING_ENABLED=True
-ENV DISABLE_WORKFLOW_ENDPOINTS=false
+ENV VERSION_CHECK_MODE=once \
+    CORE_MODEL_SAM2_ENABLED=True \
+    NUM_WORKERS=1 \
+    HOST=0.0.0.0 \
+    PORT=9001 \
+    ORT_TENSORRT_FP16_ENABLE=1 \
+    ORT_TENSORRT_ENGINE_CACHE_ENABLE=1 \
+    ORT_TENSORRT_ENGINE_CACHE_PATH=/tmp/ort_cache \
+    OPENBLAS_CORETYPE=ARMV8 \
+    LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libgomp.so.1 \
+    WORKFLOWS_STEP_EXECUTION_MODE=local \
+    WORKFLOWS_MAX_CONCURRENT_STEPS=4 \
+    API_LOGGING_ENABLED=True \
+    DISABLE_WORKFLOW_ENDPOINTS=false
 
 # Add label with versions for comparison
 LABEL org.opencontainers.image.description="Inference Server - Jetson 6.2.0 (CUDA base prototype)" \
