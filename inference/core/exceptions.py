@@ -216,3 +216,7 @@ class RetryRequestError(Exception):
     @property
     def inner_error(self) -> Exception:
         return self._inner_error
+
+
+class WebRTCConfigurationError(Exception):
+    pass
