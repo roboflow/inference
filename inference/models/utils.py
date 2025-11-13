@@ -32,11 +32,11 @@ from inference.core.registries.roboflow import get_model_type
 from inference.core.warnings import ModelDependencyMissing
 from inference.models import (
     YOLACT,
+    DinoV3Classification,
     ResNetClassification,
     RFDETRInstanceSegmentation,
     RFDETRObjectDetection,
     VitClassification,
-    DinoV3Classification,
     YOLONASObjectDetection,
     YOLOv5InstanceSegmentation,
     YOLOv5ObjectDetection,
