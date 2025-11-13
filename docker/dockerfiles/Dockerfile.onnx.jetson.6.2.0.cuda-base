@@ -121,12 +121,18 @@ RUN git clone --recursive --branch v1.20.0 https://github.com/microsoft/onnxrunt
 WORKDIR /tmp/onnxruntime
 RUN sed -i 's/be8be39fdbc6e60e94fa7870b280707069b5b81a/32b145f525a8308d7ab1c09388b2e288312d8eba/g' cmake/deps.txt
 
-# Copy TensorRT and cuDNN from jetpack for onnxruntime build
+# Copy TensorRT, cuDNN, and CUDA profiling libs from jetpack for onnxruntime build
 COPY --from=cudnn-source /usr/lib/aarch64-linux-gnu/libnvinfer* /usr/lib/aarch64-linux-gnu/
 COPY --from=cudnn-source /usr/lib/aarch64-linux-gnu/libnvonnxparser* /usr/lib/aarch64-linux-gnu/
 COPY --from=cudnn-source /usr/lib/aarch64-linux-gnu/libcudnn* /usr/lib/aarch64-linux-gnu/
 COPY --from=cudnn-source /usr/include/aarch64-linux-gnu/NvInfer*.h /usr/include/aarch64-linux-gnu/
 COPY --from=cudnn-source /usr/include/aarch64-linux-gnu/cudnn*.h /usr/include/aarch64-linux-gnu/
+COPY --from=cudnn-source /usr/local/cuda/targets/aarch64-linux/lib/libcupti*.so* /usr/local/cuda/lib64/
+COPY --from=cudnn-source /usr/local/cuda/targets/aarch64-linux/lib/libnvToolsExt*.so* /usr/local/cuda/lib64/
+
+# Set library path so PyTorch can find CUDA libs (needed by onnxruntime build script)
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/lib/aarch64-linux-gnu:$LD_LIBRARY_PATH
+RUN ldconfig
 
 RUN ./build.sh \
     --config Release \
