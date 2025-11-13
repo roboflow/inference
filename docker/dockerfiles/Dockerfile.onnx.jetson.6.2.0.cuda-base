@@ -4,8 +4,8 @@
 # Stage 1: Extract cuDNN from JetPack (for compatibility)
 FROM nvcr.io/nvidia/l4t-jetpack:r36.4.0 AS cudnn-source
 
-# Stage 2: Builder
-FROM nvcr.io/nvidia/l4t-cuda:12.6.11-runtime AS builder
+# Stage 2: Builder (use -devel for CUDA development tools like nvcc)
+FROM nvcr.io/nvidia/l4t-cuda:12.6.11-devel AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
 ENV LANG=en_US.UTF-8
