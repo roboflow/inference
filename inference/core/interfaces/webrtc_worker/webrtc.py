@@ -131,67 +131,8 @@ class VideoFrameProcessor:
                 f"data_output must be list or None, got {type(data_output).__name__}"
             )
 
-        # Validate that workflow is specified either by specification or workspace/workflow_id
-        has_specification = workflow_configuration.workflow_specification is not None
-        has_workspace_and_id = (
-            workflow_configuration.workspace_name is not None
-            and workflow_configuration.workflow_id is not None
-        )
-
-        if not has_specification and not has_workspace_and_id:
-            raise WebRTCConfigurationError(
-                "Either 'workflow_specification' or both 'workspace_name' and 'workflow_id' must be provided"
-            )
-
-        # Fetch workflow_specification from API if not provided directly
-        if not has_specification and has_workspace_and_id:
-            try:
-                logger.info(
-                    f"Fetching workflow specification for workspace={workflow_configuration.workspace_name}, "
-                    f"workflow_id={workflow_configuration.workflow_id}"
-                )
-                workflow_configuration.workflow_specification = (
-                    get_workflow_specification(
-                        api_key=api_key,
-                        workspace_id=workflow_configuration.workspace_name,
-                        workflow_id=workflow_configuration.workflow_id,
-                    )
-                )
-                # Clear workspace_name and workflow_id after fetch to avoid conflicts
-                # InferencePipeline requires these to be mutually exclusive with workflow_specification
-                workflow_configuration.workspace_name = None
-                workflow_configuration.workflow_id = None
-            except Exception as e:
-                raise WebRTCConfigurationError(
-                    f"Failed to fetch workflow specification from API: {str(e)}"
-                )
-
-        # Validate data_output and stream_output against workflow specification
-        if workflow_configuration.workflow_specification is not None:
-            workflow_outputs = workflow_configuration.workflow_specification.get(
-                "outputs", []
-            )
-            available_output_names = [o.get("name") for o in workflow_outputs]
-
-            if self._data_mode == DataOutputMode.SPECIFIC:
-                invalid_fields = [
-                    field
-                    for field in self.data_output
-                    if field not in available_output_names
-                ]
-
-                if invalid_fields:
-                    raise WebRTCConfigurationError(
-                        f"Invalid data_output fields: {invalid_fields}. "
-                        f"Available workflow outputs: {available_output_names}"
-                    )
-
-            # Validate stream_output field (if explicitly specified and not empty)
-            if self.stream_output and self.stream_output not in available_output_names:
-                raise WebRTCConfigurationError(
-                    f"Invalid stream_output field: '{self.stream_output}'. "
-                    f"Available workflow outputs: {available_output_names}"
-                )
+        self._ensure_workflow_specification(workflow_configuration, api_key)
+        self._validate_output_fields(workflow_configuration)
 
         self._inference_pipeline = InferencePipeline.init_with_workflow(
             video_reference=VideoFrameProducer,
@@ -234,12 +175,6 @@ class VideoFrameProcessor:
         frame: VideoFrame,
         errors: List[str],
     ):
-        """Send data via data channel based on data_output configuration.
-
-        - data_output = None or []: Don't send any data (only metadata)
-        - data_output = ["*"]: Send all workflow outputs (excluding images unless explicitly named)
-        - data_output = ["field1", "field2"]: Send only specified fields (including images if named)
-        """
         if not self.data_channel or self.data_channel.readyState != "open":
             return
 
@@ -348,6 +283,66 @@ class VideoFrameProcessor:
             logger.info("Stream ended in data-only processing")
         except Exception as exc:
             logger.error("Error in data-only processing: %s", exc)
+
+    @staticmethod
+    def _ensure_workflow_specification(
+        workflow_configuration: WorkflowConfiguration, api_key: str
+    ) -> None:
+        has_specification = workflow_configuration.workflow_specification is not None
+        has_workspace_and_workflow_id = (
+            workflow_configuration.workspace_name is not None
+            and workflow_configuration.workflow_id is not None
+        )
+
+        if not has_specification and not has_workspace_and_workflow_id:
+            raise WebRTCConfigurationError(
+                "Either 'workflow_specification' or both 'workspace_name' and 'workflow_id' must be provided"
+            )
+
+        if not has_specification and has_workspace_and_workflow_id:
+            try:
+                workflow_configuration.workflow_specification = (
+                    get_workflow_specification(
+                        api_key=api_key,
+                        workspace_id=workflow_configuration.workspace_name,
+                        workflow_id=workflow_configuration.workflow_id,
+                    )
+                )
+                workflow_configuration.workspace_name = None
+                workflow_configuration.workflow_id = None
+            except Exception as e:
+                raise WebRTCConfigurationError(
+                    f"Failed to fetch workflow specification from API: {str(e)}"
+                )
+
+    def _validate_output_fields(
+        self, workflow_configuration: WorkflowConfiguration
+    ) -> None:
+        if workflow_configuration.workflow_specification is None:
+            return
+
+        workflow_outputs = workflow_configuration.workflow_specification.get(
+            "outputs", []
+        )
+        available_output_names = [o.get("name") for o in workflow_outputs]
+
+        if self._data_mode == DataOutputMode.SPECIFIC:
+            invalid_fields = [
+                field
+                for field in self.data_output
+                if field not in available_output_names
+            ]
+            if invalid_fields:
+                raise WebRTCConfigurationError(
+                    f"Invalid data_output fields: {invalid_fields}. "
+                    f"Available workflow outputs: {available_output_names}"
+                )
+
+        if self.stream_output and self.stream_output not in available_output_names:
+            raise WebRTCConfigurationError(
+                f"Invalid stream_output field: '{self.stream_output}'. "
+                f"Available workflow outputs: {available_output_names}"
+            )
 
 
 class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
