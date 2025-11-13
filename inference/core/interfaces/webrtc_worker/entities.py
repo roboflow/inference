@@ -2,7 +2,10 @@ from typing import List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
-from inference.core.env import WEBRTC_REALTIME_PROCESSING
+from inference.core.env import (
+    WEBRTC_MODAL_FUNCTION_TIME_LIMIT,
+    WEBRTC_REALTIME_PROCESSING,
+)
 from inference.core.interfaces.stream_manager.manager_app.entities import (
     WebRTCOffer,
     WebRTCTURNConfig,
@@ -22,7 +25,7 @@ class WebRTCWorkerRequest(BaseModel):
     data_output: Optional[List[Optional[str]]] = Field(default_factory=list)
     declared_fps: Optional[float] = None
     rtsp_url: Optional[str] = None
-    processing_timeout: Optional[int] = 60
+    processing_timeout: Optional[int] = WEBRTC_MODAL_FUNCTION_TIME_LIMIT
     # https://modal.com/docs/guide/gpu#specifying-gpu-type
     requested_gpu: Literal[
         "T4",
