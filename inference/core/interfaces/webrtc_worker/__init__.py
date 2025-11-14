@@ -4,6 +4,8 @@ import multiprocessing
 from inference.core.env import WEBRTC_MODAL_TOKEN_ID, WEBRTC_MODAL_TOKEN_SECRET
 from inference.core.interfaces.webrtc_worker.cpu import rtc_peer_connection_process
 from inference.core.interfaces.webrtc_worker.entities import (
+    RTCIceServer,
+    WebRTCConfig,
     WebRTCWorkerRequest,
     WebRTCWorkerResult,
 )
@@ -12,6 +14,17 @@ from inference.core.interfaces.webrtc_worker.entities import (
 async def start_worker(
     webrtc_request: WebRTCWorkerRequest,
 ) -> WebRTCWorkerResult:
+    if webrtc_request.webrtc_turn_config:
+        webrtc_request.webrtc_config = WebRTCConfig(
+            iceServers=[
+                RTCIceServer(
+                    urls=[webrtc_request.webrtc_turn_config.urls],
+                    username=webrtc_request.webrtc_turn_config.username,
+                    credential=webrtc_request.webrtc_turn_config.credential,
+                )
+            ]
+        )
+
     if WEBRTC_MODAL_TOKEN_ID and WEBRTC_MODAL_TOKEN_SECRET:
         try:
             from inference.core.interfaces.webrtc_worker.modal import (
