@@ -13,6 +13,7 @@ except ImportError:
     from asyncua.crypto.permission_rules import User, UserRole
 from asyncua.sync import Client, sync_async_client_method
 from asyncua.ua.uaerrors import BadNoMatch, BadTypeMismatch, BadUserAccessDenied
+from asyncua.ua import NodeId
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.workflows.execution_engine.core import ExecutionEngine
@@ -45,6 +46,43 @@ WORKFLOW_OPC_WRITER = {
             "value": "$inputs.opc_value",
             "value_type": "$inputs.opc_value_type",
             "fire_and_forget": False,
+        }
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "opc_writer_results",
+            "selector": "$steps.opc_writer.*",
+        }
+    ],
+}
+
+WORKFLOW_OPC_WRITER_DIRECT_MODE = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "InferenceParameter", "name": "opc_url"},
+        {"type": "InferenceParameter", "name": "opc_namespace"},
+        {"type": "InferenceParameter", "name": "opc_user_name"},
+        {"type": "InferenceParameter", "name": "opc_password"},
+        {"type": "InferenceParameter", "name": "opc_object_name"},
+        {"type": "InferenceParameter", "name": "opc_variable_name"},
+        {"type": "InferenceParameter", "name": "opc_value"},
+        {"type": "InferenceParameter", "name": "opc_value_type"},
+    ],
+    "steps": [
+        {
+            "type": "roboflow_enterprise/opc_writer_sink@v1",
+            "name": "opc_writer",
+            "url": "$inputs.opc_url",
+            "namespace": "$inputs.opc_namespace",
+            "user_name": "$inputs.opc_user_name",
+            "password": "$inputs.opc_password",
+            "object_name": "$inputs.opc_object_name",
+            "variable_name": "$inputs.opc_variable_name",
+            "value": "$inputs.opc_value",
+            "value_type": "$inputs.opc_value_type",
+            "fire_and_forget": False,
+            "node_lookup_mode": "direct",
         }
     ],
     "outputs": [
@@ -95,8 +133,54 @@ async def start_test_opc_server(
     uri = namespace
     idx = await server.register_namespace(uri)
 
-    myobj = await server.nodes.objects.add_object(idx, object_name)
-    myvar = await myobj.add_variable(idx, variable_name, initial_value)
+    # Support multi-level object hierarchy by splitting on "/"
+    object_components = object_name.split("/")
+    current_obj = server.nodes.objects
+
+    # Create nested objects for each component in the path
+    for component in object_components:
+        current_obj = await current_obj.add_object(idx, component)
+
+    # Add the variable to the deepest object
+    myvar = await current_obj.add_variable(idx, variable_name, initial_value)
+    await myvar.set_writable()
+    OPC_SERVER_STARTED = True
+
+    async def run_server():
+        async with server:
+            while not STOP_OPC_SERVER:
+                await asyncio.sleep(0.1)
+
+    loop = asyncio.get_event_loop()
+    SERVER_TASK = loop.create_task(run_server())
+    try:
+        await SERVER_TASK
+    except asyncio.CancelledError:
+        pass
+
+
+async def start_test_opc_server_with_string_nodeid(
+    url: str,
+    namespace: str,
+    object_name: str,
+    variable_name: str,
+    initial_value: float,
+):
+    """Create an OPC UA server with string-based NodeIds (Ignition-style)"""
+    global OPC_SERVER_STARTED
+    global STOP_OPC_SERVER
+    global SERVER_TASK
+
+    server = Server(user_manager=UserManager())
+    await server.init()
+    server.set_endpoint(url)
+
+    uri = namespace
+    idx = await server.register_namespace(uri)
+
+    # Create a variable with a string-based NodeId directly (like Ignition does)
+    node_id = NodeId(f"{object_name}/{variable_name}", idx)
+    myvar = await server.nodes.objects.add_variable(node_id, variable_name, initial_value)
     await myvar.set_writable()
     OPC_SERVER_STARTED = True
 
@@ -121,6 +205,7 @@ def _opc_connect_and_read_value(
     object_name: str,
     variable_name: str,
     timeout: int,
+    direct_mode: bool = False,
 ) -> Union[bool, float, int, str]:
     client = Client(url=url, sync_wrapper_timeout=timeout)
     if user_name and password:
@@ -154,9 +239,17 @@ def _opc_connect_and_read_value(
         raise Exception(f"UNHANDLED ERROR: {type(exc)} {exc}")
 
     try:
-        var = client.nodes.root.get_child(
-            f"0:Objects/{nsidx}:{object_name}/{nsidx}:{variable_name}"
-        )
+        if direct_mode:
+            # Direct NodeId access for Ignition-style string identifiers
+            node_id = f"ns={nsidx};s={object_name}/{variable_name}"
+            var = client.get_node(node_id)
+        else:
+            # Hierarchical path navigation - split object_name and prepend namespace to each component
+            object_components = object_name.split("/")
+            object_path = "/".join([f"{nsidx}:{comp}" for comp in object_components])
+            var = client.nodes.root.get_child(
+                f"0:Objects/{object_path}/{nsidx}:{variable_name}"
+            )
     except BadNoMatch as exc:
         client.disconnect()
         raise Exception(f"WRONG OBJECT OR PROPERTY ERROR: {exc}")
@@ -270,3 +363,95 @@ def test_workflow_with_opc_writer_sink() -> None:
     assert result[0]["opc_writer_results"]["throttling_status"] == False
     assert result[0]["opc_writer_results"]["message"] == "Value set successfully"
     assert result_value == 41
+
+
+@pytest.mark.timeout(5)
+def test_workflow_with_opc_writer_sink_direct_mode() -> None:
+    """Test OPC writer with direct NodeId lookup mode (Ignition-style string-based tags)"""
+    # given
+    global OPC_SERVER_STARTED
+    global STOP_OPC_SERVER
+    global SERVER_TASK
+
+    # Reset global state
+    OPC_SERVER_STARTED = False
+    STOP_OPC_SERVER = False
+    SERVER_TASK = None
+
+    loop = asyncio.new_event_loop()
+    t = threading.Thread(target=start_loop, args=(loop,), daemon=True)
+    t.start()
+
+    opc_url = "opc.tcp://localhost:4841/freeopcua/server/"
+    opc_namespace = "http://examples.freeopcua.github.io/direct"
+    opc_user_name = "user1"
+    opc_password = users_db[opc_user_name]
+    opc_object_name = "[Sample_Tags]/Ramp"
+    opc_variable_name = "South_Person_Count"
+    opc_initial_value = 0
+
+    asyncio.run_coroutine_threadsafe(
+        start_test_opc_server_with_string_nodeid(
+            url=opc_url,
+            namespace=opc_namespace,
+            object_name=opc_object_name,
+            variable_name=opc_variable_name,
+            initial_value=opc_initial_value,
+        ),
+        loop,
+    )
+
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_OPC_WRITER_DIRECT_MODE,
+        init_parameters={},
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    while not OPC_SERVER_STARTED:
+        time.sleep(0.1)
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "opc_url": opc_url,
+            "opc_namespace": opc_namespace,
+            "opc_user_name": opc_user_name,
+            "opc_password": opc_password,
+            "opc_object_name": opc_object_name,
+            "opc_variable_name": opc_variable_name,
+            "opc_value": 42,
+            "opc_value_type": "Integer",
+        }
+    )
+
+    result_value = _opc_connect_and_read_value(
+        url=opc_url,
+        namespace=opc_namespace,
+        user_name=opc_user_name,
+        password=opc_password,
+        object_name=opc_object_name,
+        variable_name=opc_variable_name,
+        timeout=1,
+        direct_mode=True,
+    )
+
+    STOP_OPC_SERVER = True
+    if SERVER_TASK:
+        SERVER_TASK.cancel()
+        try:
+            # Give the server a chance to clean up
+            asyncio.run_coroutine_threadsafe(asyncio.sleep(0.1), loop).result()
+        except:
+            pass
+    loop.stop()
+    t.join()
+
+    # then
+    assert set(result[0].keys()) == {
+        "opc_writer_results",
+    }, "Expected all declared outputs to be delivered"
+    assert result[0]["opc_writer_results"]["error_status"] == False
+    assert result[0]["opc_writer_results"]["disabled"] == False
+    assert result[0]["opc_writer_results"]["throttling_status"] == False
+    assert result[0]["opc_writer_results"]["message"] == "Value set successfully"
+    assert result_value == 42

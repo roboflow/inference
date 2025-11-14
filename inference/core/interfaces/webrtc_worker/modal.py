@@ -4,7 +4,6 @@ from pathlib import Path
 from inference.core import logger
 from inference.core.env import (
     ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
-    API_KEY,
     INTERNAL_WEIGHTS_URL_SUFFIX,
     LOG_LEVEL,
     MODAL_TOKEN_ID,
@@ -68,22 +67,14 @@ if modal is not None:
         image=video_processing_image,
     )
 
-    # https://modal.com/docs/reference/modal.App#cls
-    @app.cls(
-        min_containers=WEBRTC_MODAL_FUNCTION_MIN_CONTAINERS,
-        buffer_containers=WEBRTC_MODAL_FUNCTION_BUFFER_CONTAINERS,
-        scaledown_window=WEBRTC_MODAL_FUNCTION_SCALEDOWN_WINDOW,
-        timeout=WEBRTC_MODAL_FUNCTION_TIME_LIMIT,
-        enable_memory_snapshot=WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT,
-        experimental_options=(
-            {"enable_gpu_snapshot": True}
-            if WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT
-            and WEBRTC_MODAL_FUNCTION_GPU
-            else {}
-        ),
-        gpu=WEBRTC_MODAL_FUNCTION_GPU,
-        max_inputs=WEBRTC_MODAL_FUNCTION_MAX_INPUTS,
-        env={
+    decorator_kwargs = {
+        "min_containers": WEBRTC_MODAL_FUNCTION_MIN_CONTAINERS,
+        "buffer_containers": WEBRTC_MODAL_FUNCTION_BUFFER_CONTAINERS,
+        "scaledown_window": WEBRTC_MODAL_FUNCTION_SCALEDOWN_WINDOW,
+        "timeout": WEBRTC_MODAL_FUNCTION_TIME_LIMIT,
+        "enable_memory_snapshot": WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT,
+        "max_inputs": WEBRTC_MODAL_FUNCTION_MAX_INPUTS,
+        "env": {
             "ROBOFLOW_INTERNAL_SERVICE_SECRET": ROBOFLOW_INTERNAL_SERVICE_SECRET,
             "ROBOFLOW_INTERNAL_SERVICE_NAME": WEBRTC_MODAL_ROBOFLOW_INTERNAL_SERVICE_NAME,
             "PROJECT": PROJECT,
@@ -121,14 +112,11 @@ if modal is not None:
             "WEBRTC_MODAL_IMAGE_TAG": WEBRTC_MODAL_IMAGE_TAG,
             "WEBRTC_MODAL_RTSP_PLACEHOLDER": WEBRTC_MODAL_RTSP_PLACEHOLDER,
             "WEBRTC_MODAL_RTSP_PLACEHOLDER_URL": WEBRTC_MODAL_RTSP_PLACEHOLDER_URL,
-            "ONNXRUNTIME_EXECUTION_PROVIDERS": (
-                "CUDAExecutionProvider"
-                if WEBRTC_MODAL_FUNCTION_GPU
-                else "CPUExecutionProvider"
-            ),
+            "ONNXRUNTIME_EXECUTION_PROVIDERS": "[CUDAExecutionProvider,CPUExecutionProvider]",
         },
-        volumes={MODEL_CACHE_DIR: rfcache_volume},
-    )
+        "volumes": {MODEL_CACHE_DIR: rfcache_volume},
+    }
+
     class RTCPeerConnectionModal:
         @modal.method()
         def rtc_peer_connection_modal(
@@ -149,6 +137,27 @@ if modal is not None:
                 )
             )
 
+    # Modal derives function name from class name
+    # https://modal.com/docs/reference/modal.App#cls
+    @app.cls(
+        **{
+            **decorator_kwargs,
+            "enable_memory_snapshot": True,
+        }
+    )
+    class RTCPeerConnectionModalCPU(RTCPeerConnectionModal):
+        pass
+
+    @app.cls(
+        **{
+            **decorator_kwargs,
+            "gpu": WEBRTC_MODAL_FUNCTION_GPU,
+            "experimental_options": {"enable_gpu_snapshot": True},
+        }
+    )
+    class RTCPeerConnectionModalGPU(RTCPeerConnectionModal):
+        pass
+
     def spawn_rtc_peer_connection_modal(
         webrtc_request: WebRTCWorkerRequest,
     ) -> WebRTCWorkerResult:
@@ -164,13 +173,41 @@ if modal is not None:
         except modal.exception.NotFoundError:
             logger.info("Deploying webrtc modal app %s", WEBRTC_MODAL_APP_NAME)
             app.deploy(name=WEBRTC_MODAL_APP_NAME, client=client)
+
+        if webrtc_request.requested_gpu:
+            RTCPeerConnectionModal = RTCPeerConnectionModalGPU
+        else:
+            RTCPeerConnectionModal = RTCPeerConnectionModalCPU
+
         # https://modal.com/docs/reference/modal.Cls#from_name
         deployed_cls = modal.Cls.from_name(
             app_name=app.name,
             name=RTCPeerConnectionModal.__name__,
         )
         deployed_cls.hydrate(client=client)
-        rtc_modal_obj: RTCPeerConnectionModal = deployed_cls()
+        if webrtc_request.processing_timeout is None:
+            logger.warning("Spawning webrtc modal function without timeout")
+        else:
+            logger.info(
+                "Spawning webrtc modal function with timeout %s",
+                webrtc_request.processing_timeout,
+            )
+        # https://modal.com/docs/reference/modal.Cls#with_options
+        cls_with_options = deployed_cls.with_options(
+            timeout=webrtc_request.processing_timeout,
+        )
+        if (
+            webrtc_request.requested_gpu is not None
+            and webrtc_request.requested_gpu != WEBRTC_MODAL_FUNCTION_GPU
+        ):
+            logger.warning(
+                "Spawning webrtc modal function with custom gpu %s",
+                webrtc_request.requested_gpu,
+            )
+            cls_with_options = cls_with_options.with_options(
+                gpu=webrtc_request.requested_gpu,
+            )
+        rtc_modal_obj: RTCPeerConnectionModal = cls_with_options()
         # https://modal.com/docs/reference/modal.Queue#ephemeral
         with modal.Queue.ephemeral(client=client) as q:
             logger.info(
