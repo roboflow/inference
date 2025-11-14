@@ -32,6 +32,10 @@ ENV TRT_OSSPATH=/build/tensorrt/TensorRT
 ENV TRT_LIBPATH=/usr/lib/aarch64-linux-gnu
 ENV EXT_PATH=/build/tensorrt/extenral
 ENV TENSORRT_MODULE=tensorrt
+RUN mkdir build
+WORKDIR /build/tensorrt/TensorRT/build
+RUN cmake .. -DTRT_LIB_DIR=$TRT_LIBPATH -DTRT_OUT_DIR=`pwd`/out -DTRT_PLATFORM_ID=aarch64 -DCUDA_VERSION=11.4
+RUN make -j$(nproc)
 RUN mkdir -p /build/tensorrt/extenral/python3.12/include/
 RUN cp -r /usr/local/include/python3.12/* /build/tensorrt/extenral/python3.12/include/
 WORKDIR /build/tensorrt/extenral/
