@@ -58,6 +58,8 @@ from inference_cli.lib.roboflow_cloud.errors import (
     RoboflowCloudCommandError,
 )
 from inference_cli.lib.utils import (
+    IMAGES_EXTENSIONS,
+    VIDEOS_EXTENSIONS,
     create_batches,
     get_all_images_in_directory,
     get_all_videos_in_directory,
@@ -1597,3 +1599,255 @@ def get_one_page_of_batch_shards_statuses(
         return PageOfBatchShardsStatuses.model_validate(response.json())
     except ValueError as error:
         raise RFAPICallError("Could not decode Roboflow API response.") from error
+
+
+def _parse_bucket_path(bucket_path: str) -> Tuple[str, Optional[str]]:
+    """
+    Parse bucket path to extract base path and glob pattern.
+
+    Examples:
+        "s3://bucket/path/**/*.jpg" -> ("s3://bucket/path/", "**/*.jpg")
+        "s3://bucket/path/" -> ("s3://bucket/path/", None)
+        "gs://bucket/" -> ("gs://bucket/", None)
+    """
+    has_glob = any(char in bucket_path for char in ['*', '?', '[', ']'])
+
+    if not has_glob:
+        return bucket_path, None
+
+    parts = bucket_path.split('/')
+    for i in range(len(parts) - 1, -1, -1):
+        if any(char in parts[i] for char in ['*', '?', '[', ']']):
+            continue
+        base_path = '/'.join(parts[:i+1]) + '/'
+        glob_pattern = '/'.join(parts[i+1:])
+        return base_path, glob_pattern
+
+    return bucket_path, None
+
+
+def _get_fs_kwargs() -> dict:
+    """
+    Get filesystem kwargs from environment variables for custom endpoints (e.g., R2).
+    Also supports AWS_PROFILE for using named AWS credential profiles.
+    """
+    kwargs = {}
+
+    endpoint_url = os.getenv("AWS_ENDPOINT_URL")
+    if endpoint_url:
+        kwargs["client_kwargs"] = {"endpoint_url": endpoint_url}
+
+    # Support AWS_PROFILE for named credential profiles
+    aws_profile = os.getenv("AWS_PROFILE")
+    if aws_profile:
+        kwargs["profile"] = aws_profile
+
+    return kwargs
+
+
+def create_images_batch_from_cloud_storage(
+    bucket_path: str,
+    batch_id: str,
+    api_key: str,
+    batch_name: Optional[str] = None,
+    ingest_id: Optional[str] = None,
+    notifications_url: Optional[str] = None,
+    notification_categories: Optional[List[str]] = None,
+    presign_expiration_seconds: int = 86400,
+) -> None:
+    """
+    Create image batch from cloud storage by generating presigned URLs.
+
+    Args:
+        bucket_path: Cloud path with optional glob pattern (e.g., 's3://bucket/**/*.jpg')
+        batch_id: Batch identifier
+        api_key: Roboflow API key
+        presign_expiration_seconds: Presigned URL expiration time (default: 24 hours)
+
+    Internally calls create_images_batch_from_references_file with generated URLs.
+    """
+    try:
+        import fsspec
+    except ImportError:
+        raise ImportError(
+            "Cloud storage support requires additional dependencies. "
+            "Install with: pip install 'inference-cli[cloud-storage]'"
+        )
+
+    base_path, glob_pattern = _parse_bucket_path(bucket_path)
+    fs = fsspec.filesystem(base_path.split("://")[0], **_get_fs_kwargs())
+
+    print("Listing files from cloud storage...")
+    if glob_pattern is None:
+        all_files = fs.glob(f"{base_path.rstrip('/')}/**/*")
+        image_files = [
+            f for f in all_files
+            if any(f.lower().endswith(f".{ext.lower()}") for ext in IMAGES_EXTENSIONS)
+        ]
+    else:
+        pattern_path = f"{base_path.rstrip('/')}/{glob_pattern}"
+        all_files = fs.glob(pattern_path)
+        image_files = [
+            f for f in all_files
+            if any(f.lower().endswith(f".{ext.lower()}") for ext in IMAGES_EXTENSIONS)
+        ]
+
+    if len(image_files) == 0:
+        pattern_desc = glob_pattern if glob_pattern else "**/* (all files)"
+        raise ValueError(f"No image files found matching pattern: {pattern_desc}")
+
+    print(f"Found {len(image_files)} image files in cloud storage")
+    if len(image_files) > MAX_IMAGE_REFERENCES_IN_INGEST_REQUEST:
+        num_chunks = (len(image_files) + MAX_IMAGE_REFERENCES_IN_INGEST_REQUEST - 1) // MAX_IMAGE_REFERENCES_IN_INGEST_REQUEST
+        print(f"Files will be split into {num_chunks} chunks of up to {MAX_IMAGE_REFERENCES_IN_INGEST_REQUEST} files each")
+
+    references = []
+    for file_path in tqdm(image_files, desc="Generating presigned URLs..."):
+        if not file_path.startswith(base_path.split("://")[0] + "://"):
+            file_path = f"{base_path.split('://')[0]}://{file_path}"
+
+        presigned_url = fs.sign(file_path, expiration=presign_expiration_seconds)
+        file_name = file_path.split("/")[-1]
+
+        references.append({
+            "name": file_name,
+            "url": presigned_url,
+        })
+
+    workspace = get_workspace(api_key=api_key)
+
+    # Split into batches if needed
+    ingest_parts = list(
+        create_batches(
+            sequence=references, batch_size=MAX_IMAGE_REFERENCES_IN_INGEST_REQUEST
+        )
+    )
+    if len(ingest_parts) > 1:
+        print(
+            f"Your ingest exceeds {MAX_IMAGE_REFERENCES_IN_INGEST_REQUEST} files - we split the ingest "
+            f"into {len(ingest_parts)} chunks."
+        )
+
+    # Trigger ingest for each batch
+    for batch_references in ingest_parts:
+        response = trigger_images_references_ingest(
+            workspace=workspace,
+            batch_id=batch_id,
+            references=batch_references,
+            api_key=api_key,
+            ingest_id=ingest_id,
+            batch_name=batch_name,
+            notifications_url=notifications_url,
+            notification_categories=notification_categories,
+        )
+        print(f"Ingest triggered. Ingest ID: {response.ingest_id}")
+
+    if notifications_url:
+        print(f"Monitor updates that will be sent to: {notifications_url}")
+        print(
+            f"You can also use `inference rf-cloud data-staging list-ingest-details --batch-id {batch_id}` command "
+            f"to check progress."
+        )
+    else:
+        print(
+            f"Use `inference rf-cloud data-staging list-ingest-details --batch-id {batch_id}` "
+            "command to watch the ingest progress. If you want automated updates - use `--notifications-url` option "
+            "of this command."
+        )
+
+
+def create_videos_batch_from_cloud_storage(
+    bucket_path: str,
+    batch_id: str,
+    api_key: str,
+    batch_name: Optional[str] = None,
+    ingest_id: Optional[str] = None,
+    notifications_url: Optional[str] = None,
+    notification_categories: Optional[List[str]] = None,
+    presign_expiration_seconds: int = 86400,
+) -> None:
+    """
+    Create video batch from cloud storage by generating presigned URLs.
+
+    Args:
+        bucket_path: Cloud path with optional glob pattern (e.g., 's3://bucket/**/*.mp4')
+        batch_id: Batch identifier
+        api_key: Roboflow API key
+        presign_expiration_seconds: Presigned URL expiration time (default: 24 hours)
+
+    Internally calls create_videos_batch_from_references_file with generated URLs.
+    """
+    try:
+        import fsspec
+    except ImportError:
+        raise ImportError(
+            "Cloud storage support requires additional dependencies. "
+            "Install with: pip install 'inference-cli[cloud-storage]'"
+        )
+
+    base_path, glob_pattern = _parse_bucket_path(bucket_path)
+    fs = fsspec.filesystem(base_path.split("://")[0], **_get_fs_kwargs())
+
+    print("Listing files from cloud storage...")
+    if glob_pattern is None:
+        all_files = fs.glob(f"{base_path.rstrip('/')}/**/*")
+        video_files = [
+            f for f in all_files
+            if any(f.lower().endswith(f".{ext.lower()}") for ext in VIDEOS_EXTENSIONS)
+        ]
+    else:
+        pattern_path = f"{base_path.rstrip('/')}/{glob_pattern}"
+        all_files = fs.glob(pattern_path)
+        video_files = [
+            f for f in all_files
+            if any(f.lower().endswith(f".{ext.lower()}") for ext in VIDEOS_EXTENSIONS)
+        ]
+
+    if len(video_files) == 0:
+        pattern_desc = glob_pattern if glob_pattern else "**/* (all files)"
+        raise ValueError(f"No video files found matching pattern: {pattern_desc}")
+
+    print(f"Found {len(video_files)} video files in cloud storage")
+    if len(video_files) > SUGGESTED_MAX_VIDEOS_IN_BATCH:
+        print(f"Warning: Found {len(video_files)} videos. Suggested max is {SUGGESTED_MAX_VIDEOS_IN_BATCH} videos per batch.")
+
+    references = []
+    for file_path in tqdm(video_files, desc="Generating presigned URLs..."):
+        if not file_path.startswith(base_path.split("://")[0] + "://"):
+            file_path = f"{base_path.split('://')[0]}://{file_path}"
+
+        presigned_url = fs.sign(file_path, expiration=presign_expiration_seconds)
+        file_name = file_path.split("/")[-1]
+
+        references.append({
+            "name": file_name,
+            "url": presigned_url,
+        })
+
+    workspace = get_workspace(api_key=api_key)
+
+    # Trigger ingest directly with the list of references
+    response = trigger_videos_references_ingest(
+        workspace=workspace,
+        batch_id=batch_id,
+        references=references,
+        api_key=api_key,
+        ingest_id=ingest_id,
+        batch_name=batch_name,
+        notifications_url=notifications_url,
+        notification_categories=notification_categories,
+    )
+    print(f"Ingest triggered. Ingest ID: {response.ingest_id}")
+
+    if notifications_url:
+        print(f"Monitor updates that will be sent to: {notifications_url}")
+        print(
+            f"You can also use `inference rf-cloud data-staging list-ingest-details --batch-id {batch_id}` command "
+            f"to check progress."
+        )
+    else:
+        print(
+            f"Use `inference rf-cloud data-staging list-ingest-details --batch-id {batch_id}` "
+            "command to watch the ingest progress. If you want automated updates - use `--notifications-url` option "
+            "of this command."
+        )
