@@ -1,0 +1,96 @@
+name: INTEGRATION & E2E TESTS - inference SDK
+permissions:
+  contents: read
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  call_is_mergeable:
+    uses: ./.github/workflows/check_if_branch_is_mergeable.yml
+    secrets: inherit
+
+  integration-tests:
+    needs: call_is_mergeable
+    if: ${{ github.event_name != 'pull_request' || needs.call_is_mergeable.outputs.mergeable_state != 'not_clean' }}
+    runs-on:
+      labels: depot-ubuntu-22.04-4
+      group: public-depot
+    timeout-minutes: 20
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
+    steps:
+      - name: 🛎️ Checkout
+        uses: actions/checkout@v4
+
+      - name: 📦 Cache Python packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-integration-${{ hashFiles('requirements/**') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+
+      - name: 🐍 Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          check-latest: true
+
+      - name: 📦 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --upgrade setuptools
+          pip install -r requirements/_requirements.txt \
+                      -r requirements/requirements.sdk.http.txt \
+                      -r requirements/requirements.test.unit.txt
+
+      - name: 🧪 Integration Tests - WebRTC SDK (mocked)
+        timeout-minutes: 10
+        run: python -m pytest tests/inference_sdk/integration_tests -v
+
+  e2e-tests:
+    needs: call_is_mergeable
+    if: ${{ github.event_name != 'pull_request' || needs.call_is_mergeable.outputs.mergeable_state != 'not_clean' }}
+    runs-on:
+      labels: depot-ubuntu-22.04-4
+      group: public-depot
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
+    steps:
+      - name: 🛎️ Checkout
+        uses: actions/checkout@v4
+
+      - name: 📦 Cache Python packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-e2e-${{ hashFiles('requirements/**') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+
+      - name: 🐍 Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          check-latest: true
+
+      - name: 📦 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --upgrade setuptools
+          pip install -r requirements/_requirements.txt \
+                      -r requirements/requirements.cpu.txt \
+                      -r requirements/requirements.http.txt \
+                      -r requirements/requirements.sdk.http.txt \
+                      -r requirements/requirements.test.unit.txt
+
+      - name: 🧪 E2E Tests - WebRTC SDK (real server)
+        timeout-minutes: 15
+        run: python -m pytest tests/inference_sdk/e2e_tests -m slow -v --timeout=120
