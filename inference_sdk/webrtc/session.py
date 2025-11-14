@@ -261,9 +261,7 @@ class WebRTCSession:
         try:
             return VideoMetadata(
                 frame_id=video_metadata_dict["frame_id"],
-                received_at=datetime.fromisoformat(
-                    video_metadata_dict["received_at"]
-                ),
+                received_at=datetime.fromisoformat(video_metadata_dict["received_at"]),
                 pts=video_metadata_dict.get("pts"),
                 time_base=video_metadata_dict.get("time_base"),
                 declared_fps=video_metadata_dict.get("declared_fps"),
