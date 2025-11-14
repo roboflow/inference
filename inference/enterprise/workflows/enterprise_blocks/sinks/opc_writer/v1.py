@@ -11,6 +11,7 @@ from asyncua.ua import VariantType
 from asyncua.ua.uaerrors import BadNoMatch, BadTypeMismatch, BadUserAccessDenied
 from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field
+
 from inference.core.logger import logger
 
 
@@ -521,7 +522,7 @@ def _opc_connect_and_write_value(
             logger.debug(f"OPC Writer using direct NodeId access: {node_id}")
             var = client.get_node(node_id)
             logger.debug(
-                f"OPC Writer successfully found variable node with type {vt} using direct NodeId"
+                f"OPC Writer successfully found variable node using direct NodeId"
             )
         except Exception as exc:
             logger.error(f"OPC Writer direct NodeId access failed: {exc}")
