@@ -27,7 +27,7 @@ RUN mkdir -p /build/tensorrt
 WORKDIR /build/tensorrt
 RUN git clone https://github.com/NVIDIA/TensorRT.git
 WORKDIR /build/tensorrt/TensorRT
-RUN git checkout v8.6.1 && git submodule update --init --recursive
+RUN git checkout v10.3.0 && git submodule update --init --recursive
 ENV TRT_OSSPATH=/build/tensorrt/TensorRT
 ENV TRT_LIBPATH=/usr/lib/aarch64-linux-gnu
 ENV EXT_PATH=/build/tensorrt/extenral
