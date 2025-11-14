@@ -634,6 +634,10 @@ if ROBOFLOW_API_REQUEST_TIMEOUT:
     ROBOFLOW_API_REQUEST_TIMEOUT = int(ROBOFLOW_API_REQUEST_TIMEOUT)
 
 
+# Control SSL certificate verification for requests to the Roboflow API
+# Default is True (verify SSL). Set ROBOFLOW_API_VERIFY_SSL=false to disable in local dev.
+ROBOFLOW_API_VERIFY_SSL = str2bool(os.getenv("ROBOFLOW_API_VERIFY_SSL", "True"))
+
 IGNORE_MODEL_DEPENDENCIES_WARNINGS = str2bool(
     os.getenv("IGNORE_MODEL_DEPENDENCIES_WARNINGS", "False")
 )
