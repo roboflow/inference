@@ -35,7 +35,7 @@ ENV TENSORRT_MODULE=tensorrt
 RUN mkdir build
 WORKDIR /build/tensorrt/TensorRT/build
 RUN cmake .. -DTRT_LIB_DIR=$TRT_LIBPATH -DTRT_OUT_DIR=`pwd`/out -DTRT_PLATFORM_ID=aarch64 -DCUDA_VERSION=11.4
-RUN make -j$(nproc)
+RUN make -j4
 RUN mkdir -p /build/tensorrt/extenral/python3.12/include/
 RUN cp -r /usr/local/include/python3.12/* /build/tensorrt/extenral/python3.12/include/
 WORKDIR /build/tensorrt/extenral/
