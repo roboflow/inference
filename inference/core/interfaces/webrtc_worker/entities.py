@@ -41,7 +41,7 @@ class WebRTCWorkerRequest(BaseModel):
     processing_timeout: Optional[int] = WEBRTC_MODAL_FUNCTION_TIME_LIMIT
     requested_plan: Optional[str] = "webrtc-gpu-small"
     # TODO: replaced with requested_plan
-    requested_gpu: Optional[str] = "webrtc-gpu-small"
+    requested_gpu: Optional[str] = None
     # must be valid region: https://modal.com/docs/guide/region-selection#region-options
     requested_region: Optional[str] = None
 
