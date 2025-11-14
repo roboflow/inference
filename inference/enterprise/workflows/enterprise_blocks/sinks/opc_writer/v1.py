@@ -565,21 +565,42 @@ def _opc_connect_and_write_value(
         elif value_type in [FLOAT_KIND, "Float"]:
             var.set_value(float(value), VariantType.Float)
         elif value_type == "Int16":
-            var.set_value(int(value), VariantType.Int16)
+            int_val = int(value)
+            if not (-32768 <= int_val <= 32767):
+                raise ValueError(f"Value {int_val} out of range for Int16")
+            var.set_value(int_val, VariantType.Int16)
         elif value_type == "Int32":
-            var.set_value(int(value), VariantType.Int32)
+            int_val = int(value)
+            if not (-2147483648 <= int_val <= 2147483647):
+                raise ValueError(f"Value {int_val} out of range for Int32")
+            var.set_value(int_val, VariantType.Int32)
         elif value_type in ["Int64", INTEGER_KIND, "Integer"]:
-            var.set_value(int(value), VariantType.Int64)
+            int_val = int(value)
+            if not (-9223372036854775808 <= int_val <= 9223372036854775807):
+                raise ValueError(f"Value {int_val} out of range for Int64")
+            var.set_value(int_val, VariantType.Int64)
         elif value_type == "SByte":
-            var.set_value(int(value), VariantType.SByte)
+            int_val = int(value)
+            if not (-128 <= int_val <= 127):
+                raise ValueError(f"Value {int_val} out of range for SByte")
+            var.set_value(int_val, VariantType.SByte)
         elif value_type in [STRING_KIND, "String"]:
             var.set_value(str(value), VariantType.String)
         elif value_type == "UInt16":
-            var.set_value(int(value), VariantType.UInt16)
+            int_val = int(value)
+            if not (0 <= int_val <= 65535):
+                raise ValueError(f"Value {int_val} out of range for UInt16")
+            var.set_value(int_val, VariantType.UInt16)
         elif value_type == "UInt32":
-            var.set_value(int(value), VariantType.UInt32)
+            int_val = int(value)
+            if not (0 <= int_val <= 4294967295):
+                raise ValueError(f"Value {int_val} out of range for UInt32")
+            var.set_value(int_val, VariantType.UInt32)
         elif value_type == "UInt64":
-            var.set_value(int(value), VariantType.UInt64)
+            int_val = int(value)
+            if not (0 <= int_val <= 18446744073709551615):
+                raise ValueError(f"Value {int_val} out of range for UInt64")
+            var.set_value(int_val, VariantType.UInt64)
         else:
             logger.error(f"OPC Writer unsupported value type: {value_type}")
             safe_disconnect(client)
