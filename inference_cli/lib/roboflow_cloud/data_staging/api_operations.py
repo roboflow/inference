@@ -585,6 +585,8 @@ def trigger_images_references_ingest(
         params["api_key"] = api_key
     if batch_name is not None:
         params["displayName"] = batch_name
+    elif batch_id is not None:
+        params["displayName"] = batch_id
     payload = {}
     if isinstance(references, list):
         payload["imageReferences"] = references
@@ -719,6 +721,8 @@ def trigger_videos_references_ingest(
         params["api_key"] = api_key
     if batch_name is not None:
         params["displayName"] = batch_name
+    elif batch_id is not None:
+        params["displayName"] = batch_id
     payload = {}
     if isinstance(references, list):
         payload["videoReferences"] = references
@@ -882,6 +886,8 @@ def upload_image(
         params["api_key"] = api_key
     if batch_name is not None:
         params["displayName"] = batch_name
+    elif batch_id is not None:
+        params["displayName"] = batch_id
     image_file_name = os.path.basename(image_path)
     params["fileName"] = image_file_name
     try:
@@ -929,6 +935,8 @@ def upload_video(
     params["fileName"] = image_file_name
     if batch_name is not None:
         params["displayName"] = batch_name
+    elif batch_id is not None:
+        params["displayName"] = batch_id
     try:
         response = requests.post(
             f"{API_BASE_URL}/data-staging/v1/external/{workspace}/batches/{batch_id}/upload/video",
@@ -975,6 +983,8 @@ def upload_images_shard(
         params["api_key"] = api_key
     if batch_name is not None:
         params["displayName"] = batch_name
+    elif batch_id is not None:
+        params["displayName"] = batch_id
     try:
         response = requests.post(
             f"{API_BASE_URL}/data-staging/v1/external/{workspace}/batches/{batch_id}/bulk-upload/image-files",
