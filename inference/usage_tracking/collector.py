@@ -109,6 +109,7 @@ class UsageCollector:
 
         self._plan_details = PlanDetails(
             api_plan_endpoint_url=self._settings.api_plan_endpoint_url,
+            webrtc_plans_endpoint_url=self._settings.webrtc_plans_endpoint_url,
             sqlite_cache_enabled=False,
         )
         if (LAMBDA or GCP_SERVERLESS) and REDIS_HOST:
@@ -583,7 +584,7 @@ class UsageCollector:
         usage_billable: bool,
         execution_duration: float,
         func: Callable[[Any], Any],
-        category: Literal["model", "workflows", "request"],
+        category: Literal["model", "workflows", "request", "modal"],
         exc: Optional[str],
         args: List[Any],
         kwargs: Dict[str, Any],
