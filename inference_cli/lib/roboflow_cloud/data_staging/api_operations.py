@@ -1655,6 +1655,236 @@ def _get_fs_kwargs() -> dict:
     return kwargs
 
 
+def _match_glob_pattern(path: str, pattern: str) -> bool:
+    """
+    Match a file path against a glob pattern.
+
+    Supports minimal glob syntax (like fsspec):
+    - ** : Recursive match (any number of directories, including zero)
+    - *  : Wildcard match (any characters in single segment)
+    - Literal strings
+
+    Args:
+        path: File path to check
+        pattern: Glob pattern (e.g., '**/*.jpg', '2024-*/*.png')
+
+    Returns:
+        True if path matches pattern
+    """
+    import re
+
+    # Convert glob pattern to regex
+    pattern_parts = pattern.split('/')
+    regex_parts = []
+
+    i = 0
+    while i < len(pattern_parts):
+        part = pattern_parts[i]
+
+        if part == '**':
+            # ** matches zero or more path segments
+            # If it's at the start and followed by more parts, it's optional
+            if i == 0 and i + 1 < len(pattern_parts):
+                # Make preceding path optional: either nothing or anything/
+                regex_parts.append('(?:.*/)?')
+            else:
+                # Match any path segments
+                regex_parts.append('.*')
+            i += 1
+        elif '*' in part:
+            # * matches any characters except /
+            part_regex = re.escape(part).replace(r'\*', '[^/]*')
+            regex_parts.append(part_regex)
+            i += 1
+        else:
+            # Literal match
+            regex_parts.append(re.escape(part))
+            i += 1
+
+    # Join with / but handle ** specially (already includes separator in regex)
+    regex_pattern = ''
+    for j, part in enumerate(regex_parts):
+        if j > 0 and not regex_parts[j-1].endswith(')?'):
+            regex_pattern += '/'
+        regex_pattern += part
+
+    regex_pattern += '$'
+    return re.match(regex_pattern, path) is not None
+
+
+def _list_and_filter_files_streaming(
+    fs,
+    base_path: str,
+    glob_pattern: Optional[str],
+    extensions: List[str],
+) -> Generator[str, None, None]:
+    """
+    Stream files from cloud storage.
+
+    Uses fs.walk() for streaming instead of fs.glob() for blocking.
+    Progress tracking is handled by the consuming function.
+
+    Args:
+        fs: fsspec filesystem instance
+        base_path: Base cloud path (e.g., 's3://bucket/path/')
+        glob_pattern: Optional glob pattern (e.g., '**/*.jpg'), uses None for all
+        extensions: List of file extensions to filter (e.g., ['jpg', 'png'])
+
+    Yields:
+        File paths matching the pattern and extensions
+    """
+    protocol = base_path.split("://")[0]
+    base_without_protocol = base_path.split("://", 1)[1].rstrip('/')
+
+    for root, dirs, files in fs.walk(base_path):
+        # Remove protocol from root for pattern matching
+        root_path = root
+        if root.startswith(f"{protocol}://"):
+            root_path = root.split("://", 1)[1]
+
+        for fname in files:
+            # Check extension first (fast filter)
+            if not any(fname.lower().endswith(f".{ext.lower()}") for ext in extensions):
+                continue
+
+            # Build full path for pattern matching
+            if root_path == base_without_protocol:
+                relative_path = fname
+            else:
+                relative_path = f"{root_path.removeprefix(base_without_protocol + '/')}/{fname}"
+
+            # Check glob pattern if specified
+            if glob_pattern and not _match_glob_pattern(relative_path, glob_pattern):
+                continue
+
+            # Yield full path with protocol
+            full_path = f"{root}/{fname}" if root.startswith(f"{protocol}://") else f"{protocol}://{root}/{fname}"
+            yield full_path
+
+
+def _generate_presigned_urls_parallel(
+    fs,
+    file_paths_generator: Generator[str, None, None],
+    base_path: str,
+    expiration_seconds: int,
+) -> List[dict]:
+    """
+    Generate presigned URLs concurrently while discovering files.
+
+    Uses producer-consumer pattern with Queue:
+    - Producer: Feeds files from generator into queue
+    - Consumers: Worker threads generate URLs from queue
+    - Both operations happen simultaneously with merged progress bar
+      showing "Discovered X files Y URLs generated"
+
+    Args:
+        fs: fsspec filesystem instance
+        file_paths_generator: Generator yielding file paths
+        base_path: Base cloud path for protocol extraction
+        expiration_seconds: URL expiration time in seconds
+
+    Returns:
+        List of dicts with 'name' and 'url' keys
+    """
+    from queue import Queue
+    from threading import Thread
+    from rich.progress import Progress, BarColumn, SpinnerColumn, TextColumn
+    import multiprocessing
+
+    protocol = base_path.split("://")[0]
+    file_queue = Queue(maxsize=0)  # Unlimited queue for continuous listing
+    results = []
+    results_lock = Lock()
+
+    # Sentinel to signal end of queue
+    DONE = object()
+
+    def generate_url(file_path: str) -> dict:
+        """Worker function to generate presigned URL"""
+        # Ensure file path has protocol prefix
+        if not file_path.startswith(f"{protocol}://"):
+            file_path = f"{protocol}://{file_path}"
+
+        presigned_url = fs.sign(file_path, expiration=expiration_seconds)
+        file_name = file_path.split("/")[-1]
+
+        return {"name": file_name, "url": presigned_url}
+
+    discovered_count = [0]  # Use list for mutability in closure
+    processed_count = [0]
+
+    def update_progress_display(progress, task_id):
+        """Update single progress bar with both counts"""
+        desc = f"[cyan]Discovered {discovered_count[0]} files in {base_path} [green]{processed_count[0]} URLs generated"
+        progress.update(task_id, description=desc)
+
+    def producer(generator, queue, progress, task_id):
+        """Feed files from generator into queue"""
+        for file_path in generator:
+            queue.put(file_path)
+            discovered_count[0] += 1
+            update_progress_display(progress, task_id)
+
+        # Signal completion to all workers
+        num_workers = min(multiprocessing.cpu_count() * 2, 8)
+        for _ in range(num_workers):
+            queue.put(DONE)
+
+    def consumer(queue, progress, task_id):
+        """Process files from queue and generate URLs"""
+        while True:
+            file_path = queue.get()
+
+            if file_path is DONE:
+                queue.task_done()
+                break
+
+            try:
+                result = generate_url(file_path)
+                with results_lock:
+                    results.append(result)
+                    processed_count[0] += 1
+                update_progress_display(progress, task_id)
+            finally:
+                queue.task_done()
+
+    # Concurrent processing with single merged progress bar
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+    ) as progress:
+        task = progress.add_task(f"[cyan]Discovering files in {base_path}", total=None)
+
+        # Start producer thread
+        producer_thread = Thread(
+            target=producer,
+            args=(file_paths_generator, file_queue, progress, task)
+        )
+        producer_thread.start()
+
+        # Start consumer threads
+        num_workers = min(multiprocessing.cpu_count() * 2, 8)  # 2x CPU cores, max 8
+
+        consumer_threads = []
+        for _ in range(num_workers):
+            t = Thread(target=consumer, args=(file_queue, progress, task))
+            t.start()
+            consumer_threads.append(t)
+
+        # Wait for producer to finish
+        producer_thread.join()
+
+        # Wait for all items to be processed
+        file_queue.join()
+
+        # Wait for all consumer threads to finish
+        for t in consumer_threads:
+            t.join()
+
+    return results
+
+
 def create_images_batch_from_cloud_storage(
     bucket_path: str,
     batch_id: str,
@@ -1674,7 +1904,7 @@ def create_images_batch_from_cloud_storage(
         api_key: Roboflow API key
         presign_expiration_seconds: Presigned URL expiration time (default: 24 hours)
 
-    Internally calls create_images_batch_from_references_file with generated URLs.
+    Internally calls trigger_images_references_ingest with generated presigned URLs.
     """
     try:
         import fsspec
@@ -1687,42 +1917,23 @@ def create_images_batch_from_cloud_storage(
     base_path, glob_pattern = _parse_bucket_path(bucket_path)
     fs = fsspec.filesystem(base_path.split("://")[0], **_get_fs_kwargs())
 
-    print("Listing files from cloud storage...")
-    if glob_pattern is None:
-        all_files = fs.glob(f"{base_path.rstrip('/')}/**/*")
-        image_files = [
-            f for f in all_files
-            if any(f.lower().endswith(f".{ext.lower()}") for ext in IMAGES_EXTENSIONS)
-        ]
-    else:
-        pattern_path = f"{base_path.rstrip('/')}/{glob_pattern}"
-        all_files = fs.glob(pattern_path)
-        image_files = [
-            f for f in all_files
-            if any(f.lower().endswith(f".{ext.lower()}") for ext in IMAGES_EXTENSIONS)
-        ]
+    # Stream and filter image files with progress
+    image_files_generator = _list_and_filter_files_streaming(
+        fs, base_path, glob_pattern, IMAGES_EXTENSIONS
+    )
 
-    if len(image_files) == 0:
-        pattern_desc = glob_pattern if glob_pattern else "**/* (all files)"
+    # Generate presigned URLs in parallel (consumes generator and shows progress)
+    references = _generate_presigned_urls_parallel(
+        fs, image_files_generator, base_path, presign_expiration_seconds
+    )
+
+    if len(references) == 0:
+        pattern_desc = glob_pattern if glob_pattern else "all files"
         raise ValueError(f"No image files found matching pattern: {pattern_desc}")
 
-    print(f"Found {len(image_files)} image files in cloud storage")
-    if len(image_files) > MAX_IMAGE_REFERENCES_IN_INGEST_REQUEST:
-        num_chunks = (len(image_files) + MAX_IMAGE_REFERENCES_IN_INGEST_REQUEST - 1) // MAX_IMAGE_REFERENCES_IN_INGEST_REQUEST
+    if len(references) > MAX_IMAGE_REFERENCES_IN_INGEST_REQUEST:
+        num_chunks = (len(references) + MAX_IMAGE_REFERENCES_IN_INGEST_REQUEST - 1) // MAX_IMAGE_REFERENCES_IN_INGEST_REQUEST
         print(f"Files will be split into {num_chunks} chunks of up to {MAX_IMAGE_REFERENCES_IN_INGEST_REQUEST} files each")
-
-    references = []
-    for file_path in tqdm(image_files, desc="Generating presigned URLs..."):
-        if not file_path.startswith(base_path.split("://")[0] + "://"):
-            file_path = f"{base_path.split('://')[0]}://{file_path}"
-
-        presigned_url = fs.sign(file_path, expiration=presign_expiration_seconds)
-        file_name = file_path.split("/")[-1]
-
-        references.append({
-            "name": file_name,
-            "url": presigned_url,
-        })
 
     workspace = get_workspace(api_key=api_key)
 
@@ -1785,7 +1996,7 @@ def create_videos_batch_from_cloud_storage(
         api_key: Roboflow API key
         presign_expiration_seconds: Presigned URL expiration time (default: 24 hours)
 
-    Internally calls create_videos_batch_from_references_file with generated URLs.
+    Internally calls trigger_videos_references_ingest with generated presigned URLs.
     """
     try:
         import fsspec
@@ -1798,41 +2009,23 @@ def create_videos_batch_from_cloud_storage(
     base_path, glob_pattern = _parse_bucket_path(bucket_path)
     fs = fsspec.filesystem(base_path.split("://")[0], **_get_fs_kwargs())
 
-    print("Listing files from cloud storage...")
-    if glob_pattern is None:
-        all_files = fs.glob(f"{base_path.rstrip('/')}/**/*")
-        video_files = [
-            f for f in all_files
-            if any(f.lower().endswith(f".{ext.lower()}") for ext in VIDEOS_EXTENSIONS)
-        ]
-    else:
-        pattern_path = f"{base_path.rstrip('/')}/{glob_pattern}"
-        all_files = fs.glob(pattern_path)
-        video_files = [
-            f for f in all_files
-            if any(f.lower().endswith(f".{ext.lower()}") for ext in VIDEOS_EXTENSIONS)
-        ]
+    # Stream and filter video files with progress
+    video_files_generator = _list_and_filter_files_streaming(
+        fs, base_path, glob_pattern, VIDEOS_EXTENSIONS
+    )
 
-    if len(video_files) == 0:
-        pattern_desc = glob_pattern if glob_pattern else "**/* (all files)"
+    # Generate presigned URLs in parallel (consumes generator and shows progress)
+    references = _generate_presigned_urls_parallel(
+        fs, video_files_generator, base_path, presign_expiration_seconds
+    )
+
+    if len(references) == 0:
+        pattern_desc = glob_pattern if glob_pattern else "all files"
         raise ValueError(f"No video files found matching pattern: {pattern_desc}")
 
-    print(f"Found {len(video_files)} video files in cloud storage")
-    if len(video_files) > SUGGESTED_MAX_VIDEOS_IN_BATCH:
-        print(f"Warning: Found {len(video_files)} videos. Suggested max is {SUGGESTED_MAX_VIDEOS_IN_BATCH} videos per batch.")
-
-    references = []
-    for file_path in tqdm(video_files, desc="Generating presigned URLs..."):
-        if not file_path.startswith(base_path.split("://")[0] + "://"):
-            file_path = f"{base_path.split('://')[0]}://{file_path}"
-
-        presigned_url = fs.sign(file_path, expiration=presign_expiration_seconds)
-        file_name = file_path.split("/")[-1]
-
-        references.append({
-            "name": file_name,
-            "url": presigned_url,
-        })
+    print(f"Found {len(references)} video files")
+    if len(references) > SUGGESTED_MAX_VIDEOS_IN_BATCH:
+        print(f"Warning: Found {len(references)} videos. Suggested max is {SUGGESTED_MAX_VIDEOS_IN_BATCH} videos per batch.")
 
     workspace = get_workspace(api_key=api_key)
 
