@@ -136,6 +136,7 @@ class UsageCollector:
             try:
                 self._plan_details = PlanDetails(
                     api_plan_endpoint_url=self._settings.api_plan_endpoint_url,
+                    webrtc_plans_endpoint_url=self._settings.webrtc_plans_endpoint_url,
                 )
                 logger.debug("Cached plan details")
             except Exception as exc:
