@@ -1732,9 +1732,42 @@ def _list_and_filter_files_streaming(
 
     Yields:
         File paths matching the pattern and extensions
+
+    Raises:
+        FileNotFoundError: If bucket/path doesn't exist
+        PermissionError: If access is denied
+        Exception: Other fsspec errors
     """
     protocol = base_path.split("://")[0]
     base_without_protocol = base_path.split("://", 1)[1].rstrip('/')
+
+    # Validate bucket/path exists before walking
+    # This catches silent failures where fs.walk() would return empty
+    try:
+        # Try to check if path exists - this will raise proper errors
+        # for wrong region, missing bucket, permission denied, etc.
+        if not fs.exists(base_path):
+            raise FileNotFoundError(
+                f"Cloud storage path does not exist: {base_path}\n"
+                f"Possible causes:\n"
+                f"  - Bucket doesn't exist\n"
+                f"  - Wrong region configured\n"
+                f"  - Path doesn't exist in bucket\n"
+                f"Check your bucket name and region settings."
+            )
+    except FileNotFoundError:
+        raise  # Re-raise our custom error
+    except Exception as e:
+        # fs.exists() can raise various errors
+        raise Exception(
+            f"Failed to access cloud storage path: {base_path}\n"
+            f"Error: {type(e).__name__}: {str(e)}\n"
+            f"Possible causes:\n"
+            f"  - Invalid credentials (check AWS_PROFILE, AWS_ACCESS_KEY_ID, etc.)\n"
+            f"  - Wrong region (check AWS_DEFAULT_REGION or endpoint URL)\n"
+            f"  - Permission denied (check bucket permissions)\n"
+            f"  - Network connectivity issues"
+        ) from e
 
     for root, dirs, files in fs.walk(base_path):
         # Remove protocol from root for pattern matching
@@ -1790,9 +1823,11 @@ def _generate_presigned_urls_parallel(
     from threading import Thread
     from rich.progress import Progress, BarColumn, SpinnerColumn, TextColumn
     import multiprocessing
+    import traceback
 
     protocol = base_path.split("://")[0]
     file_queue = Queue(maxsize=0)  # Unlimited queue for continuous listing
+    exception_queue = Queue()  # Thread-safe error collection
     results = []
     results_lock = Lock()
 
@@ -1818,19 +1853,29 @@ def _generate_presigned_urls_parallel(
         desc = f"[cyan]Discovered {discovered_count[0]} files in {base_path} [green]{processed_count[0]} URLs generated"
         progress.update(task_id, description=desc)
 
-    def producer(generator, queue, progress, task_id):
+    def producer(generator, queue, progress, task_id, exception_queue):
         """Feed files from generator into queue"""
-        for file_path in generator:
-            queue.put(file_path)
-            discovered_count[0] += 1
-            update_progress_display(progress, task_id)
+        try:
+            for file_path in generator:
+                queue.put(file_path)
+                discovered_count[0] += 1
+                update_progress_display(progress, task_id)
+        except Exception as e:
+            # Capture any errors from fs.walk() or file discovery
+            error_info = {
+                'error': e,
+                'traceback': traceback.format_exc(),
+                'context': 'File discovery (fs.walk)',
+                'base_path': base_path
+            }
+            exception_queue.put(error_info)
+        finally:
+            # Signal completion to all workers (even if error occurred)
+            num_workers = min(multiprocessing.cpu_count() * 2, 8)
+            for _ in range(num_workers):
+                queue.put(DONE)
 
-        # Signal completion to all workers
-        num_workers = min(multiprocessing.cpu_count() * 2, 8)
-        for _ in range(num_workers):
-            queue.put(DONE)
-
-    def consumer(queue, progress, task_id):
+    def consumer(queue, progress, task_id, exception_queue):
         """Process files from queue and generate URLs"""
         while True:
             file_path = queue.get()
@@ -1845,6 +1890,15 @@ def _generate_presigned_urls_parallel(
                     results.append(result)
                     processed_count[0] += 1
                 update_progress_display(progress, task_id)
+            except Exception as e:
+                # Capture errors from fs.sign() or URL generation
+                error_info = {
+                    'error': e,
+                    'traceback': traceback.format_exc(),
+                    'context': 'Presigned URL generation (fs.sign)',
+                    'file_path': file_path
+                }
+                exception_queue.put(error_info)
             finally:
                 queue.task_done()
 
@@ -1859,7 +1913,7 @@ def _generate_presigned_urls_parallel(
         # Start producer thread
         producer_thread = Thread(
             target=producer,
-            args=(file_paths_generator, file_queue, progress, task)
+            args=(file_paths_generator, file_queue, progress, task, exception_queue)
         )
         producer_thread.start()
 
@@ -1868,7 +1922,7 @@ def _generate_presigned_urls_parallel(
 
         consumer_threads = []
         for _ in range(num_workers):
-            t = Thread(target=consumer, args=(file_queue, progress, task))
+            t = Thread(target=consumer, args=(file_queue, progress, task, exception_queue))
             t.start()
             consumer_threads.append(t)
 
@@ -1881,6 +1935,32 @@ def _generate_presigned_urls_parallel(
         # Wait for all consumer threads to finish
         for t in consumer_threads:
             t.join()
+
+    # Check if any errors occurred during processing
+    if not exception_queue.empty():
+        errors = []
+        while not exception_queue.empty():
+            errors.append(exception_queue.get())
+
+        # Report the first error with full context
+        first_error = errors[0]
+        error_msg = (
+            f"Cloud storage error during {first_error['context']}:\n"
+            f"Error: {type(first_error['error']).__name__}: {str(first_error['error'])}\n"
+        )
+
+        # Add context-specific details
+        if 'base_path' in first_error:
+            error_msg += f"Base path: {first_error['base_path']}\n"
+        if 'file_path' in first_error:
+            error_msg += f"File: {first_error['file_path']}\n"
+
+        # If multiple errors, mention it
+        if len(errors) > 1:
+            error_msg += f"\n(Plus {len(errors) - 1} additional error(s))"
+
+        # Re-raise the original exception with enhanced context
+        raise type(first_error['error'])(error_msg) from first_error['error']
 
     return results
 
@@ -1928,8 +2008,12 @@ def create_images_batch_from_cloud_storage(
     )
 
     if len(references) == 0:
-        pattern_desc = glob_pattern if glob_pattern else "all files"
-        raise ValueError(f"No image files found matching pattern: {pattern_desc}")
+        pattern_desc = glob_pattern if glob_pattern else "all image files"
+        raise ValueError(
+            f"No image files found matching pattern: {pattern_desc} in {base_path}\n"
+            f"Supported extensions: {', '.join(IMAGES_EXTENSIONS)}\n"
+            f"Note: If you're getting connection errors, check your cloud credentials and network access."
+        )
 
     if len(references) > MAX_IMAGE_REFERENCES_IN_INGEST_REQUEST:
         num_chunks = (len(references) + MAX_IMAGE_REFERENCES_IN_INGEST_REQUEST - 1) // MAX_IMAGE_REFERENCES_IN_INGEST_REQUEST
@@ -2020,8 +2104,12 @@ def create_videos_batch_from_cloud_storage(
     )
 
     if len(references) == 0:
-        pattern_desc = glob_pattern if glob_pattern else "all files"
-        raise ValueError(f"No video files found matching pattern: {pattern_desc}")
+        pattern_desc = glob_pattern if glob_pattern else "all video files"
+        raise ValueError(
+            f"No video files found matching pattern: {pattern_desc} in {base_path}\n"
+            f"Supported extensions: {', '.join(VIDEOS_EXTENSIONS)}\n"
+            f"Note: If you're getting connection errors, check your cloud credentials and network access."
+        )
 
     print(f"Found {len(references)} video files")
     if len(references) > SUGGESTED_MAX_VIDEOS_IN_BATCH:
