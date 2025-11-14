@@ -124,10 +124,13 @@ if modal is not None:
     }
 
     class RTCPeerConnectionModal:
-        def __init__(self):
-            self._webrtc_request: Optional[WebRTCWorkerRequest] = None
-            self._exec_session_started = Optional[datetime.datetime] = None
-            self._exec_session_stopped: Optional[datetime.datetime] = None
+        _webrtc_request: Optional[WebRTCWorkerRequest] = modal.parameter(default=None)
+        _exec_session_started: Optional[datetime.datetime] = modal.parameter(
+            default=None
+        )
+        _exec_session_stopped: Optional[datetime.datetime] = modal.parameter(
+            default=None
+        )
 
         @modal.method()
         def rtc_peer_connection_modal(
