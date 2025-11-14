@@ -556,29 +556,29 @@ def _opc_connect_and_write_value(
         logger.debug(
             f"OPC Writer writing value '{value}' to variable with type '{value_type}'"
         )
-        # Use proper OPC UA type specification using VariantType enum
+        # Convert to primitive types before setting value
         if value_type in [BOOLEAN_KIND, "Boolean"]:
-            var.set_value(value, VariantType.Boolean)
+            var.set_value(bool(value), VariantType.Boolean)
         elif value_type == "Double":
-            var.set_value(value, VariantType.Double)
+            var.set_value(float(value), VariantType.Double)
         elif value_type in [FLOAT_KIND, "Float"]:
-            var.set_value(value, VariantType.Float)
+            var.set_value(float(value), VariantType.Float)
         elif value_type == "Int16":
-            var.set_value(value, VariantType.Int16)
+            var.set_value(int(value), VariantType.Int16)
         elif value_type == "Int32":
-            var.set_value(value, VariantType.Int32)
+            var.set_value(int(value), VariantType.Int32)
         elif value_type in ["Int64", INTEGER_KIND, "Integer"]:
-            var.set_value(value, VariantType.Int64)
+            var.set_value(int(value), VariantType.Int64)
         elif value_type == "SByte":
-            var.set_value(value, VariantType.SByte)
+            var.set_value(int(value), VariantType.SByte)
         elif value_type in [STRING_KIND, "String"]:
-            var.set_value(value, VariantType.String)
+            var.set_value(str(value), VariantType.String)
         elif value_type == "UInt16":
-            var.set_value(value, VariantType.UInt16)
+            var.set_value(int(value), VariantType.UInt16)
         elif value_type == "UInt32":
-            var.set_value(value, VariantType.UInt32)
+            var.set_value(int(value), VariantType.UInt32)
         elif value_type == "UInt64":
-            var.set_value(value, VariantType.UInt64)
+            var.set_value(int(value), VariantType.UInt64)
         else:
             logger.error(f"OPC Writer unsupported value type: {value_type}")
             safe_disconnect(client)
