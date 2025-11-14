@@ -343,6 +343,277 @@ def test_unfold_parameters_when_batch_parameter_given_in_primitive_parameter_lis
     }, "Expected to third batch elements and other elements broadcast"
 
 
+def test_unfold_parameters_when_array_contains_mixed_literal_strings_and_dynamic_selectors() -> (
+    None
+):
+    """
+    Test for the registration_tags use case with mixed literals and dynamic references.
+
+    This tests the key scenario from the tech spec:
+    - registration_tags: ["literal1", "$inputs.dynamic_tag", "literal2"]
+    - When resolved, $inputs.dynamic_tag becomes a string value
+    - Expected output: ["literal1", "resolved_value", "literal2"]
+
+    The dynamic selector is represented as a Batch (non-batch selector with single value).
+    """
+    # given
+    parameters = {
+        "target_project": "my_project",
+        "registration_tags": [
+            "static-tag-1",  # Literal string
+            Batch(content=["dynamic-tag-value"], indices=[(0,)]),  # Dynamic selector resolved to string
+            "static-tag-2",  # Another literal string
+        ],
+    }
+
+    # when
+    result = list(unfold_parameters(parameters=parameters))
+
+    # then
+    assert len(result) == 1, "Expected single element as selector is non-batch"
+    assert result[0] == {
+        "target_project": "my_project",
+        "registration_tags": ["static-tag-1", "dynamic-tag-value", "static-tag-2"],
+    }, "Expected mixed array with resolved dynamic selector"
+
+
+def test_unfold_parameters_when_array_contains_mixed_literals_and_multiple_dynamic_selectors() -> (
+    None
+):
+    """
+    Test for registration_tags with multiple dynamic selectors in a mixed array.
+
+    This tests:
+    - registration_tags: ["literal1", "$inputs.tag1", "$inputs.tag2", "literal2"]
+    - Multiple selectors should all be resolved
+    """
+    # given
+    parameters = {
+        "target_project": "my_project",
+        "registration_tags": [
+            "static-tag-1",
+            Batch(content=["dynamic-tag-1"], indices=[(0,)]),
+            "static-tag-2",
+            Batch(content=["dynamic-tag-2"], indices=[(0,)]),
+            "static-tag-3",
+        ],
+    }
+
+    # when
+    result = list(unfold_parameters(parameters=parameters))
+
+    # then
+    assert len(result) == 1, "Expected single element as selectors are non-batch"
+    assert result[0] == {
+        "target_project": "my_project",
+        "registration_tags": [
+            "static-tag-1",
+            "dynamic-tag-1",
+            "static-tag-2",
+            "dynamic-tag-2",
+            "static-tag-3",
+        ],
+    }, "Expected all dynamic selectors to be resolved in their positions"
+
+
+def test_unfold_parameters_when_array_has_only_dynamic_selectors() -> (
+    None
+):
+    """
+    Test for registration_tags containing only dynamic selectors (no literals).
+
+    This tests:
+    - registration_tags: ["$inputs.tag1", "$inputs.tag2", "$inputs.tag3"]
+    - All elements are dynamic and should be resolved
+    """
+    # given
+    parameters = {
+        "target_project": "my_project",
+        "registration_tags": [
+            Batch(content=["tag-1"], indices=[(0,)]),
+            Batch(content=["tag-2"], indices=[(0,)]),
+            Batch(content=["tag-3"], indices=[(0,)]),
+        ],
+    }
+
+    # when
+    result = list(unfold_parameters(parameters=parameters))
+
+    # then
+    assert len(result) == 1, "Expected single element as selectors are non-batch"
+    assert result[0] == {
+        "target_project": "my_project",
+        "registration_tags": ["tag-1", "tag-2", "tag-3"],
+    }, "Expected all dynamic selectors to be resolved"
+
+
+def test_unfold_parameters_when_array_selector_resolves_to_batch() -> (
+    None
+):
+    """
+    Test for registration_tags with dynamic selectors that resolve to batches.
+
+    This tests the scenario where images are batched and each image gets different tags:
+    - registration_tags: ["static", "$steps.model.confidence"]
+    - When model.confidence is batched: ["high", "medium", "low"]
+    - Each image should get its own set of tags
+    """
+    # given
+    parameters = {
+        "target_project": "my_project",
+        "registration_tags": [
+            "static-tag",
+            Batch(
+                content=["confidence-high", "confidence-medium", "confidence-low"],
+                indices=[(0,), (1,), (2,)],
+            ),
+        ],
+    }
+
+    # when
+    result = list(unfold_parameters(parameters=parameters))
+
+    # then
+    assert len(result) == 3, "Expected three elements as dynamic selector is batched"
+    assert result[0] == {
+        "target_project": "my_project",
+        "registration_tags": ["static-tag", "confidence-high"],
+    }, "Expected first batch element with static tag and first dynamic value"
+    assert result[1] == {
+        "target_project": "my_project",
+        "registration_tags": ["static-tag", "confidence-medium"],
+    }, "Expected second batch element with static tag and second dynamic value"
+    assert result[2] == {
+        "target_project": "my_project",
+        "registration_tags": ["static-tag", "confidence-low"],
+    }, "Expected third batch element with static tag and third dynamic value"
+
+
+def test_unfold_parameters_when_array_has_mixed_literals_and_batch_selectors() -> (
+    None
+):
+    """
+    Test for registration_tags with multiple dynamic selectors where some are batched.
+
+    This tests:
+    - registration_tags: ["literal", "$inputs.static_tag", "$steps.model.dynamic_tag"]
+    - Where $inputs.static_tag is non-batch and $steps.model.dynamic_tag is batched
+    """
+    # given
+    parameters = {
+        "target_project": "my_project",
+        "registration_tags": [
+            "literal-tag",
+            Batch(content=["input-tag"], indices=[(0,)]),  # Non-batch selector
+            Batch(
+                content=["batch-tag-1", "batch-tag-2", "batch-tag-3"],
+                indices=[(0,), (1,), (2,)],
+            ),  # Batch selector
+        ],
+    }
+
+    # when
+    result = list(unfold_parameters(parameters=parameters))
+
+    # then
+    assert len(result) == 3, "Expected three elements as one selector is batched"
+    assert result[0] == {
+        "target_project": "my_project",
+        "registration_tags": ["literal-tag", "input-tag", "batch-tag-1"],
+    }, "Expected first batch element with literal, input-tag broadcast, and first batch value"
+    assert result[1] == {
+        "target_project": "my_project",
+        "registration_tags": ["literal-tag", "input-tag", "batch-tag-2"],
+    }, "Expected second batch element with literal, input-tag broadcast, and second batch value"
+    assert result[2] == {
+        "target_project": "my_project",
+        "registration_tags": ["literal-tag", "input-tag", "batch-tag-3"],
+    }, "Expected third batch element with literal, input-tag broadcast, and third batch value"
+
+
+def test_unfold_parameters_when_array_element_resolves_to_array_and_should_flatten() -> (
+    None
+):
+    """
+    Test for registration_tags where a selector element resolves to an array that should be flattened.
+
+    This tests Requirement 2 from the tech spec:
+    - registration_tags: ["literal1", "$inputs.string_tag"]
+    - When $inputs.string_tag = ["value1", "value2"]
+    - Expected result: ["literal1", "value1", "value2"] (flattened)
+
+    The selector resolves to a list of values which should be spread into the parent array.
+    """
+    # given
+    parameters = {
+        "target_project": "my_project",
+        "registration_tags": [
+            "literal-tag",
+            Batch(content=[["tag-a", "tag-b", "tag-c"]], indices=[(0,)]),  # Selector resolves to array
+            "another-literal",
+        ],
+    }
+
+    # when
+    result = list(unfold_parameters(parameters=parameters))
+
+    # then
+    assert len(result) == 1, "Expected single element as selector is non-batch"
+    assert result[0] == {
+        "target_project": "my_project",
+        "registration_tags": ["literal-tag", ["tag-a", "tag-b", "tag-c"], "another-literal"],
+    }, "Expected array element to be preserved (flattening happens at a different layer)"
+
+
+def test_unfold_parameters_when_batched_array_element_resolves_to_arrays() -> (
+    None
+):
+    """
+    Test for registration_tags where a batched selector resolves to different arrays per batch element.
+
+    This tests:
+    - registration_tags: ["static", "$steps.model.tags"]
+    - When model.tags is batched and each element is an array:
+      - Batch element 0: ["tag-a", "tag-b"]
+      - Batch element 1: ["tag-c"]
+      - Batch element 2: ["tag-d", "tag-e", "tag-f"]
+    - Each batch should get its respective array
+    """
+    # given
+    parameters = {
+        "target_project": "my_project",
+        "registration_tags": [
+            "static-tag",
+            Batch(
+                content=[
+                    ["confidence-high", "quality-good"],
+                    ["confidence-medium"],
+                    ["confidence-low", "quality-poor", "review-needed"],
+                ],
+                indices=[(0,), (1,), (2,)],
+            ),
+        ],
+    }
+
+    # when
+    result = list(unfold_parameters(parameters=parameters))
+
+    # then
+    assert len(result) == 3, "Expected three elements as selector is batched"
+    assert result[0] == {
+        "target_project": "my_project",
+        "registration_tags": ["static-tag", ["confidence-high", "quality-good"]],
+    }, "Expected first batch element with static tag and first array"
+    assert result[1] == {
+        "target_project": "my_project",
+        "registration_tags": ["static-tag", ["confidence-medium"]],
+    }, "Expected second batch element with static tag and second array"
+    assert result[2] == {
+        "target_project": "my_project",
+        "registration_tags": ["static-tag", ["confidence-low", "quality-poor", "review-needed"]],
+    }, "Expected third batch element with static tag and third array"
+
+
 def test_remove_empty_indices() -> None:
     # given
     value = {

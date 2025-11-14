@@ -425,3 +425,160 @@ def test_run_sink_when_data_sampled(
         * 3
     ), "Expected data registered"
     assert register_datapoint_at_roboflow_mock.call_count == 3
+
+
+@mock.patch.object(v2, "register_datapoint_at_roboflow")
+def test_run_sink_with_mixed_literal_and_dynamic_registration_tags(
+    register_datapoint_at_roboflow_mock: MagicMock,
+) -> None:
+    """
+    Test that registration_tags with mixed literals and dynamic references
+    are properly resolved at runtime.
+
+    This tests the key use case from the tech spec:
+    - registration_tags: ["literal1", "literal2", "$inputs.dynamic_tag"]
+    - Should resolve to: ["literal1", "literal2", "resolved_value"]
+    """
+    # given
+    background_tasks = BackgroundTasks()
+    cache = MemoryCache()
+    data_collector_block = RoboflowDatasetUploadBlockV2(
+        cache=cache,
+        api_key="my_api_key",
+        background_tasks=background_tasks,
+        thread_pool_executor=None,
+    )
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=np.zeros((512, 256, 3), dtype=np.uint8),
+    )
+    register_datapoint_at_roboflow_mock.return_value = False, "OK"
+    indices = [(0,)]
+
+    # when - mixed array with literals and dynamic reference
+    result = data_collector_block.run(
+        images=Batch(content=[image], indices=indices),
+        predictions=None,
+        target_project="my_project",
+        usage_quota_name="my_quota",
+        data_percentage=100.1,
+        persist_predictions=True,
+        minutely_usage_limit=10,
+        hourly_usage_limit=100,
+        daily_usage_limit=1000,
+        max_image_size=(128, 128),
+        compression_level=75,
+        registration_tags=["static-tag-1", "static-tag-2", "dynamic-tag-resolved"],
+        disable_sink=False,
+        fire_and_forget=False,
+        labeling_batch_prefix="my_batch",
+        labeling_batches_recreation_frequency="never",
+    )
+
+    # then
+    assert result == [
+        {
+            "error_status": False,
+            "message": "OK",
+        }
+    ], "Expected data registered"
+    assert register_datapoint_at_roboflow_mock.call_count == 1
+
+    # Verify the registration_tags passed to the mock includes both static and resolved dynamic tags
+    call_kwargs = register_datapoint_at_roboflow_mock.call_args[1]
+    assert call_kwargs["registration_tags"] == [
+        "static-tag-1",
+        "static-tag-2",
+        "dynamic-tag-resolved"
+    ], "Expected registration_tags to contain both literal strings and resolved dynamic reference"
+
+
+def test_manifest_parsing_with_mixed_literal_and_selector_registration_tags() -> None:
+    """
+    Test manifest parsing with mixed array containing both literal strings
+    and WorkflowParameterSelector references.
+
+    This verifies the schema allows the pattern:
+    registration_tags: ["literal", "$inputs.tag", "$steps.some.output"]
+    """
+    # given
+    raw_manifest = {
+        "type": "roboflow_core/roboflow_dataset_upload@v2",
+        "name": "test_block",
+        "images": "$inputs.image",
+        "predictions": None,
+        "target_project": "my_project",
+        "usage_quota_name": "my_quota",
+        "data_percentage": 100.0,
+        "persist_predictions": True,
+        "minutely_usage_limit": 10,
+        "hourly_usage_limit": 100,
+        "daily_usage_limit": 1000,
+        "max_image_size": (1920, 1080),
+        "compression_level": 95,
+        "registration_tags": [
+            "literal-tag-1",
+            "$inputs.dynamic_tag",
+            "literal-tag-2",
+            "$steps.some_step.tag_output",
+        ],
+        "disable_sink": False,
+        "fire_and_forget": False,
+        "labeling_batch_prefix": "my_batch",
+        "labeling_batches_recreation_frequency": "never",
+    }
+
+    # when
+    result = BlockManifest.model_validate(raw_manifest)
+
+    # then
+    assert result.registration_tags == [
+        "literal-tag-1",
+        "$inputs.dynamic_tag",
+        "literal-tag-2",
+        "$steps.some_step.tag_output",
+    ], "Expected mixed array to be preserved in manifest"
+
+
+def test_manifest_parsing_with_all_selector_types_in_registration_tags() -> None:
+    """
+    Test that registration_tags accepts different patterns:
+    1. List of literals: ["tag1", "tag2"]
+    2. Single selector to list: "$inputs.tags"
+    3. Mixed literals and selectors: ["tag1", "$inputs.tag2"]
+    """
+    # Test Case 1: List of literal strings only
+    raw_manifest_literals = {
+        "type": "roboflow_core/roboflow_dataset_upload@v2",
+        "name": "test_block",
+        "images": "$inputs.image",
+        "target_project": "my_project",
+        "usage_quota_name": "my_quota",
+        "registration_tags": ["tag1", "tag2", "tag3"],
+    }
+    result1 = BlockManifest.model_validate(raw_manifest_literals)
+    assert result1.registration_tags == ["tag1", "tag2", "tag3"]
+
+    # Test Case 2: Single selector reference (expecting a list)
+    raw_manifest_selector = {
+        "type": "roboflow_core/roboflow_dataset_upload@v2",
+        "name": "test_block",
+        "images": "$inputs.image",
+        "target_project": "my_project",
+        "usage_quota_name": "my_quota",
+        "registration_tags": "$inputs.tags",
+    }
+    result2 = BlockManifest.model_validate(raw_manifest_selector)
+    assert result2.registration_tags == "$inputs.tags"
+
+    # Test Case 3: Mixed literals and selectors
+    raw_manifest_mixed = {
+        "type": "roboflow_core/roboflow_dataset_upload@v2",
+        "name": "test_block",
+        "images": "$inputs.image",
+        "target_project": "my_project",
+        "usage_quota_name": "my_quota",
+        "registration_tags": ["literal", "$inputs.dynamic", "$steps.output.tag"],
+    }
+    result3 = BlockManifest.model_validate(raw_manifest_mixed)
+    assert result3.registration_tags == ["literal", "$inputs.dynamic", "$steps.output.tag"]

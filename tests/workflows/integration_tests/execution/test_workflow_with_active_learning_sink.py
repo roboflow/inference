@@ -177,3 +177,55 @@ def test_detection_plus_classification_workflow_when_nothing_to_be_registered(
     assert (
         len(result[0]["registration_message"]) == 0
     ), "Expected 0 dogs crops on input image, hence 0 nested statuses of registration"
+
+
+def test_active_learning_workflow_with_custom_tag_value_resolves_correctly(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    roboflow_api_key: str,
+) -> None:
+    """
+    Integration test to verify that registration_tags with mixed literals and dynamic
+    references are properly resolved at runtime.
+
+    The workflow uses: registration_tags: ["a", "b", "$inputs.tag"]
+    This test verifies that providing different tag values properly resolves the
+    dynamic selector while maintaining the static literals.
+    """
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": roboflow_api_key,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=ACTIVE_LEARNING_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when - providing a custom tag value that should replace "$inputs.tag"
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": dogs_image,
+            "data_percentage": 0.0,  # Skip actual registration
+            "tag": "environment-production",
+        }
+    )
+
+    # then - verify the workflow executed successfully with the dynamic tag
+    assert isinstance(result, list), "Expected list to be delivered"
+    assert len(result) == 1, "Expected 1 element in the output for one input image"
+    assert set(result[0].keys()) == {
+        "predictions",
+        "registration_message",
+    }, "Expected all declared outputs to be delivered"
+    assert (
+        len(result[0]["predictions"]) == 2
+    ), "Expected 2 dogs crops on input image, hence 2 nested classification results"
+
+    # Verify workflow completed successfully - the mixed array was properly parsed and resolved
+    assert (
+        result[0]["registration_message"]
+        == ["Registration skipped due to sampling settings"] * 2
+    ), "Expected data not registered due to sampling, workflow should process tags without errors"

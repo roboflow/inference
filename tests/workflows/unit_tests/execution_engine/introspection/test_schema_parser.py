@@ -531,3 +531,328 @@ def test_parse_block_manifest_when_manifest_defines_selector_inside_dictionary()
             )
         },
     )
+
+
+def test_parse_block_manifest_when_manifest_defines_list_of_strings_and_string_selectors() -> (
+    None
+):
+    """
+    Test for mixed array with literal strings and WorkflowParameterSelector(STRING_KIND).
+    This tests the registration_tags use case: ["literal", "$inputs.tag"]
+    """
+    # given
+
+    class Manifest(WorkflowBlockManifest):
+        type: Literal["MyManifest"]
+        name: str = Field(description="name field")
+        registration_tags: List[Union[WorkflowParameterSelector(kind=[STRING_KIND]), str]]
+
+        @classmethod
+        def describe_outputs(cls) -> List[OutputDefinition]:
+            return []
+
+    # when
+    manifest_metadata = parse_block_manifest(manifest_type=Manifest)
+
+    # then
+    assert manifest_metadata == BlockManifestMetadata(
+        primitive_types={
+            "name": PrimitiveTypeDefinition(
+                property_name="name",
+                property_description="name field",
+                type_annotation="str",
+            ),
+            "registration_tags": PrimitiveTypeDefinition(
+                property_name="registration_tags",
+                property_description="not available",
+                type_annotation="List[str]",
+            ),
+        },
+        selectors={
+            "registration_tags": SelectorDefinition(
+                property_name="registration_tags",
+                property_description="not available",
+                allowed_references=[
+                    ReferenceDefinition(
+                        selected_element="workflow_parameter",
+                        kind=[STRING_KIND],
+                        points_to_batch={False},
+                    ),
+                ],
+                is_list_element=True,
+                is_dict_element=False,
+                dimensionality_offset=0,
+                is_dimensionality_reference_property=False,
+            )
+        },
+    )
+
+
+def test_parse_block_manifest_when_manifest_defines_union_of_string_and_string_selector() -> (
+    None
+):
+    """
+    Test for a property that can be either a string OR a selector.
+    This tests the case: registration_tags: Union[str, WorkflowParameterSelector]
+    Expected to resolve to just a string OR a selector to a string.
+    """
+    # given
+
+    class Manifest(WorkflowBlockManifest):
+        type: Literal["MyManifest"]
+        name: str = Field(description="name field")
+        single_tag: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str]
+
+        @classmethod
+        def describe_outputs(cls) -> List[OutputDefinition]:
+            return []
+
+    # when
+    manifest_metadata = parse_block_manifest(manifest_type=Manifest)
+
+    # then
+    assert manifest_metadata == BlockManifestMetadata(
+        primitive_types={
+            "name": PrimitiveTypeDefinition(
+                property_name="name",
+                property_description="name field",
+                type_annotation="str",
+            ),
+            "single_tag": PrimitiveTypeDefinition(
+                property_name="single_tag",
+                property_description="not available",
+                type_annotation="str",
+            ),
+        },
+        selectors={
+            "single_tag": SelectorDefinition(
+                property_name="single_tag",
+                property_description="not available",
+                allowed_references=[
+                    ReferenceDefinition(
+                        selected_element="workflow_parameter",
+                        kind=[STRING_KIND],
+                        points_to_batch={False},
+                    ),
+                ],
+                is_list_element=False,
+                is_dict_element=False,
+                dimensionality_offset=0,
+                is_dimensionality_reference_property=False,
+            )
+        },
+    )
+
+
+def test_parse_block_manifest_when_manifest_defines_list_of_strings_and_list_selector() -> (
+    None
+):
+    """
+    Test for a property that can be a list of strings OR a selector to a list.
+    This tests: Union[List[str], WorkflowParameterSelector]
+    Expected to handle the case where $inputs.tags itself is an array.
+    """
+    # given
+
+    class Manifest(WorkflowBlockManifest):
+        type: Literal["MyManifest"]
+        name: str = Field(description="name field")
+        tags: Union[
+            List[str],
+            WorkflowParameterSelector(kind=[STRING_KIND]),
+        ]
+
+        @classmethod
+        def describe_outputs(cls) -> List[OutputDefinition]:
+            return []
+
+    # when
+    manifest_metadata = parse_block_manifest(manifest_type=Manifest)
+
+    # then
+    assert manifest_metadata == BlockManifestMetadata(
+        primitive_types={
+            "name": PrimitiveTypeDefinition(
+                property_name="name",
+                property_description="name field",
+                type_annotation="str",
+            ),
+            "tags": PrimitiveTypeDefinition(
+                property_name="tags",
+                property_description="not available",
+                type_annotation="List[str]",
+            ),
+        },
+        selectors={
+            "tags": SelectorDefinition(
+                property_name="tags",
+                property_description="not available",
+                allowed_references=[
+                    ReferenceDefinition(
+                        selected_element="workflow_parameter",
+                        kind=[STRING_KIND],
+                        points_to_batch={False},
+                    ),
+                ],
+                is_list_element=False,
+                is_dict_element=False,
+                dimensionality_offset=0,
+                is_dimensionality_reference_property=False,
+            )
+        },
+    )
+
+
+def test_parse_block_manifest_when_manifest_defines_only_list_of_strings() -> (
+    None
+):
+    """
+    Test baseline case: just a list of strings with no selectors.
+    This should only create a primitive type definition.
+    """
+    # given
+
+    class Manifest(WorkflowBlockManifest):
+        type: Literal["MyManifest"]
+        name: str = Field(description="name field")
+        static_tags: List[str]
+
+        @classmethod
+        def describe_outputs(cls) -> List[OutputDefinition]:
+            return []
+
+    # when
+    manifest_metadata = parse_block_manifest(manifest_type=Manifest)
+
+    # then
+    assert manifest_metadata == BlockManifestMetadata(
+        primitive_types={
+            "name": PrimitiveTypeDefinition(
+                property_name="name",
+                property_description="name field",
+                type_annotation="str",
+            ),
+            "static_tags": PrimitiveTypeDefinition(
+                property_name="static_tags",
+                property_description="not available",
+                type_annotation="List[str]",
+            ),
+        },
+        selectors={},
+    )
+
+
+def test_parse_block_manifest_when_manifest_defines_only_string_selector_list() -> (
+    None
+):
+    """
+    Test a list containing only selectors (no literal strings).
+    This tests: List[WorkflowParameterSelector(STRING_KIND)]
+    """
+    # given
+
+    class Manifest(WorkflowBlockManifest):
+        type: Literal["MyManifest"]
+        name: str = Field(description="name field")
+        dynamic_tags: List[WorkflowParameterSelector(kind=[STRING_KIND])]
+
+        @classmethod
+        def describe_outputs(cls) -> List[OutputDefinition]:
+            return []
+
+    # when
+    manifest_metadata = parse_block_manifest(manifest_type=Manifest)
+
+    # then
+    assert manifest_metadata == BlockManifestMetadata(
+        primitive_types={
+            "name": PrimitiveTypeDefinition(
+                property_name="name",
+                property_description="name field",
+                type_annotation="str",
+            ),
+        },
+        selectors={
+            "dynamic_tags": SelectorDefinition(
+                property_name="dynamic_tags",
+                property_description="not available",
+                allowed_references=[
+                    ReferenceDefinition(
+                        selected_element="workflow_parameter",
+                        kind=[STRING_KIND],
+                        points_to_batch={False},
+                    ),
+                ],
+                is_list_element=True,
+                is_dict_element=False,
+                dimensionality_offset=0,
+                is_dimensionality_reference_property=False,
+            )
+        },
+    )
+
+
+def test_parse_block_manifest_when_manifest_defines_mixed_selectors_and_step_output_selectors() -> (
+    None
+):
+    """
+    Test mixed array with different selector types (WorkflowParameter and StepOutput).
+    This tests: List[Union[WorkflowParameterSelector, StepOutputSelector, str]]
+    """
+    # given
+
+    class Manifest(WorkflowBlockManifest):
+        type: Literal["MyManifest"]
+        name: str = Field(description="name field")
+        mixed_references: List[
+            Union[
+                WorkflowParameterSelector(kind=[STRING_KIND]),
+                StepOutputSelector(kind=[STRING_KIND]),
+                str,
+            ]
+        ]
+
+        @classmethod
+        def describe_outputs(cls) -> List[OutputDefinition]:
+            return []
+
+    # when
+    manifest_metadata = parse_block_manifest(manifest_type=Manifest)
+
+    # then
+    assert manifest_metadata == BlockManifestMetadata(
+        primitive_types={
+            "name": PrimitiveTypeDefinition(
+                property_name="name",
+                property_description="name field",
+                type_annotation="str",
+            ),
+            "mixed_references": PrimitiveTypeDefinition(
+                property_name="mixed_references",
+                property_description="not available",
+                type_annotation="List[str]",
+            ),
+        },
+        selectors={
+            "mixed_references": SelectorDefinition(
+                property_name="mixed_references",
+                property_description="not available",
+                allowed_references=[
+                    ReferenceDefinition(
+                        selected_element="workflow_parameter",
+                        kind=[STRING_KIND],
+                        points_to_batch={False},
+                    ),
+                    ReferenceDefinition(
+                        selected_element="step_output",
+                        kind=[STRING_KIND],
+                        points_to_batch={True},
+                    ),
+                ],
+                is_list_element=True,
+                is_dict_element=False,
+                dimensionality_offset=0,
+                is_dimensionality_reference_property=False,
+            )
+        },
+    )
