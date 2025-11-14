@@ -4,11 +4,20 @@ from datetime import datetime
 from functools import partial
 from typing import List, Literal, Optional, Tuple, Type, Union
 
+from asyncua import ua
 from asyncua.client import Client as AsyncClient
 from asyncua.sync import Client, sync_async_client_method
+from asyncua.ua import VariantType
 from asyncua.ua.uaerrors import BadNoMatch, BadTypeMismatch, BadUserAccessDenied
 from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field
+
+
+class UnsupportedTypeError(Exception):
+    """Raised when an unsupported value type is specified"""
+
+    pass
+
 
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
@@ -171,11 +180,25 @@ class BlockManifest(WorkflowBlockManifest):
     )
     value_type: Union[
         Selector(kind=[STRING_KIND]),
-        Literal["Boolean", "Float", "Integer", "String"],
+        Literal[
+            "Boolean",
+            "Double",
+            "Float",
+            "Int16",
+            "Int32",
+            "Int64",
+            "Integer",
+            "SByte",
+            "String",
+            "UInt16",
+            "UInt32",
+            "UInt64",
+        ],
     ] = Field(
         default="String",
-        description="The type of the value to be written to the target variable on the OPC UA server.",
-        examples=["Boolean", "Float", "Integer", "String"],
+        description="The type of the value to be written to the target variable on the OPC UA server. "
+        "Supported types: Boolean, Double, Float, Int16, Int32, Int64, Integer (Int64 alias), SByte, String, UInt16, UInt32, UInt64.",
+        examples=["Boolean", "Double", "Float", "Int32", "Int64", "String"],
         json_schema_extra={
             "always_visible": True,
         },
@@ -256,7 +279,20 @@ class OPCWriterSinkBlockV1(WorkflowBlock):
         object_name: str,
         variable_name: str,
         value: Union[str, bool, float, int],
-        value_type: Literal["Boolean", "Float", "Integer", "String"] = "String",
+        value_type: Literal[
+            "Boolean",
+            "Double",
+            "Float",
+            "Int16",
+            "Int32",
+            "Int64",
+            "Integer",
+            "SByte",
+            "String",
+            "UInt16",
+            "UInt32",
+            "UInt64",
+        ] = "String",
         timeout: int = 2,
         fire_and_forget: bool = True,
         disable_sink: bool = False,
@@ -285,28 +321,16 @@ class OPCWriterSinkBlockV1(WorkflowBlock):
                 "message": "Sink cooldown applies",
             }
 
-        value_str = str(value)
-        logging.debug(f"OPC Writer converting value '{value_str}' to type {value_type}")
-        try:
-            if value_type in [BOOLEAN_KIND, "Boolean"]:
-                decoded_value = value_str.strip().lower() in ("true", "1")
-            elif value_type in [FLOAT_KIND, "Float"]:
-                decoded_value = float(value_str)
-            elif value_type in [INTEGER_KIND, "Integer"]:
-                decoded_value = int(value_str)
-            elif value_type in [STRING_KIND, "String"]:
-                decoded_value = value_str
-            else:
-                raise ValueError(f"Unsupported value type: {value_type}")
-            logging.debug(f"OPC Writer successfully converted value to {decoded_value}")
-        except ValueError as exc:
-            logging.error(f"OPC Writer failed to convert value: {exc}")
-            return {
-                "disabled": False,
-                "error_status": True,
-                "throttling_status": False,
-                "message": f"Failed to convert value: {exc}",
-            }
+        if value_type in [BOOLEAN_KIND, "Boolean"] and isinstance(value, str):
+            # handle boolean conversion explicitly if value is a string
+            decoded_value = value.strip().lower() in ("true", "1")
+        else:
+            # Use value directly - OPC UA library will convert based on type specification
+            decoded_value = value
+
+        logging.debug(
+            f"OPC Writer prepared value '{decoded_value}' for type {value_type}"
+        )
 
         opc_writer_handler = partial(
             opc_connect_and_write_value,
@@ -317,6 +341,7 @@ class OPCWriterSinkBlockV1(WorkflowBlock):
             object_name=object_name,
             variable_name=variable_name,
             value=decoded_value,
+            value_type=value_type,
             timeout=timeout,
             node_lookup_mode=node_lookup_mode,
         )
@@ -398,6 +423,7 @@ def opc_connect_and_write_value(
     value: Union[bool, float, int, str],
     timeout: int,
     node_lookup_mode: Literal["hierarchical", "direct"] = "hierarchical",
+    value_type: str = "String",
 ) -> Tuple[bool, str]:
     logging.debug(
         f"OPC Writer attempting to connect and write value={value} to {url}/{object_name}/{variable_name}"
@@ -413,6 +439,7 @@ def opc_connect_and_write_value(
             value=value,
             timeout=timeout,
             node_lookup_mode=node_lookup_mode,
+            value_type=value_type,
         )
         logging.debug(
             f"OPC Writer successfully wrote value to {url}/{object_name}/{variable_name}"
@@ -436,6 +463,7 @@ def _opc_connect_and_write_value(
     value: Union[bool, float, int, str],
     timeout: int,
     node_lookup_mode: Literal["hierarchical", "direct"] = "hierarchical",
+    value_type: str = "String",
 ):
     logging.debug(f"OPC Writer creating client for {url} with timeout={timeout}")
     client = Client(url=url, sync_wrapper_timeout=timeout)
@@ -526,11 +554,41 @@ def _opc_connect_and_write_value(
             raise Exception(f"UNHANDLED ERROR: {type(exc)} {exc}")
 
     try:
-        logging.debug(f"OPC Writer writing value '{value}' to variable")
-        var.write_value(value)
+        logging.debug(
+            f"OPC Writer writing value '{value}' to variable with type '{value_type}'"
+        )
+        # Use proper OPC UA type specification using VariantType enum
+        if value_type in [BOOLEAN_KIND, "Boolean"]:
+            var.set_value(value, VariantType.Boolean)
+        elif value_type == "Double":
+            var.set_value(value, VariantType.Double)
+        elif value_type in [FLOAT_KIND, "Float"]:
+            var.set_value(value, VariantType.Float)
+        elif value_type == "Int16":
+            var.set_value(value, VariantType.Int16)
+        elif value_type == "Int32":
+            var.set_value(value, VariantType.Int32)
+        elif value_type in ["Int64", INTEGER_KIND, "Integer"]:
+            var.set_value(value, VariantType.Int64)
+        elif value_type == "SByte":
+            var.set_value(value, VariantType.SByte)
+        elif value_type in [STRING_KIND, "String"]:
+            var.set_value(value, VariantType.String)
+        elif value_type == "UInt16":
+            var.set_value(value, VariantType.UInt16)
+        elif value_type == "UInt32":
+            var.set_value(value, VariantType.UInt32)
+        elif value_type == "UInt64":
+            var.set_value(value, VariantType.UInt64)
+        else:
+            logging.error(f"OPC Writer unsupported value type: {value_type}")
+            safe_disconnect(client)
+            raise UnsupportedTypeError(f"Value type '{value_type}' is not supported.")
         logging.info(
             f"OPC Writer successfully wrote  '{value}'  to variable at {object_name}/{variable_name}"
         )
+    except UnsupportedTypeError:
+        raise
     except BadTypeMismatch as exc:
         node_type = get_node_data_type(var)
         logging.error(

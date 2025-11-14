@@ -141,9 +141,45 @@ async def start_test_opc_server(
     for component in object_components:
         current_obj = await current_obj.add_object(idx, component)
 
-    # Add the variable to the deepest object
+    # Add the main variable to the deepest object
     myvar = await current_obj.add_variable(idx, variable_name, initial_value)
     await myvar.set_writable()
+
+    # Pre-create variables of all types for parametrized tests
+    from asyncua.ua import VariantType
+
+    # Boolean variables
+    for val in [True, False]:
+        var = await current_obj.add_variable(idx, f"BoolVar_{val}", val, varianttype=VariantType.Boolean)
+        await var.set_writable()
+
+    # Numeric type variables
+    type_configs = [
+        ("Double", 0.0, VariantType.Double),
+        ("Float", 0.0, VariantType.Float),
+        ("Int16", 0, VariantType.Int16),
+        ("Int32", 0, VariantType.Int32),
+        ("Int64", 0, VariantType.Int64),
+        ("SByte", 0, VariantType.SByte),
+        ("UInt16", 0, VariantType.UInt16),
+        ("UInt32", 0, VariantType.UInt32),
+        ("UInt64", 0, VariantType.UInt64),
+    ]
+
+    for type_name, init_val, variant_type in type_configs:
+        var = await current_obj.add_variable(idx, f"{type_name}Var", init_val, varianttype=variant_type)
+        await var.set_writable()
+
+    # String variable
+    str_var = await current_obj.add_variable(idx, "StringVar", "", varianttype=VariantType.String)
+    await str_var.set_writable()
+
+    # Also create a variable with string-based NodeId for direct mode testing
+    # This allows both hierarchical and direct access to work
+    direct_node_id = NodeId(f"{object_name}/{variable_name}", idx)
+    direct_var = await server.nodes.objects.add_variable(direct_node_id, f"Direct_{variable_name}", initial_value)
+    await direct_var.set_writable()
+
     OPC_SERVER_STARTED = True
 
     async def run_server():
@@ -270,24 +306,16 @@ def _opc_connect_and_read_value(
     return value
 
 
-@add_to_workflows_gallery(
-    category="Basic Workflows",
-    use_case_title="Workflow writing data to OPC server",
-    use_case_description="""
-In this example data is written to OPC server.
+@pytest.fixture(scope="module")
+def test_opc_server():
+    """Create one OPC server that will be reused for all tests"""
+    global SERVER_TASK, OPC_SERVER_STARTED, STOP_OPC_SERVER
 
-In order to write to OPC this block is making use of [asyncua](https://github.com/FreeOpcUa/opcua-asyncio) package.
+    # Reset global state
+    OPC_SERVER_STARTED = False
+    STOP_OPC_SERVER = False
+    SERVER_TASK = None
 
-Writing to OPC enables workflows to expose insights extracted from camera to PLC controllers
-allowing factory automation engineers to take advantage of machine vision when building PLC logic.
-    """,
-    workflow_definition=WORKFLOW_OPC_WRITER,
-    workflow_name_in_app="opc_writer",
-)
-@pytest.mark.timeout(5)
-def test_workflow_with_opc_writer_sink() -> None:
-    # given
-    global SERVER_TASK
     loop = asyncio.new_event_loop()
     t = threading.Thread(target=start_loop, args=(loop,), daemon=True)
     t.start()
@@ -311,49 +339,99 @@ def test_workflow_with_opc_writer_sink() -> None:
         loop,
     )
 
+    while not OPC_SERVER_STARTED:
+        time.sleep(0.1)
+
+    yield {
+        "url": opc_url,
+        "namespace": opc_namespace,
+        "user_name": opc_user_name,
+        "password": opc_password,
+        "object_name": opc_object_name,
+        "variable_name": opc_variable_name,
+        "loop": loop,
+        "thread": t,
+    }
+
+    # Cleanup
+    STOP_OPC_SERVER = True
+    if SERVER_TASK:
+        SERVER_TASK.cancel()
+        try:
+            asyncio.run_coroutine_threadsafe(asyncio.sleep(0.1), loop).result()
+        except:
+            pass
+    loop.stop()
+    t.join()
+
+
+@add_to_workflows_gallery(
+    category="Basic Workflows",
+    use_case_title="Workflow writing data to OPC server",
+    use_case_description="""
+In this example data is written to OPC server.
+
+In order to write to OPC this block is making use of [asyncua](https://github.com/FreeOpcUa/opcua-asyncio) package.
+
+Writing to OPC enables workflows to expose insights extracted from camera to PLC controllers
+allowing factory automation engineers to take advantage of machine vision when building PLC logic.
+    """,
+    workflow_definition=WORKFLOW_OPC_WRITER,
+    workflow_name_in_app="opc_writer",
+)
+@pytest.mark.timeout(10)
+@pytest.mark.parametrize(
+    "value_type,variable_name,test_value,expected_value",
+    [
+        ("Boolean", "BoolVar_True", True, True),
+        ("Boolean", "BoolVar_True", "true", True),
+        ("Boolean", "BoolVar_True", "1", True),
+        ("Boolean", "BoolVar_False", False, False),
+        ("Boolean", "BoolVar_False", "false", False),
+        ("Double", "DoubleVar", 3.14159265359, 3.14159265359),
+        ("Float", "FloatVar", 3.14, 3.14),
+        ("Int16", "Int16Var", 100, 100),
+        ("Int32", "Int32Var", 1000, 1000),
+        ("Int64", "Int64Var", 100000, 100000),
+        ("Integer", "Int64Var", 41, 41),  # backwards compatibility
+        ("SByte", "SByteVar", -50, -50),
+        ("String", "StringVar", "test", "test"),
+        ("UInt16", "UInt16Var", 200, 200),
+        ("UInt32", "UInt32Var", 2000, 2000),
+        ("UInt64", "UInt64Var", 200000, 200000),
+    ],
+)
+def test_workflow_with_opc_writer_sink(test_opc_server, value_type, variable_name, test_value, expected_value) -> None:
+    # given - use pre-created variables from the server
     execution_engine = ExecutionEngine.init(
         workflow_definition=WORKFLOW_OPC_WRITER,
         init_parameters={},
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
 
-    while not OPC_SERVER_STARTED:
-        time.sleep(0.1)
-
     # when
     result = execution_engine.run(
         runtime_parameters={
-            "opc_url": opc_url,
-            "opc_namespace": opc_namespace,
-            "opc_user_name": opc_user_name,
-            "opc_password": opc_password,
-            "opc_object_name": opc_object_name,
-            "opc_variable_name": opc_variable_name,
-            "opc_value": 41,
-            "opc_value_type": "Integer",
+            "opc_url": test_opc_server["url"],
+            "opc_namespace": test_opc_server["namespace"],
+            "opc_user_name": test_opc_server["user_name"],
+            "opc_password": test_opc_server["password"],
+            "opc_object_name": test_opc_server["object_name"],
+            "opc_variable_name": variable_name,
+            "opc_value": test_value,
+            "opc_value_type": value_type,
         }
     )
 
     result_value = _opc_connect_and_read_value(
-        url=opc_url,
-        namespace=opc_namespace,
-        user_name=opc_user_name,
-        password=opc_password,
-        object_name=opc_object_name,
-        variable_name=opc_variable_name,
+        url=test_opc_server["url"],
+        namespace=test_opc_server["namespace"],
+        user_name=test_opc_server["user_name"],
+        password=test_opc_server["password"],
+        object_name=test_opc_server["object_name"],
+        variable_name=variable_name,
         timeout=1,
     )
-
-    STOP_OPC_SERVER = True
-    if SERVER_TASK:
-        SERVER_TASK.cancel()
-        try:
-            # Give the server a chance to clean up
-            asyncio.run_coroutine_threadsafe(asyncio.sleep(0.1), loop).result()
-        except:
-            pass
-    loop.stop()
-    t.join()
 
     assert set(result[0].keys()) == {
         "opc_writer_results",
@@ -362,89 +440,48 @@ def test_workflow_with_opc_writer_sink() -> None:
     assert result[0]["opc_writer_results"]["disabled"] == False
     assert result[0]["opc_writer_results"]["throttling_status"] == False
     assert result[0]["opc_writer_results"]["message"] == "Value set successfully"
-    assert result_value == 41
+
+    # For floats, use approximate comparison
+    if value_type in ["Float", "Double"]:
+        assert abs(result_value - expected_value) < 0.01
+    else:
+        assert result_value == expected_value
 
 
 @pytest.mark.timeout(5)
-def test_workflow_with_opc_writer_sink_direct_mode() -> None:
-    """Test OPC writer with direct NodeId lookup mode (Ignition-style string-based tags)"""
+def test_workflow_with_opc_writer_sink_direct_mode(test_opc_server) -> None:
+    """Test OPC writer with direct NodeId lookup mode using the shared server"""
     # given
-    global OPC_SERVER_STARTED
-    global STOP_OPC_SERVER
-    global SERVER_TASK
-
-    # Reset global state
-    OPC_SERVER_STARTED = False
-    STOP_OPC_SERVER = False
-    SERVER_TASK = None
-
-    loop = asyncio.new_event_loop()
-    t = threading.Thread(target=start_loop, args=(loop,), daemon=True)
-    t.start()
-
-    opc_url = "opc.tcp://localhost:4841/freeopcua/server/"
-    opc_namespace = "http://examples.freeopcua.github.io/direct"
-    opc_user_name = "user1"
-    opc_password = users_db[opc_user_name]
-    opc_object_name = "[Sample_Tags]/Ramp"
-    opc_variable_name = "South_Person_Count"
-    opc_initial_value = 0
-
-    asyncio.run_coroutine_threadsafe(
-        start_test_opc_server_with_string_nodeid(
-            url=opc_url,
-            namespace=opc_namespace,
-            object_name=opc_object_name,
-            variable_name=opc_variable_name,
-            initial_value=opc_initial_value,
-        ),
-        loop,
-    )
-
     execution_engine = ExecutionEngine.init(
         workflow_definition=WORKFLOW_OPC_WRITER_DIRECT_MODE,
         init_parameters={},
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
 
-    while not OPC_SERVER_STARTED:
-        time.sleep(0.1)
-
-    # when
+    # when - use direct mode with the hierarchical server's object
     result = execution_engine.run(
         runtime_parameters={
-            "opc_url": opc_url,
-            "opc_namespace": opc_namespace,
-            "opc_user_name": opc_user_name,
-            "opc_password": opc_password,
-            "opc_object_name": opc_object_name,
-            "opc_variable_name": opc_variable_name,
+            "opc_url": test_opc_server["url"],
+            "opc_namespace": test_opc_server["namespace"],
+            "opc_user_name": test_opc_server["user_name"],
+            "opc_password": test_opc_server["password"],
+            "opc_object_name": test_opc_server["object_name"],
+            "opc_variable_name": test_opc_server["variable_name"],
             "opc_value": 42,
             "opc_value_type": "Integer",
         }
     )
 
     result_value = _opc_connect_and_read_value(
-        url=opc_url,
-        namespace=opc_namespace,
-        user_name=opc_user_name,
-        password=opc_password,
-        object_name=opc_object_name,
-        variable_name=opc_variable_name,
+        url=test_opc_server["url"],
+        namespace=test_opc_server["namespace"],
+        user_name=test_opc_server["user_name"],
+        password=test_opc_server["password"],
+        object_name=test_opc_server["object_name"],
+        variable_name=test_opc_server["variable_name"],
         timeout=1,
         direct_mode=True,
     )
-
-    STOP_OPC_SERVER = True
-    if SERVER_TASK:
-        SERVER_TASK.cancel()
-        try:
-            # Give the server a chance to clean up
-            asyncio.run_coroutine_threadsafe(asyncio.sleep(0.1), loop).result()
-        except:
-            pass
-    loop.stop()
-    t.join()
 
     # then
     assert set(result[0].keys()) == {
