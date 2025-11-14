@@ -11,6 +11,7 @@ from asyncua.ua import VariantType
 from asyncua.ua.uaerrors import BadNoMatch, BadTypeMismatch, BadUserAccessDenied
 from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field
+from inference.core.logger import logger
 
 
 class UnsupportedTypeError(Exception):
@@ -300,7 +301,7 @@ class OPCWriterSinkBlockV1(WorkflowBlock):
         node_lookup_mode: Literal["hierarchical", "direct"] = "hierarchical",
     ) -> BlockResult:
         if disable_sink:
-            logging.debug("OPC Writer disabled by disable_sink parameter")
+            logger.debug("OPC Writer disabled by disable_sink parameter")
             return {
                 "disabled": True,
                 "throttling_status": False,
@@ -313,7 +314,7 @@ class OPCWriterSinkBlockV1(WorkflowBlock):
                 datetime.now() - self._last_notification_fired
             ).total_seconds()
         if seconds_since_last_notification < cooldown_seconds:
-            logging.info(f"Activated `{BLOCK_TYPE}` cooldown.")
+            logger.info(f"Activated `{BLOCK_TYPE}` cooldown.")
             return {
                 "disabled": False,
                 "throttling_status": True,
@@ -328,7 +329,7 @@ class OPCWriterSinkBlockV1(WorkflowBlock):
             # Use value directly - OPC UA library will convert based on type specification
             decoded_value = value
 
-        logging.debug(
+        logger.debug(
             f"OPC Writer prepared value '{decoded_value}' for type {value_type}"
         )
 
@@ -347,7 +348,7 @@ class OPCWriterSinkBlockV1(WorkflowBlock):
         )
         self._last_notification_fired = datetime.now()
         if fire_and_forget and self._background_tasks:
-            logging.debug("OPC Writer submitting write task to background tasks")
+            logger.debug("OPC Writer submitting write task to background tasks")
             self._background_tasks.add_task(opc_writer_handler)
             return {
                 "disabled": False,
@@ -356,7 +357,7 @@ class OPCWriterSinkBlockV1(WorkflowBlock):
                 "message": "Writing to the OPC UA server in the background task",
             }
         if fire_and_forget and self._thread_pool_executor:
-            logging.debug("OPC Writer submitting write task to thread pool executor")
+            logger.debug("OPC Writer submitting write task to thread pool executor")
             self._thread_pool_executor.submit(opc_writer_handler)
             return {
                 "disabled": False,
@@ -364,9 +365,9 @@ class OPCWriterSinkBlockV1(WorkflowBlock):
                 "throttling_status": False,
                 "message": "Writing to the OPC UA server in the background task",
             }
-        logging.debug("OPC Writer executing synchronous write")
+        logger.debug("OPC Writer executing synchronous write")
         error_status, message = opc_writer_handler()
-        logging.debug(
+        logger.debug(
             f"OPC Writer write completed: error_status={error_status}, message={message}"
         )
         return {
@@ -388,17 +389,17 @@ def get_available_namespaces(client: Client) -> List[str]:
         )
         return get_namespace_array()
     except Exception as exc:
-        logging.info(f"Failed to get namespace array (non-fatal): {exc}")
+        logger.info(f"Failed to get namespace array (non-fatal): {exc}")
         return ["<unable to fetch namespaces>"]
 
 
 def safe_disconnect(client: Client) -> None:
     """Safely disconnect from OPC UA server, swallowing any errors"""
     try:
-        logging.debug("OPC Writer disconnecting from server")
+        logger.debug("OPC Writer disconnecting from server")
         client.disconnect()
     except Exception as exc:
-        logging.debug(f"OPC Writer disconnect error (non-fatal): {exc}")
+        logger.debug(f"OPC Writer disconnect error (non-fatal): {exc}")
 
 
 def get_node_data_type(var) -> str:
@@ -409,7 +410,7 @@ def get_node_data_type(var) -> str:
     try:
         return str(var.read_data_type_as_variant_type())
     except Exception as exc:
-        logging.info(f"Unable to read node data type: {exc}")
+        logger.info(f"Unable to read node data type: {exc}")
         return "Unknown"
 
 
@@ -425,7 +426,7 @@ def opc_connect_and_write_value(
     node_lookup_mode: Literal["hierarchical", "direct"] = "hierarchical",
     value_type: str = "String",
 ) -> Tuple[bool, str]:
-    logging.debug(
+    logger.debug(
         f"OPC Writer attempting to connect and write value={value} to {url}/{object_name}/{variable_name}"
     )
     try:
@@ -441,12 +442,12 @@ def opc_connect_and_write_value(
             node_lookup_mode=node_lookup_mode,
             value_type=value_type,
         )
-        logging.debug(
+        logger.debug(
             f"OPC Writer successfully wrote value to {url}/{object_name}/{variable_name}"
         )
         return False, "Value set successfully"
     except Exception as exc:
-        logging.error(f"OPC Writer failed to write value: {exc}")
+        logger.error(f"OPC Writer failed to write value: {exc}")
         return (
             True,
             f"Failed to write {value} to {object_name}:{variable_name} in {url}. Internal error details: {exc}.",
@@ -465,25 +466,25 @@ def _opc_connect_and_write_value(
     node_lookup_mode: Literal["hierarchical", "direct"] = "hierarchical",
     value_type: str = "String",
 ):
-    logging.debug(f"OPC Writer creating client for {url} with timeout={timeout}")
+    logger.debug(f"OPC Writer creating client for {url} with timeout={timeout}")
     client = Client(url=url, sync_wrapper_timeout=timeout)
     if user_name and password:
         client.set_user(user_name)
         client.set_password(password)
     try:
-        logging.debug(f"OPC Writer connecting to {url}")
+        logger.debug(f"OPC Writer connecting to {url}")
         client.connect()
-        logging.debug("OPC Writer successfully connected to server")
+        logger.debug("OPC Writer successfully connected to server")
     except BadUserAccessDenied as exc:
-        logging.error(f"OPC Writer authentication failed: {exc}")
+        logger.error(f"OPC Writer authentication failed: {exc}")
         safe_disconnect(client)
         raise Exception(f"AUTH ERROR: {exc}")
     except OSError as exc:
-        logging.error(f"OPC Writer network error during connection: {exc}")
+        logger.error(f"OPC Writer network error during connection: {exc}")
         safe_disconnect(client)
         raise Exception(f"NETWORK ERROR: {exc}")
     except Exception as exc:
-        logging.error(f"OPC Writer unhandled connection error: {type(exc)} {exc}")
+        logger.error(f"OPC Writer unhandled connection error: {type(exc)} {exc}")
         safe_disconnect(client)
         raise Exception(f"UNHANDLED ERROR: {type(exc)} {exc}")
     get_namespace_index = sync_async_client_method(AsyncClient.get_namespace_index)(
@@ -493,21 +494,21 @@ def _opc_connect_and_write_value(
     try:
         if namespace.isdigit():
             nsidx = int(namespace)
-            logging.debug(f"OPC Writer using numeric namespace index: {nsidx}")
+            logger.debug(f"OPC Writer using numeric namespace index: {nsidx}")
         else:
             nsidx = get_namespace_index(namespace)
     except ValueError as exc:
         namespaces = get_available_namespaces(client)
-        logging.error(f"OPC Writer invalid namespace: {exc}")
-        logging.error(f"Available namespaces: {namespaces}")
+        logger.error(f"OPC Writer invalid namespace: {exc}")
+        logger.error(f"Available namespaces: {namespaces}")
         safe_disconnect(client)
         raise Exception(
             f"WRONG NAMESPACE ERROR: {exc}. Available namespaces: {namespaces}"
         )
     except Exception as exc:
         namespaces = get_available_namespaces(client)
-        logging.error(f"OPC Writer unhandled namespace error: {type(exc)} {exc}")
-        logging.error(f"Available namespaces: {namespaces}")
+        logger.error(f"OPC Writer unhandled namespace error: {type(exc)} {exc}")
+        logger.error(f"Available namespaces: {namespaces}")
         safe_disconnect(client)
         raise Exception(
             f"UNHANDLED ERROR: {type(exc)} {exc}. Available namespaces: {namespaces}"
@@ -517,15 +518,16 @@ def _opc_connect_and_write_value(
         # Direct NodeId access for Ignition-style string identifiers
         try:
             node_id = f"ns={nsidx};s={object_name}/{variable_name}"
-            logging.debug(f"OPC Writer using direct NodeId access: {node_id}")
+            logger.debug(f"OPC Writer using direct NodeId access: {node_id}")
             var = client.get_node(node_id)
             # Verify the node exists by reading its attributes
             var.read_browse_name()
-            logging.debug(
-                f"OPC Writer successfully found variable node using direct NodeId"
+            logger.debug(f"OPC Writer found variable with data type: {vt}")
+            logger.debug(
+                f"OPC Writer successfully found variable node with type {vt} using direct NodeId"
             )
         except Exception as exc:
-            logging.error(f"OPC Writer direct NodeId access failed: {exc}")
+            logger.error(f"OPC Writer direct NodeId access failed: {exc}")
             safe_disconnect(client)
             raise Exception(
                 f"WRONG OBJECT OR PROPERTY ERROR: Could not find node with direct NodeId '{node_id}'. Error: {exc}"
@@ -537,24 +539,24 @@ def _opc_connect_and_write_value(
             object_components = object_name.split("/")
             object_path = "/".join([f"{nsidx}:{comp}" for comp in object_components])
             node_path = f"0:Objects/{object_path}/{nsidx}:{variable_name}"
-            logging.debug(f"OPC Writer using hierarchical path: {node_path}")
+            logger.debug(f"OPC Writer using hierarchical path: {node_path}")
             var = client.nodes.root.get_child(node_path)
-            logging.debug(
+            logger.debug(
                 f"OPC Writer successfully found variable node using hierarchical path"
             )
         except BadNoMatch as exc:
-            logging.error(f"OPC Writer hierarchical path not found: {exc}")
+            logger.error(f"OPC Writer hierarchical path not found: {exc}")
             safe_disconnect(client)
             raise Exception(
                 f"WRONG OBJECT OR PROPERTY ERROR: Could not find node at hierarchical path '{node_path}'. Error: {exc}"
             )
         except Exception as exc:
-            logging.error(f"OPC Writer unhandled node lookup error: {type(exc)} {exc}")
+            logger.error(f"OPC Writer unhandled node lookup error: {type(exc)} {exc}")
             safe_disconnect(client)
             raise Exception(f"UNHANDLED ERROR: {type(exc)} {exc}")
 
     try:
-        logging.debug(
+        logger.debug(
             f"OPC Writer writing value '{value}' to variable with type '{value_type}'"
         )
         # Use proper OPC UA type specification using VariantType enum
@@ -581,17 +583,17 @@ def _opc_connect_and_write_value(
         elif value_type == "UInt64":
             var.set_value(value, VariantType.UInt64)
         else:
-            logging.error(f"OPC Writer unsupported value type: {value_type}")
+            logger.error(f"OPC Writer unsupported value type: {value_type}")
             safe_disconnect(client)
             raise UnsupportedTypeError(f"Value type '{value_type}' is not supported.")
-        logging.info(
+        logger.info(
             f"OPC Writer successfully wrote  '{value}'  to variable at {object_name}/{variable_name}"
         )
     except UnsupportedTypeError:
         raise
     except BadTypeMismatch as exc:
         node_type = get_node_data_type(var)
-        logging.error(
+        logger.error(
             f"OPC Writer type mismatch: tried to write value '{value}' (type: {type(value).__name__}) to node with data type {node_type}. Error: {exc}"
         )
         safe_disconnect(client)
@@ -599,7 +601,7 @@ def _opc_connect_and_write_value(
             f"WRONG TYPE ERROR: Tried to write value '{value}' (type: {type(value).__name__}) but node expects type {node_type}. {exc}"
         )
     except Exception as exc:
-        logging.error(f"OPC Writer unhandled write error: {type(exc)} {exc}")
+        logger.error(f"OPC Writer unhandled write error: {type(exc)} {exc}")
         safe_disconnect(client)
         raise Exception(f"UNHANDLED ERROR: {type(exc)} {exc}")
 
