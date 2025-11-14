@@ -520,9 +520,6 @@ def _opc_connect_and_write_value(
             node_id = f"ns={nsidx};s={object_name}/{variable_name}"
             logger.debug(f"OPC Writer using direct NodeId access: {node_id}")
             var = client.get_node(node_id)
-            # Verify the node exists by reading its attributes
-            var.read_browse_name()
-            logger.debug(f"OPC Writer found variable with data type: {vt}")
             logger.debug(
                 f"OPC Writer successfully found variable node with type {vt} using direct NodeId"
             )
