@@ -31,6 +31,7 @@ RUN git checkout v8.6.1 && git submodule update --init --recursive
 ENV TRT_OSSPATH=/build/tensorrt/TensorRT
 ENV TRT_LIBPATH=/usr/lib/aarch64-linux-gnu
 ENV EXT_PATH=/build/tensorrt/extenral
+ENV TENSORRT_MODULE=tensorrt
 RUN mkdir -p /build/tensorrt/extenral/python3.12/include/
 RUN cp -r /usr/local/include/python3.12/* /build/tensorrt/extenral/python3.12/include/
 WORKDIR /build/tensorrt/extenral/
