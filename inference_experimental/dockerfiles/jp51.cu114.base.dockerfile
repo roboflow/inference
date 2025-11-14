@@ -82,7 +82,7 @@ WORKDIR /build/torch/pytorch
 RUN git checkout v2.4.1
 RUN git submodule sync && git submodule update --init --recursive
 RUN python3.12 -m pip install setuptools wheel ninja
-RUN USE_PRIORITIZED_TEXT_FOR_LD=1 PYTORCH_BUILD_VERSION=2.4.1 PYTORCH_BUILD_NUMBER=1 MAX_JOBS=4 CUDA_HOME=/usr/local/cuda CUDACXX=/usr/local/cuda/bin/nvcc TORCH_CUDA_ARCH_LIST="8.7" USE_NCCL=0 USE_DISTRIBUTED=0 USE_MKLDNN=0 BUILD_TEST=0 CMAKE_POLICY_VERSION_MINIMUM=3.5 python3.12 setup.py bdist_wheel
+RUN PATH=/build/cmake/build/bin:$PATH USE_PRIORITIZED_TEXT_FOR_LD=1 PYTORCH_BUILD_VERSION=2.4.1 PYTORCH_BUILD_NUMBER=1 MAX_JOBS=4 CUDA_HOME=/usr/local/cuda CUDACXX=/usr/local/cuda/bin/nvcc TORCH_CUDA_ARCH_LIST="8.7" USE_NCCL=0 USE_DISTRIBUTED=0 USE_MKLDNN=0 BUILD_TEST=0 CMAKE_POLICY_VERSION_MINIMUM=3.5 python3.12 setup.py bdist_wheel
 RUN python3.12 -m pip install dist/torch-*.whl
 
 # Install Torchvision
@@ -92,7 +92,7 @@ RUN git clone https://github.com/pytorch/vision.git
 WORKDIR /build/torchvision/vision
 RUN git checkout v0.19.1
 RUN git submodule sync && git submodule update --init --recursive
-RUN BUILD_VERSION=0.19.1 TORCH_CUDA_ARCH_LIST="8.7" CMAKE_POLICY_VERSION_MINIMUM=3.5 python3.12 setup.py bdist_wheel
+RUN PATH=/build/cmake/build/bin:$PATH BUILD_VERSION=0.19.1 TORCH_CUDA_ARCH_LIST="8.7" CMAKE_POLICY_VERSION_MINIMUM=3.5 python3.12 setup.py bdist_wheel
 RUN python3.12 -m pip install dist/torchvision-*.whl
 
 # Install flash-attention
