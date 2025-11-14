@@ -8,7 +8,8 @@ RUN apt-get update -y && apt-get install -y \
     libbz2-dev \
     libssl-dev \
     libsqlite3-dev \
-    zlib1g-dev
+    zlib1g-dev \
+    liblzma-dev
 
 
 RUN mkdir -p /build/python-3.12
@@ -55,7 +56,8 @@ WORKDIR /build/opencv/opencv-4.12.0/release
 RUN cmake -D WITH_CUDA=ON -D WITH_CUDNN=ON -D CUDA_ARCH_BIN="8.7" -D CUDA_ARCH_PTX="" -D OPENCV_GENERATE_PKGCONFIG=ON -D OPENCV_EXTRA_MODULES_PATH=../../opencv_contrib-4.12.0/modules -D WITH_GSTREAMER=ON -D WITH_LIBV4L=ON -D BUILD_opencv_python3=ON -D BUILD_TESTS=OFF -D BUILD_PERF_TESTS=OFF -D BUILD_EXAMPLES=OFF -D CMAKE_BUILD_TYPE=RELEASE -D CMAKE_INSTALL_PREFIX=/usr/local ..
 RUN make -j$(nproc)
 RUN make install
-RUN python3.12 -m pip wheel ./python_loader --wheel-dir ~/my_wheels --verbose
+RUN python3.12 -m pip wheel ./python_loader --wheel-dir ./my_wheels --verbose
+RUN python3.12 -m pip install ./my_wheels/opencv-4.12.0-py3-none-any.whl
 
 # Install newer Cmake for builds
 RUN mkdir -p /build/cmake
@@ -87,7 +89,8 @@ WORKDIR /build/torch/pytorch
 RUN git checkout v2.4.1
 RUN git submodule sync && git submodule update --init --recursive
 RUN PATH=/build/cmake/build/bin:$PATH python3.12 -m pip install setuptools wheel astunparse numpy ninja pyyaml cmake "typing-extensions>=4.10.0" requests
-RUN PATH=/build/cmake/build/bin:$PATH PYTORCH_BUILD_VERSION=2.4.1 PYTORCH_BUILD_NUMBER=1 MAX_JOBS=4 CUDA_HOME=/usr/local/cuda CUDACXX=/usr/local/cuda/bin/nvcc TORCH_CUDA_ARCH_LIST="8.7" USE_NCCL=0 USE_DISTRIBUTED=0 USE_MKLDNN=0 BUILD_TEST=0 CMAKE_POLICY_VERSION_MINIMUM=3.5 python3.12 setup.py bdist_wheel
+ARG MAX_TORCH_COMPILATION_JOBS=4
+RUN PATH=/build/cmake/build/bin:$PATH PYTORCH_BUILD_VERSION=2.4.1 PYTORCH_BUILD_NUMBER=1 MAX_JOBS=${MAX_TORCH_COMPILATION_JOBS} CUDA_HOME=/usr/local/cuda CUDACXX=/usr/local/cuda/bin/nvcc TORCH_CUDA_ARCH_LIST="8.7" USE_NCCL=0 USE_DISTRIBUTED=0 USE_MKLDNN=0 BUILD_TEST=0 CMAKE_POLICY_VERSION_MINIMUM=3.5 python3.12 setup.py bdist_wheel
 RUN python3.12 -m pip install dist/torch-*.whl
 
 # Install Torchvision
@@ -99,5 +102,3 @@ RUN git checkout v0.19.1
 RUN git submodule sync && git submodule update --init --recursive
 RUN PATH=/build/cmake/build/bin:$PATH BUILD_VERSION=0.19.1 TORCH_CUDA_ARCH_LIST="8.7" CMAKE_POLICY_VERSION_MINIMUM=3.5 python3.12 setup.py bdist_wheel
 RUN python3.12 -m pip install dist/torchvision-*.whl
-
-# Install flash-attention
