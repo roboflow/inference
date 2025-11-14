@@ -179,9 +179,8 @@ class PlanDetails(SQLiteWrapper):
             logger.debug("Could not parse api key plan '%s'", response.content)
         except Exception as exc:
             logger.debug(
-                "Could not obtain api key plan from %s for %s - %s",
+                "Could not obtain api key plan from %s - %s",
                 self._api_plan_endpoint_url,
-                api_key,
                 exc,
             )
 
@@ -283,9 +282,8 @@ class PlanDetails(SQLiteWrapper):
             logger.debug("Could not parse webrtc plans '%s'", response.content)
         except Exception as exc:
             logger.debug(
-                "Could not obtain webrtc plans from %s for %s - %s",
+                "Could not obtain webrtc plans from %s - %s",
                 self._webrtc_plans_endpoint_url,
-                api_key,
                 exc,
             )
         return {}
