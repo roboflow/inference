@@ -211,7 +211,9 @@ if modal is not None:
         webrtc_request: WebRTCWorkerRequest,
     ) -> WebRTCWorkerResult:
         webrtc_plans: Optional[Dict[str, WebRTCPlan]] = (
-            usage_collector._plan_details.get_webrtc_plans()
+            usage_collector._plan_details.get_webrtc_plans(
+                api_key=webrtc_request.api_key
+            )
         )
         if webrtc_plans and webrtc_request.requested_plan:
             if webrtc_request.requested_plan not in webrtc_plans:
