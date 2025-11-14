@@ -54,6 +54,7 @@ STANDARD_MODELS = {
     "RFDETRObjectDetection": "inference.models.rfdetr",
     "RFDETRInstanceSegmentation": "inference.models.rfdetr",
     "VitClassification": "inference.models.vit",
+    "DinoV3Classification": "inference.models.dinov3",
     "YOLACT": "inference.models.yolact",
     "YOLONASObjectDetection": "inference.models.yolonas",
     "YOLOv5InstanceSegmentation": "inference.models.yolov5",
