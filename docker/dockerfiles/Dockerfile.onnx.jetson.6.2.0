@@ -1,3 +1,8 @@
+# Prototype: Minimal CUDA base image instead of full L4T JetPack
+# Comparing l4t-cuda vs l4t-jetpack for size and maintainability
+
+# Stage 1: Builder (use JetPack for CUDA development tools like nvcc)
+# JetPack includes CUDA 12.6, nvcc, cuDNN, TensorRT - everything needed for compilation
 FROM nvcr.io/nvidia/l4t-jetpack:r36.4.0 AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -5,31 +10,68 @@ ENV LANG=en_US.UTF-8
 
 WORKDIR /app
 
+# Install build dependencies and CUDA development tools
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \
-    libxext6 \
-    libopencv-dev \
-    uvicorn \
-    python3-pip \
-    git \
-    libgdal-dev \
-    libvips-dev \
-    wget \
-    rustc \
-    cargo \
-    curl \
+    build-essential \
     cmake \
     ninja-build \
+    file \
+    libopenblas0 \
+    libproj-dev \
+    libsqlite3-dev \
+    libtiff-dev \
+    libcurl4-openssl-dev \
+    libssl-dev \
+    zlib1g-dev \
+    wget \
+    curl \
+    ca-certificates \
+    git \
+    python3-dev \
+    python3-pip \
+    libxext6 \
+    libopencv-dev \
+    libvips-dev \
+    pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
+# Remove any pre-installed GDAL
+RUN apt-get update && apt-get remove -y libgdal-dev gdal-bin libgdal30 2>/dev/null || true && rm -rf /var/lib/apt/lists/*
+
+# Compile GDAL 3.11.5 from source with Ninja build system
+RUN wget https://github.com/OSGeo/gdal/releases/download/v3.11.5/gdal-3.11.5.tar.gz && \
+    tar -xzf gdal-3.11.5.tar.gz && \
+    cd gdal-3.11.5 && \
+    mkdir build && cd build && \
+    cmake .. \
+        -GNinja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr/local \
+        -DBUILD_PYTHON_BINDINGS=OFF \
+    && \
+    ninja && \
+    ninja install && \
+    ldconfig && \
+    cd ../.. && \
+    rm -rf gdal-3.11.5 gdal-3.11.5.tar.gz
+
+# Verify GDAL installation
+RUN gdal-config --version && \
+    test "$(gdal-config --version | cut -d. -f1,2)" = "3.11" || (echo "GDAL version mismatch!" && exit 1)
+
+# Install CMake 3.30.5 for building extensions
 RUN wget -q https://github.com/Kitware/CMake/releases/download/v3.30.5/cmake-3.30.5-linux-aarch64.sh && \
     chmod +x cmake-3.30.5-linux-aarch64.sh && \
     ./cmake-3.30.5-linux-aarch64.sh --prefix=/usr/local --skip-license && \
     rm cmake-3.30.5-linux-aarch64.sh
 
+# Install uv for fast package installation
 RUN curl -LsSf https://astral.sh/uv/install.sh | env INSTALLER_NO_MODIFY_PATH=1 sh && \
-    ln -s /root/.local/bin/uv /usr/local/bin/uv
+    ln -s /root/.local/bin/uv /usr/local/bin/uv && \
+    uv --version
 
+# Copy requirements files
 COPY requirements/requirements.sam.txt \
     requirements/requirements.clip.txt \
     requirements/requirements.http.txt \
@@ -45,41 +87,43 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.easyocr.txt \
     ./
 
+# Install PyTorch 2.8.0 with CUDA 12.6 support from jetson-ai-lab.io
 RUN python3 -m pip install --upgrade pip && \
-    python3 -m pip install "torch>=2.8.0" "torchvision>=0.15.2" \
+    python3 -m pip install "torch>=2.8.0" "torchvision>=0.23.0" \
     --index-url https://pypi.jetson-ai-lab.io/jp6/cu126
 
+# Install Python dependencies with uv
 RUN uv pip install --system --break-system-packages --index-strategy unsafe-best-match \
     --extra-index-url https://pypi.jetson-ai-lab.io/jp6/cu126 \
     -r _requirements.txt \
-    -r requirements.sam.txt \
-    -r requirements.clip.txt \
+    -r requirements.jetson.txt \
     -r requirements.http.txt \
+    -r requirements.clip.txt \
+    -r requirements.transformers.txt \
+    -r requirements.sam.txt \
     -r requirements.gaze.txt \
     -r requirements.groundingdino.txt \
-    -r requirements.doctr.txt \
     -r requirements.yolo_world.txt \
-    -r requirements.transformers.txt \
-    -r requirements.jetson.txt \
+    -r requirements.doctr.txt \
     -r requirements.sdk.http.txt \
     -r requirements.easyocr.txt \
     jupyterlab \
     "setuptools<=75.5.0" \
     packaging \
-    numpy \
     && rm -rf ~/.cache/uv
 
+# Build onnxruntime from source with CUDA and TensorRT support
 WORKDIR /tmp
 RUN git clone --recursive --branch v1.20.0 https://github.com/microsoft/onnxruntime.git /tmp/onnxruntime
 
 WORKDIR /tmp/onnxruntime
-
 RUN sed -i 's/be8be39fdbc6e60e94fa7870b280707069b5b81a/32b145f525a8308d7ab1c09388b2e288312d8eba/g' cmake/deps.txt
 
+# JetPack already has all CUDA, cuDNN, and TensorRT libs - no need to copy
 RUN ./build.sh \
     --config Release \
     --build_dir build/cuda12 \
-    --parallel 4 \
+    --parallel 12 \
     --use_cuda \
     --cuda_version 12.6 \
     --cuda_home /usr/local/cuda \
@@ -97,31 +141,7 @@ RUN ./build.sh \
 
 RUN uv pip install --system --break-system-packages /tmp/onnxruntime/build/cuda12/Release/dist/onnxruntime_gpu-*.whl
 
-FROM nvcr.io/nvidia/l4t-jetpack:r36.4.0 AS runtime
-
-ARG DEBIAN_FRONTEND=noninteractive
-ENV LANG=en_US.UTF-8
-
-WORKDIR /app
-
-COPY --from=builder /usr/local/lib/python3.10 /usr/local/lib/python3.10
-COPY --from=builder /usr/local/bin /usr/local/bin
-
-RUN apt-get update -y && \
-    apt-get install -y --no-install-recommends \
-    libxext6 \
-    libopencv-dev \
-    uvicorn \
-    python3-pip \
-    git \
-    libgdal-dev \
-    libvips-dev \
-    wget \
-    rustc \
-    cargo \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
+# Build and install inference packages (core, gpu, cli, sdk)
 WORKDIR /build
 COPY . .
 RUN ln -sf /usr/bin/python3 /usr/bin/python || true
@@ -140,15 +160,91 @@ RUN python -m pip install --break-system-packages --no-deps dist/inference_gpu*.
     dist/inference_sdk*.whl \
     "setuptools<=75.5.0"
 
-WORKDIR /notebooks
-COPY examples/notebooks .
+WORKDIR /app
+COPY requirements/requirements.http.txt requirements.txt
 
-WORKDIR /app/
+# Runtime stage - minimal CUDA runtime with only necessary libraries
+FROM nvcr.io/nvidia/l4t-cuda:12.6.11-runtime
+
+ARG DEBIAN_FRONTEND=noninteractive
+ENV LANG=en_US.UTF-8
+
+WORKDIR /app
+
+# Create python symlink for inference CLI compatibility
+RUN ln -sf /usr/bin/python3 /usr/bin/python
+
+# Install runtime dependencies only (no -dev packages)
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+    file \
+    libopenblas0 \
+    libproj22 \
+    libsqlite3-0 \
+    libtiff5 \
+    libcurl4 \
+    libssl3 \
+    zlib1g \
+    libgomp1 \
+    python3 \
+    python3-pip \
+    libxext6 \
+    libopencv-core4.5d \
+    libopencv-imgproc4.5d \
+    libvips42 \
+    libglib2.0-0 \
+    libsm6 \
+    libjpeg-turbo8 \
+    libpng16-16 \
+    libexpat1 \
+    ca-certificates \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy compiled GDAL from builder
+COPY --from=builder /usr/local/bin/gdal* /usr/local/bin/
+COPY --from=builder /usr/local/bin/ogr* /usr/local/bin/
+COPY --from=builder /usr/local/bin/gnm* /usr/local/bin/
+COPY --from=builder /usr/local/lib/libgdal* /usr/local/lib/
+COPY --from=builder /usr/local/include/gdal* /usr/local/include/
+COPY --from=builder /usr/local/share/gdal /usr/local/share/gdal
+
+# Set GDAL environment variables
+ENV GDAL_DATA=/usr/local/share/gdal
+ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+
+# Copy cuDNN, CUDA, and TensorRT libraries from builder (JetPack)
+# For PyTorch and onnxruntime compatibility
+COPY --from=builder /usr/lib/aarch64-linux-gnu/libcudnn*.so* /usr/local/cuda/lib64/
+COPY --from=builder /usr/include/aarch64-linux-gnu/cudnn*.h /usr/local/cuda/include/
+COPY --from=builder /usr/local/cuda/targets/aarch64-linux/lib/libcupti*.so* /usr/local/cuda/lib64/
+COPY --from=builder /usr/local/cuda/targets/aarch64-linux/lib/libnvToolsExt*.so* /usr/local/cuda/lib64/
+
+# TensorRT libraries (for onnxruntime)
+COPY --from=builder /usr/lib/aarch64-linux-gnu/libnvinfer*.so* /usr/local/cuda/lib64/
+COPY --from=builder /usr/lib/aarch64-linux-gnu/libnvonnxparser*.so* /usr/local/cuda/lib64/
+COPY --from=builder /usr/lib/aarch64-linux-gnu/libnvparsers*.so* /usr/local/cuda/lib64/
+
+# Update library paths and cache
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+RUN ldconfig
+
+# Copy Python packages and CLI tools from builder
+COPY --from=builder /usr/local/lib/python3.10/dist-packages /usr/local/lib/python3.10/dist-packages
+COPY --from=builder /usr/local/bin/inference /usr/local/bin/inference
+
+# Set Python path
+ENV PYTHONPATH=/usr/local/lib/python3.10/dist-packages:$PYTHONPATH
+
+# Copy application code
 COPY inference inference
+COPY inference_cli inference_cli
+COPY inference_sdk inference_sdk
 COPY docker/config/gpu_http.py gpu_http.py
 
-ENV VERSION_CHECK_MODE=continuous \
-    PROJECT=roboflow-platform \
+# Environment variables for inference server
+ENV VERSION_CHECK_MODE=once \
+    CORE_MODEL_SAM2_ENABLED=True \
     NUM_WORKERS=1 \
     HOST=0.0.0.0 \
     PORT=9001 \
@@ -160,17 +256,14 @@ ENV VERSION_CHECK_MODE=continuous \
     WORKFLOWS_STEP_EXECUTION_MODE=local \
     WORKFLOWS_MAX_CONCURRENT_STEPS=4 \
     API_LOGGING_ENABLED=True \
-    LMM_ENABLED=True \
-    CORE_MODEL_SAM2_ENABLED=True \
-    CORE_MODEL_OWLV2_ENABLED=True \
-    ENABLE_STREAM_API=True \
-    ENABLE_PROMETHEUS=True \
-    STREAM_API_PRELOADED_PROCESSES=2 \
-    RUNS_ON_JETSON=True \
-    PYTHONPATH=/app:$PYTHONPATH
+    DISABLE_WORKFLOW_ENDPOINTS=false
 
-RUN mkdir -p /tmp/ort_cache
+# Add label with versions for comparison
+LABEL org.opencontainers.image.description="Inference Server - Jetson 6.2.0 (CUDA base prototype)" \
+      org.opencontainers.image.base.name="nvcr.io/nvidia/l4t-cuda:12.6.11-runtime" \
+      cuda.version="12.6.11" \
+      cudnn.source="l4t-jetpack:r36.4.0" \
+      gdal.version="3.11.5" \
+      pytorch.version="2.8.0"
 
-EXPOSE 9001
-
-ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT
+ENTRYPOINT ["/bin/sh", "-c", "python3 -m uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT"]
