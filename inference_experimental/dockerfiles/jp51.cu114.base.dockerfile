@@ -4,7 +4,12 @@ FROM nvcr.io/nvidia/l4t-ml:r35.2.1-py3
 RUN apt-get update -y && apt-get install -y \
     libssl-dev \
     git \
-    unzip
+    unzip \
+    libbz2-dev \
+    libssl-dev \
+    libsqlite3-dev \
+    zlib1g-dev
+
 
 RUN mkdir -p /build/python-3.12
 WORKDIR /build/python-3.12
