@@ -163,6 +163,12 @@ CORE_MODEL_OWLV2_ENABLED = str2bool(os.getenv("CORE_MODEL_OWLV2_ENABLED", False)
 
 # Maximum prompt batch size for SAM3 PCS requests
 SAM3_MAX_PROMPT_BATCH_SIZE = int(os.getenv("SAM3_MAX_PROMPT_BATCH_SIZE", 16))
+SAM3_EXEC_MODE = os.getenv("SAM3_EXEC_MODE", "local")
+SAM3_EXEC_MODE = SAM3_EXEC_MODE.lower()
+if SAM3_EXEC_MODE not in ["local", "remote"]:
+    raise ValueError(
+        f"Invalid SAM3 execution mode in ENVIRONMENT var SAM3_EXEC_MODE (local or remote): {SAM3_EXEC_MODE}"
+    )
 
 # Flag to enable GAZE core model, default is True
 CORE_MODEL_GAZE_ENABLED = str2bool(os.getenv("CORE_MODEL_GAZE_ENABLED", True))
