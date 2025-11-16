@@ -3,6 +3,6 @@ requests
 pytest
 pillow 
 requests_toolbelt
-numpy>=2.0.0,<2.3.0
+numpy>=2.0.0,<2.3.5
 pytest-retry<=1.6.3
 structlog>=24.1.0,<25.0.0
