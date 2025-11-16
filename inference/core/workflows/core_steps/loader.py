@@ -293,6 +293,9 @@ from inference.core.workflows.core_steps.secrets_providers.environment_secrets_s
 from inference.core.workflows.core_steps.sinks.email_notification.v1 import (
     EmailNotificationBlockV1,
 )
+from inference.core.workflows.core_steps.sinks.email_notification.v2 import (
+    EmailNotificationBlockV2,
+)
 from inference.core.workflows.core_steps.sinks.local_file.v1 import LocalFileSinkBlockV1
 from inference.core.workflows.core_steps.sinks.onvif_movement.v1 import ONVIFSinkBlockV1
 from inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1 import (
@@ -670,6 +673,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DataAggregatorBlockV1,
         CSVFormatterBlockV1,
         EmailNotificationBlockV1,
+        EmailNotificationBlockV2,
         LocalFileSinkBlockV1,
         TraceVisualizationBlockV1,
         ReferencePathVisualizationBlockV1,
