@@ -436,13 +436,13 @@ You can store this references file locally or in [cloud storage](#cloud-storage)
 signed URL to the file when running the ingestion command.
 
 
-#### Cloud Storage
+### Cloud Storage
 
 For most use cases, the `inference-cli` provides built-in cloud storage support that handles authentication, file discovery, and presigned URL generation automatically. See the [main batch processing guide](./about.md#cloud-storage-integration) for simple examples.
 
 This section covers advanced cloud storage integration for custom workflows.
 
-##### Direct Cloud Storage Integration
+#### Direct Cloud Storage Integration
 
 The `inference-cli` supports direct integration with cloud storage providers:
 
@@ -482,40 +482,11 @@ inference rf-cloud data-staging create-batch-of-images \
 
 See the [Cloud Storage Authentication](#cloud-storage-authentication) section below for detailed configuration options.
 
-##### Custom Scripts for Advanced Use Cases
-
-If you need more customization beyond what `inference-cli` provides, you can use these reference scripts as a starting point:
-
-- **AWS S3:** [generateS3SignedUrls.sh](https://raw.githubusercontent.com/roboflow/roboflow-python/main/scripts/generateS3SignedUrls.sh)
-- **Google Cloud Storage:** [generateGCSSignedUrls.sh](https://github.com/roboflow/roboflow-python/blob/main/scripts/generateGCSSignedUrls.sh)
-- **Azure Blob Storage:** [generateAzureSasUrls.sh](https://raw.githubusercontent.com/roboflow/roboflow-python/main/scripts/generateAzureSasUrls.sh)
-
-These scripts demonstrate how to:
-- List files from cloud storage
-- Generate presigned URLs with custom expiration times
-- Process files in parallel for better performance
-- Create JSONL reference files for batch ingestion
-
-**Example usage:**
-```bash
-# Download and run the S3 script
-curl -fsSL https://raw.githubusercontent.com/roboflow/roboflow-python/main/scripts/generateS3SignedUrls.sh | \
-  bash -s -- s3://my-bucket/images/ output.jsonl
-
-# Download and run the GCS script
-curl -fsSL https://github.com/roboflow/roboflow-python/blob/main/scripts/generateGCSSignedUrls.sh | \
-  bash -s -- gs://my-bucket/images/ output.jsonl
-
-# Download and run the Azure script
-curl -fsSL https://raw.githubusercontent.com/roboflow/roboflow-python/main/scripts/generateAzureSasUrls.sh | \
-  bash -s -- az://my-container/images/ output.jsonl
-```
-
-##### Cloud Storage Authentication
+#### Cloud Storage Authentication
 
 This section provides detailed information about authenticating with different cloud storage providers.
 
-###### AWS S3 and S3-Compatible Storage
+##### AWS S3 and S3-Compatible Storage
 
 The system automatically detects AWS credentials from multiple sources in this order:
 
@@ -527,8 +498,10 @@ The system automatically detects AWS credentials from multiple sources in this o
    ```
 
 2. **AWS credential files:**
-   - `~/.aws/credentials`
-   - `~/.aws/config`
+    ```bash
+   ~/.aws/credentials
+   ~/.aws/config`
+    ```
 
 3. **IAM roles** (when running on EC2, ECS, or Lambda)
 
@@ -542,7 +515,6 @@ inference rf-cloud data-staging create-batch-of-images \
   --bucket-path "s3://my-bucket/images/**/*.jpg" \
   --batch-id my-batch
 ```
-```
 
 **S3-compatible services (Cloudflare R2, MinIO, etc.):**
 ```bash
@@ -551,7 +523,7 @@ export AWS_ACCESS_KEY_ID=your-r2-access-key
 export AWS_SECRET_ACCESS_KEY=your-r2-secret-key
 ```
 
-###### Google Cloud Storage
+##### Google Cloud Storage
 
 GCS automatically detects credentials from multiple sources:
 
@@ -570,7 +542,7 @@ GCS automatically detects credentials from multiple sources:
 
 **No additional configuration needed** if using default gcloud authentication.
 
-###### Azure Blob Storage
+##### Azure Blob Storage
 
 Azure requires explicit credential configuration. The system supports **two naming conventions**:
 
@@ -616,7 +588,7 @@ export AZURE_STORAGE_KEY=your-account-key
 - SAS token takes precedence over account key (if both are set)
 - adlfs convention takes precedence over Azure CLI standard
 
-###### Error Handling
+##### Error Handling
 
 The system provides detailed error messages for common authentication and access issues:
 
@@ -643,7 +615,7 @@ Possible causes:
 
 
 
-##### Custom Scripts for Advanced Use Cases
+#### Custom Scripts for Advanced Use Cases
 
 If you need more customization beyond what `inference-cli` provides, you can use these reference scripts as a starting point for generating a reference-file:
 
