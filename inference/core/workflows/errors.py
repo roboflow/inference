@@ -124,6 +124,11 @@ class BlockInitParameterNotProvidedError(WorkflowCompilerError):
     pass
 
 
+class EnterpriseFeatureNotAvailableError(WorkflowCompilerError):
+    """Raised when a non-enterprise account attempts to use enterprise-only features."""
+    pass
+
+
 class StepInputDimensionalityError(WorkflowCompilerError):
 
     def __init__(
