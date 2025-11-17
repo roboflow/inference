@@ -6,7 +6,13 @@ from supervision import Color, Detections
 from supervision.annotators.base import BaseAnnotator, ImageType
 from supervision.annotators.utils import ColorLookup, resolve_color
 from supervision.draw.color import ColorPalette
-from supervision.utils.conversion import ensure_cv2_image_for_annotation
+
+try:
+    from supervision.utils.conversion import ensure_cv2_image_for_annotation
+except ImportError:
+    from supervision.utils.conversion import (
+        ensure_cv2_image_for_class_method as ensure_cv2_image_for_annotation,
+    )
 
 
 class HaloAnnotator(BaseAnnotator):
