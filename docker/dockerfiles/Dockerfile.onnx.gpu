@@ -1,5 +1,4 @@
-FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 as builder
-#has python 3.10
+FROM nvcr.io/nvidia/cuda:13.0.1-cudnn-devel-ubuntu24.04 as builder
 
 WORKDIR /app
 
@@ -14,7 +13,12 @@ RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_
     wget \
     rustc \
     cargo \
+    curl \
     && rm -rf /var/lib/apt/lists/*
+
+# Install uv using standalone installer (installs to /root/.local/bin)
+RUN curl -LsSf https://astral.sh/uv/install.sh | env INSTALLER_NO_MODIFY_PATH=1 sh && \
+    ln -s /root/.local/bin/uv /usr/local/bin/uv
 
 COPY requirements/requirements.sam.txt \
     requirements/requirements.clip.txt \
@@ -31,13 +35,12 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.modal.txt \
     ./
 
-RUN python3 -m pip install -U pip
-RUN python3 -m pip install \
+# Use uv for much faster package installation (WITHOUT onnxruntime-gpu, we'll build from source)
+RUN uv pip install --system --break-system-packages \
     -r _requirements.txt \
     -r requirements.sam.txt \
     -r requirements.clip.txt \
     -r requirements.http.txt \
-    -r requirements.gpu.txt \
     -r requirements.gaze.txt \
     -r requirements.groundingdino.txt \
     -r requirements.doctr.txt \
@@ -47,22 +50,83 @@ RUN python3 -m pip install \
     -r requirements.modal.txt \
     jupyterlab \
     "setuptools<=75.5.0" \
-    --upgrade \
-    && rm -rf ~/.cache/pip
+    packaging \
+    numpy \
+    && rm -rf ~/.cache/uv
 
-# Install setup.py requirements for flash_attn
-RUN python3 -m pip install packaging==24.1 && rm -rf ~/.cache/pip
+# Install build tools for ONNX Runtime
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    cmake \
+    ninja-build \
+    && rm -rf /var/lib/apt/lists/*
+# Fix CUDA 13.0 missing CCCL headers - fetch from NVIDIA repository
+# Fix CUDA 13.0 missing CCCL headers - include cuda/std headers
+RUN git clone --depth=1 --branch v3.0.0 https://github.com/NVIDIA/cccl.git /tmp/cccl && \
+    mkdir -p /usr/local/cuda-13.0/targets/sbsa-linux/include/cccl && \
+    mkdir -p /usr/local/cuda-13.0/targets/sbsa-linux/include/cuda && \
+    cp -r /tmp/cccl/libcudacxx/include/* /usr/local/cuda-13.0/targets/sbsa-linux/include/ && \
+    cp -r /tmp/cccl/cub/cub /usr/local/cuda-13.0/targets/sbsa-linux/include/cccl/ && \
+    cp -r /tmp/cccl/thrust/thrust /usr/local/cuda-13.0/targets/sbsa-linux/include/cccl/ && \
+    ln -sf /usr/local/cuda-13.0/targets/sbsa-linux /usr/local/cuda/targets/sbsa-linux && \
+    rm -rf /tmp/cccl
 
-# Install flash_attn required for Paligemma and Florence2
-RUN python3 -m pip install -r requirements.pali.flash_attn.txt --no-dependencies --no-build-isolation && rm -rf ~/.cache/pip
+# Build ONNX Runtime from source for CUDA 13.0 (using main branch for latest CUDA 13 fixes)
+WORKDIR /tmp
+RUN git clone --recursive --branch main https://github.com/microsoft/onnxruntime.git /tmp/onnxruntime
+WORKDIR /tmp/onnxruntime
 
-# Start runtime stage
-FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 as runtime
+# Build ONNX Runtime with CUDA 13 - using exact working config from GitHub PR
+RUN ./build.sh \
+    --config Release \
+    --build_dir build/cuda13 \
+    --parallel 16 \
+    --use_cuda \
+    --cuda_version 13.0 \
+    --cuda_home /usr/local/cuda \
+    --cudnn_home /usr/local/cuda \
+    --build_wheel \
+    --build_shared_lib \
+    --skip_tests \
+    --cmake_generator Ninja \
+    --enable_cuda_nhwc_ops \
+    --use_binskim_compliant_compile_flags \
+    --allow_running_as_root \
+    --cmake_extra_defines CMAKE_CUDA_ARCHITECTURES="120-real;121-real;121-virtual" \
+    --cmake_extra_defines onnxruntime_BUILD_UNIT_TESTS=OFF
+
+# Install the built ONNX Runtime wheel
+RUN uv pip install --system --break-system-packages /tmp/onnxruntime/build/cuda13/Release/dist/onnxruntime_gpu-*.whl
+
+# Install GPU-enabled PyTorch 2.9.0 with CUDA 13.0 support
+RUN uv pip uninstall torch torchvision torchaudio || true && \
+    uv pip install --system --break-system-packages torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
+
+# Remove any existing install and clone fresh
+RUN uv pip uninstall xformers || true && \
+    rm -rf /tmp/xformers && \
+    git clone --recursive https://github.com/facebookresearch/xformers.git /tmp/xformers
+
+WORKDIR /tmp/xformers
+RUN MAX_JOBS=8 CMAKE_BUILD_PARALLEL_LEVEL=8 uv pip install --system --break-system-packages . --no-build-isolation -v
+
+ENV CMAKE_BUILD_PARALLEL_LEVEL=4
+ENV MAX_JOBS=4
+ENV SETUPTOOLS_BUILD_PARALLEL=1
+# Clone and build FlashAttention from source
+WORKDIR /tmp
+RUN git clone https://github.com/Dao-AILab/flash-attention.git
+WORKDIR /tmp/flash-attention
+RUN MAX_JOBS=4 CMAKE_BUILD_PARALLEL_LEVEL=4 uv pip install --system --break-system-packages . --no-build-isolation -v
+
+################################################################################
+# RUNTIME STAGE
+################################################################################
+FROM nvcr.io/nvidia/cuda:13.0.1-cudnn-runtime-ubuntu24.04 as runtime
 
 WORKDIR /app
 
 # Copy Python and installed packages from builder
-COPY --from=builder /usr/local/lib/python3.10 /usr/local/lib/python3.10
+COPY --from=builder /usr/local/lib/python3.12 /usr/local/lib/python3.12
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Install runtime dependencies
@@ -77,15 +141,52 @@ RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_
     wget \
     rustc \
     cargo \
+    curl \
     && rm -rf /var/lib/apt/lists/*
+
+# uv was already copied from builder stage, no need to reinstall
 
 WORKDIR /build
 COPY . .
 RUN ln -s /usr/bin/python3 /usr/bin/python
-RUN /bin/make create_wheels_for_gpu_notebook
-RUN pip3 install --no-cache-dir dist/inference_cli*.whl dist/inference_core*.whl dist/inference_gpu*.whl dist/inference_sdk*.whl "setuptools<=75.5.0"
+
+# Build wheels directly without upgrading pip (Debian-installed pip issue)
+RUN python -m pip install --break-system-packages wheel twine requests && \
+    rm -f dist/* && \
+    python .release/pypi/inference.core.setup.py bdist_wheel && \
+    python .release/pypi/inference.gpu.setup.py bdist_wheel && \
+    python .release/pypi/inference.cli.setup.py bdist_wheel && \
+    python .release/pypi/inference.sdk.setup.py bdist_wheel
+
+# First install the GPU wheel with no dependencies to avoid re-installing onnxruntime-gpu
+RUN python -m pip install --break-system-packages --no-deps dist/inference_gpu*.whl
+
+# Then install the rest with dependency resolution enabled
+RUN python -m pip install --break-system-packages \
+    dist/inference_core*.whl \
+    dist/inference_cli*.whl \
+    dist/inference_sdk*.whl \
+    "setuptools<=75.5.0"
+
 
 WORKDIR /notebooks
+
+# Install Node.js 20.x and build JupyterLab assets in runtime container
+RUN apt-get update && \
+    apt-get install -y ca-certificates curl gnupg && \
+    mkdir -p /etc/apt/keyrings && \
+    curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
+    echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list && \
+    apt-get update && \
+    apt-get install -y nodejs && \
+    node --version && \
+    jupyter lab build --minimize=False --dev-build=False && \
+    jupyter lab clean && \
+    npm cache clean --force && \
+    apt-get remove -y nodejs gnupg && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
+
 COPY examples/notebooks .
 
 WORKDIR /app/
