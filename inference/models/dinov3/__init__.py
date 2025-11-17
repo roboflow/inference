@@ -1,0 +1,1 @@
+from inference.models.dinov3.dinov3_classification import DinoV3Classification

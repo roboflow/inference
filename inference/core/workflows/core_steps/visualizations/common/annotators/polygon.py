@@ -8,7 +8,13 @@ from supervision.annotators.utils import ColorLookup, resolve_color
 from supervision.detection.utils.converters import mask_to_polygons
 from supervision.draw.color import ColorPalette
 from supervision.draw.utils import draw_polygon
-from supervision.utils.conversion import ensure_cv2_image_for_annotation
+
+try:
+    from supervision.utils.conversion import ensure_cv2_image_for_annotation
+except ImportError:
+    from supervision.utils.conversion import (
+        ensure_cv2_image_for_class_method as ensure_cv2_image_for_annotation,
+    )
 
 
 class PolygonAnnotator(BaseAnnotator):
