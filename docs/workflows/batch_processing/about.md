@@ -136,6 +136,17 @@ You can optionally include glob patterns to filter files:
 
 !!! hint "Cloud Storage Examples"
 
+    
+     **AWS S3 (with named profile):**
+    ```bash
+    export AWS_PROFILE=my-profile  # Uses credentials from ~/.aws/credentials
+
+    inference rf-cloud data-staging create-batch-of-images \
+      --data-source cloud-storage \
+      --bucket-path "s3://my-bucket/training-data/**/*.jpg" \
+      --batch-id my-s3-batch
+    ```
+
     **AWS S3 (with explicit credentials):**
     ```bash
     export AWS_ACCESS_KEY_ID=your-access-key
@@ -148,31 +159,13 @@ You can optionally include glob patterns to filter files:
       --batch-id my-s3-batch
     ```
 
-    **AWS S3 (with named profile):**
-    ```bash
-    export AWS_PROFILE=my-profile  # Uses credentials from ~/.aws/credentials
+   
 
-    inference rf-cloud data-staging create-batch-of-images \
-      --data-source cloud-storage \
-      --bucket-path "s3://my-bucket/training-data/**/*.jpg" \
-      --batch-id my-s3-batch
-    ```
-
-    **Cloudflare R2 (S3-compatible):**
-    ```bash
-    export AWS_ACCESS_KEY_ID=your-r2-access-key
-    export AWS_SECRET_ACCESS_KEY=your-r2-secret-key
-    export AWS_ENDPOINT_URL=https://account-id.r2.cloudflarestorage.com
-
-    inference rf-cloud data-staging create-batch-of-images \
-      --data-source cloud-storage \
-      --bucket-path s3://my-r2-bucket/images/ \
-      --batch-id my-r2-batch
-    ```
 
     **Google Cloud Storage:**
     ```bash
-    export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+    # GCS auto-detects GOOGLE_APPLICATION_CREDENTIALS
+    export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json # optional
 
     inference rf-cloud data-staging create-batch-of-videos \
       --data-source cloud-storage \
@@ -180,10 +173,22 @@ You can optionally include glob patterns to filter files:
       --batch-id my-gcs-batch
     ```
 
-    **Azure Blob Storage:**
+    **Azure Blob Storage (SAS Token - Recommended):**
     ```bash
-    export AZURE_STORAGE_ACCOUNT_NAME=myaccount
-    export AZURE_STORAGE_ACCOUNT_KEY=your-account-key
+    # Supports both adlfs and Azure CLI naming conventions
+    export AZURE_STORAGE_ACCOUNT_NAME=myaccount  # or AZURE_STORAGE_ACCOUNT
+    export AZURE_STORAGE_SAS_TOKEN="sv=2021-06-08&ss=b&srt=sco&sp=rl"
+
+    inference rf-cloud data-staging create-batch-of-images \
+      --data-source cloud-storage \
+      --bucket-path "az://my-container/images/*.png" \
+      --batch-id my-azure-batch
+    ```
+
+    **Azure Blob Storage (Account Key):**
+    ```bash
+    export AZURE_STORAGE_ACCOUNT_NAME=myaccount  # or AZURE_STORAGE_ACCOUNT
+    export AZURE_STORAGE_ACCOUNT_KEY=your-key    # or AZURE_STORAGE_KEY
 
     inference rf-cloud data-staging create-batch-of-images \
       --data-source cloud-storage \
@@ -205,6 +210,26 @@ You can optionally include glob patterns to filter files:
 
     Generated presigned URLs are valid for 24 hours. Ensure your batch processing job completes within this timeframe.
 
+!!! tip "Cloud Storage Authentication"
+
+    **AWS S3 / S3-Compatible:**
+    - Auto-detects `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`
+    - Auto-detects `~/.aws/credentials` and `~/.aws/config`
+    - Use `AWS_PROFILE` to specify a named profile
+    - Use `AWS_ENDPOINT_URL` for S3-compatible services (R2, MinIO)
+
+    **Google Cloud Storage:**
+    - Auto-detects `GOOGLE_APPLICATION_CREDENTIALS` (path to service account JSON)
+    - Auto-detects `~/.config/gcloud/*` credentials
+    - Auto-detects GCP metadata service (when running on GCP)
+    - No manual configuration needed if using default gcloud auth
+
+    **Azure Blob Storage:**
+    - Supports both naming conventions:
+        - adlfs: `AZURE_STORAGE_ACCOUNT_NAME`, `AZURE_STORAGE_ACCOUNT_KEY`
+        - Azure CLI: `AZURE_STORAGE_ACCOUNT`, `AZURE_STORAGE_KEY`
+    - Use `AZURE_STORAGE_SAS_TOKEN` for time-limited access (recommended)
+    - SAS token takes precedence over account key if both are set
 
 Then, you can inspect the details of staged batch of data:
 
