@@ -504,11 +504,12 @@ def test_workflow_with_custom_python_block_when_custom_python_execution_forbidde
 
 FUNCTION_TO_MERGE_CROPS_INTO_TILES = """
 def run(self, crops: Optional[Batch[Optional[WorkflowImageData]]]) -> BlockResult:
+    from inference.core.utils.drawing import create_tiles
     if crops is None:
         return {"tiles": None}
     black_image = np.zeros((192, 168, 3), dtype=np.uint8)
     images = [crop.numpy_image if crop is not None else black_image for crop in crops]
-    return {"tiles": sv.create_tiles(images)}
+    return {"tiles": create_tiles(images)}
 """
 
 

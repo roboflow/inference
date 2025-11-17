@@ -51,7 +51,11 @@ def test_load_from_cache():
     row2["id"] = 2
 
     # when
-    plan_details = PlanDetails(api_plan_endpoint_url="", sqlite_connection=conn)
+    plan_details = PlanDetails(
+        api_plan_endpoint_url="",
+        webrtc_plans_endpoint_url="",
+        sqlite_connection=conn,
+    )
     conn.close()
 
     # then

@@ -446,12 +446,18 @@ async def _wait_ice_complete(peer_connection: RTCPeerConnectionWithLoop, timeout
 
     @peer_connection.on("icegatheringstatechange")
     def _():
+        logger.info(
+            "ICE gathering state changed to %s", peer_connection.iceGatheringState
+        )
         if not fut.done() and peer_connection.iceGatheringState == "complete":
             fut.set_result(True)
 
     try:
+        logger.info("Waiting for ICE gathering to complete...")
         await asyncio.wait_for(fut, timeout)
+        logger.info("ICE gathering completed")
     except asyncio.TimeoutError:
+        logger.info("ICE gathering did not complete in %s seconds", timeout)
         pass
 
 
@@ -466,10 +472,16 @@ async def init_rtc_peer_connection_with_loop(
     if webrtc_request.processing_timeout is not None:
         try:
             time_limit_seconds = int(webrtc_request.processing_timeout)
-            termination_date = datetime.datetime.now() + datetime.timedelta(
+            datetime_now = datetime.datetime.now()
+            termination_date = datetime_now + datetime.timedelta(
                 seconds=time_limit_seconds - 1
             )
-            logger.info("Setting termination date to %s", termination_date)
+            logger.info(
+                "Setting termination date to %s (%s seconds from %s)",
+                termination_date,
+                time_limit_seconds,
+                datetime_now,
+            )
         except (TypeError, ValueError):
             pass
     if webrtc_request.stream_output is None:
@@ -578,20 +590,22 @@ async def init_rtc_peer_connection_with_loop(
         )
         return
 
-    if webrtc_request.webrtc_turn_config:
-        turn_server = RTCIceServer(
-            urls=[webrtc_request.webrtc_turn_config.urls],
-            username=webrtc_request.webrtc_turn_config.username,
-            credential=webrtc_request.webrtc_turn_config.credential,
-        )
-        peer_connection = RTCPeerConnectionWithLoop(
-            configuration=RTCConfiguration(iceServers=[turn_server]),
-            asyncio_loop=asyncio_loop,
-        )
+    if webrtc_request.webrtc_config is not None:
+        ice_servers = []
+        for ice_server in webrtc_request.webrtc_config.iceServers:
+            ice_servers.append(
+                RTCIceServer(
+                    urls=ice_server.urls,
+                    username=ice_server.username,
+                    credential=ice_server.credential,
+                )
+            )
     else:
-        peer_connection = RTCPeerConnectionWithLoop(
-            asyncio_loop=asyncio_loop,
-        )
+        ice_servers = None
+    peer_connection = RTCPeerConnectionWithLoop(
+        configuration=RTCConfiguration(iceServers=ice_servers) if ice_servers else None,
+        asyncio_loop=asyncio_loop,
+    )
 
     relay = MediaRelay()
 

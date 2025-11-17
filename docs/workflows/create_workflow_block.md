@@ -1533,6 +1533,7 @@ the method signatures.
 
         import supervision as sv
         
+        from inference.core.utils.drawing import create_tiles
         from inference.core.workflows.execution_engine.entities.base import (
             Batch,
             OutputDefinition,
@@ -1593,7 +1594,7 @@ the method signatures.
                         prediction,
                     )
                     visualisations.append(annotated_image)
-                tile = sv.create_tiles(visualisations)
+                tile = create_tiles(visualisations)
                 return {"visualisations": tile}
         ```
 
@@ -1827,6 +1828,7 @@ the method signatures.
 
         import supervision as sv
         
+        from inference.core.utils.drawing import create_tiles
         from inference.core.workflows.execution_engine.entities.base import (
             Batch,
             OutputDefinition,
@@ -1887,7 +1889,7 @@ the method signatures.
                             prediction,
                         )
                         visualisations_batch_element.append(annotated_image)
-                    tile = sv.create_tiles(visualisations_batch_element)
+                    tile = create_tiles(visualisations_batch_element)
                     visualisations.append({"visualisations": tile})
                 return visualisations
         ```
