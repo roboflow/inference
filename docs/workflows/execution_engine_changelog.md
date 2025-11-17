@@ -163,6 +163,7 @@ change will only affect new workflows created to utilise new functionalities.
 
     import supervision as sv
     
+    from inference.core.utils.drawing import create_tiles
     from inference.core.workflows.execution_engine.entities.base import (
         Batch,
         OutputDefinition,
@@ -224,7 +225,7 @@ change will only affect new workflows created to utilise new functionalities.
                     prediction,
                 )
                 visualisations.append(annotated_image)
-            tile = sv.create_tiles(visualisations)
+            tile = create_tiles(visualisations)
             return {"visualisations": tile}
     ```
 
