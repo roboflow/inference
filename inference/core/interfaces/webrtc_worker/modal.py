@@ -138,7 +138,27 @@ if modal is not None:
             webrtc_request: WebRTCWorkerRequest,
             q: modal.Queue,
         ):
-            logger.info("Received webrtc offer")
+            logger.info("*** Spawning %s:", self.__class__.__name__)
+            logger.info(
+                "webrtc_realtime_processing: %s",
+                webrtc_request.webrtc_realtime_processing,
+            )
+            logger.info("stream_output: %s", webrtc_request.stream_output)
+            logger.info("data_output: %s", webrtc_request.data_output)
+            logger.info("declared_fps: %s", webrtc_request.declared_fps)
+            logger.info("rtsp_url: %s", webrtc_request.rtsp_url)
+            logger.info("processing_timeout: %s", webrtc_request.processing_timeout)
+            logger.info("requested_plan: %s", webrtc_request.requested_plan)
+            logger.info("requested_gpu: %s", webrtc_request.requested_gpu)
+            logger.info("requested_region: %s", webrtc_request.requested_region)
+            logger.info(
+                "ICE servers: %s",
+                len(
+                    webrtc_request.webrtc_config.iceServers
+                    if webrtc_request.webrtc_config
+                    else []
+                ),
+            )
             self._webrtc_request = webrtc_request
 
             def send_answer(obj: WebRTCWorkerResult):
