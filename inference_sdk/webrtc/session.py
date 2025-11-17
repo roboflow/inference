@@ -76,8 +76,6 @@ class VideoMetadata:
     measured_fps: Optional[float] = None
 
 
-
-
 class _VideoStream:
     """Wrapper for video frame queue providing iterator interface."""
 
@@ -337,7 +335,6 @@ class WebRTCSession:
                 self.close()
         except Exception:
             pass  # Never raise from __del__
-
 
     def wait(self, timeout: Optional[float] = None) -> None:
         """Wait for session to complete.

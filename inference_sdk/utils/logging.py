@@ -28,9 +28,7 @@ def get_logger(module_name: str) -> logging.Logger:
     # Configure basic logging on first use if needed
     if not _configured and not sdk_logger.handlers:
         handler = logging.StreamHandler(sys.stderr)
-        handler.setFormatter(
-            logging.Formatter("%(levelname)s [%(name)s] %(message)s")
-        )
+        handler.setFormatter(logging.Formatter("%(levelname)s [%(name)s] %(message)s"))
         sdk_logger.addHandler(handler)
         sdk_logger.setLevel(logging.INFO)
         sdk_logger.propagate = False
