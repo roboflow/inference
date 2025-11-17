@@ -88,7 +88,7 @@ RUN python3 -m pip install --upgrade pip && \
     python3 -m pip install "torch>=${TORCH_VERSION}" "torchvision>=${TORCHVISION_VERSION}" \
     --index-url https://pypi.jetson-ai-lab.io/jp6/cu126
 
-# Install Python dependencies (torch/torchvision/numpy already installed)
+# Install Python dependencies (torch/torchvision already installed)
 RUN uv pip install --system --break-system-packages --index-strategy unsafe-best-match \
     --extra-index-url https://pypi.jetson-ai-lab.io/jp6/cu126 \
     -r _requirements.jetson.txt \
@@ -106,6 +106,9 @@ RUN uv pip install --system --break-system-packages --index-strategy unsafe-best
     "setuptools<=75.5.0" \
     packaging \
     && rm -rf ~/.cache/uv
+
+# Force numpy<2.0.0 for Jetson PyTorch compatibility (must be after all other deps)
+RUN uv pip install --system --break-system-packages "numpy<2.0.0"
 
 # Build onnxruntime-gpu from source
 WORKDIR /tmp
