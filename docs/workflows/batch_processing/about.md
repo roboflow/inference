@@ -147,25 +147,9 @@ You can optionally include glob patterns to filter files:
       --batch-id my-s3-batch
     ```
 
-    **AWS S3 (with explicit credentials):**
-    ```bash
-    export AWS_ACCESS_KEY_ID=your-access-key
-    export AWS_SECRET_ACCESS_KEY=your-secret-key
-    export AWS_DEFAULT_REGION=us-east-1  # Optional
-
-    inference rf-cloud data-staging create-batch-of-images \
-      --data-source cloud-storage \
-      --bucket-path "s3://my-bucket/training-data/**/*.jpg" \
-      --batch-id my-s3-batch
-    ```
-
-   
-
-
     **Google Cloud Storage:**
     ```bash
-    # GCS auto-detects GOOGLE_APPLICATION_CREDENTIALS
-    export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json # optional
+    export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
 
     inference rf-cloud data-staging create-batch-of-videos \
       --data-source cloud-storage \
@@ -173,10 +157,9 @@ You can optionally include glob patterns to filter files:
       --batch-id my-gcs-batch
     ```
 
-    **Azure Blob Storage (SAS Token - Recommended):**
+    **Azure Blob Storage:**
     ```bash
-    # Supports both adlfs and Azure CLI naming conventions
-    export AZURE_STORAGE_ACCOUNT_NAME=myaccount  # or AZURE_STORAGE_ACCOUNT
+    export AZURE_STORAGE_ACCOUNT_NAME=myaccount
     export AZURE_STORAGE_SAS_TOKEN="sv=2021-06-08&ss=b&srt=sco&sp=rl"
 
     inference rf-cloud data-staging create-batch-of-images \
@@ -185,16 +168,9 @@ You can optionally include glob patterns to filter files:
       --batch-id my-azure-batch
     ```
 
-    **Azure Blob Storage (Account Key):**
-    ```bash
-    export AZURE_STORAGE_ACCOUNT_NAME=myaccount  # or AZURE_STORAGE_ACCOUNT
-    export AZURE_STORAGE_ACCOUNT_KEY=your-key    # or AZURE_STORAGE_KEY
+!!! tip "Cloud Storage Configuration"
 
-    inference rf-cloud data-staging create-batch-of-images \
-      --data-source cloud-storage \
-      --bucket-path "az://my-container/images/*.png" \
-      --batch-id my-azure-batch
-    ```
+    For detailed authentication options, credential management, and advanced configuration, see the [Cloud Storage Integration guide](./integration.md#cloud-storage-authentication).
 
 !!! info "Large Dataset Handling"
 
