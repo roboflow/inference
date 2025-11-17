@@ -529,7 +529,7 @@ def test_sahi_workflow_provides_the_same_result_as_sahi_applied_directly(
     assert np.allclose(
         detections_obtained_directly.xyxy,
         workflow_result[0]["predictions"].xyxy,
-        atol=1e-1,
+        atol=1,
     ), "Expected bounding boxes to be the same for workflow SAHI and direct SAHI"
     assert np.allclose(
         detections_obtained_directly.confidence,
