@@ -1657,9 +1657,16 @@ def _get_fs_kwargs(protocol: Optional[str] = None) -> dict:
     # AWS S3 and S3-compatible (e.g., Cloudflare R2)
     if protocol in (None, "s3"):
         # Only pass endpoint_url for S3-compatible services (R2, MinIO, etc.)
+        # Must be passed as direct parameter, not in client_kwargs
         endpoint_url = os.getenv("AWS_ENDPOINT_URL")
         if endpoint_url:
-            kwargs["client_kwargs"] = {"endpoint_url": endpoint_url}
+            kwargs["endpoint_url"] = endpoint_url
+
+            # For S3-compatible services, also pass region if specified
+            # This is crucial for services like Cloudflare R2 that use 'auto' region
+            aws_region = os.getenv("AWS_REGION")
+            if aws_region:
+                kwargs["client_kwargs"] = {"region_name": aws_region}
 
         # Only pass profile to override default credential chain
         aws_profile = os.getenv("AWS_PROFILE")

@@ -24,8 +24,10 @@ def test_parse_bucket_path_with_glob():
 
 def test_get_fs_kwargs_with_endpoint(monkeypatch):
     monkeypatch.setenv("AWS_ENDPOINT_URL", "https://r2.example.com")
+    monkeypatch.delenv("AWS_REGION", raising=False)
     kwargs = _get_fs_kwargs()
-    assert kwargs["client_kwargs"]["endpoint_url"] == "https://r2.example.com"
+    assert kwargs["endpoint_url"] == "https://r2.example.com"
+    assert "client_kwargs" not in kwargs  # No region specified
 
 
 def test_get_fs_kwargs_without_endpoint(monkeypatch):
@@ -45,9 +47,33 @@ def test_get_fs_kwargs_with_profile(monkeypatch):
 def test_get_fs_kwargs_with_endpoint_and_profile(monkeypatch):
     monkeypatch.setenv("AWS_ENDPOINT_URL", "https://r2.example.com")
     monkeypatch.setenv("AWS_PROFILE", "my-profile")
+    monkeypatch.delenv("AWS_REGION", raising=False)
     kwargs = _get_fs_kwargs()
-    assert kwargs["client_kwargs"]["endpoint_url"] == "https://r2.example.com"
+    assert kwargs["endpoint_url"] == "https://r2.example.com"
     assert kwargs["profile"] == "my-profile"
+    assert "client_kwargs" not in kwargs  # No region specified
+
+
+def test_get_fs_kwargs_with_endpoint_and_region(monkeypatch):
+    """Test S3-compatible service (R2) with endpoint and region"""
+    monkeypatch.setenv("AWS_ENDPOINT_URL", "https://r2.example.com")
+    monkeypatch.setenv("AWS_REGION", "auto")
+    monkeypatch.delenv("AWS_PROFILE", raising=False)
+    kwargs = _get_fs_kwargs()
+    assert kwargs["endpoint_url"] == "https://r2.example.com"
+    assert kwargs["client_kwargs"]["region_name"] == "auto"
+    assert "profile" not in kwargs
+
+
+def test_get_fs_kwargs_with_endpoint_region_and_profile(monkeypatch):
+    """Test full R2 configuration with endpoint, region, and profile"""
+    monkeypatch.setenv("AWS_ENDPOINT_URL", "https://r2.example.com")
+    monkeypatch.setenv("AWS_REGION", "auto")
+    monkeypatch.setenv("AWS_PROFILE", "r2-read")
+    kwargs = _get_fs_kwargs()
+    assert kwargs["endpoint_url"] == "https://r2.example.com"
+    assert kwargs["client_kwargs"]["region_name"] == "auto"
+    assert kwargs["profile"] == "r2-read"
 
 
 def test_get_fs_kwargs_gcs(monkeypatch):

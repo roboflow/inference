@@ -517,11 +517,25 @@ inference rf-cloud data-staging create-batch-of-images \
 ```
 
 **S3-compatible services (Cloudflare R2, MinIO, etc.):**
+
+For S3-compatible services, you need to specify the endpoint URL and, for some services like Cloudflare R2, the region:
+
 ```bash
+# Cloudflare R2 example
 export AWS_ENDPOINT_URL=https://account-id.r2.cloudflarestorage.com
+export AWS_REGION=auto  # R2 requires region='auto'
 export AWS_ACCESS_KEY_ID=your-r2-access-key
 export AWS_SECRET_ACCESS_KEY=your-r2-secret-key
+
+# Or use a named profile
+export AWS_ENDPOINT_URL=https://account-id.r2.cloudflarestorage.com
+export AWS_REGION=auto
+export AWS_PROFILE=r2-profile
 ```
+
+!!! note "Region for S3-Compatible Services"
+
+    Some S3-compatible services like Cloudflare R2 use non-standard regions (e.g., `auto`, `wnam`, `enam`). If you get an `InvalidRegionName` error, set `AWS_REGION` to the appropriate value for your service.
 
 ##### Google Cloud Storage
 
