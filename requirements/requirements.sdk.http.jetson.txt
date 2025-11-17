@@ -1,0 +1,8 @@
+requests>=2.32.0,<3.0.0
+dataclasses-json~=0.6.0
+opencv-python>=4.8.1.78,<=4.10.0.84
+pillow>=11.0,<12.0
+supervision>=0.26
+aiohttp>=3.9.0,<=3.10.11
+backoff~=2.2.0
+py-cpuinfo~=9.0.0

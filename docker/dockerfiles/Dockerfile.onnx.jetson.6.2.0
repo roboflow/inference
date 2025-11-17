@@ -79,7 +79,7 @@ COPY requirements/requirements.sam.jetson.txt \
     requirements/_requirements.jetson.txt \
     requirements/requirements.transformers.jetson.txt \
     requirements/requirements.jetson.6.2.0.txt \
-    requirements/requirements.sdk.http.txt \
+    requirements/requirements.sdk.http.jetson.txt \
     requirements/requirements.easyocr.txt \
     ./
 
@@ -101,7 +101,7 @@ RUN uv pip install --system --break-system-packages --index-strategy unsafe-best
     -r requirements.groundingdino.txt \
     -r requirements.yolo_world.txt \
     -r requirements.doctr.txt \
-    -r requirements.sdk.http.txt \
+    -r requirements.sdk.http.jetson.txt \
     -r requirements.easyocr.txt \
     "setuptools<=75.5.0" \
     packaging \
