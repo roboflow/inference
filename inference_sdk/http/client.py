@@ -255,6 +255,7 @@ class InferenceHTTPClient:
         Returns:
             WebRTCClient: Namespaced WebRTC API bound to this HTTP client.
         """
+        from inference_sdk.webrtc.client import WebRTCClient
         if self.__webrtc_client is None:
             self.__webrtc_client = WebRTCClient(self.__api_url, self.__api_key)
         return self.__webrtc_client
