@@ -581,8 +581,6 @@ async def init_rtc_peer_connection_with_loop(
     if webrtc_request.webrtc_config is not None:
         ice_servers = []
         for ice_server in webrtc_request.webrtc_config.iceServers:
-            if not ice_server.username:
-                continue
             ice_servers.append(
                 RTCIceServer(
                     urls=ice_server.urls,
