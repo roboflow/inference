@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from typing import Any, Dict, Generator, List, Literal, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, Generator, List, Literal, Optional, Tuple, Union
 
 import aiohttp
 import numpy as np
@@ -73,7 +73,7 @@ from inference_sdk.http.utils.requests import (
     inject_nested_batches_of_images_into_payload,
 )
 from inference_sdk.utils.decorators import deprecated, experimental
-from inference_sdk.webrtc.client import WebRTCClient
+
 
 SUCCESSFUL_STATUS_CODE = 200
 DEFAULT_HEADERS = {
@@ -92,6 +92,8 @@ BufferFillingStrategy = Literal[
 ]
 BufferConsumptionStrategy = Literal["LAZY", "EAGER"]
 
+if TYPE_CHECKING:
+    from inference_sdk.webrtc.client import WebRTCClient
 
 def wrap_errors(function: callable) -> callable:
     def decorate(*args, **kwargs) -> Any:
@@ -217,7 +219,7 @@ class InferenceHTTPClient:
         self.__inference_configuration = InferenceConfiguration.init_default()
         self.__client_mode = _determine_client_mode(api_url=api_url)
         self.__selected_model: Optional[str] = None
-        self.__webrtc_client: Optional[WebRTCClient] = None
+        self.__webrtc_client: Optional["WebRTCClient"] = None
 
     @property
     def inference_configuration(self) -> InferenceConfiguration:
@@ -247,7 +249,7 @@ class InferenceHTTPClient:
         return self.__selected_model
 
     @property
-    def webrtc(self) -> WebRTCClient:
+    def webrtc(self) -> "WebRTCClient":
         """Lazy accessor for the WebRTC client namespace.
 
         Returns:
