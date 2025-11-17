@@ -68,7 +68,7 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | env INSTALLER_NO_MODIFY_PATH=1 
     ln -s /root/.local/bin/uv /usr/local/bin/uv && \
     uv --version
 
-COPY requirements/requirements.sam.txt \
+COPY requirements/requirements.sam.jetson.txt \
     requirements/requirements.clip.txt \
     requirements/requirements.http.txt \
     requirements/requirements.gpu.txt \
@@ -77,7 +77,7 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.groundingdino.txt \
     requirements/requirements.yolo_world.txt \
     requirements/_requirements.txt \
-    requirements/requirements.transformers.txt \
+    requirements/requirements.transformers.jetson.txt \
     requirements/requirements.jetson.6.2.0.txt \
     requirements/requirements.sdk.http.txt \
     requirements/requirements.easyocr.txt \
@@ -95,6 +95,8 @@ RUN uv pip install --system --break-system-packages --index-strategy unsafe-best
     -r requirements.jetson.6.2.0.txt \
     -r requirements.http.txt \
     -r requirements.clip.txt \
+    -r requirements.transformers.jetson.txt \
+    -r requirements.sam.jetson.txt \
     -r requirements.gaze.txt \
     -r requirements.groundingdino.txt \
     -r requirements.yolo_world.txt \
