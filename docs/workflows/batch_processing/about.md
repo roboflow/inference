@@ -139,7 +139,7 @@ You can optionally include glob patterns to filter files:
     
      **AWS S3 (with named profile):**
     ```bash
-    export AWS_PROFILE=my-profile  # Uses credentials from ~/.aws/credentials
+    export AWS_PROFILE=my-profile  # Optional, uses credentials from ~/.aws/credentials
 
     inference rf-cloud data-staging create-batch-of-images \
       --data-source cloud-storage \

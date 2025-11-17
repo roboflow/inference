@@ -487,7 +487,8 @@ See the [Cloud Storage Authentication](#cloud-storage-authentication) section be
 If you need more customization beyond what `inference-cli` provides, you can use these reference scripts as a starting point:
 
 - **AWS S3:** [generateS3SignedUrls.sh](https://raw.githubusercontent.com/roboflow/roboflow-python/main/scripts/generateS3SignedUrls.sh)
-- **Google Cloud Storage:** [generateGCSSignedUrls.sh](https://raw.githubusercontent.com/roboflow/roboflow-python/main/scripts/listgcs.sh)
+- **Google Cloud Storage:** [generateGCSSignedUrls.sh](https://github.com/roboflow/roboflow-python/blob/main/scripts/generateGCSSignedUrls.sh)
+- **Azure Blob Storage:** [generateAzureSasUrls.sh](https://raw.githubusercontent.com/roboflow/roboflow-python/main/scripts/generateAzureSasUrls.sh)
 
 These scripts demonstrate how to:
 - List files from cloud storage
@@ -502,8 +503,12 @@ curl -fsSL https://raw.githubusercontent.com/roboflow/roboflow-python/main/scrip
   bash -s -- s3://my-bucket/images/ output.jsonl
 
 # Download and run the GCS script
-curl -fsSL https://raw.githubusercontent.com/roboflow/roboflow-python/main/scripts/listgcs.sh | \
+curl -fsSL https://github.com/roboflow/roboflow-python/blob/main/scripts/generateGCSSignedUrls.sh | \
   bash -s -- gs://my-bucket/images/ output.jsonl
+
+# Download and run the Azure script
+curl -fsSL https://raw.githubusercontent.com/roboflow/roboflow-python/main/scripts/generateAzureSasUrls.sh | \
+  bash -s -- az://my-container/images/ output.jsonl
 ```
 
 ##### Cloud Storage Authentication
@@ -529,7 +534,14 @@ The system automatically detects AWS credentials from multiple sources in this o
 
 **Using named profiles:**
 ```bash
-export AWS_PROFILE=my-profile-name
+# Use a specific profile from ~/.aws/credentials
+export AWS_PROFILE=production # optional
+
+inference rf-cloud data-staging create-batch-of-images \
+  --data-source cloud-storage \
+  --bucket-path "s3://my-bucket/images/**/*.jpg" \
+  --batch-id my-batch
+```
 ```
 
 **S3-compatible services (Cloudflare R2, MinIO, etc.):**
@@ -629,11 +641,37 @@ Possible causes:
   - Network connectivity issues
 ```
 
-All errors include:
-- The operation that failed (file discovery vs URL generation)
-- The specific path or file involved
-- Troubleshooting hints
-- Context about the error
+
+
+##### Custom Scripts for Advanced Use Cases
+
+If you need more customization beyond what `inference-cli` provides, you can use these reference scripts as a starting point for generating a reference-file:
+
+- **AWS S3:** [generateS3SignedUrls.sh](https://raw.githubusercontent.com/roboflow/roboflow-python/main/scripts/generateS3SignedUrls.sh)
+- **Google Cloud Storage:** [generateGCSSignedUrls.sh](https://github.com/roboflow/roboflow-python/blob/main/scripts/generateGCSSignedUrls.sh)
+- **Azure Blob Storage:** [generateAzureSasUrls.sh](https://raw.githubusercontent.com/roboflow/roboflow-python/main/scripts/generateAzureSasUrls.sh)
+
+These scripts demonstrate how to:
+- List files from cloud storage
+- Generate presigned URLs with custom expiration times
+- Process files in parallel for better performance
+- Create JSONL reference files for batch ingestion
+
+**Example usage:**
+```bash
+# Download and run the S3 script
+curl -fsSL https://raw.githubusercontent.com/roboflow/roboflow-python/main/scripts/generateS3SignedUrls.sh | \
+  bash -s -- s3://my-bucket/images/ output.jsonl
+
+# Download and run the GCS script
+curl -fsSL https://github.com/roboflow/roboflow-python/blob/main/scripts/generateGCSSignedUrls.sh | \
+  bash -s -- gs://my-bucket/images/ output.jsonl
+
+# Download and run the Azure script
+curl -fsSL https://raw.githubusercontent.com/roboflow/roboflow-python/main/scripts/generateAzureSasUrls.sh | \
+  bash -s -- az://my-container/images/ output.jsonl
+```
+
 
 
 #### Notifications
