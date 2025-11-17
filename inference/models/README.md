@@ -17,6 +17,7 @@ The models supported by Roboflow Inference have their own licenses. View the lic
 | `inference/models/transformers`   | [Apache 2.0](https://github.com/huggingface/transformers/blob/main/LICENSE)          | 👍 |
 | `inference/models/trocr`          | [MIT](https://github.com/microsoft/unilm/blob/master/LICENSE)                        | 👍 |
 | `inference/models/vit`            | [Apache 2.0](https://github.com/google-research/vision_transformer/blob/main/LICENSE)| 👍 |
+| `inference/models/dinov3`         | [DinoV3](https://github.com/facebookresearch/dinov3/blob/main/LICENSE.md)            | 👍 |
 | `inference/models/yolact`         | [MIT](https://github.com/dbolya/yolact/blob/master/LICENSE)                          | 👍 |
 | `inference/models/yolo_world`     | [GPL-3.0](https://github.com/AILab-CVC/YOLO-World/blob/master/LICENSE)               | ✅ |
 | `inference/models/yolonas`        | [Apache 2.0](https://github.com/Deci-AI/super-gradients/blob/master/LICENSE.md)      | 👍 |
