@@ -3,18 +3,23 @@
 import asyncio
 import inspect
 import json
-import logging
 import queue
-import sys
 import threading
 from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
 from queue import Queue
 from typing import TYPE_CHECKING, Any, Callable, Iterator, List, Optional
 
 import numpy as np
 import requests
 
+from inference_sdk.config import (
+    WEBRTC_EVENT_LOOP_SHUTDOWN_TIMEOUT,
+    WEBRTC_INITIAL_FRAME_TIMEOUT,
+    WEBRTC_VIDEO_QUEUE_MAX_SIZE,
+)
+from inference_sdk.utils.logging import get_logger
 from inference_sdk.webrtc.config import StreamConfig
 from inference_sdk.webrtc.sources import StreamSource
 
@@ -35,7 +40,15 @@ def _check_webrtc_dependencies():
         ) from e
 
 
-logger = logging.getLogger(__name__)
+logger = get_logger("webrtc.session")
+
+
+class SessionState(Enum):
+    """WebRTC session lifecycle states."""
+
+    NOT_STARTED = "not_started"
+    STARTED = "started"
+    CLOSED = "closed"
 
 
 @dataclass
@@ -63,19 +76,6 @@ class VideoMetadata:
     measured_fps: Optional[float] = None
 
 
-# Configuration constants
-DEFAULT_INITIAL_FRAME_TIMEOUT = 30.0  # seconds to wait for first video frame
-VIDEO_QUEUE_MAX_SIZE = 8  # maximum number of frames to buffer
-EVENT_LOOP_SHUTDOWN_TIMEOUT = 2.0  # seconds to wait for event loop thread to stop
-
-# Configure basic logging if root logger has no handlers
-# This ensures users see important errors even without explicit logging setup
-if not logging.root.handlers:
-    handler = logging.StreamHandler(sys.stderr)
-    handler.setFormatter(logging.Formatter("%(levelname)s [%(name)s] %(message)s"))
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
-    logger.propagate = False
 
 
 class _VideoStream:
@@ -85,7 +85,7 @@ class _VideoStream:
         self,
         session: "WebRTCSession",
         frames: "Queue[Optional[tuple[np.ndarray, VideoMetadata]]]",
-        initial_frame_timeout: float = DEFAULT_INITIAL_FRAME_TIMEOUT,
+        initial_frame_timeout: float = WEBRTC_INITIAL_FRAME_TIMEOUT,
     ):
         self._session = session
         self._frames = frames
@@ -168,6 +168,10 @@ class WebRTCSession:
             workflow_config: Workflow configuration dict
             stream_config: Stream configuration
         """
+
+        self._state: SessionState = SessionState.NOT_STARTED
+        self._state_lock: threading.Lock = threading.Lock()
+
         self._api_url = api_url.rstrip("/")
         self._api_key = api_key
         self._source = source
@@ -180,12 +184,8 @@ class WebRTCSession:
         self._loop_thread: Optional[threading.Thread] = None
         self._pc: Optional["RTCPeerConnection"] = None
         self._video_queue: "Queue[Optional[tuple[np.ndarray, VideoMetadata]]]" = Queue(
-            maxsize=VIDEO_QUEUE_MAX_SIZE
+            maxsize=WEBRTC_VIDEO_QUEUE_MAX_SIZE
         )
-
-        # Lifecycle state tracking
-        self._state: str = "not_started"  # States: "not_started", "started", "closed"
-        self._state_lock: threading.Lock = threading.Lock()
 
         # Callback handlers
         self._frame_handlers: List[Callable] = []
@@ -238,10 +238,10 @@ class WebRTCSession:
     def _ensure_started(self) -> None:
         """Ensure connection is started (thread-safe, idempotent)."""
         with self._state_lock:
-            if self._state == "not_started":
-                self._state = "started"
+            if self._state == SessionState.NOT_STARTED:
+                self._state = SessionState.STARTED
                 self._init_connection()
-            elif self._state == "closed":
+            elif self._state == SessionState.CLOSED:
                 raise RuntimeError("Cannot use closed WebRTCSession")
 
     def _parse_video_metadata(
@@ -285,9 +285,9 @@ class WebRTCSession:
             session.close()  # Explicit cleanup (or let __del__ handle it)
         """
         with self._state_lock:
-            if self._state == "closed":
+            if self._state == SessionState.CLOSED:
                 return  # Already closed, nothing to do
-            self._state = "closed"
+            self._state = SessionState.CLOSED
 
         # Cleanup resources (nested finally ensures all cleanup steps execute)
         try:
@@ -306,12 +306,30 @@ class WebRTCSession:
                 if self._loop:
                     self._loop.call_soon_threadsafe(self._loop.stop)
                 if self._loop_thread:
-                    self._loop_thread.join(timeout=EVENT_LOOP_SHUTDOWN_TIMEOUT)
+                    self._loop_thread.join(timeout=WEBRTC_EVENT_LOOP_SHUTDOWN_TIMEOUT)
+
+    def __enter__(self) -> "WebRTCSession":
+        """Enter context manager - returns self.
+
+        Returns:
+            WebRTCSession: The session instance for use in with statement.
+        """
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Exit context manager - automatically closes the session.
+
+        Args:
+            exc_type: Exception type if an exception occurred, None otherwise.
+            exc_val: Exception value if an exception occurred, None otherwise.
+            exc_tb: Exception traceback if an exception occurred, None otherwise.
+        """
+        self.close()
 
     def __del__(self) -> None:
         """Cleanup if user forgot to close. Not guaranteed to run immediately."""
         try:
-            if hasattr(self, "_state") and self._state == "started":
+            if self._state == SessionState.STARTED:
                 logger.warning(
                     "WebRTCSession was not properly closed. "
                     "Consider calling session.close() explicitly for immediate cleanup."
@@ -319,6 +337,7 @@ class WebRTCSession:
                 self.close()
         except Exception:
             pass  # Never raise from __del__
+
 
     def wait(self, timeout: Optional[float] = None) -> None:
         """Wait for session to complete.

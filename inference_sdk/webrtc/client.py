@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Optional, Union
 
+from inference_sdk.http.errors import InvalidParameterError
 from inference_sdk.utils.decorators import experimental
 from inference_sdk.webrtc.config import StreamConfig
 from inference_sdk.webrtc.session import WebRTCSession
@@ -54,7 +55,7 @@ class WebRTCClient:
             WebRTCSession context manager
 
         Raises:
-            ValueError: If workflow/workspace parameters are invalid
+            InvalidParameterError: If workflow/workspace parameters are invalid
 
         Examples:
             # Webcam streaming
@@ -119,12 +120,12 @@ class WebRTCClient:
             Dictionary with workflow configuration
 
         Raises:
-            ValueError: If configuration is invalid
+            InvalidParameterError: If configuration is invalid
         """
         if isinstance(workflow, str):
             # Workflow ID mode - requires workspace
             if not workspace:
-                raise ValueError(
+                raise InvalidParameterError(
                     "workspace parameter required when workflow is an ID string"
                 )
             return {"workflow_id": workflow, "workspace_name": workspace}
@@ -132,6 +133,6 @@ class WebRTCClient:
             # Workflow specification mode
             return {"workflow_specification": workflow}
         else:
-            raise ValueError(
+            raise InvalidParameterError(
                 f"workflow must be a string (ID) or dict (specification), got {type(workflow)}"
             )

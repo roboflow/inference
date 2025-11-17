@@ -14,6 +14,8 @@ import numpy as np
 from aiortc import RTCPeerConnection, VideoStreamTrack
 from av import VideoFrame
 
+from inference_sdk.http.errors import InvalidParameterError
+
 
 class StreamSource(ABC):
     """Base interface for all stream sources.
@@ -188,7 +190,7 @@ class RTSPSource(StreamSource):
     def _validate_url(self) -> None:
         """Validate that the URL is a valid RTSP URL."""
         if not self.url.startswith(("rtsp://", "rtsps://")):
-            raise ValueError(
+            raise InvalidParameterError(
                 f"Invalid RTSP URL: {self.url}. Must start with rtsp:// or rtsps://"
             )
 

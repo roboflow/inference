@@ -73,6 +73,7 @@ from inference_sdk.http.utils.requests import (
     inject_nested_batches_of_images_into_payload,
 )
 from inference_sdk.utils.decorators import deprecated, experimental
+from inference_sdk.webrtc.client import WebRTCClient
 
 SUCCESSFUL_STATUS_CODE = 200
 DEFAULT_HEADERS = {
@@ -216,6 +217,7 @@ class InferenceHTTPClient:
         self.__inference_configuration = InferenceConfiguration.init_default()
         self.__client_mode = _determine_client_mode(api_url=api_url)
         self.__selected_model: Optional[str] = None
+        self.__webrtc_client: Optional[WebRTCClient] = None
 
     @property
     def inference_configuration(self) -> InferenceConfiguration:
@@ -245,20 +247,15 @@ class InferenceHTTPClient:
         return self.__selected_model
 
     @property
-    def webrtc(self):
+    def webrtc(self) -> WebRTCClient:
         """Lazy accessor for the WebRTC client namespace.
 
         Returns:
             WebRTCClient: Namespaced WebRTC API bound to this HTTP client.
         """
-        try:
-            return self.__webrtc_client  # type: ignore[attr-defined]
-        except AttributeError:
-            # Lazy import to avoid optional dependency cost if unused
-            from inference_sdk.webrtc.client import WebRTCClient  # noqa: WPS433
-
-            self.__webrtc_client = WebRTCClient(self.__api_url, self.__api_key)  # type: ignore[attr-defined]
-            return self.__webrtc_client  # type: ignore[attr-defined]
+        if self.__webrtc_client is None:
+            self.__webrtc_client = WebRTCClient(self.__api_url, self.__api_key)
+        return self.__webrtc_client
 
     @contextmanager
     def use_configuration(

@@ -47,11 +47,12 @@ jobs:
           pip install --upgrade setuptools
           pip install -r requirements/_requirements.txt \
                       -r requirements/requirements.sdk.http.txt \
+                      -r requirements/requirements.sdk.webrtc.txt \
                       -r requirements/requirements.test.unit.txt
 
       - name: 🧪 Integration Tests - WebRTC SDK (mocked)
         timeout-minutes: 10
-        run: python -m pytest tests/inference_sdk/integration_tests -v
+        run: python -m pytest tests/inference_sdk/integration_tests -v --timeout=300
 
   e2e-tests:
     needs: call_is_mergeable
@@ -89,4 +90,9 @@ jobs:
                       -r requirements/requirements.cpu.txt \
                       -r requirements/requirements.http.txt \
                       -r requirements/requirements.sdk.http.txt \
+                      -r requirements/requirements.sdk.webrtc.txt \
                       -r requirements/requirements.test.unit.txt
+
+      - name: 🧪 E2E Tests - WebRTC SDK (real server)
+        timeout-minutes: 15
+        run: python -m pytest tests/inference_sdk/e2e_tests -m slow -v --timeout=300
