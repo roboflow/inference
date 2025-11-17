@@ -391,14 +391,23 @@ allowing factory automation engineers to take advantage of machine vision when b
         ("Double", "DoubleVar", 3.14159265359, 3.14159265359),
         ("Float", "FloatVar", 3.14, 3.14),
         ("Int16", "Int16Var", 100, 100),
+        ("Int16", "Int16Var", "100", 100),  # string to int conversion
         ("Int32", "Int32Var", 1000, 1000),
+        ("Int32", "Int32Var", "1000", 1000),  # string to int conversion
         ("Int64", "Int64Var", 100000, 100000),
+        ("Int64", "Int64Var", "100000", 100000),  # string to int conversion
         ("Integer", "Int64Var", 41, 41),  # backwards compatibility
         ("SByte", "SByteVar", -50, -50),
+        ("SByte", "SByteVar", "-50", -50),  # string to int conversion
         ("String", "StringVar", "test", "test"),
+        ("String", "StringVar", 123, "123"),  # int to string conversion
+        ("String", "StringVar", 3.14, "3.14"),  # float to string conversion
         ("UInt16", "UInt16Var", 200, 200),
+        ("UInt16", "UInt16Var", "200", 200),  # string to int conversion
         ("UInt32", "UInt32Var", 2000, 2000),
+        ("UInt32", "UInt32Var", "2000", 2000),  # string to int conversion
         ("UInt64", "UInt64Var", 200000, 200000),
+        ("UInt64", "UInt64Var", "200000", 200000),  # string to int conversion
     ],
 )
 def test_workflow_with_opc_writer_sink(test_opc_server, value_type, variable_name, test_value, expected_value) -> None:
