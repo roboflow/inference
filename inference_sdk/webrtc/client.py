@@ -58,37 +58,42 @@ class WebRTCClient:
             InvalidParameterError: If workflow/workspace parameters are invalid
 
         Examples:
-            # Webcam streaming
+            # Pattern 1: Using run() with decorators (recommended, auto-cleanup)
             from inference_sdk.webrtc import WebcamSource
 
-            with client.webrtc.stream(
+            session = client.webrtc.stream(
                 source=WebcamSource(resolution=(1920, 1080)),
                 workflow="object-detection",
                 workspace="my-workspace"
-            ) as session:
-                for frame in session.video():
-                    cv2.imshow("Frame", frame)
+            )
 
-            # RTSP streaming
+            @session.on_frame
+            def process_frame(frame, metadata):
+                cv2.imshow("Frame", frame)
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    session.close()
+
+            session.run()  # Auto-closes on exception or stream end
+
+            # Pattern 2: Using video() iterator (requires context manager or explicit close)
             from inference_sdk.webrtc import RTSPSource
 
+            # Option A: With context manager (recommended)
             with client.webrtc.stream(
                 source=RTSPSource("rtsp://camera.local/stream"),
                 workflow=workflow_spec_dict
             ) as session:
-                @session.on_data("predictions")
-                def handle_predictions(data):
-                    print("Got predictions:", data)
+                for frame, metadata in session.video():
+                    cv2.imshow("Frame", frame)
+                    if cv2.waitKey(1) & 0xFF == ord('q'):
+                        break
+            # Auto-cleanup on exit
 
-                session.wait()
-
-            # Manual frame sending
-            from inference_sdk.webrtc import ManualSource
-
-            manual = ManualSource()
-            with client.webrtc.stream(source=manual, ...) as session:
-                for frame in my_frames:
-                    manual.send(frame)
+            # Option B: Manual cleanup (not recommended)
+            session = client.webrtc.stream(source=RTSPSource("rtsp://..."), ...)
+            for frame, metadata in session.video():
+                process(frame)
+            session.close()  # Must call close() explicitly!
         """
         # Validate workflow configuration
         workflow_config = self._parse_workflow_config(workflow, workspace)

@@ -448,9 +448,9 @@ class WebRTCSession:
         registered frame handlers for each frame. Automatically starts
         the session if not already started.
 
-        The session automatically closes if an exception occurs during
-        frame processing, ensuring resources are cleaned up before
-        re-raising the exception.
+        The session automatically closes when this method exits, whether
+        normally or due to an exception, ensuring resources are always
+        cleaned up.
 
         Blocks until either:
         - close() is called (e.g., from a callback)
@@ -471,10 +471,9 @@ class WebRTCSession:
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     session.close()  # Exits run() and cleans up
 
-            session.run()  # Auto-starts, blocks here
+            session.run()  # Auto-starts, auto-closes, blocks here
         """
-        try:
-            self._ensure_started()
+        with self:
             for frame, metadata in self.video():
                 # Invoke all registered frame handlers with both parameters
                 for handler in self._frame_handlers:
@@ -482,14 +481,6 @@ class WebRTCSession:
                         handler(frame, metadata)
                     except Exception:
                         logger.warning("Error in frame handler", exc_info=True)
-        except KeyboardInterrupt:
-            logger.info("Interrupted by user, closing session")
-            self.close()
-            raise
-        except Exception:
-            logger.error("Exception in run(), closing session", exc_info=True)
-            self.close()
-            raise
 
     def _invoke_data_handler(
         self, handler: Callable, value: Any, metadata: Optional[VideoMetadata]
