@@ -258,12 +258,6 @@ ENV VERSION_CHECK_MODE=once \
     API_LOGGING_ENABLED=True \
     DISABLE_WORKFLOW_ENDPOINTS=false
 
-# Add label with versions for comparison
-LABEL org.opencontainers.image.description="Inference Server - Jetson 6.2.0 (optimized CUDA base)" \
-      org.opencontainers.image.base.name="nvcr.io/nvidia/l4t-cuda:12.6.11-runtime" \
-      cuda.version="12.6.11" \
-      cudnn.source="l4t-jetpack:r36.4.0" \
-      gdal.version="3.11.5" \
-      pytorch.version="2.8.0"
+LABEL org.opencontainers.image.description="Inference Server - Jetson 6.2.0"
 
 ENTRYPOINT ["/bin/sh", "-c", "python3 -m uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT"]
