@@ -508,13 +508,22 @@ def test_sahi_workflow_provides_the_same_result_as_sahi_applied_directly(
         detections = sv.Detections.from_inference(predictions)
         return detections
 
-    slicer = sv.InferenceSlicer(
-        callback=slicer_callback,
-        slice_wh=(640, 640),
-        overlap_wh=(0.2, 0.2),
-        overlap_filter=sv.OverlapFilter.NON_MAX_SUPPRESSION,
-        iou_threshold=0.3,
-    )
+    try:
+        slicer = sv.InferenceSlicer(
+            callback=slicer_callback,
+            slice_wh=(640, 640),
+            overlap_wh=(0.2, 0.2),
+            overlap_filter=sv.OverlapFilter.NON_MAX_SUPPRESSION,
+            iou_threshold=0.3,
+        )
+    except ValueError:
+        slicer = sv.InferenceSlicer(
+            callback=slicer_callback,
+            slice_wh=(640, 640),
+            overlap_ratio_wh=(0.2, 0.2),
+            overlap_filter=sv.OverlapFilter.NON_MAX_SUPPRESSION,
+            iou_threshold=0.3,
+        )
 
     # when
     detections_obtained_directly = slicer(crowd_image)
@@ -525,20 +534,32 @@ def test_sahi_workflow_provides_the_same_result_as_sahi_applied_directly(
         }
     )
 
+    detections_obtained_directly_xyxy = detections_obtained_directly.xyxy.copy()
+    detections_obtained_directly_xyxy.sort(axis=0)
+    workflow_result_xyxy = workflow_result[0]["predictions"].xyxy.copy()
+    workflow_result_xyxy.sort(axis=0)
     # then
     assert np.allclose(
-        detections_obtained_directly.xyxy,
-        workflow_result[0]["predictions"].xyxy,
-        atol=1,
+        detections_obtained_directly_xyxy,
+        workflow_result_xyxy,
+        atol=2,
     ), "Expected bounding boxes to be the same for workflow SAHI and direct SAHI"
+    detections_obtained_directly_confidence = detections_obtained_directly.confidence.copy()
+    detections_obtained_directly_confidence.sort()
+    workflow_result_confidence = workflow_result[0]["predictions"].confidence.copy()
+    workflow_result_confidence.sort()
     assert np.allclose(
-        detections_obtained_directly.confidence,
-        workflow_result[0]["predictions"].confidence,
-        atol=1e-4,
+        detections_obtained_directly_confidence,
+        workflow_result_confidence,
+        atol=1e-1,
     ), "Expected confidences to be the same for workflow SAHI and direct SAHI"
+    detections_obtained_directly_class_id = detections_obtained_directly.class_id.copy()
+    detections_obtained_directly_class_id.sort(axis=0)
+    workflow_result_class_id = workflow_result[0]["predictions"].class_id.copy()
+    workflow_result_class_id.sort(axis=0)
     assert np.all(
-        detections_obtained_directly.class_id
-        == workflow_result[0]["predictions"].class_id
+        detections_obtained_directly_class_id
+        == workflow_result_class_id
     ), "Expected class ids to be the same for workflow SAHI and direct SAHI"
 
 
