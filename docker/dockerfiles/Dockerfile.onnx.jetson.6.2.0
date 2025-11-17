@@ -88,15 +88,13 @@ RUN python3 -m pip install --upgrade pip && \
     python3 -m pip install "torch>=${TORCH_VERSION}" "torchvision>=${TORCHVISION_VERSION}" \
     --index-url https://pypi.jetson-ai-lab.io/jp6/cu126
 
-# Install Python dependencies
+# Install Python dependencies (torch/torchvision already installed from jetson-ai-lab.io)
 RUN uv pip install --system --break-system-packages --index-strategy unsafe-best-match \
     --extra-index-url https://pypi.jetson-ai-lab.io/jp6/cu126 \
     -r _requirements.txt \
     -r requirements.jetson.6.2.0.txt \
     -r requirements.http.txt \
     -r requirements.clip.txt \
-    -r requirements.transformers.txt \
-    -r requirements.sam.txt \
     -r requirements.gaze.txt \
     -r requirements.groundingdino.txt \
     -r requirements.yolo_world.txt \
