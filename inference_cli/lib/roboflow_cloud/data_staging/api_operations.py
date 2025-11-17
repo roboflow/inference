@@ -1636,21 +1636,61 @@ def _parse_bucket_path(bucket_path: str) -> Tuple[str, Optional[str]]:
     return bucket_path, None
 
 
-def _get_fs_kwargs() -> dict:
+def _get_fs_kwargs(protocol: Optional[str] = None) -> dict:
     """
-    Get filesystem kwargs from environment variables for custom endpoints (e.g., R2).
-    Also supports AWS_PROFILE for using named AWS credential profiles.
+    Get filesystem kwargs from environment variables for cloud storage authentication.
+
+    Only passes kwargs when necessary to override defaults or enable special features.
+    Most credentials are auto-detected by fsspec from standard environment variables:
+    - s3fs: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, ~/.aws/*
+    - gcsfs: GOOGLE_APPLICATION_CREDENTIALS, ~/.config/gcloud/*, GCP metadata
+    - adlfs: Must pass explicitly (no auto-detection)
+
+    Args:
+        protocol: Cloud storage protocol (s3, gs, az, etc.). If None, returns all kwargs.
+
+    Returns:
+        Dictionary of kwargs to pass to fsspec.filesystem()
     """
     kwargs = {}
 
-    endpoint_url = os.getenv("AWS_ENDPOINT_URL")
-    if endpoint_url:
-        kwargs["client_kwargs"] = {"endpoint_url": endpoint_url}
+    # AWS S3 and S3-compatible (e.g., Cloudflare R2)
+    if protocol in (None, "s3"):
+        # Only pass endpoint_url for S3-compatible services (R2, MinIO, etc.)
+        endpoint_url = os.getenv("AWS_ENDPOINT_URL")
+        if endpoint_url:
+            kwargs["client_kwargs"] = {"endpoint_url": endpoint_url}
 
-    # Support AWS_PROFILE for named credential profiles
-    aws_profile = os.getenv("AWS_PROFILE")
-    if aws_profile:
-        kwargs["profile"] = aws_profile
+        # Only pass profile to override default credential chain
+        aws_profile = os.getenv("AWS_PROFILE")
+        if aws_profile:
+            kwargs["profile"] = aws_profile
+
+    # Google Cloud Storage - gcsfs auto-detects GOOGLE_APPLICATION_CREDENTIALS
+    # No kwargs needed unless using service account JSON directly
+    # if protocol in (None, "gs", "gcs"):
+    #     pass  # Let gcsfs auto-detect credentials
+
+    # Azure Blob Storage - adlfs does NOT auto-detect, must pass explicitly
+    # Support both adlfs convention and Azure CLI standard naming
+    if protocol in (None, "az", "abfs", "azure"):
+        # Account name: try adlfs convention first, fall back to Azure CLI standard
+        azure_account = os.getenv("AZURE_STORAGE_ACCOUNT_NAME") or os.getenv("AZURE_STORAGE_ACCOUNT")
+
+        # Account key: try adlfs convention first, fall back to Azure CLI standard
+        azure_key = os.getenv("AZURE_STORAGE_ACCOUNT_KEY") or os.getenv("AZURE_STORAGE_KEY")
+
+        # SAS token: same name in both conventions
+        azure_sas_token = os.getenv("AZURE_STORAGE_SAS_TOKEN")
+
+        if azure_account:
+            kwargs["account_name"] = azure_account
+
+        # Prefer SAS token over account key (more secure, time-limited)
+        if azure_sas_token:
+            kwargs["sas_token"] = azure_sas_token
+        elif azure_key:
+            kwargs["account_key"] = azure_key
 
     return kwargs
 
@@ -1995,7 +2035,8 @@ def create_images_batch_from_cloud_storage(
         )
 
     base_path, glob_pattern = _parse_bucket_path(bucket_path)
-    fs = fsspec.filesystem(base_path.split("://")[0], **_get_fs_kwargs())
+    protocol = base_path.split("://")[0]
+    fs = fsspec.filesystem(protocol, **_get_fs_kwargs(protocol))
 
     # Stream and filter image files with progress
     image_files_generator = _list_and_filter_files_streaming(
@@ -2091,7 +2132,8 @@ def create_videos_batch_from_cloud_storage(
         )
 
     base_path, glob_pattern = _parse_bucket_path(bucket_path)
-    fs = fsspec.filesystem(base_path.split("://")[0], **_get_fs_kwargs())
+    protocol = base_path.split("://")[0]
+    fs = fsspec.filesystem(protocol, **_get_fs_kwargs(protocol))
 
     # Stream and filter video files with progress
     video_files_generator = _list_and_filter_files_streaming(

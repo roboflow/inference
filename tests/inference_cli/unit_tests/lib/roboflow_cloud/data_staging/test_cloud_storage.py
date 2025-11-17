@@ -50,6 +50,115 @@ def test_get_fs_kwargs_with_endpoint_and_profile(monkeypatch):
     assert kwargs["profile"] == "my-profile"
 
 
+def test_get_fs_kwargs_gcs(monkeypatch):
+    """Test GCS authentication - gcsfs auto-detects GOOGLE_APPLICATION_CREDENTIALS"""
+    monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
+    monkeypatch.delenv("AWS_PROFILE", raising=False)
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", "/path/to/service-account.json")
+
+    # gcsfs auto-detects GOOGLE_APPLICATION_CREDENTIALS, so no kwargs needed
+    kwargs = _get_fs_kwargs("gs")
+    assert kwargs == {}
+
+
+def test_get_fs_kwargs_azure(monkeypatch):
+    """Test Azure authentication with account name and key"""
+    monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
+    monkeypatch.delenv("AWS_PROFILE", raising=False)
+    monkeypatch.delenv("AZURE_STORAGE_SAS_TOKEN", raising=False)
+    monkeypatch.setenv("AZURE_STORAGE_ACCOUNT_NAME", "myaccount")
+    monkeypatch.setenv("AZURE_STORAGE_ACCOUNT_KEY", "mykey")
+
+    kwargs = _get_fs_kwargs("az")
+    assert kwargs["account_name"] == "myaccount"
+    assert kwargs["account_key"] == "mykey"
+    assert "sas_token" not in kwargs
+
+
+def test_get_fs_kwargs_azure_sas_token(monkeypatch):
+    """Test Azure authentication with SAS token (preferred over account key)"""
+    monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
+    monkeypatch.delenv("AWS_PROFILE", raising=False)
+    monkeypatch.setenv("AZURE_STORAGE_ACCOUNT_NAME", "myaccount")
+    monkeypatch.setenv("AZURE_STORAGE_SAS_TOKEN", "sv=2021-06-08&ss=b&srt=sco&sp=rl&se=2024-12-31")
+
+    kwargs = _get_fs_kwargs("az")
+    assert kwargs["account_name"] == "myaccount"
+    assert kwargs["sas_token"] == "sv=2021-06-08&ss=b&srt=sco&sp=rl&se=2024-12-31"
+    assert "account_key" not in kwargs
+
+
+def test_get_fs_kwargs_azure_sas_token_precedence(monkeypatch):
+    """Test that SAS token takes precedence over account key"""
+    monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
+    monkeypatch.delenv("AWS_PROFILE", raising=False)
+    monkeypatch.setenv("AZURE_STORAGE_ACCOUNT_NAME", "myaccount")
+    monkeypatch.setenv("AZURE_STORAGE_ACCOUNT_KEY", "mykey")
+    monkeypatch.setenv("AZURE_STORAGE_SAS_TOKEN", "sv=2021-06-08&ss=b&srt=sco&sp=rl")
+
+    kwargs = _get_fs_kwargs("az")
+    assert kwargs["account_name"] == "myaccount"
+    assert kwargs["sas_token"] == "sv=2021-06-08&ss=b&srt=sco&sp=rl"
+    assert "account_key" not in kwargs  # SAS token preferred
+
+
+def test_get_fs_kwargs_azure_cli_naming(monkeypatch):
+    """Test Azure authentication with Azure CLI standard naming convention"""
+    monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
+    monkeypatch.delenv("AWS_PROFILE", raising=False)
+    monkeypatch.delenv("AZURE_STORAGE_ACCOUNT_NAME", raising=False)
+    monkeypatch.delenv("AZURE_STORAGE_ACCOUNT_KEY", raising=False)
+    monkeypatch.delenv("AZURE_STORAGE_SAS_TOKEN", raising=False)
+
+    # Use Azure CLI standard naming
+    monkeypatch.setenv("AZURE_STORAGE_ACCOUNT", "mycliaccount")
+    monkeypatch.setenv("AZURE_STORAGE_KEY", "myclikey")
+
+    kwargs = _get_fs_kwargs("az")
+    assert kwargs["account_name"] == "mycliaccount"
+    assert kwargs["account_key"] == "myclikey"
+
+
+def test_get_fs_kwargs_azure_naming_precedence(monkeypatch):
+    """Test that adlfs convention takes precedence over Azure CLI standard"""
+    monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
+    monkeypatch.delenv("AWS_PROFILE", raising=False)
+
+    # Set both naming conventions
+    monkeypatch.setenv("AZURE_STORAGE_ACCOUNT_NAME", "adlfs_account")
+    monkeypatch.setenv("AZURE_STORAGE_ACCOUNT", "cli_account")
+    monkeypatch.setenv("AZURE_STORAGE_ACCOUNT_KEY", "adlfs_key")
+    monkeypatch.setenv("AZURE_STORAGE_KEY", "cli_key")
+
+    kwargs = _get_fs_kwargs("az")
+    # adlfs convention should take precedence
+    assert kwargs["account_name"] == "adlfs_account"
+    assert kwargs["account_key"] == "adlfs_key"
+
+
+def test_get_fs_kwargs_protocol_filtering(monkeypatch):
+    """Test that protocol filtering only returns relevant kwargs"""
+    monkeypatch.setenv("AWS_PROFILE", "my-profile")
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", "/path/to/gcs.json")
+    monkeypatch.setenv("AZURE_STORAGE_ACCOUNT_NAME", "myaccount")
+    monkeypatch.setenv("AZURE_STORAGE_ACCOUNT_KEY", "mykey")
+
+    # S3 protocol should only get AWS kwargs
+    s3_kwargs = _get_fs_kwargs("s3")
+    assert "profile" in s3_kwargs
+    assert "account_name" not in s3_kwargs
+
+    # GCS protocol returns empty (auto-detection)
+    gcs_kwargs = _get_fs_kwargs("gs")
+    assert gcs_kwargs == {}
+
+    # Azure protocol should only get Azure kwargs
+    az_kwargs = _get_fs_kwargs("az")
+    assert "account_name" in az_kwargs
+    assert "account_key" in az_kwargs
+    assert "profile" not in az_kwargs
+
+
 def test_match_glob_pattern():
     """Test glob pattern matching"""
     # Test ** recursive matching
