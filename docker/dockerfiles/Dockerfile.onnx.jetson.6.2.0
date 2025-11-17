@@ -76,7 +76,7 @@ COPY requirements/requirements.sam.jetson.txt \
     requirements/requirements.doctr.txt \
     requirements/requirements.groundingdino.txt \
     requirements/requirements.yolo_world.txt \
-    requirements/_requirements.txt \
+    requirements/_requirements.jetson.txt \
     requirements/requirements.transformers.jetson.txt \
     requirements/requirements.jetson.6.2.0.txt \
     requirements/requirements.sdk.http.txt \
@@ -88,10 +88,10 @@ RUN python3 -m pip install --upgrade pip && \
     python3 -m pip install "torch>=${TORCH_VERSION}" "torchvision>=${TORCHVISION_VERSION}" \
     --index-url https://pypi.jetson-ai-lab.io/jp6/cu126
 
-# Install Python dependencies (torch/torchvision already installed from jetson-ai-lab.io)
+# Install Python dependencies (torch/torchvision/numpy already installed)
 RUN uv pip install --system --break-system-packages --index-strategy unsafe-best-match \
     --extra-index-url https://pypi.jetson-ai-lab.io/jp6/cu126 \
-    -r _requirements.txt \
+    -r _requirements.jetson.txt \
     -r requirements.jetson.6.2.0.txt \
     -r requirements.http.txt \
     -r requirements.clip.txt \
