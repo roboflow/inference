@@ -44,6 +44,7 @@ from inference.core.interfaces.webrtc_worker.entities import (
 from inference.core.interfaces.webrtc_worker.webrtc import (
     init_rtc_peer_connection_with_loop,
 )
+from inference.core.roboflow_api import get_roboflow_workspace
 from inference.core.version import __version__
 from inference.usage_tracking.collector import usage_collector
 from inference.usage_tracking.plan_details import WebRTCPlan
@@ -55,10 +56,11 @@ except ImportError:
 
 
 if modal is not None:
+    docker_tag: str = WEBRTC_MODAL_IMAGE_TAG if WEBRTC_MODAL_IMAGE_TAG else __version__
     # https://modal.com/docs/reference/modal.Image
     video_processing_image = (
         modal.Image.from_registry(
-            f"{WEBRTC_MODAL_IMAGE_NAME}:{WEBRTC_MODAL_IMAGE_TAG if WEBRTC_MODAL_IMAGE_TAG else __version__}"
+            f"{WEBRTC_MODAL_IMAGE_NAME}:{docker_tag}"
         )
         .pip_install("modal")
         .entrypoint([])
@@ -121,6 +123,7 @@ if modal is not None:
             "ONNXRUNTIME_EXECUTION_PROVIDERS": "[CUDAExecutionProvider,CPUExecutionProvider]",
         },
         "volumes": {MODEL_CACHE_DIR: rfcache_volume},
+        "tags": {"tag": docker_tag},
     }
 
     class RTCPeerConnectionModal:
@@ -139,6 +142,7 @@ if modal is not None:
             q: modal.Queue,
         ):
             logger.info("*** Spawning %s:", self.__class__.__name__)
+            self._exec_session_started = datetime.datetime.now()
             logger.info(
                 "webrtc_realtime_processing: %s",
                 webrtc_request.webrtc_realtime_processing,
@@ -176,10 +180,11 @@ if modal is not None:
         # Modal usage calculation is relying on no concurrency and no hot instances
         @modal.enter()
         def start(self):
-            self._exec_session_started = datetime.datetime.now()
+            logger.info("Starting container")
 
         @modal.exit()
         def stop(self):
+            logger.info("Stopping container")
             if not self._webrtc_request:
                 return
             self._exec_session_stopped = datetime.datetime.now()
@@ -199,12 +204,16 @@ if modal is not None:
                 source=workflow_id,
                 category="modal",
                 api_key=self._webrtc_request.api_key,
-                resource_details={"plan": webrtc_plan},
+                resource_details={
+                    "plan": webrtc_plan,
+                    "billable": True,
+                },
                 execution_duration=(
                     self._exec_session_stopped - self._exec_session_started
                 ).total_seconds(),
             )
             usage_collector.push_usage_payloads()
+            logger.info("Function completed")
 
     # Modal derives function name from class name
     # https://modal.com/docs/reference/modal.App#cls
@@ -267,6 +276,18 @@ if modal is not None:
         except modal.exception.NotFoundError:
             logger.info("Deploying webrtc modal app %s", WEBRTC_MODAL_APP_NAME)
             app.deploy(name=WEBRTC_MODAL_APP_NAME, client=client)
+
+        workspace_id = None
+        try:
+            workspace_id = get_roboflow_workspace(api_key=webrtc_request.api_key)
+        except Exception as e:
+            pass
+
+        tags = app.get_tags(client=client)
+        if not tags:
+            tags = {}
+        if workspace_id:
+            tags["workspace_id"] = workspace_id
 
         if webrtc_request.requested_gpu:
             RTCPeerConnectionModal = RTCPeerConnectionModalGPU
