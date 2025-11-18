@@ -176,7 +176,7 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
         with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
             with _temporarily_disable_torch_jit_script():
                 processor = Sam3Processor(self.sam_model)
-            state = processor.set_image(img_in)
+            state = processor.set_image(torch.from_numpy(img_in).permute(2, 0, 1))
             embedding_dict = state
 
         with self._state_lock:
@@ -313,6 +313,7 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
             args = pad_points(args)
             if not any(args.values()):
                 args = {"point_coords": [[0, 0]], "point_labels": [-1], "box": None}
+
             masks, scores, low_resolution_logits = self.sam_model.predict_inst(
                 embedding,
                 mask_input=mask_input,
