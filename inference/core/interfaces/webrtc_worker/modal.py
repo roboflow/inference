@@ -71,6 +71,7 @@ if modal is not None:
     app = modal.App(
         name=WEBRTC_MODAL_APP_NAME,
         image=video_processing_image,
+        tags={"tag": docker_tag},
     )
 
     decorator_kwargs = {
@@ -121,7 +122,6 @@ if modal is not None:
             "ONNXRUNTIME_EXECUTION_PROVIDERS": "[CUDAExecutionProvider,CPUExecutionProvider]",
         },
         "volumes": {MODEL_CACHE_DIR: rfcache_volume},
-        "tags": {"tag": docker_tag},
     }
 
     class RTCPeerConnectionModal:
@@ -292,7 +292,7 @@ if modal is not None:
 
         tags = app.get_tags(client=client)
         if not tags:
-            tags = {}
+            tags = {"tag": docker_tag}
         if workspace_id:
             tags["workspace_id"] = workspace_id
 
