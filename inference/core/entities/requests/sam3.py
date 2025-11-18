@@ -71,8 +71,8 @@ class Sam3InferenceRequest(BaseRequest):
     """
 
     model_id: Optional[str] = Field(
-        default="sam3/sam3_image_model_only",
-        description="The model ID of SAM3. Use 'sam3/sam3_image_model_only' to target the generic base model.",
+        default="sam3/sam3_final",
+        description="The model ID of SAM3. Use 'sam3/sam3_final' to target the generic base model.",
     )
 
 

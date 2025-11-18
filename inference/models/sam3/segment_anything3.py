@@ -67,8 +67,12 @@ from sam3.train.data.sam3_image_dataset import (
     InferenceMetadata,
 )
 from sam3.train.data.collator import collate_fn_api
-from sam3.train.utils.train_utils import copy_data_to_device
-from sam3.train.eval.postprocessors import PostProcessImage
+
+# from sam3.train.utils.misc import copy_data_to_device
+from sam3.model.utils.misc import copy_data_to_device
+
+# from sam3.train.eval.postprocessors import PostProcessImage
+from sam3.eval.postprocessors import PostProcessImage
 
 
 def _to_numpy_masks(masks_any) -> np.ndarray:
@@ -238,7 +242,7 @@ class SegmentAnything3(RoboflowCoreModel):
     def __init__(
         self,
         *args,
-        model_id: str = "sam3/sam3_image_model_only",
+        model_id: str = "sam3/sam3_final",
         **kwargs,
     ):
         super().__init__(*args, model_id=model_id, **kwargs)
@@ -255,7 +259,8 @@ class SegmentAnything3(RoboflowCoreModel):
             bpe_path=bpe_path,
             checkpoint_path=checkpoint,
             device="cuda" if torch.cuda.is_available() else "cpu",
-            compile_mode=None,
+            load_from_HF=False,
+            compile=False,
         )
 
         # Preprocessing and postprocessing for PCS image path

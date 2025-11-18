@@ -2408,7 +2408,7 @@ class HttpInterface(BaseInterface):
                     )
 
                     self.model_manager.add_model(
-                        "sam3/sam3_video_model_only",
+                        "sam3/sam3_interactive",
                         api_key=api_key,
                         endpoint_type=ModelEndpointType.CORE_MODEL,
                         countinference=countinference,
@@ -2417,7 +2417,7 @@ class HttpInterface(BaseInterface):
                     )
 
                     model_response = self.model_manager.infer_from_request_sync(
-                        "sam3/sam3_video_model_only", inference_request
+                        "sam3/sam3_interactive", inference_request
                     )
                     return model_response
 
@@ -2445,7 +2445,7 @@ class HttpInterface(BaseInterface):
                     )
 
                     self.model_manager.add_model(
-                        "sam3/sam3_video_model_only",
+                        "sam3/sam3_interactive",
                         api_key=api_key,
                         endpoint_type=ModelEndpointType.CORE_MODEL,
                         countinference=countinference,
@@ -2454,7 +2454,7 @@ class HttpInterface(BaseInterface):
                     )
 
                     model_response = self.model_manager.infer_from_request_sync(
-                        "sam3/sam3_video_model_only", inference_request
+                        "sam3/sam3_interactive", inference_request
                     )
                     return model_response
 

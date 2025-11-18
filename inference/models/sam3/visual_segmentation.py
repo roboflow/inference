@@ -22,8 +22,12 @@ from inference.core.roboflow_api import (
     get_roboflow_model_data,
     get_from_url,
 )
-from sam3.model.sam1_task_predictor import SAM3InteractiveImagePredictor
-from sam3.sam3_video_model_builder import build_sam3_tracking_predictor
+
+# from sam3.model.sam1_task_predictor import SAM3InteractiveImagePredictor
+# from sam3.sam3_video_model_builder import build_sam3_tracking_predictor
+
+from sam3 import build_sam3_image_model
+from sam3.model.sam3_image_processor import Sam3Processor
 
 from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.entities.requests.sam2 import (
@@ -78,7 +82,7 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
     def __init__(
         self,
         *args,
-        model_id: str = "sam3/sam3_video_model_only",
+        model_id: str = "sam3/sam3_final",
         low_res_logits_cache_size: int = SAM3_MAX_LOGITS_CACHE_SIZE,
         embedding_cache_size: int = SAM3_MAX_EMBEDDING_CACHE_SIZE,
         **kwargs,
@@ -91,11 +95,15 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
         """
         super().__init__(*args, model_id=model_id, **kwargs)
         checkpoint = self.cache_file("weights.pt")
-        checkpoint = torch.load(checkpoint, map_location=DEVICE)
-        self._sam_model = (
-            build_sam3_tracking_predictor(checkpoint, compile_mode=None)
-            .to(DEVICE)
-            .eval()
+        bpe_path = self.cache_file("bpe_simple_vocab_16e6.txt.gz")
+
+        self.sam_model = build_sam3_image_model(
+            bpe_path=bpe_path,
+            checkpoint_path=checkpoint,
+            device="cuda" if torch.cuda.is_available() else "cpu",
+            load_from_HF=False,
+            compile=False,
+            enable_inst_interactivity=True,
         )
         self.low_res_logits_cache_size = low_res_logits_cache_size
         self.embedding_cache_size = embedding_cache_size
@@ -167,11 +175,9 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
 
         with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
             with _temporarily_disable_torch_jit_script():
-                predictor = SAM3InteractiveImagePredictor(sam_model=self._sam_model)
-            print("setting image")
-            x = predictor.set_image(img_in)
-            print("image set", x)
-            embedding_dict = predictor._features
+                processor = Sam3Processor(self.sam_model)
+            state = processor.set_image(img_in)
+            embedding_dict = state
 
         with self._state_lock:
             self.embedding_cache[image_id] = embedding_dict
@@ -280,13 +286,13 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
                 image=image, image_id=image_id
             )
 
-            with _temporarily_disable_torch_jit_script():
-                predictor = SAM3InteractiveImagePredictor(sam_model=self._sam_model)
+            # with _temporarily_disable_torch_jit_script():
+            # processor = Sam3Processor(self.sam_model)
 
-            predictor._is_image_set = True
-            predictor._features = embedding
-            predictor._orig_hw = [original_image_size]
-            predictor._is_batch = False
+            # processor._is_image_set = True
+            # processor._features = embedding
+            # processor._orig_hw = [original_image_size]
+            # processor._is_batch = False
             args = dict()
             prompt_set: Sam2PromptSet
             if prompts:
@@ -307,7 +313,8 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
             args = pad_points(args)
             if not any(args.values()):
                 args = {"point_coords": [[0, 0]], "point_labels": [-1], "box": None}
-            masks, scores, low_resolution_logits = predictor.predict(
+            masks, scores, low_resolution_logits = self.sam_model.predict_inst(
+                embedding,
                 mask_input=mask_input,
                 multimask_output=multimask_output,
                 return_logits=True,

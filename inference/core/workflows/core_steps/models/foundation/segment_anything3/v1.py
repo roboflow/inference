@@ -100,11 +100,11 @@ class BlockManifest(WorkflowBlockManifest):
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
 
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), Optional[str]] = Field(
-        default="sam3/sam3_image_model_only",
+        default="sam3/sam3_final",
         # description="Model variant placeholder (SAM3 local image model).",
         description="model version",
         examples=[
-            "sam3/sam3_image_model_only",
+            "sam3/sam3_final",
             "$inputs.model_variant",
         ],
     )
