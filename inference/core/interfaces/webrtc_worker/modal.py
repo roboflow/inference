@@ -227,6 +227,9 @@ if modal is not None:
         def start(self):
             # TODO: pre-load models
             logger.info("Starting container")
+            if PRELOAD_HF_IDS:
+                # Kick off pre-loading of models (owlv2 preloading is based on module-level singleton)
+                import inference.models.owlv2.owlv2
 
         @modal.exit()
         def stop(self):
