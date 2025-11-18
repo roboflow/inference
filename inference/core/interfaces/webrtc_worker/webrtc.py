@@ -478,9 +478,9 @@ async def init_rtc_peer_connection_with_loop(
             )
             logger.info(
                 "Setting termination date to %s (%s seconds from %s)",
-                termination_date,
+                termination_date.isoformat(),
                 time_limit_seconds,
-                datetime_now,
+                datetime_now.isoformat(),
             )
         except (TypeError, ValueError):
             pass

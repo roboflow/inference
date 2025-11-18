@@ -59,9 +59,7 @@ if modal is not None:
     docker_tag: str = WEBRTC_MODAL_IMAGE_TAG if WEBRTC_MODAL_IMAGE_TAG else __version__
     # https://modal.com/docs/reference/modal.Image
     video_processing_image = (
-        modal.Image.from_registry(
-            f"{WEBRTC_MODAL_IMAGE_NAME}:{docker_tag}"
-        )
+        modal.Image.from_registry(f"{WEBRTC_MODAL_IMAGE_NAME}:{docker_tag}")
         .pip_install("modal")
         .entrypoint([])
     )
@@ -144,6 +142,9 @@ if modal is not None:
             logger.info("*** Spawning %s:", self.__class__.__name__)
             self._exec_session_started = datetime.datetime.now()
             logger.info(
+                "WebRTC session started at %s", self._exec_session_started.isoformat()
+            )
+            logger.info(
                 "webrtc_realtime_processing: %s",
                 webrtc_request.webrtc_realtime_processing,
             )
@@ -175,6 +176,7 @@ if modal is not None:
                     send_answer=send_answer,
                 )
             )
+            self._exec_session_stopped = datetime.datetime.now()
 
         # https://modal.com/docs/reference/modal.enter
         # Modal usage calculation is relying on no concurrency and no hot instances
@@ -187,7 +189,12 @@ if modal is not None:
             logger.info("Stopping container")
             if not self._webrtc_request:
                 return
-            self._exec_session_stopped = datetime.datetime.now()
+            if not self._exec_session_stopped:
+                self._exec_session_stopped = datetime.datetime.now()
+                logger.info(
+                    "WebRTC session stopped at %s",
+                    self._exec_session_stopped.isoformat(),
+                )
             workflow_id = self._webrtc_request.workflow_configuration.workflow_id
             if not workflow_id:
                 if self._webrtc_request.workflow_configuration.workflow_specification:
