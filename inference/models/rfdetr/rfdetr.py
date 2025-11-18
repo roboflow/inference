@@ -1,6 +1,7 @@
 import os
+import threading
 import time
-from time import perf_counter
+from time import perf_counter, sleep
 from typing import Any, List, Optional, Tuple, Union
 
 import cv2
@@ -54,6 +55,22 @@ if USE_PYTORCH_FOR_PREPROCESSING:
     CUDA_IS_AVAILABLE = torch.cuda.is_available()
 
 ROBOFLOW_BACKGROUND_CLASS = "background_class83422"
+
+
+def _log_progress_periodically(stop_event, operation_name, interval=30):
+    """Helper function to log periodic progress messages during long-running operations.
+
+    Args:
+        stop_event: Threading event to signal when to stop logging
+        operation_name: Name of the operation for the log message
+        interval: Seconds between progress messages (default: 30)
+    """
+    elapsed = 0
+    while not stop_event.is_set():
+        sleep(interval)
+        if not stop_event.is_set():
+            elapsed += interval
+            logger.info(f"{operation_name} still in progress... ({elapsed}s elapsed)")
 
 
 class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
@@ -467,8 +484,20 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                 if "OpenVINOExecutionProvider" in expanded_execution_providers:
                     expanded_execution_providers.remove("OpenVINOExecutionProvider")
 
+                progress_thread = None
+                stop_progress = None
+
                 if using_trt:
                     logger.info("Starting ONNX Runtime session with TensorRT for RF-DETR - compilation may occur now...")
+
+                    # Start periodic progress logging thread
+                    stop_progress = threading.Event()
+                    progress_thread = threading.Thread(
+                        target=_log_progress_periodically,
+                        args=(stop_progress, "TensorRT compilation for RF-DETR", 30),
+                        daemon=True
+                    )
+                    progress_thread.start()
 
                 self.onnx_session = onnxruntime.InferenceSession(
                     self.cache_file(self.weights_file),
@@ -477,6 +506,12 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                 )
 
                 if using_trt:
+                    # Stop progress logging
+                    if stop_progress:
+                        stop_progress.set()
+                    if progress_thread:
+                        progress_thread.join(timeout=1.0)
+
                     logger.info(f"RF-DETR ONNX Runtime session created with TensorRT in {perf_counter() - t1_session:.2f} seconds")
             except Exception as e:
                 self.clear_cache()

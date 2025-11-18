@@ -2,11 +2,12 @@ import itertools
 import json
 import os
 import random
+import threading
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from threading import Lock
-from time import perf_counter
+from time import perf_counter, sleep
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import cv2
@@ -759,6 +760,22 @@ class RoboflowCoreModel(RoboflowInferenceModel):
         return CORE_MODEL_BUCKET
 
 
+def _log_progress_periodically(stop_event, operation_name, interval=30):
+    """Helper function to log periodic progress messages during long-running operations.
+
+    Args:
+        stop_event: Threading event to signal when to stop logging
+        operation_name: Name of the operation for the log message
+        interval: Seconds between progress messages (default: 30)
+    """
+    elapsed = 0
+    while not stop_event.is_set():
+        sleep(interval)
+        if not stop_event.is_set():
+            elapsed += interval
+            logger.info(f"{operation_name} still in progress... ({elapsed}s elapsed)")
+
+
 class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
     """Roboflow Inference Model that operates using an ONNX model file."""
 
@@ -922,6 +939,9 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                 providers = ["OpenVINOExecutionProvider", "CPUExecutionProvider"]
 
             using_trt = has_trt(providers)
+            progress_thread = None
+            stop_progress = None
+
             if using_trt:
                 logger.info("TensorRT execution provider detected")
                 trt_cache_path = None
@@ -942,6 +962,15 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                     )
                     logger.info("Starting ONNX Runtime session with TensorRT - compilation may occur now...")
 
+                    # Start periodic progress logging thread
+                    stop_progress = threading.Event()
+                    progress_thread = threading.Thread(
+                        target=_log_progress_periodically,
+                        args=(stop_progress, "TensorRT compilation", 30),
+                        daemon=True
+                    )
+                    progress_thread.start()
+
                 self.onnx_session = onnxruntime.InferenceSession(
                     self.cache_file(self.weights_file),
                     providers=providers,
@@ -949,6 +978,12 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                 )
 
                 if using_trt:
+                    # Stop progress logging
+                    if stop_progress:
+                        stop_progress.set()
+                    if progress_thread:
+                        progress_thread.join(timeout=1.0)
+
                     logger.info(f"ONNX Runtime session created with TensorRT in {perf_counter() - t1_session:.2f} seconds")
             except Exception as e:
                 self.clear_cache()
