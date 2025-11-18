@@ -85,7 +85,7 @@ COPY requirements/requirements.sam.jetson.txt \
 
 # Install numpy 2.x first (required for onnxruntime compilation)
 RUN python3 -m pip install --upgrade pip && \
-    python3 -m pip install "numpy>=2.0.0,<2.3.0"
+    python3 -m pip install "numpy>=2.0.0,<2.4.0"
 
 # Install PyTorch
 RUN python3 -m pip install "torch>=${TORCH_VERSION}" "torchvision>=${TORCHVISION_VERSION}" \
