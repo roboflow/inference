@@ -33,6 +33,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     LIST_OF_VALUES_KIND,
+    STRING_KIND,
     ImageInputField,
     Selector,
 )
@@ -74,13 +75,13 @@ class BlockManifest(WorkflowBlockManifest):
 
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
 
-    class_names: Optional[Union[List[str], Selector(kind=[LIST_OF_VALUES_KIND])]] = (
-        Field(
-            title="Class Names",
-            default=None,
-            description="List of classes to recognise",
-            examples=[["car", "person"], "$inputs.classes"],
-        )
+    class_names: Union[
+        List[str], str, Selector(kind=[LIST_OF_VALUES_KIND, STRING_KIND])
+    ] = Field(
+        title="Class Names",
+        default=None,
+        description="List of classes to recognise",
+        examples=[["car", "person"], "$inputs.classes"],
     )
     threshold: Union[Selector(kind=[FLOAT_KIND]), float] = Field(
         default=0.5, description="Threshold for predicted mask scores", examples=[0.3]
@@ -127,9 +128,16 @@ class SegPreviewBlockV1(WorkflowBlock):
     def run(
         self,
         images: Batch[WorkflowImageData],
-        class_names: Optional[List[str]],
+        class_names: Optional[Union[List[str], str]],
         threshold: float,
     ) -> BlockResult:
+
+        if isinstance(class_names, str):
+            class_names = class_names.split(",")
+        elif isinstance(class_names, list):
+            class_names = class_names
+        else:
+            raise ValueError(f"Invalid class names type: {type(class_names)}")
 
         return self.run_via_request(
             images=images,

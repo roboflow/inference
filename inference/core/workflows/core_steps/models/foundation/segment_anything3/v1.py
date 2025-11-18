@@ -102,20 +102,20 @@ class BlockManifest(WorkflowBlockManifest):
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), Optional[str]] = Field(
         default="sam3/sam3_final",
         # description="Model variant placeholder (SAM3 local image model).",
-        description="model version",
+        description="model version.  You only need to change this for fine tuned sam3 models.",
         examples=[
             "sam3/sam3_final",
             "$inputs.model_variant",
         ],
     )
 
-    class_names: Optional[Union[List[str], Selector(kind=[LIST_OF_VALUES_KIND])]] = (
-        Field(
-            title="Class Names",
-            default=None,
-            description="List of classes to recognise",
-            examples=[["car", "person"], "$inputs.classes"],
-        )
+    class_names: Optional[
+        Union[List[str], str, Selector(kind=[LIST_OF_VALUES_KIND, STRING_KIND])]
+    ] = Field(
+        title="Class Names",
+        default=None,
+        description="List of classes to recognise",
+        examples=[["car", "person"], "$inputs.classes"],
     )
     threshold: Union[Selector(kind=[FLOAT_KIND]), float] = Field(
         default=0.5, description="Threshold for predicted mask scores", examples=[0.3]
@@ -163,9 +163,16 @@ class SegmentAnything3BlockV1(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         model_id: str,
-        class_names: Optional[List[str]],
+        class_names: Optional[Union[List[str], str]],
         threshold: float,
     ) -> BlockResult:
+
+        if isinstance(class_names, str):
+            class_names = class_names.split(",")
+        elif isinstance(class_names, list):
+            class_names = class_names
+        else:
+            raise ValueError(f"Invalid class names type: {type(class_names)}")
 
         exec_mode = self._step_execution_mode
         if SAM3_EXEC_MODE == "local":
