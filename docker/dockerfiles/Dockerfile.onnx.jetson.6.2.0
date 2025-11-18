@@ -250,4 +250,6 @@ ENV VERSION_CHECK_MODE=once \
 
 LABEL org.opencontainers.image.description="Inference Server - Jetson 6.2.0"
 
+EXPOSE 9001
+
 ENTRYPOINT ["/bin/sh", "-c", "python3 -m uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT"]
