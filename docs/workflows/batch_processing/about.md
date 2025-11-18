@@ -134,10 +134,14 @@ You can optionally include glob patterns to filter files:
 - `gs://my-bucket/videos/2024-*/*.mp4` - MP4 files in 2024-* folders
 - `az://container/images/*.png` - PNG files in images folder
 
+
+!!! tip "Credentials Usage"
+
+    Your cloud storage credentials are used **only locally** by the CLI tool to generate presigned URLs. They are **never uploaded** to Roboflow servers. The presigned URLs allow our batch processing service to access your files directly from your cloud storage without requiring access to your credentials.
+
 !!! hint "Cloud Storage Examples"
 
-    
-     **AWS S3 (with named profile):**
+     **AWS S3:**
     ```bash
     export AWS_PROFILE=my-profile  # Optional, uses credentials from ~/.aws/credentials
 
@@ -185,27 +189,6 @@ You can optionally include glob patterns to filter files:
 !!! warning "Presigned URL Expiration"
 
     Generated presigned URLs are valid for 24 hours. Ensure your batch processing job completes within this timeframe.
-
-!!! tip "Cloud Storage Authentication"
-
-    **AWS S3 / S3-Compatible:**
-    - Auto-detects `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`
-    - Auto-detects `~/.aws/credentials` and `~/.aws/config`
-    - Use `AWS_PROFILE` to specify a named profile
-    - Use `AWS_ENDPOINT_URL` for S3-compatible services (R2, MinIO)
-
-    **Google Cloud Storage:**
-    - Auto-detects `GOOGLE_APPLICATION_CREDENTIALS` (path to service account JSON)
-    - Auto-detects `~/.config/gcloud/*` credentials
-    - Auto-detects GCP metadata service (when running on GCP)
-    - No manual configuration needed if using default gcloud auth
-
-    **Azure Blob Storage:**
-    - Supports both naming conventions:
-        - adlfs: `AZURE_STORAGE_ACCOUNT_NAME`, `AZURE_STORAGE_ACCOUNT_KEY`
-        - Azure CLI: `AZURE_STORAGE_ACCOUNT`, `AZURE_STORAGE_KEY`
-    - Use `AZURE_STORAGE_SAS_TOKEN` for time-limited access (recommended)
-    - SAS token takes precedence over account key if both are set
 
 Then, you can inspect the details of staged batch of data:
 

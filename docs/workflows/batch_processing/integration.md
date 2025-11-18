@@ -498,10 +498,10 @@ The system automatically detects AWS credentials from multiple sources in this o
    ```
 
 2. **AWS credential files:**
-    ```bash
+   ```bash
    ~/.aws/credentials
    ~/.aws/config`
-    ```
+   ```
 
 3. **IAM roles** (when running on EC2, ECS, or Lambda)
 
@@ -526,11 +526,6 @@ export AWS_ENDPOINT_URL=https://account-id.r2.cloudflarestorage.com
 export AWS_REGION=auto  # R2 requires region='auto'
 export AWS_ACCESS_KEY_ID=your-r2-access-key
 export AWS_SECRET_ACCESS_KEY=your-r2-secret-key
-
-# Or use a named profile
-export AWS_ENDPOINT_URL=https://account-id.r2.cloudflarestorage.com
-export AWS_REGION=auto
-export AWS_PROFILE=r2-profile
 ```
 
 !!! note "Region for S3-Compatible Services"
