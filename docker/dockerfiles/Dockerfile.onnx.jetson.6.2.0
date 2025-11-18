@@ -107,10 +107,6 @@ RUN uv pip install --system --break-system-packages --index-strategy unsafe-best
     packaging \
     && rm -rf ~/.cache/uv
 
-# Force numpy<2.0.0 after all deps (Jetson PyTorch and onnxruntime require numpy 1.x)
-# Cache bust: 2025-11-17-v2
-RUN uv pip install --system --break-system-packages "numpy<2.0.0"
-
 # Build onnxruntime-gpu from source
 WORKDIR /tmp
 RUN git clone --recursive --branch v1.20.0 https://github.com/microsoft/onnxruntime.git /tmp/onnxruntime
@@ -157,6 +153,9 @@ RUN python -m pip install --break-system-packages --no-deps dist/inference_gpu*.
     dist/inference_cli*.whl \
     dist/inference_sdk*.whl \
     "setuptools<=75.5.0"
+
+# Force numpy<2.0.0 AFTER all packages installed (Jetson PyTorch requires numpy 1.x)
+RUN python -m pip install --break-system-packages "numpy<2.0.0"
 
 WORKDIR /app
 COPY requirements/requirements.http.txt requirements.txt
