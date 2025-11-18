@@ -7,6 +7,8 @@ import requests
 
 from pydantic import ConfigDict, Field
 
+from inference.core.roboflow_api import build_roboflow_api_headers
+
 from inference.core import logger
 from inference.core.entities.requests.sam3 import Sam3SegmentationRequest, Sam3Prompt
 from inference.core.entities.responses.inference import (
@@ -325,6 +327,8 @@ class SegmentAnything3BlockV1(WorkflowBlock):
                     headers["X-Roboflow-Internal-Service-Secret"] = (
                         ROBOFLOW_INTERNAL_SERVICE_SECRET
                     )
+
+                headers = build_roboflow_api_headers(explicit_headers=headers)
 
                 response = requests.post(
                     f"{endpoint}?api_key={api_key}",
