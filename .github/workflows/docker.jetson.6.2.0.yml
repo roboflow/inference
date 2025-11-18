@@ -44,3 +44,5 @@ jobs:
           tags: roboflow/roboflow-inference-server-jetson-6.2.0:latest,roboflow/roboflow-inference-server-jetson-6.2.0:${{ env.VERSION}}
           platforms: linux/arm64
           file: ./docker/dockerfiles/Dockerfile.onnx.jetson.6.2.0
+          build-args: |
+            ONNXRUNTIME_BUILD_PARALLEL=3

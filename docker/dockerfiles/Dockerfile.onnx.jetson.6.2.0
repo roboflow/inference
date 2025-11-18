@@ -117,7 +117,7 @@ RUN sed -i 's/be8be39fdbc6e60e94fa7870b280707069b5b81a/32b145f525a8308d7ab1c0938
 RUN ./build.sh \
     --config Release \
     --build_dir build/cuda12 \
-    --parallel 12 \
+    --parallel ${ONNXRUNTIME_BUILD_PARALLEL:-12} \
     --use_cuda \
     --cuda_version 12.6 \
     --cuda_home /usr/local/cuda \
