@@ -147,6 +147,8 @@ from inference.core.env import (
     ENABLE_WORKFLOWS_PROFILING,
     GCP_SERVERLESS,
     GET_MODEL_REGISTRY_ENABLED,
+    HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED,
+    HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS,
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
     LMM_ENABLED,
@@ -605,6 +607,11 @@ class HttpInterface(BaseInterface):
         self.app = app
         self.model_manager = model_manager
         self.stream_manager_client: Optional[StreamManagerClient] = None
+        self.shared_thread_pool_executor: Optional[ThreadPoolExecutor] = None
+        if HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED:
+            self.shared_thread_pool_executor = ThreadPoolExecutor(
+                max_workers=HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS
+            )
 
         if ENABLE_STREAM_API:
             operations_timeout = os.getenv("STREAM_MANAGER_OPERATIONS_TIMEOUT")
@@ -664,6 +671,7 @@ class HttpInterface(BaseInterface):
                 max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
                 prevent_local_images_loading=True,
                 profiler=profiler,
+                executor=self.shared_thread_pool_executor,
                 workflow_id=workflow_request.workflow_id,
             )
             is_preview = False

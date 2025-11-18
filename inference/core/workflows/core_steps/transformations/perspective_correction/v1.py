@@ -709,6 +709,11 @@ class PerspectiveCorrectionBlockV1(WorkflowBlock):
             )
         if not predictions:
             predictions = [None] * len(images)
+        batch_size = len(predictions) if predictions else len(images)
+        if isinstance(transformed_rect_height, int):
+            transformed_rect_height = [transformed_rect_height] * batch_size
+        if isinstance(transformed_rect_width, int):
+            transformed_rect_width = [transformed_rect_width] * batch_size
 
         if (
             not self.perspective_transformers
@@ -719,7 +724,6 @@ class PerspectiveCorrectionBlockV1(WorkflowBlock):
                 perspective_polygons
             )
 
-            batch_size = len(predictions) if predictions else len(images)
             if len(largest_perspective_polygons) == 1 and batch_size > 1:
                 largest_perspective_polygons = largest_perspective_polygons * batch_size
 
@@ -727,10 +731,6 @@ class PerspectiveCorrectionBlockV1(WorkflowBlock):
                 raise ValueError(
                     f"Predictions batch size ({batch_size}) does not match number of perspective polygons ({largest_perspective_polygons})"
                 )
-            if isinstance(transformed_rect_height, int):
-                transformed_rect_height = [transformed_rect_height] * batch_size
-            if isinstance(transformed_rect_width, int):
-                transformed_rect_width = [transformed_rect_width] * batch_size
             for polygon, detections, width, height in zip(
                 largest_perspective_polygons,
                 predictions,

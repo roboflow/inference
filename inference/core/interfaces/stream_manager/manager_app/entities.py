@@ -112,8 +112,8 @@ class InitialiseWebRTCPipelinePayload(InitialisePipelinePayload):
         WEBRTC_REALTIME_PROCESSING  # this parameter controls only webrtc processing, not inference pipeline strategies
     )
     webrtc_turn_config: Optional[WebRTCTURNConfig] = None
-    stream_output: Optional[List[Optional[str]]] = Field(default_factory=list)
-    data_output: Optional[List[Optional[str]]] = Field(default_factory=list)
+    stream_output: Optional[List[str]] = Field(default_factory=list)
+    data_output: Optional[List[str]] = Field(default_factory=list)
     webcam_fps: Optional[float] = (
         None  # TODO: this parameter is now passed for both webcam and video source
     )
@@ -124,7 +124,7 @@ class InitialiseWebRTCPipelinePayload(InitialisePipelinePayload):
 
 
 class WebRTCData(BaseModel):
-    stream_output: Optional[str] = None
+    stream_output: Optional[List[str]] = None
     data_output: Optional[List[str]] = None
 
 
