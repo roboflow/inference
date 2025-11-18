@@ -78,7 +78,6 @@ COPY requirements/requirements.sam.jetson.txt \
     requirements/requirements.yolo_world.txt \
     requirements/_requirements.jetson.txt \
     requirements/requirements.transformers.jetson.txt \
-    requirements/requirements.jetson.6.2.0.txt \
     requirements/requirements.sdk.http.jetson.txt \
     requirements/requirements.easyocr.txt \
     ./
@@ -92,7 +91,6 @@ RUN python3 -m pip install --upgrade pip && \
 RUN uv pip install --system --break-system-packages --index-strategy unsafe-best-match \
     --extra-index-url https://pypi.jetson-ai-lab.io/jp6/cu126 \
     -r _requirements.jetson.txt \
-    -r requirements.jetson.6.2.0.txt \
     -r requirements.http.txt \
     -r requirements.clip.txt \
     -r requirements.transformers.jetson.txt \

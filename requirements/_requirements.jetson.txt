@@ -5,6 +5,11 @@ cachetools<6.0.0
 cython~=3.0.0
 python-dotenv~=1.0.0
 fastapi>=0.100,<0.116  # be careful with upper pin - fastapi might remove support for on_event
+pypdfium2>=4.11.0,<5.0.0
+jupyterlab>=4.3.0,<5.0.0
+PyYAML~=6.0.0
+numpy<2.0.0  # Jetson PyTorch 2.8.0 wheels compiled with numpy 1.x
+flash-attn==2.8.2
 opencv-python>=4.8.1.78,<=4.10.0.84
 opencv-contrib-python>=4.8.1.78,<=4.10.0.84  # Note: opencv-python considers this as a bad practice, but since our dependencies rely on both we pin both here
 pillow>=11.0,<12.0
