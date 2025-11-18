@@ -466,7 +466,7 @@ async def init_rtc_peer_connection_with_loop(
     webrtc_request: WebRTCWorkerRequest,
     send_answer: Callable[[WebRTCWorkerResult], None],
     asyncio_loop: Optional[asyncio.AbstractEventLoop] = None,
-    shutdown_contingency: int = WEBRTC_MODAL_SHUTDOWN_RESERVE,
+    shutdown_reserve: int = WEBRTC_MODAL_SHUTDOWN_RESERVE,
 ) -> RTCPeerConnectionWithLoop:
     termination_date = None
     terminate_event = asyncio.Event()
@@ -478,7 +478,7 @@ async def init_rtc_peer_connection_with_loop(
             if datetime_now is None:
                 datetime_now = datetime.datetime.now()
             termination_date = datetime_now + datetime.timedelta(
-                seconds=time_limit_seconds - shutdown_contingency
+                seconds=time_limit_seconds - shutdown_reserve
             )
             logger.info(
                 "Setting termination date to %s (%s seconds from %s)",
