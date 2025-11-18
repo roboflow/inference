@@ -23,6 +23,7 @@ from inference.core import logger
 from inference.core.env import (
     WEBRTC_MODAL_RTSP_PLACEHOLDER,
     WEBRTC_MODAL_RTSP_PLACEHOLDER_URL,
+    WEBRTC_MODAL_SHUTDOWN_RESERVE,
 )
 from inference.core.exceptions import (
     MissingApiKeyError,
@@ -465,6 +466,7 @@ async def init_rtc_peer_connection_with_loop(
     webrtc_request: WebRTCWorkerRequest,
     send_answer: Callable[[WebRTCWorkerResult], None],
     asyncio_loop: Optional[asyncio.AbstractEventLoop] = None,
+    shutdown_contingency: int = WEBRTC_MODAL_SHUTDOWN_RESERVE,
 ) -> RTCPeerConnectionWithLoop:
     termination_date = None
     terminate_event = asyncio.Event()
@@ -472,9 +474,11 @@ async def init_rtc_peer_connection_with_loop(
     if webrtc_request.processing_timeout is not None:
         try:
             time_limit_seconds = int(webrtc_request.processing_timeout)
-            datetime_now = datetime.datetime.now()
+            datetime_now = webrtc_request.processing_session_started
+            if datetime_now is None:
+                datetime_now = datetime.datetime.now()
             termination_date = datetime_now + datetime.timedelta(
-                seconds=time_limit_seconds - 1
+                seconds=time_limit_seconds - shutdown_contingency
             )
             logger.info(
                 "Setting termination date to %s (%s seconds from %s)",

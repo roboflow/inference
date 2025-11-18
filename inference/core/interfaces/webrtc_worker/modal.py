@@ -126,12 +126,6 @@ if modal is not None:
 
     class RTCPeerConnectionModal:
         _webrtc_request: Optional[WebRTCWorkerRequest] = modal.parameter(default=None)
-        _exec_session_started: Optional[datetime.datetime] = modal.parameter(
-            default=None
-        )
-        _exec_session_stopped: Optional[datetime.datetime] = modal.parameter(
-            default=None
-        )
 
         @modal.method()
         def rtc_peer_connection_modal(
@@ -140,9 +134,10 @@ if modal is not None:
             q: modal.Queue,
         ):
             logger.info("*** Spawning %s:", self.__class__.__name__)
-            self._exec_session_started = datetime.datetime.now()
+            _exec_session_started = datetime.datetime.now()
+            webrtc_request.processing_session_started = _exec_session_started
             logger.info(
-                "WebRTC session started at %s", self._exec_session_started.isoformat()
+                "WebRTC session started at %s", _exec_session_started.isoformat()
             )
             logger.info(
                 "webrtc_realtime_processing: %s",
@@ -176,25 +171,11 @@ if modal is not None:
                     send_answer=send_answer,
                 )
             )
-            self._exec_session_stopped = datetime.datetime.now()
-
-        # https://modal.com/docs/reference/modal.enter
-        # Modal usage calculation is relying on no concurrency and no hot instances
-        @modal.enter()
-        def start(self):
-            logger.info("Starting container")
-
-        @modal.exit()
-        def stop(self):
-            logger.info("Stopping container")
-            if not self._webrtc_request:
-                return
-            if not self._exec_session_stopped:
-                self._exec_session_stopped = datetime.datetime.now()
-                logger.info(
-                    "WebRTC session stopped at %s",
-                    self._exec_session_stopped.isoformat(),
-                )
+            _exec_session_stopped = datetime.datetime.now()
+            logger.info(
+                "WebRTC session stopped at %s",
+                _exec_session_stopped.isoformat(),
+            )
             workflow_id = self._webrtc_request.workflow_configuration.workflow_id
             if not workflow_id:
                 if self._webrtc_request.workflow_configuration.workflow_specification:
@@ -207,6 +188,12 @@ if modal is not None:
             # requested plan is guaranteed to be set due to validation in spawn_rtc_peer_connection_modal
             webrtc_plan = self._webrtc_request.requested_plan
 
+            video_source = "realtime browser stream"
+            if self._webrtc_request.rtsp_url:
+                video_source = "rtsp"
+            elif not self._webrtc_request.webrtc_realtime_processing:
+                video_source = "buffered browser stream"
+
             usage_collector.record_usage(
                 source=workflow_id,
                 category="modal",
@@ -214,13 +201,24 @@ if modal is not None:
                 resource_details={
                     "plan": webrtc_plan,
                     "billable": True,
+                    "video_source": video_source,
                 },
                 execution_duration=(
-                    self._exec_session_stopped - self._exec_session_started
+                    _exec_session_stopped - _exec_session_started
                 ).total_seconds(),
             )
             usage_collector.push_usage_payloads()
             logger.info("Function completed")
+
+        # https://modal.com/docs/reference/modal.enter
+        # Modal usage calculation is relying on no concurrency and no hot instances
+        @modal.enter()
+        def start(self):
+            logger.info("Starting container")
+
+        @modal.exit()
+        def stop(self):
+            logger.info("Stopping container")
 
     # Modal derives function name from class name
     # https://modal.com/docs/reference/modal.App#cls
@@ -290,9 +288,7 @@ if modal is not None:
         except Exception as e:
             pass
 
-        tags = app.get_tags(client=client)
-        if not tags:
-            tags = {"tag": docker_tag}
+        tags = {"tag": docker_tag}
         if workspace_id:
             tags["workspace_id"] = workspace_id
 
