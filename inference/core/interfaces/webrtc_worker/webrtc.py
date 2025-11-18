@@ -657,7 +657,7 @@ async def init_rtc_peer_connection_with_loop(
 
     @peer_connection.on("connectionstatechange")
     async def on_connectionstatechange():
-        logger.info("Connection state is %s", peer_connection.connectionState)
+        logger.info("on_connectionstatechange: %s", peer_connection.connectionState)
         if peer_connection.connectionState in {"failed", "closed"}:
             if video_processor.track:
                 logger.info("Stopping video processor track")
@@ -666,7 +666,6 @@ async def init_rtc_peer_connection_with_loop(
             logger.info("Stopping WebRTC peer")
             await peer_connection.close()
             terminate_event.set()
-        logger.info("'connectionstatechange' event handler finished")
 
     @peer_connection.on("datachannel")
     def on_datachannel(channel: RTCDataChannel):

@@ -15,6 +15,7 @@ from inference.core.env import (
     MODELS_CACHE_AUTH_CACHE_MAX_SIZE,
     MODELS_CACHE_AUTH_CACHE_TTL,
     MODELS_CACHE_AUTH_ENABLED,
+    PRELOAD_HF_IDS,
     PROJECT,
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
     WEBRTC_MODAL_APP_NAME,
@@ -82,44 +83,45 @@ if modal is not None:
         "enable_memory_snapshot": WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT,
         "max_inputs": WEBRTC_MODAL_FUNCTION_MAX_INPUTS,
         "env": {
-            "ROBOFLOW_INTERNAL_SERVICE_SECRET": ROBOFLOW_INTERNAL_SERVICE_SECRET,
-            "ROBOFLOW_INTERNAL_SERVICE_NAME": WEBRTC_MODAL_ROBOFLOW_INTERNAL_SERVICE_NAME,
-            "PROJECT": PROJECT,
-            "LOG_LEVEL": LOG_LEVEL,
-            "INTERNAL_WEIGHTS_URL_SUFFIX": INTERNAL_WEIGHTS_URL_SUFFIX,
-            "MODELS_CACHE_AUTH_ENABLED": str(MODELS_CACHE_AUTH_ENABLED),
-            "MODELS_CACHE_AUTH_CACHE_TTL": str(MODELS_CACHE_AUTH_CACHE_TTL),
-            "MODELS_CACHE_AUTH_CACHE_MAX_SIZE": str(MODELS_CACHE_AUTH_CACHE_MAX_SIZE),
-            "METRICS_ENABLED": "False",
             "ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS": str(
                 ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS
             ),
-            "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
+            "ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES": "False",
+            "DISABLE_INFERENCE_CACHE": "True",
+            "DISABLE_VERSION_CHECK": "True",
+            "HF_HOME": Path(MODEL_CACHE_DIR).joinpath("hf_home").as_posix(),
+            "INTERNAL_WEIGHTS_URL_SUFFIX": INTERNAL_WEIGHTS_URL_SUFFIX,
+            "METRICS_ENABLED": "False",
             "MODAL_TOKEN_ID": MODAL_TOKEN_ID,
             "MODAL_TOKEN_SECRET": MODAL_TOKEN_SECRET,
             "MODAL_WORKSPACE_NAME": MODAL_WORKSPACE_NAME,
-            "ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES": "False",
-            "DISABLE_VERSION_CHECK": "True",
             "MODEL_CACHE_DIR": MODEL_CACHE_DIR,
-            "HF_HOME": Path(MODEL_CACHE_DIR).joinpath("hf_home").as_posix(),
+            "MODELS_CACHE_AUTH_CACHE_MAX_SIZE": str(MODELS_CACHE_AUTH_CACHE_MAX_SIZE),
+            "MODELS_CACHE_AUTH_CACHE_TTL": str(MODELS_CACHE_AUTH_CACHE_TTL),
+            "MODELS_CACHE_AUTH_ENABLED": str(MODELS_CACHE_AUTH_ENABLED),
+            "LOG_LEVEL": LOG_LEVEL,
+            "ONNXRUNTIME_EXECUTION_PROVIDERS": "[CUDAExecutionProvider,CPUExecutionProvider]",
+            "PRELOAD_HF_IDS": PRELOAD_HF_IDS,
+            "PROJECT": PROJECT,
+            "ROBOFLOW_INTERNAL_SERVICE_NAME": WEBRTC_MODAL_ROBOFLOW_INTERNAL_SERVICE_NAME,
+            "ROBOFLOW_INTERNAL_SERVICE_SECRET": ROBOFLOW_INTERNAL_SERVICE_SECRET,
+            "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
             "TELEMETRY_USE_PERSISTENT_QUEUE": "False",
-            "DISABLE_INFERENCE_CACHE": "True",
-            "WEBRTC_MODAL_FUNCTION_GPU": WEBRTC_MODAL_FUNCTION_GPU,
-            "WEBRTC_MODAL_FUNCTION_SCALEDOWN_WINDOW": str(
-                WEBRTC_MODAL_FUNCTION_SCALEDOWN_WINDOW
-            ),
             "WEBRTC_MODAL_FUNCTION_BUFFER_CONTAINERS": str(
                 WEBRTC_MODAL_FUNCTION_BUFFER_CONTAINERS
             ),
+            "WEBRTC_MODAL_FUNCTION_GPU": WEBRTC_MODAL_FUNCTION_GPU,
             "WEBRTC_MODAL_FUNCTION_MIN_CONTAINERS": str(
                 WEBRTC_MODAL_FUNCTION_MIN_CONTAINERS
+            ),
+            "WEBRTC_MODAL_FUNCTION_SCALEDOWN_WINDOW": str(
+                WEBRTC_MODAL_FUNCTION_SCALEDOWN_WINDOW
             ),
             "WEBRTC_MODAL_FUNCTION_TIME_LIMIT": str(WEBRTC_MODAL_FUNCTION_TIME_LIMIT),
             "WEBRTC_MODAL_IMAGE_NAME": WEBRTC_MODAL_IMAGE_NAME,
             "WEBRTC_MODAL_IMAGE_TAG": WEBRTC_MODAL_IMAGE_TAG,
             "WEBRTC_MODAL_RTSP_PLACEHOLDER": WEBRTC_MODAL_RTSP_PLACEHOLDER,
             "WEBRTC_MODAL_RTSP_PLACEHOLDER_URL": WEBRTC_MODAL_RTSP_PLACEHOLDER_URL,
-            "ONNXRUNTIME_EXECUTION_PROVIDERS": "[CUDAExecutionProvider,CPUExecutionProvider]",
         },
         "volumes": {MODEL_CACHE_DIR: rfcache_volume},
     }
@@ -134,6 +136,7 @@ if modal is not None:
             q: modal.Queue,
         ):
             logger.info("*** Spawning %s:", self.__class__.__name__)
+            logger.info("Inference tag: %s", docker_tag)
             _exec_session_started = datetime.datetime.now()
             webrtc_request.processing_session_started = _exec_session_started
             logger.info(
@@ -211,9 +214,10 @@ if modal is not None:
             logger.info("Function completed")
 
         # https://modal.com/docs/reference/modal.enter
-        # Modal usage calculation is relying on no concurrency and no hot instances
-        @modal.enter()
+        # https://modal.com/docs/guide/memory-snapshot#gpu-memory-snapshot
+        @modal.enter(snap=True)
         def start(self):
+            # TODO: pre-load models
             logger.info("Starting container")
 
         @modal.exit()
@@ -231,7 +235,6 @@ if modal is not None:
     @app.cls(
         **{
             **decorator_kwargs,
-            "enable_memory_snapshot": False,
             "gpu": WEBRTC_MODAL_FUNCTION_GPU,  # https://modal.com/docs/guide/gpu#specifying-gpu-type
             "experimental_options": {
                 "enable_gpu_snapshot": WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT
@@ -280,17 +283,21 @@ if modal is not None:
             )
         except modal.exception.NotFoundError:
             logger.info("Deploying webrtc modal app %s", WEBRTC_MODAL_APP_NAME)
-            app.deploy(name=WEBRTC_MODAL_APP_NAME, client=client)
+            app.deploy(name=WEBRTC_MODAL_APP_NAME, client=client, tag=docker_tag)
 
-        workspace_id = None
-        try:
-            workspace_id = get_roboflow_workspace(api_key=webrtc_request.api_key)
-        except Exception as e:
-            pass
+        workspace_id = webrtc_request.workflow_configuration.workspace_name
+        if not workspace_id:
+            try:
+                workspace_id = get_roboflow_workspace(api_key=webrtc_request.api_key)
+                webrtc_request.workflow_configuration.workspace_name = workspace_id
+            except Exception:
+                pass
 
         tags = {"tag": docker_tag}
         if workspace_id:
             tags["workspace_id"] = workspace_id
+
+        # TODO: tag function run
 
         if webrtc_request.requested_gpu:
             RTCPeerConnectionModal = RTCPeerConnectionModalGPU
