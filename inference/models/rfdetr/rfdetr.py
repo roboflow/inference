@@ -436,21 +436,26 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                 session_options = onnxruntime.SessionOptions()
                 session_options.log_severity_level = 3
                 # TensorRT does better graph optimization for its EP than onnx
-                if has_trt(providers):
+                using_trt = has_trt(providers)
+                if using_trt:
                     session_options.graph_optimization_level = (
                         onnxruntime.GraphOptimizationLevel.ORT_DISABLE_ALL
                     )
+                    logger.info("TensorRT execution provider detected for RF-DETR")
+
                 expanded_execution_providers = []
                 for ep in self.onnxruntime_execution_providers:
                     if ep == "TensorrtExecutionProvider":
+                        cache_path = os.path.join(TENSORRT_CACHE_PATH, self.endpoint)
+                        logger.info(f"Configuring TensorRT for RF-DETR with 1GB workspace and FP16")
+                        logger.info(f"TensorRT engine cache path: {cache_path}")
+                        logger.info("TensorRT will compile ONNX model on first run - this may take several minutes")
                         ep = (
                             "TensorrtExecutionProvider",
                             {
                                 "trt_max_workspace_size": str(1 << 30),
                                 "trt_engine_cache_enable": True,
-                                "trt_engine_cache_path": os.path.join(
-                                    TENSORRT_CACHE_PATH, self.endpoint
-                                ),
+                                "trt_engine_cache_path": cache_path,
                                 "trt_fp16_enable": True,
                                 "trt_dump_subgraphs": False,
                                 "trt_force_sequential_engine_build": False,
@@ -462,11 +467,17 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                 if "OpenVINOExecutionProvider" in expanded_execution_providers:
                     expanded_execution_providers.remove("OpenVINOExecutionProvider")
 
+                if using_trt:
+                    logger.info("Starting ONNX Runtime session with TensorRT for RF-DETR - compilation may occur now...")
+
                 self.onnx_session = onnxruntime.InferenceSession(
                     self.cache_file(self.weights_file),
                     providers=expanded_execution_providers,
                     sess_options=session_options,
                 )
+
+                if using_trt:
+                    logger.info(f"RF-DETR ONNX Runtime session created with TensorRT in {perf_counter() - t1_session:.2f} seconds")
             except Exception as e:
                 self.clear_cache()
                 raise ModelArtefactError(
