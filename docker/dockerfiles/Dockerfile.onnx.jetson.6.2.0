@@ -83,15 +83,12 @@ COPY requirements/requirements.sam.jetson.txt \
     requirements/requirements.easyocr.txt \
     ./
 
-# Install numpy 2.x first (required for onnxruntime compilation)
+# Install PyTorch (Jetson wheels require numpy<2.0.0)
 RUN python3 -m pip install --upgrade pip && \
-    python3 -m pip install "numpy>=2.0.0,<2.4.0"
-
-# Install PyTorch
-RUN python3 -m pip install "torch>=${TORCH_VERSION}" "torchvision>=${TORCHVISION_VERSION}" \
+    python3 -m pip install "torch>=${TORCH_VERSION}" "torchvision>=${TORCHVISION_VERSION}" \
     --index-url https://pypi.jetson-ai-lab.io/jp6/cu126
 
-# Install Python dependencies (torch/torchvision/numpy already installed)
+# Install Python dependencies (torch/torchvision already installed)
 RUN uv pip install --system --break-system-packages --index-strategy unsafe-best-match \
     --extra-index-url https://pypi.jetson-ai-lab.io/jp6/cu126 \
     -r _requirements.jetson.txt \
@@ -109,6 +106,9 @@ RUN uv pip install --system --break-system-packages --index-strategy unsafe-best
     "setuptools<=75.5.0" \
     packaging \
     && rm -rf ~/.cache/uv
+
+# Force numpy<2.0.0 after all deps (Jetson PyTorch and onnxruntime require numpy 1.x)
+RUN uv pip install --system --break-system-packages "numpy<2.0.0"
 
 # Build onnxruntime-gpu from source
 WORKDIR /tmp
