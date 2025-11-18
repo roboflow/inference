@@ -262,45 +262,30 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--turn-url", required=False, type=str)
     parser.add_argument("--turn-username", required=False, type=str)
     parser.add_argument("--turn-credential", required=False, type=str)
-    parser.add_argument(
-        "--output-mode",
-        required=False,
-        type=str,
-        default="both",
-        choices=["data_only", "video_only", "both"],
-        help="Output mode: data_only (JSON only), video_only (video only), both (default)",
-    )
+    parser.add_argument("--processing-timeout", required=False, type=int, default=60)
+    parser.add_argument("--gpu", required=False, type=str)
     parser.add_argument(
         "--stream-output",
         required=False,
         type=str,
         default=None,
-        help="Which workflow output to use for video stream (auto-detected if not specified)",
+        help="Which workflow output to use for video stream. Use 'none' for no video track. Auto-detected if not specified.",
     )
     parser.add_argument(
         "--data-outputs",
         required=False,
         type=str,
         default=None,
-        help="Comma-separated list of workflow outputs for data channel (e.g., 'predictions,count'). Use 'all' for all outputs, or omit for all outputs",
+        help="Comma-separated list of workflow outputs for data channel (e.g., 'predictions,count'). Use '*' for all outputs. Omit or use 'none' for no data.",
     )
+
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
 
-    logger.info(f"Starting WebRTC worker with output_mode: {args.output_mode}")
-    if args.output_mode == "data_only":
-        logger.info(
-            "DATA_ONLY mode: Server will send JSON data via data channel only (no video track)"
-        )
-    elif args.output_mode == "video_only":
-        logger.info(
-            "VIDEO_ONLY mode: Server will send processed video only (no data channel messages)"
-        )
-    elif args.output_mode == "both":
-        logger.info("BOTH mode: Server will send both video and JSON data")
+    logger.info("Starting WebRTC worker")
 
     workflow_specification = get_workflow_specification(
         api_key=args.api_key,
@@ -317,53 +302,43 @@ def main():
     else:
         logger.info(f"Available workflow outputs: {available_output_names}")
 
-    # Determine stream_output
+    # Determine stream_output (video track)
+    # - None: auto-detect
+    # - "none" or empty: no video track
+    # - "field_name": use that field
     stream_output_to_use = None
-    if args.output_mode in ["both", "video_only"]:
-        if args.stream_output:
-            # User specified stream output - validate it exists
-            if args.stream_output not in available_output_names:
-                raise ValueError(
-                    f"❌ stream_output '{args.stream_output}' not found in workflow outputs. "
-                    f"Available: {available_output_names}"
-                )
-            stream_output_to_use = args.stream_output
-            logger.info(f"Using specified stream_output: {stream_output_to_use}")
+    if args.stream_output:
+        if args.stream_output.lower() == "none":
+            stream_output_to_use = []  # Empty list = no video
+            logger.info("stream_output: NO VIDEO ([]) - data-only mode")
         else:
-            # Let backend auto-detect first valid image output
-            logger.info(
-                "stream_output not specified, backend will auto-detect first valid image output"
-            )
+            stream_output_to_use = [args.stream_output]
+            logger.info(f"stream_output: {stream_output_to_use}")
+    else:
+        # Default: auto-detect
+        stream_output_to_use = None
+        logger.info("stream_output: AUTO-DETECT (None)")
 
-    # Determine data_output
+    # Determine data_output (data channel)
+    # - None or []: no data
+    # - "*": all outputs
+    # - ["field1", "field2"]: specific fields
     data_output_to_use = None
     if args.data_outputs:
-        if args.data_outputs.lower() == "all":
-            data_output_to_use = None  # None = all outputs
-            logger.info("data_output: ALL outputs (None)")
+        if args.data_outputs == "*":
+            data_output_to_use = ["*"]  # Wildcard = all outputs
+            logger.info("data_output: ALL outputs (['*'])")
         elif args.data_outputs.lower() == "none":
             data_output_to_use = []  # Empty = no data
-            logger.info("data_output: NO outputs ([])")
+            logger.info("data_output: NO DATA ([])")
         else:
-            # Parse comma-separated list
             requested_fields = [f.strip() for f in args.data_outputs.split(",")]
-
-            # Validate all requested fields exist
-            invalid_fields = [
-                f for f in requested_fields if f not in available_output_names
-            ]
-            if invalid_fields:
-                raise ValueError(
-                    f"❌ data_output fields {invalid_fields} not found in workflow outputs. "
-                    f"Available: {available_output_names}"
-                )
-
             data_output_to_use = requested_fields
             logger.info(f"data_output: {data_output_to_use}")
     else:
-        # Default: send all outputs
+        # Default: no data
         data_output_to_use = None
-        logger.info("data_output: ALL outputs (default)")
+        logger.info("data_output: NO DATA (None - default)")
 
     webrtc_turn_config = None
     if args.turn_url:
@@ -404,11 +379,12 @@ def main():
             sdp=peer_connection.localDescription.sdp,
         ),
         webrtc_turn_config=webrtc_turn_config,
-        output_mode=args.output_mode,
-        stream_output=[stream_output_to_use] if stream_output_to_use else [],
+        stream_output=stream_output_to_use,
         data_output=data_output_to_use,
         webrtc_realtime_processing=args.realtime,
         rtsp_url=args.source if is_rtmp_url(args.source) else None,
+        processing_timeout=args.processing_timeout,
+        requested_gpu=args.gpu,
     )
 
     https_verify = True
@@ -475,12 +451,11 @@ def main():
     )
     future.result()
 
-    # Track active data output mode: "all" (None), "none" ([]), or list of field names
     active_data_fields = []  # Initialize for custom mode
-    if data_output_to_use is None:
-        active_data_mode = "all"  # "all" means None
-    elif data_output_to_use == []:
-        active_data_mode = "none"  # "none" means []
+    if data_output_to_use is None or data_output_to_use == []:
+        active_data_mode = "none"
+    elif data_output_to_use == ["*"]:
+        active_data_mode = "all"
     else:
         active_data_mode = "custom"  # Custom list
         active_data_fields = list(data_output_to_use)  # Copy of active fields
@@ -645,12 +620,12 @@ def main():
 
         # Handle + key (all outputs)
         if key == ord("+") or key == ord("="):
-            logger.info("Setting data_output to ALL (None)")
+            logger.info("Setting data_output to ALL (['*'])")
             active_data_mode = "all"
             message = json.dumps(
                 WebRTCData(
                     stream_output=None,
-                    data_output=None,
+                    data_output=["*"],
                 ).model_dump()
             )
             peer_connection.data_channel.send(message)
@@ -674,7 +649,7 @@ def main():
             if chr(key) == "0":
                 message = json.dumps(
                     WebRTCData(
-                        stream_output="",
+                        stream_output=[],
                         data_output=None,
                     ).model_dump()
                 )
@@ -687,7 +662,7 @@ def main():
                 )
                 message = json.dumps(
                     WebRTCData(
-                        stream_output=output_name,
+                        stream_output=[output_name],
                         data_output=None,
                     ).model_dump()
                 )
@@ -737,16 +712,17 @@ def main():
 
         return True
 
-    # For data_only mode, show blank window with data controls
-    if args.output_mode == "data_only":
-        logger.info("DATA_ONLY mode: Showing placeholder window with output controls")
+    has_video = stream_output_to_use != []
+
+    if not has_video:
+        logger.info("DATA-ONLY mode: Showing placeholder window with output controls")
 
         try:
             while not peer_connection.closed_event.is_set():
                 # Create black frame with overlays
                 frame = np.zeros((520, 700, 3), dtype=np.uint8)
 
-                mode_text = f"MODE: {args.output_mode.upper()}"
+                mode_text = "MODE: DATA-ONLY"
                 frame = draw_mode_indicator(frame, mode_text)
 
                 if active_data_mode == "custom":
@@ -785,7 +761,7 @@ def main():
             np_frame = frame.to_ndarray(format="bgr24")
 
             # Draw overlays
-            mode_text = f"MODE: {args.output_mode.upper()}"
+            mode_text = "MODE: VIDEO + DATA"
             np_frame = draw_mode_indicator(np_frame, mode_text)
 
             if active_data_mode == "custom":
@@ -813,7 +789,7 @@ def main():
     # Cleanup
     cv.destroyAllWindows()  # Close OpenCV windows (works for all modes now)
 
-    if args.output_mode != "data_only":
+    if has_video:
         asyncio.run_coroutine_threadsafe(
             peer_connection.stream_track.stop_recv_loop(),
             asyncio_loop,

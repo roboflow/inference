@@ -7,6 +7,7 @@ from typing import List, Literal, Type, Union
 import supervision as sv
 from pydantic import ConfigDict, Field
 
+from inference.core.utils.drawing import create_tiles
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -92,6 +93,6 @@ class TileDetectionsBatchBlock(WorkflowBlock):
                     prediction,
                 )
                 visualisations_batch_element.append(annotated_image)
-            tile = sv.create_tiles(visualisations_batch_element)
+            tile = create_tiles(visualisations_batch_element)
             visualisations.append({"visualisations": tile})
         return visualisations
