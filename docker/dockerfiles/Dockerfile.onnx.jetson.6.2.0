@@ -108,6 +108,7 @@ RUN uv pip install --system --break-system-packages --index-strategy unsafe-best
     && rm -rf ~/.cache/uv
 
 # Force numpy<2.0.0 after all deps (Jetson PyTorch and onnxruntime require numpy 1.x)
+# Cache bust: 2025-11-17-v2
 RUN uv pip install --system --break-system-packages "numpy<2.0.0"
 
 # Build onnxruntime-gpu from source
