@@ -1887,7 +1887,19 @@ def _generate_presigned_urls_parallel(
         if not file_path.startswith(f"{protocol}://"):
             file_path = f"{protocol}://{file_path}"
 
-        presigned_url = fs.sign(file_path, expiration=expiration_seconds)
+        # Special handling for Azure with SAS token
+        # When authenticated with SAS token, fs.sign() fails because it needs account_key
+        # Instead, use the existing SAS token (ignoring expiration_seconds parameter)
+        if protocol in ("az", "abfs", "azure") and hasattr(fs, 'sas_token') and fs.sas_token:
+            # Use adlfs built-in utilities to construct URL with existing SAS token
+            path_without_protocol = file_path.split("://", 1)[1]
+            container, blob, _ = fs.split_path(path_without_protocol)
+            blob = blob.lstrip("/")  # Remove leading slash from blob if present
+            presigned_url = f"{fs.account_url}/{container}/{blob}{fs.sas_token}"
+        else:
+            # S3, GCS, Azure with account_key - use fs.sign()
+            presigned_url = fs.sign(file_path, expiration=expiration_seconds)
+
         file_name = file_path.split("/")[-1]
 
         return {"name": file_name, "url": presigned_url}
