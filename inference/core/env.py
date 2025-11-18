@@ -417,9 +417,9 @@ SAM2_VERSION_ID = os.getenv("SAM2_VERSION_ID", "hiera_large")
 # SAM3_BPE_PATH = os.getenv("SAM3_BPE_PATH", "/home/hansent/sam3/assets/bpe_simple_vocab_16e6.txt.gz")
 SAM3_IMAGE_SIZE = int(os.getenv("SAM3_IMAGE_SIZE", 1008))
 # SAM3_REPO_PATH = os.getenv("SAM3_REPO_PATH", "/home/hansent/sam3")
-SAM3_MAX_EMBEDDING_CACHE_SIZE = int(os.getenv("SAM2_MAX_EMBEDDING_CACHE_SIZE", 100))
-SAM3_MAX_LOGITS_CACHE_SIZE = int(os.getenv("SAM2_MAX_LOGITS_CACHE_SIZE", 1000))
-DISABLE_SAM3_LOGITS_CACHE = str2bool(os.getenv("DISABLE_SAM2_LOGITS_CACHE", False))
+SAM3_MAX_EMBEDDING_CACHE_SIZE = int(os.getenv("SAM3_MAX_EMBEDDING_CACHE_SIZE", 100))
+SAM3_MAX_LOGITS_CACHE_SIZE = int(os.getenv("SAM3_MAX_LOGITS_CACHE_SIZE", 1000))
+DISABLE_SAM3_LOGITS_CACHE = str2bool(os.getenv("DISABLE_SAM3_LOGITS_CACHE", False))
 
 # EasyOCR version ID, default is "english_g2"
 EASYOCR_VERSION_ID = os.getenv("EASYOCR_VERSION_ID", "english_g2")
