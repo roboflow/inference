@@ -1,3 +1,4 @@
+import datetime
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Union
 
@@ -39,6 +40,7 @@ class WebRTCWorkerRequest(BaseModel):
     declared_fps: Optional[float] = None
     rtsp_url: Optional[str] = None
     processing_timeout: Optional[int] = WEBRTC_MODAL_FUNCTION_TIME_LIMIT
+    processing_session_started: Optional[datetime.datetime] = None
     requested_plan: Optional[str] = "webrtc-gpu-small"
     # TODO: replaced with requested_plan
     requested_gpu: Optional[str] = None

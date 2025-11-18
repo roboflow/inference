@@ -15,6 +15,7 @@ from inference.core.env import (
     MODELS_CACHE_AUTH_CACHE_MAX_SIZE,
     MODELS_CACHE_AUTH_CACHE_TTL,
     MODELS_CACHE_AUTH_ENABLED,
+    PRELOAD_HF_IDS,
     PROJECT,
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
     WEBRTC_MODAL_APP_NAME,
@@ -26,6 +27,7 @@ from inference.core.env import (
     WEBRTC_MODAL_FUNCTION_MIN_CONTAINERS,
     WEBRTC_MODAL_FUNCTION_SCALEDOWN_WINDOW,
     WEBRTC_MODAL_FUNCTION_TIME_LIMIT,
+    WEBRTC_MODAL_GCP_SECRET_NAME,
     WEBRTC_MODAL_IMAGE_NAME,
     WEBRTC_MODAL_IMAGE_TAG,
     WEBRTC_MODAL_RESPONSE_TIMEOUT,
@@ -44,6 +46,7 @@ from inference.core.interfaces.webrtc_worker.entities import (
 from inference.core.interfaces.webrtc_worker.webrtc import (
     init_rtc_peer_connection_with_loop,
 )
+from inference.core.roboflow_api import get_roboflow_workspace
 from inference.core.version import __version__
 from inference.usage_tracking.collector import usage_collector
 from inference.usage_tracking.plan_details import WebRTCPlan
@@ -55,14 +58,20 @@ except ImportError:
 
 
 if modal is not None:
-    # https://modal.com/docs/reference/modal.Image
-    video_processing_image = (
-        modal.Image.from_registry(
-            f"{WEBRTC_MODAL_IMAGE_NAME}:{WEBRTC_MODAL_IMAGE_TAG if WEBRTC_MODAL_IMAGE_TAG else __version__}"
+    docker_tag: str = WEBRTC_MODAL_IMAGE_TAG if WEBRTC_MODAL_IMAGE_TAG else __version__
+    if WEBRTC_MODAL_GCP_SECRET_NAME:
+        # https://modal.com/docs/reference/modal.Secret#from_name
+        secret = modal.Secret.from_name(WEBRTC_MODAL_GCP_SECRET_NAME)
+        # https://modal.com/docs/reference/modal.Image#from_gcp_artifact_registry
+        video_processing_image = modal.Image.from_gcp_artifact_registry(
+            f"{WEBRTC_MODAL_IMAGE_NAME}:{docker_tag}",
+            secret=secret,
         )
-        .pip_install("modal")
-        .entrypoint([])
-    )
+    else:
+        video_processing_image = modal.Image.from_registry(
+            f"{WEBRTC_MODAL_IMAGE_NAME}:{docker_tag}"
+        )
+    video_processing_image = video_processing_image.pip_install("modal").entrypoint([])
 
     # https://modal.com/docs/reference/modal.Volume
     rfcache_volume = modal.Volume.from_name("rfcache", create_if_missing=True)
@@ -71,6 +80,7 @@ if modal is not None:
     app = modal.App(
         name=WEBRTC_MODAL_APP_NAME,
         image=video_processing_image,
+        tags={"tag": docker_tag},
     )
 
     decorator_kwargs = {
@@ -81,56 +91,51 @@ if modal is not None:
         "enable_memory_snapshot": WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT,
         "max_inputs": WEBRTC_MODAL_FUNCTION_MAX_INPUTS,
         "env": {
-            "ROBOFLOW_INTERNAL_SERVICE_SECRET": ROBOFLOW_INTERNAL_SERVICE_SECRET,
-            "ROBOFLOW_INTERNAL_SERVICE_NAME": WEBRTC_MODAL_ROBOFLOW_INTERNAL_SERVICE_NAME,
-            "PROJECT": PROJECT,
-            "LOG_LEVEL": LOG_LEVEL,
-            "INTERNAL_WEIGHTS_URL_SUFFIX": INTERNAL_WEIGHTS_URL_SUFFIX,
-            "MODELS_CACHE_AUTH_ENABLED": str(MODELS_CACHE_AUTH_ENABLED),
-            "MODELS_CACHE_AUTH_CACHE_TTL": str(MODELS_CACHE_AUTH_CACHE_TTL),
-            "MODELS_CACHE_AUTH_CACHE_MAX_SIZE": str(MODELS_CACHE_AUTH_CACHE_MAX_SIZE),
-            "METRICS_ENABLED": "False",
             "ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS": str(
                 ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS
             ),
-            "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
+            "ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES": "False",
+            "DISABLE_INFERENCE_CACHE": "True",
+            "DISABLE_VERSION_CHECK": "True",
+            "HF_HOME": Path(MODEL_CACHE_DIR).joinpath("hf_home").as_posix(),
+            "INTERNAL_WEIGHTS_URL_SUFFIX": INTERNAL_WEIGHTS_URL_SUFFIX,
+            "METRICS_ENABLED": "False",
             "MODAL_TOKEN_ID": MODAL_TOKEN_ID,
             "MODAL_TOKEN_SECRET": MODAL_TOKEN_SECRET,
             "MODAL_WORKSPACE_NAME": MODAL_WORKSPACE_NAME,
-            "ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES": "False",
-            "DISABLE_VERSION_CHECK": "True",
             "MODEL_CACHE_DIR": MODEL_CACHE_DIR,
-            "HF_HOME": Path(MODEL_CACHE_DIR).joinpath("hf_home").as_posix(),
+            "MODELS_CACHE_AUTH_CACHE_MAX_SIZE": str(MODELS_CACHE_AUTH_CACHE_MAX_SIZE),
+            "MODELS_CACHE_AUTH_CACHE_TTL": str(MODELS_CACHE_AUTH_CACHE_TTL),
+            "MODELS_CACHE_AUTH_ENABLED": str(MODELS_CACHE_AUTH_ENABLED),
+            "LOG_LEVEL": LOG_LEVEL,
+            "ONNXRUNTIME_EXECUTION_PROVIDERS": "[CUDAExecutionProvider,CPUExecutionProvider]",
+            "PRELOAD_HF_IDS": PRELOAD_HF_IDS,
+            "PROJECT": PROJECT,
+            "ROBOFLOW_INTERNAL_SERVICE_NAME": WEBRTC_MODAL_ROBOFLOW_INTERNAL_SERVICE_NAME,
+            "ROBOFLOW_INTERNAL_SERVICE_SECRET": ROBOFLOW_INTERNAL_SERVICE_SECRET,
+            "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
             "TELEMETRY_USE_PERSISTENT_QUEUE": "False",
-            "DISABLE_INFERENCE_CACHE": "True",
-            "WEBRTC_MODAL_FUNCTION_GPU": WEBRTC_MODAL_FUNCTION_GPU,
-            "WEBRTC_MODAL_FUNCTION_SCALEDOWN_WINDOW": str(
-                WEBRTC_MODAL_FUNCTION_SCALEDOWN_WINDOW
-            ),
             "WEBRTC_MODAL_FUNCTION_BUFFER_CONTAINERS": str(
                 WEBRTC_MODAL_FUNCTION_BUFFER_CONTAINERS
             ),
+            "WEBRTC_MODAL_FUNCTION_GPU": WEBRTC_MODAL_FUNCTION_GPU,
             "WEBRTC_MODAL_FUNCTION_MIN_CONTAINERS": str(
                 WEBRTC_MODAL_FUNCTION_MIN_CONTAINERS
+            ),
+            "WEBRTC_MODAL_FUNCTION_SCALEDOWN_WINDOW": str(
+                WEBRTC_MODAL_FUNCTION_SCALEDOWN_WINDOW
             ),
             "WEBRTC_MODAL_FUNCTION_TIME_LIMIT": str(WEBRTC_MODAL_FUNCTION_TIME_LIMIT),
             "WEBRTC_MODAL_IMAGE_NAME": WEBRTC_MODAL_IMAGE_NAME,
             "WEBRTC_MODAL_IMAGE_TAG": WEBRTC_MODAL_IMAGE_TAG,
             "WEBRTC_MODAL_RTSP_PLACEHOLDER": WEBRTC_MODAL_RTSP_PLACEHOLDER,
             "WEBRTC_MODAL_RTSP_PLACEHOLDER_URL": WEBRTC_MODAL_RTSP_PLACEHOLDER_URL,
-            "ONNXRUNTIME_EXECUTION_PROVIDERS": "[CUDAExecutionProvider,CPUExecutionProvider]",
         },
         "volumes": {MODEL_CACHE_DIR: rfcache_volume},
     }
 
     class RTCPeerConnectionModal:
         _webrtc_request: Optional[WebRTCWorkerRequest] = modal.parameter(default=None)
-        _exec_session_started: Optional[datetime.datetime] = modal.parameter(
-            default=None
-        )
-        _exec_session_stopped: Optional[datetime.datetime] = modal.parameter(
-            default=None
-        )
 
         @modal.method()
         def rtc_peer_connection_modal(
@@ -139,6 +144,12 @@ if modal is not None:
             q: modal.Queue,
         ):
             logger.info("*** Spawning %s:", self.__class__.__name__)
+            logger.info("Inference tag: %s", docker_tag)
+            _exec_session_started = datetime.datetime.now()
+            webrtc_request.processing_session_started = _exec_session_started
+            logger.info(
+                "WebRTC session started at %s", _exec_session_started.isoformat()
+            )
             logger.info(
                 "webrtc_realtime_processing: %s",
                 webrtc_request.webrtc_realtime_processing,
@@ -171,18 +182,11 @@ if modal is not None:
                     send_answer=send_answer,
                 )
             )
-
-        # https://modal.com/docs/reference/modal.enter
-        # Modal usage calculation is relying on no concurrency and no hot instances
-        @modal.enter()
-        def start(self):
-            self._exec_session_started = datetime.datetime.now()
-
-        @modal.exit()
-        def stop(self):
-            if not self._webrtc_request:
-                return
-            self._exec_session_stopped = datetime.datetime.now()
+            _exec_session_stopped = datetime.datetime.now()
+            logger.info(
+                "WebRTC session stopped at %s",
+                _exec_session_stopped.isoformat(),
+            )
             workflow_id = self._webrtc_request.workflow_configuration.workflow_id
             if not workflow_id:
                 if self._webrtc_request.workflow_configuration.workflow_specification:
@@ -195,16 +199,38 @@ if modal is not None:
             # requested plan is guaranteed to be set due to validation in spawn_rtc_peer_connection_modal
             webrtc_plan = self._webrtc_request.requested_plan
 
+            video_source = "realtime browser stream"
+            if self._webrtc_request.rtsp_url:
+                video_source = "rtsp"
+            elif not self._webrtc_request.webrtc_realtime_processing:
+                video_source = "buffered browser stream"
+
             usage_collector.record_usage(
                 source=workflow_id,
                 category="modal",
                 api_key=self._webrtc_request.api_key,
-                resource_details={"plan": webrtc_plan},
+                resource_details={
+                    "plan": webrtc_plan,
+                    "billable": True,
+                    "video_source": video_source,
+                },
                 execution_duration=(
-                    self._exec_session_stopped - self._exec_session_started
+                    _exec_session_stopped - _exec_session_started
                 ).total_seconds(),
             )
             usage_collector.push_usage_payloads()
+            logger.info("Function completed")
+
+        # https://modal.com/docs/reference/modal.enter
+        # https://modal.com/docs/guide/memory-snapshot#gpu-memory-snapshot
+        @modal.enter(snap=True)
+        def start(self):
+            # TODO: pre-load models
+            logger.info("Starting container")
+
+        @modal.exit()
+        def stop(self):
+            logger.info("Stopping container")
 
     # Modal derives function name from class name
     # https://modal.com/docs/reference/modal.App#cls
@@ -217,7 +243,6 @@ if modal is not None:
     @app.cls(
         **{
             **decorator_kwargs,
-            "enable_memory_snapshot": False,
             "gpu": WEBRTC_MODAL_FUNCTION_GPU,  # https://modal.com/docs/guide/gpu#specifying-gpu-type
             "experimental_options": {
                 "enable_gpu_snapshot": WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT
@@ -266,7 +291,21 @@ if modal is not None:
             )
         except modal.exception.NotFoundError:
             logger.info("Deploying webrtc modal app %s", WEBRTC_MODAL_APP_NAME)
-            app.deploy(name=WEBRTC_MODAL_APP_NAME, client=client)
+            app.deploy(name=WEBRTC_MODAL_APP_NAME, client=client, tag=docker_tag)
+
+        workspace_id = webrtc_request.workflow_configuration.workspace_name
+        if not workspace_id:
+            try:
+                workspace_id = get_roboflow_workspace(api_key=webrtc_request.api_key)
+                webrtc_request.workflow_configuration.workspace_name = workspace_id
+            except Exception:
+                pass
+
+        tags = {"tag": docker_tag}
+        if workspace_id:
+            tags["workspace_id"] = workspace_id
+
+        # TODO: tag function run
 
         if webrtc_request.requested_gpu:
             RTCPeerConnectionModal = RTCPeerConnectionModalGPU
