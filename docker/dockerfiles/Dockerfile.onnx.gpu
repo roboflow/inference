@@ -65,7 +65,7 @@ RUN python3 -m pip install -r requirements.pali.flash_attn.txt --no-dependencies
 FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 as runtime
 
 WORKDIR /
-COPY sam3_private sam3_private
+COPY sam3_repo sam3_repo
 
 
 WORKDIR /app
@@ -99,8 +99,8 @@ RUN set -eux; \
 # rigth now just copyinh the sam3 code into the project root and gitignoring it
 # and then copyin to container here to install it since there is no pip package yet
 WORKDIR /
-COPY sam3_private sam3_private
-WORKDIR sam3_private
+COPY sam3_repo sam3_repo
+WORKDIR sam3_repo
 RUN pip install einops pycocotools decord
 RUN pip3 install --no-cache-dir .
 
