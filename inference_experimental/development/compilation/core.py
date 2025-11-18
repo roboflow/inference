@@ -1,6 +1,7 @@
 import json
 import os.path
 import shutil
+import time
 from typing import List, Literal, Optional, Tuple, Union
 
 import onnxruntime
@@ -167,48 +168,56 @@ def compile_model_to_trt(
     trt_version_compatible: bool = False,
     same_compute_compatibility: bool = False,
 ) -> None:
-    print(f"Compiling model in {model_dir}")
+    LOGGER.info("Starting TRT compilation for model in: {}".format(model_dir))
+    compilation_start_time = time.time()
+
+    LOGGER.info("Capturing runtime environment information...")
     runtime_xray = x_ray_runtime_environment()
     xray_path = os.path.join(model_dir, "env-x-ray.json")
-    dump_json(
-        path=xray_path,
-        contents={
-            "gpu_available": runtime_xray.gpu_available,
-            "gpu_devices": runtime_xray.gpu_devices,
-            "gpu_devices_cc": [str(e) for e in runtime_xray.gpu_devices_cc],
-            "driver_version": (
-                str(runtime_xray.driver_version)
-                if runtime_xray.driver_version
-                else None
-            ),
-            "cuda_version": (
-                str(runtime_xray.cuda_version) if runtime_xray.cuda_version else None
-            ),
-            "trt_version": (
-                str(runtime_xray.trt_version) if runtime_xray.trt_version else None
-            ),
-            "jetson_type": runtime_xray.jetson_type,
-            "l4t_version": (
-                str(runtime_xray.l4t_version) if runtime_xray.l4t_version else None
-            ),
-            "os_version": runtime_xray.os_version,
-            "torch_available": runtime_xray.torch_available,
-            "onnxruntime_version": (
-                str(runtime_xray.onnxruntime_version)
-                if runtime_xray.onnxruntime_version
-                else None
-            ),
-            "available_onnx_execution_providers": (
-                list(runtime_xray.available_onnx_execution_providers)
-                if runtime_xray.available_onnx_execution_providers
-                else None
-            ),
-            "hf_transformers_available": runtime_xray.hf_transformers_available,
-            "ultralytics_available": runtime_xray.ultralytics_available,
-            "trt_python_package_available": runtime_xray.trt_python_package_available,
-        },
-    )
+    env_contents = {
+        "gpu_available": runtime_xray.gpu_available,
+        "gpu_devices": runtime_xray.gpu_devices,
+        "gpu_devices_cc": [str(e) for e in runtime_xray.gpu_devices_cc],
+        "driver_version": (
+            str(runtime_xray.driver_version)
+            if runtime_xray.driver_version
+            else None
+        ),
+        "cuda_version": (
+            str(runtime_xray.cuda_version) if runtime_xray.cuda_version else None
+        ),
+        "trt_version": (
+            str(runtime_xray.trt_version) if runtime_xray.trt_version else None
+        ),
+        "jetson_type": runtime_xray.jetson_type,
+        "l4t_version": (
+            str(runtime_xray.l4t_version) if runtime_xray.l4t_version else None
+        ),
+        "os_version": runtime_xray.os_version,
+        "torch_available": runtime_xray.torch_available,
+        "onnxruntime_version": (
+            str(runtime_xray.onnxruntime_version)
+            if runtime_xray.onnxruntime_version
+            else None
+        ),
+        "available_onnx_execution_providers": (
+            list(runtime_xray.available_onnx_execution_providers)
+            if runtime_xray.available_onnx_execution_providers
+            else None
+        ),
+        "hf_transformers_available": runtime_xray.hf_transformers_available,
+        "ultralytics_available": runtime_xray.ultralytics_available,
+        "trt_python_package_available": runtime_xray.trt_python_package_available,
+    }
+    dump_json(path=xray_path, contents=env_contents)
+    LOGGER.info("GPU Available: {}".format(runtime_xray.gpu_available))
+    if runtime_xray.gpu_available and runtime_xray.gpu_devices:
+        LOGGER.info("GPU Devices: {}".format(runtime_xray.gpu_devices))
+        LOGGER.info("CUDA Version: {}".format(runtime_xray.cuda_version))
+        LOGGER.info("TensorRT Version: {}".format(runtime_xray.trt_version))
+
     onnx_path = os.path.join(model_dir, WEIGHTS_FILE_NAME)
+    LOGGER.info("Loading ONNX model from: {}".format(onnx_path))
     session = onnxruntime.InferenceSession(onnx_path)
     if model_input_size is not None:
         if isinstance(model_input_size, int):
@@ -234,10 +243,14 @@ def compile_model_to_trt(
         model_dir, f"engine-{precision}{engine_name_postfix}.plan"
     )
     if os.path.exists(engine_path):
+        LOGGER.info("TRT engine already exists at: {}".format(engine_path))
+        LOGGER.info("Skipping compilation")
         return None
+
     trt_config_path = os.path.join(
         model_dir, f"trt-config-{precision}{engine_name_postfix}.json"
     )
+    LOGGER.info("Saving TRT configuration to: {}".format(trt_config_path))
     dump_json(
         path=trt_config_path,
         contents={
@@ -250,6 +263,8 @@ def compile_model_to_trt(
             "precision": precision,
         },
     )
+
+    LOGGER.info("Initializing TensorRT Engine Builder (workspace: {} GB)".format(workspace_size_gb))
     engine_builder = EngineBuilder(workspace=workspace_size_gb)
     engine_builder.create_network(onnx_path=onnx_path)
     engine_builder.create_engine(
@@ -261,6 +276,11 @@ def compile_model_to_trt(
         trt_version_compatible=trt_version_compatible,
         same_compute_compatibility=same_compute_compatibility,
     )
+
+    total_compilation_time = time.time() - compilation_start_time
+    LOGGER.info("Total compilation time: {:.2f} seconds ({:.2f} minutes)".format(
+        total_compilation_time, total_compilation_time / 60
+    ))
 
 
 def dump_json(path: str, contents: dict) -> None:
