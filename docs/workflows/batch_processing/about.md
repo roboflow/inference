@@ -150,6 +150,7 @@ You can optionally include glob patterns to filter files:
       --bucket-path "s3://my-bucket/training-data/**/*.jpg" \
       --batch-id my-s3-batch
     ```
+    For more information, see [AWS S3 configuration](./integration.md#aws-s3-and-s3-compatible-storage).
 
     **Google Cloud Storage:**
     ```bash
@@ -161,6 +162,8 @@ You can optionally include glob patterns to filter files:
       --batch-id my-gcs-batch
     ```
 
+    For more information, see [Google Cloud Storage configuration](./integration.md#google-cloud-storage).
+
     **Azure Blob Storage:**
     ```bash
     export AZURE_STORAGE_ACCOUNT_NAME=myaccount
@@ -171,6 +174,8 @@ You can optionally include glob patterns to filter files:
       --bucket-path "az://my-container/images/*.png" \
       --batch-id my-azure-batch
     ```
+
+    For more information, see [Azure Blob Storage configuration](./integration.md#azure-blob-storage).
 
 !!! tip "Cloud Storage Configuration"
 
