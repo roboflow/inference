@@ -148,23 +148,31 @@ def send_chunked_data(
     if data_channel.readyState != "open":
         logger.warning(f"Cannot send response for frame {frame_id}, channel not open")
         return
-    
-    total_chunks = (len(payload_bytes) + chunk_size - 1) // chunk_size  # Ceiling division
+
+    payload_len = len(payload_bytes)
+    # Use divmod for more efficient ceiling division
+    total_chunks, remainder = divmod(payload_len, chunk_size)
+    if remainder:
+        total_chunks += 1
+
     
     if frame_id % 100 == 1:
         logger.info(
-            f"Sending response for frame {frame_id}: {total_chunks} chunk(s), {len(payload_bytes)} bytes"
+            f"Sending response for frame {frame_id}: {total_chunks} chunk(s), {payload_len} bytes"
         )
     
+
+    # Avoid repeated calls to len() within the loop
+    send = data_channel.send
+    create_message = create_chunked_binary_message
     for chunk_index in range(total_chunks):
         start = chunk_index * chunk_size
-        end = min(start + chunk_size, len(payload_bytes))
+        end = start + chunk_size
+        # Use slicing, but no need to clamp end since last slice will remain within bounds
         chunk_data = payload_bytes[start:end]
-        
-        message = create_chunked_binary_message(
-            frame_id, chunk_index, total_chunks, chunk_data
-        )
-        data_channel.send(message)
+        # Pre-pack message and send in tight loop
+        msg = create_message(frame_id, chunk_index, total_chunks, chunk_data)
+        send(msg)
 
 
 class RTCPeerConnectionWithLoop(RTCPeerConnection):
