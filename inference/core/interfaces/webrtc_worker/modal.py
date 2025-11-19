@@ -251,16 +251,23 @@ if modal is not None:
                 model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
                 self._model_manager = ModelManager(model_registry=model_registry)
                 for model_id in PRELOAD_MODELS:
-                    de_aliased_model_id = resolve_roboflow_model_alias(
-                        model_id=model_id
-                    )
-                    logger.info(f"Preloading model: {de_aliased_model_id}")
-                    self._model_manager.add_model(
-                        model_id=de_aliased_model_id,
-                        api_key=None,
-                        countinference=False,
-                        service_secret=ROBOFLOW_INTERNAL_SERVICE_SECRET,
-                    )
+                    try:
+                        de_aliased_model_id = resolve_roboflow_model_alias(
+                            model_id=model_id
+                        )
+                        logger.info(f"Preloading model: {de_aliased_model_id}")
+                        self._model_manager.add_model(
+                            model_id=de_aliased_model_id,
+                            api_key=None,
+                            countinference=False,
+                            service_secret=ROBOFLOW_INTERNAL_SERVICE_SECRET,
+                        )
+                    except Exception as exc:
+                        logger.error(
+                            "Failed to preload model %s: %s",
+                            model_id,
+                            exc,
+                        )
 
         @modal.exit()
         def stop(self):
