@@ -31,8 +31,8 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.modal.txt \
     ./
 
-RUN python3 -m pip install -U pip
-RUN python3 -m pip install \
+RUN python3 -m pip install -U pip uv
+RUN uv pip install \
     -r _requirements.txt \
     -r requirements.sam.txt \
     -r requirements.sam3.txt \
