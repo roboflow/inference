@@ -5,8 +5,6 @@ import numpy as np
 import requests
 from pydantic import ConfigDict, Field
 
-from inference.core.roboflow_api import build_roboflow_api_headers
-
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
     InstanceSegmentationInferenceResponse,
@@ -19,6 +17,7 @@ from inference.core.env import (
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
 )
 from inference.core.managers.base import ModelManager
+from inference.core.roboflow_api import build_roboflow_api_headers
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,

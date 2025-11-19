@@ -2,25 +2,27 @@ from types import SimpleNamespace
 from typing import List, Literal, Optional, Type, Union
 
 import numpy as np
-import supervision as sv
 import requests
-
+import supervision as sv
 from pydantic import ConfigDict, Field
 
-from inference.core.roboflow_api import build_roboflow_api_headers
-
 from inference.core import logger
-from inference.core.entities.requests.sam3 import Sam3SegmentationRequest, Sam3Prompt
+from inference.core.entities.requests.sam3 import Sam3Prompt, Sam3SegmentationRequest
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
     InstanceSegmentationInferenceResponse,
     InstanceSegmentationPrediction,
     Point,
 )
-from inference.core.entities.responses.sam3 import (
-    Sam3SegmentationPrediction,
+from inference.core.entities.responses.sam3 import Sam3SegmentationPrediction
+from inference.core.env import (
+    API_BASE_URL,
+    ROBOFLOW_INTERNAL_SERVICE_NAME,
+    ROBOFLOW_INTERNAL_SERVICE_SECRET,
+    SAM3_EXEC_MODE,
 )
 from inference.core.managers.base import ModelManager
+from inference.core.roboflow_api import build_roboflow_api_headers
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
@@ -39,12 +41,12 @@ from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
-    OBJECT_DETECTION_PREDICTION_KIND,
     LIST_OF_VALUES_KIND,
-    STRING_KIND,
+    OBJECT_DETECTION_PREDICTION_KIND,
     ROBOFLOW_MODEL_ID_KIND,
-    RoboflowModelField,
+    STRING_KIND,
     ImageInputField,
+    RoboflowModelField,
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -52,15 +54,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-
-
-from inference.core.env import (
-    API_BASE_URL,
-    ROBOFLOW_INTERNAL_SERVICE_NAME,
-    ROBOFLOW_INTERNAL_SERVICE_SECRET,
-    SAM3_EXEC_MODE,
-)
-
 
 DETECTIONS_CLASS_NAME_FIELD = "class_name"
 DETECTION_ID_FIELD = "detection_id"

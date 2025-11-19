@@ -62,9 +62,7 @@ from inference.core.entities.requests.sam2 import (
     Sam2EmbeddingRequest,
     Sam2SegmentationRequest,
 )
-from inference.core.entities.requests.sam3 import (
-    Sam3SegmentationRequest,
-)
+from inference.core.entities.requests.sam3 import Sam3SegmentationRequest
 from inference.core.entities.requests.server_state import (
     AddModelRequest,
     ClearModelRequest,

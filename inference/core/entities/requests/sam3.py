@@ -6,7 +6,6 @@ from inference.core.entities.requests.inference import (
     BaseRequest,
     InferenceRequestImage,
 )
-
 from inference.core.env import SAM3_MAX_PROMPT_BATCH_SIZE
 
 

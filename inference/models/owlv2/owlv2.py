@@ -464,7 +464,9 @@ class OwlV2(RoboflowInferenceModel):
             return image.shape[:2][::-1]
 
     @torch.no_grad()
-    def embed_image(self, image: Union[np.ndarray, LazyImageRetrievalWrapper]) -> Tuple[Hash, tuple]:
+    def embed_image(
+        self, image: Union[np.ndarray, LazyImageRetrievalWrapper]
+    ) -> Tuple[Hash, tuple]:
         if isinstance(image, LazyImageRetrievalWrapper):
             image_hash = image.image_hash
         else:
@@ -535,7 +537,7 @@ class OwlV2(RoboflowInferenceModel):
         self,
         query_spec: QuerySpecType,
         iou_threshold: float,
-        precomputed_embeddings: Optional[Dict[Hash, Tuple[torch.Tensor]]] = None
+        precomputed_embeddings: Optional[Dict[Hash, Tuple[torch.Tensor]]] = None,
     ) -> Optional[torch.Tensor]:
         # NOTE: for now we're handling each image seperately
         query_embeds = []
@@ -779,7 +781,9 @@ class OwlV2(RoboflowInferenceModel):
         }
 
         with self.owlv2_lock:
-            self.class_embeddings_cache[wrapped_training_data_hash] = class_embeddings_dict
+            self.class_embeddings_cache[wrapped_training_data_hash] = (
+                class_embeddings_dict
+            )
         if return_image_embeds:
             return class_embeddings_dict, return_image_embeds_dict
 
