@@ -438,7 +438,8 @@ class SegmentAnything3(RoboflowCoreModel):
                 post = PostProcessImage(
                     max_dets_per_img=-1,
                     iou_type="segm",
-                    use_original_sizes=True,
+                    use_original_sizes_box=True,
+                    use_original_sizes_mask=True,
                     convert_mask_to_rle=False,
                     detection_threshold=float(
                         output_prob_thresh if output_prob_thresh is not None else 0.35
