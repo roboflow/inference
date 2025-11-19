@@ -21,7 +21,7 @@ You can run SAM 3 locally using the `inference` package.
 #### 1. Install the package
 
 ```bash
-pip install inference
+uv pip install inference-gpu[sam3]
 ```
 
 #### 2. Run Inference
