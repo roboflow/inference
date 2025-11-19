@@ -122,7 +122,7 @@ OWLV2_COMPILE_MODEL = str2bool(os.getenv("OWLV2_COMPILE_MODEL", True))
 #       and also ENABLE_STREAM_API environmental variable is set to False
 PRELOAD_HF_IDS = os.getenv("PRELOAD_HF_IDS")
 if PRELOAD_HF_IDS:
-    PRELOAD_HF_IDS = [id.strip() for id in PRELOAD_HF_IDS.split(",")]
+    PRELOAD_HF_IDS = [m.strip() for m in PRELOAD_HF_IDS.split(",")]
 
 # Maximum batch size for GAZE, default is 8
 GAZE_MAX_BATCH_SIZE = int(os.getenv("GAZE_MAX_BATCH_SIZE", 8))
