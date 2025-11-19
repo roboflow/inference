@@ -249,14 +249,14 @@ if modal is not None:
                 import inference.models.owlv2.owlv2
             if PRELOAD_MODELS:
                 model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
-                self._model_manager = ModelManager(model_registry=model_registry)
+                model_manager = ModelManager(model_registry=model_registry)
                 for model_id in PRELOAD_MODELS:
                     try:
                         de_aliased_model_id = resolve_roboflow_model_alias(
                             model_id=model_id
                         )
                         logger.info(f"Preloading model: {de_aliased_model_id}")
-                        self._model_manager.add_model(
+                        model_manager.add_model(
                             model_id=de_aliased_model_id,
                             api_key=None,
                             countinference=False,
@@ -268,6 +268,7 @@ if modal is not None:
                             model_id,
                             exc,
                         )
+                self._model_manager = model_manager
 
         @modal.exit()
         def stop(self):
