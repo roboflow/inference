@@ -118,7 +118,7 @@ jobs:
         run: |
           PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
       - name: 🧪 Regression Tests - SAM3
-        id: sam2_tests
+        id: sam3_tests
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'sam3' }}
         run: |
           source .venv/bin/activate
