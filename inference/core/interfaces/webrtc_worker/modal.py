@@ -16,6 +16,7 @@ from inference.core.env import (
     MODELS_CACHE_AUTH_CACHE_TTL,
     MODELS_CACHE_AUTH_ENABLED,
     PRELOAD_HF_IDS,
+    PRELOAD_MODELS,
     PROJECT,
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
     WEBRTC_MODAL_APP_NAME,
@@ -46,8 +47,12 @@ from inference.core.interfaces.webrtc_worker.entities import (
 from inference.core.interfaces.webrtc_worker.webrtc import (
     init_rtc_peer_connection_with_loop,
 )
+from inference.core.managers.base import ModelManager
+from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.core.roboflow_api import get_roboflow_workspace
 from inference.core.version import __version__
+from inference.models.aliases import resolve_roboflow_model_alias
+from inference.models.utils import ROBOFLOW_MODEL_TYPES
 from inference.usage_tracking.collector import usage_collector
 from inference.usage_tracking.plan_details import WebRTCPlan
 
@@ -109,7 +114,8 @@ if modal is not None:
             "MODELS_CACHE_AUTH_ENABLED": str(MODELS_CACHE_AUTH_ENABLED),
             "LOG_LEVEL": LOG_LEVEL,
             "ONNXRUNTIME_EXECUTION_PROVIDERS": "[CUDAExecutionProvider,CPUExecutionProvider]",
-            "PRELOAD_HF_IDS": PRELOAD_HF_IDS,
+            "PRELOAD_HF_IDS": str(PRELOAD_HF_IDS),
+            "PRELOAD_MODELS": str(PRELOAD_MODELS),
             "PROJECT": PROJECT,
             "ROBOFLOW_INTERNAL_SERVICE_NAME": WEBRTC_MODAL_ROBOFLOW_INTERNAL_SERVICE_NAME,
             "ROBOFLOW_INTERNAL_SERVICE_SECRET": ROBOFLOW_INTERNAL_SERVICE_SECRET,
@@ -135,7 +141,7 @@ if modal is not None:
     }
 
     class RTCPeerConnectionModal:
-        _webrtc_request: Optional[WebRTCWorkerRequest] = modal.parameter(default=None)
+        _model_manager: Optional[ModelManager] = modal.parameter(default=None)
 
         @modal.method()
         def rtc_peer_connection_modal(
@@ -145,6 +151,9 @@ if modal is not None:
         ):
             logger.info("*** Spawning %s:", self.__class__.__name__)
             logger.info("Inference tag: %s", docker_tag)
+            logger.info(
+                "Preloaded models: %s", ", ".join(self._model_manager.models().keys())
+            )
             _exec_session_started = datetime.datetime.now()
             webrtc_request.processing_session_started = _exec_session_started
             logger.info(
@@ -170,7 +179,6 @@ if modal is not None:
                     else []
                 ),
             )
-            self._webrtc_request = webrtc_request
 
             def send_answer(obj: WebRTCWorkerResult):
                 logger.info("Sending webrtc answer")
@@ -180,6 +188,7 @@ if modal is not None:
                 init_rtc_peer_connection_with_loop(
                     webrtc_request=webrtc_request,
                     send_answer=send_answer,
+                    model_manager=self._model_manager,
                 )
             )
             _exec_session_stopped = datetime.datetime.now()
@@ -187,28 +196,28 @@ if modal is not None:
                 "WebRTC session stopped at %s",
                 _exec_session_stopped.isoformat(),
             )
-            workflow_id = self._webrtc_request.workflow_configuration.workflow_id
+            workflow_id = webrtc_request.workflow_configuration.workflow_id
             if not workflow_id:
-                if self._webrtc_request.workflow_configuration.workflow_specification:
+                if webrtc_request.workflow_configuration.workflow_specification:
                     workflow_id = usage_collector._calculate_resource_hash(
-                        resource_details=self._webrtc_request.workflow_configuration.workflow_specification
+                        resource_details=webrtc_request.workflow_configuration.workflow_specification
                     )
                 else:
                     workflow_id = "unknown"
 
             # requested plan is guaranteed to be set due to validation in spawn_rtc_peer_connection_modal
-            webrtc_plan = self._webrtc_request.requested_plan
+            webrtc_plan = webrtc_request.requested_plan
 
             video_source = "realtime browser stream"
-            if self._webrtc_request.rtsp_url:
+            if webrtc_request.rtsp_url:
                 video_source = "rtsp"
-            elif not self._webrtc_request.webrtc_realtime_processing:
+            elif not webrtc_request.webrtc_realtime_processing:
                 video_source = "buffered browser stream"
 
             usage_collector.record_usage(
                 source=workflow_id,
                 category="modal",
-                api_key=self._webrtc_request.api_key,
+                api_key=webrtc_request.api_key,
                 resource_details={
                     "plan": webrtc_plan,
                     "billable": True,
@@ -229,7 +238,22 @@ if modal is not None:
             logger.info("Starting container")
             if PRELOAD_HF_IDS:
                 # Kick off pre-loading of models (owlv2 preloading is based on module-level singleton)
+                logger.info("Preloading owlv2 base model")
                 import inference.models.owlv2.owlv2
+            if PRELOAD_MODELS:
+                model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
+                self._model_manager = ModelManager(model_registry=model_registry)
+                for model_id in PRELOAD_MODELS:
+                    de_aliased_model_id = resolve_roboflow_model_alias(
+                        model_id=model_id
+                    )
+                    logger.info(f"Preloading model: {de_aliased_model_id}")
+                    self._model_manager.add_model(
+                        model_id=de_aliased_model_id,
+                        api_key=None,
+                        countinference=False,
+                        service_secret=ROBOFLOW_INTERNAL_SERVICE_SECRET,
+                    )
 
         @modal.exit()
         def stop(self):
