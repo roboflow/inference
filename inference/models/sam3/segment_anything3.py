@@ -1,78 +1,70 @@
 import hashlib
+import logging
+import threading
 from io import BytesIO
 from time import perf_counter
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+import sam3
 import torch
-import threading
-import logging
+from PIL import Image
 from pycocotools import mask as mask_utils
 
-from inference.core.entities.requests.inference import InferenceRequestImage
-from inference.core.entities.requests.sam3 import (
-    Sam3InferenceRequest,
-    Sam3SegmentationRequest,
-    Sam3Prompt,
-)
-from inference.core.entities.responses.sam3 import (
-    Sam3SegmentationPrediction,
-    Sam3SegmentationResponse,
-    Sam3PromptEcho,
-    Sam3PromptResult,
-)
-from inference.core.env import (
-    SAM3_IMAGE_SIZE,
-    MODELS_CACHE_AUTH_ENABLED,
-    CORE_MODEL_BUCKET,
-    INFER_BUCKET,
-)
-from inference.core.models.roboflow import (
-    RoboflowCoreModel,
-    is_model_artefacts_bucket_available,
-)
-from inference.core.cache.model_artifacts import (
-    are_all_files_cached,
-    save_bytes_in_cache,
-)
-from inference.core.exceptions import (
-    ModelArtefactError,
-    RoboflowAPINotAuthorizedError,
-)
-from inference.core.roboflow_api import (
-    ModelEndpointType,
-    get_roboflow_model_data,
-    get_from_url,
-)
-from inference.core.registries.roboflow import _check_if_api_key_has_access_to_model
-from inference.core.utils.image_utils import load_image_rgb
-from inference.core.utils.postprocess import masks2multipoly
+# from sam3.train.eval.postprocessors import PostProcessImage
+from sam3.eval.postprocessors import PostProcessImage
 
-
-import sam3
-from PIL import Image
-
+# from sam3.train.utils.misc import copy_data_to_device
+from sam3.model.utils.misc import copy_data_to_device
+from sam3.train.data.collator import collate_fn_api
+from sam3.train.data.sam3_image_dataset import Datapoint as Sam3Datapoint
+from sam3.train.data.sam3_image_dataset import FindQueryLoaded
+from sam3.train.data.sam3_image_dataset import Image as Sam3ImageDP
+from sam3.train.data.sam3_image_dataset import InferenceMetadata
 
 # SAM3 batched PCS utilities
 from sam3.train.transforms.basic_for_api import (
     ComposeAPI,
+    NormalizeAPI,
     RandomResizeAPI,
     ToTensorAPI,
-    NormalizeAPI,
 )
-from sam3.train.data.sam3_image_dataset import (
-    Datapoint as Sam3Datapoint,
-    Image as Sam3ImageDP,
-    FindQueryLoaded,
-    InferenceMetadata,
+
+from inference.core.cache.model_artifacts import (
+    are_all_files_cached,
+    save_bytes_in_cache,
 )
-from sam3.train.data.collator import collate_fn_api
-
-# from sam3.train.utils.misc import copy_data_to_device
-from sam3.model.utils.misc import copy_data_to_device
-
-# from sam3.train.eval.postprocessors import PostProcessImage
-from sam3.eval.postprocessors import PostProcessImage
+from inference.core.entities.requests.inference import InferenceRequestImage
+from inference.core.entities.requests.sam3 import (
+    Sam3InferenceRequest,
+    Sam3Prompt,
+    Sam3SegmentationRequest,
+)
+from inference.core.entities.responses.sam3 import (
+    Sam3PromptEcho,
+    Sam3PromptResult,
+    Sam3SegmentationPrediction,
+    Sam3SegmentationResponse,
+)
+from inference.core.env import (
+    CORE_MODEL_BUCKET,
+    INFER_BUCKET,
+    MODELS_CACHE_AUTH_ENABLED,
+    SAM3_IMAGE_SIZE,
+)
+from inference.core.exceptions import ModelArtefactError, RoboflowAPINotAuthorizedError
+from inference.core.models.roboflow import (
+    RoboflowCoreModel,
+    is_model_artefacts_bucket_available,
+)
+from inference.core.registries.roboflow import _check_if_api_key_has_access_to_model
+from inference.core.roboflow_api import (
+    ModelEndpointType,
+    get_from_url,
+    get_roboflow_model_data,
+)
+from inference.core.utils.image_utils import load_image_rgb
+from inference.core.utils.postprocess import masks2multipoly
 
 
 def _to_numpy_masks(masks_any) -> np.ndarray:

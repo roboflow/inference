@@ -3,7 +3,7 @@ import random
 import time
 from functools import partial
 from threading import Thread
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional
 
 import numpy as np
 import requests
@@ -36,7 +36,7 @@ def run_api_warm_up(
 
 def coordinate_infer_api_speed_benchmark(
     client: InferenceHTTPClient,
-    images: Union[List[np.ndarray], List[Tuple[np.ndarray, Dict[str, Any]]]],
+    images: List[np.ndarray],
     model_id: str,
     warm_up_requests: int,
     benchmark_requests: int,
@@ -45,10 +45,7 @@ def coordinate_infer_api_speed_benchmark(
     requests_per_second: Optional[int],
 ) -> InferenceStatistics:
     run_api_warm_up(client=client, image=images[0], warm_up_requests=warm_up_requests)
-    if isinstance(images[0], tuple):
-        image_sizes = {i[0].shape[:2] for i in images}
-    else:
-        image_sizes = {i.shape[:2] for i in images}
+    image_sizes = {i.shape[:2] for i in images}
     print(f"Detected images dimensions: {image_sizes}")
     if client.client_mode is HTTPClientMode.V1:
         model_details = client.get_model_description(model_id=model_id)
@@ -115,7 +112,7 @@ def coordinate_workflow_api_speed_benchmark(
 def execute_infer_api_speed_benchmark(
     results_collector: ResultsCollector,
     client: InferenceHTTPClient,
-    images: Union[List[np.ndarray], List[Tuple[np.ndarray, Dict[str, Any]]]],
+    images: List[np.ndarray],
     benchmark_requests: int,
     request_batch_size: int,
     number_of_clients: int,
@@ -252,7 +249,7 @@ def execute_given_rps_sequentially(
 def execute_infer_api_request(
     results_collector: ResultsCollector,
     client: InferenceHTTPClient,
-    images: Union[List[np.ndarray], List[Tuple[np.ndarray, Dict[str, Any]]]],
+    images: List[np.ndarray],
     request_batch_size: int,
     delay: bool = False,
 ) -> None:
@@ -262,14 +259,7 @@ def execute_infer_api_request(
     payload = images[:request_batch_size]
     start = time.time()
     try:
-        if (
-            client.client_mode is HTTPClientMode.SAM3_CONCEPT_SEGMENT
-            or client.client_mode is HTTPClientMode.SAM3_VISUAL_SEGMENT
-        ):
-            request_data = client._prepare_sam_3_request_data(
-                inference_input=payload,
-            )
-        elif client.client_mode is HTTPClientMode.V0:
+        if client.client_mode is HTTPClientMode.V0:
             request_data = client._prepare_infer_from_api_v0_request_data(
                 inference_input=payload,
             )

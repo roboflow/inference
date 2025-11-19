@@ -7,10 +7,10 @@ from inference.core.env import (
     CORE_MODEL_EASYOCR_ENABLED,
     CORE_MODEL_GAZE_ENABLED,
     CORE_MODEL_GROUNDINGDINO_ENABLED,
-    CORE_MODEL_SAM3_ENABLED,
     CORE_MODEL_OWLV2_ENABLED,
     CORE_MODEL_PE_ENABLED,
     CORE_MODEL_SAM2_ENABLED,
+    CORE_MODEL_SAM3_ENABLED,
     CORE_MODEL_SAM_ENABLED,
     CORE_MODEL_TROCR_ENABLED,
     CORE_MODEL_YOLO_WORLD_ENABLED,
@@ -397,8 +397,8 @@ except:
 try:
     if CORE_MODEL_SAM3_ENABLED:
         from inference.models import (
-            SegmentAnything3,
             Sam3ForInteractiveImageSegmentation,
+            SegmentAnything3,
         )
 
         ROBOFLOW_MODEL_TYPES[("embed", "sam3")] = SegmentAnything3

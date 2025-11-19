@@ -1,5 +1,5 @@
 import json
-from typing import List, Optional
+from typing import Optional
 
 import typer
 from typing_extensions import Annotated
@@ -8,7 +8,6 @@ from inference_cli.lib.benchmark.dataset import PREDEFINED_DATASETS
 from inference_cli.lib.benchmark_adapter import (
     run_infer_api_speed_benchmark,
     run_python_package_speed_benchmark,
-    run_sam3_api_speed_benchmark,
     run_workflow_api_speed_benchmark,
 )
 
@@ -145,13 +144,6 @@ def api_speed(
             "return non-success error code. Expected percentage values in range 0.0-100.0",
         ),
     ] = None,
-    default_prompt: Annotated[
-        Optional[str],
-        typer.Option(
-            "--default_prompt",
-            help="Default prompt to use for images without prompts, if not provided, following prompt will be used: [{ 'type': 'text', 'text': 'person' }]",
-        ),
-    ] = '[{ "type": "text", "text": "person"}]',
 ):
     if "roboflow.com" in host and not proceed_automatically:
         proceed = input(
@@ -159,25 +151,8 @@ def api_speed(
         )
         if proceed.lower() != "y":
             return None
-
     try:
-        if model_id == "sam3/concept_segment" or model_id == "sam3/visual_segment":
-            default_prompt = json.loads(default_prompt)
-            run_sam3_api_speed_benchmark(
-                model_id=model_id,
-                dataset_reference=dataset_reference,
-                host=host,
-                warm_up_requests=warm_up_requests,
-                benchmark_requests=benchmark_requests,
-                request_batch_size=request_batch_size,
-                number_of_clients=number_of_clients,
-                requests_per_second=requests_per_second,
-                api_key=api_key,
-                output_location=output_location,
-                max_error_rate=max_error_rate,
-                default_prompt=default_prompt,
-            )
-        elif model_id:
+        if model_id:
             run_infer_api_speed_benchmark(
                 model_id=model_id,
                 dataset_reference=dataset_reference,

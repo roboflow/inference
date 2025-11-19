@@ -3,32 +3,18 @@ import hashlib
 from io import BytesIO
 from threading import RLock
 from time import perf_counter
-from typing import Any, Dict, List, Optional, Tuple, TypedDict, Union, TypeVar
-from pycocotools import mask as mask_utils
+from typing import Any, Dict, List, Optional, Tuple, TypedDict, TypeVar, Union
 
 import numpy as np
 import torch
+from pycocotools import mask as mask_utils
+from sam3 import build_sam3_image_model
+from sam3.model.sam3_image_processor import Sam3Processor
+
 from inference.core.cache.model_artifacts import (
     are_all_files_cached,
     save_bytes_in_cache,
 )
-
-from inference.core.exceptions import RoboflowAPINotAuthorizedError, ModelArtefactError
-
-from inference.core.registries.roboflow import _check_if_api_key_has_access_to_model
-
-from inference.core.roboflow_api import (
-    ModelEndpointType,
-    get_roboflow_model_data,
-    get_from_url,
-)
-
-# from sam3.model.sam1_task_predictor import SAM3InteractiveImagePredictor
-# from sam3.sam3_video_model_builder import build_sam3_tracking_predictor
-
-from sam3 import build_sam3_image_model
-from sam3.model.sam3_image_processor import Sam3Processor
-
 from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.entities.requests.sam2 import (
     Sam2EmbeddingRequest,
@@ -43,23 +29,32 @@ from inference.core.entities.responses.sam2 import (
     Sam2SegmentationResponse,
 )
 from inference.core.env import (
+    CORE_MODEL_BUCKET,
     DEVICE,
     DISABLE_SAM3_LOGITS_CACHE,
-    SAM3_MAX_LOGITS_CACHE_SIZE,
-    SAM3_MAX_EMBEDDING_CACHE_SIZE,
-    CORE_MODEL_BUCKET,
     INFER_BUCKET,
     MODELS_CACHE_AUTH_ENABLED,
+    SAM3_MAX_EMBEDDING_CACHE_SIZE,
+    SAM3_MAX_LOGITS_CACHE_SIZE,
 )
+from inference.core.exceptions import ModelArtefactError, RoboflowAPINotAuthorizedError
 from inference.core.models.roboflow import (
     RoboflowCoreModel,
     is_model_artefacts_bucket_available,
 )
+from inference.core.registries.roboflow import _check_if_api_key_has_access_to_model
+from inference.core.roboflow_api import (
+    ModelEndpointType,
+    get_from_url,
+    get_roboflow_model_data,
+)
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2multipoly
-from inference.core.utils.torchscript_guard import (
-    _temporarily_disable_torch_jit_script,
-)
+from inference.core.utils.torchscript_guard import _temporarily_disable_torch_jit_script
+
+# from sam3.model.sam1_task_predictor import SAM3InteractiveImagePredictor
+# from sam3.sam3_video_model_builder import build_sam3_tracking_predictor
+
 
 if DEVICE is None:
     DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"

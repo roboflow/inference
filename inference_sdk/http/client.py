@@ -1,4 +1,3 @@
-import base64
 from contextlib import contextmanager
 from typing import Any, Dict, Generator, List, Literal, Optional, Tuple, Union
 
@@ -8,12 +7,7 @@ import requests
 from aiohttp import ClientConnectionError, ClientResponseError
 from requests import HTTPError, Response
 
-from inference_sdk.config import (
-    EXECUTION_ID_HEADER,
-    INFERENCE_INTERNAL_PASSWORD,
-    INFERENCE_INTERNAL_USERNAME,
-    execution_id,
-)
+from inference_sdk.config import EXECUTION_ID_HEADER, execution_id
 from inference_sdk.http.entities import (
     ALL_ROBOFLOW_API_URLS,
     CLASSIFICATION_TASK,
@@ -22,7 +16,6 @@ from inference_sdk.http.entities import (
     OBJECT_DETECTION_TASK,
     HTTPClientMode,
     ImagesReference,
-    ImagesReferenceWithPrompt,
     InferenceConfiguration,
     ModelDescription,
     RegisteredModels,
@@ -302,24 +295,6 @@ class InferenceHTTPClient:
         self.__client_mode = HTTPClientMode.V1
         return self
 
-    def select_sam3_concept_segment(self) -> "InferenceHTTPClient":
-        """Select SAM3 concept segment for client operations.
-
-        Returns:
-            InferenceHTTPClient: The client instance with SAM3 concept segment selected.
-        """
-        self.__client_mode = HTTPClientMode.SAM3_CONCEPT_SEGMENT
-        return self
-
-    def select_sam3_visual_segment(self) -> "InferenceHTTPClient":
-        """Select SAM3 visual segment for client operations.
-
-        Returns:
-            InferenceHTTPClient: The client instance with SAM3 visual segment selected.
-        """
-        self.__client_mode = HTTPClientMode.SAM3_VISUAL_SEGMENT
-        return self
-
     @contextmanager
     def use_api_v0(self) -> Generator["InferenceHTTPClient", None, None]:
         """Temporarily use API version 0 for client operations.
@@ -388,15 +363,7 @@ class InferenceHTTPClient:
             HTTPCallErrorError: If there is an error in the HTTP call.
             HTTPClientError: If there is an error with the server connection.
         """
-        headers = {}
-        if (
-            INFERENCE_INTERNAL_USERNAME is not None
-            and INFERENCE_INTERNAL_PASSWORD is not None
-        ):
-            headers["Authorization"] = (
-                f"Basic {base64.b64encode(f'{INFERENCE_INTERNAL_USERNAME}:{INFERENCE_INTERNAL_PASSWORD}'.encode()).decode()}"
-            )
-        response = requests.get(f"{self.__api_url}/info", headers=headers)
+        response = requests.get(f"{self.__api_url}/info")
         response.raise_for_status()
         response_payload = response.json()
         return ServerInfo.from_dict(response_payload)
@@ -428,18 +395,13 @@ class InferenceHTTPClient:
     @wrap_errors
     def infer(
         self,
-        inference_input: Union[
-            ImagesReference,
-            List[ImagesReference],
-            ImagesReferenceWithPrompt,
-            List[ImagesReferenceWithPrompt],
-        ],
+        inference_input: Union[ImagesReference, List[ImagesReference]],
         model_id: Optional[str] = None,
     ) -> Union[dict, List[dict]]:
         """Run inference on one or more images.
 
         Args:
-            inference_input (Union[ImagesReference, List[ImagesReference], ImagesReferenceWithPrompt, List[ImagesReferenceWithPrompt]]): Input image(s) with/without prompts for inference.
+            inference_input (Union[ImagesReference, List[ImagesReference]]): Input image(s) for inference.
             model_id (Optional[str], optional): Model identifier to use for inference. Defaults to None.
 
         Returns:
@@ -449,14 +411,6 @@ class InferenceHTTPClient:
             HTTPCallErrorError: If there is an error in the HTTP call.
             HTTPClientError: If there is an error with the server connection.
         """
-        if (
-            self.__client_mode is HTTPClientMode.SAM3_CONCEPT_SEGMENT
-            or self.__client_mode is HTTPClientMode.SAM3_VISUAL_SEGMENT
-        ):
-            return self.infer_from_sam3(
-                inference_input=inference_input,
-                model_id=model_id,
-            )
         if self.__client_mode is HTTPClientMode.V0:
             return self.infer_from_api_v0(
                 inference_input=inference_input,
@@ -486,8 +440,6 @@ class InferenceHTTPClient:
             HTTPCallErrorError: If there is an error in the HTTP call.
             HTTPClientError: If there is an error with the server connection.
         """
-        if self.__client_mode is HTTPClientMode.SAM3_CONCEPT_SEGMENT:
-            raise NotImplementedError
         if self.__client_mode is HTTPClientMode.V0:
             return await self.infer_from_api_v0_async(
                 inference_input=inference_input,
@@ -591,14 +543,6 @@ class InferenceHTTPClient:
         if execution_id_value:
             headers = headers.copy()
             headers[EXECUTION_ID_HEADER] = execution_id_value
-        if (
-            INFERENCE_INTERNAL_USERNAME is not None
-            and INFERENCE_INTERNAL_PASSWORD is not None
-        ):
-            headers = headers.copy()
-            headers["Authorization"] = (
-                f"Basic {base64.b64encode(f'{INFERENCE_INTERNAL_USERNAME}:{INFERENCE_INTERNAL_PASSWORD}'.encode()).decode()}"
-            )
 
         requests_data = prepare_requests_data(
             url=f"{self.__api_url}/{model_id_chunks[0]}/{model_id_chunks[1]}",
@@ -935,17 +879,8 @@ class InferenceHTTPClient:
             HTTPClientError: If there is an error with the server connection.
         """
         self.__ensure_v1_client_mode()
-        headers = {}
-        if (
-            INFERENCE_INTERNAL_USERNAME is not None
-            and INFERENCE_INTERNAL_PASSWORD is not None
-        ):
-            headers["Authorization"] = (
-                f"Basic {base64.b64encode(f'{INFERENCE_INTERNAL_USERNAME}:{INFERENCE_INTERNAL_PASSWORD}'.encode()).decode()}"
-            )
         response = requests.get(
-            f"{self.__api_url}/model/registry?api_key={self.__api_key}",
-            headers=headers,
+            f"{self.__api_url}/model/registry?api_key={self.__api_key}"
         )
         response.raise_for_status()
         response_payload = response.json()
@@ -992,23 +927,13 @@ class InferenceHTTPClient:
         """
         self.__ensure_v1_client_mode()
         de_aliased_model_id = resolve_roboflow_model_alias(model_id=model_id)
-        headers = DEFAULT_HEADERS
-        if (
-            INFERENCE_INTERNAL_USERNAME is not None
-            and INFERENCE_INTERNAL_PASSWORD is not None
-        ):
-            headers = headers.copy()
-            headers["Authorization"] = (
-                f"Basic {base64.b64encode(f'{INFERENCE_INTERNAL_USERNAME}:{INFERENCE_INTERNAL_PASSWORD}'.encode()).decode()}"
-            )
-
         response = requests.post(
             f"{self.__api_url}/model/add",
             json={
                 "model_id": de_aliased_model_id,
                 "api_key": self.__api_key,
             },
-            headers=headers,
+            headers=DEFAULT_HEADERS,
         )
         response.raise_for_status()
         response_payload = response.json()
@@ -1069,22 +994,12 @@ class InferenceHTTPClient:
         """
         self.__ensure_v1_client_mode()
         de_aliased_model_id = resolve_roboflow_model_alias(model_id=model_id)
-        headers = DEFAULT_HEADERS
-        if (
-            INFERENCE_INTERNAL_USERNAME is not None
-            and INFERENCE_INTERNAL_PASSWORD is not None
-        ):
-            headers = headers.copy()
-            headers["Authorization"] = (
-                f"Basic {base64.b64encode(f'{INFERENCE_INTERNAL_USERNAME}:{INFERENCE_INTERNAL_PASSWORD}'.encode()).decode()}"
-            )
-
         response = requests.post(
             f"{self.__api_url}/model/remove",
             json={
                 "model_id": de_aliased_model_id,
             },
-            headers=headers,
+            headers=DEFAULT_HEADERS,
         )
         response.raise_for_status()
         response_payload = response.json()
@@ -1119,16 +1034,7 @@ class InferenceHTTPClient:
     @wrap_errors
     def unload_all_models(self) -> RegisteredModels:
         self.__ensure_v1_client_mode()
-        headers = {}
-        if (
-            INFERENCE_INTERNAL_USERNAME is not None
-            and INFERENCE_INTERNAL_PASSWORD is not None
-        ):
-            headers["Authorization"] = (
-                f"Basic {base64.b64encode(f'{INFERENCE_INTERNAL_USERNAME}:{INFERENCE_INTERNAL_PASSWORD}'.encode()).decode()}"
-            )
-
-        response = requests.post(f"{self.__api_url}/model/clear", headers=headers)
+        response = requests.post(f"{self.__api_url}/model/clear")
         response.raise_for_status()
         response_payload = response.json()
         self.__selected_model = None
@@ -1404,14 +1310,6 @@ class InferenceHTTPClient:
         execution_id_value = execution_id.get()
         if execution_id_value is not None:
             headers[EXECUTION_ID_HEADER] = execution_id_value
-        if (
-            INFERENCE_INTERNAL_USERNAME is not None
-            and INFERENCE_INTERNAL_PASSWORD is not None
-        ):
-            headers = headers.copy()
-            headers["Authorization"] = (
-                f"Basic {base64.b64encode(f'{INFERENCE_INTERNAL_USERNAME}:{INFERENCE_INTERNAL_PASSWORD}'.encode()).decode()}"
-            )
 
         response = requests.post(
             self.__wrap_url_with_api_key(f"{self.__api_url}/clip/embed_text"),
@@ -1515,14 +1413,6 @@ class InferenceHTTPClient:
         execution_id_value = execution_id.get()
         if execution_id_value is not None:
             headers[EXECUTION_ID_HEADER] = execution_id_value
-        if (
-            INFERENCE_INTERNAL_USERNAME is not None
-            and INFERENCE_INTERNAL_PASSWORD is not None
-        ):
-            headers = headers.copy()
-            headers["Authorization"] = (
-                f"Basic {base64.b64encode(f'{INFERENCE_INTERNAL_USERNAME}:{INFERENCE_INTERNAL_PASSWORD}'.encode()).decode()}"
-            )
 
         response = requests.post(
             self.__wrap_url_with_api_key(f"{self.__api_url}/clip/compare"),
@@ -2089,19 +1979,10 @@ class InferenceHTTPClient:
             HTTPCallErrorError: If there is an error in the HTTP call.
             HTTPClientError: If there is an error with the server connection.
         """
-        headers = {}
-        if (
-            INFERENCE_INTERNAL_USERNAME is not None
-            and INFERENCE_INTERNAL_PASSWORD is not None
-        ):
-            headers["Authorization"] = (
-                f"Basic {base64.b64encode(f'{INFERENCE_INTERNAL_USERNAME}:{INFERENCE_INTERNAL_PASSWORD}'.encode()).decode()}"
-            )
         payload = {"api_key": self.__api_key}
         response = requests.get(
             f"{self.__api_url}/inference_pipelines/list",
             json=payload,
-            headers=headers,
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
@@ -2126,18 +2007,9 @@ class InferenceHTTPClient:
         """
         self._ensure_pipeline_id_not_empty(pipeline_id=pipeline_id)
         payload = {"api_key": self.__api_key}
-        headers = {}
-        if (
-            INFERENCE_INTERNAL_USERNAME is not None
-            and INFERENCE_INTERNAL_PASSWORD is not None
-        ):
-            headers["Authorization"] = (
-                f"Basic {base64.b64encode(f'{INFERENCE_INTERNAL_USERNAME}:{INFERENCE_INTERNAL_PASSWORD}'.encode()).decode()}"
-            )
         response = requests.get(
             f"{self.__api_url}/inference_pipelines/{pipeline_id}/status",
             json=payload,
-            headers=headers,
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
@@ -2259,19 +2131,10 @@ class InferenceHTTPClient:
         self._ensure_pipeline_id_not_empty(pipeline_id=pipeline_id)
         if excluded_fields is None:
             excluded_fields = []
-        headers = {}
-        if (
-            INFERENCE_INTERNAL_USERNAME is not None
-            and INFERENCE_INTERNAL_PASSWORD is not None
-        ):
-            headers["Authorization"] = (
-                f"Basic {base64.b64encode(f'{INFERENCE_INTERNAL_USERNAME}:{INFERENCE_INTERNAL_PASSWORD}'.encode()).decode()}"
-            )
         payload = {"api_key": self.__api_key, "excluded_fields": excluded_fields}
         response = requests.get(
             f"{self.__api_url}/inference_pipelines/{pipeline_id}/consume",
             json=payload,
-            headers=headers,
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
@@ -2358,89 +2221,6 @@ class InferenceHTTPClient:
     def __ensure_v1_client_mode(self) -> None:
         if self.__client_mode is not HTTPClientMode.V1:
             raise WrongClientModeError("Use client mode `v1` to run this operation.")
-
-    def infer_from_sam3(
-        self,
-        inference_input: Union[
-            ImagesReferenceWithPrompt, List[ImagesReferenceWithPrompt]
-        ],
-    ) -> Union[dict, List[dict]]:
-        requests_data = self._prepare_sam_3_request_data(
-            inference_input=inference_input,
-        )
-        responses = self._execute_infer_from_api_request(
-            requests_data=requests_data,
-        )
-        # TODO: Adjust predictions to client scaling factor (not required when benchmarking)
-        return responses
-
-    def _prepare_sam_3_request_data(
-        self,
-        inference_input: Union[
-            ImagesReferenceWithPrompt, List[ImagesReferenceWithPrompt]
-        ],
-        model_id: Optional[str] = None,
-        format: str = "polygon",
-        output_prob_thresh: float = 0.5,
-    ) -> List[RequestData]:
-        if self.__client_mode is HTTPClientMode.SAM3_CONCEPT_SEGMENT:
-            endpoint = "sam3/concept_segment"
-        elif self.__client_mode is HTTPClientMode.SAM3_VISUAL_SEGMENT:
-            endpoint = "sam3/visual_segment"
-        else:
-            raise ValueError("Unsupported client mode")
-        model_id_to_be_used = model_id or self.__selected_model
-        _ensure_model_is_selected(model_id=model_id_to_be_used)
-        _ensure_api_key_provided(api_key=self.__api_key)
-        model_id_to_be_used = resolve_roboflow_model_alias(model_id=model_id_to_be_used)
-        model_id_chunks = model_id_to_be_used.split("/")
-        if len(model_id_chunks) != 2:
-            raise InvalidModelIdentifier(
-                f"Invalid model id: {model_id}. Expected format: project_id/model_version_id."
-            )
-        max_height, max_width = _determine_client_downsizing_parameters(
-            client_downsizing_disabled=self.__inference_configuration.client_downsizing_disabled,
-            model_description=None,
-            default_max_input_size=self.__inference_configuration.default_max_input_size,
-        )
-        if not isinstance(inference_input, list):
-            inference_input = [inference_input]
-        requests_data = []
-        for image_reference, prompts in inference_input:
-            encoded_inference_inputs = load_static_inference_input(
-                inference_input=image_reference,
-                max_height=max_height,
-                max_width=max_width,
-            )
-            params = {
-                "api_key": self.__api_key,
-            }
-            if not isinstance(prompts, list):
-                prompts = [prompts]
-            payload = {
-                "format": format,
-                "prompts": prompts,
-                "output_prob_thresh": output_prob_thresh,
-            }
-
-            execution_id_value = execution_id.get()
-            headers = DEFAULT_HEADERS
-            if execution_id_value:
-                headers = headers.copy()
-                headers[EXECUTION_ID_HEADER] = execution_id_value
-
-            requests_data.extend(
-                prepare_requests_data(
-                    url=f"{self.__api_url}/{endpoint}",
-                    encoded_inference_inputs=encoded_inference_inputs,
-                    headers=headers,
-                    parameters=params,
-                    payload=payload,
-                    max_batch_size=1,
-                    image_placement=ImagePlacement.JSON,
-                )
-            )
-        return requests_data
 
 
 def _determine_client_downsizing_parameters(

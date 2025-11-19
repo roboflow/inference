@@ -2,7 +2,7 @@ import base64
 import os.path
 from functools import partial
 from glob import glob
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Callable, List, Optional, Union
 
 import cv2
 import numpy as np
@@ -234,10 +234,7 @@ def infer_on_directory(
             visualisation_config=visualisation_config,
         )
     for reference, frame, prediction in tqdm(
-        client.infer_on_stream(
-            input_uri=input_reference,
-            model_id=model_id,
-        ),
+        client.infer_on_stream(input_uri=input_reference, model_id=model_id),
         desc=f"Inference from directory: {input_reference}",
     ):
         visualised = None
@@ -281,10 +278,7 @@ def infer_on_image(
         on_frame_visualise = build_visualisation_callback(
             visualisation_config=visualisation_config,
         )
-    prediction = client.infer(
-        inference_input=input_reference,
-        model_id=model_id,
-    )
+    prediction = client.infer(inference_input=input_reference, model_id=model_id)
     visualised = None
     if visualise:
         frame_base64 = load_image_from_string(reference=input_reference)[0]

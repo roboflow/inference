@@ -1,8 +1,10 @@
 """Tests for inline image support in email notification v2."""
-import numpy as np
-import pytest
+
 from unittest import mock
 from unittest.mock import MagicMock
+
+import numpy as np
+import pytest
 
 from inference.core.workflows.core_steps.sinks.email_notification import v2
 from inference.core.workflows.core_steps.sinks.email_notification.v2 import (
@@ -41,7 +43,7 @@ def test_format_email_message_html_with_single_inline_image() -> None:
     assert "image_detection" in inline_images
     assert isinstance(inline_images["image_detection"], bytes)
     # Verify it's JPEG format (starts with JPEG magic bytes)
-    assert inline_images["image_detection"][:2] == b'\xff\xd8'
+    assert inline_images["image_detection"][:2] == b"\xff\xd8"
 
 
 def test_format_email_message_html_with_multiple_inline_images() -> None:
@@ -74,8 +76,8 @@ def test_format_email_message_html_with_multiple_inline_images() -> None:
     assert "image_img2" in inline_images
     assert len(inline_images) == 2
     # Verify both are JPEG format
-    assert inline_images["image_img1"][:2] == b'\xff\xd8'
-    assert inline_images["image_img2"][:2] == b'\xff\xd8'
+    assert inline_images["image_img1"][:2] == b"\xff\xd8"
+    assert inline_images["image_img2"][:2] == b"\xff\xd8"
 
 
 def test_format_email_message_html_with_mixed_text_and_images() -> None:
@@ -195,12 +197,12 @@ def test_v2_smtp_mode_with_inline_image(
     # given
     send_email_using_smtp_server_v2_mock.return_value = (False, "success")
     parent_metadata = ImageParentMetadata(parent_id="test")
-    
+
     image = WorkflowImageData(
         parent_metadata=parent_metadata,
         numpy_image=np.zeros((100, 100, 3), dtype=np.uint8),
     )
-    
+
     block = EmailNotificationBlockV2(
         background_tasks=None,
         thread_pool_executor=None,
@@ -230,13 +232,13 @@ def test_v2_smtp_mode_with_inline_image(
     # then
     assert result["error_status"] is False
     call_kwargs = send_email_using_smtp_server_v2_mock.call_args[1]
-    
+
     # Should be HTML
     assert call_kwargs["is_html"] is True
-    
+
     # Message should contain HTML img tag
     assert '<img src="cid:image_detection"' in call_kwargs["message"]
-    
+
     # Should have inline_images dict
     assert call_kwargs["inline_images"] is not None
     assert "image_detection" in call_kwargs["inline_images"]
@@ -251,12 +253,12 @@ def test_v2_smtp_mode_with_inline_and_attachment_images(
     # given
     send_email_using_smtp_server_v2_mock.return_value = (False, "success")
     parent_metadata = ImageParentMetadata(parent_id="test")
-    
+
     image = WorkflowImageData(
         parent_metadata=parent_metadata,
         numpy_image=np.zeros((100, 100, 3), dtype=np.uint8),
     )
-    
+
     block = EmailNotificationBlockV2(
         background_tasks=None,
         thread_pool_executor=None,
@@ -286,17 +288,17 @@ def test_v2_smtp_mode_with_inline_and_attachment_images(
     # then
     assert result["error_status"] is False
     call_kwargs = send_email_using_smtp_server_v2_mock.call_args[1]
-    
+
     # Should be HTML with inline image
     assert call_kwargs["is_html"] is True
     assert "image_preview" in call_kwargs["inline_images"]
-    
+
     # Should also have regular attachment
     assert "full_resolution.jpg" in call_kwargs["attachments"]
-    
+
     # Both should be JPEG bytes
-    assert call_kwargs["inline_images"]["image_preview"][:2] == b'\xff\xd8'
-    assert call_kwargs["attachments"]["full_resolution.jpg"][:2] == b'\xff\xd8'
+    assert call_kwargs["inline_images"]["image_preview"][:2] == b"\xff\xd8"
+    assert call_kwargs["attachments"]["full_resolution.jpg"][:2] == b"\xff\xd8"
 
 
 @mock.patch.object(v2, "send_email_using_smtp_server_v2")
@@ -306,7 +308,7 @@ def test_v2_smtp_html_support_without_images(
     """Test that SMTP pathway uses HTML even without images (feature parity with Resend)."""
     # given
     send_email_using_smtp_server_v2_mock.return_value = (False, "success")
-    
+
     block = EmailNotificationBlockV2(
         background_tasks=None,
         thread_pool_executor=None,
@@ -336,13 +338,13 @@ def test_v2_smtp_html_support_without_images(
     # then
     assert result["error_status"] is False
     call_kwargs = send_email_using_smtp_server_v2_mock.call_args[1]
-    
+
     # Should be HTML for feature parity with Resend pathway
     assert call_kwargs["is_html"] is True
-    
+
     # Message should be plain text wrapped in HTML formatting
     assert "Count: 42" in call_kwargs["message"]
-    
+
     # inline_images should be empty dict (no images)
     assert call_kwargs["inline_images"] == {}
 
@@ -355,7 +357,7 @@ def test_v2_smtp_mode_with_multiple_inline_images(
     # given
     send_email_using_smtp_server_v2_mock.return_value = (False, "success")
     parent_metadata = ImageParentMetadata(parent_id="test")
-    
+
     image1 = WorkflowImageData(
         parent_metadata=parent_metadata,
         numpy_image=np.zeros((50, 50, 3), dtype=np.uint8),
@@ -364,7 +366,7 @@ def test_v2_smtp_mode_with_multiple_inline_images(
         parent_metadata=parent_metadata,
         numpy_image=np.ones((60, 60, 3), dtype=np.uint8) * 255,
     )
-    
+
     block = EmailNotificationBlockV2(
         background_tasks=None,
         thread_pool_executor=None,
@@ -394,12 +396,12 @@ def test_v2_smtp_mode_with_multiple_inline_images(
     # then
     assert result["error_status"] is False
     call_kwargs = send_email_using_smtp_server_v2_mock.call_args[1]
-    
+
     # Should have two inline images
     assert len(call_kwargs["inline_images"]) == 2
     assert "image_img1" in call_kwargs["inline_images"]
     assert "image_img2" in call_kwargs["inline_images"]
-    
+
     # Message should contain both img tags
     assert '<img src="cid:image_img1"' in call_kwargs["message"]
     assert '<img src="cid:image_img2"' in call_kwargs["message"]
@@ -412,7 +414,7 @@ def test_v2_smtp_mode_preserves_html_formatting(
     """Test that HTML formatting like <b>bold</b> is preserved in SMTP emails."""
     # given
     send_email_using_smtp_server_v2_mock.return_value = (False, "success")
-    
+
     block = EmailNotificationBlockV2(
         background_tasks=None,
         thread_pool_executor=None,
@@ -442,10 +444,10 @@ def test_v2_smtp_mode_preserves_html_formatting(
     # then
     assert result["error_status"] is False
     call_kwargs = send_email_using_smtp_server_v2_mock.call_args[1]
-    
+
     # Should be HTML
     assert call_kwargs["is_html"] is True
-    
+
     # HTML tags should be preserved (not escaped)
     assert "<b>bold</b>" in call_kwargs["message"]
     assert "With <b>bold</b> and attachment." in call_kwargs["message"]

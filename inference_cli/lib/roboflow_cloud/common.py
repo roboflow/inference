@@ -1,6 +1,5 @@
-import base64
 import json
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import backoff
 import requests
@@ -12,10 +11,6 @@ from inference_cli.lib.roboflow_cloud.errors import (
     RetryError,
     RFAPICallError,
     UnauthorizedRequestError,
-)
-from inference_sdk.config import (
-    INFERENCE_INTERNAL_PASSWORD,
-    INFERENCE_INTERNAL_USERNAME,
 )
 
 
@@ -35,21 +30,11 @@ def ensure_api_key_is_set(api_key: Optional[str]) -> None:
     interval=1,
 )
 def get_workspace(api_key: str) -> str:
-    headers = {}
-    if (
-        INFERENCE_INTERNAL_USERNAME is not None
-        and INFERENCE_INTERNAL_PASSWORD is not None
-    ):
-        headers["Authorization"] = (
-            f"Basic {base64.b64encode(f'{INFERENCE_INTERNAL_USERNAME}:{INFERENCE_INTERNAL_PASSWORD}'.encode()).decode()}"
-        )
-
     try:
         response = requests.get(
             f"{API_BASE_URL}",
             params={"api_key": api_key},
             timeout=REQUEST_TIMEOUT,
-            headers=headers,
         )
     except (ConnectionError, Timeout):
         raise RetryError(
