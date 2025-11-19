@@ -26,7 +26,7 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.easyocr.txt \
     ./
 
-RUN pip install --upgrade pip setuptools uv && uv pip install \
+RUN pip install --upgrade pip setuptools uv && uv pip install --system \
     -r _requirements.txt \
     -r requirements.sam.txt \
     -r requirements.sam3.txt \
