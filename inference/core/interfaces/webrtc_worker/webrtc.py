@@ -52,6 +52,7 @@ from inference.core.interfaces.webrtc_worker.utils import (
     detect_image_output,
     process_frame,
 )
+from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import get_workflow_specification
 from inference.core.workflows.core_steps.common.serializers import (
     serialize_wildcard_kind,
@@ -193,6 +194,7 @@ class VideoFrameProcessor:
         asyncio_loop: asyncio.AbstractEventLoop,
         workflow_configuration: WorkflowConfiguration,
         api_key: str,
+        model_manager: Optional[ModelManager] = None,
         data_output: Optional[List[str]] = None,
         stream_output: Optional[str] = None,
         has_video_track: bool = True,
@@ -250,6 +252,7 @@ class VideoFrameProcessor:
             workflows_thread_pool_workers=workflow_configuration.workflows_thread_pool_workers,
             cancel_thread_pool_tasks_on_exit=workflow_configuration.cancel_thread_pool_tasks_on_exit,
             video_metadata_input_name=workflow_configuration.video_metadata_input_name,
+            model_manager=model_manager,
         )
 
     def set_track(self, track: RemoteStreamTrack):
@@ -537,6 +540,7 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
         asyncio_loop: asyncio.AbstractEventLoop,
         workflow_configuration: WorkflowConfiguration,
         api_key: str,
+        model_manager: Optional[ModelManager] = None,
         data_output: Optional[List[str]] = None,
         stream_output: Optional[str] = None,
         has_video_track: bool = True,
@@ -560,6 +564,7 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
             termination_date=termination_date,
             terminate_event=terminate_event,
             use_data_channel_frames=use_data_channel_frames,
+            model_manager=model_manager,
         )
 
     async def _auto_detect_stream_output(
@@ -643,6 +648,7 @@ async def init_rtc_peer_connection_with_loop(
     webrtc_request: WebRTCWorkerRequest,
     send_answer: Callable[[WebRTCWorkerResult], None],
     asyncio_loop: Optional[asyncio.AbstractEventLoop] = None,
+    model_manager: Optional[ModelManager] = None,
     shutdown_reserve: int = WEBRTC_MODAL_SHUTDOWN_RESERVE,
 ) -> RTCPeerConnectionWithLoop:
     termination_date = None
@@ -694,6 +700,7 @@ async def init_rtc_peer_connection_with_loop(
             video_processor = VideoTransformTrackWithLoop(
                 asyncio_loop=asyncio_loop,
                 workflow_configuration=webrtc_request.workflow_configuration,
+                model_manager=model_manager,
                 api_key=webrtc_request.api_key,
                 data_output=data_fields,
                 stream_output=stream_field,
@@ -708,6 +715,7 @@ async def init_rtc_peer_connection_with_loop(
             video_processor = VideoFrameProcessor(
                 asyncio_loop=asyncio_loop,
                 workflow_configuration=webrtc_request.workflow_configuration,
+                model_manager=model_manager,
                 api_key=webrtc_request.api_key,
                 data_output=data_fields,
                 stream_output=None,
