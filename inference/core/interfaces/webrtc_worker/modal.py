@@ -31,6 +31,7 @@ from inference.core.env import (
     WEBRTC_MODAL_GCP_SECRET_NAME,
     WEBRTC_MODAL_IMAGE_NAME,
     WEBRTC_MODAL_IMAGE_TAG,
+    WEBRTC_MODAL_MODELS_PRELOAD_API_KEY,
     WEBRTC_MODAL_RESPONSE_TIMEOUT,
     WEBRTC_MODAL_ROBOFLOW_INTERNAL_SERVICE_NAME,
     WEBRTC_MODAL_RTSP_PLACEHOLDER,
@@ -134,6 +135,11 @@ if modal is not None:
             "WEBRTC_MODAL_FUNCTION_TIME_LIMIT": str(WEBRTC_MODAL_FUNCTION_TIME_LIMIT),
             "WEBRTC_MODAL_IMAGE_NAME": WEBRTC_MODAL_IMAGE_NAME,
             "WEBRTC_MODAL_IMAGE_TAG": WEBRTC_MODAL_IMAGE_TAG,
+            "WEBRTC_MODAL_MODELS_PRELOAD_API_KEY": (
+                str(WEBRTC_MODAL_MODELS_PRELOAD_API_KEY)
+                if WEBRTC_MODAL_MODELS_PRELOAD_API_KEY
+                else ""
+            ),
             "WEBRTC_MODAL_RTSP_PLACEHOLDER": WEBRTC_MODAL_RTSP_PLACEHOLDER,
             "WEBRTC_MODAL_RTSP_PLACEHOLDER_URL": WEBRTC_MODAL_RTSP_PLACEHOLDER_URL,
         },
@@ -283,7 +289,7 @@ if modal is not None:
                         logger.info(f"Preloading model: {de_aliased_model_id}")
                         model_manager.add_model(
                             model_id=de_aliased_model_id,
-                            api_key=None,
+                            api_key=WEBRTC_MODAL_MODELS_PRELOAD_API_KEY,
                             countinference=False,
                             service_secret=ROBOFLOW_INTERNAL_SERVICE_SECRET,
                         )
