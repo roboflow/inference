@@ -56,7 +56,7 @@ def test_visual_segmentation(
 
     # when
     response = requests.post(
-        f"{BASE_URL}/sam3/visual_segment",
+        f"{BASE_URL}:{PORT}/sam3/visual_segment",
         json=payload,
         params={"api_key": API_KEY}
     )
@@ -87,7 +87,7 @@ def test_concept_segmentation(
 
     # when
     response = requests.post(
-        f"{BASE_URL}/sam3/concept_segment",
+        f"{BASE_URL}:{PORT}/sam3/concept_segment",
         json=payload,
         params={"api_key": API_KEY}
     )
