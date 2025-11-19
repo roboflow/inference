@@ -152,7 +152,12 @@ if modal is not None:
             logger.info("*** Spawning %s:", self.__class__.__name__)
             logger.info("Inference tag: %s", docker_tag)
             logger.info(
-                "Preloaded models: %s", ", ".join(self._model_manager.models().keys())
+                "Preloaded models: %s",
+                (
+                    ", ".join(self._model_manager.models().keys())
+                    if self._model_manager
+                    else ""
+                ),
             )
             _exec_session_started = datetime.datetime.now()
             webrtc_request.processing_session_started = _exec_session_started
