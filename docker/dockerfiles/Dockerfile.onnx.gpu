@@ -32,9 +32,9 @@ COPY requirements/requirements.sam.txt \
     ./
 
 RUN python3 -m pip install -U pip uv
-RUN uv pip install --system -r requirements.doctr.txt
 RUN uv pip install --system \
     -r _requirements.txt \
+    -r requirements.doctr.txt \
     -r requirements.sam.txt \
     -r requirements.sam3.txt \
     -r requirements.clip.txt \
