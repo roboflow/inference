@@ -2,8 +2,8 @@ import asyncio
 import datetime
 import json
 import logging
+import struct
 from typing import Any, Callable, Dict, List, Optional, Tuple
-import base64
 
 import cv2
 import numpy as np
@@ -62,6 +62,110 @@ from inference.usage_tracking.collector import usage_collector
 
 logging.getLogger("aiortc").setLevel(logging.WARNING)
 
+# WebRTC data channel chunking configuration
+CHUNK_SIZE = 48 * 1024  # 48KB - safe for all WebRTC implementations
+
+
+def create_chunked_binary_message(
+    frame_id: int, chunk_index: int, total_chunks: int, payload: bytes
+) -> bytes:
+    """Create a binary message with standard 12-byte header.
+    
+    Format: [frame_id: 4][chunk_index: 4][total_chunks: 4][payload: N]
+    All integers are uint32 little-endian.
+    """
+    header = struct.pack('<III', frame_id, chunk_index, total_chunks)
+    return header + payload
+
+
+def parse_chunked_binary_message(message: bytes) -> Tuple[int, int, int, bytes]:
+    """Parse a binary message with standard 12-byte header.
+    
+    Returns: (frame_id, chunk_index, total_chunks, payload)
+    """
+    if len(message) < 12:
+        raise ValueError(f"Message too short: {len(message)} bytes (expected >= 12)")
+    
+    frame_id, chunk_index, total_chunks = struct.unpack('<III', message[0:12])
+    payload = message[12:]
+    return frame_id, chunk_index, total_chunks, payload
+
+
+class ChunkReassembler:
+    """Helper to reassemble chunked binary messages."""
+    
+    def __init__(self):
+        self._chunks: Dict[int, Dict[int, bytes]] = {}  # {frame_id: {chunk_index: data}}
+        self._total: Dict[int, int] = {}  # {frame_id: total_chunks}
+    
+    def add_chunk(
+        self, frame_id: int, chunk_index: int, total_chunks: int, chunk_data: bytes
+    ) -> Optional[bytes]:
+        """Add a chunk and return complete payload if all chunks received.
+        
+        Returns:
+            Complete reassembled payload bytes if all chunks received, None otherwise.
+        """
+        # Initialize buffers for new frame
+        if frame_id not in self._chunks:
+            self._chunks[frame_id] = {}
+            self._total[frame_id] = total_chunks
+        
+        # Store chunk
+        self._chunks[frame_id][chunk_index] = chunk_data
+        
+        # Check if all chunks received
+        if len(self._chunks[frame_id]) >= total_chunks:
+            # Reassemble in order
+            complete_payload = b''.join(
+                self._chunks[frame_id][i] 
+                for i in range(total_chunks)
+            )
+            
+            # Clean up
+            del self._chunks[frame_id]
+            del self._total[frame_id]
+            
+            return complete_payload
+        
+        return None
+
+
+def send_chunked_data(
+    data_channel: RTCDataChannel,
+    frame_id: int,
+    payload_bytes: bytes,
+    chunk_size: int = CHUNK_SIZE,
+) -> None:
+    """Send payload via data channel, automatically chunking if needed.
+    
+    Args:
+        data_channel: RTCDataChannel to send on
+        frame_id: Frame identifier
+        payload_bytes: Data to send (JPEG, JSON UTF-8, etc.)
+        chunk_size: Maximum chunk size (default 48KB)
+    """
+    if data_channel.readyState != "open":
+        logger.warning(f"Cannot send response for frame {frame_id}, channel not open")
+        return
+    
+    total_chunks = (len(payload_bytes) + chunk_size - 1) // chunk_size  # Ceiling division
+    
+    if frame_id % 100 == 1:
+        logger.info(
+            f"Sending response for frame {frame_id}: {total_chunks} chunk(s), {len(payload_bytes)} bytes"
+        )
+    
+    for chunk_index in range(total_chunks):
+        start = chunk_index * chunk_size
+        end = min(start + chunk_size, len(payload_bytes))
+        chunk_data = payload_bytes[start:end]
+        
+        message = create_chunked_binary_message(
+            frame_id, chunk_index, total_chunks, chunk_data
+        )
+        data_channel.send(message)
+
 
 class RTCPeerConnectionWithLoop(RTCPeerConnection):
     def __init__(
@@ -105,10 +209,7 @@ class VideoFrameProcessor:
         self._stop_processing = False
         self.use_data_channel_frames = use_data_channel_frames
         self._data_frame_queue: "asyncio.Queue[Optional[VideoFrame]]" = asyncio.Queue()
-        
-        # Binary chunk reassembly buffers
-        self._chunk_buffer: Dict[int, Dict[int, bytes]] = {}  # {frame_id: {chunk_index: jpeg_chunk}}
-        self._total_chunks: Dict[int, int] = {}  # {frame_id: total_chunks}
+        self._chunk_reassembler = ChunkReassembler()  # For reassembling inbound frame chunks
 
         self.has_video_track = has_video_track
         self.stream_output = stream_output
@@ -192,7 +293,9 @@ class VideoFrameProcessor:
         )
 
         if self._data_mode == DataOutputMode.NONE:
-            self.data_channel.send(json.dumps(webrtc_output.model_dump()))
+            # Even empty responses use binary protocol
+            json_bytes = json.dumps(webrtc_output.model_dump()).encode('utf-8')
+            send_chunked_data(self.data_channel, self._received_frames, json_bytes)
             return
 
         if self._data_mode == DataOutputMode.ALL:
@@ -223,70 +326,53 @@ class VideoFrameProcessor:
                 webrtc_output.errors.append(f"{field_name}: {e}")
                 serialized_outputs[field_name] = {"__serialization_error__": str(e)}
 
-        # Only set serialized_output_data if we have data to send
+        # Set serialized outputs
         if serialized_outputs:
             webrtc_output.serialized_output_data = serialized_outputs
 
-        self.data_channel.send(json.dumps(webrtc_output.model_dump(mode="json")))
+        # Send using binary chunked protocol
+        json_bytes = json.dumps(webrtc_output.model_dump(mode="json")).encode('utf-8')
+        send_chunked_data(self.data_channel, self._received_frames, json_bytes)
 
     async def _handle_data_channel_frame(self, message: bytes) -> None:
         """Handle incoming binary frame chunk from upstream_frames data channel.
         
-        Binary format: [frame_id: 4 bytes][chunk_index: 4 bytes][total_chunks: 4 bytes][JPEG chunk data]
-        All integers are uint32 little-endian.
+        Uses standard binary protocol with 12-byte header + JPEG chunk payload.
         """
         try:
-            if len(message) < 12:
-                logger.error("Binary message too short (< 12 bytes)")
+            # Parse message
+            frame_id, chunk_index, total_chunks, jpeg_chunk = parse_chunked_binary_message(message)
+            
+            # Add chunk and check if complete
+            jpeg_bytes = self._chunk_reassembler.add_chunk(
+                frame_id, chunk_index, total_chunks, jpeg_chunk
+            )
+            
+            if jpeg_bytes is None:
+                # Still waiting for more chunks
                 return
             
-            # Parse header (12 bytes)
-            frame_id = int.from_bytes(message[0:4], byteorder='little')
-            chunk_index = int.from_bytes(message[4:8], byteorder='little')
-            total_chunks = int.from_bytes(message[8:12], byteorder='little')
-            jpeg_chunk = message[12:]
-            
-            # Initialize buffers for new frame
-            if frame_id not in self._chunk_buffer:
-                self._chunk_buffer[frame_id] = {}
-                self._total_chunks[frame_id] = total_chunks
-            
-            # Store chunk
-            self._chunk_buffer[frame_id][chunk_index] = jpeg_chunk
-            
-            # Check if we have all chunks
-            if len(self._chunk_buffer[frame_id]) >= total_chunks:
-                # Reassemble JPEG in order
-                jpeg_bytes = b''.join(
-                    self._chunk_buffer[frame_id][i] 
-                    for i in range(total_chunks)
+            # All chunks received - decode and queue frame
+            if frame_id % 100 == 1:
+                logger.info(
+                    f"Received frame {frame_id}: {total_chunks} chunk(s), {len(jpeg_bytes)} bytes JPEG"
                 )
-                
-                # Clean up buffers
-                del self._chunk_buffer[frame_id]
-                del self._total_chunks[frame_id]
-                
-                if frame_id % 100 == 1:
-                    logger.info(
-                        f"Reassembled frame {frame_id} from {total_chunks} chunks ({len(jpeg_bytes)} bytes)"
-                    )
-                
-                # Decode JPEG → numpy array → VideoFrame
-                nparr = np.frombuffer(jpeg_bytes, np.uint8)
-                np_image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-                
-                if np_image is None:
-                    logger.error(f"Failed to decode frame {frame_id}")
-                    return
-                
-                video_frame = VideoFrame.from_ndarray(np_image, format="bgr24")
-                await self._data_frame_queue.put((frame_id, video_frame))
-                
-                if frame_id % 100 == 1:
-                    logger.info(f"Queued frame {frame_id}, queue size: {self._data_frame_queue.qsize()}")
+            
+            nparr = np.frombuffer(jpeg_bytes, np.uint8)
+            np_image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            
+            if np_image is None:
+                logger.error(f"Failed to decode JPEG for frame {frame_id}")
+                return
+            
+            video_frame = VideoFrame.from_ndarray(np_image, format="bgr24")
+            await self._data_frame_queue.put((frame_id, video_frame))
+            
+            if frame_id % 100 == 1:
+                logger.info(f"Queued frame {frame_id}")
             
         except Exception as e:
-            logger.error(f"Error handling data channel frame: {e}", exc_info=True)
+            logger.error(f"Error handling frame chunk: {e}", exc_info=True)
 
     async def process_frames_data_only(self):
         """Process frames for data extraction only, without video track output.
