@@ -27,6 +27,7 @@ from inference.core.env import (
     WEBRTC_MODAL_FUNCTION_MIN_CONTAINERS,
     WEBRTC_MODAL_FUNCTION_SCALEDOWN_WINDOW,
     WEBRTC_MODAL_FUNCTION_TIME_LIMIT,
+    WEBRTC_MODAL_GCP_SECRET_NAME,
     WEBRTC_MODAL_IMAGE_NAME,
     WEBRTC_MODAL_IMAGE_TAG,
     WEBRTC_MODAL_RESPONSE_TIMEOUT,
@@ -58,12 +59,19 @@ except ImportError:
 
 if modal is not None:
     docker_tag: str = WEBRTC_MODAL_IMAGE_TAG if WEBRTC_MODAL_IMAGE_TAG else __version__
-    # https://modal.com/docs/reference/modal.Image
-    video_processing_image = (
-        modal.Image.from_registry(f"{WEBRTC_MODAL_IMAGE_NAME}:{docker_tag}")
-        .pip_install("modal")
-        .entrypoint([])
-    )
+    if WEBRTC_MODAL_GCP_SECRET_NAME:
+        # https://modal.com/docs/reference/modal.Secret#from_name
+        secret = modal.Secret.from_name(WEBRTC_MODAL_GCP_SECRET_NAME)
+        # https://modal.com/docs/reference/modal.Image#from_gcp_artifact_registry
+        video_processing_image = modal.Image.from_gcp_artifact_registry(
+            f"{WEBRTC_MODAL_IMAGE_NAME}:{docker_tag}",
+            secret=secret,
+        )
+    else:
+        video_processing_image = modal.Image.from_registry(
+            f"{WEBRTC_MODAL_IMAGE_NAME}:{docker_tag}"
+        )
+    video_processing_image = video_processing_image.pip_install("modal").entrypoint([])
 
     # https://modal.com/docs/reference/modal.Volume
     rfcache_volume = modal.Volume.from_name("rfcache", create_if_missing=True)
