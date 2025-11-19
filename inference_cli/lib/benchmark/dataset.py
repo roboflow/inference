@@ -1,9 +1,7 @@
-import json
 import os.path
 from glob import glob
 from itertools import chain
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import List, Optional
 
 import cv2
 import numpy as np
@@ -86,52 +84,3 @@ def download_image(url: str) -> Optional[np.ndarray]:
     except Exception as error:
         CLI_LOGGER.warning(f"Could not load image: {url}. Cause: {error}")
         return None
-
-
-def load_dataset_images_with_prompts(
-    dataset_reference: str,
-    default_prompt: List[Dict[str, Any]],
-) -> List[Tuple[np.ndarray, Dict[str, Any]]]:
-    if os.path.isdir(dataset_reference):
-        return load_images_with_prompts(
-            directory=dataset_reference, default_prompt=default_prompt
-        )
-    if dataset_reference not in PREDEFINED_DATASETS:
-        raise DatasetLoadingError(f"Could not find dataset: {dataset_reference}")
-    return [
-        (image, default_prompt)
-        for image in download_images(urls=PREDEFINED_DATASETS[dataset_reference])
-    ]
-
-
-def load_images_with_prompts(
-    directory: str,
-    max_images_to_load: int = MAX_IMAGES_TO_LOAD,
-    default_prompt: List[Dict[str, Any]] = None,
-) -> List[Tuple[np.ndarray, Dict[str, Any]]]:
-    image_file_paths = sorted(
-        list(
-            chain.from_iterable(
-                glob(os.path.join(directory, f"*{e}")) for e in IMAGE_EXTENSIONS
-            )
-        )
-    )
-    results = []
-    progress_bar = tqdm(desc="Loading images and prompts...", total=max_images_to_load)
-    for image_file_path in image_file_paths:
-        image = load_image(path=image_file_path)
-        if image is None:
-            continue
-        prompt_file_path = Path(image_file_path).with_suffix(".json")
-        if not prompt_file_path.exists():
-            if default_prompt is None:
-                continue
-            prompt = default_prompt
-        with open(prompt_file_path, "r") as f:
-            prompt = json.load(f)
-        results.append((image, prompt))
-        progress_bar.update()
-    progress_bar.close()
-    if len(results) < 1:
-        raise DatasetLoadingError(f"Could not load images from {directory}")
-    return results
