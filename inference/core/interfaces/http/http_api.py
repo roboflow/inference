@@ -160,8 +160,6 @@ from inference.core.env import (
     PRELOAD_MODELS,
     PROFILE,
     ROBOFLOW_SERVICE_SECRET,
-    WEBRTC_MODAL_TOKEN_ID,
-    WEBRTC_MODAL_TOKEN_SECRET,
     WEBRTC_WORKER_ENABLED,
     WORKFLOWS_MAX_CONCURRENT_STEPS,
     WORKFLOWS_PROFILER_BUFFER_SIZE,
@@ -1605,7 +1603,7 @@ class HttpInterface(BaseInterface):
                 )
 
         # Enable preloading models at startup
-        if (WEBRTC_MODAL_TOKEN_ID and WEBRTC_MODAL_TOKEN_SECRET) or (
+        if (
             (PRELOAD_MODELS or DEDICATED_DEPLOYMENT_WORKSPACE_URL)
             and API_KEY
             and not (LAMBDA or GCP_SERVERLESS)
