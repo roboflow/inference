@@ -235,12 +235,37 @@ if modal is not None:
             usage_collector.push_usage_payloads()
             logger.info("Function completed")
 
+        @modal.exit()
+        def stop(self):
+            logger.info("Stopping container")
+
+    # Modal derives function name from class name
+    # https://modal.com/docs/reference/modal.App#cls
+    @app.cls(
+        **decorator_kwargs,
+    )
+    class RTCPeerConnectionModalCPU(RTCPeerConnectionModal):
+        # https://modal.com/docs/reference/modal.enter
+        @modal.enter(snap=True)
+        def start(self):
+            # TODO: pre-load models on CPU
+            logger.info("Starting CPU container")
+
+    @app.cls(
+        **{
+            **decorator_kwargs,
+            "gpu": WEBRTC_MODAL_FUNCTION_GPU,  # https://modal.com/docs/guide/gpu#specifying-gpu-type
+            "experimental_options": {
+                "enable_gpu_snapshot": WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT
+            },
+        }
+    )
+    class RTCPeerConnectionModalGPU(RTCPeerConnectionModal):
         # https://modal.com/docs/reference/modal.enter
         # https://modal.com/docs/guide/memory-snapshot#gpu-memory-snapshot
         @modal.enter(snap=True)
         def start(self):
-            # TODO: pre-load models
-            logger.info("Starting container")
+            logger.info("Starting GPU container")
             logger.info("Preload hf ids: %s", PRELOAD_HF_IDS)
             logger.info("Preload models: %s", PRELOAD_MODELS)
             if PRELOAD_HF_IDS:
@@ -269,30 +294,6 @@ if modal is not None:
                             exc,
                         )
                 self._model_manager = model_manager
-
-        @modal.exit()
-        def stop(self):
-            logger.info("Stopping container")
-
-    # Modal derives function name from class name
-    # https://modal.com/docs/reference/modal.App#cls
-    @app.cls(
-        **decorator_kwargs,
-    )
-    class RTCPeerConnectionModalCPU(RTCPeerConnectionModal):
-        pass
-
-    @app.cls(
-        **{
-            **decorator_kwargs,
-            "gpu": WEBRTC_MODAL_FUNCTION_GPU,  # https://modal.com/docs/guide/gpu#specifying-gpu-type
-            "experimental_options": {
-                "enable_gpu_snapshot": WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT
-            },
-        }
-    )
-    class RTCPeerConnectionModalGPU(RTCPeerConnectionModal):
-        pass
 
     def spawn_rtc_peer_connection_modal(
         webrtc_request: WebRTCWorkerRequest,
