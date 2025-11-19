@@ -241,6 +241,8 @@ if modal is not None:
         def start(self):
             # TODO: pre-load models
             logger.info("Starting container")
+            logger.info("Preload hf ids: %s", PRELOAD_HF_IDS)
+            logger.info("Preload models: %s", PRELOAD_MODELS)
             if PRELOAD_HF_IDS:
                 # Kick off pre-loading of models (owlv2 preloading is based on module-level singleton)
                 logger.info("Preloading owlv2 base model")
