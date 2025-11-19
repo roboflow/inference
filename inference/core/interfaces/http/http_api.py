@@ -2401,10 +2401,6 @@ class HttpInterface(BaseInterface):
                 ):
                     logger.debug(f"Reached /sam3/embed_image")
 
-                    from inference.models.sam3.visual_segmentation import (
-                        Sam3ForInteractiveImageSegmentation,
-                    )
-
                     self.model_manager.add_model(
                         "sam3/sam3_interactive",
                         api_key=api_key,
@@ -2436,10 +2432,7 @@ class HttpInterface(BaseInterface):
                     countinference: Optional[bool] = None,
                     service_secret: Optional[str] = None,
                 ):
-
-                    from inference.models.sam3.visual_segmentation import (
-                        Sam3ForInteractiveImageSegmentation,
-                    )
+                    logger.debug(f"Reached /sam3/visual_segment")
 
                     self.model_manager.add_model(
                         "sam3/sam3_interactive",
