@@ -439,37 +439,42 @@ class OwlV2(RoboflowInferenceModel):
         # Download from huggingface
         pass
 
-    def get_image_embeds(self, image_hash: Hash) -> Optional[torch.Tensor]:
-        if image_hash in self.image_embed_cache:
-            return self.image_embed_cache[image_hash]
-        elif image_hash in self.cpu_image_embed_cache:
-            tensors = self.cpu_image_embed_cache[image_hash]
-            tensors = tuple(t.to(DEVICE) for t in tensors)
+    def get_image_embeds(self, image_hash: Hash) -> Optional[tuple]:
+        image_embed_cache_hit = self.image_embed_cache.get(image_hash)
+        if image_embed_cache_hit is not None:
+            return image_embed_cache_hit
+        cpu_image_embed_cache_hit = self.cpu_image_embed_cache.get(image_hash)
+        if cpu_image_embed_cache_hit is not None:
+            tensors = tuple(t.to(DEVICE) for t in cpu_image_embed_cache_hit)
             return tensors
-        else:
-            return None
+        return None
 
     def compute_image_size(
         self, image: Union[np.ndarray, LazyImageRetrievalWrapper]
     ) -> Tuple[int, int]:
         if isinstance(image, LazyImageRetrievalWrapper):
-            if (image_size := self.image_size_cache.get(image.image_hash)) is None:
+            image_size = self.image_size_cache.get(image.image_hash)
+            if image_size is None:
                 np_img = image.image_as_numpy
                 image_size = np_img.shape[:2][::-1]
-                self.image_size_cache[image.image_hash] = image_size
+                with self.owlv2_lock:
+                    self.image_size_cache[image.image_hash] = image_size
             return image_size
         else:
             return image.shape[:2][::-1]
 
     @torch.no_grad()
-    def embed_image(self, image: Union[np.ndarray, LazyImageRetrievalWrapper]) -> Hash:
+    def embed_image(
+        self, image: Union[np.ndarray, LazyImageRetrievalWrapper]
+    ) -> Tuple[Hash, tuple]:
         if isinstance(image, LazyImageRetrievalWrapper):
             image_hash = image.image_hash
         else:
             image_hash = hash_function(image.tobytes())
 
-        if (image_embeds := self.get_image_embeds(image_hash)) is not None:
-            return image_hash
+        image_embeds = self.get_image_embeds(image_hash)
+        if image_embeds is not None:
+            return image_hash, image_embeds
 
         np_image = (
             image.image_as_numpy
@@ -510,33 +515,39 @@ class OwlV2(RoboflowInferenceModel):
                 objectness, boxes, image_class_embeds, logit_shift, logit_scale
             )
         )
-
-        self.image_embed_cache[image_hash] = (
+        image_embeds = (
             objectness,
             boxes,
             image_class_embeds,
             logit_shift,
             logit_scale,
         )
+        with self.owlv2_lock:
+            self.image_embed_cache[image_hash] = image_embeds
 
-        # Explicitly delete temporary tensors to free memory.
-        del pixel_values, np_image, image_features, image_embeds
-        gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
         if isinstance(image, LazyImageRetrievalWrapper):
             image.unload_numpy_image()  # Clears both _image_as_numpy and image if needed.
 
-        return image_hash
+        return image_hash, image_embeds
 
     def get_query_embedding(
-        self, query_spec: QuerySpecType, iou_threshold: float
-    ) -> torch.Tensor:
+        self,
+        query_spec: QuerySpecType,
+        iou_threshold: float,
+        precomputed_embeddings: Optional[Dict[Hash, Tuple[torch.Tensor]]] = None,
+    ) -> Optional[torch.Tensor]:
         # NOTE: for now we're handling each image seperately
         query_embeds = []
+        if precomputed_embeddings is None:
+            precomputed_embeddings = {}
         for image_hash, query_boxes in query_spec.items():
-            image_embeds = self.get_image_embeds(image_hash)
+            if image_hash in precomputed_embeddings:
+                image_embeds = precomputed_embeddings[image_hash]
+            else:
+                image_embeds = self.get_image_embeds(image_hash)
             if image_embeds is None:
                 raise KeyError("We didn't embed the image first!")
             _objectness, image_boxes, image_class_embeds, _, _ = image_embeds
@@ -570,8 +581,10 @@ class OwlV2(RoboflowInferenceModel):
         confidence: float,
         iou_threshold: float,
         max_detections: int = MAX_DETECTIONS,
+        image_embeds: Optional[tuple] = None,
     ) -> List[Dict]:
-        image_embeds = self.get_image_embeds(image_hash)
+        if image_embeds is None:
+            image_embeds = self.get_image_embeds(image_hash)
         if image_embeds is None:
             raise KeyError("We didn't embed the image first!")
         _, image_boxes, image_class_embeds, _, _ = image_embeds
@@ -640,17 +653,16 @@ class OwlV2(RoboflowInferenceModel):
         max_detections: int = MAX_DETECTIONS,
         **kwargs,
     ):
-        with self.owlv2_lock:
-            class_embeddings_dict = self.make_class_embeddings_dict(
-                training_data, iou_threshold
-            )
-            return self.infer_from_embedding_dict(
-                image,
-                class_embeddings_dict,
-                confidence,
-                iou_threshold,
-                max_detections=max_detections,
-            )
+        class_embeddings_dict = self.make_class_embeddings_dict(
+            training_data, iou_threshold
+        )
+        return self.infer_from_embedding_dict(
+            image,
+            class_embeddings_dict,
+            confidence,
+            iou_threshold,
+            max_detections=max_detections,
+        )
 
     def infer_from_embedding_dict(
         self,
@@ -661,34 +673,34 @@ class OwlV2(RoboflowInferenceModel):
         max_detections: int = MAX_DETECTIONS,
         **kwargs,
     ):
-        with self.owlv2_lock:
-            if not isinstance(image, list):
-                images = [image]
-            else:
-                images = image
+        if not isinstance(image, list):
+            images = [image]
+        else:
+            images = image
 
-            images = [LazyImageRetrievalWrapper(image) for image in images]
+        images = [LazyImageRetrievalWrapper(image) for image in images]
 
-            results = []
-            image_sizes = []
-            for image_wrapper in images:
-                # happy path here is that both image size and image embeddings are cached
-                # in which case we avoid loading the image at all
-                image_size = self.compute_image_size(image_wrapper)
-                image_sizes.append(image_size)
-                image_hash = self.embed_image(image_wrapper)
-                image_wrapper.unload_numpy_image()
-                result = self.infer_from_embed(
-                    image_hash,
-                    class_embeddings_dict,
-                    confidence,
-                    iou_threshold,
-                    max_detections=max_detections,
-                )
-                results.append(result)
-            return self.make_response(
-                results, image_sizes, sorted(list(class_embeddings_dict.keys()))
+        results = []
+        image_sizes = []
+        for image_wrapper in images:
+            # happy path here is that both image size and image embeddings are cached
+            # in which case we avoid loading the image at all
+            image_size = self.compute_image_size(image_wrapper)
+            image_sizes.append(image_size)
+            image_hash, image_embeds = self.embed_image(image_wrapper)
+            image_wrapper.unload_numpy_image()
+            result = self.infer_from_embed(
+                image_hash,
+                class_embeddings_dict,
+                confidence,
+                iou_threshold,
+                max_detections=max_detections,
+                image_embeds=image_embeds,
             )
+            results.append(result)
+        return self.make_response(
+            results, image_sizes, sorted(list(class_embeddings_dict.keys()))
+        )
 
     def make_class_embeddings_dict(
         self,
@@ -716,10 +728,9 @@ class OwlV2(RoboflowInferenceModel):
                 # Return a dummy empty dict as the second value
                 # or extract it from CPU cache if available
                 return_image_embeds_dict = {}
-                for image_hash in self.cpu_image_embed_cache:
-                    return_image_embeds_dict[image_hash] = self.cpu_image_embed_cache[
-                        image_hash
-                    ]
+                with self.owlv2_lock:
+                    for image_hash, value in self.cpu_image_embed_cache.items():
+                        return_image_embeds_dict[image_hash] = value
                 return class_embeddings_dict, return_image_embeds_dict
             else:
                 return class_embeddings_dict
@@ -731,10 +742,8 @@ class OwlV2(RoboflowInferenceModel):
 
         for train_image in wrapped_training_data:
             image_size = self.compute_image_size(train_image["image"])
-            image_hash = self.embed_image(train_image["image"])
+            image_hash, image_embeds = self.embed_image(train_image["image"])
             if return_image_embeds:
-                if (image_embeds := self.get_image_embeds(image_hash)) is None:
-                    raise KeyError("We didn't embed the image first!")
                 return_image_embeds_dict[image_hash] = tuple(
                     t.to("cpu") for t in image_embeds
                 )
@@ -745,8 +754,13 @@ class OwlV2(RoboflowInferenceModel):
             classes = [box["cls"] for box in boxes]
             is_positive = [not box["negative"] for box in boxes]
             query_spec = {image_hash: coords}
+            precomputed_embeddings = {image_hash: image_embeds}
             # compute the embeddings for the box prompts
-            embeddings = self.get_query_embedding(query_spec, iou_threshold)
+            embeddings = self.get_query_embedding(
+                query_spec,
+                iou_threshold,
+                precomputed_embeddings=precomputed_embeddings,
+            )
 
             del train_image
 
@@ -757,8 +771,6 @@ class OwlV2(RoboflowInferenceModel):
                 class_embeddings_dict[class_name][bool_to_literal[is_pos]].append(
                     embedding
                 )
-
-        gc.collect()
         # Convert lists of embeddings to tensors.
         class_embeddings_dict = {
             k: {
@@ -768,7 +780,10 @@ class OwlV2(RoboflowInferenceModel):
             for k, v in class_embeddings_dict.items()
         }
 
-        self.class_embeddings_cache[wrapped_training_data_hash] = class_embeddings_dict
+        with self.owlv2_lock:
+            self.class_embeddings_cache[wrapped_training_data_hash] = (
+                class_embeddings_dict
+            )
         if return_image_embeds:
             return class_embeddings_dict, return_image_embeds_dict
 

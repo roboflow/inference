@@ -6,18 +6,15 @@ from time import perf_counter
 from typing import Any, Dict, List, Optional, Tuple, TypedDict, TypeVar, Union
 
 import numpy as np
-import sam2.utils.misc
 import torch
 from pycocotools import mask as mask_utils
-from torch.nn.attention import SDPBackend
+from sam3 import build_sam3_image_model
+from sam3.model.sam3_image_processor import Sam3Processor
 
-sam2.utils.misc.get_sdp_backends = lambda z: [
-    SDPBackend.EFFICIENT_ATTENTION,
-    SDPBackend.MATH,
-]
-from sam2.build_sam import build_sam2
-from sam2.sam2_image_predictor import SAM2ImagePredictor
-
+from inference.core.cache.model_artifacts import (
+    are_all_files_cached,
+    save_bytes_in_cache,
+)
 from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.entities.requests.sam2 import (
     Sam2EmbeddingRequest,
@@ -32,19 +29,38 @@ from inference.core.entities.responses.sam2 import (
     Sam2SegmentationResponse,
 )
 from inference.core.env import (
+    CORE_MODEL_BUCKET,
     DEVICE,
-    DISABLE_SAM2_LOGITS_CACHE,
-    SAM2_MAX_EMBEDDING_CACHE_SIZE,
-    SAM2_MAX_LOGITS_CACHE_SIZE,
-    SAM2_VERSION_ID,
+    DISABLE_SAM3_LOGITS_CACHE,
+    INFER_BUCKET,
+    MODELS_CACHE_AUTH_ENABLED,
+    SAM3_MAX_EMBEDDING_CACHE_SIZE,
+    SAM3_MAX_LOGITS_CACHE_SIZE,
 )
-from inference.core.models.roboflow import RoboflowCoreModel
+from inference.core.exceptions import ModelArtefactError, RoboflowAPINotAuthorizedError
+from inference.core.models.roboflow import (
+    RoboflowCoreModel,
+    is_model_artefacts_bucket_available,
+)
+from inference.core.registries.roboflow import _check_if_api_key_has_access_to_model
+from inference.core.roboflow_api import (
+    ModelEndpointType,
+    get_from_url,
+    get_roboflow_model_data,
+)
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2multipoly
 from inference.core.utils.torchscript_guard import _temporarily_disable_torch_jit_script
 
+# from sam3.model.sam1_task_predictor import SAM3InteractiveImagePredictor
+# from sam3.sam3_video_model_builder import build_sam3_tracking_predictor
+
+
 if DEVICE is None:
     DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
+
+
+T = TypeVar("T")
 
 
 class LogitsCacheType(TypedDict):
@@ -52,26 +68,18 @@ class LogitsCacheType(TypedDict):
     prompt_set: Sam2PromptSet
 
 
-T = TypeVar("T")
-
-
-class SegmentAnything2(RoboflowCoreModel):
-    """SegmentAnything class for handling segmentation tasks.
-
-    Attributes:
-        sam: The segmentation model.
-        embedding_cache: Cache for embeddings.
-        image_size_cache: Cache for image sizes.
-        embedding_cache_keys: Keys for the embedding cache.
-
+class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
+    """
+    SegmentAnything3 class for handling segmentation tasks onm images with
+    box prompting and point prompting, the way as SAM2 did.
     """
 
     def __init__(
         self,
         *args,
-        model_id: str = f"sam2/{SAM2_VERSION_ID}",
-        low_res_logits_cache_size: int = SAM2_MAX_LOGITS_CACHE_SIZE,
-        embedding_cache_size: int = SAM2_MAX_EMBEDDING_CACHE_SIZE,
+        model_id: str = "sam3/sam3_final",
+        low_res_logits_cache_size: int = SAM3_MAX_LOGITS_CACHE_SIZE,
+        embedding_cache_size: int = SAM3_MAX_EMBEDDING_CACHE_SIZE,
         **kwargs,
     ):
         """Initializes the SegmentAnything.
@@ -82,17 +90,18 @@ class SegmentAnything2(RoboflowCoreModel):
         """
         super().__init__(*args, model_id=model_id, **kwargs)
         checkpoint = self.cache_file("weights.pt")
-        model_cfg = {
-            "hiera_large": "sam2_hiera_l.yaml",
-            "hiera_small": "sam2_hiera_s.yaml",
-            "hiera_tiny": "sam2_hiera_t.yaml",
-            "hiera_b_plus": "sam2_hiera_b+.yaml",
-        }[self.version_id]
+        bpe_path = self.cache_file("bpe_simple_vocab_16e6.txt.gz")
 
-        self.sam = build_sam2(model_cfg, checkpoint, device=DEVICE)
+        self.sam_model = build_sam3_image_model(
+            bpe_path=bpe_path,
+            checkpoint_path=checkpoint,
+            device="cuda" if torch.cuda.is_available() else "cpu",
+            load_from_HF=False,
+            compile=False,
+            enable_inst_interactivity=True,
+        )
         self.low_res_logits_cache_size = low_res_logits_cache_size
         self.embedding_cache_size = embedding_cache_size
-
         self.embedding_cache = {}
         self.image_size_cache = {}
         self.embedding_cache_keys = []
@@ -109,6 +118,7 @@ class SegmentAnything2(RoboflowCoreModel):
         """
         return ["weights.pt"]
 
+    @torch.inference_mode()
     def embed_image(
         self,
         image: Optional[InferenceRequestImage],
@@ -158,11 +168,11 @@ class SegmentAnything2(RoboflowCoreModel):
                 image_id,
             )
 
-        with torch.inference_mode():
+        with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
             with _temporarily_disable_torch_jit_script():
-                predictor = SAM2ImagePredictor(self.sam)
-            predictor.set_image(img_in)
-            embedding_dict = predictor._features
+                processor = Sam3Processor(self.sam_model)
+            state = processor.set_image(torch.from_numpy(img_in).permute(2, 0, 1))
+            embedding_dict = state
 
         with self._state_lock:
             self.embedding_cache[image_id] = embedding_dict
@@ -192,32 +202,11 @@ class SegmentAnything2(RoboflowCoreModel):
             return Sam2EmbeddingResponse(time=inference_time, image_id=image_id)
         elif isinstance(request, Sam2SegmentationRequest):
             masks, scores, low_resolution_logits = self.segment_image(**request.dict())
-
-            if request.format == "json":
-                return turn_segmentation_results_into_api_response(
-                    masks=masks,
-                    scores=scores,
-                    mask_threshold=0.0,
-                    inference_start_timestamp=t1,
-                )
-            elif request.format == "rle":
-                return turn_segmentation_results_into_rle_response(
-                    masks=masks,
-                    scores=scores,
-                    mask_threshold=0.0,
-                    inference_start_timestamp=t1,
-                )
-            elif request.format == "binary":
-                binary_vector = BytesIO()
-                np.savez_compressed(
-                    binary_vector, masks=masks, low_res_masks=low_resolution_logits
-                )
-                binary_vector.seek(0)
-                binary_data = binary_vector.getvalue()
-                return binary_data
-            else:
-                raise ValueError(f"Invalid format {request.format}")
-
+            predictions = _masks_to_predictions(masks, scores, request.format)
+            return Sam2SegmentationResponse(
+                time=perf_counter() - t1,
+                predictions=predictions,
+            )
         else:
             raise ValueError(f"Invalid request type {type(request)}")
 
@@ -278,9 +267,9 @@ class SegmentAnything2(RoboflowCoreModel):
               the oldest entries are removed.
         """
         load_logits_from_cache = (
-            load_logits_from_cache and not DISABLE_SAM2_LOGITS_CACHE
+            load_logits_from_cache and not DISABLE_SAM3_LOGITS_CACHE
         )
-        save_logits_to_cache = save_logits_to_cache and not DISABLE_SAM2_LOGITS_CACHE
+        save_logits_to_cache = save_logits_to_cache and not DISABLE_SAM3_LOGITS_CACHE
         with torch.inference_mode():
             if image is None and not image_id:
                 raise ValueError("Must provide either image or  cached image_id")
@@ -291,12 +280,14 @@ class SegmentAnything2(RoboflowCoreModel):
             embedding, original_image_size, image_id = self.embed_image(
                 image=image, image_id=image_id
             )
-            with _temporarily_disable_torch_jit_script():
-                predictor = SAM2ImagePredictor(self.sam)
-            predictor._is_image_set = True
-            predictor._features = embedding
-            predictor._orig_hw = [original_image_size]
-            predictor._is_batch = False
+
+            # with _temporarily_disable_torch_jit_script():
+            # processor = Sam3Processor(self.sam_model)
+
+            # processor._is_image_set = True
+            # processor._features = embedding
+            # processor._orig_hw = [original_image_size]
+            # processor._is_batch = False
             args = dict()
             prompt_set: Sam2PromptSet
             if prompts:
@@ -317,7 +308,9 @@ class SegmentAnything2(RoboflowCoreModel):
             args = pad_points(args)
             if not any(args.values()):
                 args = {"point_coords": [[0, 0]], "point_labels": [-1], "box": None}
-            masks, scores, low_resolution_logits = predictor.predict(
+
+            masks, scores, low_resolution_logits = self.sam_model.predict_inst(
+                embedding,
                 mask_input=mask_input,
                 multimask_output=multimask_output,
                 return_logits=True,
@@ -358,6 +351,73 @@ class SegmentAnything2(RoboflowCoreModel):
                         values=self.low_res_logits_cache, key=cache_key
                     )
 
+    @property
+    def model_artifact_bucket(self):
+        # Use CORE bucket for base SAM3, standard INFER bucket for fine-tuned models
+        return CORE_MODEL_BUCKET if self._is_core_sam3_endpoint() else INFER_BUCKET
+
+    def _is_core_sam3_endpoint(self) -> bool:
+        return isinstance(self.endpoint, str) and self.endpoint.startswith("sam3/")
+
+    def download_weights(self) -> None:
+        infer_bucket_files = self.get_infer_bucket_file_list()
+
+        # Auth check aligned with chosen endpoint type
+        if MODELS_CACHE_AUTH_ENABLED:
+            endpoint_type = (
+                ModelEndpointType.CORE_MODEL
+                if self._is_core_sam3_endpoint()
+                else ModelEndpointType.ORT
+            )
+            if not _check_if_api_key_has_access_to_model(
+                api_key=self.api_key,
+                model_id=self.endpoint,
+                endpoint_type=endpoint_type,
+            ):
+                raise RoboflowAPINotAuthorizedError(
+                    f"API key {self.api_key} does not have access to model {self.endpoint}"
+                )
+        # Already cached
+        if are_all_files_cached(files=infer_bucket_files, model_id=self.endpoint):
+            return None
+        # S3 path works for both; keys are {endpoint}/<file>
+        if is_model_artefacts_bucket_available():
+            self.download_model_artefacts_from_s3()
+            return None
+            # API fallback
+        if self._is_core_sam3_endpoint():
+            # Base SAM3 from core_model endpoint; preserves filenames
+            return super().download_model_from_roboflow_api()
+
+        # Fine-tuned SAM3: use ORT endpoint to fetch weights map or model url
+        api_data = get_roboflow_model_data(
+            api_key=self.api_key,
+            model_id=self.endpoint,
+            endpoint_type=ModelEndpointType.ORT,
+            device_id=self.device_id,
+        )
+
+        ort = api_data.get("ort") if isinstance(api_data, dict) else None
+        if not isinstance(ort, dict):
+            raise ModelArtefactError("ORT response malformed for fine-tuned SAM3")
+
+        # Preferred: explicit weights map of filename -> URL
+        weights_map = ort.get("weights")
+        if isinstance(weights_map, dict) and len(weights_map) > 0:
+            for filename, url in weights_map.items():
+                resp = get_from_url(
+                    url, json_response=False, verify_content_length=True
+                )
+                save_bytes_in_cache(
+                    content=resp.content,
+                    file=str(filename),
+                    model_id=self.endpoint,
+                )
+            return None
+        raise ModelArtefactError(
+            "ORT response missing both 'weights' for fine-tuned SAM3"
+        )
+
 
 def hash_prompt_set(image_id: str, prompt_set: Sam2PromptSet) -> Tuple[str, str]:
     """Computes unique hash from a prompt set."""
@@ -375,7 +435,6 @@ def maybe_load_low_res_logits_from_cache(
     prompts = prompt_set.prompts
     if not prompts:
         return None
-
     return find_prior_prompt_in_cache(prompt_set, image_id, cache)
 
 
@@ -508,34 +567,8 @@ def turn_segmentation_results_into_api_response(
         prediction = Sam2SegmentationPrediction(
             masks=[mask.tolist() for mask in mask_polygon],
             confidence=score.item(),
-            format="polygon",
         )
         predictions.append(prediction)
-    return Sam2SegmentationResponse(
-        time=perf_counter() - inference_start_timestamp,
-        predictions=predictions,
-    )
-
-
-def turn_segmentation_results_into_rle_response(
-    masks: np.ndarray,
-    scores: np.ndarray,
-    mask_threshold: float,
-    inference_start_timestamp: float,
-) -> Sam2SegmentationResponse:
-    predictions = []
-    for mask, score in zip(masks, scores):
-        # Apply same threshold as polygon format
-        mask_binary = (mask >= mask_threshold).astype(np.uint8)
-
-        # Encode mask to RLE format
-        rle = mask_utils.encode(np.asfortranarray(mask_binary))
-        rle["counts"] = rle["counts"].decode("utf-8")
-
-        predictions.append(
-            Sam2SegmentationPrediction(masks=rle, confidence=float(score), format="rle")
-        )
-
     return Sam2SegmentationResponse(
         time=perf_counter() - inference_start_timestamp,
         predictions=predictions,
@@ -565,6 +598,49 @@ def pad_points(args: Dict[str, Any]) -> Dict[str, Any]:
                 "Can't have point labels without corresponding point coordinates"
             )
     return args
+
+
+def _masks_to_predictions(
+    masks_np: np.ndarray, scores: List[float], fmt: str
+) -> List[Sam2SegmentationPrediction]:
+    """Convert boolean masks (N,H,W) to API predictions in requested format.
+
+    Assumes masks_np is already normalized to (N,H,W) by _to_numpy_masks.
+
+    Args:
+        masks_np: Boolean or uint8 masks array (N,H,W)
+        scores: Confidence scores per mask
+        fmt: Output format: 'polygon', 'json', or 'rle'
+
+    Returns:
+        List of Sam2SegmentationPrediction
+    """
+    preds = []
+
+    if masks_np.ndim != 3 or 0 in masks_np.shape:
+        return preds
+
+    if fmt in ["polygon", "json"]:
+        polygons = masks2multipoly((masks_np > 0).astype(np.uint8))
+        for poly, score in zip(polygons, scores[: len(polygons)]):
+            preds.append(
+                Sam2SegmentationPrediction(
+                    masks=[p.tolist() for p in poly],
+                    confidence=float(score),
+                    format="polygon",
+                )
+            )
+    elif fmt == "rle":
+        for m, score in zip(masks_np, scores[: masks_np.shape[0]]):
+            mb = (m > 0).astype(np.uint8)
+            rle = mask_utils.encode(np.asfortranarray(mb))
+            rle["counts"] = rle["counts"].decode("utf-8")
+            preds.append(
+                Sam2SegmentationPrediction(
+                    masks=rle, confidence=float(score), format="rle"
+                )
+            )
+    return preds
 
 
 def safe_remove_from_list(values: List[T], element: T) -> None:

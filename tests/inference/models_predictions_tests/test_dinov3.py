@@ -156,7 +156,7 @@ def test_dinov3_multi_label_batch_inference_when_batch_size_larger_then_max_batc
     batch_size = MAX_BATCH_SIZE + 2
     model = DinoV3Classification(model_id=dinov3_multi_label_model, api_key="DUMMY")
 
-    # when  
+    # when
     result = model.infer([face_image] * batch_size, confidence=0.00)
 
     # then

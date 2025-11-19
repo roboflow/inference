@@ -18,6 +18,7 @@ on:
           - paligemma
           - florence
           - sam2
+          - sam3
           - moondream2
 
 jobs:
@@ -111,6 +112,19 @@ jobs:
           PORT=9101 API_KEY=${{ secrets.API_KEY }} SKIP_SAM2_TESTS=False python3 -m pytest tests/inference/integration_tests/test_sam2.py
       - name: 🧹 Cleanup Test Docker - SAM2
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'sam2' }}
+        run: make stop_test_docker
+      - name: 🔋 Start Test Docker - SAM3
+        if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'sam3' }}
+        run: |
+          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+      - name: 🧪 Regression Tests - SAM3
+        id: sam2_tests
+        if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'sam3' }}
+        run: |
+          source .venv/bin/activate
+          PORT=9101 API_KEY=${{ secrets.API_KEY }} SKIP_SAM3_TESTS=False python3 -m pytest tests/inference/integration_tests/test_sam3.py
+      - name: 🧹 Cleanup Test Docker - SAM3
+        if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'sam3' }}
         run: make stop_test_docker
 #      - name: 🔋 Start Test Docker - GPU
 #        if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'qwen25' }}

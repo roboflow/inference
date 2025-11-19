@@ -157,8 +157,18 @@ CORE_MODEL_PE_ENABLED = str2bool(os.getenv("CORE_MODEL_PE_ENABLED", True))
 # Flag to enable SAM core model, default is True
 CORE_MODEL_SAM_ENABLED = str2bool(os.getenv("CORE_MODEL_SAM_ENABLED", True))
 CORE_MODEL_SAM2_ENABLED = str2bool(os.getenv("CORE_MODEL_SAM2_ENABLED", True))
+CORE_MODEL_SAM3_ENABLED = str2bool(os.getenv("CORE_MODEL_SAM3_ENABLED", True))
 
 CORE_MODEL_OWLV2_ENABLED = str2bool(os.getenv("CORE_MODEL_OWLV2_ENABLED", False))
+
+# Maximum prompt batch size for SAM3 PCS requests
+SAM3_MAX_PROMPT_BATCH_SIZE = int(os.getenv("SAM3_MAX_PROMPT_BATCH_SIZE", 16))
+SAM3_EXEC_MODE = os.getenv("SAM3_EXEC_MODE", "local")
+SAM3_EXEC_MODE = SAM3_EXEC_MODE.lower()
+if SAM3_EXEC_MODE not in ["local", "remote"]:
+    raise ValueError(
+        f"Invalid SAM3 execution mode in ENVIRONMENT var SAM3_EXEC_MODE (local or remote): {SAM3_EXEC_MODE}"
+    )
 
 # Flag to enable GAZE core model, default is True
 CORE_MODEL_GAZE_ENABLED = str2bool(os.getenv("CORE_MODEL_GAZE_ENABLED", True))
@@ -403,6 +413,13 @@ DISABLE_SAM2_LOGITS_CACHE = str2bool(os.getenv("DISABLE_SAM2_LOGITS_CACHE", Fals
 # SAM version ID, default is "vit_h"
 SAM_VERSION_ID = os.getenv("SAM_VERSION_ID", "vit_h")
 SAM2_VERSION_ID = os.getenv("SAM2_VERSION_ID", "hiera_large")
+# SAM3_CHECKPOINT_PATH = os.getenv("SAM3_CHECKPOINT_PATH")
+# SAM3_BPE_PATH = os.getenv("SAM3_BPE_PATH", "/home/hansent/sam3/assets/bpe_simple_vocab_16e6.txt.gz")
+SAM3_IMAGE_SIZE = int(os.getenv("SAM3_IMAGE_SIZE", 1008))
+# SAM3_REPO_PATH = os.getenv("SAM3_REPO_PATH", "/home/hansent/sam3")
+SAM3_MAX_EMBEDDING_CACHE_SIZE = int(os.getenv("SAM3_MAX_EMBEDDING_CACHE_SIZE", 100))
+SAM3_MAX_LOGITS_CACHE_SIZE = int(os.getenv("SAM3_MAX_LOGITS_CACHE_SIZE", 1000))
+DISABLE_SAM3_LOGITS_CACHE = str2bool(os.getenv("DISABLE_SAM3_LOGITS_CACHE", False))
 
 # EasyOCR version ID, default is "english_g2"
 EASYOCR_VERSION_ID = os.getenv("EASYOCR_VERSION_ID", "english_g2")
