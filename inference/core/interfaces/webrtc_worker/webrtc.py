@@ -107,20 +107,21 @@ class ChunkReassembler:
             Complete reassembled payload bytes if all chunks received, None otherwise.
         """
         # Initialize buffers for new frame
-        if frame_id not in self._chunks:
-            self._chunks[frame_id] = {}
+        chunks = self._chunks.get(frame_id)
+        if chunks is None:
+            chunks = {}
+            self._chunks[frame_id] = chunks
             self._total[frame_id] = total_chunks
         
         # Store chunk
-        self._chunks[frame_id][chunk_index] = chunk_data
+        chunks[chunk_index] = chunk_data
         
         # Check if all chunks received
-        if len(self._chunks[frame_id]) >= total_chunks:
-            # Reassemble in order
-            complete_payload = b''.join(
-                self._chunks[frame_id][i] 
-                for i in range(total_chunks)
-            )
+        if len(chunks) >= total_chunks:
+            # Reassemble in order, using list for fast sequential lookup
+            payload_chunks = [chunks[i] for i in range(total_chunks)]
+            complete_payload = b''.join(payload_chunks)
+
             
             # Clean up
             del self._chunks[frame_id]
