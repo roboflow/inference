@@ -105,6 +105,10 @@ class VideoFrameProcessor:
         self._stop_processing = False
         self.use_data_channel_frames = use_data_channel_frames
         self._data_frame_queue: "asyncio.Queue[Optional[VideoFrame]]" = asyncio.Queue()
+        
+        # Binary chunk reassembly buffers
+        self._chunk_buffer: Dict[int, Dict[int, bytes]] = {}  # {frame_id: {chunk_index: jpeg_chunk}}
+        self._total_chunks: Dict[int, int] = {}  # {frame_id: total_chunks}
 
         self.has_video_track = has_video_track
         self.stream_output = stream_output
@@ -225,35 +229,61 @@ class VideoFrameProcessor:
 
         self.data_channel.send(json.dumps(webrtc_output.model_dump(mode="json")))
 
-    async def _handle_data_channel_frame(self, message: str) -> None:
-        """Handle incoming frame from upstream_frames data channel."""
+    async def _handle_data_channel_frame(self, message: bytes) -> None:
+        """Handle incoming binary frame chunk from upstream_frames data channel.
+        
+        Binary format: [frame_id: 4 bytes][chunk_index: 4 bytes][total_chunks: 4 bytes][JPEG chunk data]
+        All integers are uint32 little-endian.
+        """
         try:
-            payload = json.loads(message)
-            if payload.get("type") != "frame":
-                logger.warning(f"Unknown message type: {payload.get('type')}")
+            if len(message) < 12:
+                logger.error("Binary message too short (< 12 bytes)")
                 return
             
-            frame_id = payload.get("frame_id", 0)
-            image_b64 = payload.get("image", "")
+            # Parse header (12 bytes)
+            frame_id = int.from_bytes(message[0:4], byteorder='little')
+            chunk_index = int.from_bytes(message[4:8], byteorder='little')
+            total_chunks = int.from_bytes(message[8:12], byteorder='little')
+            jpeg_chunk = message[12:]
             
-            if frame_id % 100 == 1:
-                logger.info(f"Received frame {frame_id} via data channel")
+            # Initialize buffers for new frame
+            if frame_id not in self._chunk_buffer:
+                self._chunk_buffer[frame_id] = {}
+                self._total_chunks[frame_id] = total_chunks
             
-            # Decode base64 → JPEG bytes → numpy array
-            image_bytes = base64.b64decode(image_b64)
-            nparr = np.frombuffer(image_bytes, np.uint8)
-            np_image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            # Store chunk
+            self._chunk_buffer[frame_id][chunk_index] = jpeg_chunk
             
-            if np_image is None:
-                logger.error(f"Failed to decode frame {frame_id}")
-                return
-            
-            # Convert to VideoFrame and queue
-            video_frame = VideoFrame.from_ndarray(np_image, format="bgr24")
-            await self._data_frame_queue.put((frame_id, video_frame))
-            
-            if frame_id % 100 == 1:
-                logger.info(f"Queued frame {frame_id}, queue size: {self._data_frame_queue.qsize()}")
+            # Check if we have all chunks
+            if len(self._chunk_buffer[frame_id]) >= total_chunks:
+                # Reassemble JPEG in order
+                jpeg_bytes = b''.join(
+                    self._chunk_buffer[frame_id][i] 
+                    for i in range(total_chunks)
+                )
+                
+                # Clean up buffers
+                del self._chunk_buffer[frame_id]
+                del self._total_chunks[frame_id]
+                
+                if frame_id % 100 == 1:
+                    logger.info(
+                        f"Reassembled frame {frame_id} from {total_chunks} chunks ({len(jpeg_bytes)} bytes)"
+                    )
+                
+                # Decode JPEG → numpy array → VideoFrame
+                nparr = np.frombuffer(jpeg_bytes, np.uint8)
+                np_image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                
+                if np_image is None:
+                    logger.error(f"Failed to decode frame {frame_id}")
+                    return
+                
+                video_frame = VideoFrame.from_ndarray(np_image, format="bgr24")
+                await self._data_frame_queue.put((frame_id, video_frame))
+                
+                if frame_id % 100 == 1:
+                    logger.info(f"Queued frame {frame_id}, queue size: {self._data_frame_queue.qsize()}")
             
         except Exception as e:
             logger.error(f"Error handling data channel frame: {e}", exc_info=True)
