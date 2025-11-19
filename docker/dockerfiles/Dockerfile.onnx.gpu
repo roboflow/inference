@@ -32,6 +32,7 @@ COPY requirements/requirements.sam.txt \
     ./
 
 RUN python3 -m pip install -U pip uv
+RUN uv pip install --system -r requirements.doctr.txt
 RUN uv pip install --system \
     -r _requirements.txt \
     -r requirements.sam.txt \
@@ -41,7 +42,6 @@ RUN uv pip install --system \
     -r requirements.gpu.txt \
     -r requirements.gaze.txt \
     -r requirements.groundingdino.txt \
-    -r requirements.doctr.txt \
     -r requirements.yolo_world.txt \
     -r requirements.transformers.txt \
     -r requirements.easyocr.txt \
