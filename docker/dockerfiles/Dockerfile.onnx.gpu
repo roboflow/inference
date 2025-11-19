@@ -22,6 +22,7 @@ RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_
 
 WORKDIR /app
 COPY requirements/requirements.sam.txt \
+    requirements/requirements.sam3.txt \
     requirements/requirements.clip.txt \
     requirements/requirements.http.txt \
     requirements/requirements.gpu.txt \
@@ -40,6 +41,7 @@ RUN python3 -m pip install -U pip
 RUN python3 -m pip install \
     -r _requirements.txt \
     -r requirements.sam.txt \
+    -r requirements.sam3.txt \
     -r requirements.clip.txt \
     -r requirements.http.txt \
     -r requirements.gpu.txt \
@@ -63,10 +65,6 @@ RUN python3 -m pip install -r requirements.pali.flash_attn.txt --no-dependencies
 
 # Start runtime stage
 FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 as runtime
-
-WORKDIR /
-COPY sam3_repo sam3_repo
-
 
 WORKDIR /app
 
@@ -95,14 +93,6 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*
 
 
-
-# rigth now just copyinh the sam3 code into the project root and gitignoring it
-# and then copyin to container here to install it since there is no pip package yet
-WORKDIR /
-COPY sam3_repo sam3_repo
-WORKDIR sam3_repo
-RUN pip install einops pycocotools decord
-RUN pip3 install --no-cache-dir .
 
 WORKDIR /build
 COPY . .
