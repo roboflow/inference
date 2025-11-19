@@ -56,7 +56,6 @@ from inference.core.utils.torchscript_guard import _temporarily_disable_torch_ji
 # from sam3.sam3_video_model_builder import build_sam3_tracking_predictor
 
 
-
 if DEVICE is None:
     DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 

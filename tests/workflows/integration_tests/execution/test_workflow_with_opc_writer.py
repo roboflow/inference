@@ -11,9 +11,10 @@ try:
     from asyncua.server.users import User, UserRole
 except ImportError:
     from asyncua.crypto.permission_rules import User, UserRole
+
 from asyncua.sync import Client, sync_async_client_method
-from asyncua.ua.uaerrors import BadNoMatch, BadTypeMismatch, BadUserAccessDenied
 from asyncua.ua import NodeId
+from asyncua.ua.uaerrors import BadNoMatch, BadTypeMismatch, BadUserAccessDenied
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.workflows.execution_engine.core import ExecutionEngine
@@ -150,7 +151,9 @@ async def start_test_opc_server(
 
     # Boolean variables
     for val in [True, False]:
-        var = await current_obj.add_variable(idx, f"BoolVar_{val}", val, varianttype=VariantType.Boolean)
+        var = await current_obj.add_variable(
+            idx, f"BoolVar_{val}", val, varianttype=VariantType.Boolean
+        )
         await var.set_writable()
 
     # Numeric type variables
@@ -167,17 +170,23 @@ async def start_test_opc_server(
     ]
 
     for type_name, init_val, variant_type in type_configs:
-        var = await current_obj.add_variable(idx, f"{type_name}Var", init_val, varianttype=variant_type)
+        var = await current_obj.add_variable(
+            idx, f"{type_name}Var", init_val, varianttype=variant_type
+        )
         await var.set_writable()
 
     # String variable
-    str_var = await current_obj.add_variable(idx, "StringVar", "", varianttype=VariantType.String)
+    str_var = await current_obj.add_variable(
+        idx, "StringVar", "", varianttype=VariantType.String
+    )
     await str_var.set_writable()
 
     # Also create a variable with string-based NodeId for direct mode testing
     # This allows both hierarchical and direct access to work
     direct_node_id = NodeId(f"{object_name}/{variable_name}", idx)
-    direct_var = await server.nodes.objects.add_variable(direct_node_id, f"Direct_{variable_name}", initial_value)
+    direct_var = await server.nodes.objects.add_variable(
+        direct_node_id, f"Direct_{variable_name}", initial_value
+    )
     await direct_var.set_writable()
 
     OPC_SERVER_STARTED = True
@@ -216,7 +225,9 @@ async def start_test_opc_server_with_string_nodeid(
 
     # Create a variable with a string-based NodeId directly (like Ignition does)
     node_id = NodeId(f"{object_name}/{variable_name}", idx)
-    myvar = await server.nodes.objects.add_variable(node_id, variable_name, initial_value)
+    myvar = await server.nodes.objects.add_variable(
+        node_id, variable_name, initial_value
+    )
     await myvar.set_writable()
     OPC_SERVER_STARTED = True
 
@@ -410,7 +421,9 @@ allowing factory automation engineers to take advantage of machine vision when b
         ("UInt64", "UInt64Var", "200000", 200000),  # string to int conversion
     ],
 )
-def test_workflow_with_opc_writer_sink(test_opc_server, value_type, variable_name, test_value, expected_value) -> None:
+def test_workflow_with_opc_writer_sink(
+    test_opc_server, value_type, variable_name, test_value, expected_value
+) -> None:
     # given - use pre-created variables from the server
     execution_engine = ExecutionEngine.init(
         workflow_definition=WORKFLOW_OPC_WRITER,

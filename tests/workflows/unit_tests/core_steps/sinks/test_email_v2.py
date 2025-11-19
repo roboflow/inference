@@ -55,16 +55,18 @@ def test_v2_manifest_parsing_when_input_is_valid(
         "receiver_email": receiver_email,
         "fire_and_forget": True,
     }
-    
+
     # Add SMTP fields if Custom SMTP
     if email_provider == "Custom SMTP":
-        raw_manifest.update({
-            "smtp_server": "smtp.gmail.com",
-            "sender_email": "$inputs.email",
-            "sender_email_password": "$inputs.email_password",
-            "cc_receiver_email": cc_receiver_email,
-            "bcc_receiver_email": bcc_receiver_email,
-        })
+        raw_manifest.update(
+            {
+                "smtp_server": "smtp.gmail.com",
+                "sender_email": "$inputs.email",
+                "sender_email_password": "$inputs.email_password",
+                "cc_receiver_email": cc_receiver_email,
+                "bcc_receiver_email": bcc_receiver_email,
+            }
+        )
 
     # when
     result = BlockManifest.model_validate(raw_manifest)
@@ -204,8 +206,9 @@ def test_v2_send_email_via_roboflow_proxy_with_cc_bcc(
     assert payload["bcc_receiver_email"] == ["bcc@gmail.com"]
     # Attachment should be base64 encoded
     import base64
+
     assert "report.csv" in payload["attachments"]
-    decoded_csv = base64.b64decode(payload["attachments"]["report.csv"]).decode('utf-8')
+    decoded_csv = base64.b64decode(payload["attachments"]["report.csv"]).decode("utf-8")
     assert decoded_csv == "csv_content"
 
 
@@ -245,7 +248,7 @@ def test_v2_roboflow_managed_mode_sends_via_proxy() -> None:
 
     with mock.patch.object(v2, "send_email_via_roboflow_proxy") as proxy_mock:
         proxy_mock.return_value = (False, "success")
-        
+
         # when
         result = block.run(
             subject="Test",
@@ -554,7 +557,7 @@ def test_v2_message_parameters_not_flattened_in_roboflow_mode() -> None:
 
     with mock.patch.object(v2, "send_email_via_roboflow_proxy") as proxy_mock:
         proxy_mock.return_value = (False, "success")
-        
+
         # when
         result = block.run(
             subject="Test",
@@ -615,6 +618,7 @@ def test_v2_serialize_image_data_with_numpy_array() -> None:
     assert len(result) > 0
     # Should be valid base64
     import base64
+
     try:
         base64.b64decode(result)
         valid_base64 = True
@@ -793,7 +797,10 @@ def test_v2_send_email_via_roboflow_proxy_with_multiple_images(
     # then
     assert result == (False, "Notification sent successfully via Roboflow proxy")
     payload = post_to_roboflow_api_mock.call_args[1]["payload"]
-    assert payload["message_parameters"]["images"] == ["/9j/first_image", "/9j/second_image"]
+    assert payload["message_parameters"]["images"] == [
+        "/9j/first_image",
+        "/9j/second_image",
+    ]
     assert all(isinstance(img, str) for img in payload["message_parameters"]["images"])
 
 
@@ -831,6 +838,7 @@ def test_v2_send_email_with_image_attachment(
     assert "detection.jpg" in payload["attachments"]
     # Should be base64 encoded
     import base64
+
     attachment_data = payload["attachments"]["detection.jpg"]
     assert isinstance(attachment_data, str)
     # Verify it's valid base64
@@ -910,7 +918,8 @@ def test_v2_send_email_with_mixed_attachments(
     assert "report.csv" in payload["attachments"]
     # CSV should be base64 encoded
     import base64
-    csv_decoded = base64.b64decode(payload["attachments"]["report.csv"]).decode('utf-8')
+
+    csv_decoded = base64.b64decode(payload["attachments"]["report.csv"]).decode("utf-8")
     assert "name,count" in csv_decoded
 
 
@@ -961,7 +970,7 @@ def test_v2_smtp_mode_with_image_attachment(
     attachment_data = call_kwargs["attachments"]["detection.jpg"]
     assert isinstance(attachment_data, bytes)
     # Should be JPEG signature
-    assert attachment_data[:2] == b'\xff\xd8'
+    assert attachment_data[:2] == b"\xff\xd8"
 
 
 @mock.patch.object(v2, "_send_email_using_smtp_server_v2")
@@ -1015,9 +1024,8 @@ def test_v2_smtp_mode_with_mixed_attachments(
     assert isinstance(call_kwargs["attachments"]["detection.jpg"], bytes)
     # CSV should be bytes (UTF-8 encoded string)
     assert isinstance(call_kwargs["attachments"]["report.csv"], bytes)
-    csv_content = call_kwargs["attachments"]["report.csv"].decode('utf-8')
+    csv_content = call_kwargs["attachments"]["report.csv"].decode("utf-8")
     assert "name,count" in csv_content
-
 
 
 @mock.patch.object(v2, "post_to_roboflow_api")
@@ -1027,7 +1035,7 @@ def test_v2_send_email_with_multiple_image_attachments(
     # given
     post_to_roboflow_api_mock.return_value = {"status": "success"}
     parent_metadata = ImageParentMetadata(parent_id="test")
-    
+
     # Create two different images
     image1 = WorkflowImageData(
         parent_metadata=parent_metadata,
@@ -1061,6 +1069,7 @@ def test_v2_send_email_with_multiple_image_attachments(
     assert "detection2.jpg" in payload["attachments"]
     # Both should be base64 encoded
     import base64
+
     assert isinstance(payload["attachments"]["detection1.jpg"], str)
     assert isinstance(payload["attachments"]["detection2.jpg"], str)
     # Verify both are valid base64
@@ -1110,7 +1119,7 @@ def test_v2_send_email_with_bytes_attachment_via_proxy(
 ) -> None:
     # given
     post_to_roboflow_api_mock.return_value = {"status": "success"}
-    binary_data = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00'
+    binary_data = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00"
 
     # when
     result = send_email_via_roboflow_proxy(
@@ -1131,6 +1140,7 @@ def test_v2_send_email_with_bytes_attachment_via_proxy(
     assert "data.bin" in payload["attachments"]
     # Should be base64 encoded
     import base64
+
     decoded = base64.b64decode(payload["attachments"]["data.bin"])
     assert decoded == binary_data
 
@@ -1141,7 +1151,7 @@ def test_v2_smtp_mode_with_bytes_attachment(
 ) -> None:
     # given
     send_email_using_smtp_server_v2_mock.return_value = None  # void return
-    binary_data = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00'
+    binary_data = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00"
     block = EmailNotificationBlockV2(
         background_tasks=None,
         thread_pool_executor=None,
@@ -1183,7 +1193,7 @@ def test_v2_smtp_mode_with_multiple_image_attachments(
     # given
     send_email_using_smtp_server_v2_mock.return_value = None  # void return
     parent_metadata = ImageParentMetadata(parent_id="test")
-    
+
     image1 = WorkflowImageData(
         parent_metadata=parent_metadata,
         numpy_image=np.zeros((100, 100, 3), dtype=np.uint8),
@@ -1192,7 +1202,7 @@ def test_v2_smtp_mode_with_multiple_image_attachments(
         parent_metadata=parent_metadata,
         numpy_image=np.ones((50, 50, 3), dtype=np.uint8) * 255,
     )
-    
+
     block = EmailNotificationBlockV2(
         background_tasks=None,
         thread_pool_executor=None,
@@ -1228,8 +1238,8 @@ def test_v2_smtp_mode_with_multiple_image_attachments(
     assert "detection1.jpg" in call_kwargs["attachments"]
     assert "detection2.jpg" in call_kwargs["attachments"]
     # Both should be JPEG bytes
-    assert call_kwargs["attachments"]["detection1.jpg"][:2] == b'\xff\xd8'
-    assert call_kwargs["attachments"]["detection2.jpg"][:2] == b'\xff\xd8'
+    assert call_kwargs["attachments"]["detection1.jpg"][:2] == b"\xff\xd8"
+    assert call_kwargs["attachments"]["detection2.jpg"][:2] == b"\xff\xd8"
 
 
 @mock.patch.object(v2, "post_to_roboflow_api")
@@ -1239,12 +1249,12 @@ def test_v2_send_email_with_all_attachment_types(
     # given
     post_to_roboflow_api_mock.return_value = {"status": "success"}
     parent_metadata = ImageParentMetadata(parent_id="test")
-    
+
     image_data = WorkflowImageData(
         parent_metadata=parent_metadata,
         numpy_image=np.zeros((50, 50, 3), dtype=np.uint8),
     )
-    binary_data = b'\x00\x01\x02\x03'
+    binary_data = b"\x00\x01\x02\x03"
     text_data = "This is CSV content"
 
     # when
@@ -1270,13 +1280,17 @@ def test_v2_send_email_with_all_attachment_types(
     assert "image.jpg" in payload["attachments"]
     assert "binary.bin" in payload["attachments"]
     assert "text.csv" in payload["attachments"]
-    
+
     # All should be base64 encoded strings
     import base64
+
     assert isinstance(payload["attachments"]["image.jpg"], str)
     assert isinstance(payload["attachments"]["binary.bin"], str)
     assert isinstance(payload["attachments"]["text.csv"], str)
-    
+
     # Verify content can be decoded
     assert base64.b64decode(payload["attachments"]["binary.bin"]) == binary_data
-    assert base64.b64decode(payload["attachments"]["text.csv"]).decode('utf-8') == text_data
+    assert (
+        base64.b64decode(payload["attachments"]["text.csv"]).decode("utf-8")
+        == text_data
+    )
