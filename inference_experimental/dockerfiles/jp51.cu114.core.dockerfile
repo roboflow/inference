@@ -103,7 +103,7 @@ RUN mkdir -p /build/onnxruntime
 WORKDIR /build/onnxruntime
 RUN git clone https://github.com/microsoft/onnxruntime.git
 WORKDIR /build/onnxruntime/onnxruntime
-RUN git checkout v1.16.3
+RUN git checkout v1.21.1
 RUN python3.12 -m pip install packaging
 RUN PATH=/build/cmake/build/bin:$PATH CMAKE_POLICY_VERSION_MINIMUM=3.5 ./build.sh --update --config Release --build --build_wheel --use_cuda --cuda_home /usr/local/cuda --cudnn_home /usr/lib/aarch64-linux-gnu --use_tensorrt --tensorrt_home /usr/lib/aarch64-linux-gnu --allow_running_as_root --parallel 0 --use_preinstalled_eigen --eigen_path /build/eigen3/eigen-3.4.1 --skip_tests --cmake_extra_defines onnxruntime_BUILD_UNIT_TESTS=OFF
 RUN python3.12 -m pip install ./build/Linux/Release/dist/onnxruntime_gpu-1.16.3-cp312-cp312-linux_aarch64.whl
