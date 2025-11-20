@@ -99,7 +99,7 @@ WORKDIR /build/onnxruntime
 RUN git clone https://github.com/microsoft/onnxruntime.git
 WORKDIR /build/onnxruntime/onnxruntime
 RUN git checkout v1.21.1
-RUN sed -i 's/5ea4d05e62d7f954a46b3213f9b2535bdd866803/51982be81bbe52572b54180454df11a3ece9a934/' cmake/deps.txt
+RUN sed -i 's/5ea4d05e62d7f954a46b3213f9b2535bdd866803/05b19b49e6fbb91246be711d801160528c135e34/' cmake/deps.txt
 RUN python3.12 -m pip install packaging
 RUN PATH=/build/cmake/build/bin:$PATH CMAKE_POLICY_VERSION_MINIMUM=3.5 ./build.sh --update --config Release --build --build_wheel --use_cuda --cuda_home /usr/local/cuda --cudnn_home /usr/lib/aarch64-linux-gnu --use_tensorrt --tensorrt_home /usr/lib/aarch64-linux-gnu --allow_running_as_root --parallel 0 --skip_tests --cmake_extra_defines onnxruntime_BUILD_UNIT_TESTS=OFF
 RUN python3.12 -m pip install ./build/Linux/Release/dist/onnxruntime_gpu-1.16.3-cp312-cp312-linux_aarch64.whl
