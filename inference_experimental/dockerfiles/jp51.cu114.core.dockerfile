@@ -92,6 +92,11 @@ WORKDIR /build/cmake
 RUN wget https://github.com/Kitware/CMake/releases/download/v4.1.2/cmake-4.1.2-linux-aarch64.sh
 RUN mkdir build && chmod ugo+x cmake-4.1.2-linux-aarch64.sh && bash cmake-4.1.2-linux-aarch64.sh --skip-license --prefix=./build
 
+# Install gcc-11
+RUN add-apt-repository ppa:ubuntu-toolchain-r/ppa -y && apt update
+RUN apt install gcc-11 g++-11
+RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 110 --slave /usr/bin/g++ g++ /usr/bin/g++-11 --slave /usr/bin/cpp cpp /usr/bin/cpp-11 --slave /usr/bin/gcov gcov /usr/bin/gcov-11
+RUN update-alternatives --config gcc
 
 # Install ONNX-runtime GPU
 RUN mkdir -p /build/onnxruntime
