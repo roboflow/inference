@@ -164,7 +164,7 @@ def workflow_contains_instant_model(workflow_specification: Dict[str, Any]):
             model_id = step["model_id"]
             model_id = resolve_roboflow_model_alias(model_id=model_id)
             _, version_id = get_model_id_chunks(model_id=model_id)
-            if version_id is not None:
+            if version_id is None:
                 return True
     return False
 

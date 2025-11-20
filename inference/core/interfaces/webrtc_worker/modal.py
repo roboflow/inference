@@ -435,6 +435,7 @@ if modal is not None:
         if WEBRTC_MODAL_PRELOAD_HF_IDS and workflow_contains_instant_model(
             workflow_specification=webrtc_request.workflow_configuration.workflow_specification
         ):
+            logger.info("Parametrized preload hf ids: %s", WEBRTC_MODAL_PRELOAD_HF_IDS)
             preload_hf_ids = WEBRTC_MODAL_PRELOAD_HF_IDS
 
         preload_models = ""
@@ -442,6 +443,7 @@ if modal is not None:
             workflow_specification=webrtc_request.workflow_configuration.workflow_specification,
             preload_models=[m.strip() for m in WEBRTC_MODAL_PRELOAD_MODELS.split(",")],
         ):
+            logger.info("Parametrized preload models: %s", WEBRTC_MODAL_PRELOAD_MODELS)
             preload_models = WEBRTC_MODAL_PRELOAD_MODELS
 
         if webrtc_request.requested_gpu:
