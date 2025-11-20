@@ -291,8 +291,8 @@ if modal is not None:
     )
     class RTCPeerConnectionModalCPU(RTCPeerConnectionModal):
         # https://modal.com/docs/guide/parametrized-functions#parametrized-functions
-        preload_models: Optional[str] = modal.parameter(default=None)
-        preload_hf_ids: Optional[str] = modal.parameter(default=None)
+        preload_models: str = modal.parameter(default="")
+        preload_hf_ids: str = modal.parameter(default="")
 
         # https://modal.com/docs/reference/modal.enter
         @modal.enter(snap=True)
@@ -312,8 +312,8 @@ if modal is not None:
     )
     class RTCPeerConnectionModalGPU(RTCPeerConnectionModal):
         # https://modal.com/docs/guide/parametrized-functions#parametrized-functions
-        preload_models: Optional[str] = modal.parameter(default=None)
-        preload_hf_ids: Optional[str] = modal.parameter(default=None)
+        preload_models: str = modal.parameter(default="")
+        preload_hf_ids: str = modal.parameter(default="")
 
         # https://modal.com/docs/reference/modal.enter
         # https://modal.com/docs/guide/memory-snapshot#gpu-memory-snapshot
