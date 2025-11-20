@@ -176,9 +176,6 @@ if modal is not None:
     }
 
     class RTCPeerConnectionModal:
-        # https://modal.com/docs/guide/parametrized-functions#parametrized-functions
-        preload_models: Optional[str] = modal.parameter(default=None)
-        preload_hf_ids: Optional[str] = modal.parameter(default=None)
         _model_manager: Optional[ModelManager] = modal.parameter(
             default=None, init=False
         )
@@ -293,6 +290,10 @@ if modal is not None:
         **decorator_kwargs,
     )
     class RTCPeerConnectionModalCPU(RTCPeerConnectionModal):
+        # https://modal.com/docs/guide/parametrized-functions#parametrized-functions
+        preload_models: Optional[str] = modal.parameter(default=None)
+        preload_hf_ids: Optional[str] = modal.parameter(default=None)
+
         # https://modal.com/docs/reference/modal.enter
         @modal.enter(snap=True)
         def start(self):
@@ -310,6 +311,10 @@ if modal is not None:
         }
     )
     class RTCPeerConnectionModalGPU(RTCPeerConnectionModal):
+        # https://modal.com/docs/guide/parametrized-functions#parametrized-functions
+        preload_models: Optional[str] = modal.parameter(default=None)
+        preload_hf_ids: Optional[str] = modal.parameter(default=None)
+
         # https://modal.com/docs/reference/modal.enter
         # https://modal.com/docs/guide/memory-snapshot#gpu-memory-snapshot
         @modal.enter(snap=True)
