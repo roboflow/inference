@@ -113,11 +113,11 @@ RUN mkdir -p /build/onnxruntime
 WORKDIR /build/onnxruntime
 RUN git clone https://github.com/microsoft/onnxruntime.git
 WORKDIR /build/onnxruntime/onnxruntime
-RUN git checkout v1.18.2
+RUN git checkout v1.21.1
 # Hash aligned with the source code that had this problem fixed on main branch - we need to stick to this version and patch, as our env is cuda 11 and the patched version do only support cuda 12
-RUN sed -i 's|eigen;https://gitlab.com/libeigen/eigen/-/archive/e7248b26a1ed53fa030c5c459f7ea095dfd276ac/eigen-e7248b26a1ed53fa030c5c459f7ea095dfd276ac.zip;be8be39fdbc6e60e94fa7870b280707069b5b81a|eigen;https://github.com/eigen-mirror/eigen/archive/1d8b82b0740839c0de7f1242a3585e3390ff5f33/eigen-1d8b82b0740839c0de7f1242a3585e3390ff5f33.zip;05b19b49e6fbb91246be711d801160528c135e34|' cmake/deps.txt
+RUN sed -i 's|eigen;https://gitlab.com/libeigen/eigen/-/archive/1d8b82b0740839c0de7f1242a3585e3390ff5f33/eigen-1d8b82b0740839c0de7f1242a3585e3390ff5f33.zip;5ea4d05e62d7f954a46b3213f9b2535bdd866803|eigen;https://github.com/eigen-mirror/eigen/archive/1d8b82b0740839c0de7f1242a3585e3390ff5f33/eigen-1d8b82b0740839c0de7f1242a3585e3390ff5f33.zip;05b19b49e6fbb91246be711d801160528c135e34|' cmake/deps.txt
 RUN python3.12 -m pip install packaging
-RUN LD_LIBRARY_PATH=/root/GCC-11/lib64/:$LD_LIBRARY_PATH CC=/root/GCC-11/bin/gcc CXX=/root/GCC-11/bin/g++ PATH=/build/cmake/build/bin:$PATH CMAKE_POLICY_VERSION_MINIMUM=3.5 ./build.sh --update --config Release --build --build_wheel --use_cuda --cuda_home /usr/local/cuda --cudnn_home /usr/lib/aarch64-linux-gnu --use_tensorrt --tensorrt_home /usr/lib/aarch64-linux-gnu --allow_running_as_root --parallel 0 --skip_tests --cmake_extra_defines onnxruntime_BUILD_UNIT_TESTS=OFF
+RUN LD_LIBRARY_PATH=/root/GCC-11/lib64/:$LD_LIBRARY_PATH CC=/root/GCC-11/bin/gcc CXX=/root/GCC-11/bin/g++ PATH=/build/cmake/build/bin:$PATH CMAKE_POLICY_VERSION_MINIMUM=3.5 ./build.sh --update --config Release --build --build_wheel --use_cuda --cuda_home /usr/local/cuda --cudnn_home /usr/lib/aarch64-linux-gnu --use_tensorrt --tensorrt_home /usr/lib/aarch64-linux-gnu --allow_running_as_root --parallel 0 --disable_types float8 --skip_tests --cmake_extra_defines onnxruntime_BUILD_UNIT_TESTS=OFF
 RUN python3.12 -m pip install ./build/Linux/Release/dist/onnxruntime_gpu-1.16.3-cp312-cp312-linux_aarch64.whl
 RUN cp ./build/Linux/Release/dist/onnxruntime_gpu-1.16.3-cp312-cp312-linux_aarch64.whl /build/out/wheels/onnxruntime_gpu-1.16.3-cp312-cp312-linux_aarch64.whl
 
