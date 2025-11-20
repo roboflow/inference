@@ -234,6 +234,21 @@ if modal is not None:
                 logger.info("Sending webrtc answer")
                 q.put(obj)
 
+            if webrtc_request.processing_timeout == 0:
+                error_msg = "Processing timeout is 0, skipping processing"
+                logger.info(error_msg)
+                send_answer(WebRTCWorkerResult(error_message=error_msg))
+                return
+            if (
+                not webrtc_request.webrtc_offer
+                or not webrtc_request.webrtc_offer.sdp
+                or not webrtc_request.webrtc_offer.type
+            ):
+                error_msg = "Webrtc offer is missing, skipping processing"
+                logger.info(error_msg)
+                send_answer(WebRTCWorkerResult(error_message=error_msg))
+                return
+
             asyncio.run(
                 init_rtc_peer_connection_with_loop(
                     webrtc_request=webrtc_request,
