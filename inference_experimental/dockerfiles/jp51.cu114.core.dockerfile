@@ -95,7 +95,7 @@ RUN mkdir build && chmod ugo+x cmake-4.1.2-linux-aarch64.sh && bash cmake-4.1.2-
 # Install gcc-11
 RUN gpg --keyserver keyserver.ubuntu.com --recv-keys 2c277a0a352154e5 && gpg --export 2c277a0a352154e5 > /usr/share/keyrings/ubuntu-toolchain-r.gpg
 RUN echo "deb [signed-by=/usr/share/keyrings/ubuntu-toolchain-r.gpg] \
-http://ppa.launchpad.net/ubuntu-toolchain-r/ppa/ubuntu $(lsb_release -sc) main" \
+http://ppa.launchpad.net/ubuntu-toolchain-r/ppa/ubuntu focal main" \
   > /etc/apt/sources.list.d/ubuntu-toolchain-r-ppa.list
 RUN apt update
 RUN apt install gcc-11 g++-11
