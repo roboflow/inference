@@ -381,7 +381,7 @@ if modal is not None:
         if webrtc_plans and webrtc_request.requested_plan:
             if webrtc_request.requested_plan not in webrtc_plans:
                 raise RoboflowAPIUnsuccessfulRequestError(
-                    f"Unknown requested plan {webrtc_request.requested_plan}"
+                    f"Unknown requested plan {webrtc_request.requested_plan}, available plans: {', '.join(webrtc_plans.keys())}"
                 )
             webrtc_request.requested_gpu = webrtc_plans[
                 webrtc_request.requested_plan
@@ -394,7 +394,7 @@ if modal is not None:
             gpu_to_plan = {v.gpu: k for k, v in webrtc_plans.items()}
             if webrtc_request.requested_gpu not in gpu_to_plan:
                 raise RoboflowAPIUnsuccessfulRequestError(
-                    f"Requested gpu {webrtc_request.requested_gpu} not associated with any plan"
+                    f"Requested gpu {webrtc_request.requested_gpu} not associated with any plan, available gpus: {', '.join(gpu_to_plan.keys())}"
                 )
             webrtc_request.requested_plan = gpu_to_plan[webrtc_request.requested_gpu]
 
