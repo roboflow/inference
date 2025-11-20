@@ -2379,7 +2379,7 @@ class HttpInterface(BaseInterface):
                         )
                     return model_response
 
-            if CORE_MODEL_SAM3_ENABLED:
+            if CORE_MODEL_SAM3_ENABLED and not GCP_SERVERLESS:
 
                 @app.post(
                     "/sam3/embed_image",
@@ -2400,6 +2400,12 @@ class HttpInterface(BaseInterface):
                     service_secret: Optional[str] = None,
                 ):
                     logger.debug(f"Reached /sam3/embed_image")
+
+                    if SAM3_EXEC_MODE == "remote":
+                        raise HTTPException(
+                            status_code=501,
+                            detail="SAM3 embedding is not supported in remote execution mode.",
+                        )
 
                     self.model_manager.add_model(
                         "sam3/sam3_interactive",
@@ -2434,6 +2440,12 @@ class HttpInterface(BaseInterface):
                 ):
                     logger.debug(f"Reached /sam3/visual_segment")
 
+                    if SAM3_EXEC_MODE == "remote":
+                        raise HTTPException(
+                            status_code=501,
+                            detail="SAM3 visual segmentation is not supported in remote execution mode.",
+                        )
+
                     self.model_manager.add_model(
                         "sam3/sam3_interactive",
                         api_key=api_key,
@@ -2447,6 +2459,7 @@ class HttpInterface(BaseInterface):
                     )
                     return model_response
 
+            if CORE_MODEL_SAM3_ENABLED:
                 @app.post(
                     "/sam3/concept_segment",
                     response_model=Sam3SegmentationResponse,
@@ -2465,6 +2478,82 @@ class HttpInterface(BaseInterface):
                     countinference: Optional[bool] = None,
                     service_secret: Optional[str] = None,
                 ):
+                    if SAM3_EXEC_MODE == "remote":
+                        if not inference_request.model_id.startswith("sam3/"):
+                            raise HTTPException(
+                                status_code=501,
+                                detail="Fine-tuned SAM3 models are not supported in remote execution mode yet. Please use a workflow or self-host the server.",
+                            )
+                        endpoint = f"{API_BASE_URL}/inferenceproxy/seg-preview"
+                        
+                        # Construct payload for remote API
+                        # The remote API expects:
+                        # {
+                        #     "image": {"type": "base64", "value": ...},
+                        #     "prompts": [{"type": "text", "text": ...}, ...],
+                        #     "output_prob_thresh": ...
+                        # }
+                        
+                        # Extract prompts from request
+                        http_prompts = []
+                        for prompt in inference_request.prompts:
+                            p_dict = prompt.dict(exclude_none=True)
+                            # Ensure type is set if missing (default to text if text is present)
+                            if "type" not in p_dict:
+                                if "text" in p_dict:
+                                    p_dict["type"] = "text"
+                            http_prompts.append(p_dict)
+
+                        # Prepare image
+                        # inference_request.image is InferenceRequestImage
+                        if inference_request.image.type == "base64":
+                            http_image = {"type": "base64", "value": inference_request.image.value}
+                        elif inference_request.image.type == "url":
+                             http_image = {"type": "url", "value": inference_request.image.value}
+                        elif inference_request.image.type == "numpy":
+                             # Numpy not supported for remote proxy easily without serialization, 
+                             # but InferenceRequestImage usually comes as base64/url in HTTP API.
+                             # If it is numpy, we might need to handle it, but for now assume base64/url.
+                             # If it's numpy, it's likely from internal call, but this is HTTP API.
+                             http_image = {"type": "numpy", "value": inference_request.image.value}
+                        else:
+                             http_image = {"type": inference_request.image.type, "value": inference_request.image.value}
+
+                        payload = {
+                            "image": http_image,
+                            "prompts": http_prompts,
+                            "output_prob_thresh": inference_request.output_prob_thresh,
+                        }
+
+                        try:
+                            headers = {"Content-Type": "application/json"}
+                            if ROBOFLOW_INTERNAL_SERVICE_NAME:
+                                headers["X-Roboflow-Internal-Service-Name"] = (
+                                    ROBOFLOW_INTERNAL_SERVICE_NAME
+                                )
+                            if ROBOFLOW_INTERNAL_SERVICE_SECRET:
+                                headers["X-Roboflow-Internal-Service-Secret"] = (
+                                    ROBOFLOW_INTERNAL_SERVICE_SECRET
+                                )
+
+                            headers = build_roboflow_api_headers(explicit_headers=headers)
+
+                            response = requests.post(
+                                f"{endpoint}?api_key={api_key}",
+                                json=payload,
+                                headers=headers,
+                                timeout=60,
+                            )
+                            response.raise_for_status()
+                            resp_json = response.json()
+                            
+                            # The remote API returns the same structure as Sam3SegmentationResponse
+                            return Sam3SegmentationResponse(**resp_json)
+                            
+                        except Exception as e:
+                            logger.error(f"SAM3 remote request failed: {e}")
+                            raise HTTPException(status_code=500, detail=f"SAM3 remote request failed: {str(e)}")
+
                     if inference_request.model_id.startswith("sam3/"):
                         self.model_manager.add_model(
                             inference_request.model_id,
