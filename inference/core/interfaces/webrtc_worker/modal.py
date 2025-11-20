@@ -452,9 +452,10 @@ if modal is not None:
                 webrtc_request.requested_gpu,
             )
             # Specify fallback GPU
+            # TODO: with_options does not support gpu fallback
             # https://modal.com/docs/examples/gpu_fallbacks#set-fallback-gpus
             cls_with_options = cls_with_options.with_options(
-                gpu=[webrtc_request.requested_gpu, WEBRTC_MODAL_FUNCTION_GPU],
+                gpu=webrtc_request.requested_gpu,
             )
         if webrtc_request.requested_region:
             logger.info(
