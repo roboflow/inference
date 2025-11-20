@@ -22,7 +22,7 @@ RUN update-alternatives --install /usr/bin/python python /usr/local/bin/python3.
 RUN update-alternatives --install /usr/bin/python3 python3 /usr/local/bin/python3.12 1
 
 # Get rid of tensorrt-8.X
-RUN apt remove 'libnvinfer*' 'libnvonnxparsers*' 'libnvparsers*' 'libnvinfer-plugin*' 'python3-libnvinfer*' 'tensorrt*' 'uff-converter*' 'graphsurgeon*'
+RUN apt remove -y 'libnvinfer*' 'libnvonnxparsers*' 'libnvparsers*' 'libnvinfer-plugin*' 'python3-libnvinfer*' 'tensorrt*' 'uff-converter*' 'graphsurgeon*'
 
 # Create out dir where all wheels will be stored
 RUN mkdir -p /build/out/wheels
@@ -144,7 +144,7 @@ RUN apt-get update -y && apt-get install -y \
     zlib1g-dev \
     liblzma-dev \
 
-RUN apt remove 'libnvinfer*' 'libnvonnxparsers*' 'libnvparsers*' 'libnvinfer-plugin*' 'python3-libnvinfer*' 'tensorrt*' 'uff-converter*' 'graphsurgeon*'
+RUN apt remove -y 'libnvinfer*' 'libnvonnxparsers*' 'libnvparsers*' 'libnvinfer-plugin*' 'python3-libnvinfer*' 'tensorrt*' 'uff-converter*' 'graphsurgeon*'
 
 
 COPY --from=builder /build/out/wheels /compiled_python_packages
