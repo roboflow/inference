@@ -98,7 +98,7 @@ RUN mkdir -p /build/onnxruntime
 WORKDIR /build/onnxruntime
 RUN git clone https://github.com/microsoft/onnxruntime.git
 WORKDIR /build/onnxruntime/onnxruntime
-RUN git checkout v1.20.2
+RUN git checkout v1.19.2
 # Hash aligned with the source code that had this problem fixed on main branch - we need to stick to this version and patch, as our env is cuda 11 and the patched version do only support cuda 12
 RUN sed -i 's|eigen;https://gitlab.com/libeigen/eigen/-/archive/e7248b26a1ed53fa030c5c459f7ea095dfd276ac/eigen-e7248b26a1ed53fa030c5c459f7ea095dfd276ac.zip;be8be39fdbc6e60e94fa7870b280707069b5b81a|eigen;https://github.com/eigen-mirror/eigen/archive/1d8b82b0740839c0de7f1242a3585e3390ff5f33/eigen-1d8b82b0740839c0de7f1242a3585e3390ff5f33.zip;05b19b49e6fbb91246be711d801160528c135e34|' cmake/deps.txt
 RUN python3.12 -m pip install packaging
