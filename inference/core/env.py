@@ -116,7 +116,6 @@ OWLV2_CPU_IMAGE_CACHE_SIZE = int(os.getenv("OWLV2_CPU_IMAGE_CACHE_SIZE", 1000))
 OWLV2_COMPILE_MODEL = str2bool(os.getenv("OWLV2_COMPILE_MODEL", True))
 
 # Preload comma separated list of Huggingface IDs for OWLv2 models
-# Mentioned here for documentation purposes, env is parsed in owlv2.py
 # NOTE: this will result in ALL inference processes to preload the models
 #       (e.g. InferencePipelineManager, InferencePipeline, etc.)
 #       Ensure NUM_WORKERS environmental variable is set to 1

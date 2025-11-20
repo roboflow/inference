@@ -62,6 +62,7 @@ from inference.core.roboflow_api import (
 )
 from inference.core.version import __version__
 from inference.models.aliases import resolve_roboflow_model_alias
+from inference.models.owlv2.owlv2 import preload_owlv2_model
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
 from inference.usage_tracking.collector import usage_collector
 from inference.usage_tracking.plan_details import WebRTCPlan
@@ -339,11 +340,10 @@ if modal is not None:
             logger.info("Preload hf ids: %s", self.preload_hf_ids)
             logger.info("Preload models: %s", self.preload_models)
             if self.preload_hf_ids:
-                if self.preload_hf_ids:
-                    os.environ["PRELOAD_HF_IDS"] = self.preload_hf_ids
-                # Kick off pre-loading of models (owlv2 preloading is based on module-level singleton)
-                logger.info("Preloading owlv2 base model")
-                import inference.models.owlv2.owlv2
+                preload_hf_ids = [m.strip() for m in self.preload_hf_ids.split(",")]
+                for preload_hf_id in preload_hf_ids:
+                    logger.info("Preloading owlv2 base model: %s", preload_hf_id)
+                    preload_owlv2_model(preload_hf_id)
             if self.preload_models:
                 preload_models = []
                 if self.preload_models:
