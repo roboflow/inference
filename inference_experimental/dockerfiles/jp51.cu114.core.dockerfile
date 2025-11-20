@@ -93,15 +93,19 @@ RUN wget https://github.com/Kitware/CMake/releases/download/v4.1.2/cmake-4.1.2-l
 RUN mkdir build && chmod ugo+x cmake-4.1.2-linux-aarch64.sh && bash cmake-4.1.2-linux-aarch64.sh --skip-license --prefix=./build
 
 # Install gcc-11
-#RUN gpg --keyserver keyserver.ubuntu.com --recv-keys 2c277a0a352154e5 && gpg --export 2c277a0a352154e5 > /usr/share/keyrings/ubuntu-toolchain-r.gpg
-#RUN echo "deb [signed-by=/usr/share/keyrings/ubuntu-toolchain-r.gpg] \
-#http://ppa.launchpad.net/ubuntu-toolchain-r/ppa/ubuntu focal main" \
-#  > /etc/apt/sources.list.d/ubuntu-toolchain-r-ppa.list
-RUN deb https://ppa.launchpadcontent.net/ubuntu-toolchain-r/test/ubuntu focal main 
-RUN apt-get update
-RUN apt-get install gcc-11 g++-11
-RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 110 --slave /usr/bin/g++ g++ /usr/bin/g++-11 --slave /usr/bin/cpp cpp /usr/bin/cpp-11 --slave /usr/bin/gcov gcov /usr/bin/gcov-11
-RUN update-alternatives --config gcc
+RUN wget https://ftp.gnu.org/gnu/gcc/gcc-11.1.0/gcc-11.1.0.tar.gz
+RUN tar xzf gcc-11.1.0.tar.gz
+WORKDIR /build/gcc/gcc-11.1.0
+RUN ./contrib/download_prerequisites
+WORKDIR /build/gcc/
+RUN mkdir objdir
+WORKDIR /build/gcc/objdir
+RUN $PWD/../gcc-11.1.0/configure --prefix=$HOME/GCC-11 --enable-languages=c,c++
+RUN make -j$(nproc)
+RUN make install
+RUN export PATH=/root/GCC-11/bin:$PATH
+RUN export LD_LIBRARY_PATH=/root/GCC-11/lib64/:$LD_LIBRARY_PATH
+RUN ldconfig
 
 # Install ONNX-runtime GPU
 RUN mkdir -p /build/onnxruntime
@@ -112,7 +116,7 @@ RUN git checkout v1.18.2
 # Hash aligned with the source code that had this problem fixed on main branch - we need to stick to this version and patch, as our env is cuda 11 and the patched version do only support cuda 12
 RUN sed -i 's|eigen;https://gitlab.com/libeigen/eigen/-/archive/e7248b26a1ed53fa030c5c459f7ea095dfd276ac/eigen-e7248b26a1ed53fa030c5c459f7ea095dfd276ac.zip;be8be39fdbc6e60e94fa7870b280707069b5b81a|eigen;https://github.com/eigen-mirror/eigen/archive/1d8b82b0740839c0de7f1242a3585e3390ff5f33/eigen-1d8b82b0740839c0de7f1242a3585e3390ff5f33.zip;05b19b49e6fbb91246be711d801160528c135e34|' cmake/deps.txt
 RUN python3.12 -m pip install packaging
-RUN PATH=/build/cmake/build/bin:$PATH CMAKE_POLICY_VERSION_MINIMUM=3.5 ./build.sh --update --config Release --build --build_wheel --use_cuda --cuda_home /usr/local/cuda --cudnn_home /usr/lib/aarch64-linux-gnu --use_tensorrt --tensorrt_home /usr/lib/aarch64-linux-gnu --allow_running_as_root --parallel 0 --skip_tests --cmake_extra_defines onnxruntime_BUILD_UNIT_TESTS=OFF
+RUN CC=/root/GCC-11/bin/gcc CXX=/root/GCC-11/bin/g++ PATH=/build/cmake/build/bin:$PATH CMAKE_POLICY_VERSION_MINIMUM=3.5 ./build.sh --update --config Release --build --build_wheel --use_cuda --cuda_home /usr/local/cuda --cudnn_home /usr/lib/aarch64-linux-gnu --use_tensorrt --tensorrt_home /usr/lib/aarch64-linux-gnu --allow_running_as_root --parallel 0 --skip_tests --cmake_extra_defines onnxruntime_BUILD_UNIT_TESTS=OFF
 RUN python3.12 -m pip install ./build/Linux/Release/dist/onnxruntime_gpu-1.16.3-cp312-cp312-linux_aarch64.whl
 RUN cp ./build/Linux/Release/dist/onnxruntime_gpu-1.16.3-cp312-cp312-linux_aarch64.whl /build/out/wheels/onnxruntime_gpu-1.16.3-cp312-cp312-linux_aarch64.whl
 
