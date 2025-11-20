@@ -36,6 +36,7 @@ WORKDIR /build/tensorrt-10.x/TensorRT-10.8.0.43/targets/aarch64-linux-gnu
 RUN mkdir -p /usr/src/tensorrt/bin
 RUN cp bin/trtexec /usr/src/tensorrt/bin/trtexec
 RUN cp include/* /usr/include/aarch64-linux-gnu/
+RUN mkdir -p /usr/lib/aarch64-linux-gnu/stubs
 RUN cp -r lib/stubs/* /usr/lib/aarch64-linux-gnu/stubs/
 RUN cp lib/libnvinfer.so.10.8.0 /usr/lib/aarch64-linux-gnu/libnvinfer.so.10.8.0 && \
     cp lib/libnvinfer_builder_resource.so.10.8.0 /usr/lib/aarch64-linux-gnu/libnvinfer_builder_resource.so.10.8.0 && \
