@@ -93,6 +93,7 @@ RUN wget https://github.com/Kitware/CMake/releases/download/v4.1.2/cmake-4.1.2-l
 RUN mkdir build && chmod ugo+x cmake-4.1.2-linux-aarch64.sh && bash cmake-4.1.2-linux-aarch64.sh --skip-license --prefix=./build
 
 # Install gcc-11
+WORKDIR /build/gcc/
 RUN wget https://ftp.gnu.org/gnu/gcc/gcc-11.1.0/gcc-11.1.0.tar.gz
 RUN tar xzf gcc-11.1.0.tar.gz
 WORKDIR /build/gcc/gcc-11.1.0
