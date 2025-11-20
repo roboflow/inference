@@ -116,6 +116,7 @@ OWLV2_CPU_IMAGE_CACHE_SIZE = int(os.getenv("OWLV2_CPU_IMAGE_CACHE_SIZE", 1000))
 OWLV2_COMPILE_MODEL = str2bool(os.getenv("OWLV2_COMPILE_MODEL", True))
 
 # Preload comma separated list of Huggingface IDs for OWLv2 models
+# Mentioned here for documentation purposes, env is parsed in owlv2.py
 # NOTE: this will result in ALL inference processes to preload the models
 #       (e.g. InferencePipelineManager, InferencePipeline, etc.)
 #       Ensure NUM_WORKERS environmental variable is set to 1
@@ -760,6 +761,9 @@ WEBRTC_MODAL_RTSP_PLACEHOLDER = os.getenv("WEBRTC_MODAL_RTSP_PLACEHOLDER")
 WEBRTC_MODAL_RTSP_PLACEHOLDER_URL = os.getenv("WEBRTC_MODAL_RTSP_PLACEHOLDER_URL")
 WEBRTC_MODAL_GCP_SECRET_NAME = os.getenv("WEBRTC_MODAL_GCP_SECRET_NAME")
 WEBRTC_MODAL_MODELS_PRELOAD_API_KEY = os.getenv("WEBRTC_MODAL_MODELS_PRELOAD_API_KEY")
+WEBRTC_MODAL_PRELOAD_MODELS = os.getenv("WEBRTC_MODAL_PRELOAD_MODELS")
+WEBRTC_MODAL_PRELOAD_HF_IDS = os.getenv("WEBRTC_MODAL_PRELOAD_HF_IDS")
+
 HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED = str2bool(
     os.getenv("HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED", "True")
 )

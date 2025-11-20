@@ -200,10 +200,8 @@ def dummy_infer(hf_id: str):
     return singleton
 
 
-if PRELOAD_HF_IDS:
-    hf_ids = PRELOAD_HF_IDS
-    if not isinstance(hf_ids, list):
-        hf_ids = [hf_ids]
+if os.getenv("PRELOAD_HF_IDS"):
+    hf_ids = os.getenv("PRELOAD_HF_IDS").split(",")
     for hf_id in hf_ids:
         logger.info("Preloading OWLv2 model for %s (this may take a while)", hf_id)
         try:

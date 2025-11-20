@@ -1,5 +1,7 @@
 import asyncio
 import datetime
+import os
+import subprocess
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -32,6 +34,8 @@ from inference.core.env import (
     WEBRTC_MODAL_IMAGE_NAME,
     WEBRTC_MODAL_IMAGE_TAG,
     WEBRTC_MODAL_MODELS_PRELOAD_API_KEY,
+    WEBRTC_MODAL_PRELOAD_HF_IDS,
+    WEBRTC_MODAL_PRELOAD_MODELS,
     WEBRTC_MODAL_RESPONSE_TIMEOUT,
     WEBRTC_MODAL_ROBOFLOW_INTERNAL_SERVICE_NAME,
     WEBRTC_MODAL_RTSP_PLACEHOLDER,
@@ -45,12 +49,19 @@ from inference.core.interfaces.webrtc_worker.entities import (
     WebRTCWorkerRequest,
     WebRTCWorkerResult,
 )
+from inference.core.interfaces.webrtc_worker.utils import (
+    workflow_contains_instant_model,
+    workflow_contains_preloaded_model,
+)
 from inference.core.interfaces.webrtc_worker.webrtc import (
     init_rtc_peer_connection_with_loop,
 )
 from inference.core.managers.base import ModelManager
 from inference.core.registries.roboflow import RoboflowModelRegistry
-from inference.core.roboflow_api import get_roboflow_workspace
+from inference.core.roboflow_api import (
+    get_roboflow_workspace,
+    get_workflow_specification,
+)
 from inference.core.version import __version__
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
@@ -61,6 +72,28 @@ try:
     import modal
 except ImportError:
     modal = None
+
+
+# https://modal.com/docs/guide/environment_variables#environment-variables
+MODAL_CLOUD_PROVIDER = os.getenv("MODAL_CLOUD_PROVIDER")
+MODAL_IMAGE_ID = os.getenv("MODAL_IMAGE_ID")
+MODAL_REGION = os.getenv("MODAL_REGION")
+MODAL_TASK_ID = os.getenv("MODAL_TASK_ID")
+MODAL_ENVIRONMENT = os.getenv("MODAL_ENVIRONMENT")
+MODAL_IDENTITY_TOKEN = os.getenv("MODAL_IDENTITY_TOKEN")
+
+
+def check_nvidia_smi_gpu() -> str:
+    try:
+        gpu = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+            check=True,
+            text=True,
+            stdout=subprocess.PIPE,
+        ).stdout.strip()
+        return gpu
+    except subprocess.CalledProcessError:
+        return ""
 
 
 if modal is not None:
@@ -115,8 +148,6 @@ if modal is not None:
             "MODELS_CACHE_AUTH_ENABLED": str(MODELS_CACHE_AUTH_ENABLED),
             "LOG_LEVEL": LOG_LEVEL,
             "ONNXRUNTIME_EXECUTION_PROVIDERS": "[CUDAExecutionProvider,CPUExecutionProvider]",
-            "PRELOAD_HF_IDS": ",".join(PRELOAD_HF_IDS) if PRELOAD_HF_IDS else "",
-            "PRELOAD_MODELS": ",".join(PRELOAD_MODELS) if PRELOAD_MODELS else "",
             "PROJECT": PROJECT,
             "ROBOFLOW_INTERNAL_SERVICE_NAME": WEBRTC_MODAL_ROBOFLOW_INTERNAL_SERVICE_NAME,
             "ROBOFLOW_INTERNAL_SERVICE_SECRET": ROBOFLOW_INTERNAL_SERVICE_SECRET,
@@ -147,7 +178,13 @@ if modal is not None:
     }
 
     class RTCPeerConnectionModal:
-        _model_manager: Optional[ModelManager] = modal.parameter(default=None)
+        # https://modal.com/docs/guide/parametrized-functions#parametrized-functions
+        preload_models: Optional[str] = modal.parameter(default=None)
+        preload_hf_ids: Optional[str] = modal.parameter(default=None)
+        _model_manager: Optional[ModelManager] = modal.parameter(
+            default=None, init=False
+        )
+        _gpu: Optional[str] = modal.parameter(default=None, init=False)
 
         @modal.method()
         def rtc_peer_connection_modal(
@@ -156,6 +193,7 @@ if modal is not None:
             q: modal.Queue,
         ):
             logger.info("*** Spawning %s:", self.__class__.__name__)
+            logger.info("Running on %s", self._gpu)
             logger.info("Inference tag: %s", docker_tag)
             logger.info(
                 "Preloaded models: %s",
@@ -190,6 +228,12 @@ if modal is not None:
                     else []
                 ),
             )
+            logger.info("MODAL_CLOUD_PROVIDER: %s", MODAL_CLOUD_PROVIDER)
+            logger.info("MODAL_IMAGE_ID: %s", MODAL_IMAGE_ID)
+            logger.info("MODAL_REGION: %s", MODAL_REGION)
+            logger.info("MODAL_TASK_ID: %s", MODAL_TASK_ID)
+            logger.info("MODAL_ENVIRONMENT: %s", MODAL_ENVIRONMENT)
+            logger.info("MODAL_IDENTITY_TOKEN: %s", MODAL_IDENTITY_TOKEN)
 
             def send_answer(obj: WebRTCWorkerResult):
                 logger.info("Sending webrtc answer")
@@ -256,6 +300,7 @@ if modal is not None:
         def start(self):
             # TODO: pre-load models on CPU
             logger.info("Starting CPU container")
+            self._gpu = "CPU"
 
     @app.cls(
         **{
@@ -271,17 +316,23 @@ if modal is not None:
         # https://modal.com/docs/guide/memory-snapshot#gpu-memory-snapshot
         @modal.enter(snap=True)
         def start(self):
-            logger.info("Starting GPU container")
-            logger.info("Preload hf ids: %s", PRELOAD_HF_IDS)
-            logger.info("Preload models: %s", PRELOAD_MODELS)
-            if PRELOAD_HF_IDS:
+            self._gpu = check_nvidia_smi_gpu()
+            logger.info("Starting GPU container on %s", self._gpu)
+            logger.info("Preload hf ids: %s", self.preload_hf_ids)
+            logger.info("Preload models: %s", self.preload_models)
+            if self.preload_hf_ids:
+                if self.preload_hf_ids:
+                    os.environ["PRELOAD_HF_IDS"] = self.preload_hf_ids
                 # Kick off pre-loading of models (owlv2 preloading is based on module-level singleton)
                 logger.info("Preloading owlv2 base model")
                 import inference.models.owlv2.owlv2
-            if PRELOAD_MODELS:
+            if self.preload_models:
+                preload_models = []
+                if self.preload_models:
+                    preload_models = [m.strip() for m in self.preload_models.split(",")]
                 model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
                 model_manager = ModelManager(model_registry=model_registry)
-                for model_id in PRELOAD_MODELS:
+                for model_id in preload_models:
                     try:
                         de_aliased_model_id = resolve_roboflow_model_alias(
                             model_id=model_id
@@ -344,17 +395,36 @@ if modal is not None:
 
         workspace_id = webrtc_request.workflow_configuration.workspace_name
         if not workspace_id:
-            try:
-                workspace_id = get_roboflow_workspace(api_key=webrtc_request.api_key)
-                webrtc_request.workflow_configuration.workspace_name = workspace_id
-            except Exception:
-                pass
+            workspace_id = get_roboflow_workspace(api_key=webrtc_request.api_key)
+            webrtc_request.workflow_configuration.workspace_name = workspace_id
+        if not webrtc_request.workflow_configuration.workflow_specification:
+            webrtc_request.workflow_configuration.workflow_specification = (
+                get_workflow_specification(
+                    api_key=webrtc_request.api_key,
+                    workspace_id=webrtc_request.workflow_configuration.workspace_name,
+                    workflow_id=webrtc_request.workflow_configuration.workflow_id,
+                )
+            )
 
         tags = {"tag": docker_tag}
         if workspace_id:
             tags["workspace_id"] = workspace_id
 
         # TODO: tag function run
+
+        # Modal parametrization
+        preload_hf_ids = ""
+        if WEBRTC_MODAL_PRELOAD_HF_IDS and workflow_contains_instant_model(
+            workflow_specification=webrtc_request.workflow_configuration.workflow_specification
+        ):
+            preload_hf_ids = WEBRTC_MODAL_PRELOAD_HF_IDS
+
+        preload_models = ""
+        if WEBRTC_MODAL_PRELOAD_MODELS and workflow_contains_preloaded_model(
+            workflow_specification=webrtc_request.workflow_configuration.workflow_specification,
+            preload_models=[m.strip() for m in WEBRTC_MODAL_PRELOAD_MODELS.split(",")],
+        ):
+            preload_models = WEBRTC_MODAL_PRELOAD_MODELS
 
         if webrtc_request.requested_gpu:
             RTCPeerConnectionModal = RTCPeerConnectionModalGPU
@@ -383,8 +453,10 @@ if modal is not None:
                 "Spawning webrtc modal function with gpu %s",
                 webrtc_request.requested_gpu,
             )
+            # Specify fallback GPU
+            # https://modal.com/docs/examples/gpu_fallbacks#set-fallback-gpus
             cls_with_options = cls_with_options.with_options(
-                gpu=webrtc_request.requested_gpu,
+                gpu=[webrtc_request.requested_gpu, WEBRTC_MODAL_FUNCTION_GPU],
             )
         if webrtc_request.requested_region:
             logger.info(
@@ -394,7 +466,10 @@ if modal is not None:
             cls_with_options = cls_with_options.with_options(
                 region=webrtc_request.requested_region,
             )
-        rtc_modal_obj: RTCPeerConnectionModal = cls_with_options()
+        rtc_modal_obj: RTCPeerConnectionModal = cls_with_options(
+            preload_hf_ids=preload_hf_ids,
+            preload_models=preload_models,
+        )
         # https://modal.com/docs/reference/modal.Queue#ephemeral
         with modal.Queue.ephemeral(client=client) as q:
             logger.info(
