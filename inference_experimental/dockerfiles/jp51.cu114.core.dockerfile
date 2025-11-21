@@ -142,54 +142,54 @@ RUN LD_LIBRARY_PATH=/root/GCC-11/lib64/:$LD_LIBRARY_PATH CC=/root/GCC-11/bin/gcc
 RUN python3.12 -m pip install ./build/Linux/Release/dist/onnxruntime_gpu-1.21.1-cp312-cp312-linux_aarch64.whl
 RUN cp ./build/Linux/Release/dist/onnxruntime_gpu-1.21.1-cp312-cp312-linux_aarch64.whl /build/out/wheels/onnxruntime_gpu-1.21.1-cp312-cp312-linux_aarch64.whl
 
-# Install PyTorch
-RUN mkdir -p /build/torch
-WORKDIR /build/torch
-RUN git clone https://github.com/pytorch/pytorch.git
-WORKDIR /build/torch/pytorch
-RUN git checkout v2.4.1
-RUN git submodule sync && git submodule update --init --recursive
-RUN PATH=/build/cmake/build/bin:$PATH python3.12 -m pip install setuptools wheel astunparse numpy ninja pyyaml cmake "typing-extensions>=4.10.0" requests
-ARG MAX_TORCH_COMPILATION_JOBS=4
-RUN PATH=/build/cmake/build/bin:$PATH PYTORCH_BUILD_VERSION=2.4.1 PYTORCH_BUILD_NUMBER=1 MAX_JOBS=${MAX_TORCH_COMPILATION_JOBS} CUDA_HOME=/usr/local/cuda-11.8 CUDACXX=/usr/local/cuda-11.8/bin/nvcc TORCH_CUDA_ARCH_LIST="8.7" USE_NCCL=0 USE_DISTRIBUTED=0 USE_MKLDNN=0 BUILD_TEST=0 CMAKE_POLICY_VERSION_MINIMUM=3.5 python3.12 setup.py bdist_wheel
-RUN python3.12 -m pip install dist/torch-*.whl
-RUN cp dist/torch-*.whl /build/out/wheels/
-
-# Install Torchvision
-RUN mkdir -p /build/torchvision
-WORKDIR /build/torchvision
-RUN git clone https://github.com/pytorch/vision.git
-WORKDIR /build/torchvision/vision
-RUN git checkout v0.19.1
-RUN git submodule sync && git submodule update --init --recursive
-RUN PATH=/build/cmake/build/bin:$PATH BUILD_VERSION=0.19.1 TORCH_CUDA_ARCH_LIST="8.7" CMAKE_POLICY_VERSION_MINIMUM=3.5 python3.12 setup.py bdist_wheel
-RUN python3.12 -m pip install dist/torchvision-*.whl
-RUN cp dist/torchvision-*.whl /build/out/wheels/
-
-FROM nvcr.io/nvidia/l4t-ml:r35.2.1-py3 AS target
-
-RUN apt-get update -y && apt-get install -y \
-    libssl-dev \
-    git \
-    unzip \
-    libbz2-dev \
-    libssl-dev \
-    libsqlite3-dev \
-    zlib1g-dev \
-    liblzma-dev \
-
-RUN apt remove -y 'libnvinfer*' 'libnvonnxparsers*' 'libnvparsers*' 'libnvinfer-plugin*' 'python3-libnvinfer*' 'tensorrt*' 'uff-converter*' 'graphsurgeon*'
-
-
-COPY --from=builder /build/out/wheels /compiled_python_packages
-COPY --from=builder /usr/include /usr/include
-COPY --from=builder /usr/lib /usr/lib
-COPY --from=builder /usr/share /usr/share
-COPY --from=builder /usr/src /usr/src
-COPY --from=builder /usr/local/bin /usr/local/bin
-COPY --from=builder /usr/local/include /usr/local/include
-COPY --from=builder /usr/local/lib /usr/local/lib
-COPY --from=builder /usr/local/share /usr/local/share
-COPY --from=builder /usr/local/cuda-11.4 /usr/local/cuda-11.4
-
-ENTRYPOINT ["bash"]
+## Install PyTorch
+#RUN mkdir -p /build/torch
+#WORKDIR /build/torch
+#RUN git clone https://github.com/pytorch/pytorch.git
+#WORKDIR /build/torch/pytorch
+#RUN git checkout v2.4.1
+#RUN git submodule sync && git submodule update --init --recursive
+#RUN PATH=/build/cmake/build/bin:$PATH python3.12 -m pip install setuptools wheel astunparse numpy ninja pyyaml cmake "typing-extensions>=4.10.0" requests
+#ARG MAX_TORCH_COMPILATION_JOBS=4
+#RUN PATH=/build/cmake/build/bin:$PATH PYTORCH_BUILD_VERSION=2.4.1 PYTORCH_BUILD_NUMBER=1 MAX_JOBS=${MAX_TORCH_COMPILATION_JOBS} CUDA_HOME=/usr/local/cuda-11.8 CUDACXX=/usr/local/cuda-11.8/bin/nvcc TORCH_CUDA_ARCH_LIST="8.7" USE_NCCL=0 USE_DISTRIBUTED=0 USE_MKLDNN=0 BUILD_TEST=0 CMAKE_POLICY_VERSION_MINIMUM=3.5 python3.12 setup.py bdist_wheel
+#RUN python3.12 -m pip install dist/torch-*.whl
+#RUN cp dist/torch-*.whl /build/out/wheels/
+#
+## Install Torchvision
+#RUN mkdir -p /build/torchvision
+#WORKDIR /build/torchvision
+#RUN git clone https://github.com/pytorch/vision.git
+#WORKDIR /build/torchvision/vision
+#RUN git checkout v0.19.1
+#RUN git submodule sync && git submodule update --init --recursive
+#RUN PATH=/build/cmake/build/bin:$PATH BUILD_VERSION=0.19.1 TORCH_CUDA_ARCH_LIST="8.7" CMAKE_POLICY_VERSION_MINIMUM=3.5 python3.12 setup.py bdist_wheel
+#RUN python3.12 -m pip install dist/torchvision-*.whl
+#RUN cp dist/torchvision-*.whl /build/out/wheels/
+#
+#FROM nvcr.io/nvidia/l4t-ml:r35.2.1-py3 AS target
+#
+#RUN apt-get update -y && apt-get install -y \
+#    libssl-dev \
+#    git \
+#    unzip \
+#    libbz2-dev \
+#    libssl-dev \
+#    libsqlite3-dev \
+#    zlib1g-dev \
+#    liblzma-dev \
+#
+#RUN apt remove -y 'libnvinfer*' 'libnvonnxparsers*' 'libnvparsers*' 'libnvinfer-plugin*' 'python3-libnvinfer*' 'tensorrt*' 'uff-converter*' 'graphsurgeon*'
+#
+#
+#COPY --from=builder /build/out/wheels /compiled_python_packages
+#COPY --from=builder /usr/include /usr/include
+#COPY --from=builder /usr/lib /usr/lib
+#COPY --from=builder /usr/share /usr/share
+#COPY --from=builder /usr/src /usr/src
+#COPY --from=builder /usr/local/bin /usr/local/bin
+#COPY --from=builder /usr/local/include /usr/local/include
+#COPY --from=builder /usr/local/lib /usr/local/lib
+#COPY --from=builder /usr/local/share /usr/local/share
+#COPY --from=builder /usr/local/cuda-11.4 /usr/local/cuda-11.4
+#
+#ENTRYPOINT ["bash"]
