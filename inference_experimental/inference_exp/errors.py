@@ -109,10 +109,6 @@ class ModelImplementationLoaderError(ModelLoadingError):
     pass
 
 
-class MissingModelDependencyError(ModelLoadingError):
-    pass
-
-
 class CorruptedModelPackageError(ModelLoadingError):
     pass
 

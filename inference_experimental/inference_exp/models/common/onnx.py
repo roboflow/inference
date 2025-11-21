@@ -281,8 +281,14 @@ def run_session_via_iobinding(
             if pre_allocated_output is not None:
                 result.append(pre_allocated_output)
                 continue
-            dlpack_tensor = bound_output._ortvalue.to_dlpack()
-            out_tensor = torch.utils.dlpack.from_dlpack(dlpack_tensor)
+            # This is added for the sake of true compatibility with older builds of onnxruntime
+            # which do not support zero-copy OrtValue -> torch.Tensor thanks top dlpack
+            if not hasattr(bound_output._ortvalue, "to_dlpack"):
+                # slower but needed :(
+                out_tensor = torch.from_numpy(bound_output._ortvalue.numpy()).to(device)
+            else:
+                dlpack_tensor = bound_output._ortvalue.to_dlpack()
+                out_tensor = torch.utils.dlpack.from_dlpack(dlpack_tensor)
             result.append(out_tensor)
         return result
 

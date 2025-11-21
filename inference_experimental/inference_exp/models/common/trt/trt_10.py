@@ -6,8 +6,7 @@ from inference_exp.errors import (
     MissingDependencyError,
     ModelRuntimeError,
 )
-from inference_exp.logger import LOGGER
-from inference_exp.models.common.roboflow.model_packages import TRTConfig
+from inference_exp.models.common.trt.common import InferenceTRTLogger
 
 try:
     import tensorrt as trt
@@ -22,42 +21,6 @@ except ImportError as import_error:
         f"You can also contact Roboflow to get support.",
         help_url="https://todo",
     ) from import_error
-
-try:
-    import pycuda.driver as cuda
-except ImportError as import_error:
-    raise MissingDependencyError(
-        message="TODO",
-        help_url="https://todo",
-    ) from import_error
-
-
-class InferenceTRTLogger(trt.ILogger):
-
-    def __init__(self, with_memory: bool = False):
-        super().__init__()
-        self._memory: List[Tuple[trt.ILogger.Severity, str]] = []
-        self._with_memory = with_memory
-
-    def log(self, severity: trt.ILogger.Severity, msg: str) -> None:
-        if self._with_memory:
-            self._memory.append((severity, msg))
-        severity_str = str(severity)
-        if severity_str == str(trt.Logger.VERBOSE):
-            log_function = LOGGER.debug
-        elif severity_str is str(trt.Logger.INFO):
-            log_function = LOGGER.info
-        elif severity_str is str(trt.Logger.WARNING):
-            log_function = LOGGER.warning
-        else:
-            log_function = LOGGER.error
-        log_function(msg)
-
-    def get_memory(self) -> List[Tuple[trt.ILogger.Severity, str]]:
-        return self._memory
-
-
-TRT_LOGGER = InferenceTRTLogger()
 
 
 def get_engine_inputs_and_outputs(
@@ -74,106 +37,6 @@ def get_engine_inputs_and_outputs(
         elif io_mode == trt.TensorIOMode.OUTPUT:
             outputs.append(name)
     return inputs, outputs
-
-
-def infer_from_trt_engine(
-    pre_processed_images: torch.Tensor,
-    trt_config: TRTConfig,
-    engine: trt.ICudaEngine,
-    context: trt.IExecutionContext,
-    device: torch.device,
-    input_name: str,
-    outputs: List[str],
-) -> List[torch.Tensor]:
-    if trt_config.static_batch_size is not None:
-        return infer_from_trt_engine_with_batch_size_boundaries(
-            pre_processed_images=pre_processed_images,
-            engine=engine,
-            context=context,
-            device=device,
-            input_name=input_name,
-            outputs=outputs,
-            min_batch_size=trt_config.static_batch_size,
-            max_batch_size=trt_config.static_batch_size,
-        )
-    return infer_from_trt_engine_with_batch_size_boundaries(
-        pre_processed_images=pre_processed_images,
-        engine=engine,
-        context=context,
-        device=device,
-        input_name=input_name,
-        outputs=outputs,
-        min_batch_size=trt_config.dynamic_batch_size_min,
-        max_batch_size=trt_config.dynamic_batch_size_max,
-    )
-
-
-def infer_from_trt_engine_with_batch_size_boundaries(
-    pre_processed_images: torch.Tensor,
-    engine: trt.ICudaEngine,
-    context: trt.IExecutionContext,
-    device: torch.device,
-    input_name: str,
-    outputs: List[str],
-    min_batch_size: int,
-    max_batch_size: int,
-) -> List[torch.Tensor]:
-    if pre_processed_images.shape[0] <= max_batch_size:
-        reminder = min_batch_size - pre_processed_images.shape[0]
-        if reminder > 0:
-            pre_processed_images = torch.cat(
-                (
-                    pre_processed_images,
-                    torch.zeros(
-                        (reminder,) + pre_processed_images.shape[1:],
-                        dtype=pre_processed_images.dtype,
-                        device=pre_processed_images.device,
-                    ),
-                ),
-                dim=0,
-            )
-        results = execute_trt_engine(
-            pre_processed_images=pre_processed_images,
-            engine=engine,
-            context=context,
-            device=device,
-            input_name=input_name,
-            outputs=outputs,
-        )
-        if reminder > 0:
-            results = [r[:-reminder] for r in results]
-        return results
-    all_results = []
-    for _ in outputs:
-        all_results.append([])
-    for i in range(0, pre_processed_images.shape[0], max_batch_size):
-        batch = pre_processed_images[i : i + max_batch_size].contiguous()
-        reminder = min_batch_size - batch.shape[0]
-        if reminder > 0:
-            batch = torch.cat(
-                (
-                    pre_processed_images,
-                    torch.zeros(
-                        (reminder,) + batch.shape[1:],
-                        dtype=pre_processed_images.dtype,
-                        device=pre_processed_images.device,
-                    ),
-                ),
-                dim=0,
-            )
-        results = execute_trt_engine(
-            pre_processed_images=batch,
-            engine=engine,
-            context=context,
-            device=device,
-            input_name=input_name,
-            outputs=outputs,
-        )
-        if reminder > 0:
-            results = [r[:-reminder] for r in results]
-        for partial_result, all_result_element in zip(results, all_results):
-            all_result_element.append(partial_result)
-    return [torch.cat(e, dim=0).contiguous() for e in all_results]
 
 
 def execute_trt_engine(

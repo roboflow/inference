@@ -30,7 +30,7 @@ from inference_exp.models.common.roboflow.model_packages import (
 from inference_exp.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
-from inference_exp.models.common.trt import (
+from inference_exp.models.common.trt.core import (
     get_engine_inputs_and_outputs,
     infer_from_trt_engine,
     load_model,
