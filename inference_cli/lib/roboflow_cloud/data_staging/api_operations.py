@@ -58,6 +58,8 @@ from inference_cli.lib.roboflow_cloud.errors import (
     RoboflowCloudCommandError,
 )
 from inference_cli.lib.utils import (
+    IMAGES_EXTENSIONS,
+    VIDEOS_EXTENSIONS,
     create_batches,
     get_all_images_in_directory,
     get_all_videos_in_directory,
@@ -583,6 +585,8 @@ def trigger_images_references_ingest(
         params["api_key"] = api_key
     if batch_name is not None:
         params["displayName"] = batch_name
+    elif batch_id is not None:
+        params["displayName"] = batch_id
     payload = {}
     if isinstance(references, list):
         payload["imageReferences"] = references
@@ -717,6 +721,8 @@ def trigger_videos_references_ingest(
         params["api_key"] = api_key
     if batch_name is not None:
         params["displayName"] = batch_name
+    elif batch_id is not None:
+        params["displayName"] = batch_id
     payload = {}
     if isinstance(references, list):
         payload["videoReferences"] = references
@@ -880,6 +886,8 @@ def upload_image(
         params["api_key"] = api_key
     if batch_name is not None:
         params["displayName"] = batch_name
+    elif batch_id is not None:
+        params["displayName"] = batch_id
     image_file_name = os.path.basename(image_path)
     params["fileName"] = image_file_name
     try:
@@ -927,6 +935,8 @@ def upload_video(
     params["fileName"] = image_file_name
     if batch_name is not None:
         params["displayName"] = batch_name
+    elif batch_id is not None:
+        params["displayName"] = batch_id
     try:
         response = requests.post(
             f"{API_BASE_URL}/data-staging/v1/external/{workspace}/batches/{batch_id}/upload/video",
@@ -973,6 +983,8 @@ def upload_images_shard(
         params["api_key"] = api_key
     if batch_name is not None:
         params["displayName"] = batch_name
+    elif batch_id is not None:
+        params["displayName"] = batch_id
     try:
         response = requests.post(
             f"{API_BASE_URL}/data-staging/v1/external/{workspace}/batches/{batch_id}/bulk-upload/image-files",
@@ -1597,3 +1609,597 @@ def get_one_page_of_batch_shards_statuses(
         return PageOfBatchShardsStatuses.model_validate(response.json())
     except ValueError as error:
         raise RFAPICallError("Could not decode Roboflow API response.") from error
+
+
+def _parse_bucket_path(bucket_path: str) -> Tuple[str, Optional[str]]:
+    """
+    Parse bucket path to extract base path and glob pattern.
+
+    Examples:
+        "s3://bucket/path/**/*.jpg" -> ("s3://bucket/path/", "**/*.jpg")
+        "s3://bucket/path/" -> ("s3://bucket/path/", None)
+        "gs://bucket/" -> ("gs://bucket/", None)
+    """
+    has_glob = any(char in bucket_path for char in ['*', '?', '[', ']'])
+
+    if not has_glob:
+        return bucket_path, None
+
+    parts = bucket_path.split('/')
+    for i in range(len(parts) - 1, -1, -1):
+        if any(char in parts[i] for char in ['*', '?', '[', ']']):
+            continue
+        base_path = '/'.join(parts[:i+1]) + '/'
+        glob_pattern = '/'.join(parts[i+1:])
+        return base_path, glob_pattern
+
+    return bucket_path, None
+
+
+def _get_fs_kwargs(protocol: Optional[str] = None) -> dict:
+    """
+    Get filesystem kwargs from environment variables for cloud storage authentication.
+
+    Only passes kwargs when necessary to override defaults or enable special features.
+    Most credentials are auto-detected by fsspec from standard environment variables:
+    - s3fs: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, ~/.aws/*
+    - gcsfs: GOOGLE_APPLICATION_CREDENTIALS, ~/.config/gcloud/*, GCP metadata
+    - adlfs: Must pass explicitly (no auto-detection)
+
+    Args:
+        protocol: Cloud storage protocol (s3, gs, az, etc.). If None, returns all kwargs.
+
+    Returns:
+        Dictionary of kwargs to pass to fsspec.filesystem()
+    """
+    kwargs = {}
+
+    # AWS S3 and S3-compatible (e.g., Cloudflare R2)
+    if protocol in (None, "s3"):
+        # Only pass endpoint_url for S3-compatible services (R2, MinIO, etc.)
+        # Must be passed as direct parameter, not in client_kwargs
+        endpoint_url = os.getenv("AWS_ENDPOINT_URL")
+        if endpoint_url:
+            kwargs["endpoint_url"] = endpoint_url
+
+            # For S3-compatible services, also pass region if specified
+            # This is crucial for services like Cloudflare R2 that use 'auto' region
+            aws_region = os.getenv("AWS_REGION")
+            if aws_region:
+                kwargs["client_kwargs"] = {"region_name": aws_region}
+
+        # Only pass profile to override default credential chain
+        aws_profile = os.getenv("AWS_PROFILE")
+        if aws_profile:
+            kwargs["profile"] = aws_profile
+
+    # Google Cloud Storage - gcsfs auto-detects GOOGLE_APPLICATION_CREDENTIALS
+    # No kwargs needed unless using service account JSON directly
+    # if protocol in (None, "gs", "gcs"):
+    #     pass  # Let gcsfs auto-detect credentials
+
+    # Azure Blob Storage - adlfs does NOT auto-detect, must pass explicitly
+    # Support both adlfs convention and Azure CLI standard naming
+    if protocol in (None, "az", "abfs", "azure"):
+        # Account name: try adlfs convention first, fall back to Azure CLI standard
+        azure_account = os.getenv("AZURE_STORAGE_ACCOUNT_NAME") or os.getenv("AZURE_STORAGE_ACCOUNT")
+
+        # Account key: try adlfs convention first, fall back to Azure CLI standard
+        azure_key = os.getenv("AZURE_STORAGE_ACCOUNT_KEY") or os.getenv("AZURE_STORAGE_KEY")
+
+        # SAS token: same name in both conventions
+        azure_sas_token = os.getenv("AZURE_STORAGE_SAS_TOKEN")
+
+        if azure_account:
+            kwargs["account_name"] = azure_account
+
+        # Prefer SAS token over account key (more secure, time-limited)
+        if azure_sas_token:
+            kwargs["sas_token"] = azure_sas_token
+        elif azure_key:
+            kwargs["account_key"] = azure_key
+
+    return kwargs
+
+
+def _match_glob_pattern(path: str, pattern: str) -> bool:
+    """
+    Match a file path against a glob pattern.
+
+    Supports minimal glob syntax (like fsspec):
+    - ** : Recursive match (any number of directories, including zero)
+    - *  : Wildcard match (any characters in single segment)
+    - Literal strings
+
+    Args:
+        path: File path to check
+        pattern: Glob pattern (e.g., '**/*.jpg', '2024-*/*.png')
+
+    Returns:
+        True if path matches pattern
+    """
+    import re
+
+    # Convert glob pattern to regex
+    pattern_parts = pattern.split('/')
+    regex_parts = []
+
+    i = 0
+    while i < len(pattern_parts):
+        part = pattern_parts[i]
+
+        if part == '**':
+            # ** matches zero or more path segments
+            # If it's at the start and followed by more parts, it's optional
+            if i == 0 and i + 1 < len(pattern_parts):
+                # Make preceding path optional: either nothing or anything/
+                regex_parts.append('(?:.*/)?')
+            else:
+                # Match any path segments
+                regex_parts.append('.*')
+            i += 1
+        elif '*' in part:
+            # * matches any characters except /
+            part_regex = re.escape(part).replace(r'\*', '[^/]*')
+            regex_parts.append(part_regex)
+            i += 1
+        else:
+            # Literal match
+            regex_parts.append(re.escape(part))
+            i += 1
+
+    # Join with / but handle ** specially (already includes separator in regex)
+    regex_pattern = ''
+    for j, part in enumerate(regex_parts):
+        if j > 0 and not regex_parts[j-1].endswith(')?'):
+            regex_pattern += '/'
+        regex_pattern += part
+
+    regex_pattern += '$'
+    return re.match(regex_pattern, path) is not None
+
+
+def _list_and_filter_files_streaming(
+    fs,
+    base_path: str,
+    glob_pattern: Optional[str],
+    extensions: List[str],
+) -> Generator[str, None, None]:
+    """
+    Stream files from cloud storage.
+
+    Uses fs.walk() for streaming instead of fs.glob() for blocking.
+    Progress tracking is handled by the consuming function.
+
+    Args:
+        fs: fsspec filesystem instance
+        base_path: Base cloud path (e.g., 's3://bucket/path/')
+        glob_pattern: Optional glob pattern (e.g., '**/*.jpg'), uses None for all
+        extensions: List of file extensions to filter (e.g., ['jpg', 'png'])
+
+    Yields:
+        File paths matching the pattern and extensions
+
+    Raises:
+        FileNotFoundError: If bucket/path doesn't exist
+        PermissionError: If access is denied
+        Exception: Other fsspec errors
+    """
+    protocol = base_path.split("://")[0]
+    base_without_protocol = base_path.split("://", 1)[1].rstrip('/')
+
+    # Validate bucket/path exists before walking
+    # This catches silent failures where fs.walk() would return empty
+    try:
+        # Try to check if path exists - this will raise proper errors
+        # for wrong region, missing bucket, permission denied, etc.
+        if not fs.exists(base_path):
+            raise FileNotFoundError(
+                f"Cloud storage path does not exist: {base_path}\n"
+                f"Possible causes:\n"
+                f"  - Bucket doesn't exist\n"
+                f"  - Wrong region configured\n"
+                f"  - Path doesn't exist in bucket\n"
+                f"Check your bucket name and region settings."
+            )
+    except FileNotFoundError:
+        raise  # Re-raise our custom error
+    except Exception as e:
+        # fs.exists() can raise various errors
+        raise Exception(
+            f"Failed to access cloud storage path: {base_path}\n"
+            f"Error: {type(e).__name__}: {str(e)}\n"
+            f"Possible causes:\n"
+            f"  - Invalid credentials (check AWS_PROFILE, AWS_ACCESS_KEY_ID, etc.)\n"
+            f"  - Wrong region (check AWS_DEFAULT_REGION or endpoint URL)\n"
+            f"  - Permission denied (check bucket permissions)\n"
+            f"  - Network connectivity issues"
+        ) from e
+
+    for root, dirs, files in fs.walk(base_path):
+        # Remove protocol from root for pattern matching
+        root_path = root
+        if root.startswith(f"{protocol}://"):
+            root_path = root.split("://", 1)[1]
+
+        for fname in files:
+            # Check extension first (fast filter)
+            if not any(fname.lower().endswith(f".{ext.lower()}") for ext in extensions):
+                continue
+
+            # Build full path for pattern matching
+            if root_path == base_without_protocol:
+                relative_path = fname
+            else:
+                relative_path = f"{root_path.removeprefix(base_without_protocol + '/')}/{fname}"
+
+            # Check glob pattern if specified
+            if glob_pattern and not _match_glob_pattern(relative_path, glob_pattern):
+                continue
+
+            # Yield full path with protocol
+            full_path = f"{root}/{fname}" if root.startswith(f"{protocol}://") else f"{protocol}://{root}/{fname}"
+            yield full_path
+
+
+def _generate_presigned_urls_parallel(
+    fs,
+    file_paths_generator: Generator[str, None, None],
+    base_path: str,
+    expiration_seconds: int,
+) -> List[dict]:
+    """
+    Generate presigned URLs concurrently while discovering files.
+
+    Uses producer-consumer pattern with Queue:
+    - Producer: Feeds files from generator into queue
+    - Consumers: Worker threads generate URLs from queue
+    - Both operations happen simultaneously with merged progress bar
+      showing "Discovered X files Y URLs generated"
+
+    Args:
+        fs: fsspec filesystem instance
+        file_paths_generator: Generator yielding file paths
+        base_path: Base cloud path for protocol extraction
+        expiration_seconds: URL expiration time in seconds
+
+    Returns:
+        List of dicts with 'name' and 'url' keys
+    """
+    from queue import Queue
+    from threading import Thread
+    from rich.progress import Progress, BarColumn, SpinnerColumn, TextColumn
+    import multiprocessing
+    import traceback
+
+    protocol = base_path.split("://")[0]
+    file_queue = Queue(maxsize=0)  # Unlimited queue for continuous listing
+    exception_queue = Queue()  # Thread-safe error collection
+    results = []
+    results_lock = Lock()
+
+    # Sentinel to signal end of queue
+    DONE = object()
+
+    def generate_url(file_path: str) -> dict:
+        """Worker function to generate presigned URL"""
+        # Ensure file path has protocol prefix
+        if not file_path.startswith(f"{protocol}://"):
+            file_path = f"{protocol}://{file_path}"
+
+        # Special handling for Azure with SAS token
+        # When authenticated with SAS token, fs.sign() fails because it needs account_key
+        # Instead, use the existing SAS token (ignoring expiration_seconds parameter)
+        if protocol in ("az", "abfs", "azure") and hasattr(fs, 'sas_token') and fs.sas_token:
+            # Use adlfs built-in utilities to construct URL with existing SAS token
+            path_without_protocol = file_path.split("://", 1)[1]
+            container, blob, _ = fs.split_path(path_without_protocol)
+            blob = blob.lstrip("/")  # Remove leading slash from blob if present
+            presigned_url = f"{fs.account_url}/{container}/{blob}{fs.sas_token}"
+        else:
+            # S3, GCS, Azure with account_key - use fs.sign()
+            presigned_url = fs.sign(file_path, expiration=expiration_seconds)
+
+        file_name = file_path.split("/")[-1]
+
+        return {"name": file_name, "url": presigned_url}
+
+    discovered_count = [0]  # Use list for mutability in closure
+    processed_count = [0]
+
+    def update_progress_display(progress, task_id):
+        """Update single progress bar with both counts"""
+        desc = f"[cyan]Discovered {discovered_count[0]} files in {base_path} [green]{processed_count[0]} URLs generated"
+        progress.update(task_id, description=desc)
+
+    def producer(generator, queue, progress, task_id, exception_queue):
+        """Feed files from generator into queue"""
+        try:
+            for file_path in generator:
+                queue.put(file_path)
+                discovered_count[0] += 1
+                update_progress_display(progress, task_id)
+        except Exception as e:
+            # Capture any errors from fs.walk() or file discovery
+            error_info = {
+                'error': e,
+                'traceback': traceback.format_exc(),
+                'context': 'File discovery (fs.walk)',
+                'base_path': base_path
+            }
+            exception_queue.put(error_info)
+        finally:
+            # Signal completion to all workers (even if error occurred)
+            num_workers = min(multiprocessing.cpu_count() * 2, 8)
+            for _ in range(num_workers):
+                queue.put(DONE)
+
+    def consumer(queue, progress, task_id, exception_queue):
+        """Process files from queue and generate URLs"""
+        while True:
+            file_path = queue.get()
+
+            if file_path is DONE:
+                queue.task_done()
+                break
+
+            try:
+                result = generate_url(file_path)
+                with results_lock:
+                    results.append(result)
+                    processed_count[0] += 1
+                update_progress_display(progress, task_id)
+            except Exception as e:
+                # Capture errors from fs.sign() or URL generation
+                error_info = {
+                    'error': e,
+                    'traceback': traceback.format_exc(),
+                    'context': 'Presigned URL generation (fs.sign)',
+                    'file_path': file_path
+                }
+                exception_queue.put(error_info)
+            finally:
+                queue.task_done()
+
+    # Concurrent processing with single merged progress bar
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+    ) as progress:
+        task = progress.add_task(f"[cyan]Discovering files in {base_path}", total=None)
+
+        # Start producer thread
+        producer_thread = Thread(
+            target=producer,
+            args=(file_paths_generator, file_queue, progress, task, exception_queue)
+        )
+        producer_thread.start()
+
+        # Start consumer threads
+        num_workers = min(multiprocessing.cpu_count() * 2, 8)  # 2x CPU cores, max 8
+
+        consumer_threads = []
+        for _ in range(num_workers):
+            t = Thread(target=consumer, args=(file_queue, progress, task, exception_queue))
+            t.start()
+            consumer_threads.append(t)
+
+        # Wait for producer to finish
+        producer_thread.join()
+
+        # Wait for all items to be processed
+        file_queue.join()
+
+        # Wait for all consumer threads to finish
+        for t in consumer_threads:
+            t.join()
+
+    # Check if any errors occurred during processing
+    if not exception_queue.empty():
+        errors = []
+        while not exception_queue.empty():
+            errors.append(exception_queue.get())
+
+        # Report the first error with full context
+        first_error = errors[0]
+        error_msg = (
+            f"Cloud storage error during {first_error['context']}:\n"
+            f"Error: {type(first_error['error']).__name__}: {str(first_error['error'])}\n"
+        )
+
+        # Add context-specific details
+        if 'base_path' in first_error:
+            error_msg += f"Base path: {first_error['base_path']}\n"
+        if 'file_path' in first_error:
+            error_msg += f"File: {first_error['file_path']}\n"
+
+        # If multiple errors, mention it
+        if len(errors) > 1:
+            error_msg += f"\n(Plus {len(errors) - 1} additional error(s))"
+
+        # Re-raise the original exception with enhanced context
+        raise type(first_error['error'])(error_msg) from first_error['error']
+
+    return results
+
+
+def create_images_batch_from_cloud_storage(
+    bucket_path: str,
+    batch_id: str,
+    api_key: str,
+    batch_name: Optional[str] = None,
+    ingest_id: Optional[str] = None,
+    notifications_url: Optional[str] = None,
+    notification_categories: Optional[List[str]] = None,
+    presign_expiration_seconds: int = 86400,
+) -> None:
+    """
+    Create image batch from cloud storage by generating presigned URLs.
+
+    Args:
+        bucket_path: Cloud path with optional glob pattern (e.g., 's3://bucket/**/*.jpg')
+        batch_id: Batch identifier
+        api_key: Roboflow API key
+        presign_expiration_seconds: Presigned URL expiration time (default: 24 hours)
+
+    Internally calls trigger_images_references_ingest with generated presigned URLs.
+    """
+    try:
+        import fsspec
+    except ImportError:
+        raise ImportError(
+            "Cloud storage support requires additional dependencies. "
+            "Install with: pip install 'inference-cli[cloud-storage]'"
+        )
+
+    base_path, glob_pattern = _parse_bucket_path(bucket_path)
+    protocol = base_path.split("://")[0]
+    fs = fsspec.filesystem(protocol, **_get_fs_kwargs(protocol))
+
+    # Stream and filter image files with progress
+    image_files_generator = _list_and_filter_files_streaming(
+        fs, base_path, glob_pattern, IMAGES_EXTENSIONS
+    )
+
+    # Generate presigned URLs in parallel (consumes generator and shows progress)
+    references = _generate_presigned_urls_parallel(
+        fs, image_files_generator, base_path, presign_expiration_seconds
+    )
+
+    if len(references) == 0:
+        pattern_desc = glob_pattern if glob_pattern else "all image files"
+        raise ValueError(
+            f"No image files found matching pattern: {pattern_desc} in {base_path}\n"
+            f"Supported extensions: {', '.join(IMAGES_EXTENSIONS)}\n"
+            f"Note: If you're getting connection errors, check your cloud credentials and network access."
+        )
+
+    if len(references) > MAX_IMAGE_REFERENCES_IN_INGEST_REQUEST:
+        num_chunks = (len(references) + MAX_IMAGE_REFERENCES_IN_INGEST_REQUEST - 1) // MAX_IMAGE_REFERENCES_IN_INGEST_REQUEST
+        print(f"Files will be split into {num_chunks} chunks of up to {MAX_IMAGE_REFERENCES_IN_INGEST_REQUEST} files each")
+
+    workspace = get_workspace(api_key=api_key)
+
+    # Split into batches if needed
+    ingest_parts = list(
+        create_batches(
+            sequence=references, batch_size=MAX_IMAGE_REFERENCES_IN_INGEST_REQUEST
+        )
+    )
+    if len(ingest_parts) > 1:
+        print(
+            f"Your ingest exceeds {MAX_IMAGE_REFERENCES_IN_INGEST_REQUEST} files - we split the ingest "
+            f"into {len(ingest_parts)} chunks."
+        )
+
+    # Trigger ingest for each batch
+    for batch_references in ingest_parts:
+        response = trigger_images_references_ingest(
+            workspace=workspace,
+            batch_id=batch_id,
+            references=batch_references,
+            api_key=api_key,
+            ingest_id=ingest_id,
+            batch_name=batch_name,
+            notifications_url=notifications_url,
+            notification_categories=notification_categories,
+        )
+        print(f"Ingest triggered. Ingest ID: {response.ingest_id}")
+
+    if notifications_url:
+        print(f"Monitor updates that will be sent to: {notifications_url}")
+        print(
+            f"You can also use `inference rf-cloud data-staging list-ingest-details --batch-id {batch_id}` command "
+            f"to check progress."
+        )
+    else:
+        print(
+            f"Use `inference rf-cloud data-staging list-ingest-details --batch-id {batch_id}` "
+            "command to watch the ingest progress. If you want automated updates - use `--notifications-url` option "
+            "of this command."
+        )
+
+
+def create_videos_batch_from_cloud_storage(
+    bucket_path: str,
+    batch_id: str,
+    api_key: str,
+    batch_name: Optional[str] = None,
+    ingest_id: Optional[str] = None,
+    notifications_url: Optional[str] = None,
+    notification_categories: Optional[List[str]] = None,
+    presign_expiration_seconds: int = 86400,
+) -> None:
+    """
+    Create video batch from cloud storage by generating presigned URLs.
+
+    Args:
+        bucket_path: Cloud path with optional glob pattern (e.g., 's3://bucket/**/*.mp4')
+        batch_id: Batch identifier
+        api_key: Roboflow API key
+        presign_expiration_seconds: Presigned URL expiration time (default: 24 hours)
+
+    Internally calls trigger_videos_references_ingest with generated presigned URLs.
+    """
+    try:
+        import fsspec
+    except ImportError:
+        raise ImportError(
+            "Cloud storage support requires additional dependencies. "
+            "Install with: pip install 'inference-cli[cloud-storage]'"
+        )
+
+    base_path, glob_pattern = _parse_bucket_path(bucket_path)
+    protocol = base_path.split("://")[0]
+    fs = fsspec.filesystem(protocol, **_get_fs_kwargs(protocol))
+
+    # Stream and filter video files with progress
+    video_files_generator = _list_and_filter_files_streaming(
+        fs, base_path, glob_pattern, VIDEOS_EXTENSIONS
+    )
+
+    # Generate presigned URLs in parallel (consumes generator and shows progress)
+    references = _generate_presigned_urls_parallel(
+        fs, video_files_generator, base_path, presign_expiration_seconds
+    )
+
+    if len(references) == 0:
+        pattern_desc = glob_pattern if glob_pattern else "all video files"
+        raise ValueError(
+            f"No video files found matching pattern: {pattern_desc} in {base_path}\n"
+            f"Supported extensions: {', '.join(VIDEOS_EXTENSIONS)}\n"
+            f"Note: If you're getting connection errors, check your cloud credentials and network access."
+        )
+
+    print(f"Found {len(references)} video files")
+    if len(references) > SUGGESTED_MAX_VIDEOS_IN_BATCH:
+        print(f"Warning: Found {len(references)} videos. Suggested max is {SUGGESTED_MAX_VIDEOS_IN_BATCH} videos per batch.")
+
+    workspace = get_workspace(api_key=api_key)
+
+    # Trigger ingest directly with the list of references
+    response = trigger_videos_references_ingest(
+        workspace=workspace,
+        batch_id=batch_id,
+        references=references,
+        api_key=api_key,
+        ingest_id=ingest_id,
+        batch_name=batch_name,
+        notifications_url=notifications_url,
+        notification_categories=notification_categories,
+    )
+    print(f"Ingest triggered. Ingest ID: {response.ingest_id}")
+
+    if notifications_url:
+        print(f"Monitor updates that will be sent to: {notifications_url}")
+        print(
+            f"You can also use `inference rf-cloud data-staging list-ingest-details --batch-id {batch_id}` command "
+            f"to check progress."
+        )
+    else:
+        print(
+            f"Use `inference rf-cloud data-staging list-ingest-details --batch-id {batch_id}` "
+            "command to watch the ingest progress. If you want automated updates - use `--notifications-url` option "
+            "of this command."
+        )
