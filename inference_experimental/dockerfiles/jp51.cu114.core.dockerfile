@@ -129,67 +129,67 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
-## Install ONNX-runtime GPU
-#RUN mkdir -p /build/onnxruntime
-#WORKDIR /build/onnxruntime
-#RUN git clone https://github.com/microsoft/onnxruntime.git
-#WORKDIR /build/onnxruntime/onnxruntime
-#RUN git checkout v1.18.2
-## Hash aligned with the source code that had this problem fixed on main branch - we need to stick to this version and patch, as our env is cuda 11 and the patched version do only support cuda 12
-#RUN sed -i 's|eigen;https://gitlab.com/libeigen/eigen/-/archive/e7248b26a1ed53fa030c5c459f7ea095dfd276ac/eigen-e7248b26a1ed53fa030c5c459f7ea095dfd276ac.zip;be8be39fdbc6e60e94fa7870b280707069b5b81a|eigen;https://github.com/eigen-mirror/eigen/archive/1d8b82b0740839c0de7f1242a3585e3390ff5f33/eigen-1d8b82b0740839c0de7f1242a3585e3390ff5f33.zip;05b19b49e6fbb91246be711d801160528c135e34|' cmake/deps.txt
-#RUN python3.12 -m pip install packaging
-#RUN LD_LIBRARY_PATH=/root/GCC-11/lib64/:$LD_LIBRARY_PATH CC=/root/GCC-11/bin/gcc CXX=/root/GCC-11/bin/g++ PATH=/build/cmake/build/bin:$PATH CMAKE_POLICY_VERSION_MINIMUM=3.5 ./build.sh --update --config Release --build --build_wheel --use_cuda --cuda_version=11.8 --cuda_home /usr/local/cuda-11.8 --cudnn_home /usr/lib/aarch64-linux-gnu --use_tensorrt --tensorrt_home /usr/lib/aarch64-linux-gnu --allow_running_as_root --parallel 0 --disable_types float8 --skip_tests --cmake_extra_defines onnxruntime_BUILD_UNIT_TESTS=OFF
-#RUN python3.12 -m pip install ./build/Linux/Release/dist/onnxruntime_gpu-1.16.3-cp312-cp312-linux_aarch64.whl
-#RUN cp ./build/Linux/Release/dist/onnxruntime_gpu-1.16.3-cp312-cp312-linux_aarch64.whl /build/out/wheels/onnxruntime_gpu-1.16.3-cp312-cp312-linux_aarch64.whl
+# Install ONNX-runtime GPU
+RUN mkdir -p /build/onnxruntime
+WORKDIR /build/onnxruntime
+RUN git clone https://github.com/microsoft/onnxruntime.git
+WORKDIR /build/onnxruntime/onnxruntime
+RUN git checkout v1.21.1
+# Hash aligned with the source code that had this problem fixed on main branch - we need to stick to this version and patch, as our env is cuda 11 and the patched version do only support cuda 12
+RUN sed -i 's|eigen;https://gitlab.com/libeigen/eigen/-/archive/e7248b26a1ed53fa030c5c459f7ea095dfd276ac/eigen-e7248b26a1ed53fa030c5c459f7ea095dfd276ac.zip;be8be39fdbc6e60e94fa7870b280707069b5b81a|eigen;https://github.com/eigen-mirror/eigen/archive/1d8b82b0740839c0de7f1242a3585e3390ff5f33/eigen-1d8b82b0740839c0de7f1242a3585e3390ff5f33.zip;05b19b49e6fbb91246be711d801160528c135e34|' cmake/deps.txt
+RUN python3.12 -m pip install packaging
+RUN LD_LIBRARY_PATH=/root/GCC-11/lib64/:$LD_LIBRARY_PATH CC=/root/GCC-11/bin/gcc CXX=/root/GCC-11/bin/g++ PATH=/build/cmake/build/bin:$PATH CMAKE_POLICY_VERSION_MINIMUM=3.5 ./build.sh --update --config Release --build --build_wheel --use_cuda --cuda_version=11.8 --cuda_home /usr/local/cuda-11.8 --cudnn_home /usr/lib/aarch64-linux-gnu --use_tensorrt --tensorrt_home /usr/lib/aarch64-linux-gnu --allow_running_as_root --parallel 0 --disable_types float8 --skip_tests --cmake_extra_defines onnxruntime_BUILD_UNIT_TESTS=OFF
+RUN python3.12 -m pip install ./build/Linux/Release/dist/onnxruntime_gpu-1.21.1-cp312-cp312-linux_aarch64.whl
+RUN cp ./build/Linux/Release/dist/onnxruntime_gpu-1.21.1-cp312-cp312-linux_aarch64.whl /build/out/wheels/onnxruntime_gpu-1.21.1-cp312-cp312-linux_aarch64.whl
 
-## Install PyTorch
-#RUN mkdir -p /build/torch
-#WORKDIR /build/torch
-#RUN git clone https://github.com/pytorch/pytorch.git
-#WORKDIR /build/torch/pytorch
-#RUN git checkout v2.4.1
-#RUN git submodule sync && git submodule update --init --recursive
-#RUN PATH=/build/cmake/build/bin:$PATH python3.12 -m pip install setuptools wheel astunparse numpy ninja pyyaml cmake "typing-extensions>=4.10.0" requests
-#ARG MAX_TORCH_COMPILATION_JOBS=4
-#RUN PATH=/build/cmake/build/bin:$PATH PYTORCH_BUILD_VERSION=2.4.1 PYTORCH_BUILD_NUMBER=1 MAX_JOBS=${MAX_TORCH_COMPILATION_JOBS} CUDA_HOME=/usr/local/cuda-11.8 CUDACXX=/usr/local/cuda-11.8/bin/nvcc TORCH_CUDA_ARCH_LIST="8.7" USE_NCCL=0 USE_DISTRIBUTED=0 USE_MKLDNN=0 BUILD_TEST=0 CMAKE_POLICY_VERSION_MINIMUM=3.5 python3.12 setup.py bdist_wheel
-#RUN python3.12 -m pip install dist/torch-*.whl
-#RUN cp dist/torch-*.whl /build/out/wheels/
-#
-## Install Torchvision
-#RUN mkdir -p /build/torchvision
-#WORKDIR /build/torchvision
-#RUN git clone https://github.com/pytorch/vision.git
-#WORKDIR /build/torchvision/vision
-#RUN git checkout v0.19.1
-#RUN git submodule sync && git submodule update --init --recursive
-#RUN PATH=/build/cmake/build/bin:$PATH BUILD_VERSION=0.19.1 TORCH_CUDA_ARCH_LIST="8.7" CMAKE_POLICY_VERSION_MINIMUM=3.5 python3.12 setup.py bdist_wheel
-#RUN python3.12 -m pip install dist/torchvision-*.whl
-#RUN cp dist/torchvision-*.whl /build/out/wheels/
-#
-#FROM nvcr.io/nvidia/l4t-ml:r35.2.1-py3 AS target
-#
-#RUN apt-get update -y && apt-get install -y \
-#    libssl-dev \
-#    git \
-#    unzip \
-#    libbz2-dev \
-#    libssl-dev \
-#    libsqlite3-dev \
-#    zlib1g-dev \
-#    liblzma-dev \
-#
-#RUN apt remove -y 'libnvinfer*' 'libnvonnxparsers*' 'libnvparsers*' 'libnvinfer-plugin*' 'python3-libnvinfer*' 'tensorrt*' 'uff-converter*' 'graphsurgeon*'
-#
-#
-#COPY --from=builder /build/out/wheels /compiled_python_packages
-#COPY --from=builder /usr/include /usr/include
-#COPY --from=builder /usr/lib /usr/lib
-#COPY --from=builder /usr/share /usr/share
-#COPY --from=builder /usr/src /usr/src
-#COPY --from=builder /usr/local/bin /usr/local/bin
-#COPY --from=builder /usr/local/include /usr/local/include
-#COPY --from=builder /usr/local/lib /usr/local/lib
-#COPY --from=builder /usr/local/share /usr/local/share
-#COPY --from=builder /usr/local/cuda-11.4 /usr/local/cuda-11.4
-#
-#ENTRYPOINT ["bash"]
+# Install PyTorch
+RUN mkdir -p /build/torch
+WORKDIR /build/torch
+RUN git clone https://github.com/pytorch/pytorch.git
+WORKDIR /build/torch/pytorch
+RUN git checkout v2.4.1
+RUN git submodule sync && git submodule update --init --recursive
+RUN PATH=/build/cmake/build/bin:$PATH python3.12 -m pip install setuptools wheel astunparse numpy ninja pyyaml cmake "typing-extensions>=4.10.0" requests
+ARG MAX_TORCH_COMPILATION_JOBS=4
+RUN PATH=/build/cmake/build/bin:$PATH PYTORCH_BUILD_VERSION=2.4.1 PYTORCH_BUILD_NUMBER=1 MAX_JOBS=${MAX_TORCH_COMPILATION_JOBS} CUDA_HOME=/usr/local/cuda-11.8 CUDACXX=/usr/local/cuda-11.8/bin/nvcc TORCH_CUDA_ARCH_LIST="8.7" USE_NCCL=0 USE_DISTRIBUTED=0 USE_MKLDNN=0 BUILD_TEST=0 CMAKE_POLICY_VERSION_MINIMUM=3.5 python3.12 setup.py bdist_wheel
+RUN python3.12 -m pip install dist/torch-*.whl
+RUN cp dist/torch-*.whl /build/out/wheels/
+
+# Install Torchvision
+RUN mkdir -p /build/torchvision
+WORKDIR /build/torchvision
+RUN git clone https://github.com/pytorch/vision.git
+WORKDIR /build/torchvision/vision
+RUN git checkout v0.19.1
+RUN git submodule sync && git submodule update --init --recursive
+RUN PATH=/build/cmake/build/bin:$PATH BUILD_VERSION=0.19.1 TORCH_CUDA_ARCH_LIST="8.7" CMAKE_POLICY_VERSION_MINIMUM=3.5 python3.12 setup.py bdist_wheel
+RUN python3.12 -m pip install dist/torchvision-*.whl
+RUN cp dist/torchvision-*.whl /build/out/wheels/
+
+FROM nvcr.io/nvidia/l4t-ml:r35.2.1-py3 AS target
+
+RUN apt-get update -y && apt-get install -y \
+    libssl-dev \
+    git \
+    unzip \
+    libbz2-dev \
+    libssl-dev \
+    libsqlite3-dev \
+    zlib1g-dev \
+    liblzma-dev \
+
+RUN apt remove -y 'libnvinfer*' 'libnvonnxparsers*' 'libnvparsers*' 'libnvinfer-plugin*' 'python3-libnvinfer*' 'tensorrt*' 'uff-converter*' 'graphsurgeon*'
+
+
+COPY --from=builder /build/out/wheels /compiled_python_packages
+COPY --from=builder /usr/include /usr/include
+COPY --from=builder /usr/lib /usr/lib
+COPY --from=builder /usr/share /usr/share
+COPY --from=builder /usr/src /usr/src
+COPY --from=builder /usr/local/bin /usr/local/bin
+COPY --from=builder /usr/local/include /usr/local/include
+COPY --from=builder /usr/local/lib /usr/local/lib
+COPY --from=builder /usr/local/share /usr/local/share
+COPY --from=builder /usr/local/cuda-11.4 /usr/local/cuda-11.4
+
+ENTRYPOINT ["bash"]
