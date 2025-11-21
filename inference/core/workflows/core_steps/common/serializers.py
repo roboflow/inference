@@ -292,14 +292,14 @@ def serialise_image(image: WorkflowImageData) -> Dict[str, Any]:
     # Add parent origin metadata if image is a crop/slice
     if parent_metadata.parent_id != root_metadata.parent_id:
         result[PARENT_ID_KEY] = parent_metadata.parent_id
-        result[PARENT_ORIGIN_KEY] = ParentOrigin.from_origin_coordinates_system(
+        result[PARENT_ORIGIN_KEY] = _parent_origin_as_dict(
             parent_metadata.origin_coordinates
-        ).model_dump()
+        )
 
         result[ROOT_PARENT_ID_KEY] = root_metadata.parent_id
-        result[ROOT_PARENT_ORIGIN_KEY] = ParentOrigin.from_origin_coordinates_system(
+        result[ROOT_PARENT_ORIGIN_KEY] = _parent_origin_as_dict(
             root_metadata.origin_coordinates
-        ).model_dump()
+        )
 
     return result
 
@@ -349,3 +349,12 @@ def serialize_secret(secret: str) -> str:
 
 def serialize_timestamp(timestamp: datetime) -> str:
     return timestamp.isoformat()
+
+
+def _parent_origin_as_dict(origin_coordinates_system) -> dict:
+    return {
+        "offset_x": origin_coordinates_system.left_top_x,
+        "offset_y": origin_coordinates_system.left_top_y,
+        "width": origin_coordinates_system.origin_width,
+        "height": origin_coordinates_system.origin_height,
+    }
