@@ -200,32 +200,36 @@ def dummy_infer(hf_id: str):
     return singleton
 
 
+def preload_owlv2_model(hf_id: str):
+    logger.info("Preloading OWLv2 model for %s (this may take a while)", hf_id)
+    try:
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            allocated_gpu_memory = torch.cuda.memory_allocated() / (1024**3)
+            logger.info(
+                f"Allocated GPU memory before loading model: {allocated_gpu_memory:.2f} GB"
+            )
+        t1 = time.time()
+        singleton = dummy_infer(hf_id)
+        t2 = time.time()
+        logger.info("Preloaded OWLv2 model for %s in %0.2f seconds", hf_id, t2 - t1)
+        if torch.cuda.is_available():
+            allocated_gpu_memory = torch.cuda.memory_allocated() / (1024**3)
+            logger.info(
+                f"Allocated GPU memory after loading model: {allocated_gpu_memory:.2f} GB"
+            )
+        # Store the singleton instance directly in PRELOADED_HF_MODELS
+        PRELOADED_HF_MODELS[hf_id] = singleton
+    except Exception as exc:
+        logger.error("Failed to preload OWLv2 model for %s: %s", hf_id, exc)
+
+
 if PRELOAD_HF_IDS:
     hf_ids = PRELOAD_HF_IDS
     if not isinstance(hf_ids, list):
         hf_ids = [hf_ids]
     for hf_id in hf_ids:
-        logger.info("Preloading OWLv2 model for %s (this may take a while)", hf_id)
-        try:
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-                allocated_gpu_memory = torch.cuda.memory_allocated() / (1024**3)
-                logger.info(
-                    f"Allocated GPU memory before loading model: {allocated_gpu_memory:.2f} GB"
-                )
-            t1 = time.time()
-            singleton = dummy_infer(hf_id)
-            t2 = time.time()
-            logger.info("Preloaded OWLv2 model for %s in %0.2f seconds", hf_id, t2 - t1)
-            if torch.cuda.is_available():
-                allocated_gpu_memory = torch.cuda.memory_allocated() / (1024**3)
-                logger.info(
-                    f"Allocated GPU memory after loading model: {allocated_gpu_memory:.2f} GB"
-                )
-            # Store the singleton instance directly in PRELOADED_HF_MODELS
-            PRELOADED_HF_MODELS[hf_id] = singleton
-        except Exception as exc:
-            logger.error("Failed to preload OWLv2 model for %s: %s", hf_id, exc)
+        preload_owlv2_model(hf_id)
 
 
 def filter_tensors_by_objectness(

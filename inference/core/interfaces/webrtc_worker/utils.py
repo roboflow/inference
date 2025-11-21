@@ -10,7 +10,9 @@ from inference.core import logger
 from inference.core.env import DEBUG_WEBRTC_PROCESSING_LATENCY
 from inference.core.interfaces.camera.entities import VideoFrame as InferenceVideoFrame
 from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
+from inference.core.utils.roboflow import get_model_id_chunks
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
+from inference.models.aliases import resolve_roboflow_model_alias
 
 logging.getLogger("aiortc").setLevel(logging.WARNING)
 
@@ -151,3 +153,31 @@ def get_frame_from_workflow_output(
         logger.warning("Processing latency: %ss", latency.total_seconds())
 
     return np_image
+
+
+def workflow_contains_instant_model(workflow_specification: Dict[str, Any]):
+    for step in workflow_specification["steps"]:
+        step_type = step["type"]
+        if "roboflow_core/roboflow_object_detection_model" in step_type:
+            if "model_id" not in step:
+                continue
+            model_id = step["model_id"]
+            model_id = resolve_roboflow_model_alias(model_id=model_id)
+            _, version_id = get_model_id_chunks(model_id=model_id)
+            if version_id is None:
+                return True
+    return False
+
+
+def workflow_contains_preloaded_model(
+    workflow_specification: Dict[str, Any], preload_models: List[str]
+):
+    preload_models = set(preload_models)
+    for step in workflow_specification["steps"]:
+        if "model_id" not in step:
+            continue
+        model_id = step["model_id"]
+        resolved_model_id = resolve_roboflow_model_alias(model_id=model_id)
+        if model_id in preload_models or resolved_model_id in preload_models:
+            return True
+    return False
