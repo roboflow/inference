@@ -194,9 +194,8 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 COPY --from=builder /usr/local/include /usr/local/include
 COPY --from=builder /usr/local/lib /usr/local/lib
 COPY --from=builder /usr/local/share /usr/local/share
-COPY --from=builder /usr/local/cuda-11.4 /usr/local/cuda-11.4
-RUN ln -s /usr/local/cuda-11.8 /etc/alternatives/cuda
-RUN ln -s /usr/local/cuda-11.8 /etc/alternatives/cuda-11
+COPY --from=builder /usr/local/cuda-11.8 /usr/local/cuda-11.8
+RUN update-alternatives --set cuda-11 /usr/local/cuda-11.8
 RUN rm -rf /usr/local/cuda-11.4
 ENV LD_LIBRARY_PATH="/opt/gcc-11/lib64:$$LD_LIBRARY_PATH"
 ENTRYPOINT ["bash"]
