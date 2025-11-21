@@ -755,8 +755,15 @@ class RFDETRInstanceSegmentation(
         **kwargs,
     ) -> List[InstanceSegmentationInferenceResponse]:
         """Constructs instance segmentation response objects from preprocessed predictions and polygons."""
+        # Align to actual number of real images; predictions/masks may include padded slots
+        if isinstance(img_dims, dict) and "img_dims" in img_dims:
+            img_dims = img_dims["img_dims"]
+        effective_len = min(len(img_dims), len(predictions), len(masks))
+
         responses = []
-        for ind, (batch_predictions, batch_masks) in enumerate(zip(predictions, masks)):
+        for ind in range(effective_len):
+            batch_predictions = predictions[ind]
+            batch_masks = masks[ind]
             preds_out = []
             for pred, mask in zip(batch_predictions, batch_masks):
                 if class_filter and self.class_names[int(pred[6])] not in class_filter:
