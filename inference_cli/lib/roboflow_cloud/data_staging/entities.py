@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 class DataSource(str, Enum):
     LOCAL_DIRECTORY = "local-directory"
     REFERENCES_FILE = "references-file"
+    CLOUD_STORAGE = "cloud-storage"
 
 
 class ShardDetails(BaseModel):
