@@ -2901,7 +2901,7 @@ class HttpInterface(BaseInterface):
                 model_id = f"{dataset_id}/{version_id}"
                 if confidence >= 1:
                     confidence /= 100
-                elif confidence < CONFIDENCE_LOWER_BOUND_OOM_PREVENTION:
+                if confidence < CONFIDENCE_LOWER_BOUND_OOM_PREVENTION:
                     # allowing lower confidence results in RAM usage explosion
                     confidence = CONFIDENCE_LOWER_BOUND_OOM_PREVENTION
 
