@@ -13,7 +13,7 @@ from inference.usage_tracking.payload_helpers import APIKey, APIKeyHash, sha256_
 
 
 class WebRTCPlan(BaseModel):
-    gpu: str
+    gpu: Optional[str] = None
 
 
 class PlanDetails(SQLiteWrapper):
