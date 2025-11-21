@@ -66,6 +66,7 @@ setuptools.setup(
     ),
     extras_require={
         "sam": read_requirements("requirements/requirements.sam.txt"),
+        "cloud-storage": read_requirements("requirements/requirements.cloud_storage.txt"),
     },
     classifiers=[
         "Programming Language :: Python :: 3",
