@@ -108,6 +108,27 @@ RUN export PATH=/root/GCC-11/bin:$PATH
 RUN export LD_LIBRARY_PATH=/root/GCC-11/lib64/:$LD_LIBRARY_PATH
 RUN ldconfig
 
+# upgrade to CUDA 11.8
+WORKDIR /build/cuda-118
+RUN wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/arm64/cuda-ubuntu2004.pin -O /etc/apt/preferences.d/cuda-repository-pin-600 && \
+    wget https://developer.download.nvidia.com/compute/cuda/11.8.0/local_installers/cuda-tegra-repo-ubuntu2004-11-8-local_11.8.0-1_arm64.deb && \
+    dpkg -i cuda-tegra-repo-*.deb && \
+    rm cuda-tegra-repo-*.deb
+
+RUN cp /var/cuda-tegra-repo-*/cuda-tegra-*-keyring.gpg /usr/share/keyrings/
+
+RUN mkdir /var/cuda-compat && \
+    cd /var/cuda-compat && \
+    ar x ../cuda-tegra-repo-*/cuda-compat-*.deb && \
+    tar xvf data.tar.xz -C / && \
+    rm -rf /var/cuda-compat
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+            cuda-toolkit-* \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
 # Install ONNX-runtime GPU
 RUN mkdir -p /build/onnxruntime
 WORKDIR /build/onnxruntime
@@ -117,7 +138,7 @@ RUN git checkout v1.18.2
 # Hash aligned with the source code that had this problem fixed on main branch - we need to stick to this version and patch, as our env is cuda 11 and the patched version do only support cuda 12
 RUN sed -i 's|eigen;https://gitlab.com/libeigen/eigen/-/archive/e7248b26a1ed53fa030c5c459f7ea095dfd276ac/eigen-e7248b26a1ed53fa030c5c459f7ea095dfd276ac.zip;be8be39fdbc6e60e94fa7870b280707069b5b81a|eigen;https://github.com/eigen-mirror/eigen/archive/1d8b82b0740839c0de7f1242a3585e3390ff5f33/eigen-1d8b82b0740839c0de7f1242a3585e3390ff5f33.zip;05b19b49e6fbb91246be711d801160528c135e34|' cmake/deps.txt
 RUN python3.12 -m pip install packaging
-RUN LD_LIBRARY_PATH=/root/GCC-11/lib64/:$LD_LIBRARY_PATH CC=/root/GCC-11/bin/gcc CXX=/root/GCC-11/bin/g++ PATH=/build/cmake/build/bin:$PATH CMAKE_POLICY_VERSION_MINIMUM=3.5 ./build.sh --update --config Release --build --build_wheel --use_cuda --cuda_version=11.4 --cuda_home /usr/local/cuda --cudnn_home /usr/lib/aarch64-linux-gnu --use_tensorrt --tensorrt_home /usr/lib/aarch64-linux-gnu --allow_running_as_root --parallel 0 --disable_types float8 --skip_tests --cmake_extra_defines onnxruntime_BUILD_UNIT_TESTS=OFF
+RUN LD_LIBRARY_PATH=/root/GCC-11/lib64/:$LD_LIBRARY_PATH CC=/root/GCC-11/bin/gcc CXX=/root/GCC-11/bin/g++ PATH=/build/cmake/build/bin:$PATH CMAKE_POLICY_VERSION_MINIMUM=3.5 ./build.sh --update --config Release --build --build_wheel --use_cuda --cuda_version=11.8 --cuda_home /usr/local/cuda-11.8 --cudnn_home /usr/lib/aarch64-linux-gnu --use_tensorrt --tensorrt_home /usr/lib/aarch64-linux-gnu --allow_running_as_root --parallel 0 --disable_types float8 --skip_tests --cmake_extra_defines onnxruntime_BUILD_UNIT_TESTS=OFF
 RUN python3.12 -m pip install ./build/Linux/Release/dist/onnxruntime_gpu-1.16.3-cp312-cp312-linux_aarch64.whl
 RUN cp ./build/Linux/Release/dist/onnxruntime_gpu-1.16.3-cp312-cp312-linux_aarch64.whl /build/out/wheels/onnxruntime_gpu-1.16.3-cp312-cp312-linux_aarch64.whl
 
@@ -130,7 +151,7 @@ RUN git checkout v2.4.1
 RUN git submodule sync && git submodule update --init --recursive
 RUN PATH=/build/cmake/build/bin:$PATH python3.12 -m pip install setuptools wheel astunparse numpy ninja pyyaml cmake "typing-extensions>=4.10.0" requests
 ARG MAX_TORCH_COMPILATION_JOBS=4
-RUN PATH=/build/cmake/build/bin:$PATH PYTORCH_BUILD_VERSION=2.4.1 PYTORCH_BUILD_NUMBER=1 MAX_JOBS=${MAX_TORCH_COMPILATION_JOBS} CUDA_HOME=/usr/local/cuda CUDACXX=/usr/local/cuda/bin/nvcc TORCH_CUDA_ARCH_LIST="8.7" USE_NCCL=0 USE_DISTRIBUTED=0 USE_MKLDNN=0 BUILD_TEST=0 CMAKE_POLICY_VERSION_MINIMUM=3.5 python3.12 setup.py bdist_wheel
+RUN PATH=/build/cmake/build/bin:$PATH PYTORCH_BUILD_VERSION=2.4.1 PYTORCH_BUILD_NUMBER=1 MAX_JOBS=${MAX_TORCH_COMPILATION_JOBS} CUDA_HOME=/usr/local/cuda-11.8 CUDACXX=/usr/local/cuda-11.8/bin/nvcc TORCH_CUDA_ARCH_LIST="8.7" USE_NCCL=0 USE_DISTRIBUTED=0 USE_MKLDNN=0 BUILD_TEST=0 CMAKE_POLICY_VERSION_MINIMUM=3.5 python3.12 setup.py bdist_wheel
 RUN python3.12 -m pip install dist/torch-*.whl
 RUN cp dist/torch-*.whl /build/out/wheels/
 
