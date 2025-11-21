@@ -68,9 +68,11 @@ def truck_image() -> np.ndarray:
 def melee_image() -> np.ndarray:
     return cv2.imread(MELEE_IMAGE_PATH)
 
+
 @pytest.fixture(scope="function")
 def bird_image() -> np.ndarray:
     return cv2.imread(BIRD_IMAGE_PATH)
+
 
 @pytest.fixture(scope="function")
 def face_image() -> np.ndarray:
@@ -147,7 +149,9 @@ def dinov3_multi_label_model() -> Generator[str, None, None]:
 
 
 @pytest.fixture(scope="function")
-def dinov3_multi_label_reference_prediction() -> MultiLabelClassificationInferenceResponse:
+def dinov3_multi_label_reference_prediction() -> (
+    MultiLabelClassificationInferenceResponse
+):
     with open(
         os.path.join(ASSETS_DIR, "dinov3_multi_label_reference_prediction.json"), "r"
     ) as f:

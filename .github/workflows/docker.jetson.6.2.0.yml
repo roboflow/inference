@@ -19,8 +19,9 @@ env:
 jobs:
   docker:
     runs-on:
-      labels: ubuntu-latest
-    timeout-minutes: 120
+      labels: depot-ubuntu-24.04-4
+      group: public-depot
+    timeout-minutes: 360
     permissions:
       id-token: write
       contents: read
