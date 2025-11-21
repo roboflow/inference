@@ -238,7 +238,6 @@ class VideoFrameProcessor:
                 f"data_output must be list or None, got {type(data_output).__name__}"
             )
 
-        self._ensure_workflow_specification(workflow_configuration, api_key)
         self._validate_output_fields(workflow_configuration)
 
         self._inference_pipeline = InferencePipeline.init_with_workflow(
