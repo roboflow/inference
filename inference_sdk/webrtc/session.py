@@ -96,7 +96,8 @@ class _VideoStream:
         """Iterate over video frames with metadata.
 
         Automatically starts the session if not already started.
-        Yields tuples of (BGR numpy array, VideoMetadata) until the stream ends (None received).
+        Yields tuples of (BGR numpy array, VideoMetadata) until the stream ends (None received)
+        or session is closed.
         The metadata is extracted directly from the video frame (pts, time_base, etc.).
 
         Raises:
@@ -104,6 +105,10 @@ class _VideoStream:
         """
         self._session._ensure_started()
         while True:
+            # Check if session was closed (e.g., from a handler)
+            if self._session._state == SessionState.CLOSED:
+                break
+
             # Use timeout only for first frame to detect server not sending
             timeout = (
                 self._initial_frame_timeout if not self._first_frame_received else None
@@ -291,6 +296,12 @@ class WebRTCSession:
             if self._state == SessionState.CLOSED:
                 return  # Already closed, nothing to do
             self._state = SessionState.CLOSED
+
+        # Signal video iterator to stop by putting None sentinel
+        try:
+            self._video_queue.put_nowait(None)
+        except Exception:
+            pass  # Queue might be full, but that's okay
 
         # Cleanup resources (nested finally ensures all cleanup steps execute)
         try:

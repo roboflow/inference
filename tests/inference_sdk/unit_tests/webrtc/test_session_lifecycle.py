@@ -96,11 +96,11 @@ class TestRunMethod:
             if len(frame_count) >= 2:
                 mock_session.close()
 
-        # Put multiple frames in queue
-        for i in range(10):
+        # Put multiple frames in queue (use put_nowait to avoid blocking on full queue)
+        for i in range(5):
             test_frame = np.zeros((100, 100, 3), dtype=np.uint8)
             test_metadata = VideoMetadata(frame_id=i, received_at=datetime.now())
-            mock_session._video_queue.put((test_frame, test_metadata))
+            mock_session._video_queue.put_nowait((test_frame, test_metadata))
 
         # Mock state as started
         mock_session._state = SessionState.STARTED
@@ -328,15 +328,15 @@ class TestCloseMethod:
             calls.append(1)
             mock_session.close()
 
-        # Put frames in queue
+        # Put frames in queue (use put_nowait to avoid blocking on full queue)
         for i in range(5):
             test_frame = np.zeros((100, 100, 3), dtype=np.uint8)
             test_metadata = VideoMetadata(frame_id=i, received_at=datetime.now())
-            mock_session._video_queue.put((test_frame, test_metadata))
+            mock_session._video_queue.put_nowait((test_frame, test_metadata))
 
         mock_session._state = SessionState.STARTED
         mock_session.run()
 
         # Should have stopped after first frame
         assert len(calls) == 1
-        assert mock_session._state == "closed"
+        assert mock_session._state == SessionState.CLOSED
