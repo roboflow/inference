@@ -154,8 +154,8 @@ def mock_rtc_peer_connection():
             self._frame_idx += 1
             return frame
 
-    with patch("inference_sdk.webrtc.session.RTCPeerConnection", MockRTCPeerConnection), \
-         patch("inference_sdk.webrtc.session.MediaRelay") as mock_relay:
+    with patch("aiortc.RTCPeerConnection", MockRTCPeerConnection), \
+         patch("aiortc.contrib.media.MediaRelay") as mock_relay:
 
         # Mock MediaRelay to pass through the track
         mock_relay_instance = Mock()

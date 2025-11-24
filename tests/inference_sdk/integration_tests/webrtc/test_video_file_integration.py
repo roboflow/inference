@@ -39,6 +39,7 @@ def test_video_file_session_basic(
         workflow_config=sample_workflow_config,
         stream_config=sample_stream_config
     ) as session:
+        session._ensure_started()
         # Verify track was created
         assert source._track is not None
         assert source._track._container is not None
@@ -65,6 +66,7 @@ def test_video_file_fps_detection(
         workflow_config=sample_workflow_config,
         stream_config=sample_stream_config
     ) as session:
+        session._ensure_started()
         # Verify track was created and FPS was detected
         assert source._track is not None
         fps = source._track.get_declared_fps()
@@ -159,6 +161,7 @@ def test_video_file_cleanup(
         workflow_config=sample_workflow_config,
         stream_config=sample_stream_config
     ) as session:
+        session._ensure_started()
         track = source._track
         assert track._container is not None, "Container should exist during session"
         # PyAV containers don't have a simple "is_open" check, but we can verify it exists
@@ -237,6 +240,8 @@ def test_video_file_with_data_channel(
     def collect_results(data):
         results.append(data)
 
+    session._ensure_started()
+
     try:
 
         # Get the data channel
@@ -245,7 +250,7 @@ def test_video_file_with_data_channel(
         # Simulate receiving results for each frame
         for i in range(5):
             data_channel.send_message(
-                f'{{"output_name": "analysis_results", "serialized_output_data": {{"frame": {i}, "detections": []}}}}'
+                f'{{"serialized_output_data": {{"analysis_results": {{"frame": {i}, "detections": []}}}}}}'
             )
 
         # Give handlers time to process
