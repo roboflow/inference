@@ -256,11 +256,9 @@ if modal is not None:
             try:
                 loop.run_until_complete(
                     init_rtc_peer_connection_with_loop(
-                        init_rtc_peer_connection_with_loop(
-                            webrtc_request=webrtc_request,
-                            send_answer=send_answer,
-                            model_manager=self._model_manager,
-                        )
+                        webrtc_request=webrtc_request,
+                        send_answer=send_answer,
+                        model_manager=self._model_manager,
                     )
                 )
             except Exception as exc:
