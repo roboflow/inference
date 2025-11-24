@@ -84,7 +84,6 @@ from inference_sdk.http.utils.requests import (
 )
 from inference_sdk.utils.decorators import deprecated, experimental
 
-
 SUCCESSFUL_STATUS_CODE = 200
 DEFAULT_HEADERS = {
     "Content-Type": "application/json",
