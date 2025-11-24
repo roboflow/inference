@@ -51,6 +51,7 @@ from inference.core.interfaces.webrtc_worker.utils import (
     workflow_contains_instant_model,
     workflow_contains_preloaded_model,
 )
+from inference.core.interfaces.webrtc_worker.watchdog import Watchdog
 from inference.core.managers.base import ModelManager
 from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.core.roboflow_api import (
@@ -236,9 +237,29 @@ if modal is not None:
             logger.info("MODAL_ENVIRONMENT: %s", MODAL_ENVIRONMENT)
             logger.info("MODAL_IDENTITY_TOKEN: %s", MODAL_IDENTITY_TOKEN)
 
+            try:
+                current_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                current_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(current_loop)
+
+            def on_timeout():
+                def shutdown():
+                    for task in asyncio.all_tasks():
+                        task.cancel()
+                    current_loop.stop()
+
+                current_loop.call_soon_threadsafe(shutdown)
+
+            watchdog = Watchdog(
+                timeout_seconds=30,
+                on_timeout=on_timeout,
+            )
+
             def send_answer(obj: WebRTCWorkerResult):
                 logger.info("Sending webrtc answer")
                 q.put(obj)
+                watchdog.start()
 
             if webrtc_request.processing_timeout == 0:
                 error_msg = "Processing timeout is 0, skipping processing"
@@ -261,6 +282,7 @@ if modal is not None:
                         webrtc_request=webrtc_request,
                         send_answer=send_answer,
                         model_manager=self._model_manager,
+                        heartbeat_callback=watchdog.heartbeat,
                     )
                 )
             except Exception as exc:

@@ -203,6 +203,7 @@ class VideoFrameProcessor:
         termination_date: Optional[datetime.datetime] = None,
         terminate_event: Optional[asyncio.Event] = None,
         use_data_channel_frames: bool = False,
+        heartbeat_callback: Optional[Callable[[], None]] = None,
     ):
         self._loop = asyncio_loop
         self._termination_date = termination_date
@@ -213,6 +214,7 @@ class VideoFrameProcessor:
         self._received_frames = 0
         self._declared_fps = declared_fps
         self._stop_processing = False
+        self.heartbeat_callback = heartbeat_callback
         self.use_data_channel_frames = use_data_channel_frames
         self._data_frame_queue: "asyncio.Queue[Optional[VideoFrame]]" = asyncio.Queue()
         self._chunk_reassembler = (
@@ -402,6 +404,8 @@ class VideoFrameProcessor:
             while not self._stop_processing:
                 if self._check_termination():
                     break
+                if self.heartbeat_callback:
+                    self.heartbeat_callback()
 
                 # Get frame from appropriate source
                 if self.use_data_channel_frames:
@@ -548,6 +552,7 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
         termination_date: Optional[datetime.datetime] = None,
         terminate_event: Optional[asyncio.Event] = None,
         use_data_channel_frames: bool = False,
+        heartbeat_callback: Optional[Callable[[], None]] = None,
         *args,
         **kwargs,
     ):
@@ -565,6 +570,7 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
             terminate_event=terminate_event,
             use_data_channel_frames=use_data_channel_frames,
             model_manager=model_manager,
+            heartbeat_callback=heartbeat_callback,
         )
 
     async def _auto_detect_stream_output(
@@ -589,6 +595,9 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
         if not self._av_logging_set:
             av_logging.set_libav_level(av_logging.ERROR)
             self._av_logging_set = True
+
+        if self.heartbeat_callback:
+            self.heartbeat_callback()
 
         # Check if we should terminate
         if self._check_termination():
@@ -650,6 +659,7 @@ async def init_rtc_peer_connection_with_loop(
     asyncio_loop: Optional[asyncio.AbstractEventLoop] = None,
     model_manager: Optional[ModelManager] = None,
     shutdown_reserve: int = WEBRTC_MODAL_SHUTDOWN_RESERVE,
+    heartbeat_callback: Optional[Callable[[], None]] = None,
 ) -> RTCPeerConnectionWithLoop:
     # ice._mdns is instantiated on the module level, it has a lock that is bound to the event loop
     # avoid RuntimeError: asyncio.locks.Lock is bound to a different event loop
@@ -720,6 +730,7 @@ async def init_rtc_peer_connection_with_loop(
                 termination_date=termination_date,
                 terminate_event=terminate_event,
                 use_data_channel_frames=webrtc_request.use_data_channel_frames,
+                heartbeat_callback=heartbeat_callback,
             )
         else:
             # No video track - use base VideoFrameProcessor
@@ -735,6 +746,7 @@ async def init_rtc_peer_connection_with_loop(
                 termination_date=termination_date,
                 terminate_event=terminate_event,
                 use_data_channel_frames=webrtc_request.use_data_channel_frames,
+                heartbeat_callback=heartbeat_callback,
             )
     except (
         ValidationError,
