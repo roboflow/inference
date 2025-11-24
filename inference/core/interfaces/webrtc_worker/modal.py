@@ -62,10 +62,7 @@ from inference.core.roboflow_api import (
 )
 from inference.core.version import __version__
 from inference.models.aliases import resolve_roboflow_model_alias
-from inference.models.owlv2.owlv2 import (
-    PRELOADED_HF_MODELS,
-    preload_owlv2_model,
-)
+from inference.models.owlv2.owlv2 import PRELOADED_HF_MODELS, preload_owlv2_model
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
 from inference.usage_tracking.collector import usage_collector
 from inference.usage_tracking.plan_details import WebRTCPlan
