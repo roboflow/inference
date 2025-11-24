@@ -45,6 +45,20 @@ GEMINI_MODEL_ALIASES = {
     "gemini-2.0-flash-exp": "gemini-2.0-flash",
 }
 
+MODELS_SUPPORTING_THINKING_LEVEL = [
+    "gemini-3-pro-preview",
+]
+
+MODELS_NOT_SUPPORTING_THINKING_LEVEL = [
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-lite",
+]
+
+GEMINI_MODEL_IDS = MODELS_SUPPORTING_THINKING_LEVEL + MODELS_NOT_SUPPORTING_THINKING_LEVEL
+
 SUPPORTED_TASK_TYPES_LIST = [
     "unconstrained",
     "ocr",
@@ -72,11 +86,11 @@ You can specify arbitrary text prompts or predefined ones, the block supports th
 
 {RELEVANT_TASKS_DOCS_DESCRIPTION}
 
-You need to provide your Google AI API key to use the Gemini model. 
+You need to provide your Google AI API key to use the Gemini model.
 
 **WARNING!**
 
-This block makes use of `/v1beta` API of Google Gemini model - the implementation may change 
+This block makes use of `/v1beta` API of Google Gemini model - the implementation may change
 in the future, without guarantee of backward compatibility.
 """
 
@@ -180,22 +194,25 @@ class BlockManifest(WorkflowBlockManifest):
     )
     model_version: Union[
         Selector(kind=[STRING_KIND]),
-        Literal[
-            "gemini-3-pro-preview",
-            "gemini-2.5-pro",
-            "gemini-2.5-flash",
-            "gemini-2.5-flash-lite",
-            "gemini-2.0-flash",
-            "gemini-2.0-flash-lite",
-        ],
+        Literal[tuple(GEMINI_MODEL_IDS)],
     ] = Field(
-        default="gemini-2.0-flash",
+        default="gemini-3-pro-preview",
         description="Model to be used",
-        examples=["gemini-2.5-pro", "$inputs.gemini_model"],
+        examples=["gemini-3-pro-preview", "$inputs.gemini_model"],
     )
-    max_tokens: int = Field(
-        default=450,
-        description="Maximum number of tokens the model can generate in it's response.",
+    thinking_level: Optional[Union[Selector(kind=[STRING_KIND]), Literal["low", "high"]]] = Field(
+        default=None,
+        description="Controls the depth of internal reasoning for Gemini 3+ models. "
+        "'low' minimizes latency and cost (best for simple tasks), 'high' maximizes reasoning depth (default). "
+        "Only supported by Gemini 3 and newer models.",
+        json_schema_extra={
+            "relevant_for": {
+                "model_version": {
+                    "values": MODELS_SUPPORTING_THINKING_LEVEL,
+                    "required": False,
+                },
+            },
+        },
     )
     temperature: Optional[Union[float, Selector(kind=[FLOAT_KIND])]] = Field(
         default=None,
@@ -203,6 +220,19 @@ class BlockManifest(WorkflowBlockManifest):
         'random / "creative" the generations are.',
         ge=0.0,
         le=2.0,
+        json_schema_extra={
+            "relevant_for": {
+                "model_version": {
+                    "values": MODELS_NOT_SUPPORTING_THINKING_LEVEL,
+                    "required": False,
+                },
+            },
+        },
+    )
+    max_tokens: Optional[int] = Field(
+        default=None,
+        description="Maximum number of tokens the model can generate in it's response. "
+        "If not specified, the model will use its default limit.",
     )
     max_concurrent_requests: Optional[int] = Field(
         default=None,
@@ -286,8 +316,9 @@ class GoogleGeminiBlockV1(WorkflowBlock):
         classes: Optional[List[str]],
         api_key: str,
         model_version: str,
-        max_tokens: int,
+        max_tokens: Optional[int],
         temperature: Optional[float],
+        thinking_level: Optional[str],
         max_concurrent_requests: Optional[int],
     ) -> BlockResult:
         inference_images = [i.to_inference_format() for i in images]
@@ -301,6 +332,7 @@ class GoogleGeminiBlockV1(WorkflowBlock):
             model_version=model_version,
             max_tokens=max_tokens,
             temperature=temperature,
+            thinking_level=thinking_level,
             max_concurrent_requests=max_concurrent_requests,
         )
         return [
@@ -316,8 +348,9 @@ def run_gemini_prompting(
     classes: Optional[List[str]],
     google_api_key: Optional[str],
     model_version: str,
-    max_tokens: int,
+    max_tokens: Optional[int],
     temperature: Optional[float],
+    thinking_level: Optional[str],
     max_concurrent_requests: Optional[int],
 ) -> List[str]:
     if task_type not in PROMPT_BUILDERS:
@@ -333,7 +366,9 @@ def run_gemini_prompting(
             prompt=prompt,
             output_structure=output_structure,
             classes=classes,
+            model_version=model_version,
             temperature=temperature,
+            thinking_level=thinking_level,
             max_tokens=max_tokens,
         )
         gemini_prompts.append(generated_prompt)
@@ -393,8 +428,10 @@ def execute_gemini_request(
 def prepare_unconstrained_prompt(
     base64_image: str,
     prompt: str,
+    model_version: str,
     temperature: Optional[float],
-    max_tokens: int,
+    thinking_level: Optional[str],
+    max_tokens: Optional[int],
     **kwargs,
 ) -> dict:
     return {
@@ -415,6 +452,8 @@ def prepare_unconstrained_prompt(
         "generationConfig": prepare_generation_config(
             max_tokens=max_tokens,
             temperature=temperature,
+            thinking_level=thinking_level,
+            model_version=model_version,
         ),
     }
 
@@ -422,8 +461,10 @@ def prepare_unconstrained_prompt(
 def prepare_classification_prompt(
     base64_image: str,
     classes: List[str],
+    model_version: str,
     temperature: Optional[float],
-    max_tokens: int,
+    thinking_level: Optional[str],
+    max_tokens: Optional[int],
     **kwargs,
 ) -> dict:
     serialised_classes = ", ".join(classes)
@@ -458,6 +499,8 @@ def prepare_classification_prompt(
         "generationConfig": prepare_generation_config(
             max_tokens=max_tokens,
             temperature=temperature,
+            thinking_level=thinking_level,
+            model_version=model_version,
             response_mime_type="application/json",
         ),
     }
@@ -466,8 +509,10 @@ def prepare_classification_prompt(
 def prepare_multi_label_classification_prompt(
     base64_image: str,
     classes: List[str],
+    model_version: str,
     temperature: Optional[float],
-    max_tokens: int,
+    thinking_level: Optional[str],
+    max_tokens: Optional[int],
     **kwargs,
 ) -> dict:
     serialised_classes = ", ".join(classes)
@@ -503,6 +548,8 @@ def prepare_multi_label_classification_prompt(
         "generationConfig": prepare_generation_config(
             max_tokens=max_tokens,
             temperature=temperature,
+            thinking_level=thinking_level,
+            model_version=model_version,
             response_mime_type="application/json",
         ),
     }
@@ -511,8 +558,10 @@ def prepare_multi_label_classification_prompt(
 def prepare_vqa_prompt(
     base64_image: str,
     prompt: str,
+    model_version: str,
     temperature: Optional[float],
-    max_tokens: int,
+    thinking_level: Optional[str],
+    max_tokens: Optional[int],
     **kwargs,
 ) -> dict:
     return {
@@ -543,14 +592,18 @@ def prepare_vqa_prompt(
         "generationConfig": prepare_generation_config(
             max_tokens=max_tokens,
             temperature=temperature,
+            thinking_level=thinking_level,
+            model_version=model_version,
         ),
     }
 
 
 def prepare_ocr_prompt(
     base64_image: str,
+    model_version: str,
     temperature: Optional[float],
-    max_tokens: int,
+    thinking_level: Optional[str],
+    max_tokens: Optional[int],
     **kwargs,
 ) -> dict:
     return {
@@ -581,6 +634,8 @@ def prepare_ocr_prompt(
         "generationConfig": prepare_generation_config(
             max_tokens=max_tokens,
             temperature=temperature,
+            thinking_level=thinking_level,
+            model_version=model_version,
         ),
     }
 
@@ -588,8 +643,10 @@ def prepare_ocr_prompt(
 def prepare_caption_prompt(
     base64_image: str,
     short_description: bool,
+    model_version: str,
     temperature: Optional[float],
-    max_tokens: int,
+    thinking_level: Optional[str],
+    max_tokens: Optional[int],
     **kwargs,
 ) -> dict:
     caption_detail_level = "Caption should be short."
@@ -622,6 +679,8 @@ def prepare_caption_prompt(
         "generationConfig": prepare_generation_config(
             max_tokens=max_tokens,
             temperature=temperature,
+            thinking_level=thinking_level,
+            model_version=model_version,
         ),
     }
 
@@ -629,8 +688,10 @@ def prepare_caption_prompt(
 def prepare_structured_answering_prompt(
     base64_image: str,
     output_structure: Dict[str, str],
+    model_version: str,
     temperature: Optional[float],
-    max_tokens: int,
+    thinking_level: Optional[str],
+    max_tokens: Optional[int],
     **kwargs,
 ) -> dict:
     output_structure_serialised = json.dumps(output_structure, indent=4)
@@ -663,6 +724,8 @@ def prepare_structured_answering_prompt(
         "generationConfig": prepare_generation_config(
             max_tokens=max_tokens,
             temperature=temperature,
+            thinking_level=thinking_level,
+            model_version=model_version,
             response_mime_type="application/json",
         ),
     }
@@ -671,8 +734,10 @@ def prepare_structured_answering_prompt(
 def prepare_object_detection_prompt(
     base64_image: str,
     classes: List[str],
+    model_version: str,
     temperature: Optional[float],
-    max_tokens: int,
+    thinking_level: Optional[str],
+    max_tokens: Optional[int],
     **kwargs,
 ) -> dict:
     serialised_classes = ", ".join(classes)
@@ -706,23 +771,36 @@ def prepare_object_detection_prompt(
         "generationConfig": prepare_generation_config(
             max_tokens=max_tokens,
             temperature=temperature,
+            thinking_level=thinking_level,
+            model_version=model_version,
             response_mime_type="application/json",
         ),
     }
 
 
 def prepare_generation_config(
-    max_tokens: int,
+    max_tokens: Optional[int],
     temperature: Optional[float],
+    thinking_level: Optional[str],
+    model_version: str,
     response_mime_type: str = "text/plain",
 ) -> dict:
     result = {
-        "max_output_tokens": max_tokens,
         "response_mime_type": response_mime_type,
         "candidate_count": 1,
     }
-    if temperature is not None:
+
+    if max_tokens is not None:
+        result["max_output_tokens"] = max_tokens
+
+    supports_thinking_level = model_version in MODELS_SUPPORTING_THINKING_LEVEL
+
+    if thinking_level is not None and supports_thinking_level:
+        result["thinking_config"] = {"thinking_level": thinking_level}
+
+    if temperature is not None and not supports_thinking_level:
         result["temperature"] = temperature
+
     return result
 
 
