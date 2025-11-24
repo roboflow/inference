@@ -57,7 +57,9 @@ MODELS_NOT_SUPPORTING_THINKING_LEVEL = [
     "gemini-2.0-flash-lite",
 ]
 
-GEMINI_MODEL_IDS = MODELS_SUPPORTING_THINKING_LEVEL + MODELS_NOT_SUPPORTING_THINKING_LEVEL
+GEMINI_MODEL_IDS = (
+    MODELS_SUPPORTING_THINKING_LEVEL + MODELS_NOT_SUPPORTING_THINKING_LEVEL
+)
 
 SUPPORTED_TASK_TYPES_LIST = [
     "unconstrained",
@@ -200,7 +202,12 @@ class BlockManifest(WorkflowBlockManifest):
         description="Model to be used",
         examples=["gemini-3-pro-preview", "$inputs.gemini_model"],
     )
-    thinking_level: Optional[Union[Selector(kind=[STRING_KIND]), Literal["low", "high"]]] = Field(
+    thinking_level: Optional[
+        Union[
+            Selector(kind=[STRING_KIND]),
+            Literal["low", "high"],
+        ]
+    ] = Field(
         default=None,
         description="Controls the depth of internal reasoning for Gemini 3+ models. "
         "'low' minimizes latency and cost (best for simple tasks), 'high' maximizes reasoning depth (default). "
