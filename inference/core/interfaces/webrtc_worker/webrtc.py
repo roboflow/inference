@@ -7,6 +7,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
+from aioice import ice
 from aiortc import (
     RTCConfiguration,
     RTCDataChannel,
@@ -650,6 +651,15 @@ async def init_rtc_peer_connection_with_loop(
     model_manager: Optional[ModelManager] = None,
     shutdown_reserve: int = WEBRTC_MODAL_SHUTDOWN_RESERVE,
 ) -> RTCPeerConnectionWithLoop:
+    # ice._mdns is instantiated on the module level, it has a lock that is bound to the event loop
+    # avoid RuntimeError: asyncio.locks.Lock is bound to a different event loop
+    if hasattr(ice, "_mdns"):
+        ice._mdns.lock = asyncio.Lock()
+    else:
+        logger.warning(
+            "aioice.ice implementation was changed, _mdns attribute is not available"
+        )
+
     termination_date = None
     terminate_event = asyncio.Event()
 

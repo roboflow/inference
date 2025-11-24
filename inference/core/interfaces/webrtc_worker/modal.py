@@ -250,13 +250,21 @@ if modal is not None:
                 send_answer(WebRTCWorkerResult(error_message=error_msg))
                 return
 
-            asyncio.run(
-                init_rtc_peer_connection_with_loop(
-                    webrtc_request=webrtc_request,
-                    send_answer=send_answer,
-                    model_manager=self._model_manager,
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(
+                    init_rtc_peer_connection_with_loop(
+                        init_rtc_peer_connection_with_loop(
+                            webrtc_request=webrtc_request,
+                            send_answer=send_answer,
+                            model_manager=self._model_manager,
+                        )
+                    )
                 )
-            )
+            finally:
+                loop.close()
+
             _exec_session_stopped = datetime.datetime.now()
             logger.info(
                 "WebRTC session stopped at %s",
