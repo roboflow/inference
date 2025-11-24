@@ -25,7 +25,9 @@ class ChunkReassembler:
 
     def __init__(self):
         """Initialize the chunk reassembler."""
-        self._chunks: Dict[int, Dict[int, bytes]] = {}  # {frame_id: {chunk_index: data}}
+        self._chunks: Dict[int, Dict[int, bytes]] = (
+            {}
+        )  # {frame_id: {chunk_index: data}}
         self._total: Dict[int, int] = {}  # {frame_id: total_chunks}
 
     def add_chunk(self, message: bytes) -> Tuple[Optional[bytes], Optional[int]]:
@@ -38,7 +40,9 @@ class ChunkReassembler:
             Tuple of (payload, frame_id) if complete, (None, None) otherwise
         """
         # Parse the binary message
-        frame_id, chunk_index, total_chunks, chunk_data = _parse_chunked_binary_message(message)
+        frame_id, chunk_index, total_chunks, chunk_data = _parse_chunked_binary_message(
+            message
+        )
 
         # Initialize buffers for new frame
         if frame_id not in self._chunks:

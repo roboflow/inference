@@ -652,18 +652,20 @@ class WebRTCSession:
                     if len(message) >= 12:
                         try:
                             # Try to reassemble chunks
-                            complete_payload, _ = self._chunk_reassembler.add_chunk(message)
+                            complete_payload, _ = self._chunk_reassembler.add_chunk(
+                                message
+                            )
                             if complete_payload is None:
                                 # Not all chunks received yet
                                 return
                             # Parse the complete JSON from reassembled payload
-                            message = complete_payload.decode('utf-8')
+                            message = complete_payload.decode("utf-8")
                         except (struct.error, ValueError):
                             # Not a chunked message, try to decode as regular UTF-8
-                            message = message.decode('utf-8')
+                            message = message.decode("utf-8")
                     else:
                         # Too short to be chunked, decode as regular UTF-8
-                        message = message.decode('utf-8')
+                        message = message.decode("utf-8")
 
                 parsed_message = json.loads(message)
 
