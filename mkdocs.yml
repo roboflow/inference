@@ -114,6 +114,7 @@ nav:
           - Perception Encoder: foundation/perception_encoder.md
           - Segment Anything (Segmentation): foundation/sam.md
           - Segment Anything 2 (Segmentation): foundation/sam2.md
+          - Segment Anything 3 (Segmentation): foundation/sam3.md
           - SmolVLM2: foundation/smolvlm.md
           - YOLO-World (Object Detection): foundation/yolo_world.md
           - OwlV2 (Object Detection): foundation/owlv2.md

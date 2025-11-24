@@ -1,3 +1,4 @@
+import datetime
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Union
 
@@ -14,10 +15,22 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
 )
 
 
+class RTCIceServer(BaseModel):
+    urls: List[str]
+    username: Optional[str] = None
+    credential: Optional[str] = None
+
+
+class WebRTCConfig(BaseModel):
+    iceServers: List[RTCIceServer]
+
+
 class WebRTCWorkerRequest(BaseModel):
     api_key: Optional[str] = None
     workflow_configuration: WorkflowConfiguration
     webrtc_offer: WebRTCOffer
+    webrtc_config: Optional[WebRTCConfig] = None
+    # TODO: to be removed, replaced with webrtc_config
     webrtc_turn_config: Optional[WebRTCTURNConfig] = None
     webrtc_realtime_processing: bool = (
         WEBRTC_REALTIME_PROCESSING  # when set to True, MediaRelay.subscribe will be called with buffered=False
@@ -26,22 +39,16 @@ class WebRTCWorkerRequest(BaseModel):
     data_output: Optional[List[str]] = Field(default=None)
     declared_fps: Optional[float] = None
     rtsp_url: Optional[str] = None
+    use_data_channel_frames: bool = (
+        False  # When True, expect frames via data channel instead of media track
+    )
     processing_timeout: Optional[int] = WEBRTC_MODAL_FUNCTION_TIME_LIMIT
-    # https://modal.com/docs/guide/gpu#specifying-gpu-type
-    requested_gpu: Optional[
-        Literal[
-            "T4",
-            "L4",
-            "A10",
-            "A100",
-            "A100-40GB",
-            "A100-80GB",
-            "L40S",
-            "H100/H100!",
-            "H200",
-            "B200",
-        ]
-    ] = "T4"
+    processing_session_started: Optional[datetime.datetime] = None
+    requested_plan: Optional[str] = "webrtc-gpu-small"
+    # TODO: replaced with requested_plan
+    requested_gpu: Optional[str] = None
+    # must be valid region: https://modal.com/docs/guide/region-selection#region-options
+    requested_region: Optional[str] = None
 
 
 class WebRTCVideoMetadata(BaseModel):

@@ -62,6 +62,7 @@ from inference.core.entities.requests.sam2 import (
     Sam2EmbeddingRequest,
     Sam2SegmentationRequest,
 )
+from inference.core.entities.requests.sam3 import Sam3SegmentationRequest
 from inference.core.entities.requests.server_state import (
     AddModelRequest,
     ClearModelRequest,
@@ -106,6 +107,10 @@ from inference.core.entities.responses.sam2 import (
     Sam2EmbeddingResponse,
     Sam2SegmentationResponse,
 )
+from inference.core.entities.responses.sam3 import (
+    Sam3EmbeddingResponse,
+    Sam3SegmentationResponse,
+)
 from inference.core.entities.responses.server_state import (
     ModelsDescriptions,
     ServerVersionInfo,
@@ -132,6 +137,7 @@ from inference.core.env import (
     CORE_MODEL_OWLV2_ENABLED,
     CORE_MODEL_PE_ENABLED,
     CORE_MODEL_SAM2_ENABLED,
+    CORE_MODEL_SAM3_ENABLED,
     CORE_MODEL_SAM_ENABLED,
     CORE_MODEL_TROCR_ENABLED,
     CORE_MODEL_YOLO_WORLD_ENABLED,
@@ -2373,6 +2379,119 @@ class HttpInterface(BaseInterface):
                         )
                     return model_response
 
+            if CORE_MODEL_SAM3_ENABLED:
+
+                @app.post(
+                    "/sam3/embed_image",
+                    response_model=Sam3EmbeddingResponse,
+                    summary="Seg preview Image Embeddings",
+                    description="Run the  Model to embed image data.",
+                )
+                @with_route_exceptions
+                @usage_collector("request")
+                def sam3_embed_image(
+                    inference_request: Sam2EmbeddingRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
+                ):
+                    logger.debug(f"Reached /sam3/embed_image")
+
+                    self.model_manager.add_model(
+                        "sam3/sam3_interactive",
+                        api_key=api_key,
+                        endpoint_type=ModelEndpointType.CORE_MODEL,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
+
+                    model_response = self.model_manager.infer_from_request_sync(
+                        "sam3/sam3_interactive", inference_request
+                    )
+                    return model_response
+
+                @app.post(
+                    "/sam3/visual_segment",
+                    response_model=Sam2SegmentationResponse,
+                    summary="SAM3 PVS (promptable visual segmentation)",
+                    description="Run the SAM3 PVS (promptable visual segmentation) to generate segmentations for image data.",
+                )
+                @with_route_exceptions
+                @usage_collector("request")
+                def sam3_visual_segment(
+                    inference_request: Sam2SegmentationRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
+                ):
+                    logger.debug(f"Reached /sam3/visual_segment")
+
+                    self.model_manager.add_model(
+                        "sam3/sam3_interactive",
+                        api_key=api_key,
+                        endpoint_type=ModelEndpointType.CORE_MODEL,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
+
+                    model_response = self.model_manager.infer_from_request_sync(
+                        "sam3/sam3_interactive", inference_request
+                    )
+                    return model_response
+
+                @app.post(
+                    "/sam3/concept_segment",
+                    response_model=Sam3SegmentationResponse,
+                    summary="SAM3 PCS (promptable concept segmentation)",
+                    description="Run the SAM3 PCS (promptable concept segmentation) to generate segmentations for image data.",
+                )
+                @with_route_exceptions
+                @usage_collector("request")
+                def sam3_segment_image(
+                    inference_request: Sam3SegmentationRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
+                ):
+                    if inference_request.model_id.startswith("sam3/"):
+                        self.model_manager.add_model(
+                            inference_request.model_id,
+                            api_key=api_key,
+                            endpoint_type=ModelEndpointType.CORE_MODEL,
+                            countinference=countinference,
+                            service_secret=service_secret,
+                        )
+                    else:
+                        self.model_manager.add_model(
+                            inference_request.model_id,
+                            api_key=api_key,
+                            endpoint_type=ModelEndpointType.ORT,
+                            countinference=countinference,
+                            service_secret=service_secret,
+                        )
+
+                    model_response = self.model_manager.infer_from_request_sync(
+                        inference_request.model_id, inference_request
+                    )
+                    if inference_request.format == "binary":
+                        return Response(
+                            content=model_response,
+                            headers={"Content-Type": "application/octet-stream"},
+                        )
+                    return model_response
+
             if CORE_MODEL_OWLV2_ENABLED:
 
                 @app.post(
@@ -2782,7 +2901,7 @@ class HttpInterface(BaseInterface):
                 model_id = f"{dataset_id}/{version_id}"
                 if confidence >= 1:
                     confidence /= 100
-                elif confidence < CONFIDENCE_LOWER_BOUND_OOM_PREVENTION:
+                if confidence < CONFIDENCE_LOWER_BOUND_OOM_PREVENTION:
                     # allowing lower confidence results in RAM usage explosion
                     confidence = CONFIDENCE_LOWER_BOUND_OOM_PREVENTION
 

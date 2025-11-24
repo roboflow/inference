@@ -169,6 +169,15 @@ def create_batch_of_images(
             help="Path to JSON file with URLs of files to be ingested (required if data source is 'references-file')",
         ),
     ] = None,
+    bucket_path: Annotated[
+        Optional[str],
+        typer.Option(
+            "--bucket-path",
+            "-bp",
+            help="Cloud storage path with optional glob pattern (e.g., 's3://bucket/path/**/*.jpg', 'gs://bucket/images/'). "
+                 "Required for cloud-storage source. Supports S3, GCS, and Azure.",
+        ),
+    ] = None,
     ingest_id: Annotated[
         Optional[str],
         typer.Option(
@@ -229,6 +238,12 @@ def create_batch_of_images(
         notification_categories = None
     try:
         ensure_api_key_is_set(api_key=api_key)
+        if source is DataSource.LOCAL_DIRECTORY and images_dir:
+            if images_dir.startswith(("s3://", "gs://", "gcs://", "az://", "azure://")):
+                raise ValueError(
+                    f"Detected cloud storage path '{images_dir}' but data source is set to 'local-directory'. "
+                    "Please use --data-source cloud-storage and --bucket-path instead."
+                )
         if source is DataSource.LOCAL_DIRECTORY:
             if images_dir is None:
                 raise ValueError(
@@ -245,6 +260,20 @@ def create_batch_of_images(
                 batch_name=batch_name,
                 ingest_id=ingest_id,
                 notifications_url=notifications_url,
+            )
+        elif source is DataSource.CLOUD_STORAGE:
+            if bucket_path is None:
+                raise ValueError(
+                    "`bucket-path` not provided when `cloud-storage` specified as a data source"
+                )
+            api_operations.create_images_batch_from_cloud_storage(
+                bucket_path=bucket_path,
+                batch_id=batch_id,
+                api_key=api_key,
+                batch_name=batch_name,
+                ingest_id=ingest_id,
+                notifications_url=notifications_url,
+                notification_categories=notification_categories,
             )
         else:
             if references is None:
@@ -302,6 +331,15 @@ def create_batch_of_videos(
             "--references",
             "-r",
             help="Path to JSON file with URLs of files to be ingested (required if data source is 'references-file')",
+        ),
+    ] = None,
+    bucket_path: Annotated[
+        Optional[str],
+        typer.Option(
+            "--bucket-path",
+            "-bp",
+            help="Cloud storage path with optional glob pattern (e.g., 's3://bucket/path/**/*.mp4', 'gs://bucket/videos/'). "
+                 "Required for cloud-storage source. Supports S3, GCS, and Azure.",
         ),
     ] = None,
     ingest_id: Annotated[
@@ -365,6 +403,12 @@ def create_batch_of_videos(
         notification_categories = None
     try:
         ensure_api_key_is_set(api_key=api_key)
+        if source is DataSource.LOCAL_DIRECTORY and videos_dir:
+            if videos_dir.startswith(("s3://", "gs://", "gcs://", "az://", "azure://")):
+                raise ValueError(
+                    f"Detected cloud storage path '{videos_dir}' but data source is set to 'local-directory'. "
+                    "Please use --data-source cloud-storage and --bucket-path instead."
+                )
         if source is DataSource.LOCAL_DIRECTORY:
             if videos_dir is None:
                 raise ValueError(
@@ -379,6 +423,20 @@ def create_batch_of_videos(
                 batch_id=batch_id,
                 api_key=api_key,
                 batch_name=batch_name,
+            )
+        elif source is DataSource.CLOUD_STORAGE:
+            if bucket_path is None:
+                raise ValueError(
+                    "`bucket-path` not provided when `cloud-storage` specified as a data source"
+                )
+            api_operations.create_videos_batch_from_cloud_storage(
+                bucket_path=bucket_path,
+                batch_id=batch_id,
+                api_key=api_key,
+                batch_name=batch_name,
+                ingest_id=ingest_id,
+                notifications_url=notifications_url,
+                notification_categories=notification_categories,
             )
         else:
             if references is None:

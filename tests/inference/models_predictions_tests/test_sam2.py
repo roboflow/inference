@@ -288,7 +288,7 @@ def test_sam2_segment_with_rle_format(sam2_small_model: str, truck_image: np.nda
     resp = turn_segmentation_results_into_rle_response(
         masks=masks,
         scores=scores,
-        mask_threshold=model.predictor.mask_threshold,
+        mask_threshold=0.0,
         inference_start_timestamp=t1,
     )
 

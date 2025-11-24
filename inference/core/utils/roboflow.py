@@ -26,6 +26,7 @@ def get_model_id_chunks(
         "grounding_dino",
         "sam",
         "sam2",
+        "sam3",
         "owlv2",
         "trocr",
         "yolo_world",

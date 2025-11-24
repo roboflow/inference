@@ -544,7 +544,9 @@ def test_sahi_workflow_provides_the_same_result_as_sahi_applied_directly(
         workflow_result_xyxy,
         atol=2,
     ), "Expected bounding boxes to be the same for workflow SAHI and direct SAHI"
-    detections_obtained_directly_confidence = detections_obtained_directly.confidence.copy()
+    detections_obtained_directly_confidence = (
+        detections_obtained_directly.confidence.copy()
+    )
     detections_obtained_directly_confidence.sort()
     workflow_result_confidence = workflow_result[0]["predictions"].confidence.copy()
     workflow_result_confidence.sort()
@@ -558,8 +560,7 @@ def test_sahi_workflow_provides_the_same_result_as_sahi_applied_directly(
     workflow_result_class_id = workflow_result[0]["predictions"].class_id.copy()
     workflow_result_class_id.sort(axis=0)
     assert np.all(
-        detections_obtained_directly_class_id
-        == workflow_result_class_id
+        detections_obtained_directly_class_id == workflow_result_class_id
     ), "Expected class ids to be the same for workflow SAHI and direct SAHI"
 
 

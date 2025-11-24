@@ -8,6 +8,7 @@ from inference.core.env import (
     CORE_MODEL_GAZE_ENABLED,
     CORE_MODEL_GROUNDINGDINO_ENABLED,
     CORE_MODEL_SAM2_ENABLED,
+    CORE_MODEL_SAM3_ENABLED,
     CORE_MODEL_SAM_ENABLED,
     CORE_MODEL_YOLO_WORLD_ENABLED,
     CORE_MODELS_ENABLED,
@@ -21,6 +22,11 @@ CORE_MODELS = {
     "Gaze": ("inference.models.gaze", CORE_MODEL_GAZE_ENABLED),
     "SegmentAnything": ("inference.models.sam", CORE_MODEL_SAM_ENABLED),
     "SegmentAnything2": ("inference.models.sam2", CORE_MODEL_SAM2_ENABLED),
+    "SegmentAnything3": ("inference.models.sam3", CORE_MODEL_SAM3_ENABLED),
+    "Sam3ForInteractiveImageSegmentation": (
+        "inference.models.sam3",
+        CORE_MODEL_SAM3_ENABLED,
+    ),
     "DocTR": ("inference.models.doctr", CORE_MODEL_DOCTR_ENABLED),
     "EasyOCR": ("inference.models.easy_ocr", CORE_MODEL_EASYOCR_ENABLED),
     "GroundingDINO": (
@@ -102,8 +108,9 @@ def get_model_class(name: str) -> Any:
 
 def __getattr__(name: str) -> Any:
     """Implement lazy loading for model classes."""
-    if name in __all__:
-        return get_model_class(name)
+    cls = get_model_class(name)
+    if cls is not None:
+        return cls
     raise AttributeError(f"module 'inference.models' has no attribute '{name}'")
 
 

@@ -14,6 +14,7 @@ RUN apt-get update -y && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements/requirements.sam.txt \
+    requirements/requirements.sam3.txt \
     requirements/requirements.clip.txt \
     requirements/requirements.http.txt \
     requirements/requirements.gpu.txt \
@@ -28,13 +29,14 @@ COPY requirements/requirements.sam.txt \
 RUN pip install --upgrade pip setuptools && pip install \
     -r _requirements.txt \
     -r requirements.sam.txt \
+    -r requirements.sam3.txt \
     -r requirements.clip.txt \
     -r requirements.http.txt \
     -r requirements.gpu.txt \
     -r requirements.gaze.txt \
-    -r requirements.doctr.txt \
     -r requirements.groundingdino.txt \
     -r requirements.sdk.http.txt \
+    -r requirements.doctr.txt \
     -r requirements.easyocr.txt \
     "scikit-image==0.25.2" \
     "mediapipe==0.10.14" \
@@ -71,5 +73,6 @@ ENV PYTHONPATH=/app/:${PYTHONPATH}
 ENV PATH=/opt/miniconda/bin:$PATH
 ENV CORE_MODEL_TROCR_ENABLED=false
 ENV ENABLE_PROMETHEUS=True
+ENV CORE_MODEL_SAM3_ENABLED=True
 
 ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT

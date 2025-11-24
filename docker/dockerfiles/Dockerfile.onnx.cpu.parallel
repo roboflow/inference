@@ -80,6 +80,7 @@ ENV API_LOGGING_ENABLED=True
 ENV CORE_MODEL_SAM2_ENABLED=True
 ENV CORE_MODEL_TROCR_ENABLED=false
 ENV ENABLE_PROMETHEUS=True
+ENV CORE_MODEL_SAM3_ENABLED=False
 
 ENTRYPOINT redis-server --io-threads 3 --save --port $REDIS_PORT & \
     celery -A inference.enterprise.parallel.tasks worker --prefetch-multiplier 2 --concurrency $NUM_CELERY_WORKERS -Q pre --loglevel=WARNING & \
