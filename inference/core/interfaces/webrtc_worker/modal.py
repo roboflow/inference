@@ -262,6 +262,8 @@ if modal is not None:
                         )
                     )
                 )
+            except Exception as exc:
+                logger.error(exc)
             finally:
                 loop.close()
 
