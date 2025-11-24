@@ -531,13 +531,12 @@ class WebRTCSession:
                 raise
 
     async def _get_turn_config(self) -> Optional[dict]:
-        """Fetch TURN configuration from server or use user-provided config.
+        """Get TURN configuration from user-provided config.
 
         Priority order:
         1. User-provided config via StreamConfig.turn_server (highest priority)
-        2. Auto-fetch from server endpoint /query/webrtc_turn_config
-        3. Skip TURN for localhost connections
-        4. Graceful fallback to None if unavailable
+        2. Skip TURN for localhost connections
+        3. Return None if not provided
 
         Returns:
             TURN configuration dict or None
@@ -552,30 +551,9 @@ class WebRTCSession:
             logger.debug("Skipping TURN for localhost connection")
             return None
 
-        # 3. Try to auto-fetch from server
-        try:
-            logger.debug("Attempting to fetch TURN config from server")
-            response = requests.get(
-                f"{self._api_url}/query/webrtc_turn_config", timeout=5
-            )
-            response.raise_for_status()
-            data = response.json()
-
-            turn_config = {
-                "urls": data["urls"],
-                "username": data["username"],
-                "credential": data["credential"],
-            }
-            logger.info("Successfully fetched TURN configuration from server")
-            return turn_config
-        except Exception as e:
-            # 4. Graceful fallback - proceed without TURN
-            logger.info(
-                f"TURN configuration not available ({e.__class__.__name__}), "
-                "proceeding without TURN server",
-                exc_info=True,
-            )
-            return None
+        # 3. No TURN config provided
+        logger.debug("No TURN configuration provided, proceeding without TURN server")
+        return None
 
     async def _init(self) -> None:
         """Initialize WebRTC connection.
