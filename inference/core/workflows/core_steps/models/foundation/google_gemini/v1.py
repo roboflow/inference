@@ -38,28 +38,59 @@ GOOGLE_API_KEY_PATTERN = re.compile(r"key=(.[^&]*)")
 GOOGLE_API_KEY_VALUE_GROUP = 1
 MIN_KEY_LENGTH_TO_REVEAL_PREFIX = 8
 
-GEMINI_MODEL_ALIASES = {
+MODEL_ALIASES = {
     "gemini-2.5-pro-preview-06-05": "gemini-2.5-pro",
     "gemini-2.5-pro-preview-05-06": "gemini-2.5-pro",
     "gemini-2.5-pro-preview-03-25": "gemini-2.5-pro",
     "gemini-2.0-flash-exp": "gemini-2.0-flash",
 }
 
+GEMINI_MODELS = [
+    {
+        "id": "gemini-3-pro-preview",
+        "name": "Gemini 3 Pro",
+        "supports_thinking_level": True,
+    },
+    {
+        "id": "gemini-2.5-pro",
+        "name": "Gemini 2.5 Pro",
+        "supports_thinking_level": False,
+    },
+    {
+        "id": "gemini-2.5-flash",
+        "name": "Gemini 2.5 Flash",
+        "supports_thinking_level": False,
+    },
+    {
+        "id": "gemini-2.5-flash-lite",
+        "name": "Gemini 2.5 Flash-Lite",
+        "supports_thinking_level": False,
+    },
+    {
+        "id": "gemini-2.0-flash",
+        "name": "Gemini 2.0 Flash",
+        "supports_thinking_level": False,
+    },
+    {
+        "id": "gemini-2.0-flash-lite",
+        "name": "Gemini 2.0 Flash-Lite",
+        "supports_thinking_level": False,
+    },
+]
+
+MODEL_VERSION_IDS = [model["id"] for model in GEMINI_MODELS]
+
+MODEL_VERSION_METADATA = {
+    model["id"]: {"name": model["name"]} for model in GEMINI_MODELS
+}
+
 MODELS_SUPPORTING_THINKING_LEVEL = [
-    "gemini-3-pro-preview",
+    model["id"] for model in GEMINI_MODELS if model["supports_thinking_level"]
 ]
 
 MODELS_NOT_SUPPORTING_THINKING_LEVEL = [
-    "gemini-2.5-pro",
-    "gemini-2.5-flash",
-    "gemini-2.5-flash-lite",
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-lite",
+    model["id"] for model in GEMINI_MODELS if not model["supports_thinking_level"]
 ]
-
-GEMINI_MODEL_IDS = (
-    MODELS_SUPPORTING_THINKING_LEVEL + MODELS_NOT_SUPPORTING_THINKING_LEVEL
-)
 
 SUPPORTED_TASK_TYPES_LIST = [
     "unconstrained",
@@ -196,11 +227,14 @@ class BlockManifest(WorkflowBlockManifest):
     )
     model_version: Union[
         Selector(kind=[STRING_KIND]),
-        Literal[tuple(GEMINI_MODEL_IDS)],
+        Literal[tuple(MODEL_VERSION_IDS)],
     ] = Field(
         default="gemini-3-pro-preview",
         description="Model to be used",
         examples=["gemini-3-pro-preview", "$inputs.gemini_model"],
+        json_schema_extra={
+            "values_metadata": MODEL_VERSION_METADATA,
+        },
     )
     thinking_level: Optional[
         Union[
@@ -251,8 +285,8 @@ class BlockManifest(WorkflowBlockManifest):
     @field_validator("model_version", mode="before")
     @classmethod
     def validate_model_version(cls, value):
-        if isinstance(value, str) and value in GEMINI_MODEL_ALIASES:
-            return GEMINI_MODEL_ALIASES[value]
+        if isinstance(value, str) and value in MODEL_ALIASES:
+            return MODEL_ALIASES[value]
         return value
 
     @model_validator(mode="after")
