@@ -1,5 +1,15 @@
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Dict, Generator, List, Literal, Optional, Tuple, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    Generator,
+    List,
+    Literal,
+    Optional,
+    Tuple,
+    Union,
+)
 
 import aiohttp
 import numpy as np
@@ -94,6 +104,7 @@ BufferConsumptionStrategy = Literal["LAZY", "EAGER"]
 
 if TYPE_CHECKING:
     from inference_sdk.webrtc.client import WebRTCClient
+
 
 def wrap_errors(function: callable) -> callable:
     def decorate(*args, **kwargs) -> Any:
@@ -256,6 +267,7 @@ class InferenceHTTPClient:
             WebRTCClient: Namespaced WebRTC API bound to this HTTP client.
         """
         from inference_sdk.webrtc.client import WebRTCClient
+
         if self.__webrtc_client is None:
             self.__webrtc_client = WebRTCClient(self.__api_url, self.__api_key)
         return self.__webrtc_client
