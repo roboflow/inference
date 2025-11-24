@@ -325,6 +325,7 @@ if modal is not None:
                 ).total_seconds(),
             )
             usage_collector.push_usage_payloads()
+            watchdog.stop()
             logger.info("Function completed")
 
         @modal.exit()
