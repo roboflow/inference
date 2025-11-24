@@ -31,6 +31,7 @@ from inference.core.entities.types import (
 )
 from inference.core.env import (
     API_BASE_URL,
+    ATOMIC_CACHE_WRITES_ENABLED,
     INTERNAL_WEIGHTS_URL_SUFFIX,
     MD5_VERIFICATION_ENABLED,
     MODEL_CACHE_DIR,
@@ -819,11 +820,38 @@ def get_from_url(
     url: str,
     json_response: bool = True,
     verify_content_length: bool = False,
+    stream: bool = False,
 ) -> Union[Response, dict]:
     return _get_from_url(
         url=url,
         json_response=json_response,
         verify_content_length=verify_content_length,
+        stream=stream,
+    )
+
+
+def stream_url_to_cache(
+    url: str,
+    filename: str,
+    model_id: str,
+    chunk_size: int = 1024 * 1024,
+) -> None:
+    """
+    Stream download a file from URL directly to cache without loading into memory.
+
+    This is a public wrapper for _stream_url_to_cache that can be imported by other modules.
+
+    Args:
+        url: URL to download from
+        filename: Target filename in cache
+        model_id: Model ID for cache directory
+        chunk_size: Size of chunks to download (default 1MB)
+    """
+    return _stream_url_to_cache(
+        url=url,
+        filename=filename,
+        model_id=model_id,
+        chunk_size=chunk_size,
     )
 
 
@@ -837,13 +865,27 @@ def _get_from_url(
     url: str,
     json_response: bool = True,
     verify_content_length: bool = False,
+    stream: bool = False,
 ) -> Union[Response, dict]:
+    """
+    Downloads data from URL with optional streaming support.
+
+    Args:
+        url: URL to download from
+        json_response: If True, parse response as JSON
+        verify_content_length: If True, verify Content-Length header matches received data
+        stream: If True, return Response with stream=True (caller must handle streaming)
+
+    Returns:
+        Dict if json_response=True, Response object otherwise
+    """
     try:
         response = requests.get(
             wrap_url(url),
             headers=build_roboflow_api_headers(),
             timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
             verify=ROBOFLOW_API_VERIFY_SSL,
+            stream=stream,
         )
 
     except (ConnectionError, Timeout, requests.exceptions.ConnectionError) as error:
@@ -859,6 +901,12 @@ def _get_from_url(
             raise RetryRequestError(message=str(error), inner_error=error) from error
         raise error
 
+    # For streaming responses, return immediately without consuming content
+    # The caller is responsible for MD5 verification during streaming
+    if stream:
+        return response
+
+    # For non-streaming responses, verify MD5 and content-length as before
     if MD5_VERIFICATION_ENABLED and "x-goog-hash" in response.headers:
         x_goog_hash = response.headers["x-goog-hash"]
         md5_part = None
@@ -891,6 +939,76 @@ def _get_from_url(
     if json_response:
         return response.json()
     return response
+
+
+def _stream_url_to_cache(
+    url: str,
+    filename: str,
+    model_id: str,
+    chunk_size: int = 1024 * 1024,  # 1MB chunks
+) -> None:
+    """
+    Stream download a file from URL directly to cache without loading into memory.
+
+    Args:
+        url: URL to download from
+        filename: Target filename in cache
+        model_id: Model ID for cache directory
+        chunk_size: Size of chunks to download (default 1MB)
+
+    Raises:
+        RoboflowAPIUnsuccessfulRequestError: If MD5 verification fails or download errors
+    """
+    from inference.core.cache.model_artifacts import get_cache_file_path, initialise_cache
+    from inference.core.utils.file_system import dump_bytes_atomic, dump_bytes
+
+    initialise_cache(model_id=model_id)
+    cache_file_path = get_cache_file_path(file=filename, model_id=model_id)
+
+    response = _get_from_url(url, json_response=False, stream=True)
+
+    expected_md5_digest = None
+    if MD5_VERIFICATION_ENABLED and "x-goog-hash" in response.headers:
+        x_goog_hash = response.headers["x-goog-hash"]
+        for part in x_goog_hash.split(","):
+            if part.strip().startswith("md5="):
+                md5_part = part.strip()[4:]
+                expected_md5_digest = base64.b64decode(md5_part)
+                break
+
+    computed_md5 = hashlib.md5() if MD5_VERIFICATION_ENABLED else None
+    temp_file_path = f"{cache_file_path}.tmp"
+
+    try:
+        with open(temp_file_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=chunk_size):
+                if chunk:
+                    f.write(chunk)
+                    if computed_md5 is not None:
+                        computed_md5.update(chunk)
+
+        if expected_md5_digest is not None and computed_md5 is not None:
+            if expected_md5_digest != computed_md5.digest():
+                os.remove(temp_file_path)
+                raise RoboflowAPIUnsuccessfulRequestError(
+                    f"MD5 hash does not match for {filename}. "
+                    f"Expected: {expected_md5_digest.hex()}, "
+                    f"Got: {computed_md5.hexdigest()}"
+                )
+
+        if ATOMIC_CACHE_WRITES_ENABLED:
+            os.replace(temp_file_path, cache_file_path)
+        else:
+            if os.path.exists(cache_file_path):
+                os.remove(cache_file_path)
+            os.rename(temp_file_path, cache_file_path)
+
+    except Exception as e:
+        if os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
+        raise
+    finally:
+        response.close()
 
 
 def _add_params_to_url(url: str, params: List[Tuple[str, str]]) -> str:
