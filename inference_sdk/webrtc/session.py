@@ -4,6 +4,7 @@ import asyncio
 import inspect
 import json
 import queue
+import struct
 import threading
 from dataclasses import dataclass
 from datetime import datetime
@@ -21,6 +22,7 @@ from inference_sdk.config import (
 )
 from inference_sdk.utils.logging import get_logger
 from inference_sdk.webrtc.config import StreamConfig
+from inference_sdk.webrtc.datachannel import ChunkReassembler
 from inference_sdk.webrtc.sources import StreamSource
 
 if TYPE_CHECKING:
@@ -189,6 +191,9 @@ class WebRTCSession:
         self._frame_handlers: List[Callable] = []
         self._data_field_handlers: dict[str, List[Callable]] = {}
         self._data_global_handler: Optional[Callable] = None
+
+        # Chunk reassembly for binary messages
+        self._chunk_reassembler = ChunkReassembler()
 
         # Public APIs
         self.video = _VideoStream(self, self._video_queue)
@@ -663,6 +668,25 @@ class WebRTCSession:
         @ch.on("message")
         def _on_data_message(message: Any) -> None:  # noqa: ANN401
             try:
+                # Handle both bytes and str messages
+                if isinstance(message, bytes):
+                    # Check if it's a chunked binary message
+                    if len(message) >= 12:
+                        try:
+                            # Try to reassemble chunks
+                            complete_payload, _ = self._chunk_reassembler.add_chunk(message)
+                            if complete_payload is None:
+                                # Not all chunks received yet
+                                return
+                            # Parse the complete JSON from reassembled payload
+                            message = complete_payload.decode('utf-8')
+                        except (struct.error, ValueError):
+                            # Not a chunked message, try to decode as regular UTF-8
+                            message = message.decode('utf-8')
+                    else:
+                        # Too short to be chunked, decode as regular UTF-8
+                        message = message.decode('utf-8')
+
                 parsed_message = json.loads(message)
 
                 # Extract video metadata if present (for data handlers)
