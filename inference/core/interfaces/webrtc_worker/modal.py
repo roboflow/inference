@@ -265,6 +265,7 @@ if modal is not None:
                 error_msg = "Processing timeout is 0, skipping processing"
                 logger.info(error_msg)
                 send_answer(WebRTCWorkerResult(error_message=error_msg))
+                watchdog.stop()
                 return
             if (
                 not webrtc_request.webrtc_offer
@@ -274,6 +275,7 @@ if modal is not None:
                 error_msg = "Webrtc offer is missing, skipping processing"
                 logger.info(error_msg)
                 send_answer(WebRTCWorkerResult(error_message=error_msg))
+                watchdog.stop()
                 return
 
             try:
