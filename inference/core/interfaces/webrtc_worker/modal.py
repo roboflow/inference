@@ -51,9 +51,6 @@ from inference.core.interfaces.webrtc_worker.utils import (
     workflow_contains_instant_model,
     workflow_contains_preloaded_model,
 )
-from inference.core.interfaces.webrtc_worker.webrtc import (
-    init_rtc_peer_connection_with_loop,
-)
 from inference.core.managers.base import ModelManager
 from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.core.roboflow_api import (
@@ -189,6 +186,10 @@ if modal is not None:
             webrtc_request: WebRTCWorkerRequest,
             q: modal.Queue,
         ):
+            from inference.core.interfaces.webrtc_worker.webrtc import (
+                init_rtc_peer_connection_with_loop,
+            )
+
             logger.info("*** Spawning %s:", self.__class__.__name__)
             logger.info("Running on %s", self._gpu)
             logger.info("Inference tag: %s", docker_tag)

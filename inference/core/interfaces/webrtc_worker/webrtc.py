@@ -654,7 +654,9 @@ async def init_rtc_peer_connection_with_loop(
     # ice._mdns is instantiated on the module level, it has a lock that is bound to the event loop
     # avoid RuntimeError: asyncio.locks.Lock is bound to a different event loop
     if hasattr(ice, "_mdns"):
-        ice._mdns.lock = asyncio.Lock()
+        if hasattr(ice._mdns, "lock"):
+            logger.info("Removing lock from aioice.ice._mdns")
+            delattr(ice._mdns, "lock")
     else:
         logger.warning(
             "aioice.ice implementation was changed, _mdns attribute is not available"
