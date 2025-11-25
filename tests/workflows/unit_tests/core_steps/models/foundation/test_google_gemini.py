@@ -310,7 +310,9 @@ def test_prepare_generation_config_with_thinking_level_for_older_models() -> Non
     assert "thinking_config" not in result
 
 
-@patch("inference.core.workflows.core_steps.models.foundation.google_gemini.v2.requests.post")
+@patch(
+    "inference.core.workflows.core_steps.models.foundation.google_gemini.v2.requests.post"
+)
 def test_execute_gemini_request_success(mock_post: Mock) -> None:
     # given
     mock_response = Mock()
@@ -336,7 +338,9 @@ def test_execute_gemini_request_success(mock_post: Mock) -> None:
     assert result == "This is the generated response"
 
 
-@patch("inference.core.workflows.core_steps.models.foundation.google_gemini.v2.requests.post")
+@patch(
+    "inference.core.workflows.core_steps.models.foundation.google_gemini.v2.requests.post"
+)
 def test_execute_gemini_request_max_tokens_error(mock_post: Mock) -> None:
     # given
     mock_response = Mock()
@@ -362,7 +366,9 @@ def test_execute_gemini_request_max_tokens_error(mock_post: Mock) -> None:
     assert "increase the max_tokens parameter" in str(exc_info.value)
 
 
-@patch("inference.core.workflows.core_steps.models.foundation.google_gemini.v2.requests.post")
+@patch(
+    "inference.core.workflows.core_steps.models.foundation.google_gemini.v2.requests.post"
+)
 def test_execute_gemini_request_safety_error(mock_post: Mock) -> None:
     # given
     mock_response = Mock()
@@ -387,7 +393,9 @@ def test_execute_gemini_request_safety_error(mock_post: Mock) -> None:
     assert "SAFETY" in str(exc_info.value)
 
 
-@patch("inference.core.workflows.core_steps.models.foundation.google_gemini.v2.requests.post")
+@patch(
+    "inference.core.workflows.core_steps.models.foundation.google_gemini.v2.requests.post"
+)
 def test_execute_gemini_request_http_error(mock_post: Mock) -> None:
     # given
     mock_response = Mock()
