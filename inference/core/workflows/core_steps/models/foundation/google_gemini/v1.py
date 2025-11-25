@@ -463,7 +463,29 @@ def execute_gemini_request(
     )
     response_data = response.json()
     google_api_key_safe_raise_for_status(response=response)
-    return response_data["candidates"][0]["content"]["parts"][0]["text"]
+
+    if "candidates" not in response_data or not response_data["candidates"]:
+        raise ValueError("Gemini API returned no response candidates.")
+
+    candidate = response_data["candidates"][0]
+    finish_reason = candidate.get("finishReason", "FINISH_REASON_UNSPECIFIED")
+
+    if finish_reason == "MAX_TOKENS":
+        raise ValueError(
+            "Gemini API stopped generation because the max_tokens limit was reached. "
+            "Please increase the max_tokens parameter to allow for a complete response."
+        )
+
+    # Check for values different than natural stop or unspecified
+    if finish_reason not in ["STOP", "FINISH_REASON_UNSPECIFIED"]:
+        raise ValueError(
+            f"Gemini API stopped generation with finish reason: {finish_reason}."
+        )
+
+    try:
+        return candidate["content"]["parts"][0]["text"]
+    except (KeyError, IndexError, TypeError):
+        raise ValueError("Unable to parse Gemini API response.")
 
 
 def prepare_unconstrained_prompt(
