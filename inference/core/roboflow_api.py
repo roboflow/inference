@@ -901,12 +901,9 @@ def _get_from_url(
             raise RetryRequestError(message=str(error), inner_error=error) from error
         raise error
 
-    # For streaming responses, return immediately without consuming content
-    # The caller is responsible for MD5 verification during streaming
     if stream:
         return response
 
-    # For non-streaming responses, verify MD5 and content-length as before
     if MD5_VERIFICATION_ENABLED and "x-goog-hash" in response.headers:
         x_goog_hash = response.headers["x-goog-hash"]
         md5_part = None
@@ -967,6 +964,9 @@ def _stream_url_to_cache(
 
     response = _get_from_url(url, json_response=False, stream=True)
 
+    total_size = response.headers.get('content-length')
+    total_size_int = int(total_size) if total_size else None
+
     expected_md5_digest = None
     if MD5_VERIFICATION_ENABLED and "x-goog-hash" in response.headers:
         x_goog_hash = response.headers["x-goog-hash"]
@@ -980,12 +980,38 @@ def _stream_url_to_cache(
     temp_file_path = f"{cache_file_path}.tmp"
 
     try:
+        downloaded_bytes = 0
+        last_logged_mb = 0
+        log_interval_mb = 10
+
         with open(temp_file_path, 'wb') as f:
             for chunk in response.iter_content(chunk_size=chunk_size):
                 if chunk:
                     f.write(chunk)
                     if computed_md5 is not None:
                         computed_md5.update(chunk)
+
+                    downloaded_bytes += len(chunk)
+                    downloaded_mb = downloaded_bytes / (1024 * 1024)
+
+                    if downloaded_mb - last_logged_mb >= log_interval_mb or (
+                        total_size_int and downloaded_bytes >= total_size_int
+                    ):
+                        if total_size_int:
+                            total_mb = total_size_int / (1024 * 1024)
+                            percent = (downloaded_bytes / total_size_int) * 100
+                            progress_msg = (
+                                f"Downloading {filename}: {downloaded_mb:.1f}MB / "
+                                f"{total_mb:.1f}MB ({percent:.1f}%)"
+                            )
+                        else:
+                            progress_msg = f"Downloading {filename}: {downloaded_mb:.1f}MB"
+
+                        logger.info(progress_msg)
+                        print(f"\r{progress_msg}", end='', flush=True)
+                        last_logged_mb = downloaded_mb
+
+        print()
 
         if expected_md5_digest is not None and computed_md5 is not None:
             if expected_md5_digest != computed_md5.digest():
