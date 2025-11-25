@@ -956,7 +956,10 @@ def _stream_url_to_cache(
     Raises:
         RoboflowAPIUnsuccessfulRequestError: If MD5 verification fails or download errors
     """
-    from inference.core.cache.model_artifacts import get_cache_file_path, initialise_cache
+    from inference.core.cache.model_artifacts import (
+        get_cache_file_path,
+        initialise_cache,
+    )
     from inference.core.utils.file_system import dump_bytes_atomic, dump_bytes
 
     initialise_cache(model_id=model_id)
@@ -964,7 +967,7 @@ def _stream_url_to_cache(
 
     response = _get_from_url(url, json_response=False, stream=True)
 
-    total_size = response.headers.get('content-length')
+    total_size = response.headers.get("content-length")
     total_size_int = int(total_size) if total_size else None
 
     expected_md5_digest = None
@@ -984,7 +987,7 @@ def _stream_url_to_cache(
         last_logged_mb = 0
         log_interval_mb = 10
 
-        with open(temp_file_path, 'wb') as f:
+        with open(temp_file_path, "wb") as f:
             for chunk in response.iter_content(chunk_size=chunk_size):
                 if chunk:
                     f.write(chunk)
@@ -1005,10 +1008,12 @@ def _stream_url_to_cache(
                                 f"{total_mb:.1f}MB ({percent:.1f}%)"
                             )
                         else:
-                            progress_msg = f"Downloading {filename}: {downloaded_mb:.1f}MB"
+                            progress_msg = (
+                                f"Downloading {filename}: {downloaded_mb:.1f}MB"
+                            )
 
                         logger.info(progress_msg)
-                        print(f"\r{progress_msg}", end='', flush=True)
+                        print(f"\r{progress_msg}", end="", flush=True)
                         last_logged_mb = downloaded_mb
 
         print()
