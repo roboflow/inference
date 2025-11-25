@@ -1,8 +1,13 @@
-from typing import List, Optional, Union
+import datetime
+from enum import Enum
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
-from inference.core.env import WEBRTC_REALTIME_PROCESSING
+from inference.core.env import (
+    WEBRTC_MODAL_FUNCTION_TIME_LIMIT,
+    WEBRTC_REALTIME_PROCESSING,
+)
 from inference.core.interfaces.stream_manager.manager_app.entities import (
     WebRTCOffer,
     WebRTCTURNConfig,
@@ -10,18 +15,40 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
 )
 
 
+class RTCIceServer(BaseModel):
+    urls: List[str]
+    username: Optional[str] = None
+    credential: Optional[str] = None
+
+
+class WebRTCConfig(BaseModel):
+    iceServers: List[RTCIceServer]
+
+
 class WebRTCWorkerRequest(BaseModel):
     api_key: Optional[str] = None
     workflow_configuration: WorkflowConfiguration
     webrtc_offer: WebRTCOffer
+    webrtc_config: Optional[WebRTCConfig] = None
+    # TODO: to be removed, replaced with webrtc_config
     webrtc_turn_config: Optional[WebRTCTURNConfig] = None
     webrtc_realtime_processing: bool = (
         WEBRTC_REALTIME_PROCESSING  # when set to True, MediaRelay.subscribe will be called with buffered=False
     )
-    stream_output: Optional[List[Optional[str]]] = Field(default_factory=list)
-    data_output: Optional[List[Optional[str]]] = Field(default_factory=list)
+    stream_output: Optional[List[str]] = Field(default=None)
+    data_output: Optional[List[str]] = Field(default=None)
     declared_fps: Optional[float] = None
     rtsp_url: Optional[str] = None
+    use_data_channel_frames: bool = (
+        False  # When True, expect frames via data channel instead of media track
+    )
+    processing_timeout: Optional[int] = WEBRTC_MODAL_FUNCTION_TIME_LIMIT
+    processing_session_started: Optional[datetime.datetime] = None
+    requested_plan: Optional[str] = "webrtc-gpu-small"
+    # TODO: replaced with requested_plan
+    requested_gpu: Optional[str] = None
+    # must be valid region: https://modal.com/docs/guide/region-selection#region-options
+    requested_region: Optional[str] = None
 
 
 class WebRTCVideoMetadata(BaseModel):
@@ -34,8 +61,15 @@ class WebRTCVideoMetadata(BaseModel):
 
 
 class WebRTCOutput(BaseModel):
-    output_name: Optional[str] = None
-    serialized_output_data: Optional[str] = None
+    """Output sent via WebRTC data channel.
+
+    serialized_output_data contains a dictionary with workflow outputs:
+    - If data_output is None or []: no data sent (only metadata)
+    - If data_output is ["*"]: all workflow outputs (excluding images, unless explicitly named)
+    - If data_output is ["field1", "field2"]: only those fields (including images if explicitly named)
+    """
+
+    serialized_output_data: Optional[Dict[str, Any]] = None
     video_metadata: Optional[WebRTCVideoMetadata] = None
     errors: List[str] = Field(default_factory=list)
 
@@ -47,3 +81,15 @@ class WebRTCWorkerResult(BaseModel):
     error_message: Optional[str] = None
     error_context: Optional[str] = None
     inner_error: Optional[str] = None
+
+
+class StreamOutputMode(str, Enum):
+    AUTO_DETECT = "auto_detect"  # None -> auto-detect first image
+    NO_VIDEO = "no_video"  # [] -> no video track
+    SPECIFIC_FIELD = "specific"  # ["field"] -> use specific field
+
+
+class DataOutputMode(str, Enum):
+    NONE = "none"  # None or [] -> no data sent
+    ALL = "all"  # ["*"] -> send all (skip images)
+    SPECIFIC = "specific"  # ["field1", "field2"] -> send only these

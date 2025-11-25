@@ -227,6 +227,9 @@ from inference.core.workflows.core_steps.models.foundation.seg_preview.v1 import
 from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
     SegmentAnything2BlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.segment_anything3.v1 import (
+    SegmentAnything3BlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.smolvlm.v1 import (
     SmolVLM2BlockV1,
 )
@@ -289,6 +292,9 @@ from inference.core.workflows.core_steps.secrets_providers.environment_secrets_s
 )
 from inference.core.workflows.core_steps.sinks.email_notification.v1 import (
     EmailNotificationBlockV1,
+)
+from inference.core.workflows.core_steps.sinks.email_notification.v2 import (
+    EmailNotificationBlockV2,
 )
 from inference.core.workflows.core_steps.sinks.local_file.v1 import LocalFileSinkBlockV1
 from inference.core.workflows.core_steps.sinks.onvif_movement.v1 import ONVIFSinkBlockV1
@@ -647,6 +653,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         SIFTComparisonBlockV1,
         SIFTComparisonBlockV2,
         SegmentAnything2BlockV1,
+        SegmentAnything3BlockV1,
         SegPreviewBlockV1,
         StabilityAIInpaintingBlockV1,
         StabilityAIImageGenBlockV1,
@@ -666,6 +673,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DataAggregatorBlockV1,
         CSVFormatterBlockV1,
         EmailNotificationBlockV1,
+        EmailNotificationBlockV2,
         LocalFileSinkBlockV1,
         TraceVisualizationBlockV1,
         ReferencePathVisualizationBlockV1,

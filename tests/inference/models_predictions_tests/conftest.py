@@ -29,6 +29,8 @@ PERSON_IMAGE_PATH = os.path.join(ASSETS_DIR, "person_image.jpg")
 BEER_IMAGE_PATH = os.path.join(ASSETS_DIR, "beer.jpg")
 TRUCK_IMAGE_PATH = os.path.join(ASSETS_DIR, "truck.jpg")
 MELEE_IMAGE_PATH = os.path.join(ASSETS_DIR, "melee.jpg")
+BIRD_IMAGE_PATH = os.path.join(ASSETS_DIR, "altamira_yellowthroat.jpg")
+FACE_IMAGE_PATH = os.path.join(ASSETS_DIR, "face.jpg")
 SAM2_TRUCK_LOGITS = os.path.join(ASSETS_DIR, "low_res_logits.npy")
 SAM2_TRUCK_MASK_FROM_CACHE = os.path.join(ASSETS_DIR, "mask_from_cached_logits.npy")
 SAM2_MULTI_POLY_RESPONSE_PATH = os.path.join(
@@ -68,6 +70,16 @@ def melee_image() -> np.ndarray:
 
 
 @pytest.fixture(scope="function")
+def bird_image() -> np.ndarray:
+    return cv2.imread(BIRD_IMAGE_PATH)
+
+
+@pytest.fixture(scope="function")
+def face_image() -> np.ndarray:
+    return cv2.imread(FACE_IMAGE_PATH)
+
+
+@pytest.fixture(scope="function")
 def vit_multi_class_model() -> Generator[str, None, None]:
     model_id = "vit_multi_class/1"
     model_cache_dir = fetch_and_place_model_in_cache(
@@ -101,6 +113,47 @@ def vit_multi_label_model() -> Generator[str, None, None]:
 def vit_multi_label_reference_prediction() -> MultiLabelClassificationInferenceResponse:
     with open(
         os.path.join(ASSETS_DIR, "vit_multi_label_reference_prediction.json"), "r"
+    ) as f:
+        return MultiLabelClassificationInferenceResponse.model_validate(json.load(f))
+
+
+# DINOv3
+@pytest.fixture(scope="function")
+def dinov3_multi_class_model() -> Generator[str, None, None]:
+    model_id = "dinov3_multi_class/1"
+    model_cache_dir = fetch_and_place_model_in_cache(
+        model_id=model_id,
+        model_package_url="https://storage.googleapis.com/roboflow-tests-assets/dinov3_multi_class.zip",
+    )
+    yield model_id
+    shutil.rmtree(model_cache_dir)
+
+
+@pytest.fixture(scope="function")
+def dinov3_multi_class_reference_prediction() -> ClassificationInferenceResponse:
+    with open(
+        os.path.join(ASSETS_DIR, "dinov3_multi_class_reference_prediction.json"), "r"
+    ) as f:
+        return ClassificationInferenceResponse.model_validate(json.load(f))
+
+
+@pytest.fixture(scope="function")
+def dinov3_multi_label_model() -> Generator[str, None, None]:
+    model_id = "dinov3_multi_label/1"
+    model_cache_dir = fetch_and_place_model_in_cache(
+        model_id=model_id,
+        model_package_url="https://storage.googleapis.com/roboflow-tests-assets/dinov3_multi_label.zip",
+    )
+    yield model_id
+    shutil.rmtree(model_cache_dir)
+
+
+@pytest.fixture(scope="function")
+def dinov3_multi_label_reference_prediction() -> (
+    MultiLabelClassificationInferenceResponse
+):
+    with open(
+        os.path.join(ASSETS_DIR, "dinov3_multi_label_reference_prediction.json"), "r"
     ) as f:
         return MultiLabelClassificationInferenceResponse.model_validate(json.load(f))
 

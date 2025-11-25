@@ -98,9 +98,9 @@ Some functionality requires extra dependencies. These can be installed by specif
 | `http` | Ability to run the http interface                                                                                                                                                                                                   |
 | `sam`  | Ability to run the core `Segment Anything` model (by Meta AI)                                                                                                                                                                       |
 | `doctr` | Ability to use the core `doctr` model (by <a href="https://github.com/mindee/doctr" target="_blank">Mindee</a>)                                                                                                                     |
-| `easy-ocr` | Ability to use the core `easy-ocr` model (by <a href="https://github.com/JaidedAI/EasyOCRr" target="_blank">JaidedAI</a>)                                                                                                                  |
+| `easy-ocr` | Ability to use the core `easy-ocr` model (by <a href="https://github.com/JaidedAI/EasyOCRr" target="_blank">JaidedAI</a>)                                                                                                           |
 | `transformers` | Ability to use transformers based multi-modal models such as `Florence2` and `PaliGemma`. To use Florence2 you will need to manually install <a href="https://github.com/Dao-AILab/flash-attention/" target="_blank">flash_attn</a> |
-
+| `sam3`    | Ability to use Segment Anything 3 model (only available for `inference-gpu`)                                                                                                                                                        |
 **_Note:_** Both CLIP and Segment Anything require PyTorch to run. These are included in their respective dependencies however PyTorch installs can be highly environment dependent. See the <a href="https://pytorch.org/get-started/locally/" target="_blank">official PyTorch install page</a> for instructions specific to your enviornment.
 
 Example install with CLIP dependencies:

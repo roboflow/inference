@@ -591,6 +591,7 @@ class RFDETRInstanceSegmentation(
         img_dims = preproc_return_metadata["img_dims"]
 
         processed_predictions = []
+        processed_masks = []
 
         for batch_idx in range(batch_size):
             orig_h, orig_w = img_dims[batch_idx]
@@ -623,37 +624,6 @@ class RFDETRInstanceSegmentation(
 
             selected_boxes = bboxes[batch_idx, topk_boxes]
             selected_masks = masks[batch_idx, topk_boxes]
-            if selected_masks.size != 0:
-                if kwargs.get("mask_decode_mode", "accurate") == "accurate":
-                    target_res = (orig_w, orig_h)
-                    new_masks = []
-                    for mask in selected_masks:
-                        new_masks.append(
-                            cv2.resize(mask, target_res, interpolation=cv2.INTER_LINEAR)
-                        )
-                    selected_masks = np.stack(new_masks, axis=0)
-                elif kwargs.get("mask_decode_mode", "accurate") == "tradeoff":
-                    tradeoff_factor = kwargs.get("tradeoff_factor", 0.0)
-                    mask_res = (selected_masks.shape[2], selected_masks.shape[1])
-                    full_res = (orig_w, orig_h)
-                    target_res = (
-                        int(
-                            mask_res[0] * (1 - tradeoff_factor)
-                            + full_res[0] * tradeoff_factor
-                        ),
-                        int(
-                            mask_res[1] * (1 - tradeoff_factor)
-                            + full_res[1] * tradeoff_factor
-                        ),
-                    )
-                    new_masks = []
-                    for mask in selected_masks:
-                        new_masks.append(
-                            cv2.resize(mask, target_res, interpolation=cv2.INTER_LINEAR)
-                        )
-                    selected_masks = np.stack(new_masks, axis=0)
-
-            selected_masks = selected_masks > 0
 
             cxcy = selected_boxes[:, :2]
             wh = selected_boxes[:, 2:]
@@ -700,58 +670,59 @@ class RFDETRInstanceSegmentation(
                     topk_labels,
                 )
             )
-            batch_predictions = batch_predictions[
-                batch_predictions[:, 6] < len(self.class_names)
-            ]
-            selected_masks = selected_masks[
-                batch_predictions[:, 6] < len(self.class_names)
-            ]
+            valid_pred_mask = batch_predictions[:, 6] < len(self.class_names)
 
-            outputs = []
-            for pred, mask in zip(batch_predictions, selected_masks):
-                outputs.append(list(pred) + [mask])
-
-            processed_predictions.append(outputs)
-
-        res = self.make_response(processed_predictions, img_dims, **kwargs)
-        return res
-
-    def make_response(
-        self,
-        predictions: List[List[float]],
-        img_dims: List[Tuple[int, int]],
-        class_filter: Optional[List[str]] = None,
-        *args,
-        **kwargs,
-    ) -> List[ObjectDetectionInferenceResponse]:
-        """Constructs object detection response objects based on predictions.
-
-        Args:
-            predictions (List[List[float]]): The list of predictions.
-            img_dims (List[Tuple[int, int]]): Dimensions of the images.
-            class_filter (Optional[List[str]]): A list of class names to filter, if provided.
-
-        Returns:
-            List[ObjectDetectionInferenceResponse]: A list of response objects containing object detection predictions.
-        """
-
-        if isinstance(img_dims, dict) and "img_dims" in img_dims:
-            img_dims = img_dims["img_dims"]
-
-        predictions = predictions[
-            : len(img_dims)
-        ]  # If the batch size was fixed we have empty preds at the end
-
-        batch_mask_preds = []
-        for image_ind in range(len(img_dims)):
-            masks = [pred[7] for pred in predictions[image_ind]]
-            orig_h, orig_w = img_dims[image_ind]
-
-            mask_preds = []
-            for mask in masks:
-                points = mask2poly(mask.astype(np.uint8))
+            outputs_predictions = []
+            outputs_polygons = []
+            class_filter_local = kwargs.get("class_filter")
+            for i, pred in enumerate(batch_predictions):
+                if not valid_pred_mask[i]:
+                    continue
+                # Early class filtering to avoid unnecessary mask processing
+                if class_filter_local:
+                    try:
+                        pred_class_name = self.class_names[int(pred[6])]
+                    except Exception:
+                        continue
+                    if pred_class_name not in class_filter_local:
+                        continue
+                mask = selected_masks[i]
+                # Per-mask optional upscaling for better polygon quality without retaining all high-res masks
+                mask_decode_mode = kwargs.get("mask_decode_mode", "accurate")
+                if mask_decode_mode == "accurate":
+                    target_res = (orig_w, orig_h)
+                    if mask.shape[1] != target_res[0] or mask.shape[0] != target_res[1]:
+                        mask = cv2.resize(
+                            mask.astype(np.float32),
+                            target_res,
+                            interpolation=cv2.INTER_LINEAR,
+                        )
+                elif mask_decode_mode == "tradeoff":
+                    tradeoff_factor = kwargs.get("tradeoff_factor", 0.0)
+                    mask_res = (mask.shape[1], mask.shape[0])  # (w, h)
+                    full_res = (orig_w, orig_h)  # (w, h)
+                    target_res = (
+                        int(
+                            mask_res[0] * (1 - tradeoff_factor)
+                            + full_res[0] * tradeoff_factor
+                        ),
+                        int(
+                            mask_res[1] * (1 - tradeoff_factor)
+                            + full_res[1] * tradeoff_factor
+                        ),
+                    )
+                    if mask.shape[1] != target_res[0] or mask.shape[0] != target_res[1]:
+                        mask = cv2.resize(
+                            mask.astype(np.float32),
+                            target_res,
+                            interpolation=cv2.INTER_LINEAR,
+                        )
+                # Ensure binary for polygonization
+                mask_bin = (mask > 0).astype(np.uint8)
+                points = mask2poly(mask_bin)
+                # Scale polygon points back to original image coordinates if needed
                 new_points = []
-                prediction_h, prediction_w = mask.shape[0], mask.shape[1]
+                prediction_h, prediction_w = mask_bin.shape[0], mask_bin.shape[1]
                 for point in points:
                     if self.resize_method == "Stretch to":
                         new_x = point[0] * (orig_w / prediction_w)
@@ -763,14 +734,42 @@ class RFDETRInstanceSegmentation(
                         new_x = point[0] * scale + pad_x
                         new_y = point[1] * scale + pad_y
                     new_points.append(np.array([new_x, new_y]))
-                mask_preds.append(new_points)
-            batch_mask_preds.append(mask_preds)
+                outputs_polygons.append(new_points)
+                outputs_predictions.append(list(pred))
 
-        responses = [
-            InstanceSegmentationInferenceResponse(
-                predictions=[
+            processed_predictions.append(outputs_predictions)
+            processed_masks.append(outputs_polygons)
+
+        res = self.make_response(
+            processed_predictions, processed_masks, img_dims, **kwargs
+        )
+        return res
+
+    def make_response(
+        self,
+        predictions: List[List[List[float]]],
+        masks: List[List[List[np.ndarray]]],
+        img_dims: List[Tuple[int, int]],
+        class_filter: Optional[List[str]] = None,
+        *args,
+        **kwargs,
+    ) -> List[InstanceSegmentationInferenceResponse]:
+        """Constructs instance segmentation response objects from preprocessed predictions and polygons."""
+        # Align to actual number of real images; predictions/masks may include padded slots
+        if isinstance(img_dims, dict) and "img_dims" in img_dims:
+            img_dims = img_dims["img_dims"]
+        effective_len = min(len(img_dims), len(predictions), len(masks))
+
+        responses = []
+        for ind in range(effective_len):
+            batch_predictions = predictions[ind]
+            batch_masks = masks[ind]
+            preds_out = []
+            for pred, mask in zip(batch_predictions, batch_masks):
+                if class_filter and self.class_names[int(pred[6])] not in class_filter:
+                    continue
+                preds_out.append(
                     InstanceSegmentationPrediction(
-                        # Passing args as a dictionary here since one of the args is 'class' (a protected term in Python)
                         **{
                             "x": (pred[0] + pred[2]) / 2,
                             "y": (pred[1] + pred[3]) / 2,
@@ -782,14 +781,13 @@ class RFDETRInstanceSegmentation(
                             "points": [Point(x=point[0], y=point[1]) for point in mask],
                         }
                     )
-                    for pred, mask in zip(batch_predictions, batch_mask_preds[ind])
-                    if not class_filter
-                    or self.class_names[int(pred[6])] in class_filter
-                ],
-                image=InferenceResponseImage(
-                    width=img_dims[ind][1], height=img_dims[ind][0]
-                ),
+                )
+            responses.append(
+                InstanceSegmentationInferenceResponse(
+                    predictions=preds_out,
+                    image=InferenceResponseImage(
+                        width=img_dims[ind][1], height=img_dims[ind][0]
+                    ),
+                )
             )
-            for ind, batch_predictions in enumerate(predictions)
-        ]
         return responses

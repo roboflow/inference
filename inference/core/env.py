@@ -122,7 +122,7 @@ OWLV2_COMPILE_MODEL = str2bool(os.getenv("OWLV2_COMPILE_MODEL", True))
 #       and also ENABLE_STREAM_API environmental variable is set to False
 PRELOAD_HF_IDS = os.getenv("PRELOAD_HF_IDS")
 if PRELOAD_HF_IDS:
-    PRELOAD_HF_IDS = [id.strip() for id in PRELOAD_HF_IDS.split(",")]
+    PRELOAD_HF_IDS = [m.strip() for m in PRELOAD_HF_IDS.split(",")]
 
 # Maximum batch size for GAZE, default is 8
 GAZE_MAX_BATCH_SIZE = int(os.getenv("GAZE_MAX_BATCH_SIZE", 8))
@@ -157,8 +157,18 @@ CORE_MODEL_PE_ENABLED = str2bool(os.getenv("CORE_MODEL_PE_ENABLED", True))
 # Flag to enable SAM core model, default is True
 CORE_MODEL_SAM_ENABLED = str2bool(os.getenv("CORE_MODEL_SAM_ENABLED", True))
 CORE_MODEL_SAM2_ENABLED = str2bool(os.getenv("CORE_MODEL_SAM2_ENABLED", True))
+CORE_MODEL_SAM3_ENABLED = str2bool(os.getenv("CORE_MODEL_SAM3_ENABLED", True))
 
 CORE_MODEL_OWLV2_ENABLED = str2bool(os.getenv("CORE_MODEL_OWLV2_ENABLED", False))
+
+# Maximum prompt batch size for SAM3 PCS requests
+SAM3_MAX_PROMPT_BATCH_SIZE = int(os.getenv("SAM3_MAX_PROMPT_BATCH_SIZE", 16))
+SAM3_EXEC_MODE = os.getenv("SAM3_EXEC_MODE", "local")
+SAM3_EXEC_MODE = SAM3_EXEC_MODE.lower()
+if SAM3_EXEC_MODE not in ["local", "remote"]:
+    raise ValueError(
+        f"Invalid SAM3 execution mode in ENVIRONMENT var SAM3_EXEC_MODE (local or remote): {SAM3_EXEC_MODE}"
+    )
 
 # Flag to enable GAZE core model, default is True
 CORE_MODEL_GAZE_ENABLED = str2bool(os.getenv("CORE_MODEL_GAZE_ENABLED", True))
@@ -403,6 +413,13 @@ DISABLE_SAM2_LOGITS_CACHE = str2bool(os.getenv("DISABLE_SAM2_LOGITS_CACHE", Fals
 # SAM version ID, default is "vit_h"
 SAM_VERSION_ID = os.getenv("SAM_VERSION_ID", "vit_h")
 SAM2_VERSION_ID = os.getenv("SAM2_VERSION_ID", "hiera_large")
+# SAM3_CHECKPOINT_PATH = os.getenv("SAM3_CHECKPOINT_PATH")
+# SAM3_BPE_PATH = os.getenv("SAM3_BPE_PATH", "/home/hansent/sam3/assets/bpe_simple_vocab_16e6.txt.gz")
+SAM3_IMAGE_SIZE = int(os.getenv("SAM3_IMAGE_SIZE", 1008))
+# SAM3_REPO_PATH = os.getenv("SAM3_REPO_PATH", "/home/hansent/sam3")
+SAM3_MAX_EMBEDDING_CACHE_SIZE = int(os.getenv("SAM3_MAX_EMBEDDING_CACHE_SIZE", 100))
+SAM3_MAX_LOGITS_CACHE_SIZE = int(os.getenv("SAM3_MAX_LOGITS_CACHE_SIZE", 1000))
+DISABLE_SAM3_LOGITS_CACHE = str2bool(os.getenv("DISABLE_SAM3_LOGITS_CACHE", False))
 
 # EasyOCR version ID, default is "english_g2"
 EASYOCR_VERSION_ID = os.getenv("EASYOCR_VERSION_ID", "english_g2")
@@ -634,6 +651,10 @@ if ROBOFLOW_API_REQUEST_TIMEOUT:
     ROBOFLOW_API_REQUEST_TIMEOUT = int(ROBOFLOW_API_REQUEST_TIMEOUT)
 
 
+# Control SSL certificate verification for requests to the Roboflow API
+# Default is True (verify SSL). Set ROBOFLOW_API_VERIFY_SSL=false to disable in local dev.
+ROBOFLOW_API_VERIFY_SSL = str2bool(os.getenv("ROBOFLOW_API_VERIFY_SSL", "True"))
+
 IGNORE_MODEL_DEPENDENCIES_WARNINGS = str2bool(
     os.getenv("IGNORE_MODEL_DEPENDENCIES_WARNINGS", "False")
 )
@@ -699,8 +720,14 @@ WEBRTC_MODAL_APP_NAME = os.getenv(
 WEBRTC_MODAL_RESPONSE_TIMEOUT = int(os.getenv("WEBRTC_MODAL_RESPONSE_TIMEOUT", "60"))
 # seconds
 WEBRTC_MODAL_FUNCTION_TIME_LIMIT = int(
-    os.getenv("WEBRTC_MODAL_FUNCTION_TIME_LIMIT", "60")
+    os.getenv("WEBRTC_MODAL_FUNCTION_TIME_LIMIT", "3600")
 )
+# seconds
+WEBRTC_MODAL_FUNCTION_MAX_TIME_LIMIT = int(
+    os.getenv("WEBRTC_MODAL_FUNCTION_MAX_TIME_LIMIT", "604800")  # 7 days
+)
+# seconds
+WEBRTC_MODAL_SHUTDOWN_RESERVE = int(os.getenv("WEBRTC_MODAL_SHUTDOWN_RESERVE", "1"))
 WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT = str2bool(
     os.getenv("WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT", "True")
 )
@@ -731,3 +758,14 @@ WEBRTC_MODAL_ROBOFLOW_INTERNAL_SERVICE_NAME = os.getenv(
 )
 WEBRTC_MODAL_RTSP_PLACEHOLDER = os.getenv("WEBRTC_MODAL_RTSP_PLACEHOLDER")
 WEBRTC_MODAL_RTSP_PLACEHOLDER_URL = os.getenv("WEBRTC_MODAL_RTSP_PLACEHOLDER_URL")
+WEBRTC_MODAL_GCP_SECRET_NAME = os.getenv("WEBRTC_MODAL_GCP_SECRET_NAME")
+WEBRTC_MODAL_MODELS_PRELOAD_API_KEY = os.getenv("WEBRTC_MODAL_MODELS_PRELOAD_API_KEY")
+WEBRTC_MODAL_PRELOAD_MODELS = os.getenv("WEBRTC_MODAL_PRELOAD_MODELS")
+WEBRTC_MODAL_PRELOAD_HF_IDS = os.getenv("WEBRTC_MODAL_PRELOAD_HF_IDS")
+
+HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED = str2bool(
+    os.getenv("HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED", "True")
+)
+HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS = int(
+    os.getenv("HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS", "16")
+)
