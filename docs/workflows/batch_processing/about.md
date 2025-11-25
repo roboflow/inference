@@ -87,13 +87,113 @@ inference rf-cloud data-staging create-batch-of-images --images-dir <your-images
 
 for videos:
 ```bash
-inference rf-cloud data-staging create-batch-of-videos --videos-dir <your-images-dir-path> --batch-id <your-batch-id>
+inference rf-cloud data-staging create-batch-of-videos --videos-dir <your-videos-dir-path> --batch-id <your-batch-id>
 ```
 
 !!! hint "Format of `<your-batch-id>`"
 
     Batch ID must be lower-cased string without special caraters, with letters and digits allowed.
 
+#### Cloud Storage Integration
+
+If your data is already stored in cloud storage (S3, Google Cloud Storage, or Azure), you can process it directly without downloading files locally. This feature generates presigned URLs for your cloud files, making it efficient for large datasets.
+
+!!! info "Installing Cloud Storage Support"
+
+    Cloud storage integration requires additional dependencies. Install them with:
+
+    ```bash
+    pip install 'inference-cli[cloud-storage]'
+    ```
+
+**For images stored in cloud storage:**
+
+```bash
+inference rf-cloud data-staging create-batch-of-images \
+  --data-source cloud-storage \
+  --bucket-path <cloud-path> \
+  --batch-id <your-batch-id>
+```
+
+**For videos stored in cloud storage:**
+
+```bash
+inference rf-cloud data-staging create-batch-of-videos \
+  --data-source cloud-storage \
+  --bucket-path <cloud-path> \
+  --batch-id <your-batch-id>
+```
+
+The `--bucket-path` parameter supports:
+- **S3**: `s3://bucket-name/path/`
+- **Google Cloud Storage**: `gs://bucket-name/path/`
+- **Azure Blob Storage**: `az://container-name/path/`
+
+You can optionally include glob patterns to filter files:
+- `s3://my-bucket/training-data/**/*.jpg` - All JPG files recursively
+- `gs://my-bucket/videos/2024-*/*.mp4` - MP4 files in 2024-* folders
+- `az://container/images/*.png` - PNG files in images folder
+
+
+!!! tip "Credentials Usage"
+
+    Your cloud storage credentials are used **only locally** by the CLI tool to generate presigned URLs. They are **never uploaded** to Roboflow servers. The presigned URLs allow our batch processing service to access your files directly from your cloud storage without requiring access to your credentials.
+
+!!! hint "Cloud Storage Examples"
+
+     **AWS S3:**
+    ```bash
+    export AWS_PROFILE=my-profile  # Optional, uses credentials from ~/.aws/credentials
+
+    inference rf-cloud data-staging create-batch-of-images \
+      --data-source cloud-storage \
+      --bucket-path "s3://my-bucket/training-data/**/*.jpg" \
+      --batch-id my-s3-batch
+    ```
+    For more information, see [AWS S3 configuration](./integration.md#aws-s3-and-s3-compatible-storage).
+
+    **Google Cloud Storage:**
+    ```bash
+    export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+
+    inference rf-cloud data-staging create-batch-of-videos \
+      --data-source cloud-storage \
+      --bucket-path "gs://my-gcs-bucket/videos/**/*.mp4" \
+      --batch-id my-gcs-batch
+    ```
+
+    For more information, see [Google Cloud Storage configuration](./integration.md#google-cloud-storage).
+
+    **Azure Blob Storage:**
+    ```bash
+    export AZURE_STORAGE_ACCOUNT_NAME=myaccount
+    export AZURE_STORAGE_SAS_TOKEN="sv=2021-06-08&ss=b&srt=sco&sp=rl"
+
+    inference rf-cloud data-staging create-batch-of-images \
+      --data-source cloud-storage \
+      --bucket-path "az://my-container/images/*.png" \
+      --batch-id my-azure-batch
+    ```
+
+    For more information, see [Azure Blob Storage configuration](./integration.md#azure-blob-storage).
+
+!!! tip "Cloud Storage Configuration"
+
+    For detailed authentication options, credential management, and advanced configuration, see the [Cloud Storage Integration guide](./integration.md#cloud-storage-authentication).
+
+!!! info "Large Dataset Handling"
+
+    The system automatically handles large datasets:
+
+    - **Images**: Automatically split into chunks of 20,000 files each for efficient processing
+    - **Videos**: Best results with batches under 1,000 videos
+    - **Progress tracking**: You'll see real-time progress as files are listed and presigned URLs are generated
+
+    When processing over 20,000 images, you'll see a message indicating how many chunks will be created.
+
+!!! warning "Presigned URL Expiration"
+
+    Generated presigned URLs are valid for 24 hours. Ensure your batch processing job completes within this timeframe.
 
 Then, you can inspect the details of staged batch of data:
 
