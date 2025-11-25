@@ -82,7 +82,9 @@ class OPCUAConnectionManager:
         self._connections: Dict[str, Client] = {}
         self._connection_locks: Dict[str, threading.Lock] = {}
         self._connection_metadata: Dict[str, dict] = {}
-        self._connection_failures: Dict[str, float] = {}  # key -> timestamp of last failure
+        self._connection_failures: Dict[str, float] = (
+            {}
+        )  # key -> timestamp of last failure
         self._global_lock = threading.Lock()
         self._initialized = True
         logger.debug("OPC UA Connection Manager initialized")
@@ -141,7 +143,9 @@ class OPCUAConnectionManager:
                     f"(attempt {attempt + 1}/{max_retries})"
                 )
                 client.connect()
-                logger.info(f"OPC UA Connection Manager successfully connected to {url}")
+                logger.info(
+                    f"OPC UA Connection Manager successfully connected to {url}"
+                )
                 return
             except BadUserAccessDenied as exc:
                 # Auth errors should not be retried - they will keep failing
@@ -161,8 +165,10 @@ class OPCUAConnectionManager:
 
             # Don't sleep after the last attempt
             if attempt < max_retries - 1:
-                backoff_time = base_backoff * (2 ** attempt)
-                logger.debug(f"OPC UA Connection Manager waiting {backoff_time}s before retry")
+                backoff_time = base_backoff * (2**attempt)
+                logger.debug(
+                    f"OPC UA Connection Manager waiting {backoff_time}s before retry"
+                )
                 time.sleep(backoff_time)
 
         # All retries exhausted
@@ -171,8 +177,12 @@ class OPCUAConnectionManager:
             f"after {max_retries} attempts"
         )
         if isinstance(last_exception, OSError):
-            raise Exception(f"NETWORK ERROR: Failed to connect after {max_retries} attempts. Last error: {last_exception}")
-        raise Exception(f"CONNECTION ERROR: Failed to connect after {max_retries} attempts. Last error: {last_exception}")
+            raise Exception(
+                f"NETWORK ERROR: Failed to connect after {max_retries} attempts. Last error: {last_exception}"
+            )
+        raise Exception(
+            f"CONNECTION ERROR: Failed to connect after {max_retries} attempts. Last error: {last_exception}"
+        )
 
     def _is_circuit_open(self, key: str) -> bool:
         """
@@ -276,9 +286,13 @@ class OPCUAConnectionManager:
             logger.debug("OPC UA Connection Manager disconnecting client")
             client.disconnect()
         except Exception as exc:
-            logger.debug(f"OPC UA Connection Manager disconnect error (non-fatal): {exc}")
+            logger.debug(
+                f"OPC UA Connection Manager disconnect error (non-fatal): {exc}"
+            )
 
-    def release_connection(self, url: str, user_name: Optional[str], force_close: bool = False) -> None:
+    def release_connection(
+        self, url: str, user_name: Optional[str], force_close: bool = False
+    ) -> None:
         """
         Release a connection back to the pool.
 
@@ -325,7 +339,9 @@ class OPCUAConnectionManager:
                 del self._connections[key]
                 if key in self._connection_metadata:
                     del self._connection_metadata[key]
-                logger.debug(f"OPC UA Connection Manager invalidated connection for {url}")
+                logger.debug(
+                    f"OPC UA Connection Manager invalidated connection for {url}"
+                )
 
     def close_all(self) -> None:
         """Close all connections in the pool."""
@@ -348,7 +364,7 @@ class OPCUAConnectionManager:
                         "connected_at": meta["connected_at"].isoformat(),
                     }
                     for meta in self._connection_metadata.values()
-                ]
+                ],
             }
 
 
@@ -880,7 +896,9 @@ def opc_connect_and_write_value(
             # Invalidate the connection so next call gets a fresh one
             connection_manager.invalidate_connection(url, user_name)
         else:
-            logger.error(f"OPC Writer failed to write value: {type(exc).__name__}: {exc}")
+            logger.error(
+                f"OPC Writer failed to write value: {type(exc).__name__}: {exc}"
+            )
 
         return (
             True,
