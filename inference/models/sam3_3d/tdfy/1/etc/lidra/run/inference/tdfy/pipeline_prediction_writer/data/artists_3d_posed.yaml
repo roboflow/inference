@@ -1,0 +1,5 @@
+# Data configuration for artists_3d_posed dataset
+
+defaults:
+  - /data/module@_here_: tdfy/artists_3d_posed_v2  # Use artists_3d_posed dataloader
+  - override /data/dataset/tdfy/trellis500k/preprocessor@validation.dataset.latent_loader_dataset.preprocessor: raw  # Override the preprocessor

@@ -1,0 +1,10 @@
+# @package _global_
+defaults:
+  - v2_mot_shape_6drotation_normalized_layout_ptmap
+  - override /model/backbone/dit/embedder@tdfy.reverse_fn_pretrained.model.condition_embedder: image_dino_mask_pointmap_embedder_fuser_dropout
+  - _self_
+
+tdfy:
+  pointmap_embedder:
+    dropout_prob: 0.1
+    force_dropout_always: false

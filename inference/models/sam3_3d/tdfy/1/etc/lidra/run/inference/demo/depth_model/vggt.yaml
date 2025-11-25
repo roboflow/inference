@@ -1,0 +1,6 @@
+_target_: lidra.pipeline.depth_models.vggt.VGGT
+model:
+  _target_: vggt.models.vggt.from_pretrained
+  pretrained_model_name_or_path: "facebook/VGGT-1B"
+device: cuda
+

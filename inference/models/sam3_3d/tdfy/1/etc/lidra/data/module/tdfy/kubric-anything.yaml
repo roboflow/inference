@@ -1,0 +1,6 @@
+defaults:
+  - /data/module/dict/training@_here_
+  - /data/dataset/tdfy/kubric@training.dataset: anything_training
+
+  - /data/module/dict/validation@_here_
+  - /data/dataset/tdfy/kubric@validation.dataset: anything_validation

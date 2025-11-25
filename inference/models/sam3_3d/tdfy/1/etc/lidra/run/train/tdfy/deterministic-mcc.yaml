@@ -1,0 +1,52 @@
+# @package _global_
+defaults:
+  - base
+
+  - /optimizer@module.model.optimizer: adamw
+  - /scheduler@module.model.scheduler: base
+  - /model/backbone@module.model: trainable
+  - /model/backbone@module.model.backbone: mcc/pretrained
+  - /model/module/tdfy@module: deterministic
+
+  - override /loop: normal
+  - override /hydra: slurm
+  - override /strategy: auto
+  - override /compute: 8x8
+
+  - override /data/module@loop.dataloaders: tdfy/objaverse
+
+  - _self_
+
+batch_size: 16
+lr: 1e-4
+
+loop:
+  max_epochs: 100
+  callbacks:
+    model_checkpoint:
+      monitor: val/loss
+      save_top_k: 10
+      every_n_epochs: null
+
+module:
+  model:
+    optimizer:
+      betas: [0.9, 0.95]
+      eps: 1e-6
+      lr: ${lr}
+
+    scheduler:
+      path: lidra.model.module.tdfy.scheduler.MCCScheduler
+      warmup_epochs: 10
+      max_epochs: ${loop.max_epochs}
+      min_factor: 1e-3
+      max_factor: 1.0
+
+    # https://lightning.ai/docs/pytorch/stable/api/lightning.pytorch.core.LightningModule.html#lightning.pytorch.core.LightningModule.configure_optimizers
+    scheduler_kwargs:
+      interval: epoch
+      frequency: 1
+      name: "train/learning_rate"
+
+tdfy:
+  collator: ${rv.locate:lidra.data.dataset.tdfy.collator.collate_fn}

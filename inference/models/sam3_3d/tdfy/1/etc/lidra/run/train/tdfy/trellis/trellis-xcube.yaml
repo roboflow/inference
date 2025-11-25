@@ -1,0 +1,55 @@
+# @package _global_
+defaults:
+  - base
+
+  # generator
+  - /model/backbone@module.generator.backbone.reverse_fn: trellis_dit/image_large
+
+  - override /model/module/tdfy@module: generative-features-only
+  - override /model/backbone/generator@module.generator.backbone: ddim
+
+  # dataset
+  - override /data/module@loop.dataloaders: tdfy/objaverse-xcube
+
+  - _self_
+
+batch_size: 8
+
+
+module:
+  latent_scale_factor: 0.317 # from https://github.com/nv-tlabs/XCube/blob/254d95b2bca540c20aced686027055a9bff392ed/xcube/models/diffusion.py#L277
+  batch_conditions_mapping: "image" # rgb-image
+
+  generator:
+    backbone:
+      reverse_fn:
+        resolution: 16
+        patch_size: 1
+
+        # cond_image_size: 512
+        # learn_sigma: false
+        # input_type: "tokens+linear"
+        # condition_type: dino # dino (=conditional), none (=unconditional)
+
+    # scheduler:
+    #   _target_: lidra.model.module.tdfy.scheduler.MCCScheduler
+    #   _partial_: true
+    #   warmup_epochs: 10
+    #   max_epochs: ${loop.max_epochs}
+    #   min_factor: 1e-3
+    #   max_factor: 1.0
+
+    # # https://lightning.ai/docs/pytorch/stable/api/lightning.pytorch.core.LightningModule.html#lightning.pytorch.core.LightningModule.configure_optimizers
+    # scheduler_kwargs:
+    #   interval: epoch
+    #   frequency: 1
+    #   name: "train/learning_rate"
+
+loop:
+
+  dataloaders:
+    validation: null
+
+tdfy:
+  collator:
+    _target_: lidra.data.collator.auto_collate

@@ -1,0 +1,29 @@
+defaults:
+  - /data/dataset/tdfy/trellis500k/preprocessor@dataset.latent_loader_dataset.preprocessor: val_full_img
+
+_target_: lidra.data.dataset.tdfy.kubric.anything_dataset.AnythingDataset
+dataset:
+  _target_: lidra.data.dataset.tdfy.kubric.multi_obj_frame_dataset.KubricMultiObjInFrameDataset
+  preload_gt_pts: false
+  n_points_per_instance: 10000
+  keep_k_instances: 1
+  dataset:
+    # Take same frame of all 1k validation videos
+    _target_: lidra.data.dataset.tdfy.kubric.dataset.KubricDataset
+    data_dir: "/checkpoint/3dfy/shared/datasets/kubric/tdfy_v0"
+    dataset_name: "movi_c/256x256" # movi_e also downloaded
+    split: "validation"
+    frame_skip: 1
+    sequence_length: 1
+    skip_first_n_frames: 20 
+    reload_cache: false
+    load_meshes: false
+    random_frame_selection: false
+  # Optional latent loader configuration
+  latent_loader_dataset:
+    _target_: lidra.data.dataset.tdfy.trellis.dataset.PerSubsetDataset
+    path: "/checkpoint/3dfy/shared/datasets/trellis500k/GSO"
+    split: "val"
+    pose_loader:
+      _target_: lidra.data.dataset.tdfy.trellis.pose_loader.load_transforms_json
+      _partial_: true

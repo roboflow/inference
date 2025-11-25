@@ -1,0 +1,6 @@
+defaults:
+  - base
+path: torch.optim.lr_scheduler.CosineAnnealingLR
+T_max: ???
+eta_min: 0.000001
+last_epoch: -1

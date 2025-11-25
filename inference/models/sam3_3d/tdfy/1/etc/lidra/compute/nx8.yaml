@@ -1,0 +1,4 @@
+defaults:
+  - base
+
+n_gpus_per_node: 8

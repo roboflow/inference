@@ -1,0 +1,57 @@
+# @package _global_
+defaults:
+  - base
+
+  # generator
+  - /model/backbone@tdfy.reverse_fn: trellis_dit/pretrained_base
+  - /model/backbone@tdfy.reverse_fn.model: trellis_dit/mm_image_large
+  - override /model/backbone/dit/embedder@tdfy.reverse_fn.model.condition_embedder: imagex2_maskx2_dino_dino
+
+  # dataset
+  - override /data/module@loop.dataloaders: tdfy/trellisRP_a_thru_25_04_01
+
+
+  - _self_
+
+loop:
+  max_epochs: 200
+  check_val_every_n_epoch: 25
+  dataloaders:
+    training:
+      dataset:
+        datasets:
+          RP_a_25_04_01:
+            preprocessor: ${tdfy.train_preprocessor}
+            metadata_filter:
+              filter_funcs:
+                - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+                  query: "pose==True"
+                - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+                  query: "mesh_source == 'trellis'" 
+                - ${tdfy.data_keep_filter}
+          RP_a_25_03_01:
+            preprocessor: ${tdfy.train_preprocessor}
+            metadata_filter:
+              filter_funcs:
+                - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+                  query: "pose==True"
+                - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+                  query: "mesh_source == 'trellis' or mesh_source == 'shutterstock'" 
+                - ${tdfy.data_keep_filter}
+    validation:
+      dataset:
+        # dataset:
+        latent_loader_dataset:
+          preprocessor: ${tdfy.val_preprocessor}
+
+
+tdfy:
+  data_keep_fraction: 1.0
+  pose_weight: 0.01
+  reverse_fn:
+    checkpoint_path: /checkpoint/3dfy/haotang/lidra/logs/tagged/_submit/v1-pretraining-shape-quaternion-fo-only-noema/lightning/version_0/checkpoints/epoch=199-step=250400-v1.ckpt
+    device: "cpu"
+    strict: false
+  data_keep_filter:
+    _target_: lidra.data.dataset.tdfy.metadata_filter.keep_data_fraction
+    proportion: ${tdfy.data_keep_fraction}

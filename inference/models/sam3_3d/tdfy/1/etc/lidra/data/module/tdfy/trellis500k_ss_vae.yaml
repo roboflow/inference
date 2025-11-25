@@ -1,0 +1,3 @@
+defaults:
+  - /data/module/dict/training@_here_
+  - /data/dataset/tdfy/trellis500k@training.dataset: training_ss_vae

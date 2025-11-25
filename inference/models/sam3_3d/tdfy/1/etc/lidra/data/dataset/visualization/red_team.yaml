@@ -1,0 +1,8 @@
+# Instantiate the RedTeam dataset via Hydra
+_target_: scripts.weiyaowang.inference_datasets.red_team.RedTeamDataset
+base_path: /checkpoint/3dfy/shared/datasets/redTeam/0713/
+# Can specify either:
+# - subfolder: "Kevin" (loads all images from Kevin subfolder)
+# - img_names: ["Kevin/image1.jpg", "Kevin/image2.jpg"] (explicit list)
+# - neither (loads all images from all subfolders)
+subfolder: null  # Change to specific subfolder name like "Kevin", "Matt", etc.

@@ -1,0 +1,11 @@
+defaults:
+  - base
+
+path: "${cluster.path.datasets}/variant_F_part_0"
+metadata_fname: metadata_stage2.csv
+latent_dir: "latents/inhouseSLATVAE_gsplat_epoch=249-step=462000-v1"
+metadata_filter: 
+  _target_: lidra.data.dataset.tdfy.metadata_filter.custom_metadata_filter
+  filter_funcs:
+    - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+      query: "num_voxels<35000 and num_voxels>0 and cond_rendered and aesthetic_avg>3 and `latent_inhouseSLATVAE_gsplat_epoch=249-step=462000-v1`"

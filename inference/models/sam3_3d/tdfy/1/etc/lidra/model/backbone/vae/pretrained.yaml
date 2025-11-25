@@ -1,0 +1,11 @@
+defaults:
+  - /model/backbone/vae@model: compressed
+
+_target_: lidra.model.io.load_model_from_checkpoint
+checkpoint_path: ${cluster.path.models}/vae/occ-gleize-epoch=20-step=14343.ckpt
+device: cpu
+strict: true
+state_dict_key: "state_dict"
+state_dict_fn:
+  _target_: lidra.model.io.remove_prefix_state_dict_fn
+  prefix: "_base_models.main."

@@ -1,0 +1,22 @@
+defaults:
+  - mock
+
+limit_train_batches: 10
+limit_val_batches: 10
+limit_test_batches: 10
+limit_predict_batches: 10
+
+profiler:
+  _target_: lidra.profiler.composite.Composite
+  profilers:
+    - simple
+    - advanced
+    - pytorch
+    # - xla # requires torch_xla>=1.13
+
+callbacks:
+  device_monitor:
+    _target_: lightning.pytorch.callbacks.DeviceStatsMonitor
+  model_checkpoint:
+    _target_: lightning.pytorch.callbacks.ModelCheckpoint
+    save_on_train_epoch_end: true

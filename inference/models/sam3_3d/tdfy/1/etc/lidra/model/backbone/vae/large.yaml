@@ -1,0 +1,16 @@
+defaults:
+  - _self_
+
+_target_: lidra.model.backbone.autoencoder.vae.create_autoencoder
+
+# Model parameters (these will be passed to create_autoencoder)
+depth: 24
+dim: 1024
+M: 1024  # num_latents
+latent_dim: 1024
+num_heads: 16
+deterministic: false
+
+
+# Additional parameters
+drop_path_rate: 0.1

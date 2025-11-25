@@ -1,0 +1,56 @@
+# @package _global_
+defaults:
+  - base
+
+  # generator and condition embedder
+  - /model/backbone@tdfy.reverse_fn: trellis_dit/pretrained_base
+  - /model/backbone@tdfy.reverse_fn.model: trellis_dit/mm_image_large
+
+  - override /model/backbone/dit/embedder@tdfy.reverse_fn.model.condition_embedder: image_dino_moge_mask_pointmap
+
+  # preprocessor 
+  - override /data/dataset/tdfy/trellis500k/preprocessor@tdfy.train_preprocessor: train_keep_bg_w_ptmp
+  - override /data/dataset/tdfy/trellis500k/preprocessor@tdfy.val_preprocessor: val_keep_bg_w_ptmp
+
+  # dataset
+  - override /data/module@loop.dataloaders: tdfy/trellisEITRv2
+  - _self_
+
+
+module:
+  batch_conditions_mapping:
+    # Full image
+    rgb_image: rgb_image
+    rgb_image_mask: rgb_image_mask
+    rgb_pointmap: rgb_pointmap
+
+    # Cropped image
+    image: image
+    mask: mask
+    pointmap: pointmap
+
+
+loop:
+  max_epochs: 100
+  check_val_every_n_epoch: 25
+  dataloaders:
+    training:
+      dataset:
+        datasets:
+          elephant_2M:
+            preprocessor: ${tdfy.train_preprocessor}
+          elephant_sketchfaball:
+            preprocessor: ${tdfy.train_preprocessor}
+    validation:
+      dataset:
+        latent_loader_dataset:
+          preprocessor: ${tdfy.val_preprocessor}
+
+
+tdfy:
+  pose_weight: 0.01
+  reverse_fn:
+    checkpoint_path: /checkpoint/3dfy/haotang/lidra/logs/tagged/_submit/v1-tricks-moge-midtraining-bf16/lightning/version_0/checkpoints/epoch=24-step=129875-v1.ckpt
+    strict: false
+    device: "cpu"
+  

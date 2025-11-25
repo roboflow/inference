@@ -1,0 +1,26 @@
+# @package _global_
+defaults:
+  - /run/inference/tdfy/base
+  - /loop/callbacks@callbacks.prediction_writer: cached_prediction_dataset_writer
+
+module: ???
+
+loop:
+  module: ${module}
+  enable_progress_bar: true
+
+  dataloaders:
+    validation:
+      batch_size: ${batch_size}
+      collate_fn:
+        _target_: lidra.data.collator.auto_collate
+
+
+predict:
+  args:
+    dataloader: ${loop.dataloaders.validation}
+
+# Allow running on dev partition in H200
+cluster:
+  slurm:
+    timeout: 1440 # 1440 minutes = 24 hours

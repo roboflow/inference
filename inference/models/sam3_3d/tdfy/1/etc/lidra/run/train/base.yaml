@@ -1,0 +1,17 @@
+# @package _global_
+defaults:
+  - /run@_here_: base
+  - /hydra: local
+  - /compute: 1x1
+  - /cluster: fair
+  - /strategy: auto
+
+module: ???
+loop:
+  module: ${module}
+seed: 42
+
+# Set hydra job name to tag name if tag is not None
+hydra:
+  job:
+    name: ${oc.select:tag.name,train}

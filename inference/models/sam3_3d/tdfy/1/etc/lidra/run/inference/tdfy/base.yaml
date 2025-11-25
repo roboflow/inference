@@ -1,0 +1,12 @@
+# @package _global_
+defaults:
+  - /run/inference/base
+
+batch_size: 1
+validation_batch_size: ${batch_size}
+lr: null
+# tdfy: ${logs.config.tdfy}
+tdfy: ${rv.merge:${logs.config.tdfy},${overwrites.tdfy}}
+
+overwrites:
+  tdfy:

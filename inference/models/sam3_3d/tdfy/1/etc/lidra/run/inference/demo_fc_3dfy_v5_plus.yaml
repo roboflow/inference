@@ -1,0 +1,100 @@
+# @package _global_
+
+cluster_path: /large_experiments/3dfy/model_weights
+trellis_ckpts_dir: ${cluster_path}/TRELLIS-image-large/ckpts
+
+inference_pipeline:
+  _target_: lidra.pipeline.inference_pipeline_pointmap.InferencePipelinePointMap
+  ss_generator_config_path: ${cluster_path}/v2_mot_6drotation_normalized_no_layout_inhouse_VAE_Artists_3D_0822/config_converted.yaml
+  ss_generator_ckpt_path: ${cluster_path}/v2_mot_6drotation_normalized_no_layout_inhouse_VAE_Artists_3D_0822/lightning/version_0/checkpoints/last_converted.ckpt
+
+  slat_generator_config_path: ${cluster_path}/fm-trellis-features-foV4-ft-16x8-resume2/config_converted.yaml
+  slat_generator_ckpt_path: ${cluster_path}/fm-trellis-features-foV4-ft-16x8-resume2-spconvConverted/last_converted_spconv.ckpt
+
+  ss_decoder_config_path: ${cluster_path}/ss_decoder/ss_decoder.yaml
+  ss_decoder_ckpt_path: ${cluster_path}/ss_decoder/decoder.ckpt
+
+  ss_encoder_config_path: ${trellis_ckpts_dir}/ss_encoder.yaml
+  ss_encoder_ckpt_path: ${trellis_ckpts_dir}/ss_enc_conv3d_16l8_fp16.safetensors
+
+  slat_decoder_gs_config_path: ${trellis_ckpts_dir}/slat_decoder_gs.yaml
+  slat_decoder_gs_ckpt_path: ${cluster_path}/slat-vae-training-gsplat/slat_gs_decoder_epoch249.ckpt
+
+  slat_decoder_mesh_config_path: ${trellis_ckpts_dir}/slat_decoder_mesh.yaml
+  slat_decoder_mesh_ckpt_path: ${cluster_path}/trellis-train-mesh-inhouseGSPLAT-12x8/decoder_ema0.9999_step0035000.pt
+
+  layout_model_config_path: ${cluster_path}/layoutv0-r3v0_2-eitr-ptmap-cfg/config_converted.yaml
+  layout_model_ckpt_path: ${cluster_path}/layoutv0-r3v0_2-eitr-ptmap-cfg/lightning/version_0/checkpoints/last_converted.ckpt
+
+  pad_size: 1.0
+  dtype: float16
+  version: 3dfy_v5_plus
+  use_pretrained_slat: false
+  use_layout_result: true
+  force_shape_in_layout: true
+  downsample_ss_dist: 1
+
+  ss_condition_input_mapping: []  
+  layout_condition_input_mapping: []
+
+  ss_preprocessor:
+    _target_: lidra.data.dataset.tdfy.trellis.dataset.PreProcessor
+    img_transform:
+      _target_: torchvision.transforms.Compose
+      transforms:
+        - _target_: lidra.data.dataset.tdfy.img_processing.pad_to_square_centered
+          _partial_: true
+        - _target_: torchvision.transforms.Resize
+          size: 518
+    mask_transform:
+      _target_: torchvision.transforms.Compose
+      transforms:
+        - _target_: lidra.data.dataset.tdfy.img_processing.pad_to_square_centered
+          _partial_: true
+        - _target_: torchvision.transforms.Resize
+          size: 518
+          interpolation: 0 # nearest
+    img_mask_joint_transform:
+      - _target_: lidra.data.dataset.tdfy.img_and_mask_transforms.crop_around_mask_with_padding
+        _partial_: true
+        box_size_factor: 1.2
+        padding_factor: 0.0 
+
+  layout_preprocessor:
+    _target_: lidra.data.dataset.tdfy.trellis.dataset.PreProcessor
+    img_mask_joint_transform: []
+    img_mask_pointmap_joint_transform: 
+      - _partial_: true
+        _target_: lidra.data.dataset.tdfy.img_and_mask_transforms.crop_around_mask_with_padding
+        box_size_factor: 1.2
+        padding_factor: 0.0
+    img_transform:
+      _target_: torchvision.transforms.Compose
+      transforms:
+      - _partial_: true
+        _target_: lidra.data.dataset.tdfy.img_processing.pad_to_square_centered
+      - _target_: torchvision.transforms.Resize
+        size: 518
+    mask_transform:
+      _target_: torchvision.transforms.Compose
+      transforms:
+      - _partial_: true
+        _target_: lidra.data.dataset.tdfy.img_processing.pad_to_square_centered
+      - _target_: torchvision.transforms.Resize
+        interpolation: 0
+        size: 518
+    pointmap_transform:
+      _target_: torchvision.transforms.Compose
+      transforms:
+      - _partial_: true
+        _target_: lidra.data.dataset.tdfy.img_processing.pad_to_square_centered
+      - _target_: torchvision.transforms.Resize
+        interpolation: 0
+        size: 518
+
+  pose_decoder_name: ScaleShiftInvariant
+  depth_model:
+    _target_: lidra.pipeline.depth_models.moge.MoGe
+    model:
+      _target_: moge.model.v1.MoGeModel.from_pretrained
+      pretrained_model_name_or_path: Ruicheng/moge-vitl

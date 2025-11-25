@@ -1,0 +1,8 @@
+defaults:
+  - /data/module/dict/training@_here_
+  - /data/dataset@training.dataset: tokenized
+  - /data/dataset/wikipedia@training.dataset.dataset: english
+
+training:
+  dataset:
+    subkey: text

@@ -1,0 +1,14 @@
+defaults:
+  - base
+  - override /data/dataset/tdfy/trellis500k/preprocessor@preprocessor: val_full_img
+
+path: ???
+metadata_fname: ???
+
+return_pointmap: true
+pose_loader:
+  _target_: lidra.data.dataset.tdfy.trellis.pose_loader.R3.load_pose
+pointmap_loader:
+  _target_: lidra.data.dataset.tdfy.trellis.pose_loader.R3.load_pointmap
+  _partial_: True
+  pointcloud_directory: "/checkpoint/3dfy/shared/r3_data/pointmaps/moge"

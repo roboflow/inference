@@ -1,0 +1,19 @@
+# @package _global_
+defaults:
+  - /run/inference/tdfy/prediction_writer/from_config
+  - /data/module@loop.dataloaders: tdfy/scannetpp
+  - /model/backbone@overwrites.module.generator.backbone: generator/flow_matching_cfg_inference
+
+loop:
+  precision: bf16
+  dataloaders:
+    validation:
+      dataset:
+        latent_loader_dataset:
+          preprocessor:  ${logs.config.tdfy.val_preprocessor}
+
+
+# You can also specify a checkpoint here
+# logs:    
+#   checkpoint: "/checkpoint/3dfy/ssax/lidra/logs/tagged/_submit/v2-mot-layout-ptmap-eitrpw0_1-lr1e-5-pw0_1-fixcrop-Feb-April/lightning/version_0/checkpoints/epoch=74-step=22500-v1.ckpt"
+#   checkpoint: "/checkpoint/3dfy/haotang/lidra/logs/tagged/_submit/v2_mot_6drotation_normalized_Feb-May/lightning/version_0/checkpoints/epoch=99-step=76800-v1.ckpt"

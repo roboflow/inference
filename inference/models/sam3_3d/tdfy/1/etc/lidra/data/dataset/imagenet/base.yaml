@@ -1,0 +1,3 @@
+_target_: torchvision.datasets.imagenet.ImageFolder
+transform:
+  _target_: torchvision.transforms.ToTensor

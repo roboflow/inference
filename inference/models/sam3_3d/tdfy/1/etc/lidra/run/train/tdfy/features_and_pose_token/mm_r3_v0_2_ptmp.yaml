@@ -1,0 +1,25 @@
+# @package _global_
+defaults:
+  - mm_r3_v0_2
+  - override /data/dataset/tdfy/trellis500k/preprocessor@tdfy.train_preprocessor: train_keep_bg_w_ptmp
+  - override /data/dataset/tdfy/trellis500k/preprocessor@tdfy.val_preprocessor: val_keep_bg_w_ptmp
+  - override /model/backbone/dit/embedder@tdfy.reverse_fn.model.condition_embedder: image_dino_moge_mask_pointmap
+  - _self_
+
+
+module:
+  batch_conditions_mapping:
+    # Full image
+    rgb_image: rgb_image
+    rgb_image_mask: rgb_image_mask
+    rgb_pointmap: rgb_pointmap
+
+    # Cropped image
+    image: image
+    mask: mask
+    pointmap: pointmap
+
+tdfy:
+  reverse_fn:
+    model:
+      force_zeros_cond: true

@@ -1,0 +1,65 @@
+# @package _global_
+defaults:
+  - ../fm-trellis-trellis500k-tricks-moge-mm-shape-quaternion
+
+  # load pretrained backbone
+  - /data/dataset/tdfy/trellis500k/preprocessor@tdfy.preprocessor: train_keep_bg
+  - /data/dataset/tdfy/trellis500k/subset_train@loop.dataloaders.training.dataset.datasets.r3_sa3_April: r3_sa3_April
+  - /data/dataset/tdfy/trellis500k/subset_train@loop.dataloaders.training.dataset.datasets.r3_25_April: r3_25_April
+  - /data/dataset/tdfy/trellis500k/subset_train@loop.dataloaders.training.dataset.datasets.r3_25_March_morphing: r3_25_March_morphing
+  - /data/dataset/tdfy/trellis500k/subset_train@loop.dataloaders.training.dataset.datasets.r3_25_morphing: r3_25_morphing
+
+  - /model/backbone@tdfy.reverse_fn_pretrained: trellis_dit/mm_image_large_shape_quaternion_pretrained
+  - override /data/dataset/tdfy/trellis500k@loop.dataloaders.training.dataset: training_empty
+  - override /model/backbone/dit/embedder@tdfy.reverse_fn_pretrained.model.condition_embedder: image_dino_moge_mask
+
+module:
+  # cropped image, cropped mask, full image, mask
+  batch_conditions_mapping: 
+    image: image
+    mask: mask
+    rgb_image: rgb_image
+    rgb_image_mask: rgb_image_mask
+  generator:
+    backbone:
+      reverse_fn:
+        unconditional_handling: "add_flag"
+
+lr: 1e-5  # Smaller learning rate; tune yourself
+
+loop:
+  max_epochs: 100
+  dataloaders:
+    validation: null
+    training:
+      dataset:
+        datasets:
+          # _target_: lidra.config.utils.make_list_from_kwargs
+          r3_sa3_April:
+            pose_loader:
+              _target_: lidra.data.dataset.tdfy.trellis.pose_loader.R3.load_pose
+            preprocessor: ${tdfy.preprocessor}
+          r3_25_April:
+            pose_loader:
+              _target_: lidra.data.dataset.tdfy.trellis.pose_loader.R3.load_pose
+            preprocessor: ${tdfy.preprocessor}
+          r3_25_March_morphing:
+            pose_loader:
+              _target_: lidra.data.dataset.tdfy.trellis.pose_loader.R3.load_pose
+            preprocessor: ${tdfy.preprocessor}
+          r3_25_morphing:
+            pose_loader:
+              _target_: lidra.data.dataset.tdfy.trellis.pose_loader.R3.load_pose
+            preprocessor: ${tdfy.preprocessor}
+
+tdfy:
+  reverse_fn_pretrained:
+    checkpoint_path: /checkpoint/3dfy/haotang/lidra/logs/tagged/_submit/v1-tricks-moge-midtraining-bf16/lightning/version_0/checkpoints/epoch=24-step=129875-v1.ckpt
+    strict: false
+    device: "cpu"
+    remove_name:
+      - "_base_models.generator.reverse_fn.backbone.condition_embedder.idx_emb"
+    model:
+      use_fp16: True
+      force_zeros_cond: True
+  reverse_fn: ${tdfy.reverse_fn_pretrained}

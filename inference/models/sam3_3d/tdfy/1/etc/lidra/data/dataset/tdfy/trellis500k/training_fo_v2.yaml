@@ -1,0 +1,7 @@
+defaults:
+  - subset_train@datasets.variantF_v2: variantF_v2
+  
+
+_target_: torch.utils.data.dataset.ConcatDataset
+datasets:
+  _target_: lidra.config.utils.make_list_from_kwargs

@@ -1,0 +1,7 @@
+defaults:
+  - /model/backbone@_here_: frozen
+  - /model/backbone@backbone: trellis_vae/ss_decoder
+  - _self_
+
+backbone:
+  reshape_input_to_cube: true

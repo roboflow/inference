@@ -1,0 +1,16 @@
+# @package _global_
+defaults:
+  - fm-trellis-trellis500k-randPad
+  - _self_
+
+loop:
+  callbacks:
+    ema:
+      _target_: lidra.callback.ema.EMA
+      decays:
+        slow: 0.9999 # trellis's rate
+        # medium: 0.99
+        # fast: 0.9
+      default_decay_for_eval: slow
+      device: null
+      recover_existing: true

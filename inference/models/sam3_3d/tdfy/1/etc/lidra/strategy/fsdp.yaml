@@ -1,0 +1,9 @@
+_target_: lightning.pytorch.strategies.fsdp.FSDPStrategy
+sharding_strategy: ??? # "FULL_SHARD" or "HYBRID_SHARD" or "SHARD_GRAD_OP" or "NO_SHARD"
+cpu_offload: true
+state_dict_type: sharded
+mixed_precision:
+  _target_: torch.distributed.fsdp.MixedPrecision
+  param_dtype: ${rv.locate:torch.float16}
+  reduce_dtype: ${rv.locate:torch.float16}
+  buffer_dtype: ${rv.locate:torch.float16}

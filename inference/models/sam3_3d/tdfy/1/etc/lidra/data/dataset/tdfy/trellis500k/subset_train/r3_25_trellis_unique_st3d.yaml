@@ -1,0 +1,9 @@
+defaults:
+  - r3_25_morphing
+
+metadata_filter: 
+  _target_: lidra.data.dataset.tdfy.metadata_filter.custom_metadata_filter
+  filter_funcs:
+    - _target_: lidra.data.dataset.tdfy.metadata_filter.unique_mesh_filter
+    - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+      query: "mesh_source=='trellis' or mesh_source=='shutterstock_3d_text_retrieval' or mesh_source=='shutterstock_3d_image_retrieval'"

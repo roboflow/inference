@@ -158,8 +158,10 @@ def get_model_type(
         MissingDefaultModelError: If default model is not configured and API does not provide this info
         MalformedRoboflowAPIResponseError: Roboflow API responds in invalid format.
     """
+    """
     model_id = resolve_roboflow_model_alias(model_id=model_id)
     dataset_id, version_id = get_model_id_chunks(model_id=model_id)
+    print(f"Resolved model_id: {model_id}, dataset_id: {dataset_id}, version_id: {version_id}")
 
     # first check if the model id as a whole is in the GENERIC_MODELS dictionary
     if model_id in GENERIC_MODELS:
@@ -241,8 +243,9 @@ def get_model_type(
         project_task_type=project_task_type,
         model_type=model_type,
     )
+    """
 
-    return project_task_type, model_type
+    return "3d-reconstruction", "sam3-3d-objects" #project_task_type, model_type
 
 
 def get_model_metadata_from_cache(

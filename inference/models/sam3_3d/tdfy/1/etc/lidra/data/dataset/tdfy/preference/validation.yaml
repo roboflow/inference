@@ -1,0 +1,8 @@
+defaults:
+  - training_dpo
+
+metadata_fname: "metadata_pref_0618_filtered_catA_val.csv"
+split: "val" 
+
+latent_loader_dataset:
+  split: "val" 

@@ -1,0 +1,72 @@
+# @package _global_
+defaults:
+  - /run/train/tdfy@: base
+
+  - /model/module/tdfy@module: generative-featuresAndPoseToken
+  - /model/backbone@module.generator: trainable
+  - /model/backbone/generator@module.generator.backbone: ???
+  - /model/module/vae@module.decoder: trellis_structure_decoder_frozen
+  - /optimizer@module.generator.optimizer: adam
+
+  - /data/dataset/tdfy/trellis500k/preprocessor@tdfy.train_preprocessor: train_keep_bg
+  - /data/dataset/tdfy/trellis500k/preprocessor@tdfy.val_preprocessor: val_keep_bg
+  # - override /model/backbone/dit/embedder@tdfy.reverse_fn.model.condition_embedder: imagex2_maskx2_dino_dino
+  - override /model/backbone/generator@module.generator.backbone: flow_matching_cfg
+
+  - override /loop: normal
+  - override /hydra: slurm
+  - override /strategy: auto
+  - override /compute: 8x8
+
+
+  - override /data/module@loop.dataloaders: ???
+  - _self_
+
+batch_size: 6
+validation_batch_size: 1
+lr: 1e-4
+
+loop:
+  max_epochs: 100
+  deterministic: false
+  precision: bf16-mixed
+  callbacks:
+    model_checkpoint2:
+      _target_: lightning.pytorch.callbacks.ModelCheckpoint
+      save_on_train_epoch_end: true
+      every_n_epochs: 25
+      save_top_k: -1
+    gradient_clipping:
+      _target_: lidra.callback.tdfy.adaptive_gradient_clipping.AdaptiveGradientClipCallback
+      max_clip_val: 1.0
+      clip_percentile: 95.0
+      buffer_size: 200
+
+module:
+  batch_conditions_mapping:
+    image: image
+    mask: mask
+    image2: rgb_image
+    mask2: rgb_image_mask
+  pose_target_convention: ScaleShiftInvariant 
+  generator:
+    optimizer:
+      lr: ${lr}
+    backbone:
+      reverse_fn:
+        backbone: ${tdfy.reverse_fn}
+        unconditional_handling: "add_flag"
+      loss_weights:
+        # help optree broadcase, it does not broadcast DictConfig
+        _target_: lidra.config.utils.make_dict
+        shape: 1.0
+        quaternion: ${tdfy.pose_weight}
+        translation: ${tdfy.pose_weight}
+        scale: ${tdfy.pose_weight}
+        translation_scale: ${tdfy.pose_weight}
+  validation_dump_type: null
+
+tdfy:
+  pose_weight: 0.01
+  collator:
+    _target_: lidra.data.collator.auto_collate

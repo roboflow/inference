@@ -1,0 +1,15 @@
+# @package _global_
+defaults:
+  - /run/inference/tdfy/scoring/base
+  - dataloaders@loop.dataloaders: r3_anything
+  - callbacks@callbacks.score_sample: log_likelihood
+  - _self_
+
+callbacks: {}
+
+loop:
+  precision: bf16
+
+logs:
+  config: ${rv.config:${logs.path}/config_dictmap.yaml}
+

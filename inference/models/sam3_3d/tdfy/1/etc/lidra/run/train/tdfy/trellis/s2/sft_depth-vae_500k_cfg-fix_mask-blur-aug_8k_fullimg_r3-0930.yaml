@@ -1,0 +1,33 @@
+# @package _global_
+defaults:
+  - input_fullimg
+  - sft
+
+  - override /data/dataset/tdfy/trellis500k@loop.dataloaders.training.dataset: training_features_r3-0930
+
+  - _self_
+
+loop:
+  dataloaders:
+    training:
+      dataset:
+        datasets:
+          r3-texture-0918:
+            preprocessor: ${tdfy.preprocessor}
+          r3-texture-0922:
+            preprocessor: ${tdfy.preprocessor}
+          r3-texture-0927:
+            preprocessor: ${tdfy.preprocessor}
+          r3-texture-0930:
+            preprocessor: ${tdfy.preprocessor}
+  callbacks:
+    ema:
+      # Tune the decays because this run has a small number of iterations
+      decays:
+        slow: 0.9999 # trellis's rate
+        medium: 0.999
+        fast: 0.99
+
+tdfy:
+  reverse_fn_pretrained:
+    checkpoint_path: /checkpoint/3dfy/michelleguo/lidra/logs/tagged/_submit/feature-s2-recipe_mid_depth-vae_500k_cfg-fix_mask-blur-aug_fullimg/lightning/version_0/checkpoints/epoch=39-step=100480-v1.ckpt

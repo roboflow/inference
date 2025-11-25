@@ -1,0 +1,7 @@
+_target_: lidra.data.dataset.tdfy.r3.dataset.Dataset
+split: ???
+preload_gt_pts: false
+add_context_to_bbox: 0.1
+frustum_visible: false
+masked_img: false
+n_gt_pts: 20000

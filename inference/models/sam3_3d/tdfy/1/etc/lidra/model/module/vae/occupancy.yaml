@@ -1,0 +1,24 @@
+_target_: lidra.model.module.vae.occupancy.OccupancyKLAutoencoder
+model: ???
+
+# Sampling parameters
+box_size: 1.0
+n_queries_pos: 550
+n_queries_neg: 2000
+n_input_points: [2048, 4096, 8192]
+granularity: 0.1
+
+# Augmentation parameters
+use_xyz_aug: false
+xyz_aug_random_scale_delta: 0.0
+xyz_aug_origin_at_cam: false
+xyz_aug_random_rotate_degree: 180
+xyz_aug_random_shift: 0.0
+
+# Loss weights
+loss_weight_reconstruction: 1.0
+loss_weight_kl: 0.001
+loss_weight_color: 0.0
+# # Evaluation parameters
+# eval_xyz_distance_threshold: null  # defaults to granularity if not set
+# shrink_threshold: 10.0

@@ -1,0 +1,17 @@
+defaults:
+  - flow_matching_cfg
+  - _self_
+
+_target_: lidra.model.backbone.generator.shortcut.model.ShortCut
+# loss_weights:
+#   # help optree broadcase, it does not broadcast DictConfig
+#     _target_: lidra.config.utils.make_dict
+#     shape: 1.0
+reverse_fn:
+  unconditional_handling: "add_flag"
+training_time_sampler_fn:
+  _target_: lidra.model.backbone.generator.flow_matching.model.lognorm_sampler
+  _partial_: true
+  mean: -1.0
+  std: 1.0
+self_consistency_prob: 0.25

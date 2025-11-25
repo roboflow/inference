@@ -1,0 +1,15 @@
+# @package _global_
+defaults:
+  - ddpm-3d-features
+
+  # dataset
+  - override /data/module@loop.dataloaders: tdfy/objaverse-shape2vec
+
+  - _self_
+
+batch_size: 16
+
+tdfy:
+  reverse_fn:
+    input_size: 8
+    n_tokens: 512

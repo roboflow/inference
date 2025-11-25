@@ -1,0 +1,56 @@
+# @package _global_
+defaults:
+  - ../fm-trellis-features-fo-ft
+
+  # load pretrained backbone
+  - /data/dataset/tdfy/trellis500k/preprocessor@tdfy.preprocessor: train_keep_bg_noAug
+  
+lr: 1e-4  
+
+batch_size: 6
+
+module:
+  batch_conditions_mapping: ${tdfy.new_batch_conditions_mapping}
+
+loop:
+  dataloaders:
+    validation: null
+    training:
+      dataset:
+        # _target_: torch.utils.data.dataset.ConcatDataset
+        datasets:
+          # _target_: lidra.config.utils.make_list_from_kwargs
+          variantF_v1:
+            preprocessor: ${tdfy.preprocessor}
+          variantF_v1_complement: 
+            preprocessor: ${tdfy.preprocessor}
+  checkpoint: "/checkpoint/3dfy/weiyaowang/lidra/logs/timestamped/2025-07-21/00-58-23/0/lightning/version_0/checkpoints/last.ckpt"
+
+tdfy:
+  new_batch_conditions_mapping:
+    image: image
+    mask: mask
+    coords: coords
+  new_cond_embedder:
+    _target_: lidra.model.backbone.dit.embedder.embedder_fuser.EmbedderFuser
+    use_pos_embedding: learned
+    projection_net_hidden_dim_multiplier: 4.0
+    embedder_list:
+      - - _target_: lidra.model.backbone.dit.embedder.dino.Dino
+          dino_model: "dinov2_vitl14_reg"
+          input_size: 518
+          normalize_images: True
+          prenorm_features: True
+        - - ["image", "cropped"]
+      # - - _target_: lidra.model.backbone.dit.embedder.moge.MoGe
+      #   - - ["image", "cropped"]
+      - - _target_: lidra.model.backbone.dit.embedder.dino.Dino
+          dino_model: "dinov2_vitl14_reg"
+          input_size: 518
+          normalize_images: True
+          prenorm_features: True
+        - - ["mask", "cropped"]
+  reverse_fn_pretrained:
+    model:
+      condition_embedder: ${tdfy.new_cond_embedder}
+        

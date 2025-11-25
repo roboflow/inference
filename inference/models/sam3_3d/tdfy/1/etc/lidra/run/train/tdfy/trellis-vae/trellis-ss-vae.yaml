@@ -1,0 +1,54 @@
+# @package _global_
+defaults:
+  - /run/train/tdfy@: base
+
+  - /model/module/tdfy@module: vae-sparseStructure
+  - /optimizer@module.encoder.optimizer: adam
+  - /optimizer@module.decoder.optimizer: adam
+
+  - override /loop: normal
+  - override /hydra: slurm
+  - override /strategy: auto
+  - override /compute: 8x8
+
+  - override /data/module@loop.dataloaders: tdfy/trellis500k_ss_vae
+
+  - _self_
+
+
+module:
+  encoder:
+    optimizer:
+      lr: ${lr}
+  decoder:
+    optimizer:
+      lr: ${lr}
+
+batch_size: 16
+lr: 1e-4
+
+loop:
+  max_epochs: 200
+  precision: null
+  dataloaders:
+    validation: null
+  callbacks:
+    model_checkpoint2:
+      _target_: lightning.pytorch.callbacks.ModelCheckpoint
+      save_on_train_epoch_end: true
+      every_n_epochs: 25
+      save_top_k: -1
+    gradient_scaler:
+      _target_: lidra.callback.tdfy.gradual_grad_scale.GradualGradScaleCallback
+      initial_scale: 30.0
+      scale_growth: 0.001
+    gradient_clipping:
+      _target_: lidra.callback.tdfy.adaptive_gradient_clipping.AdaptiveGradientClipCallback
+      max_clip_val: 1.0
+      clip_percentile: 95.0
+      buffer_size: 1000
+  # limit_train_batches: 500
+
+tdfy:
+  collator:
+    _target_: lidra.data.collator.auto_collate

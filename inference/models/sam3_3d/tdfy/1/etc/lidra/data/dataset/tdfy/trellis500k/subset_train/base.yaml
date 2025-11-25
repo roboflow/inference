@@ -1,0 +1,20 @@
+defaults:
+  - /data/dataset/tdfy/trellis500k/preprocessor@preprocessor: train_default
+
+_target_: lidra.data.dataset.tdfy.trellis.dataset.PerSubsetDataset
+path: ???
+split: "train"
+latent_dir: "ss_latents/ss_enc_conv3d_16l8_fp16"
+latent_loader: 
+  _target_: lidra.data.dataset.tdfy.trellis.latent_loader.load_structure_latents
+  _partial_: true
+metadata_filter:
+  _target_: lidra.data.dataset.tdfy.metadata_filter.custom_metadata_filter
+  filter_funcs:
+    - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+      query: "num_voxels>0 and cond_rendered"
+      # example for structured latents
+      # query: "num_voxels<25000 and cond_rendered and num_voxels > 0"
+pose_loader: 
+  _target_: lidra.data.dataset.tdfy.trellis.pose_loader.load_trellis_pose
+  _partial_: true

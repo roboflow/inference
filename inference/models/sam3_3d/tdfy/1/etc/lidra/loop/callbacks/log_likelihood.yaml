@@ -1,0 +1,3 @@
+_target_: lidra.callback.tdfy.score_sample.LogLikelihoodScorer
+output_dir: ${hydra:runtime.output_dir}/scores/log_likelihood
+scorer_fn: ${rv.locate:lidra.callback.tdfy.score_sample.LogLikelihoodScorer.compute_log_likelihood}

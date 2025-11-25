@@ -1,0 +1,61 @@
+# @package _global_
+defaults:
+  - ../fm-trellis-trellis500k-tricks-moge-mot-shape-quaternion
+
+  # load pretrained backbone
+  - /data/dataset/tdfy/trellis500k/preprocessor@tdfy.preprocessor: train_keep_bg
+  - /data/dataset/tdfy/trellis500k/subset_train@loop.dataloaders.training.dataset.datasets.elephant: elephant
+  - /model/backbone@tdfy.reverse_fn_pretrained: trellis_dit/mot_image_large_pretrained
+  - override /data/dataset/tdfy/trellis500k@loop.dataloaders.training.dataset: training_empty
+  - override /model/backbone/dit/embedder@tdfy.reverse_fn_pretrained.model.condition_embedder: image_dino_moge_mask
+
+module:
+  pose_target_convention: ScaleShiftInvariant
+  keep_preds: ["shape", "quaternion", "translation", "scale", "translation_scale"]
+  # cropped image, cropped mask, full image, mask
+  batch_conditions_mapping: 
+    image: image
+    mask: mask
+    rgb_image: rgb_image
+    rgb_image_mask: rgb_image_mask
+  generator:
+    backbone:
+      reverse_fn:
+        unconditional_handling: "add_flag"
+      loss_weights:
+        # help optree broadcase, it does not broadcast DictConfig
+        _target_: lidra.config.utils.make_dict
+        # layout midtraining we only train pose
+        shape: 1.0
+        quaternion: ${tdfy.pose_weight}
+        translation: ${tdfy.pose_weight}
+        scale: ${tdfy.pose_weight}
+        translation_scale: ${tdfy.pose_weight}
+
+lr: 1e-4  # Smaller learning rate; tune yourself
+
+loop:
+  max_epochs: 100
+  check_val_every_n_epoch: 25
+  dataloaders:
+    training:
+      dataset:
+        datasets:
+          elephant:
+            preprocessor: ${tdfy.preprocessor}
+    validation: null
+
+tdfy:
+  pose_weight: 1.0
+  reverse_fn_pretrained:
+    checkpoint_path: /checkpoint/3dfy/haotang/lidra/logs/tagged/_submit/v2-mot-shape-quaternion-midtrain/lightning/version_0/checkpoints/last.ckpt
+    strict: false
+    device: "cpu"
+    remove_name:
+      - "_base_models.generator.reverse_fn.backbone.condition_embedder.idx_emb"
+    model:
+      use_fp16: True
+      force_zeros_cond: True
+  reverse_fn: ${tdfy.reverse_fn_pretrained}
+
+batch_size: 6

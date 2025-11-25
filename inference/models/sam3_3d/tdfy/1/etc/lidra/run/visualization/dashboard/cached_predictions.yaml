@@ -1,0 +1,20 @@
+# @package _global_
+defaults:
+  - _self_
+
+# Required parameters (to be overridden)
+prediction_folder: ???
+dataset_config_key: loop.dataloaders.validation.dataset  # Key to find dataset config in experiment config
+device: cpu  # Device to load tensors to
+
+# Visualization parameters
+viz:
+  output_dir: ${prediction_folder}_dashboard
+  viz_pm: true  # Visualize pointmaps if available
+  export_gif: false  # Export videos as GIFs
+  max_samples: null  # Process all samples by default
+  verbose: false  # Verbose logging
+  create_gallery: false  # Create gallery index page
+  gallery_limit: 30  # Items per gallery page
+  dashboard_template: "stage_1_scene"  # Dashboard template to use (default, stage_1_scene)
+  group_key_extractor: "image_stem" 

@@ -1,0 +1,26 @@
+# @package _global_
+
+cluster_path: /large_experiments/3dfy/model_weights
+trellis_ckpts_dir: ${cluster_path}/TRELLIS-image-large/ckpts
+
+inference_pipeline:
+  _target_: lidra.pipeline.inference_pipeline.InferencePipeline
+  ss_generator_config_path: ${cluster_path}/v0-tricks-moge-mm-ft-artist-3D/config.yaml
+  ss_generator_ckpt_path: ${cluster_path}/v0-tricks-moge-mm-ft-artist-3D/lightning/version_0/checkpoints/last.ckpt
+
+  slat_generator_config_path: ${cluster_path}/fm-trellisDiT-features-ObjV1-ABO-ObjGithub-nvoxels15k-dinov2_vitl14_reg-518-16x8/config.yaml
+  slat_generator_ckpt_path: ${trellis_ckpts_dir}/slat_flow_img_dit_L_64l8p2_fp16.safetensors
+
+  ss_decoder_config_path: ${trellis_ckpts_dir}/ss_decoder.yaml
+  ss_decoder_ckpt_path: ${trellis_ckpts_dir}/ss_dec_conv3d_16l8_fp16.safetensors
+
+  slat_decoder_gs_config_path: ${trellis_ckpts_dir}/slat_decoder_gs.yaml
+  slat_decoder_gs_ckpt_path: ${trellis_ckpts_dir}/slat_dec_gs_swin8_B_64l8gs32_fp16.safetensors
+
+  slat_decoder_mesh_config_path: ${trellis_ckpts_dir}/slat_decoder_mesh.yaml
+  slat_decoder_mesh_ckpt_path: ${trellis_ckpts_dir}/slat_dec_mesh_swin8_B_64l8m256c_fp16.safetensors
+
+  pad_size: 1.0
+  dtype: float32
+  version: v0.8
+  ss_condition_input_mapping: []

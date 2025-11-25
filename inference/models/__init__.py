@@ -13,6 +13,7 @@ from inference.core.env import (
     CORE_MODEL_YOLO_WORLD_ENABLED,
     CORE_MODELS_ENABLED,
     DEPTH_ESTIMATION_ENABLED,
+    SAM3_3D_OBJECTS_ENABLED,
 )
 
 _MODEL_REGISTRY: dict[str, Any] = {}
@@ -23,6 +24,7 @@ CORE_MODELS = {
     "SegmentAnything": ("inference.models.sam", CORE_MODEL_SAM_ENABLED),
     "SegmentAnything2": ("inference.models.sam2", CORE_MODEL_SAM2_ENABLED),
     "SegmentAnything3": ("inference.models.sam3", CORE_MODEL_SAM3_ENABLED),
+    "SegmentAnything3_3D_Objects": ("inference.models.sam3_3d", SAM3_3D_OBJECTS_ENABLED),
     "Sam3ForInteractiveImageSegmentation": (
         "inference.models.sam3",
         CORE_MODEL_SAM3_ENABLED,

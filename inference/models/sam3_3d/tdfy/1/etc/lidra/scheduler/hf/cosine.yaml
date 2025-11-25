@@ -1,0 +1,3 @@
+defaults:
+  - /scheduler/hf@_here_: base
+name: cosine

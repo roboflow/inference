@@ -1,0 +1,5 @@
+defaults:
+  - dict/all@_here_
+  - /data/dataset/imagenet@training.dataset: training
+  - /data/dataset/imagenet@validation.dataset: validation
+  - /data/dataset/imagenet@test.dataset: test

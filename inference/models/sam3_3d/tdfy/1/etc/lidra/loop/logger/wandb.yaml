@@ -1,0 +1,15 @@
+_target_: lightning.pytorch.loggers.wandb.WandbLogger
+name: ${tag.name}-${oc.env:SLURM_JOB_ID}-${now:%Y-%m-%d}/${now:%H-%M-%S}
+save_dir: .
+offline: False
+id: null # pass correct id to resume experiment!
+anonymous: null # enable anonymous logging
+project: "3dfy-lidra-${oc.env:USER}"
+log_model: False # upload lightning ckpts
+prefix: "" # a string to put at the beginning of metric keys
+entity: "3dfy" # set to name of your wandb team
+group: ""
+tags:
+  - ${now:%Y-%m-%d}/${now:%H-%M-%S}
+  - ${cluster.name}_slurm_${oc.env:SLURM_JOB_ID}
+job_type: ""

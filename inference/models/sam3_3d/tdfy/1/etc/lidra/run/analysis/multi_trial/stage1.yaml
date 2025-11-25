@@ -1,0 +1,71 @@
+# @package _global_
+
+# Stage1 configuration - full analysis preset using direct instantiation
+defaults:
+  - base
+  - _self_
+
+# Override config with stage1 metrics
+config:
+  # All metrics from the legacy config
+  metrics:
+    f1:
+      direction: maximize
+      trial_reduction_group: shape
+    chamfer_distance:
+      direction: minimize
+      trial_reduction_group: shape
+    oriented_rot_error_deg:
+      direction: minimize
+      trial_reduction_group: orientation
+    scale_abs_rel_error:
+      direction: minimize
+      trial_reduction_group: scale
+    trans_abs_rel_error:
+      direction: minimize
+      trial_reduction_group: translation
+    trans_angle_err_deg:
+      direction: minimize
+      trial_reduction_group: translation
+  
+  # Trial reduction functions
+  trial_reduction_fns:
+    orientation:
+      _target_: lidra.metrics.analysis.v3.trial_reduction.select_by
+      _partial_: true
+      select_trials_by: oriented_chamfer_distance
+      select_trials_should_be_minimized: true
+    shape:
+      _target_: lidra.metrics.analysis.v3.trial_reduction.select_by
+      _partial_: true
+      select_trials_by: chamfer_distance
+      select_trials_should_be_minimized: true
+    scale:
+      _target_: lidra.metrics.analysis.v3.trial_reduction.select_by
+      _partial_: true
+      select_trials_by: scale_abs_rel_error
+      select_trials_should_be_minimized: true
+    translation:
+      _target_: lidra.metrics.analysis.v3.trial_reduction.select_by
+      _partial_: true
+      select_trials_by: trans_abs_rel_error
+      select_trials_should_be_minimized: true
+  
+  # Thresholds
+  thresholds:
+    oriented_rot_error_deg: [5, 15, 30]
+    scale_abs_rel_error: [0.05, 0.10, 0.20]
+    trans_abs_rel_error: [0.05, 0.10, 0.25]
+    trans_angle_err_deg: [0.5, 1.25, 5.0]
+  
+  # More comprehensive statistics
+  statistics:
+    - mean
+    - std
+    - min
+    - max
+    - p5
+    - p25
+    - p50
+    - p75
+    - p95

@@ -1,0 +1,7 @@
+_target_: lidra.model.module.tdfy.generative.TrellisDINOFeaturesOnly
+generator: ???
+batch_conditions_mapping: ???
+batch_preprocessing_fn:
+  _target_: lidra.model.module.tdfy.batch_transform_utils.trellis.TrellisDINOFeaturesOnly.batch_preprocessing
+  _partial_: True
+  deterministic_sampling: False

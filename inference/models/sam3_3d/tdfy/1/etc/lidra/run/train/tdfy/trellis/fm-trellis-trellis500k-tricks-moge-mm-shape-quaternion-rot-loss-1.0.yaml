@@ -1,0 +1,29 @@
+# @package _global_
+defaults:
+  - fm-trellis-trellis500k-tricks-moge-mm
+  - /model/backbone@tdfy.reverse_fn_pretrained: trellis_dit/mm_image_large_shape_quaternion_pretrained
+  - override /model/backbone/dit/embedder@tdfy.reverse_fn_pretrained.model.condition_embedder: image_dino_moge
+
+# batch_size: 4
+
+module:
+  keep_preds: ["shape", "quaternion"]
+  generator:
+    backbone:
+      loss_weights:
+        # help optree broadcase, it does not broadcast DictConfig
+        _target_: lidra.config.utils.make_dict
+        shape: 1.0
+        quaternion: 0.01
+      cd_weight: 1.0
+      emd_weight: 1.0
+    
+tdfy:
+  reverse_fn_pretrained:
+    checkpoint_path: /fsx-3dfy-v2/bowenzhang/3dfy/lidra/logs/tagged/_submit/bowen_reproduction_0623/lightning/version_0/checkpoints/saved_epoch=99-step=123200-v1.ckpt
+    strict: false
+    device: "cpu"
+    model:
+      use_fp16: True
+      force_zeros_cond: True
+  reverse_fn: ${tdfy.reverse_fn_pretrained}

@@ -1,0 +1,44 @@
+# @package _global_
+defaults:
+  - fm-trellis-features-trellis500k-tricks
+  
+  - /model/backbone@tdfy.reverse_fn_pretrained: trellis_dit/image_large_featured_latents_pretrained
+
+  # dataset
+  - override /data/dataset/tdfy/trellis500k@loop.dataloaders.training.dataset: training_fo_v4_features
+  - _self_
+
+loop:
+  max_epochs: 100
+  callbacks:
+    model_checkpoint2:
+      every_n_epochs: 10
+    ema:
+      force_fp32: True
+
+tdfy:
+  reverse_fn_pretrained:
+    checkpoint_path: /fsx-3dfy-v2/weiyaowang/3dfy/lidra/logs/tagged/_submit/fm-trellis-features-trellis500k-tricksNew-inHouseVAE-stk3d3-16x8-torchSparse/lightning/version_0/checkpoints/last.ckpt
+    strict: false
+    device: "cpu"
+    model:
+      use_fp16: True
+      force_zeros_cond: True
+      condition_embedder: 
+        dino_model: "dinov2_vitl14_reg"
+        input_size: 518
+        normalize_images: True
+        prenorm_features: True
+  reverse_fn: ${tdfy.reverse_fn_pretrained}
+
+module:
+  generator:
+    backbone:
+      training_time_sampler_fn:
+        _target_: lidra.model.backbone.generator.flow_matching.model.lognorm_sampler
+        _partial_: true
+        mean: -1.0
+        std: 1.0 
+      reverse_fn:
+        strength: 0.0
+      inference_steps: 12

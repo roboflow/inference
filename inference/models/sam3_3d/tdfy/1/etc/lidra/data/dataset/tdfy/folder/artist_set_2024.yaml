@@ -1,0 +1,14 @@
+defaults:
+  - base
+  - _self_
+
+base_dir: /checkpoint/3dfy/ssax/trellis_3d_artist_set_v0/3d_artist_set/masked_rgb
+metadata_csv_path: /checkpoint/3dfy/ssax/trellis_3d_artist_set_v0/3d_artist_set/metadata.csv
+image_mask_processor:
+  _target_: lidra.data.dataset.tdfy.img_and_mask_transforms.RGBAImageProcessor
+  resize_and_make_square_kwargs:
+    img_size: 512
+    make_square: false
+  object_crop_kwargs: false
+  remove_background: false
+  imagenet_normalization: false

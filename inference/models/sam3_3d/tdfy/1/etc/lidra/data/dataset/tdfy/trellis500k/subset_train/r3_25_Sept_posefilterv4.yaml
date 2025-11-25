@@ -1,0 +1,28 @@
+defaults:
+  - rp_a_base
+
+_target_: lidra.data.dataset.tdfy.trellis.dataset.PerSubsetDataset
+latent_dir: ss_latents/ss_enc_conv3d_16l8_fp16
+latent_loader:
+  _partial_: true
+  _target_: lidra.data.dataset.tdfy.trellis.latent_loader.load_structure_latents
+metadata_filter:
+  _target_: lidra.data.dataset.tdfy.metadata_filter.custom_metadata_filter
+  filter_funcs:
+  - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+    query: pose==True and ss_latent_ss_enc_conv3d_16l8_fp16==True
+  - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+    query: mesh_source=='trellis' or mesh_source=='shutterstock' or mesh_source=='3dfy_v0_81'
+      or mesh_source=='3dfy_v1_0' or mesh_source=='3dfy_v0_2' or mesh_source=='3dfy_v1_2'
+      or mesh_source=='3dfy_v0_6' or mesh_source=='3dfy_v0_7' or mesh_source=='3dfy_v0_82'
+  - _target_: lidra.data.dataset.tdfy.metadata_filter.unique_mesh_filter
+    col_name: sha256_prior_morphing
+  - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+    query: normalized_dist_from_mask_centroid < 3.0 and -3.0 < obj_scale and obj_scale < 3.0
+  - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+    query: annotator_fail_rate <= 0.1
+metadata_fname: metadata_clean_w_posedist_v2.csv
+# metadata_fname: metadata_clean.csv
+path: ${cluster.path.datasets}/r3_25_Sept_morphing
+preprocessor: ???
+split: train
