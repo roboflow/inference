@@ -18,9 +18,6 @@ def clip_model_name() -> str:
     return "RN50"
 
 
-@pytest.mark.skip(
-    reason="Skipping clip reference model test because openai weights hosted on azure are not available"
-)
 @pytest.fixture(scope="module")
 def baseline_clip_model(clip_model_name: str):
     original_clip_dir = os.path.join(ASSETS_DIR, "original_clip")
@@ -81,9 +78,6 @@ def clip_onnx_wrapper_small_batch(clip_model_name: str) -> AutoModel:
     return _get_clip_onnx_wrapper(clip_model_name=clip_model_name, max_batch_size=2)
 
 
-@pytest.mark.skip(
-    reason="Skipping clip reference model test because openai weights hosted on azure are not available"
-)
 def _test_clip_wrapper_vs_baseline_for_image_embeddings(
     clip_wrapper,
     baseline_clip_model,
@@ -110,9 +104,6 @@ def _test_clip_wrapper_vs_baseline_for_image_embeddings(
     assert similarity.item() > 0.99
 
 
-@pytest.mark.skip(
-    reason="Skipping clip reference model test because openai weights hosted on azure are not available"
-)
 @pytest.mark.e2e_model_inference
 @pytest.mark.parametrize("image_shape", [(224, 224), (320, 240), (448, 448)])
 def test_torch_clip_wrapper_vs_baseline_for_image_embeddings(
@@ -127,9 +118,6 @@ def test_torch_clip_wrapper_vs_baseline_for_image_embeddings(
     )
 
 
-@pytest.mark.skip(
-    reason="Skipping clip reference model test because openai weights hosted on azure are not available"
-)
 @pytest.mark.onnx_extras
 @pytest.mark.e2e_model_inference
 @pytest.mark.parametrize("image_shape", [(224, 224), (320, 240), (448, 448)])
@@ -145,9 +133,6 @@ def test_onnx_clip_wrapper_vs_baseline_for_image_embeddings(
     )
 
 
-@pytest.mark.skip(
-    reason="Skipping clip reference model test because openai weights hosted on azure are not available"
-)
 def _test_clip_wrapper_vs_baseline_for_text_embeddings(
     clip_wrapper,
     baseline_clip_model,
@@ -168,9 +153,6 @@ def _test_clip_wrapper_vs_baseline_for_text_embeddings(
     assert similarity.item() > 0.999
 
 
-@pytest.mark.skip(
-    reason="Skipping clip reference model test because openai weights hosted on azure are not available"
-)
 @pytest.mark.e2e_model_inference
 def test_torch_clip_wrapper_vs_baseline_for_text_embeddings(
     clip_torch_wrapper: AutoModel,
@@ -181,9 +163,6 @@ def test_torch_clip_wrapper_vs_baseline_for_text_embeddings(
     )
 
 
-@pytest.mark.skip(
-    reason="Skipping clip reference model test because openai weights hosted on azure are not available"
-)
 @pytest.mark.onnx_extras
 @pytest.mark.e2e_model_inference
 def test_onnx_clip_wrapper_vs_baseline_for_text_embeddings(

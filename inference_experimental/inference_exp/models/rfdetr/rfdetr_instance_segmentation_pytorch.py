@@ -124,9 +124,7 @@ class RFDetrForInstanceSegmentationTorch(
         model_config = CONFIG_FOR_MODEL_TYPE[model_type](device=device)
         checkpoint_num_classes = weights_dict["class_embed.bias"].shape[0]
         model_config.num_classes = checkpoint_num_classes - 1
-        model_config.resolution = (
-            inference_config.network_input.training_input_size.height
-        )
+        model_config.resolution = inference_config.network_input.training_input_size.height
         model = build_model(config=model_config)
         model.load_state_dict(weights_dict)
         model = model.eval().to(device)
