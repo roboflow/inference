@@ -9,6 +9,7 @@ from typing import Annotated, Any, Dict, List, Optional, Tuple, Union
 from uuid import uuid4
 
 import asgi_correlation_id
+import requests
 import uvicorn
 from fastapi import (
     BackgroundTasks,
@@ -125,6 +126,7 @@ from inference.core.entities.responses.workflows import (
 )
 from inference.core.env import (
     ALLOW_ORIGINS,
+    API_BASE_URL,
     API_KEY,
     API_LOGGING_ENABLED,
     BUILDER_ORIGIN,
@@ -165,7 +167,10 @@ from inference.core.env import (
     NOTEBOOK_PORT,
     PRELOAD_MODELS,
     PROFILE,
+    ROBOFLOW_INTERNAL_SERVICE_NAME,
+    ROBOFLOW_INTERNAL_SERVICE_SECRET,
     ROBOFLOW_SERVICE_SECRET,
+    SAM3_EXEC_MODE,
     WEBRTC_WORKER_ENABLED,
     WORKFLOWS_MAX_CONCURRENT_STEPS,
     WORKFLOWS_PROFILER_BUFFER_SIZE,
@@ -228,6 +233,7 @@ from inference.core.managers.base import ModelManager
 from inference.core.managers.metrics import get_container_stats
 from inference.core.managers.prometheus import InferenceInstrumentator
 from inference.core.roboflow_api import (
+    build_roboflow_api_headers,
     get_roboflow_workspace,
     get_roboflow_workspace_async,
     get_workflow_specification,
