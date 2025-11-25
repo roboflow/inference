@@ -182,6 +182,10 @@ RUN ln -s /usr/local/cuda-11.8 /etc/alternatives/cuda-11
 RUN rm -rf /usr/local/cuda-11.4
 ENV LD_LIBRARY_PATH="/opt/gcc-11/lib64:$$LD_LIBRARY_PATH"
 
+
+RUN update-alternatives --install /usr/bin/python python /usr/local/bin/python3.12 1
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/local/bin/python3.12 1
+
 # Install OpenCV
 RUN mkdir -p /build/opencv
 WORKDIR  /build/opencv
@@ -198,7 +202,6 @@ RUN make install
 RUN python3.12 -m pip wheel ./python_loader --wheel-dir /build/out/wheels --verbose
 RUN python3.12 -m pip install /build/out/wheels/opencv-4.12.0-py3-none-any.whl
 
-RUN update-alternatives --install /usr/bin/python python /usr/local/bin/python3.12 1
-RUN update-alternatives --install /usr/bin/python3 python3 /usr/local/bin/python3.12 1
+WORKDIR /
 
 ENTRYPOINT ["bash"]
