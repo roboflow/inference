@@ -65,7 +65,7 @@ class OPCUAConnectionManager:
     _lock = threading.Lock()
 
     # Circuit breaker: how long to wait before trying a failed server again
-    CIRCUIT_BREAKER_TIMEOUT_SECONDS = 30.0
+    CIRCUIT_BREAKER_TIMEOUT_SECONDS = 2.0
 
     def __new__(cls) -> "OPCUAConnectionManager":
         """Singleton pattern to ensure one connection manager across the application."""
@@ -606,17 +606,17 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["hierarchical", "direct"],
     )
     max_retries: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
-        default=1,
+        default=3,
         description="Maximum number of connection attempts before giving up. "
-        "Default is 1 (no retries) to avoid blocking the pipeline.",
+        "Default is 3 with exponential backoff starting at 15ms.",
         examples=[1, 3, "$inputs.max_retries"],
         ge=1,
     )
     retry_backoff_seconds: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
-        default=0.0,
-        description="Base delay between retry attempts in seconds. "
-        "Default is 0 (no delay). Only applies when max_retries > 1.",
-        examples=[0.0, 0.5, 1.0, "$inputs.retry_backoff"],
+        default=0.015,
+        description="Base delay between retry attempts in seconds (doubles each retry). "
+        "Default is 0.015 (15ms) for fast exponential backoff.",
+        examples=[0.015, 0.5, 1.0, "$inputs.retry_backoff"],
         ge=0.0,
     )
 
@@ -682,7 +682,7 @@ class OPCWriterSinkBlockV1(WorkflowBlock):
         cooldown_seconds: int = 5,
         node_lookup_mode: Literal["hierarchical", "direct"] = "hierarchical",
         max_retries: int = 3,
-        retry_backoff_seconds: float = 1.0,
+        retry_backoff_seconds: float = 0.015,
     ) -> BlockResult:
         if disable_sink:
             logger.debug("OPC Writer disabled by disable_sink parameter")
@@ -943,9 +943,14 @@ def _opc_write_value(
 
     # Locate the node
     if node_lookup_mode == "direct":
-        # Direct NodeId access for Ignition-style string identifiers
+        # Direct NodeId access for string identifiers
+        # If variable_name is empty, use object_name as the full identifier
+        # This allows maximum flexibility for different server naming conventions
         try:
-            node_id = f"ns={nsidx};s={object_name}/{variable_name}"
+            if variable_name:
+                node_id = f"ns={nsidx};s={object_name}/{variable_name}"
+            else:
+                node_id = f"ns={nsidx};s={object_name}"
             logger.debug(f"OPC Writer using direct NodeId access: {node_id}")
             var = client.get_node(node_id)
             logger.debug(
