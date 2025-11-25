@@ -149,7 +149,7 @@ class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Google Gemini",
-            "version": "v1",
+            "version": "v2",
             "short_description": "Run Google's Gemini model with vision capabilities.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
@@ -167,7 +167,7 @@ class BlockManifest(WorkflowBlockManifest):
         },
         protected_namespaces=(),
     )
-    type: Literal["roboflow_core/google_gemini@v1"]
+    type: Literal["roboflow_core/google_gemini@v2"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     task_type: TaskType = Field(
         default="unconstrained",
@@ -176,9 +176,9 @@ class BlockManifest(WorkflowBlockManifest):
             "values_metadata": RELEVANT_TASKS_METADATA,
             "recommended_parsers": {
                 "structured-answering": "roboflow_core/json_parser@v1",
-                "classification": "roboflow_core/vlm_as_classifier@v1",
-                "multi-label-classification": "roboflow_core/vlm_as_classifier@v1",
-                "object-detection": "roboflow_core/vlm_as_detector@v1",
+                "classification": "roboflow_core/vlm_as_classifier@v2",
+                "multi-label-classification": "roboflow_core/vlm_as_classifier@v2",
+                "object-detection": "roboflow_core/vlm_as_detector@v2",
             },
             "always_visible": True,
         },
@@ -326,7 +326,7 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.4.0,<2.0.0"
 
 
-class GoogleGeminiBlockV1(WorkflowBlock):
+class GoogleGeminiBlockV2(WorkflowBlock):
 
     def __init__(
         self,
