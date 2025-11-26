@@ -692,6 +692,11 @@ async def init_rtc_peer_connection_with_loop(
     else:
         data_fields = webrtc_request.data_output
 
+    # When video_url or rtsp_url is provided, frames come from the URL, not the data channel
+    use_data_channel_frames = webrtc_request.use_data_channel_frames
+    if webrtc_request.video_url or webrtc_request.rtsp_url:
+        use_data_channel_frames = False
+
     try:
         should_send_video = stream_mode != StreamOutputMode.NO_VIDEO
 
@@ -707,7 +712,7 @@ async def init_rtc_peer_connection_with_loop(
                 declared_fps=webrtc_request.declared_fps,
                 termination_date=termination_date,
                 terminate_event=terminate_event,
-                use_data_channel_frames=webrtc_request.use_data_channel_frames,
+                use_data_channel_frames=use_data_channel_frames,
             )
         else:
             # No video track - use base VideoFrameProcessor
@@ -722,7 +727,7 @@ async def init_rtc_peer_connection_with_loop(
                 declared_fps=webrtc_request.declared_fps,
                 termination_date=termination_date,
                 terminate_event=terminate_event,
-                use_data_channel_frames=webrtc_request.use_data_channel_frames,
+                use_data_channel_frames=use_data_channel_frames,
             )
     except (
         ValidationError,
@@ -821,6 +826,23 @@ async def init_rtc_peer_connection_with_loop(
         else:
             # For DATA_ONLY, start data-only processing task
             logger.info("Starting data-only processing for RTSP stream")
+            asyncio.create_task(video_processor.process_frames_data_only())
+    elif webrtc_request.video_url:
+        logger.info("Processing video URL: %s", webrtc_request.video_url)
+        player = MediaPlayer(
+            webrtc_request.video_url,
+            options={
+                "timeout": "10000000",  # 10s timeout for HTTP connections
+            },
+        )
+        video_processor.set_track(track=player.video)
+
+        # Only add video track if we should send video back
+        if should_send_video:
+            peer_connection.addTrack(video_processor)
+        else:
+            # For DATA_ONLY, start data-only processing task
+            logger.info("Starting data-only processing for video URL")
             asyncio.create_task(video_processor.process_frames_data_only())
 
     @peer_connection.on("track")
