@@ -9,42 +9,7 @@ from typing import Dict, List, Literal, Optional, Tuple, Type, Union
 from asyncua.client import Client as AsyncClient
 from asyncua.sync import Client, sync_async_client_method
 from asyncua.ua import VariantType
-from asyncua.ua.uaerrors import (
-    BadCommunicationError,
-    BadConnectionClosed,
-    BadConnectionRejected,
-    BadDisconnect,
-    BadNoCommunication,
-    BadNoMatch,
-    BadNotConnected,
-    BadSecureChannelClosed,
-    BadServerNotConnected,
-    BadSessionClosed,
-    BadSessionIdInvalid,
-    BadTimeout,
-    BadTooManySessions,
-    BadTypeMismatch,
-    BadUserAccessDenied,
-    UaError,
-)
-
-# Exception types that indicate connection/network issues (should trigger circuit breaker)
-CONNECTION_ERROR_TYPES = (
-    BadCommunicationError,
-    BadConnectionClosed,
-    BadConnectionRejected,
-    BadDisconnect,
-    BadNoCommunication,
-    BadNotConnected,
-    BadSecureChannelClosed,
-    BadServerNotConnected,
-    BadSessionClosed,
-    BadSessionIdInvalid,
-    BadTimeout,
-    BadTooManySessions,  # Server has reached maximum sessions
-    OSError,  # Network-level errors (socket errors, etc.)
-    ConnectionError,  # Python built-in connection errors
-)
+from asyncua.ua.uaerrors import BadNoMatch, BadTypeMismatch, BadUserAccessDenied
 from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field
 
