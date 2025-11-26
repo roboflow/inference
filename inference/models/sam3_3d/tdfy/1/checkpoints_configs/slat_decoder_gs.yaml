@@ -1,0 +1,25 @@
+_target_: lidra.model.backbone.trellis.models.structured_latent_vae.decoder_gs.SLatGaussianDecoderTdfyWrapper
+resolution: 64
+model_channels: 768
+latent_channels: 8
+num_blocks: 12
+num_heads: 12
+mlp_ratio: 4
+attn_mode: swin
+window_size: 8
+representation_config:
+  lr:
+    _xyz: 1.0
+    _features_dc: 1.0
+    _opacity: 1.0
+    _scaling: 1.0
+    _rotation: 0.1
+  perturb_offset: true
+  voxel_size: 1.5
+  num_gaussians: 32
+  2d_filter_kernel_size: 0.1
+  3d_filter_kernel_size: 9e-4
+  scaling_bias: 4e-3
+  opacity_bias: 0.1
+  scaling_activation: softplus
+use_fp16: true

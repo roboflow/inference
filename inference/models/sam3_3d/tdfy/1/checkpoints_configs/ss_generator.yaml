@@ -1,0 +1,609 @@
+batch_size: 4
+cluster:
+  name: aws-h100
+  path:
+    base: /checkpoint/3dfy/${oc.env:USER}/lidra
+    cache: ${cluster.path.base}/cache
+    cwd: ${hydra:runtime.cwd}
+    datasets: /checkpoint/3dfy/shared/datasets
+    logs: ${cluster.path.base}/logs
+    models: ${cluster.path.base}/models
+    weights: /checkpoint/3dfy/shared/weights/
+  slurm:
+    account: 3dfy
+    constraint: null
+    mem_per_gpu: 224G
+    partition: learn
+    qos: h200_3dfy_high
+    timeout: 10000
+compute:
+  n_cpus_per_gpu: 8
+  n_gpus_per_node: 8
+  n_nodes: 8
+loop:
+  _target_: lidra.loop.Loop
+  accelerator: auto
+  accumulate_grad_batches: 1
+  benchmark: false
+  callbacks:
+    _target_: lidra.config.utils.make_list_from_kwargs
+    ema: null
+    garbage_collection:
+      _target_: lidra.callback.garbage_collection.GarbageCollection
+      collect_cuda: true
+      collect_on_epoch_end: true
+      frequency: 1000
+    gradient_clipping:
+      _target_: lidra.callback.tdfy.adaptive_gradient_clipping.AdaptiveGradientClipCallback
+      buffer_size: 1000
+      clip_percentile: 95.0
+      max_clip_val: 1.0
+    gradient_scaler:
+      _target_: lidra.callback.tdfy.gradual_grad_scale.GradualGradScaleCallback
+      initial_scale: 0.0
+      scale_cut: 0.0
+      scale_growth: 0.0
+    learning_rate_monitor:
+      _target_: lightning.pytorch.callbacks.LearningRateMonitor
+      log_momentum: false
+      log_weight_decay: false
+      logging_interval: null
+    model_checkpoint:
+      _target_: lightning.pytorch.callbacks.ModelCheckpoint
+      every_n_epochs: 1
+      save_last: link
+      save_on_train_epoch_end: true
+    model_checkpoint2:
+      _target_: lightning.pytorch.callbacks.ModelCheckpoint
+      every_n_epochs: ${loop.check_val_every_n_epoch}
+      save_on_train_epoch_end: true
+      save_top_k: -1
+  check_val_every_n_epoch: 2
+  dataloaders:
+    training:
+      _target_: torch.utils.data.DataLoader
+      batch_size: ${batch_size}
+      collate_fn: ${tdfy.collator}
+      dataset:
+        _target_: torch.utils.data.dataset.ConcatDataset
+        datasets:
+          _target_: lidra.config.utils.make_list_from_kwargs
+          eitr_dataset: null
+          elephant: null
+          elephant_ego: null
+          elephant_food: null
+          elephant_food_table: null
+          elephant_shutterstock_tranche1: null
+          elephant_shutterstock_tranche2: null
+          elephant_sketchfab_extended: null
+          elephant_trellis500k: null
+          elephant_v1_2M: null
+          procthor_dataset: null
+          r3_25_April:
+            _target_: lidra.data.dataset.tdfy.trellis.dataset.PerSubsetDataset
+            latent_dir: ${tdfy.latent_dir}
+            latent_loader:
+              _partial_: true
+              _target_: lidra.data.dataset.tdfy.trellis.latent_loader.load_structure_latents
+            metadata_filter:
+              _target_: lidra.data.dataset.tdfy.metadata_filter.custom_metadata_filter
+              filter_funcs:
+              - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+                query: pose==True
+              - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+                query: mesh_source=='trellis' or mesh_source=='shutterstock' or mesh_source=='unknown'
+              - _target_: lidra.data.dataset.tdfy.metadata_filter.unique_mesh_filter
+                col_name: sha256_prior_morphing
+              - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+                query: normalized_dist_from_mask_centroid < 3.0 and -3.0 < obj_scale
+                  and obj_scale < 3.0
+            metadata_fname: metadata_clean_w_posedist.csv
+            path: ${cluster.path.datasets}/trellis500k/r3_25_April_morphing
+            pointmap_loader: ${tdfy.pointmap_loader}
+            pose_loader: ${tdfy.pose_loader}
+            preprocessor: ${tdfy.preprocessor}
+            return_pointmap: true
+            split: train
+          r3_25_March_morphing:
+            _target_: lidra.data.dataset.tdfy.trellis.dataset.PerSubsetDataset
+            latent_dir: ${tdfy.latent_dir}
+            latent_loader:
+              _partial_: true
+              _target_: lidra.data.dataset.tdfy.trellis.latent_loader.load_structure_latents
+            metadata_filter:
+              _target_: lidra.data.dataset.tdfy.metadata_filter.custom_metadata_filter
+              filter_funcs:
+              - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+                query: pose==True and ss_latent_ss_enc_conv3d_16l8_fp16==True
+              - _target_: lidra.data.dataset.tdfy.metadata_filter.unique_mesh_filter
+                col_name: sha256_prior_morphing
+              - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+                query: (mesh_source=='shutterstock' or mesh_source=='trellis') and
+                  pose==True
+              - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+                query: normalized_dist_from_mask_centroid < 3.0 and -3.0 < obj_scale
+                  and obj_scale < 3.0
+            metadata_fname: metadata_clean_w_posedist.csv
+            path: ${cluster.path.datasets}/trellis500k/r3_25_March_morphing_scaleonly
+            pointmap_loader: ${tdfy.pointmap_loader}
+            pose_loader: ${tdfy.pose_loader}
+            preprocessor: ${tdfy.preprocessor}
+            return_pointmap: true
+            split: train
+          r3_25_May:
+            _target_: lidra.data.dataset.tdfy.trellis.dataset.PerSubsetDataset
+            latent_dir: ${tdfy.latent_dir}
+            latent_loader:
+              _partial_: true
+              _target_: lidra.data.dataset.tdfy.trellis.latent_loader.load_structure_latents
+            metadata_filter:
+              _target_: lidra.data.dataset.tdfy.metadata_filter.custom_metadata_filter
+              filter_funcs:
+              - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+                query: pose==True and ss_latent_ss_enc_conv3d_16l8_fp16==True
+              - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+                query: mesh_source=='trellis' or mesh_source=='shutterstock' or mesh_source=='1.0'
+                  or mesh_source=='0.2' or mesh_source=='0.43'
+              - _target_: lidra.data.dataset.tdfy.metadata_filter.unique_mesh_filter
+                col_name: sha256_prior_morphing
+              - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+                query: normalized_dist_from_mask_centroid < 3.0 and -3.0 < obj_scale
+                  and obj_scale < 3.0
+            metadata_fname: metadata_clean_w_posedist.csv
+            path: ${cluster.path.datasets}/trellis500k/r3_25_May_morphing
+            pointmap_loader: ${tdfy.pointmap_loader}
+            pose_loader: ${tdfy.pose_loader}
+            preprocessor: ${tdfy.preprocessor}
+            return_pointmap: true
+            split: train
+          r3_25_Sept:
+            _target_: lidra.data.dataset.tdfy.trellis.dataset.PerSubsetDataset
+            latent_dir: ${tdfy.latent_dir}
+            latent_loader:
+              _partial_: true
+              _target_: lidra.data.dataset.tdfy.trellis.latent_loader.load_structure_latents
+            metadata_filter:
+              _target_: lidra.data.dataset.tdfy.metadata_filter.custom_metadata_filter
+              filter_funcs:
+              - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+                query: pose==True and ss_latent_ss_enc_conv3d_16l8_fp16==True
+              - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+                query: mesh_source=='trellis' or mesh_source=='shutterstock' or mesh_source=='3dfy_v0_81'
+                  or mesh_source=='3dfy_v1_0' or mesh_source=='3dfy_v0_2' or mesh_source=='3dfy_v1_2'
+                  or mesh_source=='3dfy_v0_6' or mesh_source=='3dfy_v0_7' or mesh_source=='3dfy_v0_82'
+              - _target_: lidra.data.dataset.tdfy.metadata_filter.unique_mesh_filter
+                col_name: sha256_prior_morphing
+              - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+                query: normalized_dist_from_mask_centroid < 3.0 and -3.0 < obj_scale
+                  and obj_scale < 3.0
+            metadata_fname: metadata_clean_w_posedist.csv
+            path: ${cluster.path.datasets}/r3_25_Sept_morphing
+            pointmap_loader: ${tdfy.pointmap_loader}
+            pose_loader: ${tdfy.pose_loader}
+            preprocessor: ${tdfy.preprocessor}
+            return_pointmap: true
+            split: train
+          r3_25_morphing:
+            _target_: lidra.data.dataset.tdfy.trellis.dataset.PerSubsetDataset
+            latent_dir: ${tdfy.latent_dir}
+            latent_loader:
+              _partial_: true
+              _target_: lidra.data.dataset.tdfy.trellis.latent_loader.load_structure_latents
+            metadata_filter:
+              _target_: lidra.data.dataset.tdfy.metadata_filter.custom_metadata_filter
+              filter_funcs:
+              - _target_: lidra.data.dataset.tdfy.metadata_filter.unique_mesh_filter
+                col_name: sha256_prior_morphing
+              - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+                query: (mesh_source=='shutterstock' or mesh_source=='trellis') and
+                  pose==True and ss_latent_ss_enc_conv3d_16l8_fp16==True
+              - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+                query: normalized_dist_from_mask_centroid < 3.0 and -3.0 < obj_scale
+                  and obj_scale < 3.0
+            metadata_fname: metadata_clean_w_posedist.csv
+            path: ${cluster.path.datasets}/trellis500k/r3_25_morphing_fix_scaleonly
+            pointmap_loader: ${tdfy.pointmap_loader}
+            pose_loader: ${tdfy.pose_loader}
+            preprocessor: ${tdfy.preprocessor}
+            return_pointmap: true
+            split: train
+          r3_sa3_April:
+            _target_: lidra.data.dataset.tdfy.trellis.dataset.PerSubsetDataset
+            latent_dir: ${tdfy.latent_dir}
+            latent_loader:
+              _partial_: true
+              _target_: lidra.data.dataset.tdfy.trellis.latent_loader.load_structure_latents
+            metadata_filter:
+              _target_: lidra.data.dataset.tdfy.metadata_filter.custom_metadata_filter
+              filter_funcs:
+              - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+                query: pose==True
+              - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+                query: mesh_source=='trellis' or mesh_source=='shutterstock' or mesh_source=='unknown'
+              - _target_: lidra.data.dataset.tdfy.metadata_filter.unique_mesh_filter
+                col_name: sha256_prior_morphing
+              - _target_: lidra.data.dataset.tdfy.metadata_filter.data_query_filter
+                query: normalized_dist_from_mask_centroid < 3.0 and -3.0 < obj_scale
+                  and obj_scale < 3.0
+            metadata_fname: metadata_clean_w_posedist.csv
+            path: ${cluster.path.datasets}/trellis500k/r3_sa3_April_morphing
+            pointmap_loader: ${tdfy.pointmap_loader}
+            pose_loader: ${tdfy.pose_loader}
+            preprocessor: ${tdfy.preprocessor}
+            return_pointmap: true
+            split: train
+      drop_last: true
+      num_workers: ${compute.n_cpus_per_gpu}
+      persistent_workers: false
+      pin_memory: true
+      shuffle: true
+    validation: null
+  detect_anomaly: false
+  deterministic: false
+  devices: auto
+  enable_checkpointing: true
+  enable_model_summary: true
+  enable_progress_bar: true
+  fast_dev_run: false
+  gradient_clip_algorithm: norm
+  gradient_clip_val: null
+  limit_predict_batches: null
+  limit_test_batches: null
+  limit_train_batches: null
+  limit_val_batches: 1.0
+  log_every_n_steps: 1
+  logger:
+  - _target_: lightning.pytorch.loggers.tensorboard.TensorBoardLogger
+    log_graph: false
+    name: lightning
+    save_dir: .
+    version: 0
+  - _target_: lightning.pytorch.loggers.csv_logs.CSVLogger
+    name: csv/
+    prefix: ''
+    save_dir: .
+  - _target_: lightning.pytorch.loggers.wandb.WandbLogger
+    anonymous: null
+    entity: 3dfy
+    group: ''
+    id: null
+    job_type: ''
+    log_model: false
+    name: ${tag.name}-${oc.env:SLURM_JOB_ID}-${now:%Y-%m-%d}/${now:%H-%M-%S}
+    offline: false
+    prefix: ''
+    project: 3dfy-lidra-${oc.env:USER}
+    save_dir: .
+    tags:
+    - ${now:%Y-%m-%d}/${now:%H-%M-%S}
+    - ${cluster.name}_slurm_${oc.env:SLURM_JOB_ID}
+  max_epochs: 3
+  max_steps: -1
+  min_epochs: null
+  min_steps: null
+  module: ${module}
+  num_nodes: ${compute.n_nodes}
+  num_sanity_val_steps: -1
+  plugins: null
+  precision: bf16
+  profiler: null
+  strategy: ${strategy}
+  sync_batchnorm: false
+  val_check_interval: null
+lr: 1.0e-05
+module:
+  _target_: lidra.model.module.tdfy.generative.FeaturesAndPoseTokenWithNormalization
+  batch_conditions_mapping:
+    image: image
+    mask: mask
+    pointmap: pointmap
+    rgb_image: rgb_image
+    rgb_image_mask: rgb_image_mask
+    rgb_pointmap: rgb_pointmap
+  batch_preprocessing_fn:
+    _partial_: true
+    _target_: lidra.model.module.tdfy.generative.FeaturesAndPoseToken._prepare_training_targets
+  compute_metrics_callback:
+    _target_: lidra.callback.tdfy.compute_metrics.TdfySingleTrialMetricsCallback
+    batch_preprocess_fn:
+      _partial_: true
+      _target_: lidra.callback.tdfy.compute_metrics.TdfySingleTrialMetricsCallback.em_batch_preprocess_fn
+      module_extractor_str: _base_models.decoder
+    evaluation_fn:
+      _partial_: true
+      _target_: lidra.callback.tdfy.compute_metrics.TdfyPerSample.evaluate
+      occupancy_volume_resolution: null
+    metrics_fstem: metrics
+    output_dir: ${hydra:runtime.output_dir}/validation_metrics_tdfy
+    prediction_extractor_fn:
+      occupancy_volume: x_shape
+      pose_target_convention: pose_target_convention
+      x_instance_rotation: x_instance_rotation
+      x_instance_scale: x_instance_scale
+      x_instance_translation: x_instance_translation
+      x_translation_scale: x_translation_scale
+    sample_extractor_fn:
+      instance_position_l2c: instance_position_l2c
+      instance_quaternion_l2c: instance_quaternion_l2c
+      instance_scale_l2c: instance_scale_l2c
+      occupancy_volume: occupancy_volume
+      scene_scale: pointmap_scale
+      scene_shift: pointmap_shift
+  decoder:
+    _target_: lidra.model.module.base.FrozenBackbone
+    backbone:
+      _target_: lidra.model.backbone.trellis.models.sparse_structure_vae.SparseStructureDecoderTdfyWrapper
+      channels:
+      - 512
+      - 128
+      - 32
+      latent_channels: 8
+      num_res_blocks: 2
+      num_res_blocks_middle: 2
+      out_channels: 1
+      pretrained_ckpt_path: ${cluster.path.weights}/tdfy/TRELLIS-image-large/ckpts/ss_dec_conv3d_16l8_fp16.safetensors
+      reshape_input_to_cube: true
+      use_fp16: false
+  generator:
+    _target_: lidra.model.module.base.TrainableBackbone
+    backbone:
+      _target_: lidra.model.backbone.generator.shortcut.model.ShortCut
+      batch_mode: true
+      cfg_modalities:
+      - shape
+      inference_steps: 2
+      loss_weights:
+        6drotation_normalized: 0.1
+        _target_: lidra.config.utils.make_dict
+        scale: 0.1
+        shape: 0
+        translation: 1.0
+        translation_scale: 0.0
+      ratio_cfg_samples_in_self_consistency_target: 0.25
+      rescale_t: 1
+      reverse_fn:
+        _target_: lidra.model.backbone.generator.classifier_free_guidance.ClassifierFreeGuidanceWithExternalUnconditionalProbability
+        backbone: ${tdfy.reverse_fn}
+        interval:
+        - 0
+        - 500
+        p_unconditional: 0.1
+        strength: 2.0
+        unconditional_handling: add_flag
+      self_consistency_cfg_strength: 2.0
+      self_consistency_prob: 0.25
+      shortcut_loss_weight: 1.0
+      sigma_min: 0.0
+      time_scale: 1000.0
+      training_time_sampler_fn:
+        _partial_: true
+        _target_: lidra.model.backbone.generator.flow_matching.model.lognorm_sampler
+        mean: -1.0
+        std: 1.0
+    optimizer:
+      _target_: lidra.config.utils.Partial
+      betas:
+      - 0.9
+      - 0.999
+      eps: 1.0e-08
+      lr: ${lr}
+      path: torch.optim.AdamW
+      weight_decay: 0.0
+  keep_preds:
+  - shape
+  - 6drotation_normalized
+  - translation
+  - scale
+  - translation_scale
+  pose_target_convention: ScaleShiftInvariant
+  validation_dump_type: null
+  condition_embedder:
+    _target_: lidra.model.module.base.TrainableBackbone
+    optimizer: null
+    backbone:
+      _target_: lidra.model.backbone.dit.embedder.embedder_fuser.EmbedderFuser
+      drop_modalities_weight:
+      - - - pointmap
+          - rgb_pointmap
+        - 1.0
+      dropout_prob: ${tdfy.pointmap_embedder.dropout_prob}
+      embedder_list:
+      - - _target_: lidra.model.backbone.dit.embedder.dino.Dino
+          dino_model: dinov2_vitl14_reg
+          input_size: 518
+          normalize_images: true
+        - - - image
+            - cropped
+          - - rgb_image
+            - full
+      - - _target_: lidra.model.backbone.dit.embedder.dino.Dino
+          dino_model: dinov2_vitl14_reg
+          input_size: 518
+          normalize_images: true
+        - - - mask
+            - cropped
+          - - rgb_image_mask
+            - full
+      - - _target_: lidra.model.backbone.dit.embedder.pointmap.PointPatchEmbed
+          embed_dim: 512
+          input_size: 256
+          patch_size: 8
+          remap_output: linear
+        - - - pointmap
+            - cropped
+          - - rgb_pointmap
+            - full
+      force_drop_modalities: ${tdfy.pointmap_embedder.force_drop_modalities}
+      freeze: true
+      projection_net_hidden_dim_multiplier: 4.0
+      use_pos_embedding: learned
+seed: 42
+strategy:
+  _target_: lidra.config.utils.make_string
+  value: auto
+tag:
+  name: oct_release_planA_shortcut_layout_only_fix_code
+  overwrite: true
+tdfy:
+  collator:
+    _target_: lidra.data.collator.auto_collate
+  latent_dir: ss_latents/trellis-ss-vae-trial1-lambda1e-3-8x8
+  pointmap_embedder:
+    dropout_prob: 0.1
+    force_drop_modalities: null
+  pointmap_loader:
+    _partial_: true
+    _target_: lidra.data.dataset.tdfy.trellis.pose_loader.R3.load_pointmap
+    pointcloud_directory: /checkpoint/3dfy/shared/r3_data/pointmaps/moge
+  pose_loader:
+    _partial_: true
+    _target_: lidra.data.dataset.tdfy.trellis.pose_loader.R3.load_pose
+  pose_weight: 0.1
+  preprocessor:
+    _target_: lidra.data.dataset.tdfy.trellis.dataset.PreProcessor
+    img_mask_joint_transform: []
+    img_mask_pointmap_joint_transform:
+    - _partial_: true
+      _target_: lidra.data.dataset.tdfy.img_and_mask_transforms.resize_all_to_same_size
+    - _partial_: true
+      _target_: lidra.data.dataset.tdfy.img_and_mask_transforms.crop_around_mask_with_random_box_size_factor
+      random_box_size_factor: 2.0
+    img_transform:
+      _target_: torchvision.transforms.Compose
+      transforms:
+      - _partial_: true
+        _target_: lidra.data.dataset.tdfy.img_processing.pad_to_square_centered
+      - _target_: torchvision.transforms.Resize
+        size: 518
+      - _target_: lidra.data.dataset.tdfy.img_processing.get_img_color_augmentation
+    mask_transform:
+      _target_: torchvision.transforms.Compose
+      transforms:
+      - _partial_: true
+        _target_: lidra.data.dataset.tdfy.img_processing.pad_to_square_centered
+      - _target_: torchvision.transforms.Resize
+        interpolation: 0
+        size: 518
+    normalize_pointmap: true
+    pointmap_normalizer:
+      _target_: lidra.data.dataset.tdfy.img_and_mask_transforms.ObjectCentricSSI
+      allow_scale_and_shift_override: true
+      raise_on_no_valid_points: true
+      use_scene_scale: true
+    pointmap_transform:
+      _target_: torchvision.transforms.Compose
+      transforms:
+      - _partial_: true
+        _target_: lidra.data.dataset.tdfy.img_processing.pad_to_square_centered
+      - _target_: torchvision.transforms.Resize
+        interpolation: 0
+        size: 518
+  reverse_fn:
+    _target_: lidra.model.backbone.trellis.models.mot_sparse_structure_flow.SparseStructureFlowTdfyWrapper
+    cond_channels: 1024
+    condition_embedder: null
+    force_zeros_cond: true
+    freeze_d_time_embedder: true
+    freeze_shared_parameters: true
+    in_channels: 8
+    is_shortcut_model: true
+    latent_mapping:
+      6drotation_normalized:
+        _target_: lidra.model.backbone.trellis.models.mm_latent.Latent
+        in_channels: 6
+        model_channels: ${...model_channels}
+        pos_embedder:
+          _target_: lidra.model.backbone.trellis.models.mm_latent.LearntPositionEmbedder
+          model_channels: ${....model_channels}
+          token_len: 1
+      scale:
+        _target_: lidra.model.backbone.trellis.models.mm_latent.Latent
+        in_channels: 3
+        model_channels: ${...model_channels}
+        pos_embedder:
+          _target_: lidra.model.backbone.trellis.models.mm_latent.LearntPositionEmbedder
+          model_channels: ${....model_channels}
+          token_len: 1
+      shape:
+        _target_: lidra.model.backbone.trellis.models.mm_latent.Latent
+        in_channels: ${...in_channels}
+        model_channels: ${...model_channels}
+        pos_embedder:
+          _target_: lidra.model.backbone.trellis.models.mm_latent.ShapePositionEmbedder
+          model_channels: ${....model_channels}
+          patch_size: ${....patch_size}
+          resolution: ${....resolution}
+      translation:
+        _target_: lidra.model.backbone.trellis.models.mm_latent.Latent
+        in_channels: 3
+        model_channels: ${...model_channels}
+        pos_embedder:
+          _target_: lidra.model.backbone.trellis.models.mm_latent.LearntPositionEmbedder
+          model_channels: ${....model_channels}
+          token_len: 1
+      translation_scale:
+        _target_: lidra.model.backbone.trellis.models.mm_latent.Latent
+        in_channels: 1
+        model_channels: ${...model_channels}
+        pos_embedder:
+          _target_: lidra.model.backbone.trellis.models.mm_latent.LearntPositionEmbedder
+          model_channels: ${....model_channels}
+          token_len: 1
+    latent_share_transformer:
+      6drotation_normalized:
+      - 6drotation_normalized
+      - translation
+      - scale
+      - translation_scale
+    mlp_ratio: 4
+    model_channels: 1024
+    num_blocks: 24
+    num_heads: 16
+    out_channels: 8
+    patch_size: 1
+    pe_mode: ape
+    qk_rms_norm: true
+    resolution: 16
+    use_checkpoint: false
+    use_fp16: false
+  train_preprocessor: ${tdfy.preprocessor}
+  vae_checkpoint_path: ${cluster.path.weights}/tdfy/trellis-ss-vae-trial1-lambda1e-3-8x8/weiyao_decoder.ckpt
+  val_preprocessor:
+    _target_: lidra.data.dataset.tdfy.trellis.dataset.PreProcessor
+    img_mask_joint_transform: []
+    img_mask_pointmap_joint_transform:
+    - _partial_: true
+      _target_: lidra.data.dataset.tdfy.img_and_mask_transforms.resize_all_to_same_size
+    - _partial_: true
+      _target_: lidra.data.dataset.tdfy.img_and_mask_transforms.crop_around_mask_with_padding
+      box_size_factor: 1.2
+      padding_factor: 0.0
+    img_transform:
+      _target_: torchvision.transforms.Compose
+      transforms:
+      - _partial_: true
+        _target_: lidra.data.dataset.tdfy.img_processing.pad_to_square_centered
+      - _target_: torchvision.transforms.Resize
+        size: 518
+    mask_transform:
+      _target_: torchvision.transforms.Compose
+      transforms:
+      - _partial_: true
+        _target_: lidra.data.dataset.tdfy.img_processing.pad_to_square_centered
+      - _target_: torchvision.transforms.Resize
+        interpolation: 0
+        size: 518
+    normalize_pointmap: true
+    pointmap_normalizer:
+      _target_: lidra.data.dataset.tdfy.img_and_mask_transforms.ObjectCentricSSI
+      allow_scale_and_shift_override: true
+      use_scene_scale: true
+    pointmap_transform:
+      _target_: torchvision.transforms.Compose
+      transforms:
+      - _partial_: true
+        _target_: lidra.data.dataset.tdfy.img_processing.pad_to_square_centered
+      - _target_: torchvision.transforms.Resize
+        interpolation: 0
+        size: 518
+validation_batch_size: ${batch_size}
