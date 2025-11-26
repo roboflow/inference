@@ -214,16 +214,14 @@ class BlockManifest(WorkflowBlockManifest):
     )
     extended_thinking: Optional[bool] = Field(
         default=None,
-        description="Enable extended thinking for Claude models. "
-        "When enabled, the model will use additional internal reasoning before responding, "
-        "which can improve performance on complex tasks. "
+        description="Enable extended thinking for deeper reasoning on complex tasks. "
         "Note: temperature cannot be used when extended thinking is enabled.",
     )
     thinking_budget_tokens: Optional[int] = Field(
         default=10000,
-        description="Maximum number of tokens the model can use for internal thinking when extended_thinking is enabled. "
-        "Higher values allow for deeper reasoning but increase latency and cost. "
-        "Must be less than max_tokens. Minimum: 1024. Recommended range: 5000-50000.",
+        description="Maximum number of tokens for internal thinking when extended thinking is enabled. "
+        "Higher values allow deeper reasoning but increase latency and cost. "
+        "Must be less than max_tokens. Minimum: 1024.",
         ge=1024,
         json_schema_extra={
             "relevant_for": {
@@ -236,8 +234,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     max_tokens: int = Field(
         default=16000,
-        description="Maximum number of tokens the model can generate in its response. "
-        "When using extended_thinking, this must be greater than thinking_budget_tokens.",
+        description="Maximum number of tokens the model can generate in its response."
     )
     temperature: Optional[Union[float, Selector(kind=[FLOAT_KIND])]] = Field(
         default=None,
