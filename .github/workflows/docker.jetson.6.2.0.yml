@@ -56,6 +56,6 @@ jobs:
         with:
           push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true')}}
           project: grl7ffzxd7
-          tags: ${{ steps.tags.outputs.image_tag }}
+          tags: ${{ steps.tags.outputs.image_tags }}
           platforms: linux/arm64
           file: ./docker/dockerfiles/Dockerfile.onnx.jetson.6.2.0
