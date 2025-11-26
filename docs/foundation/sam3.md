@@ -157,23 +157,6 @@ curl -X POST 'http://localhost:9001/sam3/visual_segment?api_key=<YOUR_API_KEY>' 
   }'
 ```
 
-You can also take advantage of hot SAM3 instances maintained by Roboflow
-
-```bash
-curl -X POST 'https://serverless.roboflow.com/sam3/visual_segment?api_key=<YOUR_API_KEY>' \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "image": {
-      "type": "url",
-      "value": "https://media.roboflow.com/inference/sample.jpg"
-    },
-    "prompts": [
-      { "points": [ { "x": 100, "y": 100, "positive": true } ] }
-    ]
-  }'
-```
-
-
 ## Workflow Integration
 
 SAM 3 is fully integrated into [Inference Workflows](https://inference.roboflow.com/workflows/core_steps/). You can use the **SAM 3** block to add zero-shot instance segmentation to your pipeline.
