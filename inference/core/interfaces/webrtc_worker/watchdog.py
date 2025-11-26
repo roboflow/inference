@@ -31,6 +31,7 @@ class Watchdog:
                 self.on_timeout()
                 break
             time.sleep(0.1)
+        logger.info("Watchdog stopped")
 
     def heartbeat(self):
         self.last_heartbeat = datetime.datetime.now()
