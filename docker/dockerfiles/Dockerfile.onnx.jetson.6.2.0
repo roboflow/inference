@@ -94,6 +94,7 @@ RUN git clone --recursive --branch v${PYTORCH_VERSION} https://github.com/pytorc
     export PYTORCH_BUILD_VERSION=${PYTORCH_VERSION} PYTORCH_BUILD_NUMBER=1 && \
     export CMAKE_BUILD_TYPE=Release BUILD_SHARED_LIBS=ON USE_PRIORITIZED_TEXT_FOR_LD=1 && \
     export MAX_JOBS=12 && \
+    export CMAKE_POLICY_VERSION_MINIMUM=3.5 && \
     python3 setup.py bdist_wheel && \
     python3 -m pip install dist/torch-*.whl
 
