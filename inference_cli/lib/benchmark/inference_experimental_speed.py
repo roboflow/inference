@@ -37,7 +37,9 @@ def run_inference_experimental_benchmark(
         AutoModel.describe_model_package(model_id=model_id, package_id=model_package_id)
     if turn_images_to_tensors:
         images = [
-            torch.from_numpy(image[:, :, ::-1]).permute(2, 0, 1).to(DEFAULT_DEVICE)
+            torch.from_numpy(np.ascontiguousarray(image[:, :, ::-1]))
+            .permute(2, 0, 1)
+            .to(DEFAULT_DEVICE)
             for image in images
         ]
     model = AutoModel.from_pretrained(
