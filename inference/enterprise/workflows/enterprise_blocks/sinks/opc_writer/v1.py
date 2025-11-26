@@ -899,7 +899,7 @@ def opc_connect_and_write_value(
         is_user_config_error = isinstance(exc, USER_CONFIG_ERROR_TYPES)
 
         # Check the exception chain for wrapped errors
-        if not is_user_config_error and hasattr(exc, '__cause__') and exc.__cause__:
+        if not is_user_config_error and hasattr(exc, "__cause__") and exc.__cause__:
             is_user_config_error = isinstance(exc.__cause__, USER_CONFIG_ERROR_TYPES)
 
         if not is_user_config_error:
@@ -909,9 +909,7 @@ def opc_connect_and_write_value(
             connection_manager.invalidate_connection(url, user_name)
         else:
             # User configuration errors - connection is fine, just log the error
-            logger.error(
-                f"OPC Writer configuration error: {type(exc).__name__}: {exc}"
-            )
+            logger.error(f"OPC Writer configuration error: {type(exc).__name__}: {exc}")
 
         return (
             True,
