@@ -32,9 +32,11 @@ def run_inference_experimental_benchmark(
     print(
         f"Inference will be executed with the following parameters: {inference_configuration}"
     )
-    AutoModel.describe_model(model_id=model_id)
+    AutoModel.describe_model(model_id=model_id, api_key=api_key)
     if model_package_id:
-        AutoModel.describe_model_package(model_id=model_id, package_id=model_package_id)
+        AutoModel.describe_model_package(
+            model_id=model_id, package_id=model_package_id, api_key=api_key
+        )
     if turn_images_to_tensors:
         images = [
             torch.from_numpy(np.ascontiguousarray(image[:, :, ::-1]))
