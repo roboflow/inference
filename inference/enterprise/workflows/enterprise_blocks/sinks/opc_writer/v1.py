@@ -386,6 +386,14 @@ class UnsupportedTypeError(Exception):
     pass
 
 
+# Exception types that should NOT invalidate the connection (user configuration errors)
+USER_CONFIG_ERROR_TYPES = (
+    BadTypeMismatch,  # Wrong data type - configuration error
+    UnsupportedTypeError,  # Invalid value_type parameter
+    ValueError,  # Value range validation errors
+)
+
+
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
@@ -888,16 +896,21 @@ def opc_connect_and_write_value(
         return False, "Value set successfully"
 
     except Exception as exc:
-        # Check if this is a connection-related error using proper exception types
-        is_connection_error = isinstance(exc, CONNECTION_ERROR_TYPES)
+        is_user_config_error = isinstance(exc, USER_CONFIG_ERROR_TYPES)
 
-        if is_connection_error:
-            logger.warning(f"OPC Writer connection error: {type(exc).__name__}: {exc}")
-            # Invalidate the connection so next call gets a fresh one
+        # Check the exception chain for wrapped errors
+        if not is_user_config_error and hasattr(exc, '__cause__') and exc.__cause__:
+            is_user_config_error = isinstance(exc.__cause__, USER_CONFIG_ERROR_TYPES)
+
+        if not is_user_config_error:
+            logger.warning(
+                f"OPC Writer error (invalidating connection): {type(exc).__name__}: {exc}"
+            )
             connection_manager.invalidate_connection(url, user_name)
         else:
+            # User configuration errors - connection is fine, just log the error
             logger.error(
-                f"OPC Writer failed to write value: {type(exc).__name__}: {exc}"
+                f"OPC Writer configuration error: {type(exc).__name__}: {exc}"
             )
 
         return (
@@ -950,14 +963,14 @@ def _opc_write_value(
         logger.error(f"Available namespaces: {namespaces}")
         raise Exception(
             f"WRONG NAMESPACE ERROR: {exc}. Available namespaces: {namespaces}"
-        )
+        ) from exc
     except Exception as exc:
         namespaces = get_available_namespaces(client)
         logger.error(f"OPC Writer unhandled namespace error: {type(exc)} {exc}")
         logger.error(f"Available namespaces: {namespaces}")
         raise Exception(
             f"UNHANDLED ERROR: {type(exc)} {exc}. Available namespaces: {namespaces}"
-        )
+        ) from exc
 
     # Locate the node
     if node_lookup_mode == "direct":
@@ -978,7 +991,7 @@ def _opc_write_value(
             logger.error(f"OPC Writer direct NodeId access failed: {exc}")
             raise Exception(
                 f"WRONG OBJECT OR PROPERTY ERROR: Could not find node with direct NodeId '{node_id}'. Error: {exc}"
-            )
+            ) from exc
     else:
         # Hierarchical path navigation (standard OPC UA)
         try:
@@ -995,10 +1008,10 @@ def _opc_write_value(
             logger.error(f"OPC Writer hierarchical path not found: {exc}")
             raise Exception(
                 f"WRONG OBJECT OR PROPERTY ERROR: Could not find node at hierarchical path '{node_path}'. Error: {exc}"
-            )
+            ) from exc
         except Exception as exc:
             logger.error(f"OPC Writer unhandled node lookup error: {type(exc)} {exc}")
-            raise Exception(f"UNHANDLED ERROR: {type(exc)} {exc}")
+            raise Exception(f"UNHANDLED ERROR: {type(exc)} {exc}") from exc
 
     # Write the value
     try:
@@ -1064,7 +1077,7 @@ def _opc_write_value(
         )
         raise Exception(
             f"WRONG TYPE ERROR: Tried to write value '{value}' (type: {type(value).__name__}) but node expects type {node_type}. {exc}"
-        )
+        ) from exc
     except Exception as exc:
         logger.error(f"OPC Writer unhandled write error: {type(exc)} {exc}")
-        raise Exception(f"UNHANDLED ERROR: {type(exc)} {exc}")
+        raise Exception(f"UNHANDLED ERROR: {type(exc)} {exc}") from exc
