@@ -183,7 +183,12 @@ For more technical details, refer to the [official SAM 3 paper](https://ai.meta.
 
 ## How to use SAM 3 taking advantage of hot SAM3 instances maintained by Roboflow
 
+In below examples we are taking advantage of the serverless infrastructure which handles GPU provisioning automatically, making it ideal for applications that need on-demand segmentation without managing infrastructure.
+
 ### 1. SAM3 Concept Segmentation workflow
+
+This example demonstrates using SAM3 with the workflow approach which allows you to combine SAM3's concept segmentation with visualization in a single pipeline. Here, we're segmenting all dogs in an image and automatically visualizing the results with polygon overlays.
+If you have created a workflow in Roboflow platform you can use `workspace_name` and `workflow_id` instead of `specification` to run it.
 
 ```python
 import base64
@@ -250,6 +255,11 @@ cv.destroyAllWindows()
 ```
 
 ### 2. SAM3 raw API
+
+For direct API access to SAM3 without workflows, you can use Roboflow's serverless endpoint.
+This approach gives you raw segmentation results that you can process however you need.
+The example below shows how to segment a dog and draw the resulting polygon directly on the image using OpenCV.
+
 
 ```python
 import requests
