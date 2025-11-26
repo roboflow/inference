@@ -300,7 +300,9 @@ potential costs.
 
 ## Known limitations
 
-* Batch Processing service cannot run Custom Python blocks.
+<div style="border: 2px solid #059669; background: #D1FAE5; color: #065F46; padding: 1em; border-radius: 8px; text-align: center; margin-bottom: 1em; font-weight: bold;">
+  🚀 <b>Update:</b> Batch Processing service <b>now supports running Custom Python blocks.</b>
+</div>
 
 * Certain Workflow blocks requiring access to env variables and local storage (like File Sink and Environment 
 Secret Store) are blacklisted and will not execute.
