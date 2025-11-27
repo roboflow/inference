@@ -478,7 +478,11 @@ def execute_claude_request(
     }
 
     if extended_thinking:
-        effective_budget = thinking_budget_tokens if thinking_budget_tokens is not None else model_max_output // 2
+        effective_budget = (
+            thinking_budget_tokens
+            if thinking_budget_tokens is not None
+            else model_max_output // 2
+        )
         request_params["thinking"] = {
             "type": "enabled",
             "budget_tokens": effective_budget,
