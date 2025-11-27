@@ -1,8 +1,0 @@
-_target_: lidra.model.backbone.dit.embedder.image_and_masks.ImageAndMasks
-image_embedder:
-    _target_: lidra.model.backbone.dit.embedder.dino.Dino
-    dino_model: dinov2_vitl14_reg
-    input_size: 518
-mask_embedder:
-    _target_: lidra.model.backbone.dit.embedder.dino.DinoForMasks
-    backbone: ${..image_embedder}

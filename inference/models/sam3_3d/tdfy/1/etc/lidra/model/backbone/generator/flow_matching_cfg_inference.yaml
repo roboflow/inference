@@ -1,5 +1,0 @@
-inference_steps: 25
-rescale_t: 3
-reverse_fn:
-  strength: 5
-  interval: [0, 500]

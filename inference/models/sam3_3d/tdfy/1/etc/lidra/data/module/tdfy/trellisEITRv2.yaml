@@ -1,8 +1,0 @@
-defaults:
-  - /data/module/dict/training@_here_
-  - /data/module/dict/validation@_here_
-  - /data/dataset/tdfy/trellis500k@training.dataset: training_empty
-  - /data/dataset/tdfy/trellis500k/subset_train@training.dataset.datasets.elephant_2M: elephant_2M
-  - /data/dataset/tdfy/trellis500k/subset_train@training.dataset.datasets.elephant_sketchfaball: elephant_sketchfaball
-  - /data/dataset/tdfy/r3@validation.dataset: anything_validation
-

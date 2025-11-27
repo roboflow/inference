@@ -1,9 +1,0 @@
-defaults:
-  - base
-
-max_epochs: 3
-# precision: 16-true
-limit_train_batches: 10
-limit_val_batches: 10
-limit_test_batches: 10
-limit_predict_batches: 10

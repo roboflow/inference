@@ -1,5 +1,0 @@
-defaults:
-  - /loop/callbacks@_here_: log_likelihood
-
-remove_predict_step: true
-write_every: 250 

@@ -1,4 +1,0 @@
-defaults:
-  - base
-path: torch.optim.lr_scheduler.PolynomialLR
-power: 1.0

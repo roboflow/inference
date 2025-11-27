@@ -1,3 +1,0 @@
-# Instantiate the HOI DoH100 dataset via Hydra
-_target_: scripts.weiyaowang.inference_datasets.DoH_100.DoH100Dataset
-base_path: /checkpoint/3dfy/weiyaowang/3dfy/hoi100/pascal_voc_format/VOCdevkit2007_handobj_100K/

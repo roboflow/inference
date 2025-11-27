@@ -1,4 +1,0 @@
-defaults:
-  - base_deprecated
-split: val
-subsets: ["ObjaverseV1_all"]

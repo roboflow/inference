@@ -1,4 +1,0 @@
-defaults:
-  - training
-  - validation
-  - test

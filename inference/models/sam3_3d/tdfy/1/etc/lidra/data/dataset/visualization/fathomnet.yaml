@@ -1,5 +1,0 @@
-# Instantiate the FathomNet dataset via Hydra
-_target_: scripts.weiyaowang.inference_datasets.fathomnet.FathomNetDataset
-base_path: /checkpoint/3dfy/weiyaowang/datasets/fathomnet/
-val_split: val_15k_neg_30
-max_img: 100

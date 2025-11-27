@@ -1,5 +1,17 @@
 import importlib
 from typing import Any
+#Preinit nvdiffrast for SAM3D as it breaks if any flash attn model is loaded in first
+try:
+    import torch 
+    if torch.cuda.is_available():
+        import utils3d.torch
+        _nvdiffrast_ctx = utils3d.torch.RastContext(backend='cuda')
+        _dummy_verts = torch.zeros(1, 3, 3, device='cuda')
+        _dummy_faces = torch.tensor([[0, 1, 2]], dtype=torch.int32, device='cuda')
+        _ = utils3d.torch.rasterize_triangle_faces(_nvdiffrast_ctx, _dummy_verts, _dummy_faces, 64, 64)
+        del _dummy_verts, _dummy_faces, _
+except:
+    pass
 
 from inference.core.env import (
     CORE_MODEL_CLIP_ENABLED,

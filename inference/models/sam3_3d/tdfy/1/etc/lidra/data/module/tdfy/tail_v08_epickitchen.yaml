@@ -1,3 +1,0 @@
-defaults:
-  - /data/module/dict/validation@_here_
-  - /data/dataset/tdfy/tail@validation.dataset: tail_epickitchen_validation

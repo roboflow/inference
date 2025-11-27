@@ -1,6 +1,0 @@
-defaults:
-  - /data/module/dict/training@_here_
-  - /data/dataset/tdfy/folder@training.dataset: artist_set_2024
-
-  - /data/module/dict/validation@_here_
-  - /data/dataset/tdfy/folder@validation.dataset: artist_set_2024

@@ -1,3 +1,0 @@
-defaults:
-  - fsdp
-sharding_strategy: "HYBRID_SHARD"

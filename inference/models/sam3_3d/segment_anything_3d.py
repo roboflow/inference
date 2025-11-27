@@ -12,10 +12,6 @@ import torch
 
 from inference.core.cache.model_artifacts import get_cache_dir
 
-_TDFY_DIR = Path(__file__).parent.resolve() / "tdfy" / "1"
-if str(_TDFY_DIR) not in sys.path:
-    sys.path.insert(0, str(_TDFY_DIR))
-
 from inference.core import logger
 from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.env import DEVICE, MODEL_CACHE_DIR
@@ -43,10 +39,8 @@ if torch.cuda.is_available():
 else:
     os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
-import argparse
-from glob import glob
-
-# from inference.models.sam3_3d.body.sam3d_body_estimator import SAM3DBodyEstimator
+from importlib.resources import files
+import tdfy.sam3d_v1
 
 if DEVICE is None:
     DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -84,9 +78,9 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
         super().__init__(model_id=model_id, **kwargs)
 
         self.cache_dir = Path(get_cache_dir(model_id=self.endpoint))
-        self.current_dir = Path(__file__).parent.resolve()
-        tdfy_dir = self.current_dir / "tdfy" / "1"
-        pipeline_config_path = tdfy_dir / "checkpoints" / "pipeline.yaml"
+
+        tdfy_dir = files(tdfy.sam3d_v1)
+        pipeline_config_path = tdfy_dir / "checkpoints_configs" / "pipeline.yaml"
         moge_checkpoint_path = self.cache_dir / "moge-vitl.pth"
         ss_generator_checkpoint_path = self.cache_dir / "ss_generator.ckpt"
         slat_generator_checkpoint_path = (
@@ -100,6 +94,7 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
         slat_decoder_mesh_checkpoint_path = (
             self.cache_dir / "slat_decoder_mesh.pt"
         )
+        dinov2_ckpt_path = self.cache_dir / "dinov2_vitl14_reg4_pretrain.pth"
 
         config_key = f"{DEVICE}_{pipeline_config_path}"
         singleton = Sam3_3D_ObjectsPipelineSingleton(config_key)
@@ -132,6 +127,7 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
             self.pipeline_config["slat_decoder_mesh_ckpt_path"] = str(
                 slat_decoder_mesh_checkpoint_path
             )
+            self.pipeline_config["dinov2_ckpt_path"] = str(dinov2_ckpt_path)
             singleton.pipeline = instantiate(self.pipeline_config)
             logger.info("SAM3_3D pipeline initialization complete")
 
@@ -152,17 +148,15 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
         lock_dir = MODEL_CACHE_DIR + "/_file_locks"
         os.makedirs(lock_dir, exist_ok=True)
         lock_file = os.path.join(lock_dir, f"{os.path.basename(self.cache_dir)}.lock")
-        """
         try:
             lock = FileLock(lock_file, timeout = 120)
             with lock:
                 api_data = get_roboflow_model_data(
                     api_key=self.api_key,
-                    model_id=self.endpoint,
+                    model_id="sam3-3d-weights-vc6vz/1",
                     endpoint_type=ModelEndpointType.ORT,
                     device_id=self.device_id,
                 )["ort"]
-                print(f"Roboflow API data retrieved: {api_data}")
                 if "weights" not in api_data:
                     raise ModelArtefactError(
                         f"`weights` key not available in Roboflow API response while downloading model weights."
@@ -180,7 +174,6 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
         except Exception as e:
             logger.error(f"Error downloading SAM3_3D model artifacts: {e}")
             raise
-        """
 
     def infer_from_request(
         self, request: Sam3_3D_Objects_InferenceRequest

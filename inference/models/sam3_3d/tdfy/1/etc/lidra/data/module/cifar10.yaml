@@ -1,5 +1,0 @@
-_target_: lidra.data.module.cifar.CIFAR10
-batch_size: 32
-data_dir: "${cluster.path.datasets}/cifar10"
-download: true
-random_split: [0.9, 0.1]

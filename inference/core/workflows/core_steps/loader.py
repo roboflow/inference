@@ -5,6 +5,7 @@ from inference.core.env import (
     ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES,
     ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
     API_KEY,
+    SAM3_3D_OBJECTS_ENABLED,
     WORKFLOW_BLOCKS_WRITE_DIRECTORY,
     WORKFLOWS_STEP_EXECUTION_MODE,
 )
@@ -500,6 +501,13 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
 
+# Conditional import - only load SAM3_3D block if explicitly enabled
+# This prevents Hydra/OmegaConf pollution when SAM3_3D is not being used
+if SAM3_3D_OBJECTS_ENABLED:
+    from inference.core.workflows.core_steps.models.foundation.segment_anything3_3d.v1 import (
+        SegmentAnything3_3D_ObjectsBlockV1,
+    )
+
 REGISTERED_INITIALIZERS = {
     "api_key": API_KEY,
     "cache": cache,
@@ -658,6 +666,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         SIFTComparisonBlockV2,
         SegmentAnything2BlockV1,
         SegmentAnything3BlockV1,
+        SegmentAnything3_3D_ObjectsBlockV1,
         SegPreviewBlockV1,
         StabilityAIInpaintingBlockV1,
         StabilityAIImageGenBlockV1,

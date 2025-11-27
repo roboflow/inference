@@ -1,5 +1,0 @@
-defaults:
-  - /data/module/dict/training@_here_
-  - /data/module/dict/validation@_here_
-  - /data/dataset/tdfy/objaverse@training.dataset: training
-  - /data/dataset/tdfy/objaverse@validation.dataset: validation

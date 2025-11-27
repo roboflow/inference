@@ -1,6 +1,0 @@
-_target_: torch.utils.data.DataLoader
-dataset: ???
-batch_size: 1
-num_workers: ${compute.n_cpus_per_gpu}
-persistent_workers: false
-pin_memory: true

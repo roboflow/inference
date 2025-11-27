@@ -24,7 +24,7 @@ class Sam3_3D_Objects_Metadata(BaseModel):
 
 
 class Sam3_3D_Objects_Response(BaseModel):
-    """SAM3_3D inference response for 3D object generation.
+    """SAM3D inference response for 3D object generation.
 
     Attributes:
         mesh_glb (Optional[bytes]): The 3D mesh in GLB format (binary).

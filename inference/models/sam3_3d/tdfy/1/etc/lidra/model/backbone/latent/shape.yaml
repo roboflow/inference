@@ -1,8 +1,0 @@
-_target_: lidra.model.backbone.trellis.models.mm_latent.Latent
-in_channels: ???
-model_channels: ???
-pos_embedder:
-  _target_: lidra.model.backbone.trellis.models.mm_latent.ShapePositionEmbedder
-  model_channels: ???
-  resolution: ???
-  patch_size: ???

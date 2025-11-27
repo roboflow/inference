@@ -1,6 +1,0 @@
-# Instantiate the MultiObjectR3 dataset via Hydra
-_target_: scripts.weiyaowang.inference_datasets.multi_object_r3.MultiObjectR3
-# You can override these at launch time if needed
-# default_config: data/dataset/tdfy/trellis500k/subset_train/rp_a_25_morphing_pose.yaml
-# dataset_path: /checkpoint/3dfy/shared/datasets/r3_25_May_layout_morphing_backup
-# metadata_fname: metadata_clean_new.csv

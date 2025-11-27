@@ -34,7 +34,7 @@ QWEN_ALIASES = {
 }
 
 SAM3_3D_ALIASES = {
-    "sam3-3d-objects": "captoin-t38zo/1", #"sam3-3d-weights-vc6vz/1",
+    "sam3-3d-objects": "sam3-3d-weights-vc6vz/1",
 }
 
 REGISTERED_ALIASES = {

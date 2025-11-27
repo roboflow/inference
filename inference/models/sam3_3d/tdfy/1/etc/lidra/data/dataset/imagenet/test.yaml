@@ -1,6 +1,0 @@
-defaults:
-  - base
-
-# TODO(Pierre) : test doesn't work directly with `ImageFolder`, I'll need to fix that if necessary
-root: "/datasets01/imagenet_full_size/061417/val"
-# root: "/datasets01/imagenet_full_size/061417/test"

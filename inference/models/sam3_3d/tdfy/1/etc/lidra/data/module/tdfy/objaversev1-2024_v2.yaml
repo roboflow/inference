@@ -1,3 +1,0 @@
-defaults:
-  - /data/module/dict/validation@_here_
-  - /data/dataset/tdfy/objaversev1-2024@validation.dataset: validation_v2

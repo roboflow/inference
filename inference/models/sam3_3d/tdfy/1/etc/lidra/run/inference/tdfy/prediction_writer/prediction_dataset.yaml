@@ -1,4 +1,0 @@
-# @package _global_
-defaults:
-  - /run/inference/tdfy/prediction_writer/from_config
-  - /data/module@loop.dataloaders: tdfy/with_cached_prediction

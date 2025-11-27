@@ -9,7 +9,7 @@ from inference.core.entities.requests.inference import (
 
 
 class Sam3_3D_Objects_InferenceRequest(BaseRequest):
-    """SAM3_3D inference request for 3D object generation.
+    """SAM3D inference request for 3D object generation.
 
     Attributes:
         api_key (Optional[str]): Roboflow API Key.

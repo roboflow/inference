@@ -29,6 +29,7 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.pali.flash_attn.txt \
     requirements/requirements.easyocr.txt \
     requirements/requirements.modal.txt \
+    requirements/requirements.sam3_3d.txt \
     ./
 
 RUN python3 -m pip install -U pip uv
@@ -57,6 +58,8 @@ RUN python3 -m pip install packaging==24.1 && rm -rf ~/.cache/pip
 # Install flash_attn required for Paligemma and Florence2
 RUN python3 -m pip install -r requirements.pali.flash_attn.txt --no-dependencies --no-build-isolation && rm -rf ~/.cache/pip
 
+ENV TORCH_CUDA_ARCH_LIST="7.5;8.0;8.6;8.9;9.0"
+RUN python3 -m pip install --no-cache-dir --no-build-isolation -r requirements.sam3_3d.txt && rm -rf ~/.cache/pip
 # Start runtime stage
 FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 as runtime
 
@@ -83,7 +86,19 @@ RUN set -eux; \
         libvips-dev \
         wget \
         rustc \
-        cargo; \
+        cargo \
+        libgl1 \
+        libegl1 \
+        libgles2 \
+        libglvnd0 \
+        libglx0 \
+        cuda-nvcc-12-4 \
+        cuda-cudart-dev-12-4 \
+        libcusparse-dev-12-4 \
+        libcublas-dev-12-4 \
+        libcusolver-dev-12-4 \
+        libcurand-dev-12-4 \
+        libcufft-dev-12-4; \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
@@ -91,6 +106,7 @@ COPY . .
 RUN ln -s /usr/bin/python3 /usr/bin/python
 RUN /bin/make create_wheels_for_gpu_notebook
 RUN pip3 install --no-cache-dir dist/inference_cli*.whl dist/inference_core*.whl dist/inference_gpu*.whl dist/inference_sdk*.whl "setuptools<=75.5.0"
+
 
 WORKDIR /notebooks
 COPY examples/notebooks .
@@ -114,5 +130,8 @@ ENV CORE_MODEL_OWLV2_ENABLED=True
 ENV ENABLE_STREAM_API=True
 ENV ENABLE_PROMETHEUS=True
 ENV STREAM_API_PRELOADED_PROCESSES=2
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV TORCH_EXTENSIONS_DIR=/tmp/torch_extensions
 
 ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT

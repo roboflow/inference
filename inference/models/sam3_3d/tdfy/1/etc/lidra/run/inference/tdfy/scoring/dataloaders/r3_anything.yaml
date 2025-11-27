@@ -1,9 +1,0 @@
-defaults:
-  - /data/module@_here_: tdfy/r3_anything
-  - _self_
-
-validation:
-  dataset:
-    latent_loader_dataset:
-      preprocessor: ${logs.config.tdfy.val_preprocessor}
-

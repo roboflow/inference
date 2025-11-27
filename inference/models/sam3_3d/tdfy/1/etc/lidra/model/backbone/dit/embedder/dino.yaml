@@ -1,3 +1,0 @@
-_target_: lidra.model.backbone.dit.embedder.dino.Dino
-dino_model: dinov2_vitl14
-normalize_images: false

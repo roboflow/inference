@@ -1,3 +1,0 @@
-defaults:
-  - /data/module/dict/validation@_here_
-  - /data/dataset/tdfy/artists_3d_posed@validation.dataset: validation

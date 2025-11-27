@@ -1,5 +1,0 @@
-defaults:
-  - /data/module/dict/training@_here_
-  - /data/module/dict/validation@_here_
-  - /data/dataset/tdfy/trellis500k@training.dataset: training
-  - /data/dataset/tdfy/r3@validation.dataset: anything_validation

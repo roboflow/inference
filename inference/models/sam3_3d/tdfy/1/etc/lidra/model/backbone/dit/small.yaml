@@ -1,6 +1,0 @@
-defaults:
-  - /model/backbone/dit@_here_: base
-
-depth: 12
-hidden_size: 384
-num_heads: 6
