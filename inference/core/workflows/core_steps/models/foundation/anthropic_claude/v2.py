@@ -40,41 +40,49 @@ CLAUDE_MODELS = [
         "id": "claude-sonnet-4-5",
         "name": "Claude Sonnet 4.5",
         "exact_version": "claude-sonnet-4-5-20250929",
+        "max_output_tokens": 64000,
     },
     {
         "id": "claude-haiku-4-5",
         "name": "Claude Haiku 4.5",
         "exact_version": "claude-haiku-4-5-20251001",
+        "max_output_tokens": 64000,
     },
     {
         "id": "claude-opus-4-5",
         "name": "Claude Opus 4.5",
         "exact_version": "claude-opus-4-5-20251101",
+        "max_output_tokens": 64000,
     },
     {
         "id": "claude-sonnet-4",
         "name": "Claude Sonnet 4",
         "exact_version": "claude-sonnet-4-20250514",
+        "max_output_tokens": 64000,
     },
     {
         "id": "claude-opus-4-1",
         "name": "Claude Opus 4.1",
         "exact_version": "claude-opus-4-1-20250805",
+        "max_output_tokens": 32000,
     },
     {
         "id": "claude-opus-4",
         "name": "Claude Opus 4",
         "exact_version": "claude-opus-4-20250514",
+        "max_output_tokens": 32000,
     },
 ]
 
 MODEL_VERSION_IDS = [model["id"] for model in CLAUDE_MODELS]
+EXACT_MODEL_VERSIONS = {model["id"]: model["exact_version"] for model in CLAUDE_MODELS}
 
 MODEL_VERSION_METADATA = {
     model["id"]: {"name": model["name"]} for model in CLAUDE_MODELS
 }
 
-EXACT_MODEL_VERSIONS = {model["id"]: model["exact_version"] for model in CLAUDE_MODELS}
+MAX_OUTPUT_TOKENS = {model["id"]: model["max_output_tokens"] for model in CLAUDE_MODELS}
+DEFAULT_MAX_OUTPUT_TOKENS = 64000
 
 SUPPORTED_TASK_TYPES_LIST = [
     "unconstrained",
@@ -218,7 +226,7 @@ class BlockManifest(WorkflowBlockManifest):
         "Note: temperature cannot be used when extended thinking is enabled.",
     )
     thinking_budget_tokens: Optional[int] = Field(
-        default=10000,
+        default=None,
         description="Maximum number of tokens for internal thinking when extended thinking is enabled. "
         "Higher values allow deeper reasoning but increase latency and cost. "
         "Must be less than max_tokens. Minimum: 1024.",
@@ -232,9 +240,9 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
-    max_tokens: int = Field(
-        default=16000,
-        description="Maximum number of tokens the model can generate in its response."
+    max_tokens: Optional[int] = Field(
+        default=None,
+        description="Maximum number of tokens the model can generate in its response.",
     )
     temperature: Optional[Union[float, Selector(kind=[FLOAT_KIND])]] = Field(
         default=None,
@@ -276,9 +284,11 @@ class BlockManifest(WorkflowBlockManifest):
                 raise ValueError(
                     "`temperature` cannot be used when `extended_thinking` is enabled"
                 )
-            if self.thinking_budget_tokens >= self.max_tokens:
+            budget_tokens = self.thinking_budget_tokens
+            max_tokens = self.max_tokens
+            if budget_tokens and max_tokens and budget_tokens >= max_tokens:
                 raise ValueError(
-                    f"`thinking_budget_tokens` ({self.thinking_budget_tokens}) must be less than `max_tokens` ({self.max_tokens})"
+                    f"`thinking_budget_tokens` ({budget_tokens}) must be less than `max_tokens` ({max_tokens})"
                 )
         return self
 
@@ -331,7 +341,7 @@ class AnthropicClaudeBlockV2(WorkflowBlock):
         classes: Optional[List[str]],
         api_key: str,
         model_version: str,
-        max_tokens: int,
+        max_tokens: Optional[int],
         temperature: Optional[float],
         extended_thinking: Optional[bool],
         thinking_budget_tokens: Optional[int],
@@ -367,7 +377,7 @@ def run_claude_prompting(
     classes: Optional[List[str]],
     api_key: str,
     model_version: str,
-    max_tokens: int,
+    max_tokens: Optional[int],
     temperature: Optional[float],
     extended_thinking: Optional[bool],
     thinking_budget_tokens: Optional[int],
@@ -408,7 +418,7 @@ def execute_claude_requests(
     api_key: str,
     prompts: List[Tuple[Optional[str], List[dict]]],
     model_version: str,
-    max_tokens: int,
+    max_tokens: Optional[int],
     temperature: Optional[float],
     extended_thinking: Optional[bool],
     thinking_budget_tokens: Optional[int],
@@ -442,7 +452,7 @@ def execute_claude_request(
     system_prompt: Optional[str],
     messages: List[dict],
     model_version: str,
-    max_tokens: int,
+    max_tokens: Optional[int],
     temperature: Optional[float],
     extended_thinking: Optional[bool],
     thinking_budget_tokens: Optional[int],
@@ -456,18 +466,22 @@ def execute_claude_request(
     if temperature is None or extended_thinking:
         temperature = NOT_GIVEN
 
+    model_max_output = MAX_OUTPUT_TOKENS.get(model_version, DEFAULT_MAX_OUTPUT_TOKENS)
+    effective_max_tokens = max_tokens if max_tokens is not None else model_max_output
+
     request_params = {
         "system": system_prompt,
         "messages": messages,
-        "max_tokens": max_tokens,
+        "max_tokens": effective_max_tokens,
         "model": EXACT_MODEL_VERSIONS.get(model_version, model_version),
         "temperature": temperature,
     }
 
-    if extended_thinking and thinking_budget_tokens:
+    if extended_thinking:
+        effective_budget = thinking_budget_tokens if thinking_budget_tokens is not None else model_max_output // 2
         request_params["thinking"] = {
             "type": "enabled",
-            "budget_tokens": thinking_budget_tokens,
+            "budget_tokens": effective_budget,
         }
 
     result = client.messages.create(**request_params)
