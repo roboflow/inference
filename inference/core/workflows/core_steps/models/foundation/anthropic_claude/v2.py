@@ -484,7 +484,9 @@ def execute_claude_request(
             "budget_tokens": effective_budget,
         }
 
-    result = client.messages.create(**request_params)
+    # Stream response to avoid max_tokens limitation
+    with client.messages.stream(**request_params) as stream:
+        result = stream.get_final_message()
 
     # Handle stop reason
     stop_reason = result.stop_reason
