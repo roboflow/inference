@@ -179,3 +179,116 @@ The Workflow block allows you to:
 - **Unified Architecture**: Handles both detection and segmentation in a single model.
 
 For more technical details, refer to the [official SAM 3 paper](https://ai.meta.com/research/publications/sam-3-segment-anything-with-concepts/).
+
+
+## How to use SAM 3 taking advantage of hot SAM3 instances maintained by Roboflow
+
+In below examples we are taking advantage of the serverless infrastructure which handles GPU provisioning automatically, making it ideal for applications that need on-demand segmentation without managing infrastructure.
+
+### 1. SAM3 Concept Segmentation workflow
+
+This example demonstrates using SAM3 with the workflow approach which allows you to combine SAM3's concept segmentation with visualization in a single pipeline. Here, we're segmenting all dogs in an image and automatically visualizing the results with polygon overlays.
+If you have created a workflow in Roboflow platform you can use `workspace_name` and `workflow_id` instead of `specification` to run it.
+
+```python
+import base64
+
+import cv2 as cv
+import numpy as np
+
+from inference_sdk import InferenceHTTPClient
+
+# 2. Connect to your workflow
+client = InferenceHTTPClient(
+    api_url="https://serverless.roboflow.com",
+    api_key="<YOUR_ROBOFLOW_API_KEY>"
+)
+
+# 3. Run your workflow on an image
+workflow_spec = {
+  "version": "1.0",
+  "inputs": [
+    {
+      "type": "InferenceImage",
+      "name": "image"
+    }
+  ],
+  "steps": [
+    {
+      "type": "roboflow_core/sam3@v1",
+      "name": "sam",
+      "images": "$inputs.image",
+      "class_names": "dog"
+    },
+    {
+      "type": "roboflow_core/polygon_visualization@v1",
+      "name": "polygon_visualization",
+      "image": "$inputs.image",
+      "predictions": "$steps.sam.predictions"
+    }
+  ],
+  "outputs": [
+    {
+      "type": "JsonField",
+      "name": "output",
+      "coordinates_system": "own",
+      "selector": "$steps.polygon_visualization.image"
+    }
+  ]
+}
+
+result = client.run_workflow(
+    specification=workflow_spec,
+    images={
+        "image": "https://media.roboflow.com/inference/dog.jpeg" # Path or url to your image file
+    },
+    use_cache=True # Speeds up repeated requests
+)
+
+# 4. Display the result
+nparr = np.frombuffer(base64.b64decode(result[0]["output"]), np.uint8)
+img = cv.imdecode(nparr, cv.IMREAD_COLOR)
+
+cv.imshow("result", img)
+cv.waitKey(0)
+cv.destroyAllWindows()
+```
+
+### 2. SAM3 raw API
+
+For direct API access to SAM3 without workflows, you can use Roboflow's serverless endpoint.
+This approach gives you raw segmentation results that you can process however you need.
+The example below shows how to segment a dog and draw the resulting polygon directly on the image using OpenCV.
+
+
+```python
+import requests
+import cv2 as cv
+import numpy as np
+
+response = requests.post(
+    "https://serverless.roboflow.com/sam3/concept_segment?api_key=<YOUR_ROBOFLOW_API_KEY>",
+    headers={
+        "Content-Type": "application/json"
+    },
+    json={
+        "format": "polygon",
+        "image": {
+            "type": "url",
+            "value": "https://media.roboflow.com/dog.jpeg"
+        },
+        "prompts": [
+            { "text": "dog" }
+        ]
+    }
+)
+
+img_req = requests.get("https://media.roboflow.com/dog.jpeg")
+img_arr = np.asarray(bytearray(img_req.content), dtype=np.uint8)
+img = cv.imdecode(img_arr, -1)
+polygon_arr = np.array(response.json()["prompt_results"][0]["predictions"][0]["masks"][0])
+cv.polylines(img, [polygon_arr], True, (0, 200, 200), 3)
+cv.imshow("result", img)
+cv.waitKey(0)
+cv.destroyAllWindows()
+```
