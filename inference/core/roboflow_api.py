@@ -607,7 +607,7 @@ def get_workflow_cache_file(
     sanitized_workspace_id = sanitize_path_segment(workspace_id)
     sanitized_workflow_id = sanitize_path_segment(workflow_id)
     api_key_hash = (
-        hashlib.md5(api_key.encode("utf-8")).hexdigest()
+        sha256(api_key.encode("utf-8")).hexdigest()
         if api_key is not None
         else "None"
     )
@@ -808,7 +808,7 @@ def _prepare_workflow_response_cache_key(
     workflow_id: str,
 ) -> str:
     api_key_hash = (
-        hashlib.md5(api_key.encode("utf-8")).hexdigest()
+        sha256(api_key.encode("utf-8")).hexdigest()
         if api_key is not None
         else "None"
     )
@@ -978,14 +978,25 @@ def _stream_url_to_cache(
 
     computed_md5 = hashlib.md5() if MD5_VERIFICATION_ENABLED else None
     temp_file_path = f"{cache_file_path}.tmp"
+    total_size = response.headers.get("Content-Length")
+    total_size = int(total_size) if total_size else None
+    downloaded = 0
 
     try:
         with open(temp_file_path, 'wb') as f:
             for chunk in response.iter_content(chunk_size=chunk_size):
                 if chunk:
                     f.write(chunk)
+                    downloaded += len(chunk)
+                    if total_size:
+                        percent = (downloaded / total_size) * 100
+                        print(f"Downloading {filename}: {percent:.1f}% ({downloaded / 1024 / 1024:.1f}/{total_size / 1024 / 1024:.1f} MB)", end="\r")
+                    else:
+                        print(f"Downloading {filename}: {downloaded / 1024 / 1024:.1f} MB", end="\r")
                     if computed_md5 is not None:
                         computed_md5.update(chunk)
+
+        print()
 
         if expected_md5_digest is not None and computed_md5 is not None:
             if expected_md5_digest != computed_md5.digest():
