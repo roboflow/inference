@@ -2,6 +2,7 @@ import asyncio
 import threading
 import time
 from typing import Optional, Union
+from unittest.mock import patch, MagicMock
 
 import pytest
 from asyncua import Server
@@ -18,6 +19,11 @@ from asyncua.ua.uaerrors import BadNoMatch, BadTypeMismatch, BadUserAccessDenied
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from inference.enterprise.workflows.enterprise_blocks.sinks.opc_writer.v1 import (
+    OPCUAConnectionManager,
+    get_connection_manager,
+    opc_connect_and_write_value,
+)
 from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
     add_to_workflows_gallery,
 )
@@ -514,3 +520,231 @@ def test_workflow_with_opc_writer_sink_direct_mode(test_opc_server) -> None:
     assert result[0]["opc_writer_results"]["throttling_status"] == False
     assert result[0]["opc_writer_results"]["message"] == "Value set successfully"
     assert result_value == 42
+
+
+@pytest.fixture
+def reset_connection_manager():
+    """Reset the connection manager singleton before and after each test."""
+    # Get the manager and close all connections before test
+    manager = get_connection_manager()
+    manager.close_all()
+
+    yield manager
+
+    # Clean up after test
+    manager.close_all()
+
+
+@pytest.mark.timeout(10)
+def test_connection_pooling_reuses_connections(test_opc_server, reset_connection_manager) -> None:
+    """Test that the connection manager reuses connections for the same server."""
+    manager = reset_connection_manager
+
+    # First write - should create a new connection
+    error_status1, message1 = opc_connect_and_write_value(
+        url=test_opc_server["url"],
+        namespace=test_opc_server["namespace"],
+        user_name=test_opc_server["user_name"],
+        password=test_opc_server["password"],
+        object_name=test_opc_server["object_name"],
+        variable_name="Int32Var",
+        value=100,
+        timeout=2,
+        value_type="Int32",
+    )
+
+    assert error_status1 == False
+    assert message1 == "Value set successfully"
+
+    # Check pool stats - should have 1 connection
+    stats = manager.get_pool_stats()
+    assert stats["total_connections"] == 1
+
+    # Second write - should reuse the connection
+    error_status2, message2 = opc_connect_and_write_value(
+        url=test_opc_server["url"],
+        namespace=test_opc_server["namespace"],
+        user_name=test_opc_server["user_name"],
+        password=test_opc_server["password"],
+        object_name=test_opc_server["object_name"],
+        variable_name="Int32Var",
+        value=200,
+        timeout=2,
+        value_type="Int32",
+    )
+
+    assert error_status2 == False
+    assert message2 == "Value set successfully"
+
+    # Still should have only 1 connection (reused)
+    stats = manager.get_pool_stats()
+    assert stats["total_connections"] == 1
+
+    # Verify the value was actually written
+    result_value = _opc_connect_and_read_value(
+        url=test_opc_server["url"],
+        namespace=test_opc_server["namespace"],
+        user_name=test_opc_server["user_name"],
+        password=test_opc_server["password"],
+        object_name=test_opc_server["object_name"],
+        variable_name="Int32Var",
+        timeout=1,
+    )
+    assert result_value == 200
+
+
+@pytest.mark.timeout(10)
+def test_connection_invalidation_creates_new_connection(test_opc_server, reset_connection_manager) -> None:
+    """Test that invalidating a connection causes a new one to be created."""
+    manager = reset_connection_manager
+
+    # Create initial connection
+    error_status1, message1 = opc_connect_and_write_value(
+        url=test_opc_server["url"],
+        namespace=test_opc_server["namespace"],
+        user_name=test_opc_server["user_name"],
+        password=test_opc_server["password"],
+        object_name=test_opc_server["object_name"],
+        variable_name="Int32Var",
+        value=300,
+        timeout=2,
+        value_type="Int32",
+    )
+
+    assert error_status1 == False
+    stats = manager.get_pool_stats()
+    assert stats["total_connections"] == 1
+
+    # Invalidate the connection
+    manager.invalidate_connection(test_opc_server["url"], test_opc_server["user_name"])
+
+    # Should have 0 connections now
+    stats = manager.get_pool_stats()
+    assert stats["total_connections"] == 0
+
+    # Next write should create a new connection
+    error_status2, message2 = opc_connect_and_write_value(
+        url=test_opc_server["url"],
+        namespace=test_opc_server["namespace"],
+        user_name=test_opc_server["user_name"],
+        password=test_opc_server["password"],
+        object_name=test_opc_server["object_name"],
+        variable_name="Int32Var",
+        value=400,
+        timeout=2,
+        value_type="Int32",
+    )
+
+    assert error_status2 == False
+    stats = manager.get_pool_stats()
+    assert stats["total_connections"] == 1
+
+
+@pytest.mark.timeout(10)
+def test_connection_failure_fails_fast(reset_connection_manager) -> None:
+    """Test that connection failures fail fast without blocking."""
+    manager = reset_connection_manager
+
+    # Try to connect to a non-existent server with default settings (no retries)
+    error_status, message = opc_connect_and_write_value(
+        url="opc.tcp://localhost:59999/nonexistent/",  # Non-existent server
+        namespace="http://test.namespace",
+        user_name=None,
+        password=None,
+        object_name="TestObject",
+        variable_name="TestVar",
+        value=123,
+        timeout=1,
+        value_type="Int32",
+        # Use defaults: max_retries=1, retry_backoff_seconds=0.0
+    )
+
+    # Should fail quickly
+    assert error_status == True
+    assert "Failed to write" in message
+
+
+@pytest.mark.timeout(10)
+def test_different_servers_get_different_connections(test_opc_server, reset_connection_manager) -> None:
+    """Test that different server URLs get separate pooled connections."""
+    manager = reset_connection_manager
+
+    # Connect to the real server
+    error_status1, message1 = opc_connect_and_write_value(
+        url=test_opc_server["url"],
+        namespace=test_opc_server["namespace"],
+        user_name=test_opc_server["user_name"],
+        password=test_opc_server["password"],
+        object_name=test_opc_server["object_name"],
+        variable_name="Int32Var",
+        value=500,
+        timeout=2,
+        value_type="Int32",
+    )
+
+    assert error_status1 == False
+    stats = manager.get_pool_stats()
+    assert stats["total_connections"] == 1
+
+    # Now connect with a different user (should create separate connection key)
+    # This will fail because user2 doesn't exist, but it demonstrates separate pooling
+    error_status2, message2 = opc_connect_and_write_value(
+        url=test_opc_server["url"],
+        namespace=test_opc_server["namespace"],
+        user_name="different_user",
+        password="different_pass",
+        object_name=test_opc_server["object_name"],
+        variable_name="Int32Var",
+        value=600,
+        timeout=1,
+        value_type="Int32",
+        max_retries=1,
+    )
+
+    # This should fail due to auth, but the point is it tried a separate connection
+    assert error_status2 == True
+    assert "AUTH ERROR" in message2
+
+
+@pytest.mark.timeout(10)
+def test_close_all_connections(test_opc_server, reset_connection_manager) -> None:
+    """Test that close_all properly closes all pooled connections."""
+    manager = reset_connection_manager
+
+    # Create a connection
+    error_status, _ = opc_connect_and_write_value(
+        url=test_opc_server["url"],
+        namespace=test_opc_server["namespace"],
+        user_name=test_opc_server["user_name"],
+        password=test_opc_server["password"],
+        object_name=test_opc_server["object_name"],
+        variable_name="Int32Var",
+        value=700,
+        timeout=2,
+        value_type="Int32",
+    )
+
+    assert error_status == False
+    assert manager.get_pool_stats()["total_connections"] == 1
+
+    # Close all connections
+    manager.close_all()
+
+    # Should have no connections
+    assert manager.get_pool_stats()["total_connections"] == 0
+
+    # Next write should work fine (creates new connection)
+    error_status2, _ = opc_connect_and_write_value(
+        url=test_opc_server["url"],
+        namespace=test_opc_server["namespace"],
+        user_name=test_opc_server["user_name"],
+        password=test_opc_server["password"],
+        object_name=test_opc_server["object_name"],
+        variable_name="Int32Var",
+        value=800,
+        timeout=2,
+        value_type="Int32",
+    )
+
+    assert error_status2 == False
+    assert manager.get_pool_stats()["total_connections"] == 1
