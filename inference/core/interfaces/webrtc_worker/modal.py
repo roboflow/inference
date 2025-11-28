@@ -423,11 +423,6 @@ if modal is not None:
                     workflow_id=webrtc_request.workflow_configuration.workflow_id,
                 )
             )
-            # Clear workspace_name and workflow_id after fetching spec
-            # to avoid XOR validation error in InferencePipeline.init_with_workflow()
-            webrtc_request.workflow_configuration.workspace_name = None
-            webrtc_request.workflow_configuration.workflow_id = None
-
         tags = {"tag": docker_tag}
         if workspace_id:
             tags["workspace_id"] = workspace_id
