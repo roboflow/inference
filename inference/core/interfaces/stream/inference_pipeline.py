@@ -792,9 +792,9 @@ class InferencePipeline:
         if status_update_handlers is None:
             status_update_handlers = []
         status_update_handlers.append(watchdog.on_status_update)
-        desired_source_fps = None
-        if ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING:
-            desired_source_fps = max_fps
+        desired_source_fps = (
+            max_fps if ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING else None
+        )
         video_sources = prepare_video_sources(
             video_reference=video_reference,
             video_source_properties=video_source_properties,

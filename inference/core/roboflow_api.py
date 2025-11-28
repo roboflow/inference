@@ -3,7 +3,6 @@ import base64
 import hashlib
 import json
 import os
-import re
 import urllib.parse
 from enum import Enum
 from hashlib import sha256
@@ -697,18 +696,18 @@ def get_workflow_specification(
             return cached_entry
 
     if workspace_id == "local":
-        if not re.match(r"^[\w\-]+$", workflow_id):
+        if not _is_valid_workflow_id(workflow_id):
             raise ValueError("Invalid workflow id")
 
         workflow_hash = sha256(workflow_id.encode()).hexdigest()
         local_file_path = (
             Path(MODEL_CACHE_DIR) / "workflow" / "local" / f"{workflow_hash}.json"
         )
-        if not local_file_path.exists():
+        try:
+            with local_file_path.open("r", encoding="utf-8") as f:
+                local_config = json.load(f)
+        except FileNotFoundError:
             raise FileNotFoundError(f"Local workflow file not found: {local_file_path}")
-
-        with local_file_path.open("r", encoding="utf-8") as f:
-            local_config = json.load(f)
 
         # Mimic the same shape as the cloud response:
         response = {"workflow": local_config}
@@ -983,3 +982,9 @@ def post_to_roboflow_api(
         return response.json()
 
     return _make_request()
+
+
+
+def _is_valid_workflow_id(workflow_id: str) -> bool:
+    allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
+    return all(c in allowed for c in workflow_id)
