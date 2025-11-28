@@ -39,6 +39,7 @@ class WebRTCWorkerRequest(BaseModel):
     data_output: Optional[List[str]] = Field(default=None)
     declared_fps: Optional[float] = None
     rtsp_url: Optional[str] = None
+    video_url: Optional[str] = None  # Public URL to download video file from
     use_data_channel_frames: bool = (
         False  # When True, expect frames via data channel instead of media track
     )
