@@ -701,7 +701,7 @@ def prepare_classification_prompt(
     return {
         "instructions": (
             "You act as single-class classification model. You must provide reasonable predictions. "
-            "You are only allowed to produce JSON document. "
+            "You are only allowed to produce JSON document in Markdown ```json [...]``` markers. "
             'Expected structure of json: {"class_name": "class-name", "confidence": 0.4}. '
             "`class-name` must be one of the class names defined by user. You are only allowed to return "
             "single JSON document, even if there are potentially multiple classes. You are not allowed to return list."
@@ -735,11 +735,11 @@ def prepare_multi_label_classification_prompt(
     return {
         "instructions": (
             "You act as multi-label classification model. You must provide reasonable predictions. "
-            "You are only allowed to produce JSON document. "
+            "You are only allowed to produce JSON document in Markdown ```json``` markers. "
             'Expected structure of json: {"predicted_classes": [{"class": "class-name-1", "confidence": 0.9}, '
             '{"class": "class-name-2", "confidence": 0.7}]}. '
             "`class-name-X` must be one of the class names defined by user and `confidence` is a float value in range "
-            "0.0-1.0 that represents how sure you are that the class is present in the image. Only return class names "
+            "0.0-1.0 that represent how sure you are that the class is present in the image. Only return class names "
             "that are visible."
         ),
         "input": [
@@ -804,7 +804,6 @@ def prepare_ocr_prompt(
             {
                 "role": "user",
                 "content": [
-                    {"type": "input_text", "text": "Read the text"},
                     {
                         "type": "input_image",
                         "image_url": f"data:image/jpeg;base64,{base64_image}",
@@ -834,7 +833,6 @@ def prepare_caption_prompt(
             {
                 "role": "user",
                 "content": [
-                    {"type": "input_text", "text": "Caption the image"},
                     {
                         "type": "input_image",
                         "image_url": f"data:image/jpeg;base64,{base64_image}",
@@ -855,9 +853,10 @@ def prepare_structured_answering_prompt(
     output_structure_serialised = json.dumps(output_structure, indent=4)
     return {
         "instructions": (
-            "You are supposed to produce responses in JSON. User is to provide you dictionary with "
-            "keys and values. Each key must be present in your response. Values in user dictionary "
-            "represent descriptions for JSON fields to be generated. Provide only JSON in response."
+            "You are supposed to produce responses in JSON wrapped in Markdown markers: "
+            "```json\nyour-response\n```. User is to provide you dictionary with keys and values. "
+            "Each key must be present in your response. Values in user dictionary represent "
+            "descriptions for JSON fields to be generated. Provide only JSON Markdown in response."
         ),
         "input": [
             {
