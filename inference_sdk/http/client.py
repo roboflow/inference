@@ -1,5 +1,15 @@
 from contextlib import contextmanager
-from typing import Any, Dict, Generator, List, Literal, Optional, Tuple, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    Generator,
+    List,
+    Literal,
+    Optional,
+    Tuple,
+    Union,
+)
 
 import aiohttp
 import numpy as np
@@ -90,6 +100,9 @@ BufferFillingStrategy = Literal[
     "WAIT", "DROP_OLDEST", "ADAPTIVE_DROP_OLDEST", "DROP_LATEST", "ADAPTIVE_DROP_LATEST"
 ]
 BufferConsumptionStrategy = Literal["LAZY", "EAGER"]
+
+if TYPE_CHECKING:
+    from inference_sdk.webrtc.client import WebRTCClient
 
 
 def wrap_errors(function: callable) -> callable:
@@ -216,6 +229,7 @@ class InferenceHTTPClient:
         self.__inference_configuration = InferenceConfiguration.init_default()
         self.__client_mode = _determine_client_mode(api_url=api_url)
         self.__selected_model: Optional[str] = None
+        self.__webrtc_client: Optional["WebRTCClient"] = None
 
     @property
     def inference_configuration(self) -> InferenceConfiguration:
@@ -243,6 +257,19 @@ class InferenceHTTPClient:
             Optional[str]: The identifier of the currently selected model, if any.
         """
         return self.__selected_model
+
+    @property
+    def webrtc(self) -> "WebRTCClient":
+        """Lazy accessor for the WebRTC client namespace.
+
+        Returns:
+            WebRTCClient: Namespaced WebRTC API bound to this HTTP client.
+        """
+        from inference_sdk.webrtc.client import WebRTCClient
+
+        if self.__webrtc_client is None:
+            self.__webrtc_client = WebRTCClient(self.__api_url, self.__api_key)
+        return self.__webrtc_client
 
     @contextmanager
     def use_configuration(
