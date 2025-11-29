@@ -3,9 +3,9 @@
 FROM nvcr.io/nvidia/l4t-jetpack:r36.4.0 AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG CMAKE_VERSION=3.31.10
-ARG PYTORCH_VERSION=2.8.0
-ARG TORCHVISION_VERSION=0.23.0
+ARG CMAKE_VERSION=4.2.0
+ARG PYTORCH_VERSION=2.6.0
+ARG TORCHVISION_VERSION=0.21.0
 ARG OPENCV_VERSION=4.10.0
 ARG ONNXRUNTIME_VERSION=1.20.0
 ENV LANG=en_US.UTF-8
@@ -94,6 +94,7 @@ RUN git clone --recursive --branch v${PYTORCH_VERSION} https://github.com/pytorc
     export PYTORCH_BUILD_VERSION=${PYTORCH_VERSION} PYTORCH_BUILD_NUMBER=1 && \
     export CMAKE_BUILD_TYPE=Release BUILD_SHARED_LIBS=ON USE_PRIORITIZED_TEXT_FOR_LD=1 && \
     export MAX_JOBS=12 && \
+    export CMAKE_POLICY_VERSION_MINIMUM=3.5 && \
     python3 setup.py bdist_wheel && \
     python3 -m pip install dist/torch-*.whl
 
@@ -178,6 +179,7 @@ RUN uv pip install --system --break-system-packages --index-strategy unsafe-best
     -r requirements.sdk.http.txt \
     -r requirements.easyocr.txt \
     -r requirements.jetson.txt \
+    "pycuda>=2025.0.0,<2026.0.0" \
     "setuptools<=75.5.0" \
     packaging \
     && rm -rf ~/.cache/uv
@@ -205,7 +207,6 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python && \
 RUN cd /usr/local/lib/python3.10/dist-packages && \
     find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
     rm -rf debugpy* jupyterlab* jupyter_* notebook* ipython* ipykernel* || true && \
-    rm -rf torch/bin torch/include || true && \
     rm -rf onnx/backend/test onnx/test || true && \
     rm -rf scipy/*/tests pandas/tests || true && \
     rm -rf */examples */benchmarks */docs || true && \

@@ -175,7 +175,7 @@ def create_batch_of_images(
             "--bucket-path",
             "-bp",
             help="Cloud storage path with optional glob pattern (e.g., 's3://bucket/path/**/*.jpg', 'gs://bucket/images/'). "
-                 "Required for cloud-storage source. Supports S3, GCS, and Azure.",
+            "Required for cloud-storage source. Supports S3, GCS, and Azure.",
         ),
     ] = None,
     ingest_id: Annotated[
@@ -339,7 +339,7 @@ def create_batch_of_videos(
             "--bucket-path",
             "-bp",
             help="Cloud storage path with optional glob pattern (e.g., 's3://bucket/path/**/*.mp4', 'gs://bucket/videos/'). "
-                 "Required for cloud-storage source. Supports S3, GCS, and Azure.",
+            "Required for cloud-storage source. Supports S3, GCS, and Azure.",
         ),
     ] = None,
     ingest_id: Annotated[

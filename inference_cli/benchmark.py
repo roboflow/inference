@@ -7,6 +7,7 @@ from typing_extensions import Annotated
 from inference_cli.lib.benchmark.dataset import PREDEFINED_DATASETS
 from inference_cli.lib.benchmark_adapter import (
     run_infer_api_speed_benchmark,
+    run_inference_experimental_benchmark,
     run_python_package_speed_benchmark,
     run_workflow_api_speed_benchmark,
 )
@@ -260,6 +261,110 @@ def python_package_speed(
             api_key=api_key,
             model_configuration=model_configuration,
             output_location=output_location,
+        )
+    except KeyboardInterrupt:
+        print("Benchmark interrupted.")
+        return
+    except Exception as error:
+        typer.echo(f"Command failed. Cause: {error}")
+        raise typer.Exit(code=1)
+
+
+@benchmark_app.command(
+    help="This command provides a benchmark of inference-exp package. Currently, support for this feature "
+    "is experimental."
+)
+def inference_experimental_speed(
+    model_id: Annotated[
+        str,
+        typer.Option(
+            "--model_id",
+            "-m",
+            help="Model ID in format project/version.",
+        ),
+    ],
+    dataset_reference: Annotated[
+        str,
+        typer.Option(
+            "--dataset_reference",
+            "-d",
+            help=f"Name of predefined dataset (one of {list(PREDEFINED_DATASETS.keys())}) or path to directory with images",
+        ),
+    ] = "coco",
+    warm_up_inferences: Annotated[
+        int,
+        typer.Option("--warm_up_inferences", "-wi", help="Number of warm-up requests"),
+    ] = 10,
+    benchmark_inferences: Annotated[
+        int,
+        typer.Option(
+            "--benchmark_requests", "-bi", help="Number of benchmark requests"
+        ),
+    ] = 1000,
+    batch_size: Annotated[
+        int,
+        typer.Option("--batch_size", "-bs", help="Batch size of single request"),
+    ] = 1,
+    api_key: Annotated[
+        Optional[str],
+        typer.Option(
+            "--api-key",
+            "-a",
+            help="Roboflow API key for your workspace. If not given - env variable `ROBOFLOW_API_KEY` will be used",
+        ),
+    ] = None,
+    model_configuration: Annotated[
+        Optional[str],
+        typer.Option(
+            "--model_config", "-mc", help="Location of yaml file with model config"
+        ),
+    ] = None,
+    output_location: Annotated[
+        Optional[str],
+        typer.Option(
+            "--output_location",
+            "-o",
+            help="Location where to save the result (path to file or directory)",
+        ),
+    ] = None,
+    model_package_id: Annotated[
+        Optional[str],
+        typer.Option(
+            "--model_package_id",
+            "-o",
+            help="Selected model package ID (leave blank to run auto-negotiation)",
+        ),
+    ] = None,
+    turn_images_to_tensors: Annotated[
+        bool,
+        typer.Option(
+            "--images-as-tensors/--no-images-as-tensors",
+            help="Boolean flag to decide if input images are to be loaded as tensors on the device that model "
+            "is running, or should be left as np.arrays.",
+        ),
+    ] = True,
+    allow_untrusted_packages: Annotated[
+        bool,
+        typer.Option(
+            "--allow-untrusted-packages/--no-allow-untrusted-packages",
+            help="Boolean flag to decide if untrusted packages (for example the ones registered by clients) are "
+            "allowed to be loaded.",
+        ),
+    ] = True,
+):
+    try:
+        run_inference_experimental_benchmark(
+            model_id=model_id,
+            dataset_reference=dataset_reference,
+            warm_up_inferences=warm_up_inferences,
+            benchmark_inferences=benchmark_inferences,
+            batch_size=batch_size,
+            api_key=api_key,
+            model_configuration=model_configuration,
+            output_location=output_location,
+            model_package_id=model_package_id,
+            turn_images_to_tensors=turn_images_to_tensors,
+            allow_untrusted_packages=allow_untrusted_packages,
         )
     except KeyboardInterrupt:
         print("Benchmark interrupted.")

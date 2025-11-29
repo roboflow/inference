@@ -12,9 +12,14 @@ on:
         type: boolean
         description: "Do you want to push image after build?"
         default: false
+      custom_tag:
+        type: string
+        description: "Custom tag to use for the image (overrides VERSION)"
+        default: ""
 
 env:
   VERSION: "0.0.0" # Default version, will be overwritten
+  BASE_IMAGE: "roboflow/roboflow-inference-server-jetson-6.2.0"
 
 jobs:
   docker:
@@ -35,6 +40,15 @@ jobs:
         uses: actions/checkout@v4
       - name: Read version from file
         run: echo "VERSION=$(DISABLE_VERSION_CHECK=true python ./inference/core/version.py)" >> $GITHUB_ENV
+      - name: Determine Image Tags
+        id: tags
+        uses: ./.github/actions/determine-tags
+        with:
+          custom_tag: ${{ github.event.inputs.custom_tag }}
+          version: ${{ env.VERSION }}
+          base_image: ${{ env.BASE_IMAGE }}
+          force_push: ${{ github.event.inputs.force_push }}
+          token: ${{ secrets.GITHUB_TOKEN }}
       - name: Set up Depot CLI
         uses: depot/setup-action@v1
       - name: Build and Push
@@ -42,6 +56,6 @@ jobs:
         with:
           push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true')}}
           project: grl7ffzxd7
-          tags: roboflow/roboflow-inference-server-jetson-6.2.0:latest,roboflow/roboflow-inference-server-jetson-6.2.0:${{ env.VERSION}}
+          tags: ${{ steps.tags.outputs.image_tags }}
           platforms: linux/arm64
           file: ./docker/dockerfiles/Dockerfile.onnx.jetson.6.2.0
