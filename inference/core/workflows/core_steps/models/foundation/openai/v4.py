@@ -131,9 +131,6 @@ You can specify arbitrary text prompts or predefined ones, the block supports th
 
 Provide your OpenAI API key or set the value to ``rf_key:account`` (or
 ``rf_key:user:<id>``) to proxy requests through Roboflow's API.
-
-This block uses the OpenAI Responses API which provides enhanced capabilities including
-reasoning effort control for GPT-5 models.
 """
 
 TaskType = Literal[tuple(SUPPORTED_TASK_TYPES_LIST)]
@@ -506,6 +503,7 @@ def _execute_proxied_openai_request(
     endpoint = "apiproxy/openai/v2"
 
     try:
+        # Use the Roboflow API post function (this ensures proper auth headers used based on invocation context)
         response_data = post_to_roboflow_api(
             endpoint=endpoint,
             api_key=roboflow_api_key,
@@ -518,6 +516,51 @@ def _execute_proxied_openai_request(
         raise RuntimeError(
             f"Invalid response structure from Roboflow proxy: {e}"
         ) from e
+
+
+def _extract_output_text(response_data: dict) -> str:
+    """Extract output text from OpenAI Responses API response."""
+    status = response_data.get("status")
+
+    if status == "failed":
+        error = response_data.get("error", {})
+        error_message = (
+            f"{error.get('code', 'Unknown')}: {error.get('message', 'Unknown error')}"
+        )
+        raise ValueError(f"OpenAI API request failed: {error_message}")
+
+    if status == "cancelled":
+        raise ValueError("OpenAI API request was cancelled.")
+
+    if status == "incomplete":
+        incomplete_details = response_data.get("incomplete_details", {})
+        reason = incomplete_details.get("reason", "Unknown reason")
+        if reason == "max_output_tokens":
+            raise ValueError(
+                "OpenAI API stopped generation because the max_tokens limit was reached. "
+                "Please increase the max_tokens parameter to allow for a complete response."
+            )
+        raise ValueError(
+            f"OpenAI API returned an incomplete response. Reason: {reason}"
+        )
+
+    if status not in ["completed", "in_progress", "queued", None]:
+        raise ValueError(f"OpenAI API returned unexpected status: {status}")
+
+    # Extract text from output items
+    output_items = response_data.get("output", [])
+    texts = []
+    for item in output_items:
+        if item.get("type") == "message":
+            for content in item.get("content", []):
+                if content.get("type") == "output_text":
+                    texts.append(content.get("text", ""))
+
+    output_text = "".join(texts)
+    if not output_text:
+        raise ValueError("OpenAI API returned no text content in response.")
+
+    return output_text
 
 
 def _execute_direct_openai_request(
@@ -592,51 +635,6 @@ def _execute_direct_openai_request(
     return output_text
 
 
-def _extract_output_text(response_data: dict) -> str:
-    """Extract output text from OpenAI Responses API response."""
-    status = response_data.get("status")
-
-    if status == "failed":
-        error = response_data.get("error", {})
-        error_message = (
-            f"{error.get('code', 'Unknown')}: {error.get('message', 'Unknown error')}"
-        )
-        raise ValueError(f"OpenAI API request failed: {error_message}")
-
-    if status == "cancelled":
-        raise ValueError("OpenAI API request was cancelled.")
-
-    if status == "incomplete":
-        incomplete_details = response_data.get("incomplete_details", {})
-        reason = incomplete_details.get("reason", "Unknown reason")
-        if reason == "max_output_tokens":
-            raise ValueError(
-                "OpenAI API stopped generation because the max_tokens limit was reached. "
-                "Please increase the max_tokens parameter to allow for a complete response."
-            )
-        raise ValueError(
-            f"OpenAI API returned an incomplete response. Reason: {reason}"
-        )
-
-    if status not in ["completed", "in_progress", "queued", None]:
-        raise ValueError(f"OpenAI API returned unexpected status: {status}")
-
-    # Extract text from output items
-    output_items = response_data.get("output", [])
-    texts = []
-    for item in output_items:
-        if item.get("type") == "message":
-            for content in item.get("content", []):
-                if content.get("type") == "output_text":
-                    texts.append(content.get("text", ""))
-
-    output_text = "".join(texts)
-    if not output_text:
-        raise ValueError("OpenAI API returned no text content in response.")
-
-    return output_text
-
-
 def execute_openai_request(
     roboflow_api_key: Optional[str],
     openai_api_key: str,
@@ -668,15 +666,6 @@ def execute_openai_request(
             max_tokens=max_tokens,
             temperature=temperature,
         )
-
-
-def _get_openai_client(api_key: str) -> OpenAI:
-    """Get or create a cached OpenAI client for the given API key."""
-    client = _openai_client_cache.get(api_key)
-    if client is None:
-        client = OpenAI(api_key=api_key)
-        _openai_client_cache[api_key] = client
-    return client
 
 
 def prepare_unconstrained_prompt(
@@ -924,6 +913,14 @@ def prepare_object_detection_prompt(
     }
 
 
+def _get_openai_client(api_key: str):
+    client = _openai_client_cache.get(api_key)
+    if client is None:
+        client = OpenAI(api_key=api_key)
+        _openai_client_cache[api_key] = client
+    return client
+
+
 PROMPT_BUILDERS = {
     "unconstrained": prepare_unconstrained_prompt,
     "ocr": prepare_ocr_prompt,
@@ -936,4 +933,4 @@ PROMPT_BUILDERS = {
     "object-detection": prepare_object_detection_prompt,
 }
 
-_openai_client_cache: Dict[str, OpenAI] = {}
+_openai_client_cache = {}
