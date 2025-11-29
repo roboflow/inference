@@ -423,7 +423,6 @@ if modal is not None:
                     workflow_id=webrtc_request.workflow_configuration.workflow_id,
                 )
             )
-
         tags = {"tag": docker_tag}
         if workspace_id:
             tags["workspace_id"] = workspace_id
