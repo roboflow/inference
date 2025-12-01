@@ -26,7 +26,7 @@ pydantic-settings<2.8
 openai>=1.12.0,<2.0.0
 structlog>=24.1.0,<25.0.0
 zxing-cpp~=2.2.0
-boto3>=1.40.0,<1.43.0
+boto3>=1.40.0,<=1.41.5
 typing_extensions>=4.8.0,<=4.12.2
 pydot~=2.0.0
 shapely>=2.0.4,<2.1.0
