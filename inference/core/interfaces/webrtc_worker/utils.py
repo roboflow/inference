@@ -1,5 +1,7 @@
+import ctypes
 import datetime
 import logging
+import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import cv2 as cv
@@ -181,3 +183,29 @@ def workflow_contains_preloaded_model(
         if model_id in preload_models or resolved_model_id in preload_models:
             return True
     return False
+
+
+def warmup_cuda(
+    max_retries: int = 10,
+    retry_delay: float = 0.5,
+):
+    cu = ctypes.CDLL("libcuda.so.1")
+
+    for attempt in range(max_retries):
+        rc = cu.cuInit(0)
+
+        if rc == 0:
+            break
+        else:
+            if attempt < max_retries - 1:
+                logger.warning(
+                    "cuInit failed on attempt %s/%s with code %s, retrying...",
+                    attempt + 1,
+                    max_retries,
+                    rc,
+                )
+                time.sleep(retry_delay)
+    else:
+        raise RuntimeError(f"CUDA initialization failed after {max_retries} attempts")
+
+    logger.info("CUDA initialization succeeded")
