@@ -57,7 +57,7 @@ SMOLVLM_ALIASES = {
 }
 
 SAM3_3D_ALIASES = {
-    # sam3-3d-objects is registered as a generic model, no alias needed
+    "sam3-3d-objects": "sam3-3d-weights-vc6vz/1",
 }
 
 RFDETR_ALIASES = {

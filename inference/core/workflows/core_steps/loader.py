@@ -504,8 +504,6 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
 
-# Conditional import - only load SAM3_3D block if explicitly enabled
-# This prevents Hydra/OmegaConf pollution when SAM3_3D is not being used
 if SAM3_3D_OBJECTS_ENABLED:
     from inference.core.workflows.core_steps.models.foundation.segment_anything3_3d.v1 import (
         SegmentAnything3_3D_ObjectsBlockV1,
