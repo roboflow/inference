@@ -15,12 +15,14 @@ import aiohttp
 import backoff
 import requests
 from cachetools.func import ttl_cache
+from inference_exp.utils.download import download_files_to_directory
 from requests import Response, Timeout
 from requests_toolbelt import MultipartEncoder
 
 from inference.core import logger
 from inference.core.cache import cache
 from inference.core.cache.base import BaseCache
+from inference.core.cache.model_artifacts import get_cache_dir, initialise_cache
 from inference.core.entities.types import (
     DatasetID,
     ModelID,
@@ -71,8 +73,6 @@ from inference.core.utils.requests import (
     api_key_safe_raise_for_status_aiohttp,
 )
 from inference.core.utils.url_utils import wrap_url
-from inference.core.cache.model_artifacts import get_cache_dir, initialise_cache
-from inference_exp.utils.download import download_files_to_directory
 
 MODEL_TYPE_DEFAULTS = {
     "object-detection": "yolov5v2s",
