@@ -596,10 +596,9 @@ class InferencePipeline:
         named_workflow_specified = (workspace_name is not None) and (
             workflow_id is not None
         )
-        if not (named_workflow_specified != (workflow_specification is not None)):
+        if not named_workflow_specified and not workflow_specification:
             raise ValueError(
-                "Parameters (`workspace_name`, `workflow_id`) can be used mutually exclusive with "
-                "`workflow_specification`, but at least one must be set."
+                "Either (`workspace_name`, `workflow_id`) or `workflow_specification` must be provided."
             )
         try:
             from inference.core.interfaces.stream.model_handlers.workflows import (
