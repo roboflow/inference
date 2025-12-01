@@ -164,6 +164,9 @@ from inference.core.workflows.core_steps.math.cosine_similarity.v1 import (
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v1 import (
     AnthropicClaudeBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v2 import (
+    AnthropicClaudeBlockV2,
+)
 from inference.core.workflows.core_steps.models.foundation.clip.v1 import (
     ClipModelBlockV1,
 )
@@ -191,6 +194,9 @@ from inference.core.workflows.core_steps.models.foundation.florence2.v2 import (
 from inference.core.workflows.core_steps.models.foundation.gaze.v1 import GazeBlockV1
 from inference.core.workflows.core_steps.models.foundation.google_gemini.v1 import (
     GoogleGeminiBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.google_gemini.v2 import (
+    GoogleGeminiBlockV2,
 )
 from inference.core.workflows.core_steps.models.foundation.google_vision_ocr.v1 import (
     GoogleVisionOCRBlockV1,
@@ -579,6 +585,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DimensionCollapseBlockV1,
         FirstNonEmptyOrDefaultBlockV1,
         AnthropicClaudeBlockV1,
+        AnthropicClaudeBlockV2,
         CosineSimilarityBlockV1,
         BackgroundColorVisualizationBlockV1,
         BarcodeDetectorBlockV1,
@@ -610,6 +617,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         Florence2BlockV1,
         Florence2BlockV2,
         GoogleGeminiBlockV1,
+        GoogleGeminiBlockV2,
         GoogleVisionOCRBlockV1,
         GridVisualizationBlockV1,
         HaloVisualizationBlockV1,
