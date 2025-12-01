@@ -1,7 +1,10 @@
 import asyncio
 import datetime
 import os
+import signal
 import subprocess
+import threading
+import time
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -247,9 +250,15 @@ if modal is not None:
                 asyncio.set_event_loop(current_loop)
 
             def on_timeout():
+                logger.info("Watchdog timeout reached")
+
                 def shutdown():
-                    for task in asyncio.all_tasks():
-                        task.cancel()
+                    for task in asyncio.all_tasks(current_loop):
+                        logger.info("Cancelling task %s", task)
+                        try:
+                            task.cancel(msg="Watchdog timeout")
+                        except Exception as exc:
+                            logger.error("Failed to cancel task %s: %s", task, exc)
                     current_loop.stop()
 
                 current_loop.call_soon_threadsafe(shutdown)
@@ -282,7 +291,7 @@ if modal is not None:
                 return
 
             try:
-                asyncio.run(
+                task = current_loop.create_task(
                     init_rtc_peer_connection_with_loop(
                         webrtc_request=webrtc_request,
                         send_answer=send_answer,
@@ -290,6 +299,9 @@ if modal is not None:
                         heartbeat_callback=watchdog.heartbeat,
                     )
                 )
+                current_loop.run_until_complete(task)
+            except asyncio.CancelledError as exc:
+                logger.info("WebRTC connection task was cancelled (%s)", exc)
             except Exception as exc:
                 logger.error(exc)
 
