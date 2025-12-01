@@ -33,7 +33,6 @@ from inference.core.entities.types import (
 )
 from inference.core.env import (
     API_BASE_URL,
-    ATOMIC_CACHE_WRITES_ENABLED,
     INTERNAL_WEIGHTS_URL_SUFFIX,
     MD5_VERIFICATION_ENABLED,
     MODEL_CACHE_DIR,
@@ -837,16 +836,6 @@ def stream_url_to_cache(
     filename: str,
     model_id: str,
 ) -> None:
-    """
-    Stream download a file from URL directly to cache without loading into memory.
-
-    This is a public wrapper for _stream_url_to_cache that can be imported by other modules.
-
-    Args:
-        url: URL to download from
-        filename: Target filename in cache
-        model_id: Model ID for cache directory
-    """
     return _stream_url_to_cache(
         url=url,
         filename=filename,
@@ -866,18 +855,6 @@ def _get_from_url(
     verify_content_length: bool = False,
     stream: bool = False,
 ) -> Union[Response, dict]:
-    """
-    Downloads data from URL with optional streaming support.
-
-    Args:
-        url: URL to download from
-        json_response: If True, parse response as JSON
-        verify_content_length: If True, verify Content-Length header matches received data
-        stream: If True, return Response with stream=True (caller must handle streaming)
-
-    Returns:
-        Dict if json_response=True, Response object otherwise
-    """
     try:
         response = requests.get(
             wrap_url(url),
@@ -900,14 +877,6 @@ def _get_from_url(
             raise RetryRequestError(message=str(error), inner_error=error) from error
         raise error
 
-    # For streaming responses, return immediately without consuming content
-    # The caller is responsible for MD5 verification during streaming
-    if stream:
-        return response
-
-    # For non-streaming responses, verify MD5 and content-length as before
-    # MD5 verification matches Google Cloud Storage's x-goog-hash header format
-    # This is for data integrity (detecting corruption), not cryptographic security
     if MD5_VERIFICATION_ENABLED and "x-goog-hash" in response.headers:
         x_goog_hash = response.headers["x-goog-hash"]
         md5_part = None
@@ -917,7 +886,6 @@ def _get_from_url(
                 break
         if md5_part is not None:
             md5_from_header = base64.b64decode(md5_part)
-            # nosec B324 - MD5 for integrity verification against GCS header, not cryptographic security
             if md5_from_header != hashlib.md5(response.content).digest():
                 raise RoboflowAPIUnsuccessfulRequestError(
                     "MD5 hash does not match MD5 received from x-goog-hash header"
@@ -948,19 +916,6 @@ def _stream_url_to_cache(
     filename: str,
     model_id: str,
 ) -> None:
-    """
-    Stream download a file from URL directly to cache without loading into memory.
-
-    Uses inference_exp's optimized download functiona.
-    Args:
-        url: URL to download from
-        filename: Target filename in cache
-        model_id: Model ID for cache directory
-
-    Raises:
-        RoboflowAPIUnsuccessfulRequestError: If download fails or hash verification fails
-    """
-
     initialise_cache(model_id=model_id)
     cache_dir = get_cache_dir(model_id=model_id)
     md5_hash = None
