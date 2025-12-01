@@ -810,7 +810,7 @@ def _prepare_workflow_response_cache_key(
     workflow_id: str,
 ) -> str:
     api_key_hash = (
-        sha512(api_key.encode("utf-8")).hexdigest()
+        hashlib.md5(api_key.encode("utf-8")).hexdigest()
         if api_key is not None
         else "None"
     )
