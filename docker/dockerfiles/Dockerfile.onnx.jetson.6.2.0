@@ -121,7 +121,7 @@ RUN wget https://developer.nvidia.com/downloads/compute/machine-learning/tensorr
     dpkg -i nv-tensorrt-local-tegra-repo-ubuntu2204-10.7.0-cuda-12.6_1.0-1_arm64.deb && \
     cp /var/nv-tensorrt-local-tegra-repo-ubuntu2204-10.7.0-cuda-12.6/nv-tensorrt-local-tegra-C50F04B9-keyring.gpg /usr/share/keyrings/ && \
     apt-get update && \
-    apt-get install -y python3-libnvinfer1
+    apt-get install -y python3-libnvinfer
 
 # Build onnxruntime-gpu from source with TensorRT support
 WORKDIR /build/onnxruntime
