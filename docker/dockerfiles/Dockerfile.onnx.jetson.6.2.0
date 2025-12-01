@@ -286,6 +286,7 @@ RUN ldconfig
 
 # Copy Python packages
 COPY --from=builder /usr/local/lib/python3.10/dist-packages /usr/local/lib/python3.10/dist-packages
+COPY --from=builder /usr/lib/python3.10/dist-packages/tensorrt* /usr/local/lib/python3.10/dist-packages
 COPY --from=builder /usr/local/bin/inference /usr/local/bin/inference
 
 ENV PYTHONPATH=/usr/local/lib/python3.10/dist-packages:$PYTHONPATH
