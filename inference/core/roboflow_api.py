@@ -821,13 +821,11 @@ def get_from_url(
     url: str,
     json_response: bool = True,
     verify_content_length: bool = False,
-    stream: bool = False,
 ) -> Union[Response, dict]:
     return _get_from_url(
         url=url,
         json_response=json_response,
         verify_content_length=verify_content_length,
-        stream=stream,
     )
 
 
@@ -853,7 +851,6 @@ def _get_from_url(
     url: str,
     json_response: bool = True,
     verify_content_length: bool = False,
-    stream: bool = False,
 ) -> Union[Response, dict]:
     try:
         response = requests.get(
@@ -861,7 +858,6 @@ def _get_from_url(
             headers=build_roboflow_api_headers(),
             timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
             verify=ROBOFLOW_API_VERIFY_SSL,
-            stream=stream,
         )
 
     except (ConnectionError, Timeout, requests.exceptions.ConnectionError) as error:
