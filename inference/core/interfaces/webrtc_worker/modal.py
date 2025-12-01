@@ -49,6 +49,7 @@ from inference.core.interfaces.webrtc_worker.entities import (
     WebRTCWorkerResult,
 )
 from inference.core.interfaces.webrtc_worker.utils import (
+    warmup_cuda,
     workflow_contains_instant_model,
     workflow_contains_preloaded_model,
 )
@@ -371,6 +372,7 @@ if modal is not None:
         # https://modal.com/docs/guide/memory-snapshot#gpu-memory-snapshot
         @modal.enter(snap=True)
         def start(self):
+            warmup_cuda(max_retries=10, retry_delay=0.5)
             self._gpu = check_nvidia_smi_gpu()
             logger.info("Starting GPU container on %s", self._gpu)
             logger.info("Preload hf ids: %s", self.preload_hf_ids)

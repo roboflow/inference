@@ -22,7 +22,8 @@ class Watchdog:
 
     def stop(self):
         self._stopping = True
-        self._thread.join()
+        if self._thread.is_alive():
+            self._thread.join()
 
     def _watchdog_thread(self):
         while not self._stopping:
