@@ -58,7 +58,7 @@ RUN python3 -m pip install packaging==24.1 && rm -rf ~/.cache/pip
 # Install flash_attn required for Paligemma and Florence2
 RUN python3 -m pip install -r requirements.pali.flash_attn.txt --no-dependencies --no-build-isolation && rm -rf ~/.cache/pip
 
-ENV TORCH_CUDA_ARCH_LIST="7.5;8.0;8.6;8.9;9.0"
+ENV TORCH_CUDA_ARCH_LIST="7.5;8.0;8.6;8.9;9.0;10.0;10.3;11.0;12.0"
 RUN python3 -m pip install --no-cache-dir --no-build-isolation -r requirements.sam3_3d.txt && rm -rf ~/.cache/pip
 # Start runtime stage
 FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 as runtime
