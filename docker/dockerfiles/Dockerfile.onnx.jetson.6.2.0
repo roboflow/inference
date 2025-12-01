@@ -302,6 +302,8 @@ COPY inference_cli inference_cli
 COPY inference_sdk inference_sdk
 COPY docker/config/gpu_http.py gpu_http.py
 
+RUN python -m pip uninstall -y boto3 botocore && python -m pip install "boto3>=1.40.0,<=1.41.5" "botocore>=1.40.0,<=1.41.5"
+
 # Environment variables
 ENV VERSION_CHECK_MODE=once \
     CORE_MODEL_SAM2_ENABLED=True \
@@ -313,14 +315,14 @@ ENV VERSION_CHECK_MODE=once \
     ORT_TENSORRT_ENGINE_CACHE_PATH=/tmp/ort_cache \
     ORT_TENSORRT_MAX_WORKSPACE_SIZE=4294967296 \
     ORT_TENSORRT_BUILDER_OPTIMIZATION_LEVEL=5 \
-    ONNXRUNTIME_EXECUTION_PROVIDERS=[TensorrtExecutionProvider] \
-    REQUIRED_ONNX_PROVIDERS=TensorrtExecutionProvider \
     OPENBLAS_CORETYPE=ARMV8 \
     LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libgomp.so.1 \
     WORKFLOWS_STEP_EXECUTION_MODE=local \
     WORKFLOWS_MAX_CONCURRENT_STEPS=4 \
     API_LOGGING_ENABLED=True \
-    DISABLE_WORKFLOW_ENDPOINTS=false
+    DISABLE_WORKFLOW_ENDPOINTS=false \
+    ALLOW_INFERENCE_EXP_UNTRUSTED_MODELS=True \
+    USE_INFERENCE_EXP_MODELS=False
 
 LABEL org.opencontainers.image.description="Inference Server - Jetson 6.2.0 (PyTorch from source, numpy 2.x)"
 
