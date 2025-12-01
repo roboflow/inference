@@ -7,7 +7,7 @@ from functools import partial
 from typing import Dict, List, Literal, Optional, Tuple, Type, Union
 
 from asyncua.client import Client as AsyncClient
-from asyncua.sync import Client, sync_async_client_method
+from asyncua.sync import Client, ThreadLoop, sync_async_client_method
 from asyncua.ua import VariantType
 from asyncua.ua.uaerrors import BadNoMatch, BadTypeMismatch, BadUserAccessDenied
 from fastapi import BackgroundTasks
@@ -51,8 +51,28 @@ class OPCUAConnectionManager:
             {}
         )  # key -> timestamp of last failure
         self._global_lock = threading.Lock()
+        self._tloop: Optional[ThreadLoop] = None
         self._initialized = True
         logger.debug("OPC UA Connection Manager initialized")
+
+    def _get_tloop(self) -> ThreadLoop:
+        """Get or create the shared ThreadLoop for all clients."""
+        if self._tloop is None or not self._tloop.is_alive():
+            logger.debug("OPC UA Connection Manager creating shared ThreadLoop")
+            self._tloop = ThreadLoop(timeout=120)
+            self._tloop.start()
+        return self._tloop
+
+    def _stop_tloop(self) -> None:
+        """Stop the shared ThreadLoop if it exists."""
+        if self._tloop is not None and self._tloop.is_alive():
+            logger.debug("OPC UA Connection Manager stopping shared ThreadLoop")
+            try:
+                self._tloop.loop.call_soon_threadsafe(self._tloop.loop.stop)
+                self._tloop.join(timeout=2.0)
+            except Exception as exc:
+                logger.debug(f"OPC UA Connection Manager ThreadLoop stop error: {exc}")
+            self._tloop = None
 
     def _get_connection_key(self, url: str, user_name: Optional[str]) -> str:
         """Generate a unique key for connection pooling."""
@@ -72,9 +92,10 @@ class OPCUAConnectionManager:
         password: Optional[str],
         timeout: int,
     ) -> Client:
-        """Create and configure a new OPC UA client."""
+        """Create and configure a new OPC UA client using the shared ThreadLoop."""
         logger.debug(f"OPC UA Connection Manager creating client for {url}")
-        client = Client(url=url, sync_wrapper_timeout=timeout)
+        tloop = self._get_tloop()
+        client = Client(url=url, tloop=tloop, sync_wrapper_timeout=timeout)
         if user_name and password:
             client.set_user(user_name)
             client.set_password(password)
@@ -309,12 +330,13 @@ class OPCUAConnectionManager:
                 )
 
     def close_all(self) -> None:
-        """Close all connections in the pool."""
+        """Close all connections in the pool and stop the shared ThreadLoop."""
         with self._global_lock:
             for key, client in list(self._connections.items()):
                 self._safe_disconnect(client)
             self._connections.clear()
             self._connection_metadata.clear()
+            self._stop_tloop()
             logger.info("OPC UA Connection Manager closed all connections")
 
     def get_pool_stats(self) -> dict:

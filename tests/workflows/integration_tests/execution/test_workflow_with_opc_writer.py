@@ -371,15 +371,14 @@ def test_opc_server():
     }
 
     # Cleanup
+    manager = get_connection_manager()
+    manager.close_all()
+    OPCUAConnectionManager._instance = None
+
     STOP_OPC_SERVER = True
     if SERVER_TASK:
         SERVER_TASK.cancel()
-        try:
-            asyncio.run_coroutine_threadsafe(asyncio.sleep(0.1), loop).result()
-        except:
-            pass
-    loop.stop()
-    t.join()
+    loop.call_soon_threadsafe(loop.stop)
 
 
 @add_to_workflows_gallery(
