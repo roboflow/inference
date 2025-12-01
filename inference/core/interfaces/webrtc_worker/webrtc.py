@@ -814,6 +814,8 @@ async def init_rtc_peer_connection_with_loop(
                     credential=ice_server.credential,
                 )
             )
+        # Always add Google's public STUN server to ensure we get server reflexive candidates
+        ice_servers.append(RTCIceServer(urls="stun:stun.l.google.com:19302"))
     else:
         ice_servers = None
     peer_connection = RTCPeerConnectionWithLoop(
