@@ -6,8 +6,10 @@ from inference.core.workflows.execution_engine.entities.base import OutputDefini
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     IMAGE_KIND,
+    LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
+    Selector,
     StepOutputImageSelector,
     StepOutputSelector,
     StepSelector,
@@ -526,6 +528,64 @@ def test_parse_block_manifest_when_manifest_defines_selector_inside_dictionary()
                 ],
                 is_list_element=False,
                 is_dict_element=True,
+                dimensionality_offset=0,
+                is_dimensionality_reference_property=False,
+            )
+        },
+    )
+
+
+def test_parse_block_manifest_when_manifest_defines_union_of_list_or_selector() -> (
+    None
+):
+    """Test that Union[List[...], Selector(...)] properly sets is_list_element=True.
+
+    This is a regression test for the bug where the schema parser would not detect
+    that a property could receive a list when defined as Union[List[T], Selector(...)].
+    """
+    # given
+
+    class Manifest(WorkflowBlockManifest):
+        type: Literal["MyManifest"]
+        name: str = Field(description="name field")
+        tags: Union[List[str], Selector(kind=[LIST_OF_VALUES_KIND])] = Field(
+            description="Tags can be a literal list or a selector to a list"
+        )
+
+        @classmethod
+        def describe_outputs(cls) -> List[OutputDefinition]:
+            return []
+
+    # when
+    manifest_metadata = parse_block_manifest(manifest_type=Manifest)
+
+    # then
+    assert manifest_metadata == BlockManifestMetadata(
+        primitive_types={
+            "name": PrimitiveTypeDefinition(
+                property_name="name",
+                property_description="name field",
+                type_annotation="str",
+            ),
+            "tags": PrimitiveTypeDefinition(
+                property_name="tags",
+                property_description="Tags can be a literal list or a selector to a list",
+                type_annotation="List[str]",
+            ),
+        },
+        selectors={
+            "tags": SelectorDefinition(
+                property_name="tags",
+                property_description="Tags can be a literal list or a selector to a list",
+                allowed_references=[
+                    ReferenceDefinition(
+                        selected_element="any_data",
+                        kind=[LIST_OF_VALUES_KIND],
+                        points_to_batch={False},
+                    ),
+                ],
+                is_list_element=True,
+                is_dict_element=False,
                 dimensionality_offset=0,
                 is_dimensionality_reference_property=False,
             )
