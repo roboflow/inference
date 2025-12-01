@@ -6,7 +6,7 @@ import os
 import re
 import urllib.parse
 from enum import Enum
-from hashlib import sha256, sha512
+from hashlib import sha256
 from json import JSONDecodeError
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
@@ -609,7 +609,7 @@ def get_workflow_cache_file(
     sanitized_workspace_id = sanitize_path_segment(workspace_id)
     sanitized_workflow_id = sanitize_path_segment(workflow_id)
     api_key_hash = (
-        sha512(api_key.encode("utf-8")).hexdigest()
+        hashlib.md5(api_key.encode("utf-8")).hexdigest()
         if api_key is not None
         else "None"
     )
@@ -703,7 +703,7 @@ def get_workflow_specification(
         if not re.match(r"^[\w\-]+$", workflow_id):
             raise ValueError("Invalid workflow id")
 
-        workflow_hash = sha512(workflow_id.encode()).hexdigest()
+        workflow_hash = sha256(workflow_id.encode()).hexdigest()
         local_file_path = (
             Path(MODEL_CACHE_DIR) / "workflow" / "local" / f"{workflow_hash}.json"
         )
