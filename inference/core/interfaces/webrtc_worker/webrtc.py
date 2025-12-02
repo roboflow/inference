@@ -634,6 +634,7 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
 
 async def _wait_ice_complete(peer_connection: RTCPeerConnectionWithLoop, timeout=2.0):
     if peer_connection.iceGatheringState == "complete":
+        logger.info("ICE gathering state already complete")
         return
     fut = asyncio.get_running_loop().create_future()
 
@@ -957,9 +958,9 @@ async def init_rtc_peer_connection_with_loop(
     answer = await peer_connection.createAnswer()
     await peer_connection.setLocalDescription(answer)
 
-    logger.debug(f"WebRTC connection status: {peer_connection.connectionState}")
-
     await _wait_ice_complete(peer_connection, timeout=2.0)
+
+    logger.info("Initialized RTC peer connection with loop (status: %s), sending answer", peer_connection.connectionState)
 
     send_answer(
         WebRTCWorkerResult(
@@ -970,7 +971,9 @@ async def init_rtc_peer_connection_with_loop(
         )
     )
 
+    logger.info("Answer sent, waiting for termination event")
     await terminate_event.wait()
+    logger.info("Termination event received, closing WebRTC connection")
     if player:
         logger.info("Stopping player")
         player.video.stop()
