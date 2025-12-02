@@ -765,7 +765,7 @@ WEBRTC_MODAL_PRELOAD_HF_IDS = os.getenv("WEBRTC_MODAL_PRELOAD_HF_IDS")
 WEBRTC_MODAL_MIN_RAM_MB = int(os.getenv("WEBRTC_MODAL_MIN_RAM_MB", "4096"))
 WEBRTC_MODAL_PUBLIC_STUN_SERVERS = os.getenv(
     "WEBRTC_MODAL_PUBLIC_STUN_SERVERS",
-    "stun:stun.l.google.com:19302,stun1.l.google.com:19302,stun2.l.google.com:19302,stun3.l.google.com:19302,stun4.l.google.com:19302",
+    "stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302,stun:stun2.l.google.com:19302,stun:stun3.l.google.com:19302,stun:stun4.l.google.com:19302",
 )
 
 HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED = str2bool(

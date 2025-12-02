@@ -818,7 +818,12 @@ async def init_rtc_peer_connection_with_loop(
         # Always add public stun servers (if specified)
         if WEBRTC_MODAL_PUBLIC_STUN_SERVERS:
             for stun_server in WEBRTC_MODAL_PUBLIC_STUN_SERVERS.split(","):
-                ice_servers.append(RTCIceServer(urls=stun_server.strip()))
+                try:
+                    ice_servers.append(RTCIceServer(urls=stun_server.strip()))
+                except Exception as e:
+                    logger.warning(
+                        "Failed to add public stun server '%s': %s", stun_server, e
+                    )
     else:
         ice_servers = None
     peer_connection = RTCPeerConnectionWithLoop(
