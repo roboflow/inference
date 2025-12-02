@@ -268,6 +268,7 @@ if modal is not None:
             logger.info("declared_fps: %s", webrtc_request.declared_fps)
             logger.info("rtsp_url: %s", webrtc_request.rtsp_url)
             logger.info("processing_timeout: %s", webrtc_request.processing_timeout)
+            logger.info("watchdog_timeout: %s", WEBRTC_MODAL_WATCHDOG_TIMEMOUT)
             logger.info("requested_plan: %s", webrtc_request.requested_plan)
             logger.info("requested_region: %s", webrtc_request.requested_region)
             logger.info(
