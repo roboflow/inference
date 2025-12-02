@@ -14,6 +14,8 @@ from inference.usage_tracking.payload_helpers import APIKey, APIKeyHash, sha256_
 
 class WebRTCPlan(BaseModel):
     gpu: Optional[str] = None
+    cpu_cores: Optional[int] = None
+    ram_mb: Optional[int] = None
 
 
 class PlanDetails(SQLiteWrapper):

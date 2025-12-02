@@ -267,7 +267,6 @@ if modal is not None:
             logger.info("rtsp_url: %s", webrtc_request.rtsp_url)
             logger.info("processing_timeout: %s", webrtc_request.processing_timeout)
             logger.info("requested_plan: %s", webrtc_request.requested_plan)
-            logger.info("requested_gpu: %s", webrtc_request.requested_gpu)
             logger.info("requested_region: %s", webrtc_request.requested_region)
             logger.info(
                 "ICE servers: %s",
@@ -437,6 +436,9 @@ if modal is not None:
     def spawn_rtc_peer_connection_modal(
         webrtc_request: WebRTCWorkerRequest,
     ) -> WebRTCWorkerResult:
+        requested_gpu: Optional[str] = None
+        requested_ram_mb: Optional[int] = None
+        requested_cpu_cores: Optional[int] = None
         webrtc_plans: Optional[Dict[str, WebRTCPlan]] = (
             usage_collector._plan_details.get_webrtc_plans(
                 api_key=webrtc_request.api_key
@@ -447,9 +449,11 @@ if modal is not None:
                 raise RoboflowAPIUnsuccessfulRequestError(
                     f"Unknown requested plan {webrtc_request.requested_plan}, available plans: {', '.join(webrtc_plans.keys())}"
                 )
-            webrtc_request.requested_gpu = webrtc_plans[
-                webrtc_request.requested_plan
-            ].gpu
+            requested_gpu = webrtc_plans[webrtc_request.requested_plan].gpu
+            requested_ram_mb = webrtc_plans[webrtc_request.requested_plan].ram_mb
+            requested_cpu_cores = webrtc_plans[webrtc_request.requested_plan].cpu_cores
+
+        # TODO: requested_gpu is replaced with requested_plan
         if (
             webrtc_plans
             and not webrtc_request.requested_plan
@@ -461,6 +465,7 @@ if modal is not None:
                     f"Requested gpu {webrtc_request.requested_gpu} not associated with any plan, available gpus: {', '.join(gpu_to_plan.keys())}"
                 )
             webrtc_request.requested_plan = gpu_to_plan[webrtc_request.requested_gpu]
+            requested_gpu = webrtc_plans[webrtc_request.requested_plan].gpu
 
         # https://modal.com/docs/reference/modal.Client#from_credentials
         client = modal.Client.from_credentials(
@@ -509,7 +514,7 @@ if modal is not None:
             logger.info("Parametrized preload models: %s", WEBRTC_MODAL_PRELOAD_MODELS)
             preload_models = WEBRTC_MODAL_PRELOAD_MODELS
 
-        if webrtc_request.requested_gpu:
+        if requested_gpu:
             RTCPeerConnectionModal = RTCPeerConnectionModalGPU
         else:
             RTCPeerConnectionModal = RTCPeerConnectionModalCPU
@@ -531,16 +536,16 @@ if modal is not None:
         cls_with_options = deployed_cls.with_options(
             timeout=webrtc_request.processing_timeout,
         )
-        if webrtc_request.requested_gpu is not None:
+        if requested_gpu is not None:
             logger.info(
                 "Spawning webrtc modal function with gpu %s",
-                webrtc_request.requested_gpu,
+                requested_gpu,
             )
             # Specify fallback GPU
             # TODO: with_options does not support gpu fallback
             # https://modal.com/docs/examples/gpu_fallbacks#set-fallback-gpus
             cls_with_options = cls_with_options.with_options(
-                gpu=webrtc_request.requested_gpu,
+                gpu=requested_gpu,
             )
         if webrtc_request.requested_region:
             logger.info(
@@ -549,6 +554,22 @@ if modal is not None:
             )
             cls_with_options = cls_with_options.with_options(
                 region=webrtc_request.requested_region,
+            )
+        if requested_ram_mb is not None:
+            logger.info(
+                "Spawning webrtc modal function with ram %s",
+                requested_ram_mb,
+            )
+            cls_with_options = cls_with_options.with_options(
+                ram=requested_ram_mb,
+            )
+        if requested_cpu_cores is not None:
+            logger.info(
+                "Spawning webrtc modal function with cpu cores %s",
+                requested_cpu_cores,
+            )
+            cls_with_options = cls_with_options.with_options(
+                cpu=requested_cpu_cores,
             )
         rtc_modal_obj: RTCPeerConnectionModal = cls_with_options(
             preload_hf_ids=preload_hf_ids,
