@@ -31,6 +31,7 @@ from inference.core.env import (
     WEBRTC_MODAL_GCP_SECRET_NAME,
     WEBRTC_MODAL_IMAGE_NAME,
     WEBRTC_MODAL_IMAGE_TAG,
+    WEBRTC_MODAL_MIN_RAM_MB,
     WEBRTC_MODAL_MODELS_PRELOAD_API_KEY,
     WEBRTC_MODAL_PRELOAD_HF_IDS,
     WEBRTC_MODAL_PRELOAD_MODELS,
@@ -48,12 +49,11 @@ from inference.core.interfaces.webrtc_worker.entities import (
     WebRTCWorkerResult,
 )
 from inference.core.interfaces.webrtc_worker.utils import (
+    warmup_cuda,
     workflow_contains_instant_model,
     workflow_contains_preloaded_model,
 )
-from inference.core.interfaces.webrtc_worker.webrtc import (
-    init_rtc_peer_connection_with_loop,
-)
+from inference.core.interfaces.webrtc_worker.watchdog import Watchdog
 from inference.core.managers.base import ModelManager
 from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.core.roboflow_api import (
@@ -62,7 +62,7 @@ from inference.core.roboflow_api import (
 )
 from inference.core.version import __version__
 from inference.models.aliases import resolve_roboflow_model_alias
-from inference.models.owlv2.owlv2 import preload_owlv2_model
+from inference.models.owlv2.owlv2 import PRELOADED_HF_MODELS, preload_owlv2_model
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
 from inference.usage_tracking.collector import usage_collector
 from inference.usage_tracking.plan_details import WebRTCPlan
@@ -125,6 +125,7 @@ if modal is not None:
         "min_containers": WEBRTC_MODAL_FUNCTION_MIN_CONTAINERS,
         "buffer_containers": WEBRTC_MODAL_FUNCTION_BUFFER_CONTAINERS,
         "scaledown_window": WEBRTC_MODAL_FUNCTION_SCALEDOWN_WINDOW,
+        "memory": WEBRTC_MODAL_MIN_RAM_MB,
         "timeout": WEBRTC_MODAL_FUNCTION_TIME_LIMIT,
         "enable_memory_snapshot": WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT,
         "max_inputs": WEBRTC_MODAL_FUNCTION_MAX_INPUTS,
@@ -152,6 +153,7 @@ if modal is not None:
             "ROBOFLOW_INTERNAL_SERVICE_SECRET": ROBOFLOW_INTERNAL_SERVICE_SECRET,
             "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
             "TELEMETRY_USE_PERSISTENT_QUEUE": "False",
+            "TORCHINDUCTOR_COMPILE_THREADS": "1",
             "WEBRTC_MODAL_FUNCTION_BUFFER_CONTAINERS": str(
                 WEBRTC_MODAL_FUNCTION_BUFFER_CONTAINERS
             ),
@@ -188,6 +190,10 @@ if modal is not None:
             webrtc_request: WebRTCWorkerRequest,
             q: modal.Queue,
         ):
+            from inference.core.interfaces.webrtc_worker.webrtc import (
+                init_rtc_peer_connection_with_loop,
+            )
+
             logger.info("*** Spawning %s:", self.__class__.__name__)
             logger.info("Running on %s", self._gpu)
             logger.info("Inference tag: %s", docker_tag)
@@ -198,6 +204,9 @@ if modal is not None:
                     if self._model_manager
                     else ""
                 ),
+            )
+            logger.info(
+                "Preloaded hf models: %s", ", ".join(PRELOADED_HF_MODELS.keys())
             )
             _exec_session_started = datetime.datetime.now()
             webrtc_request.processing_session_started = _exec_session_started
@@ -231,14 +240,35 @@ if modal is not None:
             logger.info("MODAL_ENVIRONMENT: %s", MODAL_ENVIRONMENT)
             logger.info("MODAL_IDENTITY_TOKEN: %s", MODAL_IDENTITY_TOKEN)
 
+            try:
+                current_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                current_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(current_loop)
+
+            def on_timeout():
+                def shutdown():
+                    for task in asyncio.all_tasks():
+                        task.cancel()
+                    current_loop.stop()
+
+                current_loop.call_soon_threadsafe(shutdown)
+
+            watchdog = Watchdog(
+                timeout_seconds=30,
+                on_timeout=on_timeout,
+            )
+
             def send_answer(obj: WebRTCWorkerResult):
                 logger.info("Sending webrtc answer")
                 q.put(obj)
+                watchdog.start()
 
             if webrtc_request.processing_timeout == 0:
                 error_msg = "Processing timeout is 0, skipping processing"
                 logger.info(error_msg)
                 send_answer(WebRTCWorkerResult(error_message=error_msg))
+                watchdog.stop()
                 return
             if (
                 not webrtc_request.webrtc_offer
@@ -248,15 +278,21 @@ if modal is not None:
                 error_msg = "Webrtc offer is missing, skipping processing"
                 logger.info(error_msg)
                 send_answer(WebRTCWorkerResult(error_message=error_msg))
+                watchdog.stop()
                 return
 
-            asyncio.run(
-                init_rtc_peer_connection_with_loop(
-                    webrtc_request=webrtc_request,
-                    send_answer=send_answer,
-                    model_manager=self._model_manager,
+            try:
+                asyncio.run(
+                    init_rtc_peer_connection_with_loop(
+                        webrtc_request=webrtc_request,
+                        send_answer=send_answer,
+                        model_manager=self._model_manager,
+                        heartbeat_callback=watchdog.heartbeat,
+                    )
                 )
-            )
+            except Exception as exc:
+                logger.error(exc)
+
             _exec_session_stopped = datetime.datetime.now()
             logger.info(
                 "WebRTC session stopped at %s",
@@ -294,6 +330,7 @@ if modal is not None:
                 ).total_seconds(),
             )
             usage_collector.push_usage_payloads()
+            watchdog.stop()
             logger.info("Function completed")
 
         @modal.exit()
@@ -335,6 +372,7 @@ if modal is not None:
         # https://modal.com/docs/guide/memory-snapshot#gpu-memory-snapshot
         @modal.enter(snap=True)
         def start(self):
+            warmup_cuda(max_retries=10, retry_delay=0.5)
             self._gpu = check_nvidia_smi_gpu()
             logger.info("Starting GPU container on %s", self._gpu)
             logger.info("Preload hf ids: %s", self.preload_hf_ids)
@@ -423,7 +461,6 @@ if modal is not None:
                     workflow_id=webrtc_request.workflow_configuration.workflow_id,
                 )
             )
-
         tags = {"tag": docker_tag}
         if workspace_id:
             tags["workspace_id"] = workspace_id
