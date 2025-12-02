@@ -43,6 +43,7 @@ from inference.core.env import (
     WEBRTC_MODAL_SHUTDOWN_RESERVE,
     WEBRTC_MODAL_TOKEN_ID,
     WEBRTC_MODAL_TOKEN_SECRET,
+    WEBRTC_MODAL_WATCHDOG_TIMEMOUT,
     WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
 )
 from inference.core.exceptions import RoboflowAPIUnsuccessfulRequestError
@@ -184,6 +185,7 @@ if modal is not None:
             "WEBRTC_MODAL_RTSP_PLACEHOLDER": WEBRTC_MODAL_RTSP_PLACEHOLDER,
             "WEBRTC_MODAL_RTSP_PLACEHOLDER_URL": WEBRTC_MODAL_RTSP_PLACEHOLDER_URL,
             "WEBRTC_MODAL_SHUTDOWN_RESERVE": str(WEBRTC_MODAL_SHUTDOWN_RESERVE),
+            "WEBRTC_MODAL_WATCHDOG_TIMEMOUT": str(WEBRTC_MODAL_WATCHDOG_TIMEMOUT),
         },
         "volumes": {MODEL_CACHE_DIR: rfcache_volume},
     }
@@ -198,7 +200,7 @@ if modal is not None:
         )
 
         watchdog = Watchdog(
-            timeout_seconds=30,
+            timeout_seconds=WEBRTC_MODAL_WATCHDOG_TIMEMOUT,
         )
 
         rtc_peer_connection_task = asyncio.create_task(
