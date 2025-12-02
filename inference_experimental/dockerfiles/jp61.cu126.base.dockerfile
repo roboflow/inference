@@ -3,6 +3,7 @@ FROM nvcr.io/nvidia/l4t-jetpack:r36.4.0
 ARG DEBIAN_FRONTEND=noninteractive
 ENV LANG=en_US.UTF-8
 
+RUN chmod 1777 /tmp
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \
     lshw \
