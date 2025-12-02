@@ -1,16 +1,18 @@
 import datetime
 import threading
 import time
-from typing import Callable
+from typing import Callable, Optional
 
 from inference.core.logger import logger
 
 
 class Watchdog:
-    def __init__(self, timeout_seconds: int, on_timeout: Callable[[], None]):
+    def __init__(
+        self, timeout_seconds: int, on_timeout: Optional[Callable[[], None]] = None
+    ):
         self.timeout_seconds = timeout_seconds
         self.last_heartbeat = datetime.datetime.now()
-        self.on_timeout = on_timeout
+        self.on_timeout: Optional[Callable[[], None]] = on_timeout
         self._thread = threading.Thread(target=self._watchdog_thread)
         self._stopping = False
         self._last_log_ts = datetime.datetime.now()
@@ -18,6 +20,10 @@ class Watchdog:
         self._heartbeats = 0
 
     def start(self):
+        if not self.on_timeout:
+            raise ValueError(
+                "on_timeout callback must be provided before starting the watchdog"
+            )
         self._thread.start()
 
     def stop(self):
