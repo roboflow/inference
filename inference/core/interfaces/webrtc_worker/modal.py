@@ -242,27 +242,32 @@ if modal is not None:
             logger.info("MODAL_ENVIRONMENT: %s", MODAL_ENVIRONMENT)
             logger.info("MODAL_IDENTITY_TOKEN: %s", MODAL_IDENTITY_TOKEN)
 
+            owns_loop = False
             try:
                 current_loop = asyncio.get_running_loop()
             except RuntimeError:
                 current_loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(current_loop)
+                owns_loop = True
 
             def shutdown(asyncio_loop: asyncio.AbstractEventLoop):
                 logger.info("Shutting down asyncio loop")
-                if not asyncio_loop.is_running():
-                    return
-                for task in asyncio.all_tasks(asyncio_loop):
+
+                pending = [t for t in asyncio.all_tasks(current_loop) if not t.done()]
+                for task in pending:
                     logger.info("Cancelling task %s", task)
                     try:
                         task.cancel(msg="Watchdog timeout")
                     except Exception as exc:
                         logger.error("Failed to cancel task %s: %s", task, exc)
-                asyncio_loop.stop()
+                if pending:
+                    current_loop.run_until_complete(
+                        asyncio.gather(*pending, return_exceptions=True)
+                    )
 
             def on_timeout():
                 logger.info("Watchdog timeout reached")
-                shutdown(asyncio_loop=current_loop)
+                current_loop.call_soon_threadsafe(shutdown, current_loop)
 
             watchdog = Watchdog(
                 timeout_seconds=30,
@@ -329,6 +334,8 @@ if modal is not None:
                 video_source = "rtsp"
             elif not webrtc_request.webrtc_realtime_processing:
                 video_source = "buffered browser stream"
+            else:
+                video_source = "realtime browser stream"
 
             usage_collector.record_usage(
                 source=workflow_id,
@@ -345,7 +352,15 @@ if modal is not None:
             )
             usage_collector.push_usage_payloads()
             watchdog.stop()
-            shutdown(asyncio_loop=current_loop)
+            logger.info("Cleaning up")
+            current_loop.call_soon_threadsafe(shutdown, current_loop)
+            if owns_loop:
+                current_loop.run_until_complete(current_loop.shutdown_asyncgens())
+                current_loop.run_until_complete(
+                    current_loop.shutdown_default_executor()
+                )
+                current_loop.close()
+
             logger.info("Function completed")
 
         @modal.exit()
