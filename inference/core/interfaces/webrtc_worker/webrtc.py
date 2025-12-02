@@ -25,6 +25,7 @@ from pydantic import ValidationError
 
 from inference.core import logger
 from inference.core.env import (
+    WEBRTC_MODAL_PUBLIC_STUN_SERVERS,
     WEBRTC_MODAL_RTSP_PLACEHOLDER,
     WEBRTC_MODAL_RTSP_PLACEHOLDER_URL,
     WEBRTC_MODAL_SHUTDOWN_RESERVE,
@@ -814,8 +815,10 @@ async def init_rtc_peer_connection_with_loop(
                     credential=ice_server.credential,
                 )
             )
-        # Always add Google's public STUN server to ensure we get server reflexive candidates
-        ice_servers.append(RTCIceServer(urls="stun:stun.l.google.com:19302"))
+        # Always add public stun servers (if specified)
+        if WEBRTC_MODAL_PUBLIC_STUN_SERVERS:
+            for stun_server in WEBRTC_MODAL_PUBLIC_STUN_SERVERS.split(","):
+                ice_servers.append(RTCIceServer(urls=stun_server.strip()))
     else:
         ice_servers = None
     peer_connection = RTCPeerConnectionWithLoop(
