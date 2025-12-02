@@ -107,6 +107,8 @@ def get_request_resource_id_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional
             if version_id:
                 return f"{dataset_id}/{version_id}"
             return str(dataset_id)
+        if hasattr(inference_request, "model_id"):
+            return str(inference_request.model_id)
     if "dataset_id" in func_kwargs and "version_id" in func_kwargs:
         dataset_id = func_kwargs["dataset_id"]
         version_id = func_kwargs["version_id"]
