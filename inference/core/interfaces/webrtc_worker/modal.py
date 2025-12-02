@@ -296,6 +296,7 @@ if modal is not None:
                         send_answer=send_answer,
                         model_manager=self._model_manager,
                         heartbeat_callback=watchdog.heartbeat,
+                        asyncio_loop=current_loop,
                     )
                 )
                 current_loop.run_until_complete(task)
