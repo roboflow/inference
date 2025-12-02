@@ -3,7 +3,7 @@ import datetime
 import os
 import subprocess
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Callable, Dict, Optional
 
 from inference.core import logger
 from inference.core.env import (
@@ -180,6 +180,44 @@ if modal is not None:
         "volumes": {MODEL_CACHE_DIR: rfcache_volume},
     }
 
+    async def run_rtc_peer_connection_with_watchdog(
+        webrtc_request: WebRTCWorkerRequest,
+        send_answer: Callable[[WebRTCWorkerResult], None],
+        model_manager: ModelManager,
+    ):
+        from inference.core.interfaces.webrtc_worker.webrtc import (
+            init_rtc_peer_connection_with_loop,
+        )
+
+        watchdog = Watchdog(
+            timeout_seconds=30,
+        )
+
+        rtc_peer_connection_task = asyncio.create_task(
+            init_rtc_peer_connection_with_loop(
+                webrtc_request=webrtc_request,
+                send_answer=send_answer,
+                model_manager=model_manager,
+                heartbeat_callback=watchdog.heartbeat,
+            )
+        )
+
+        def on_timeout():
+            logger.info("Watchdog timeout reached")
+            rtc_peer_connection_task.cancel()
+
+        watchdog.on_timeout = on_timeout
+        watchdog.start()
+
+        try:
+            await rtc_peer_connection_task
+        except asyncio.CancelledError as exc:
+            logger.info("WebRTC connection task was cancelled (%s)", exc)
+        except Exception as exc:
+            logger.error(exc)
+        finally:
+            watchdog.stop()
+
     class RTCPeerConnectionModal:
         _model_manager: Optional[ModelManager] = modal.parameter(
             default=None, init=False
@@ -192,10 +230,6 @@ if modal is not None:
             webrtc_request: WebRTCWorkerRequest,
             q: modal.Queue,
         ):
-            from inference.core.interfaces.webrtc_worker.webrtc import (
-                init_rtc_peer_connection_with_loop,
-            )
-
             logger.info("*** Spawning %s:", self.__class__.__name__)
             logger.info("Running on %s", self._gpu)
             logger.info("Inference tag: %s", docker_tag)
@@ -242,48 +276,14 @@ if modal is not None:
             logger.info("MODAL_ENVIRONMENT: %s", MODAL_ENVIRONMENT)
             logger.info("MODAL_IDENTITY_TOKEN: %s", MODAL_IDENTITY_TOKEN)
 
-            owns_loop = False
-            try:
-                current_loop = asyncio.get_running_loop()
-            except RuntimeError:
-                current_loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(current_loop)
-                owns_loop = True
-
-            def shutdown(asyncio_loop: asyncio.AbstractEventLoop):
-                logger.info("Shutting down asyncio loop")
-
-                pending = [t for t in asyncio.all_tasks(current_loop) if not t.done()]
-                for task in pending:
-                    logger.info("Cancelling task %s", task)
-                    try:
-                        task.cancel(msg="Watchdog timeout")
-                    except Exception as exc:
-                        logger.error("Failed to cancel task %s: %s", task, exc)
-                if pending:
-                    current_loop.run_until_complete(
-                        asyncio.gather(*pending, return_exceptions=True)
-                    )
-
-            def on_timeout():
-                logger.info("Watchdog timeout reached")
-                current_loop.call_soon_threadsafe(shutdown, current_loop)
-
-            watchdog = Watchdog(
-                timeout_seconds=30,
-                on_timeout=on_timeout,
-            )
-
             def send_answer(obj: WebRTCWorkerResult):
                 logger.info("Sending webrtc answer")
                 q.put(obj)
-                watchdog.start()
 
             if webrtc_request.processing_timeout == 0:
                 error_msg = "Processing timeout is 0, skipping processing"
                 logger.info(error_msg)
                 send_answer(WebRTCWorkerResult(error_message=error_msg))
-                watchdog.stop()
                 return
             if (
                 not webrtc_request.webrtc_offer
@@ -293,24 +293,15 @@ if modal is not None:
                 error_msg = "Webrtc offer is missing, skipping processing"
                 logger.info(error_msg)
                 send_answer(WebRTCWorkerResult(error_message=error_msg))
-                watchdog.stop()
                 return
 
-            try:
-                task = current_loop.create_task(
-                    init_rtc_peer_connection_with_loop(
-                        webrtc_request=webrtc_request,
-                        send_answer=send_answer,
-                        model_manager=self._model_manager,
-                        heartbeat_callback=watchdog.heartbeat,
-                        asyncio_loop=current_loop,
-                    )
+            asyncio.run(
+                run_rtc_peer_connection_with_watchdog(
+                    webrtc_request=webrtc_request,
+                    send_answer=send_answer,
+                    model_manager=self._model_manager,
                 )
-                current_loop.run_until_complete(task)
-            except asyncio.CancelledError as exc:
-                logger.info("WebRTC connection task was cancelled (%s)", exc)
-            except Exception as exc:
-                logger.error(exc)
+            )
 
             _exec_session_stopped = datetime.datetime.now()
             logger.info(
@@ -351,16 +342,6 @@ if modal is not None:
                 ).total_seconds(),
             )
             usage_collector.push_usage_payloads()
-            watchdog.stop()
-            logger.info("Cleaning up")
-            current_loop.call_soon_threadsafe(shutdown, current_loop)
-            if owns_loop:
-                current_loop.run_until_complete(current_loop.shutdown_asyncgens())
-                current_loop.run_until_complete(
-                    current_loop.shutdown_default_executor()
-                )
-                current_loop.close()
-
             logger.info("Function completed")
 
         @modal.exit()
