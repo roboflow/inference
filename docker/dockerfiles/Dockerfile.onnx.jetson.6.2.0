@@ -205,7 +205,7 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python && \
 RUN cd /usr/local/lib/python3.10/dist-packages && \
     find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
     rm -rf debugpy* jupyterlab* jupyter_* notebook* ipython* ipykernel* || true && \
-    rm -rf torch/bin torch/include || true && \
+    rm -rf torch/include || true && \
     rm -rf onnx/backend/test onnx/test || true && \
     rm -rf scipy/*/tests pandas/tests || true && \
     rm -rf */examples */benchmarks */docs || true && \
