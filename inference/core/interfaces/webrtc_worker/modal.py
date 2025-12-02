@@ -31,6 +31,7 @@ from inference.core.env import (
     WEBRTC_MODAL_GCP_SECRET_NAME,
     WEBRTC_MODAL_IMAGE_NAME,
     WEBRTC_MODAL_IMAGE_TAG,
+    WEBRTC_MODAL_MIN_CPU_CORES,
     WEBRTC_MODAL_MIN_RAM_MB,
     WEBRTC_MODAL_MODELS_PRELOAD_API_KEY,
     WEBRTC_MODAL_PRELOAD_HF_IDS,
@@ -127,6 +128,7 @@ if modal is not None:
         "buffer_containers": WEBRTC_MODAL_FUNCTION_BUFFER_CONTAINERS,
         "scaledown_window": WEBRTC_MODAL_FUNCTION_SCALEDOWN_WINDOW,
         "memory": WEBRTC_MODAL_MIN_RAM_MB,
+        "cpu": WEBRTC_MODAL_MIN_CPU_CORES,
         "timeout": WEBRTC_MODAL_FUNCTION_TIME_LIMIT,
         "enable_memory_snapshot": WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT,
         "max_inputs": WEBRTC_MODAL_FUNCTION_MAX_INPUTS,
@@ -168,6 +170,12 @@ if modal is not None:
             "WEBRTC_MODAL_FUNCTION_TIME_LIMIT": str(WEBRTC_MODAL_FUNCTION_TIME_LIMIT),
             "WEBRTC_MODAL_IMAGE_NAME": WEBRTC_MODAL_IMAGE_NAME,
             "WEBRTC_MODAL_IMAGE_TAG": WEBRTC_MODAL_IMAGE_TAG,
+            "WEBRTC_MODAL_MIN_CPU_CORES": str(
+                WEBRTC_MODAL_MIN_CPU_CORES if WEBRTC_MODAL_MIN_CPU_CORES else ""
+            ),
+            "WEBRTC_MODAL_MIN_RAM_MB": str(
+                WEBRTC_MODAL_MIN_RAM_MB if WEBRTC_MODAL_MIN_RAM_MB else ""
+            ),
             "WEBRTC_MODAL_MODELS_PRELOAD_API_KEY": (
                 str(WEBRTC_MODAL_MODELS_PRELOAD_API_KEY)
                 if WEBRTC_MODAL_MODELS_PRELOAD_API_KEY
@@ -268,6 +276,13 @@ if modal is not None:
                     if webrtc_request.webrtc_config
                     else []
                 ),
+            )
+            logger.info(
+                "WEBRTC_MODAL_MIN_CPU_CORES: %s",
+                WEBRTC_MODAL_MIN_CPU_CORES or "not set",
+            )
+            logger.info(
+                "WEBRTC_MODAL_MIN_RAM_MB: %s", WEBRTC_MODAL_MIN_RAM_MB or "not set"
             )
             logger.info("MODAL_CLOUD_PROVIDER: %s", MODAL_CLOUD_PROVIDER)
             logger.info("MODAL_IMAGE_ID: %s", MODAL_IMAGE_ID)
