@@ -109,6 +109,10 @@ def get_request_resource_id_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional
             return str(dataset_id)
         if hasattr(inference_request, "model_id"):
             return str(inference_request.model_id)
+    if "request" in func_kwargs:
+        request = func_kwargs["request"]
+        if hasattr(request, "model_id"):
+            return str(request.model_id)
     if "dataset_id" in func_kwargs and "version_id" in func_kwargs:
         dataset_id = func_kwargs["dataset_id"]
         version_id = func_kwargs["version_id"]
@@ -121,6 +125,12 @@ def get_request_resource_id_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional
         workflow_request = func_kwargs["workflow_request"]
         if hasattr(workflow_request, "workflow_id"):
             return str(workflow_request.workflow_id)
+    if "self" in func_kwargs:
+        _self = func_kwargs["self"]
+        if hasattr(_self, "model_id"):
+            return str(_self.model_id)
+        if hasattr(_self, "endpoint"):
+            return str(_self.endpoint)
     return None
 
 

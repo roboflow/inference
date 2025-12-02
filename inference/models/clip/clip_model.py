@@ -24,12 +24,12 @@ from inference.core.env import (
     CLIP_MODEL_ID,
     ONNXRUNTIME_EXECUTION_PROVIDERS,
     REQUIRED_ONNX_PROVIDERS,
-    TENSORRT_CACHE_PATH,
 )
 from inference.core.exceptions import OnnxProviderNotAvailable
 from inference.core.models.roboflow import OnnxRoboflowCoreModel
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.models.utils.batching import create_batches
+from inference.usage_tracking.collector import usage_collector
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.onnx import get_onnxruntime_execution_providers
 from inference.core.utils.postprocess import cosine_similarity
@@ -304,6 +304,7 @@ class Clip(OnnxRoboflowCoreModel):
         """
         return ["textual.onnx", "visual.onnx"]
 
+    @usage_collector("model")
     def infer_from_request(
         self, request: ClipInferenceRequest
     ) -> ClipEmbeddingResponse:

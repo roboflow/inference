@@ -65,6 +65,7 @@ from inference.core.roboflow_api import (
 )
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2multipoly
+from inference.usage_tracking.collector import usage_collector
 
 
 def _to_numpy_masks(masks_any) -> np.ndarray:
@@ -372,6 +373,7 @@ class SegmentAnything3(RoboflowCoreModel):
         else:
             raise ValueError(f"Invalid request type {type(request)}")
 
+    @usage_collector("model")
     def segment_image(
         self,
         image: Optional[InferenceRequestImage],

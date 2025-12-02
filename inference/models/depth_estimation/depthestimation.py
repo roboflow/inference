@@ -21,6 +21,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.models.transformers import TransformerModel
+from inference.usage_tracking.collector import usage_collector
 
 
 class DepthEstimator(TransformerModel):
@@ -50,6 +51,7 @@ class DepthEstimator(TransformerModel):
                 "Running DepthPro on CPU. This may be very slow. Consider using GPU or MPS if available."
             )
 
+    @usage_collector("model")
     def predict(self, image_in: Image.Image, prompt="", history=None, **kwargs):
         try:
             # Process input image
