@@ -213,7 +213,6 @@ if modal is not None:
         )
 
         def on_timeout():
-            logger.info("Watchdog timeout reached")
             rtc_peer_connection_task.cancel()
 
         watchdog.on_timeout = on_timeout
