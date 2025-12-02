@@ -248,19 +248,21 @@ if modal is not None:
                 current_loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(current_loop)
 
+            def shutdown(asyncio_loop: asyncio.AbstractEventLoop):
+                logger.info("Shutting down asyncio loop")
+                if not asyncio_loop.is_running():
+                    return
+                for task in asyncio.all_tasks(asyncio_loop):
+                    logger.info("Cancelling task %s", task)
+                    try:
+                        task.cancel(msg="Watchdog timeout")
+                    except Exception as exc:
+                        logger.error("Failed to cancel task %s: %s", task, exc)
+                asyncio_loop.stop()
+
             def on_timeout():
                 logger.info("Watchdog timeout reached")
-
-                def shutdown():
-                    for task in asyncio.all_tasks(current_loop):
-                        logger.info("Cancelling task %s", task)
-                        try:
-                            task.cancel(msg="Watchdog timeout")
-                        except Exception as exc:
-                            logger.error("Failed to cancel task %s: %s", task, exc)
-                    current_loop.stop()
-
-                current_loop.call_soon_threadsafe(shutdown)
+                shutdown(asyncio_loop=current_loop)
 
             watchdog = Watchdog(
                 timeout_seconds=30,
@@ -343,6 +345,7 @@ if modal is not None:
             )
             usage_collector.push_usage_payloads()
             watchdog.stop()
+            shutdown(asyncio_loop=current_loop)
             logger.info("Function completed")
 
         @modal.exit()
