@@ -617,8 +617,8 @@ class SegmentAnything3(RoboflowCoreModel):
                 default_threshold=output_prob_thresh,
             )
 
-            # Apply cross-prompt NMS if enabled
-            if nms_iou_threshold is not None and len(all_masks) > 0:
+            # Apply cross-prompt NMS
+            if len(all_masks) > 0:
                 all_masks = _apply_nms_cross_prompt(all_masks, nms_iou_threshold)
 
             # Regroup masks by prompt
