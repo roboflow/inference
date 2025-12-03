@@ -1,6 +1,5 @@
 import numpy as np
 import pytest
-import torch
 from inference_exp import Detections
 from inference_exp.models.moondream2.moondream2_hf import MoonDream2HF, Points
 
