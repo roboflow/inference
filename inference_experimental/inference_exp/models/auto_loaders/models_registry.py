@@ -14,6 +14,7 @@ VLM_TASK = "vlm"
 EMBEDDING_TASK = "embedding"
 CLASSIFICATION_TASK = "classification"
 MULTI_LABEL_CLASSIFICATION_TASK = "multi-label-classification"
+DEPTH_ESTIMATION_TASK = "depth-estimation"
 
 
 @dataclass(frozen=True)
@@ -353,6 +354,10 @@ REGISTERED_MODELS: Dict[
         module_name="inference_exp.models.yolact.yolact_instance_segmentation_trt",
         class_name="YOLOACTForInstanceSegmentationTRT",
     ),
+    ("depth-anything-v2", DEPTH_ESTIMATION_TASK, BackendType.HF): LazyClass(
+        module_name="inference_exp.models.depth_anything_v2.depth_anything_v2_hf",
+        class_name="DepthAnythingV2HF"
+    )
 }
 
 
