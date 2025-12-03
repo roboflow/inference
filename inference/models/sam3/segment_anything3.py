@@ -144,6 +144,203 @@ def _masks_to_predictions(
     return preds
 
 
+def _nms_greedy_pycocotools(
+    rles: List[Dict],
+    confidences: np.ndarray,
+    iou_threshold: float = 0.5,
+) -> np.ndarray:
+    """
+    NMS (Non-Maximum Suppression): removes duplicate detections by keeping only
+    the highest confidence detection when multiple detections overlap the same object.
+
+    Args:
+        rles: List of RLE dictionaries
+        confidences: Array of confidence scores
+        iou_threshold: IoU threshold above which detections are suppressed
+
+    Returns:
+        Boolean array indicating which detections to keep (in original order)
+    """
+    num_detections = len(rles)
+    if num_detections == 0:
+        return np.array([], dtype=bool)
+
+    # Sort by confidence descending
+    sort_index = np.argsort(confidences)[::-1]
+    sorted_rles = [rles[i] for i in sort_index]
+
+    # Calculate IoU matrix: ious[i,j] = overlap between detection i and j
+    ious = mask_utils.iou(sorted_rles, sorted_rles, [0] * num_detections)
+
+    # Greedy NMS: keep highest confidence, suppress overlaps
+    keep = np.ones(num_detections, dtype=bool)
+    for i in range(num_detections):
+        if keep[i]:
+            condition = ious[i, :] > iou_threshold
+            keep[i + 1 :] = np.where(condition[i + 1 :], False, keep[i + 1 :])
+
+    # Return indices in original order
+    return keep[np.argsort(sort_index)]
+
+
+def apply_nms_to_rle(
+    rle_list: List[Dict],
+    iou_threshold: float = 0.5,
+) -> List[Dict]:
+    """
+    Apply NMS to RLE predictions. Removes duplicate detections that overlap
+    the same object, keeping only the highest confidence one.
+
+    Args:
+        rle_list: List of dicts with structure {"detection": {"confidence": float}, "rle": dict}
+        iou_threshold: IoU threshold for suppression
+
+    Returns:
+        Filtered list of RLE items
+    """
+    if not rle_list:
+        return []
+
+    confidences = np.array([item["detection"]["confidence"] for item in rle_list])
+    rles = [item["rle"] for item in rle_list]
+
+    keep_indices = _nms_greedy_pycocotools(rles, confidences, iou_threshold)
+
+    return [rle_list[i] for i in range(len(rle_list)) if keep_indices[i]]
+
+
+def apply_nms_to_polygon(
+    polygon_list: List[Dict],
+    image_width: int,
+    image_height: int,
+    iou_threshold: float = 0.5,
+) -> List[Dict]:
+    """
+    Apply NMS to polygon predictions. Converts polygons to RLE temporarily
+    for IoU calculation, then returns filtered polygons.
+
+    Args:
+        polygon_list: List of dicts with structure {"confidence": float, "points": [{"x": float, "y": float}, ...]}
+        image_width: Image width for RLE encoding
+        image_height: Image height for RLE encoding
+        iou_threshold: IoU threshold for suppression
+
+    Returns:
+        Filtered list of polygon items
+    """
+    if not polygon_list:
+        return []
+
+    confidences = np.array([item["confidence"] for item in polygon_list])
+
+    # Convert polygons to RLE for IoU calculation
+    rles = []
+    for item in polygon_list:
+        # Flatten: [{"x": x1, "y": y1}, ...] → [x1, y1, x2, y2, ...]
+        polygon_flat = []
+        for point in item["points"]:
+            polygon_flat.extend([point["x"], point["y"]])
+        rle = mask_utils.frPyObjects([polygon_flat], image_height, image_width)[0]
+        rles.append(rle)
+
+    keep_indices = _nms_greedy_pycocotools(rles, confidences, iou_threshold)
+
+    return [polygon_list[i] for i in range(len(polygon_list)) if keep_indices[i]]
+
+
+def _apply_nms_cross_prompt(
+    all_masks: List[Tuple[int, np.ndarray, float]],
+    iou_threshold: float,
+) -> List[Tuple[int, np.ndarray, float]]:
+    """
+    Apply NMS across all prompts.
+
+    Args:
+        all_masks: List of tuples (prompt_idx, mask_np, score)
+        iou_threshold: IoU threshold for suppression
+
+    Returns:
+        Filtered list of (prompt_idx, mask_np, score) tuples
+    """
+    if not all_masks or len(all_masks) == 0:
+        return all_masks
+
+    # Convert masks to RLE for IoU calculation
+    rles = []
+    for _, mask_np, _ in all_masks:
+        mb = (mask_np > 0).astype(np.uint8)
+        rle = mask_utils.encode(np.asfortranarray(mb))
+        rles.append(rle)
+
+    confidences = np.array([score for _, _, score in all_masks])
+    keep_indices = _nms_greedy_pycocotools(rles, confidences, iou_threshold)
+
+    return [all_masks[i] for i in range(len(all_masks)) if keep_indices[i]]
+
+
+def _collect_masks_with_per_prompt_threshold(
+    processed: Dict[int, Dict],
+    prompt_ids: List[int],
+    prompts: List[Any],
+    default_threshold: float,
+) -> List[Tuple[int, np.ndarray, float]]:
+    """
+    Collect all masks applying per-prompt thresholds.
+
+    Args:
+        processed: Dict mapping coco_id -> {"masks": ..., "scores": ...}
+        prompt_ids: List of prompt indices
+        prompts: List of Sam3Prompt objects
+        default_threshold: Default threshold if prompt doesn't specify one
+
+    Returns:
+        List of (prompt_idx, mask_np, score) tuples that pass threshold
+    """
+    all_masks = []
+
+    for idx, coco_id in enumerate(prompt_ids):
+        # Get per-prompt threshold or use default
+        prompt_thresh = getattr(prompts[idx], "output_prob_thresh", None)
+        if prompt_thresh is None:
+            prompt_thresh = default_threshold
+
+        masks_np = _to_numpy_masks(processed[coco_id].get("masks"))
+        scores = list(processed[coco_id].get("scores", []))
+
+        if masks_np.ndim != 3 or 0 in masks_np.shape:
+            continue
+
+        for mask_i, (mask, score) in enumerate(zip(masks_np, scores)):
+            if score >= prompt_thresh:
+                all_masks.append((idx, mask, score))
+
+    return all_masks
+
+
+def _regroup_masks_by_prompt(
+    filtered_masks: List[Tuple[int, np.ndarray, float]],
+    num_prompts: int,
+) -> Dict[int, List[Tuple[np.ndarray, float]]]:
+    """
+    Regroup filtered masks back to per-prompt results.
+
+    Args:
+        filtered_masks: List of (prompt_idx, mask_np, score) tuples
+        num_prompts: Total number of prompts
+
+    Returns:
+        Dict mapping prompt_idx -> list of (mask_np, score) tuples
+    """
+    result: Dict[int, List[Tuple[np.ndarray, float]]] = {
+        i: [] for i in range(num_prompts)
+    }
+
+    for prompt_idx, mask_np, score in filtered_masks:
+        result[prompt_idx].append((mask_np, score))
+
+    return result
+
+
 def _build_text_query(
     coco_id: int,
     h: int,
@@ -366,6 +563,7 @@ class SegmentAnything3(RoboflowCoreModel):
                 prompts=request.prompts,
                 output_prob_thresh=request.output_prob_thresh or 0.5,
                 format=request.format or "polygon",
+                nms_iou_threshold=request.nms_iou_threshold,
             )
             # segment_image now returns either bytes or a response model
             return result
@@ -379,6 +577,7 @@ class SegmentAnything3(RoboflowCoreModel):
         prompts: Optional[List[Sam3Prompt]] = None,
         output_prob_thresh: float = 0.5,
         format: Optional[str] = "polygon",
+        nms_iou_threshold: Optional[float] = None,
         **kwargs,
     ):
         np_image = load_image_rgb(image)
@@ -434,6 +633,14 @@ class SegmentAnything3(RoboflowCoreModel):
                 # Forward
                 output = self.model(batch)
 
+                # Calculate minimum threshold for initial filtering
+                # (we'll apply per-prompt thresholds later)
+                min_threshold = output_prob_thresh
+                for p in prompts:
+                    prompt_thresh = getattr(p, "output_prob_thresh", None)
+                    if prompt_thresh is not None:
+                        min_threshold = min(min_threshold, prompt_thresh)
+
                 # Postprocess to original size and build per-prompt results
                 post = PostProcessImage(
                     max_dets_per_img=-1,
@@ -442,29 +649,80 @@ class SegmentAnything3(RoboflowCoreModel):
                     use_original_sizes_mask=True,
                     convert_mask_to_rle=False,
                     detection_threshold=float(
-                        output_prob_thresh if output_prob_thresh is not None else 0.35
+                        min_threshold if min_threshold is not None else 0.35
                     ),
                     to_cpu=True,
                 )
                 processed = post.process_results(output, batch.find_metadatas)
 
-        # Batched prompt response (even for a single prompt)
-        prompt_results: List[Sam3PromptResult] = []
-        for idx, coco_id in enumerate(prompt_ids):
-            has_visual = bool(getattr(prompts[idx], "boxes", None))
-            num_boxes = len(prompts[idx].boxes or []) if has_visual else 0
-            echo = Sam3PromptEcho(
-                prompt_index=idx,
-                type=("visual" if has_visual else "text"),
-                text=prompts[idx].text,
-                num_boxes=num_boxes,
+        # Check if we need NMS or per-prompt thresholds
+        has_per_prompt_thresholds = any(
+            getattr(p, "output_prob_thresh", None) is not None for p in prompts
+        )
+        needs_cross_prompt_processing = (
+            nms_iou_threshold is not None or has_per_prompt_thresholds
+        )
+
+        if needs_cross_prompt_processing and len(prompts) > 0:
+            # Collect all masks with per-prompt thresholds
+            all_masks = _collect_masks_with_per_prompt_threshold(
+                processed=processed,
+                prompt_ids=prompt_ids,
+                prompts=prompts,
+                default_threshold=output_prob_thresh,
             )
-            masks_np = _to_numpy_masks(processed[coco_id].get("masks"))
-            scores = list(processed[coco_id].get("scores", []))
-            preds = _masks_to_predictions(masks_np, scores, format)
-            prompt_results.append(
-                Sam3PromptResult(prompt_index=idx, echo=echo, predictions=preds)
-            )
+
+            # Apply cross-prompt NMS if enabled
+            if nms_iou_threshold is not None and len(all_masks) > 0:
+                all_masks = _apply_nms_cross_prompt(all_masks, nms_iou_threshold)
+
+            # Regroup masks by prompt
+            regrouped = _regroup_masks_by_prompt(all_masks, len(prompts))
+
+            # Build prompt results from regrouped masks
+            prompt_results: List[Sam3PromptResult] = []
+            for idx, coco_id in enumerate(prompt_ids):
+                has_visual = bool(getattr(prompts[idx], "boxes", None))
+                num_boxes = len(prompts[idx].boxes or []) if has_visual else 0
+                echo = Sam3PromptEcho(
+                    prompt_index=idx,
+                    type=("visual" if has_visual else "text"),
+                    text=prompts[idx].text,
+                    num_boxes=num_boxes,
+                )
+
+                # Convert regrouped masks to predictions
+                prompt_masks = regrouped.get(idx, [])
+                if prompt_masks:
+                    masks_np = np.stack([m for m, _ in prompt_masks], axis=0)
+                    scores = [s for _, s in prompt_masks]
+                else:
+                    masks_np = np.zeros((0, 0, 0), dtype=np.uint8)
+                    scores = []
+
+                preds = _masks_to_predictions(masks_np, scores, format)
+                prompt_results.append(
+                    Sam3PromptResult(prompt_index=idx, echo=echo, predictions=preds)
+                )
+        else:
+            # Original path: no cross-prompt processing needed
+            prompt_results: List[Sam3PromptResult] = []
+            for idx, coco_id in enumerate(prompt_ids):
+                has_visual = bool(getattr(prompts[idx], "boxes", None))
+                num_boxes = len(prompts[idx].boxes or []) if has_visual else 0
+                echo = Sam3PromptEcho(
+                    prompt_index=idx,
+                    type=("visual" if has_visual else "text"),
+                    text=prompts[idx].text,
+                    num_boxes=num_boxes,
+                )
+                masks_np = _to_numpy_masks(processed[coco_id].get("masks"))
+                scores = list(processed[coco_id].get("scores", []))
+                preds = _masks_to_predictions(masks_np, scores, format)
+                prompt_results.append(
+                    Sam3PromptResult(prompt_index=idx, echo=echo, predictions=preds)
+                )
+
         return Sam3SegmentationResponse(
             time=perf_counter() - start_ts, prompt_results=prompt_results
         )
