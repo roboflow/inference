@@ -144,6 +144,22 @@ def _masks_to_predictions(
     return preds
 
 
+def _filter_by_threshold(
+    masks_np: np.ndarray,
+    scores: List[float],
+    threshold: float,
+) -> Tuple[np.ndarray, List[float]]:
+    """Filter masks and scores by confidence threshold."""
+    if masks_np.ndim != 3 or masks_np.shape[0] == 0:
+        return masks_np, scores
+
+    keep = [i for i, s in enumerate(scores) if s >= threshold]
+    if not keep:
+        return np.zeros((0, 0, 0), dtype=np.uint8), []
+
+    return masks_np[keep], [scores[i] for i in keep]
+
+
 def _nms_greedy_pycocotools(
     rles: List[Dict],
     confidences: np.ndarray,
@@ -655,15 +671,9 @@ class SegmentAnything3(RoboflowCoreModel):
                 )
                 processed = post.process_results(output, batch.find_metadatas)
 
-        # Check if we need NMS or per-prompt thresholds
-        has_per_prompt_thresholds = any(
-            getattr(p, "output_prob_thresh", None) is not None for p in prompts
-        )
-        needs_cross_prompt_processing = (
-            nms_iou_threshold is not None or has_per_prompt_thresholds
-        )
+        needs_cross_prompt_nms = nms_iou_threshold is not None
 
-        if needs_cross_prompt_processing and len(prompts) > 0:
+        if needs_cross_prompt_nms and len(prompts) > 0:
             # Collect all masks with per-prompt thresholds
             all_masks = _collect_masks_with_per_prompt_threshold(
                 processed=processed,
@@ -718,6 +728,9 @@ class SegmentAnything3(RoboflowCoreModel):
                 )
                 masks_np = _to_numpy_masks(processed[coco_id].get("masks"))
                 scores = list(processed[coco_id].get("scores", []))
+                prompt_thresh = getattr(prompts[idx], "output_prob_thresh", None)
+                if prompt_thresh is not None:
+                    masks_np, scores = _filter_by_threshold(masks_np, scores, prompt_thresh)
                 preds = _masks_to_predictions(masks_np, scores, format)
                 prompt_results.append(
                     Sam3PromptResult(prompt_index=idx, echo=echo, predictions=preds)
