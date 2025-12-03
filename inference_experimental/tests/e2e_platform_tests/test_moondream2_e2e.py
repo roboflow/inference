@@ -5,6 +5,7 @@ from inference_exp import AutoModel
 
 @pytest.mark.e2e_model_inference
 @pytest.mark.slow
+@pytest.mark.gpu_only
 def test_moondream2_model(dog_image_numpy: np.ndarray):
     # GIVEN
     model = AutoModel.from_pretrained("moondream2")
