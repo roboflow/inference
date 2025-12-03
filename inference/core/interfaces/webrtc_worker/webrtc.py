@@ -960,7 +960,10 @@ async def init_rtc_peer_connection_with_loop(
 
     await _wait_ice_complete(peer_connection, timeout=2.0)
 
-    logger.info("Initialized RTC peer connection with loop (status: %s), sending answer", peer_connection.connectionState)
+    logger.info(
+        "Initialized RTC peer connection with loop (status: %s), sending answer",
+        peer_connection.connectionState,
+    )
 
     send_answer(
         WebRTCWorkerResult(
