@@ -607,6 +607,7 @@ class SegmentAnything3(RoboflowCoreModel):
                 processed = post.process_results(output, batch.find_metadatas)
 
         needs_cross_prompt_nms = nms_iou_threshold is not None
+        prompt_results: List[Sam3PromptResult] = []
 
         if needs_cross_prompt_nms and len(prompts) > 0:
             # Collect all masks with per-prompt thresholds
@@ -625,7 +626,6 @@ class SegmentAnything3(RoboflowCoreModel):
             regrouped = _regroup_masks_by_prompt(all_masks, len(prompts))
 
             # Build prompt results from regrouped masks
-            prompt_results: List[Sam3PromptResult] = []
             for idx, coco_id in enumerate(prompt_ids):
                 has_visual = bool(getattr(prompts[idx], "boxes", None))
                 num_boxes = len(prompts[idx].boxes or []) if has_visual else 0
@@ -651,7 +651,6 @@ class SegmentAnything3(RoboflowCoreModel):
                 )
         else:
             # Original path: no cross-prompt processing needed
-            prompt_results: List[Sam3PromptResult] = []
             for idx, coco_id in enumerate(prompt_ids):
                 has_visual = bool(getattr(prompts[idx], "boxes", None))
                 num_boxes = len(prompts[idx].boxes or []) if has_visual else 0
