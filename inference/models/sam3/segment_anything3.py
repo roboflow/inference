@@ -181,21 +181,17 @@ def _nms_greedy_pycocotools(
     if num_detections == 0:
         return np.array([], dtype=bool)
 
-    # Sort by confidence descending
     sort_index = np.argsort(confidences)[::-1]
     sorted_rles = [rles[i] for i in sort_index]
 
-    # Calculate IoU matrix: ious[i,j] = overlap between detection i and j
     ious = mask_utils.iou(sorted_rles, sorted_rles, [0] * num_detections)
 
-    # Greedy NMS: keep highest confidence, suppress overlaps
     keep = np.ones(num_detections, dtype=bool)
     for i in range(num_detections):
         if keep[i]:
             condition = ious[i, :] > iou_threshold
             keep[i + 1 :] = np.where(condition[i + 1 :], False, keep[i + 1 :])
 
-    # Return indices in original order
     return keep[np.argsort(sort_index)]
 
 
@@ -217,6 +213,7 @@ def _apply_nms_cross_prompt(
         return all_masks
 
     # Convert masks to RLE for IoU calculation
+    # We perform NMS using RLE to save memory (using masks could cause OOM)
     rles = []
     for _, mask_np, _ in all_masks:
         mb = (mask_np > 0).astype(np.uint8)
@@ -250,7 +247,6 @@ def _collect_masks_with_per_prompt_threshold(
     all_masks = []
 
     for idx, coco_id in enumerate(prompt_ids):
-        # Get per-prompt threshold or use default
         prompt_thresh = getattr(prompts[idx], "output_prob_thresh", None)
         if prompt_thresh is None:
             prompt_thresh = default_threshold
@@ -610,7 +606,6 @@ class SegmentAnything3(RoboflowCoreModel):
         prompt_results: List[Sam3PromptResult] = []
 
         if needs_cross_prompt_nms and len(prompts) > 0:
-            # Collect all masks with per-prompt thresholds
             all_masks = _collect_masks_with_per_prompt_threshold(
                 processed=processed,
                 prompt_ids=prompt_ids,
@@ -618,11 +613,9 @@ class SegmentAnything3(RoboflowCoreModel):
                 default_threshold=output_prob_thresh,
             )
 
-            # Apply cross-prompt NMS
             if len(all_masks) > 0:
                 all_masks = _apply_nms_cross_prompt(all_masks, nms_iou_threshold)
 
-            # Regroup masks by prompt
             regrouped = _regroup_masks_by_prompt(all_masks, len(prompts))
 
             # Build prompt results from regrouped masks
@@ -650,7 +643,6 @@ class SegmentAnything3(RoboflowCoreModel):
                     Sam3PromptResult(prompt_index=idx, echo=echo, predictions=preds)
                 )
         else:
-            # Original path: no cross-prompt processing needed
             for idx, coco_id in enumerate(prompt_ids):
                 has_visual = bool(getattr(prompts[idx], "boxes", None))
                 num_boxes = len(prompts[idx].boxes or []) if has_visual else 0
