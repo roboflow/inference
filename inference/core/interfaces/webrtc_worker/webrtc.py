@@ -101,9 +101,9 @@ class ChunkReassembler:
     """Helper to reassemble chunked binary messages."""
 
     def __init__(self):
-        self._chunks: Dict[int, Dict[int, bytes]] = (
-            {}
-        )  # {frame_id: {chunk_index: data}}
+        self._chunks: Dict[
+            int, Dict[int, bytes]
+        ] = {}  # {frame_id: {chunk_index: data}}
         self._total: Dict[int, int] = {}  # {frame_id: total_chunks}
 
     def add_chunk(
@@ -167,7 +167,9 @@ class VideoFileUploadHandler:
             self._total_chunks = total_chunks
             self._total_size = total_size
             self._state = VideoFileUploadState.UPLOADING
-            logger.info(f"Starting video upload: {total_size} bytes, {total_chunks} chunks")
+            logger.info(
+                f"Starting video upload: {total_size} bytes, {total_chunks} chunks"
+            )
 
         self._chunks[chunk_index] = data
 
@@ -189,7 +191,9 @@ class VideoFileUploadHandler:
                 f.write(self._chunks[i])
             self._temp_file_path = f.name
 
-        logger.info(f"Video upload complete: {self._total_size} bytes -> {self._temp_file_path}")
+        logger.info(
+            f"Video upload complete: {self._total_size} bytes -> {self._temp_file_path}"
+        )
         self._chunks.clear()  # Free memory
 
     def try_start_processing(self) -> Optional[str]:
@@ -1156,7 +1160,9 @@ async def init_rtc_peer_connection_with_loop(
 
             @channel.on("message")
             def on_upload_message(message):
-                chunk_index, total_chunks, total_size, data = parse_video_file_chunk(message)
+                chunk_index, total_chunks, total_size, data = parse_video_file_chunk(
+                    message
+                )
                 video_processor.video_upload_handler.handle_chunk(
                     chunk_index, total_chunks, total_size, data
                 )
