@@ -1,88 +1,98 @@
-import os
 from dataclasses import dataclass
 from typing import Callable, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
 from doctr.io import Document
-from doctr.models import ocr_predictor
+from doctr.models import detection_predictor, ocr_predictor, recognition_predictor
 from inference_exp import Detections
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat, ImageDimensions
 from inference_exp.errors import CorruptedModelPackageError, ModelRuntimeError
-from inference_exp.models.base.documents_parsing import DocumentParsingModel
+from inference_exp.models.base.documents_parsing import StructuredOCRModel
 from inference_exp.models.common.model_packages import get_model_package_contents
 from inference_exp.utils.file_system import read_json
 
-WEIGHTS_NAMES_MAPPING = {
-    "db_resnet50": "db_resnet50-79bd7d70.pt",
-    "db_resnet34": "db_resnet34-cb6aed9e.pt",
-    "db_mobilenet_v3_large": "db_mobilenet_v3_large-21748dd0.pt",
-    "crnn_vgg16_bn": "crnn_vgg16_bn-9762b0b0.pt",
-    "crnn_mobilenet_v3_small": "crnn_mobilenet_v3_small_pt-3b919a02.pt",
-    "crnn_mobilenet_v3_large": "crnn_mobilenet_v3_large_pt-f5259ec2.pt",
+SUPPORTED_DETECTION_MODELS = {
+    "fast_base",
+    "fast_small",
+    "fast_tiny",
+    "db_resnet50",
+    "db_resnet34",
+    "db_mobilenet_v3_large",
+    "linknet_resnet18",
+    "linknet_resnet34",
+    "linknet_resnet50",
+}
+SUPPORTED_RECOGNITION_MODELS = {
+    "crnn_vgg16_bn",
+    "crnn_mobilenet_v3_small",
+    "crnn_mobilenet_v3_large",
+    "master",
+    "sar_resnet31",
+    "vitstr_small",
+    "vitstr_base",
+    "parseq",
 }
 
 
-class DocTR(DocumentParsingModel[List[np.ndarray], ImageDimensions, Document]):
+class DocTR(StructuredOCRModel[List[np.ndarray], ImageDimensions, Document]):
 
     @classmethod
     def from_pretrained(
         cls,
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
+        assume_straight_pages: bool = True,
+        preserve_aspect_ratio: bool = True,
+        detection_max_batch_size: int = 2,
+        recognition_max_batch_size: int = 128,
         **kwargs,
-    ) -> "DocumentParsingModel":
-        os.environ["DOCTR_CACHE_DIR"] = model_name_or_path
+    ) -> "StructuredOCRModel":
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
-            elements=["doctr_det", "doctr_rec", "config.json"],
+            elements=["detection_weights.pt", "recognition_weights.pt", "config.json"],
         )
         config = parse_model_config(config_path=model_package_content["config.json"])
-        os.makedirs(f"{model_name_or_path}/doctr_det/models/", exist_ok=True)
-        os.makedirs(f"{model_name_or_path}/doctr_rec/models/", exist_ok=True)
-        det_model_source_path = os.path.join(
-            model_name_or_path, "doctr_det", config.det_model, "model.pt"
-        )
-        rec_model_source_path = os.path.join(
-            model_name_or_path, "doctr_rec", config.rec_model, "model.pt"
-        )
-        if not os.path.exists(det_model_source_path):
-            raise CorruptedModelPackageError(
-                message="Could not initialize DocTR model - could not find detection model weights.",
-                help_url="https://todo",
-            )
-        if not os.path.exists(rec_model_source_path):
-            raise CorruptedModelPackageError(
-                message="Could not initialize DocTR model - could not find recognition model weights.",
-                help_url="https://todo",
-            )
-        if config.det_model not in WEIGHTS_NAMES_MAPPING:
+        if config.det_model not in SUPPORTED_DETECTION_MODELS:
             raise CorruptedModelPackageError(
                 message=f"{config.det_model} model denoted in configuration not supported as DocTR detection model.",
                 help_url="https://todo",
             )
-        if config.rec_model not in WEIGHTS_NAMES_MAPPING:
+        if config.rec_model not in SUPPORTED_RECOGNITION_MODELS:
             raise CorruptedModelPackageError(
-                message=f"{config.det_model} model denoted in configuration not supported as DocTR recognition model.",
+                message=f"{config.rec_model} model denoted in configuration not supported as DocTR recognition model.",
                 help_url="https://todo",
             )
-        det_model_target_path = os.path.join(
-            model_name_or_path, "models", WEIGHTS_NAMES_MAPPING[config.det_model]
+        det_model = detection_predictor(
+            arch=config.det_model,
+            pretrained=False,
+            assume_straight_pages=assume_straight_pages,
+            preserve_aspect_ratio=preserve_aspect_ratio,
+            batch_size=detection_max_batch_size,
         )
-        rec_model_target_path = os.path.join(
-            model_name_or_path, "models", WEIGHTS_NAMES_MAPPING[config.rec_model]
+        det_model.model.to(device)
+        detector_weights = torch.load(
+            model_package_content["detection_weights.pt"],
+            weights_only=True,
+            map_location=device,
         )
-        if os.path.exists(det_model_target_path):
-            os.remove(det_model_target_path)
-        os.symlink(det_model_source_path, det_model_target_path)
-        if os.path.exists(rec_model_target_path):
-            os.remove(rec_model_target_path)
-        os.symlink(rec_model_source_path, rec_model_target_path)
+        det_model.model.load_state_dict(detector_weights)
+        rec_model = recognition_predictor(
+            arch=config.rec_model,
+            pretrained=False,
+            batch_size=recognition_max_batch_size,
+        )
+        rec_model.model.to(device)
+        rec_weights = torch.load(
+            model_package_content["recognition_weights.pt"],
+            weights_only=True,
+            map_location=device,
+        )
+        rec_model.model.load_state_dict(rec_weights)
         model = ocr_predictor(
-            det_arch=config.det_model,
-            reco_arch=config.rec_model,
-            pretrained=True,
+            det_arch=det_model.model,
+            reco_arch=rec_model.model,
         ).to(device=device)
         return cls(model=model, device=device)
 

@@ -37,8 +37,8 @@ class MoonDream2HF:
         if torch.mps.is_available():
             raise ModelRuntimeError(
                 message=f"This model cannot run on Apple device with MPS unit - original implementation contains bug "
-                        f"preventing proper allocation of tensors which causes runtime error. Run this model on the "
-                        f"machine with Nvidia GPU or x86 CPU.",
+                f"preventing proper allocation of tensors which causes runtime error. Run this model on the "
+                f"machine with Nvidia GPU or x86 CPU.",
                 help_url="https://todo",
             )
         model_package_content = get_model_package_contents(
