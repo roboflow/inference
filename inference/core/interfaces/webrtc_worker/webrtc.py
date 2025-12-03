@@ -190,6 +190,17 @@ class VideoFileUploadHandler:
         logger.info(f"Video upload complete: {self._total_size} bytes -> {self._temp_file_path}")
         self._chunks.clear()  # Free memory
 
+    def try_start_processing(self) -> Optional[str]:
+        """Atomically check if upload is complete and transition to PROCESSING.
+
+        Returns video path if processing should start, None otherwise.
+        This ensures process_video_file() is only triggered once.
+        """
+        if self._state == VideoFileUploadState.COMPLETE:
+            self._state = VideoFileUploadState.PROCESSING
+            return self._temp_file_path
+        return None
+
     def cleanup(self) -> None:
         """Clean up temp file."""
         if self._temp_file_path:
@@ -1114,11 +1125,10 @@ async def init_rtc_peer_connection_with_loop(
                     chunk_index, total_chunks, total_size, data
                 )
 
-                # Start processing when upload completes
-                if video_processor.video_upload_handler.upload_complete_event.is_set():
-                    video_path = video_processor.video_upload_handler.temp_file_path
-                    if video_path:
-                        asyncio.create_task(video_processor.process_video_file(video_path))
+                # Start processing when upload completes (only once via state guard)
+                video_path = video_processor.video_upload_handler.try_start_processing()
+                if video_path:
+                    asyncio.create_task(video_processor.process_video_file(video_path))
 
             return
 
