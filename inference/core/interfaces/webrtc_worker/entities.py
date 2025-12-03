@@ -96,8 +96,8 @@ class DataOutputMode(str, Enum):
 
 
 # Video File Upload Protocol
-# Binary header: [chunk_index:u32][total_chunks:u32][total_size:u32][payload]
-VIDEO_FILE_HEADER_SIZE = 12
+# Binary header: [chunk_index:u32][total_chunks:u32][payload]
+VIDEO_FILE_HEADER_SIZE = 8
 
 
 class VideoFileUploadState(str, Enum):

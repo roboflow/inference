@@ -188,16 +188,16 @@ def workflow_contains_preloaded_model(
 
 
 # Video File Upload Protocol
-# Header: [chunk_index:u32][total_chunks:u32][total_size:u32][payload]
-def parse_video_file_chunk(message: bytes) -> Tuple[int, int, int, bytes]:
+# Header: [chunk_index:u32][total_chunks:u32][payload]
+def parse_video_file_chunk(message: bytes) -> Tuple[int, int, bytes]:
     """Parse video file chunk message.
 
-    Returns: (chunk_index, total_chunks, total_size, payload)
+    Returns: (chunk_index, total_chunks, payload)
     """
     if len(message) < VIDEO_FILE_HEADER_SIZE:
         raise ValueError(f"Message too short: {len(message)} bytes")
-    chunk_index, total_chunks, total_size = struct.unpack("<III", message[:12])
-    return chunk_index, total_chunks, total_size, message[12:]
+    chunk_index, total_chunks = struct.unpack("<II", message[:8])
+    return chunk_index, total_chunks, message[8:]
   
 def warmup_cuda(
     max_retries: int = 10,

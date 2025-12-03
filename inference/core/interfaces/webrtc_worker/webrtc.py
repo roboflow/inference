@@ -141,7 +141,7 @@ class ChunkReassembler:
 class VideoFileUploadHandler:
     """Handles video file uploads via data channel.
 
-    Protocol: [chunk_index:u32][total_chunks:u32][total_size:u32][payload]
+    Protocol: [chunk_index:u32][total_chunks:u32][payload]
     Auto-completes when all chunks received.
     """
 
@@ -150,7 +150,6 @@ class VideoFileUploadHandler:
 
         self._chunks: Dict[int, bytes] = {}
         self._total_chunks: Optional[int] = None
-        self._total_size: Optional[int] = None
         self._temp_file_path: Optional[str] = None
         self._state = VideoFileUploadState.IDLE
         self.upload_complete_event = asyncio.Event()
@@ -160,16 +159,13 @@ class VideoFileUploadHandler:
         return self._temp_file_path
 
     def handle_chunk(
-        self, chunk_index: int, total_chunks: int, total_size: int, data: bytes
+        self, chunk_index: int, total_chunks: int, data: bytes
     ) -> None:
         """Handle a chunk. Auto-completes when all chunks received."""
         if self._total_chunks is None:
             self._total_chunks = total_chunks
-            self._total_size = total_size
             self._state = VideoFileUploadState.UPLOADING
-            logger.info(
-                f"Starting video upload: {total_size} bytes, {total_chunks} chunks"
-            )
+            logger.info(f"Starting video upload: {total_chunks} chunks")
 
         self._chunks[chunk_index] = data
 
@@ -186,13 +182,16 @@ class VideoFileUploadHandler:
         """Reassemble chunks and write to temp file."""
         import tempfile
 
+        total_size = 0
         with tempfile.NamedTemporaryFile(mode="wb", suffix=".mp4", delete=False) as f:
             for i in range(self._total_chunks):
-                f.write(self._chunks[i])
+                chunk_data = self._chunks[i]
+                f.write(chunk_data)
+                total_size += len(chunk_data)
             self._temp_file_path = f.name
 
         logger.info(
-            f"Video upload complete: {self._total_size} bytes -> {self._temp_file_path}"
+            f"Video upload complete: {total_size} bytes -> {self._temp_file_path}"
         )
         self._chunks.clear()  # Free memory
 
@@ -1160,11 +1159,9 @@ async def init_rtc_peer_connection_with_loop(
 
             @channel.on("message")
             def on_upload_message(message):
-                chunk_index, total_chunks, total_size, data = parse_video_file_chunk(
-                    message
-                )
+                chunk_index, total_chunks, data = parse_video_file_chunk(message)
                 video_processor.video_upload_handler.handle_chunk(
-                    chunk_index, total_chunks, total_size, data
+                    chunk_index, total_chunks, data
                 )
 
                 # Start processing when upload completes (only once via state guard)
