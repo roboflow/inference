@@ -18,6 +18,8 @@ from inference.core.utils.roboflow import get_model_id_chunks
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.models.aliases import resolve_roboflow_model_alias
 
+_unpack_video_header = struct.Struct("<III").unpack_from
+
 logging.getLogger("aiortc").setLevel(logging.WARNING)
 
 
@@ -196,9 +198,10 @@ def parse_video_file_chunk(message: bytes) -> Tuple[int, int, int, bytes]:
     """
     if len(message) < VIDEO_FILE_HEADER_SIZE:
         raise ValueError(f"Message too short: {len(message)} bytes")
-    chunk_index, total_chunks, total_size = struct.unpack("<III", message[:12])
+    chunk_index, total_chunks, total_size = _unpack_video_header(message)
     return chunk_index, total_chunks, total_size, message[12:]
-  
+
+
 def warmup_cuda(
     max_retries: int = 10,
     retry_delay: float = 0.5,
