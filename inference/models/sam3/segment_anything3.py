@@ -272,7 +272,7 @@ def _apply_nms_cross_prompt(
         rle = mask_utils.encode(np.asfortranarray(mb))
         rles.append(rle)
 
-    confidences = np.array([score for _, _, score in all_masks])
+    confidences = np.array([float(score) for _, _, score in all_masks])
     keep_indices = _nms_greedy_pycocotools(rles, confidences, iou_threshold)
 
     return [all_masks[i] for i in range(len(all_masks)) if keep_indices[i]]
