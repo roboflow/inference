@@ -730,7 +730,9 @@ class SegmentAnything3(RoboflowCoreModel):
                 scores = list(processed[coco_id].get("scores", []))
                 prompt_thresh = getattr(prompts[idx], "output_prob_thresh", None)
                 if prompt_thresh is not None:
-                    masks_np, scores = _filter_by_threshold(masks_np, scores, prompt_thresh)
+                    masks_np, scores = _filter_by_threshold(
+                        masks_np, scores, prompt_thresh
+                    )
                 preds = _masks_to_predictions(masks_np, scores, format)
                 prompt_results.append(
                     Sam3PromptResult(prompt_index=idx, echo=echo, predictions=preds)
