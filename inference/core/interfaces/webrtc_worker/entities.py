@@ -93,3 +93,18 @@ class DataOutputMode(str, Enum):
     NONE = "none"  # None or [] -> no data sent
     ALL = "all"  # ["*"] -> send all (skip images)
     SPECIFIC = "specific"  # ["field1", "field2"] -> send only these
+
+
+# Video File Upload Protocol
+# Binary header: [chunk_index:u32][total_chunks:u32][total_size:u32][payload]
+VIDEO_FILE_HEADER_SIZE = 12
+
+
+class VideoFileUploadState(str, Enum):
+    """State of video file upload."""
+
+    IDLE = "idle"
+    UPLOADING = "uploading"
+    COMPLETE = "complete"
+    PROCESSING = "processing"
+    ERROR = "error"

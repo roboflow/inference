@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import fractions
 import json
 import logging
 import struct
@@ -43,6 +44,7 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
 from inference.core.interfaces.webrtc_worker.entities import (
     DataOutputMode,
     StreamOutputMode,
+    VideoFileUploadState,
     WebRTCOutput,
     WebRTCVideoMetadata,
     WebRTCWorkerRequest,
@@ -50,6 +52,7 @@ from inference.core.interfaces.webrtc_worker.entities import (
 )
 from inference.core.interfaces.webrtc_worker.utils import (
     detect_image_output,
+    parse_video_file_chunk,
     process_frame,
 )
 from inference.core.managers.base import ModelManager
@@ -131,6 +134,72 @@ class ChunkReassembler:
             return complete_payload
 
         return None
+
+
+class VideoFileUploadHandler:
+    """Handles video file uploads via data channel.
+
+    Protocol: [chunk_index:u32][total_chunks:u32][total_size:u32][payload]
+    Auto-completes when all chunks received.
+    """
+
+    def __init__(self):
+        import tempfile
+
+        self._chunks: Dict[int, bytes] = {}
+        self._total_chunks: Optional[int] = None
+        self._total_size: Optional[int] = None
+        self._temp_file_path: Optional[str] = None
+        self._state = VideoFileUploadState.IDLE
+        self.upload_complete_event = asyncio.Event()
+
+    @property
+    def temp_file_path(self) -> Optional[str]:
+        return self._temp_file_path
+
+    def handle_chunk(
+        self, chunk_index: int, total_chunks: int, total_size: int, data: bytes
+    ) -> None:
+        """Handle a chunk. Auto-completes when all chunks received."""
+        if self._total_chunks is None:
+            self._total_chunks = total_chunks
+            self._total_size = total_size
+            self._state = VideoFileUploadState.UPLOADING
+            logger.info(f"Starting video upload: {total_size} bytes, {total_chunks} chunks")
+
+        self._chunks[chunk_index] = data
+
+        if chunk_index % 100 == 0:
+            logger.info(f"Upload progress: {len(self._chunks)}/{total_chunks} chunks")
+
+        # Auto-complete when all chunks received
+        if len(self._chunks) == total_chunks:
+            self._write_to_temp_file()
+            self._state = VideoFileUploadState.COMPLETE
+            self.upload_complete_event.set()
+
+    def _write_to_temp_file(self) -> None:
+        """Reassemble chunks and write to temp file."""
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(mode="wb", suffix=".mp4", delete=False) as f:
+            for i in range(self._total_chunks):
+                f.write(self._chunks[i])
+            self._temp_file_path = f.name
+
+        logger.info(f"Video upload complete: {self._total_size} bytes -> {self._temp_file_path}")
+        self._chunks.clear()  # Free memory
+
+    def cleanup(self) -> None:
+        """Clean up temp file."""
+        if self._temp_file_path:
+            import os
+
+            try:
+                os.unlink(self._temp_file_path)
+            except Exception:
+                pass
+            self._temp_file_path = None
 
 
 def send_chunked_data(
@@ -222,6 +291,10 @@ class VideoFrameProcessor:
         self.stream_output = stream_output
         self.data_channel: Optional[RTCDataChannel] = None
 
+        # Video file upload support
+        self.video_upload_handler: Optional[VideoFileUploadHandler] = None
+        self._video_file_mode = False
+
         if data_output is None:
             self.data_output = None
             self._data_mode = DataOutputMode.NONE
@@ -261,6 +334,13 @@ class VideoFrameProcessor:
     def close(self):
         self._track_active = False
         self._stop_processing = True
+        # Clean up video upload handler if present
+        if self.video_upload_handler is not None:
+            self.video_upload_handler.cleanup()
+        # Clean up video capture if present
+        if hasattr(self, "_video_capture") and self._video_capture is not None:
+            self._video_capture.release()
+            self._video_capture = None
 
     def _check_termination(self):
         """Check if we should terminate based on timeout"""
@@ -445,6 +525,70 @@ class VideoFrameProcessor:
         except Exception as exc:
             logger.error("Error in data-only processing: %s", exc)
 
+    async def process_video_file(self, video_path: str) -> None:
+        """Process a video file through the workflow.
+
+        Reads frames from the video file using cv2.VideoCapture and sends
+        processed results via data channel.
+
+        Args:
+            video_path: Path to the video file to process
+        """
+        if not self._av_logging_set:
+            av_logging.set_libav_level(av_logging.ERROR)
+            self._av_logging_set = True
+
+        logger.info(f"Starting video file processing: {video_path}")
+
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            logger.error(f"Failed to open video file: {video_path}")
+            return
+
+        try:
+            fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            logger.info(f"Video info: fps={fps}, total_frames={total_frames}")
+
+            frame_id = 0
+            while not self._stop_processing:
+                if self._check_termination():
+                    break
+
+                ret, np_frame = cap.read()
+                if not ret:
+                    logger.info("Reached end of video file")
+                    break
+
+                frame_id += 1
+                self._received_frames = frame_id
+                frame_timestamp = datetime.datetime.now()
+
+                # Convert numpy frame to VideoFrame
+                video_frame = VideoFrame.from_ndarray(np_frame, format="bgr24")
+
+                workflow_output, _, errors = await self._process_frame_async(
+                    frame=video_frame,
+                    frame_id=frame_id,
+                    render_output=False,
+                    include_errors_on_frame=False,
+                )
+
+                # Send data via data channel
+                await self._send_data_output(
+                    workflow_output, frame_timestamp, video_frame, errors
+                )
+
+                if frame_id % 100 == 0:
+                    logger.info(f"Processed frame {frame_id}/{total_frames}")
+
+            logger.info(f"Video file processing complete: {frame_id} frames processed")
+
+        except Exception as exc:
+            logger.error(f"Error processing video file: {exc}", exc_info=True)
+        finally:
+            cap.release()
+
     @staticmethod
     def _ensure_workflow_specification(
         workflow_configuration: WorkflowConfiguration, api_key: str
@@ -593,6 +737,10 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
         if self._check_termination():
             raise MediaStreamError("Processing terminated due to timeout")
 
+        # Video file upload mode: wait for upload, then read from file
+        if self._video_file_mode:
+            return await self._recv_from_video_file()
+
         # Drain queue if using PlayerStreamTrack (RTSP)
         if isinstance(self.track, PlayerStreamTrack):
             while self.track._queue.qsize() > 30:
@@ -617,6 +765,84 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
         new_frame.time_base = frame.time_base
 
         await self._send_data_output(workflow_output, frame_timestamp, frame, errors)
+
+        return new_frame
+
+    async def _recv_from_video_file(self) -> VideoFrame:
+        """Read and process frames from uploaded video file.
+
+        Waits for upload completion, then reads frames sequentially.
+        Returns processed frames for video track output.
+        """
+        # Wait for upload to complete (only on first call)
+        if not hasattr(self, "_video_capture") or self._video_capture is None:
+            if self.video_upload_handler is None:
+                raise MediaStreamError("Video upload handler not initialized")
+
+            logger.info("Waiting for video file upload to complete...")
+            await self.video_upload_handler.upload_complete_event.wait()
+
+            video_path = self.video_upload_handler.temp_file_path
+            if not video_path:
+                raise MediaStreamError("No video file path after upload complete")
+
+            logger.info(f"Opening uploaded video file: {video_path}")
+            self._video_capture = cv2.VideoCapture(video_path)
+            if not self._video_capture.isOpened():
+                raise MediaStreamError(f"Failed to open video file: {video_path}")
+
+            self._video_fps = self._video_capture.get(cv2.CAP_PROP_FPS) or 30.0
+            self._video_total_frames = int(
+                self._video_capture.get(cv2.CAP_PROP_FRAME_COUNT)
+            )
+            self._video_pts = 0
+            logger.info(
+                f"Video opened: fps={self._video_fps}, total_frames={self._video_total_frames}"
+            )
+
+        # Read next frame
+        ret, np_frame = self._video_capture.read()
+        if not ret:
+            logger.info("Reached end of video file")
+            self._video_capture.release()
+            self._video_capture = None
+            # Clean up temp file
+            if self.video_upload_handler:
+                self.video_upload_handler.cleanup()
+            raise MediaStreamError("End of video file")
+
+        self._received_frames += 1
+        frame_timestamp = datetime.datetime.now()
+
+        # Convert numpy frame to VideoFrame
+        frame = VideoFrame.from_ndarray(np_frame, format="bgr24")
+        frame.pts = self._video_pts
+        frame.time_base = fractions.Fraction(1, int(self._video_fps))
+        self._video_pts += 1
+
+        # Auto-detect stream output on first frame
+        if self.stream_output is None and self._received_frames == 1:
+            await self._auto_detect_stream_output(frame, self._received_frames)
+
+        # Process frame
+        workflow_output, new_frame, errors = await self._process_frame_async(
+            frame=frame,
+            frame_id=self._received_frames,
+            stream_output=self.stream_output,
+            render_output=True,
+            include_errors_on_frame=True,
+        )
+
+        new_frame.pts = frame.pts
+        new_frame.time_base = frame.time_base
+
+        # Send data output
+        await self._send_data_output(workflow_output, frame_timestamp, frame, errors)
+
+        if self._received_frames % 100 == 0:
+            logger.info(
+                f"Video file processing: {self._received_frames}/{self._video_total_frames}"
+            )
 
         return new_frame
 
@@ -870,6 +1096,29 @@ async def init_rtc_peer_connection_with_loop(
             # Start processing immediately since we won't get a media track
             if webrtc_request.use_data_channel_frames and not should_send_video:
                 asyncio.create_task(video_processor.process_frames_data_only())
+
+            return
+
+        # Handle video file upload channel
+        if channel.label == "video_upload":
+            logger.info("Video upload channel established")
+
+            if video_processor.video_upload_handler is None:
+                video_processor.video_upload_handler = VideoFileUploadHandler()
+                video_processor._video_file_mode = True
+
+            @channel.on("message")
+            def on_upload_message(message):
+                chunk_index, total_chunks, total_size, data = parse_video_file_chunk(message)
+                video_processor.video_upload_handler.handle_chunk(
+                    chunk_index, total_chunks, total_size, data
+                )
+
+                # Start processing when upload completes
+                if video_processor.video_upload_handler.upload_complete_event.is_set():
+                    video_path = video_processor.video_upload_handler.temp_file_path
+                    if video_path:
+                        asyncio.create_task(video_processor.process_video_file(video_path))
 
             return
 
