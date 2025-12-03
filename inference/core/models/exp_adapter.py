@@ -15,7 +15,7 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
 )
-from inference.core.env import API_KEY
+from inference.core.env import ALLOW_INFERENCE_EXP_UNTRUSTED_MODELS, API_KEY
 from inference.core.logger import logger
 from inference.core.models.base import Model
 from inference.core.utils.image_utils import load_image_rgb
@@ -37,7 +37,10 @@ class InferenceExpObjectDetectionModelAdapter(Model):
         from inference_exp import AutoModel  # type: ignore
 
         self._exp_model: ObjectDetectionModel = AutoModel.from_pretrained(
-            model_id_or_path=model_id, api_key=self.api_key
+            model_id_or_path=model_id,
+            api_key=self.api_key,
+            allow_untrusted_packages=ALLOW_INFERENCE_EXP_UNTRUSTED_MODELS,
+            allow_direct_local_storage_loading=False,
         )
         # if hasattr(self._exp_model, "optimize_for_inference"):
         #     self._exp_model.optimize_for_inference()

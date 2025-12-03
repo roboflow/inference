@@ -1,6 +1,8 @@
+import ctypes
 import datetime
 import logging
 import struct
+import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import cv2 as cv
@@ -187,8 +189,6 @@ def workflow_contains_preloaded_model(
 
 # Video File Upload Protocol
 # Header: [chunk_index:u32][total_chunks:u32][total_size:u32][payload]
-
-
 def parse_video_file_chunk(message: bytes) -> Tuple[int, int, int, bytes]:
     """Parse video file chunk message.
 
@@ -198,3 +198,28 @@ def parse_video_file_chunk(message: bytes) -> Tuple[int, int, int, bytes]:
         raise ValueError(f"Message too short: {len(message)} bytes")
     chunk_index, total_chunks, total_size = struct.unpack("<III", message[:12])
     return chunk_index, total_chunks, total_size, message[12:]
+  
+def warmup_cuda(
+    max_retries: int = 10,
+    retry_delay: float = 0.5,
+):
+    cu = ctypes.CDLL("libcuda.so.1")
+
+    for attempt in range(max_retries):
+        rc = cu.cuInit(0)
+
+        if rc == 0:
+            break
+        else:
+            if attempt < max_retries - 1:
+                logger.warning(
+                    "cuInit failed on attempt %s/%s with code %s, retrying...",
+                    attempt + 1,
+                    max_retries,
+                    rc,
+                )
+                time.sleep(retry_delay)
+    else:
+        raise RuntimeError(f"CUDA initialization failed after {max_retries} attempts")
+
+    logger.info("CUDA initialization succeeded")

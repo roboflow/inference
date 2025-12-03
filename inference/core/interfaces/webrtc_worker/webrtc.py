@@ -8,6 +8,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
+from aioice import ice
 from aiortc import (
     RTCConfiguration,
     RTCDataChannel,
@@ -25,6 +26,7 @@ from pydantic import ValidationError
 
 from inference.core import logger
 from inference.core.env import (
+    WEBRTC_MODAL_PUBLIC_STUN_SERVERS,
     WEBRTC_MODAL_RTSP_PLACEHOLDER,
     WEBRTC_MODAL_RTSP_PLACEHOLDER_URL,
     WEBRTC_MODAL_SHUTDOWN_RESERVE,
@@ -282,6 +284,7 @@ class VideoFrameProcessor:
         termination_date: Optional[datetime.datetime] = None,
         terminate_event: Optional[asyncio.Event] = None,
         use_data_channel_frames: bool = False,
+        heartbeat_callback: Optional[Callable[[], None]] = None,
     ):
         self._loop = asyncio_loop
         self._termination_date = termination_date
@@ -292,6 +295,7 @@ class VideoFrameProcessor:
         self._received_frames = 0
         self._declared_fps = declared_fps
         self._stop_processing = False
+        self.heartbeat_callback = heartbeat_callback
         self.use_data_channel_frames = use_data_channel_frames
         self._data_frame_queue: "asyncio.Queue[Optional[VideoFrame]]" = asyncio.Queue()
         self._chunk_reassembler = (
@@ -358,8 +362,8 @@ class VideoFrameProcessor:
         if (
             self._termination_date
             and self._termination_date < datetime.datetime.now()
-            and self._terminate_event
-            and not self._terminate_event.is_set()
+            or self._terminate_event
+            and self._terminate_event.is_set()
         ):
             logger.info("Timeout reached, terminating inference pipeline")
             self._terminate_event.set()
@@ -492,6 +496,8 @@ class VideoFrameProcessor:
             while not self._stop_processing:
                 if self._check_termination():
                     break
+                if self.heartbeat_callback:
+                    self.heartbeat_callback()
 
                 # Get frame from appropriate source
                 if self.use_data_channel_frames:
@@ -702,6 +708,7 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
         termination_date: Optional[datetime.datetime] = None,
         terminate_event: Optional[asyncio.Event] = None,
         use_data_channel_frames: bool = False,
+        heartbeat_callback: Optional[Callable[[], None]] = None,
         *args,
         **kwargs,
     ):
@@ -719,6 +726,7 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
             terminate_event=terminate_event,
             use_data_channel_frames=use_data_channel_frames,
             model_manager=model_manager,
+            heartbeat_callback=heartbeat_callback,
         )
 
     async def _auto_detect_stream_output(
@@ -743,6 +751,9 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
         if not self._av_logging_set:
             av_logging.set_libav_level(av_logging.ERROR)
             self._av_logging_set = True
+
+        if self.heartbeat_callback:
+            self.heartbeat_callback()
 
         # Check if we should terminate
         if self._check_termination():
@@ -860,6 +871,7 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
 
 async def _wait_ice_complete(peer_connection: RTCPeerConnectionWithLoop, timeout=2.0):
     if peer_connection.iceGatheringState == "complete":
+        logger.info("ICE gathering state already complete")
         return
     fut = asyncio.get_running_loop().create_future()
 
@@ -886,7 +898,20 @@ async def init_rtc_peer_connection_with_loop(
     asyncio_loop: Optional[asyncio.AbstractEventLoop] = None,
     model_manager: Optional[ModelManager] = None,
     shutdown_reserve: int = WEBRTC_MODAL_SHUTDOWN_RESERVE,
+    heartbeat_callback: Optional[Callable[[], None]] = None,
 ) -> RTCPeerConnectionWithLoop:
+    logger.info("Initializing RTC peer connection with loop")
+    # ice._mdns is instantiated on the module level, it has a lock that is bound to the event loop
+    # avoid RuntimeError: asyncio.locks.Lock is bound to a different event loop
+    if hasattr(ice, "_mdns"):
+        if hasattr(ice._mdns, "lock"):
+            logger.info("Removing lock from aioice.ice._mdns")
+            delattr(ice._mdns, "lock")
+    else:
+        logger.warning(
+            "aioice.ice implementation was changed, _mdns attribute is not available"
+        )
+
     termination_date = None
     terminate_event = asyncio.Event()
 
@@ -945,6 +970,7 @@ async def init_rtc_peer_connection_with_loop(
                 termination_date=termination_date,
                 terminate_event=terminate_event,
                 use_data_channel_frames=webrtc_request.use_data_channel_frames,
+                heartbeat_callback=heartbeat_callback,
             )
         else:
             # No video track - use base VideoFrameProcessor
@@ -960,6 +986,7 @@ async def init_rtc_peer_connection_with_loop(
                 termination_date=termination_date,
                 terminate_event=terminate_event,
                 use_data_channel_frames=webrtc_request.use_data_channel_frames,
+                heartbeat_callback=heartbeat_callback,
             )
     except (
         ValidationError,
@@ -1027,6 +1054,15 @@ async def init_rtc_peer_connection_with_loop(
                     credential=ice_server.credential,
                 )
             )
+        # Always add public stun servers (if specified)
+        if WEBRTC_MODAL_PUBLIC_STUN_SERVERS:
+            for stun_server in WEBRTC_MODAL_PUBLIC_STUN_SERVERS.split(","):
+                try:
+                    ice_servers.append(RTCIceServer(urls=stun_server.strip()))
+                except Exception as e:
+                    logger.warning(
+                        "Failed to add public stun server '%s': %s", stun_server, e
+                    )
     else:
         ice_servers = None
     peer_connection = RTCPeerConnectionWithLoop(
@@ -1181,9 +1217,12 @@ async def init_rtc_peer_connection_with_loop(
     answer = await peer_connection.createAnswer()
     await peer_connection.setLocalDescription(answer)
 
-    logger.debug(f"WebRTC connection status: {peer_connection.connectionState}")
-
     await _wait_ice_complete(peer_connection, timeout=2.0)
+
+    logger.info(
+        "Initialized RTC peer connection with loop (status: %s), sending answer",
+        peer_connection.connectionState,
+    )
 
     send_answer(
         WebRTCWorkerResult(
@@ -1194,7 +1233,9 @@ async def init_rtc_peer_connection_with_loop(
         )
     )
 
+    logger.info("Answer sent, waiting for termination event")
     await terminate_event.wait()
+    logger.info("Termination event received, closing WebRTC connection")
     if player:
         logger.info("Stopping player")
         player.video.stop()
