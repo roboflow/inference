@@ -66,6 +66,12 @@ class Sam3Prompt(BaseModel):
         description="Score threshold for this prompt's outputs. Overrides request-level threshold if set.",
     )
 
+    @validator("output_prob_thresh")
+    def _validate_output_prob_thresh(cls, v):
+        if v is not None and (v < 0.0 or v > 1.0):
+            raise ValueError("output_prob_thresh must be between 0.0 and 1.0")
+        return v
+
 
 class Sam3InferenceRequest(BaseRequest):
     """SAM3 inference request.
