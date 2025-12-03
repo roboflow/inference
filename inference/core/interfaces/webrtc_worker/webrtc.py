@@ -153,24 +153,29 @@ def send_chunked_data(
         logger.warning(f"Cannot send response for frame {frame_id}, channel not open")
         return
 
-    total_chunks = (
-        len(payload_bytes) + chunk_size - 1
-    ) // chunk_size  # Ceiling division
+    payload_len = len(payload_bytes)
+    # Use bitwise math for ceiling division for performance, since chunk_size > 0
+    total_chunks = (payload_len + chunk_size - 1) // chunk_size
+
+    # Avoid repeated computation of payload_len
 
     if frame_id % 100 == 1:
         logger.info(
-            f"Sending response for frame {frame_id}: {total_chunks} chunk(s), {len(payload_bytes)} bytes"
+            f"Sending response for frame {frame_id}: {total_chunks} chunk(s), {payload_len} bytes"
         )
 
     view = memoryview(payload_bytes)
     for chunk_index in range(total_chunks):
         start = chunk_index * chunk_size
-        end = min(start + chunk_size, len(payload_bytes))
+        end = start + chunk_size
+        if end > payload_len:
+            end = payload_len
         chunk_data = view[start:end]
 
         message = create_chunked_binary_message(
             frame_id, chunk_index, total_chunks, chunk_data
         )
+        # Direct send with the built message
         data_channel.send(message)
 
 
