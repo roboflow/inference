@@ -61,6 +61,11 @@ class Sam3Prompt(BaseModel):
             raise ValueError("box_labels must match boxes length when provided")
         return labels
 
+    output_prob_thresh: Optional[float] = Field(
+        default=None,
+        description="Score threshold for this prompt's outputs. Overrides request-level threshold if set.",
+    )
+
 
 class Sam3InferenceRequest(BaseRequest):
     """SAM3 inference request.
@@ -92,6 +97,17 @@ class Sam3SegmentationRequest(Sam3InferenceRequest):
     prompts: List[Sam3Prompt] = Field(
         description="List of prompts (text and/or visual)", min_items=1
     )
+
+    nms_iou_threshold: Optional[float] = Field(
+        default=None,
+        description="IoU threshold for cross-prompt NMS. If None, NMS is disabled. Must be in [0.0, 1.0] when set.",
+    )
+
+    @validator("nms_iou_threshold")
+    def _validate_nms_iou_threshold(cls, v):
+        if v is not None and (v < 0.0 or v > 1.0):
+            raise ValueError("nms_iou_threshold must be between 0.0 and 1.0")
+        return v
 
     @validator("prompts")
     def _validate_prompts(cls, prompts: List[Sam3Prompt]):
