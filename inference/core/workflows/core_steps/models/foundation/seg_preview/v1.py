@@ -122,7 +122,6 @@ class BlockManifest(WorkflowBlockManifest):
         if v is None:
             return None
         if isinstance(v, str):
-            # Parse comma-separated string to list of floats
             try:
                 return [float(x.strip()) for x in v.split(",") if x.strip()]
             except ValueError:
@@ -186,7 +185,6 @@ class SegPreviewBlockV1(WorkflowBlock):
         else:
             raise ValueError(f"Invalid class names type: {type(class_names)}")
 
-        # Parse confidence_thresholds if string
         parsed_thresholds = None
         if confidence_thresholds is not None:
             if isinstance(confidence_thresholds, str):
@@ -198,7 +196,6 @@ class SegPreviewBlockV1(WorkflowBlock):
             else:
                 parsed_thresholds = confidence_thresholds
 
-            # Validate length matches class_names
             if parsed_thresholds and class_names:
                 if len(parsed_thresholds) != len(class_names):
                     raise ValueError(
