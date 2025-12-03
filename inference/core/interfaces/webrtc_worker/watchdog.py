@@ -20,6 +20,7 @@ class Watchdog:
         self._heartbeats = 0
 
     def start(self):
+        logger.info("Starting watchdog with timeout %s", self.timeout_seconds)
         if not self.on_timeout:
             raise ValueError(
                 "on_timeout callback must be provided before starting the watchdog"
@@ -32,12 +33,13 @@ class Watchdog:
             self._thread.join()
 
     def _watchdog_thread(self):
+        logger.info("Watchdog thread started")
         while not self._stopping:
             if not self.is_alive():
                 logger.error("Watchdog timeout reached")
                 self.on_timeout()
                 break
-            time.sleep(0.1)
+            time.sleep(1)
         logger.info("Watchdog stopped")
 
     def heartbeat(self):
