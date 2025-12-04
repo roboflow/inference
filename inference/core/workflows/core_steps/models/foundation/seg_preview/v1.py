@@ -3,7 +3,7 @@ from typing import Any, List, Literal, Optional, Type, Union
 
 import numpy as np
 import requests
-from pydantic import ConfigDict, Field, root_validator, validator
+from pydantic import ConfigDict, Field, model_validator, validator
 
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
@@ -117,20 +117,18 @@ class BlockManifest(WorkflowBlockManifest):
             raise ValueError("nms_iou_threshold must be between 0.0 and 1.0")
         return v
 
-    @root_validator(pre=False)
-    def _validate_confidence_thresholds_length(cls, values):
-        class_names = values.get("class_names")
-        confidence_thresholds = values.get("confidence_thresholds")
+    @model_validator(mode="after")
+    def _validate_confidence_thresholds_length(self) -> "BlockManifest":
         if (
-            isinstance(class_names, list)
-            and isinstance(confidence_thresholds, list)
-            and len(confidence_thresholds) != len(class_names)
+            isinstance(self.class_names, list)
+            and isinstance(self.confidence_thresholds, list)
+            and len(self.confidence_thresholds) != len(self.class_names)
         ):
             raise ValueError(
-                f"confidence_thresholds length ({len(confidence_thresholds)}) "
-                f"must match class_names length ({len(class_names)})"
+                f"confidence_thresholds length ({len(self.confidence_thresholds)}) "
+                f"must match class_names length ({len(self.class_names)})"
             )
-        return values
+        return self
 
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
