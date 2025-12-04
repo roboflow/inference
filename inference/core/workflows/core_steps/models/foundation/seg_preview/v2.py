@@ -3,7 +3,7 @@ from typing import Any, List, Literal, Optional, Type, Union
 
 import numpy as np
 import requests
-from pydantic import ConfigDict, Field, validator
+from pydantic import ConfigDict, Field, model_validator, validator
 
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
@@ -56,7 +56,7 @@ class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Seg Preview",
-            "version": "v1",
+            "version": "v2",
             "short_description": "Seg Preview",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
@@ -73,7 +73,7 @@ class BlockManifest(WorkflowBlockManifest):
         protected_namespaces=(),
     )
 
-    type: Literal["roboflow_core/seg-preview@v1"]
+    type: Literal["roboflow_core/seg-preview@v2"]
 
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
 
@@ -90,12 +90,12 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     confidence_thresholds: Optional[
-        Union[List[float], str, Selector(kind=[LIST_OF_VALUES_KIND, STRING_KIND])]
+        Union[List[float], Selector(kind=[LIST_OF_VALUES_KIND])]
     ] = Field(
         default=None,
         title="Per-Class Confidence Thresholds",
-        description="List of thresholds per class (must match class_names length) or comma-separated string",
-        examples=[[0.3, 0.5, 0.7], "0.3,0.5,0.7"],
+        description="List of thresholds per class (must match class_names length)",
+        examples=[[0.3, 0.5, 0.7]],
     )
 
     apply_nms: Union[Selector(kind=[BOOLEAN_KIND]), bool] = Field(
@@ -117,19 +117,18 @@ class BlockManifest(WorkflowBlockManifest):
             raise ValueError("nms_iou_threshold must be between 0.0 and 1.0")
         return v
 
-    @validator("confidence_thresholds", pre=True)
-    def _parse_confidence_thresholds(cls, v):
-        if v is None:
-            return None
-        if isinstance(v, str):
-            # Parse comma-separated string to list of floats
-            try:
-                return [float(x.strip()) for x in v.split(",") if x.strip()]
-            except ValueError:
-                raise ValueError(
-                    "confidence_thresholds string must be comma-separated floats"
-                )
-        return v
+    @model_validator(mode="after")
+    def _validate_confidence_thresholds_length(self) -> "BlockManifest":
+        if (
+            isinstance(self.class_names, list)
+            and isinstance(self.confidence_thresholds, list)
+            and len(self.confidence_thresholds) != len(self.class_names)
+        ):
+            raise ValueError(
+                f"confidence_thresholds length ({len(self.confidence_thresholds)}) "
+                f"must match class_names length ({len(self.class_names)})"
+            )
+        return self
 
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
@@ -149,7 +148,7 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
 
-class SegPreviewBlockV1(WorkflowBlock):
+class SegPreviewBlockV2(WorkflowBlock):
 
     def __init__(
         self,
@@ -174,7 +173,7 @@ class SegPreviewBlockV1(WorkflowBlock):
         images: Batch[WorkflowImageData],
         class_names: Optional[Union[List[str], str]],
         threshold: float,
-        confidence_thresholds: Optional[Union[List[float], str]] = None,
+        confidence_thresholds: Optional[List[float]] = None,
         apply_nms: bool = True,
         nms_iou_threshold: float = 0.9,
     ) -> BlockResult:
@@ -186,31 +185,11 @@ class SegPreviewBlockV1(WorkflowBlock):
         else:
             raise ValueError(f"Invalid class names type: {type(class_names)}")
 
-        # Parse confidence_thresholds if string
-        parsed_thresholds = None
-        if confidence_thresholds is not None:
-            if isinstance(confidence_thresholds, str):
-                parsed_thresholds = [
-                    float(x.strip())
-                    for x in confidence_thresholds.split(",")
-                    if x.strip()
-                ]
-            else:
-                parsed_thresholds = confidence_thresholds
-
-            # Validate length matches class_names
-            if parsed_thresholds and class_names:
-                if len(parsed_thresholds) != len(class_names):
-                    raise ValueError(
-                        f"confidence_thresholds length ({len(parsed_thresholds)}) "
-                        f"must match class_names length ({len(class_names)})"
-                    )
-
         return self.run_via_request(
             images=images,
             class_names=class_names,
             threshold=threshold,
-            confidence_thresholds=parsed_thresholds,
+            confidence_thresholds=confidence_thresholds,
             apply_nms=apply_nms,
             nms_iou_threshold=nms_iou_threshold,
         )
@@ -242,8 +221,7 @@ class SegPreviewBlockV1(WorkflowBlock):
             http_prompts: List[dict] = []
             for idx, class_name in enumerate(class_names):
                 prompt_data = {"type": "text", "text": class_name}
-                # Add per-prompt threshold if confidence_thresholds is set
-                if confidence_thresholds is not None and idx < len(confidence_thresholds):
+                if confidence_thresholds is not None:
                     prompt_data["output_prob_thresh"] = confidence_thresholds[idx]
                 http_prompts.append(prompt_data)
 

@@ -4,7 +4,7 @@ from typing import List, Literal, Optional, Type, Union
 import numpy as np
 import requests
 import supervision as sv
-from pydantic import ConfigDict, Field, model_validator, validator
+from pydantic import ConfigDict, Field, validator
 
 from inference.core import logger
 from inference.core.entities.requests.sam3 import Sam3Prompt, Sam3SegmentationRequest
@@ -117,12 +117,12 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     confidence_thresholds: Optional[
-        Union[List[float], Selector(kind=[LIST_OF_VALUES_KIND])]
+        Union[List[float], str, Selector(kind=[LIST_OF_VALUES_KIND, STRING_KIND])]
     ] = Field(
         default=None,
         title="Per-Class Confidence Thresholds",
-        description="List of thresholds per class (must match class_names length)",
-        examples=[[0.3, 0.5, 0.7]],
+        description="List of thresholds per class (must match class_names length) or comma-separated string",
+        examples=[[0.3, 0.5, 0.7], "0.3,0.5,0.7"],
     )
 
     apply_nms: Union[Selector(kind=[BOOLEAN_KIND]), bool] = Field(
@@ -144,18 +144,19 @@ class BlockManifest(WorkflowBlockManifest):
             raise ValueError("nms_iou_threshold must be between 0.0 and 1.0")
         return v
 
-    @model_validator(mode="after")
-    def _validate_confidence_thresholds_length(self) -> "BlockManifest":
-        if (
-            isinstance(self.class_names, list)
-            and isinstance(self.confidence_thresholds, list)
-            and len(self.confidence_thresholds) != len(self.class_names)
-        ):
-            raise ValueError(
-                f"confidence_thresholds length ({len(self.confidence_thresholds)}) "
-                f"must match class_names length ({len(self.class_names)})"
-            )
-        return self
+    @validator("confidence_thresholds", pre=True)
+    def _parse_confidence_thresholds(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, str):
+            # Parse comma-separated string to list of floats
+            try:
+                return [float(x.strip()) for x in v.split(",") if x.strip()]
+            except ValueError:
+                raise ValueError(
+                    "confidence_thresholds string must be comma-separated floats"
+                )
+        return v
 
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
@@ -201,7 +202,7 @@ class SegmentAnything3BlockV1(WorkflowBlock):
         model_id: str,
         class_names: Optional[Union[List[str], str]],
         threshold: float,
-        confidence_thresholds: Optional[List[float]] = None,
+        confidence_thresholds: Optional[Union[List[float], str]] = None,
         apply_nms: bool = True,
         nms_iou_threshold: float = 0.9,
     ) -> BlockResult:
@@ -212,6 +213,26 @@ class SegmentAnything3BlockV1(WorkflowBlock):
             class_names = class_names
         else:
             raise ValueError(f"Invalid class names type: {type(class_names)}")
+
+        # Parse confidence_thresholds if string
+        parsed_thresholds = None
+        if confidence_thresholds is not None:
+            if isinstance(confidence_thresholds, str):
+                parsed_thresholds = [
+                    float(x.strip())
+                    for x in confidence_thresholds.split(",")
+                    if x.strip()
+                ]
+            else:
+                parsed_thresholds = confidence_thresholds
+
+            # Validate length matches class_names
+            if parsed_thresholds and class_names:
+                if len(parsed_thresholds) != len(class_names):
+                    raise ValueError(
+                        f"confidence_thresholds length ({len(parsed_thresholds)}) "
+                        f"must match class_names length ({len(class_names)})"
+                    )
 
         exec_mode = self._step_execution_mode
         if SAM3_EXEC_MODE == "local":
@@ -232,7 +253,7 @@ class SegmentAnything3BlockV1(WorkflowBlock):
                 model_id=model_id,
                 class_names=class_names,
                 threshold=threshold,
-                confidence_thresholds=confidence_thresholds,
+                confidence_thresholds=parsed_thresholds,
                 apply_nms=apply_nms,
                 nms_iou_threshold=nms_iou_threshold,
             )
@@ -242,7 +263,7 @@ class SegmentAnything3BlockV1(WorkflowBlock):
                 images=images,
                 class_names=class_names,
                 threshold=threshold,
-                confidence_thresholds=confidence_thresholds,
+                confidence_thresholds=parsed_thresholds,
                 apply_nms=apply_nms,
                 nms_iou_threshold=nms_iou_threshold,
             )
@@ -281,14 +302,12 @@ class SegmentAnything3BlockV1(WorkflowBlock):
             # Build unified prompt list: one per class name
             unified_prompts: List[Sam3Prompt] = []
             for idx, class_name in enumerate(class_names):
-                prompt_thresh = (
-                    confidence_thresholds[idx] if confidence_thresholds else None
-                )
-
+                # Add per-prompt threshold if confidence_thresholds is set
+                prompt_thresh = None
+                if confidence_thresholds is not None and idx < len(confidence_thresholds):
+                    prompt_thresh = confidence_thresholds[idx]
                 unified_prompts.append(
-                    Sam3Prompt(
-                        type="text", text=class_name, output_prob_thresh=prompt_thresh
-                    )
+                    Sam3Prompt(type="text", text=class_name, output_prob_thresh=prompt_thresh)
                 )
 
             # Single batched request with all prompts
@@ -365,7 +384,8 @@ class SegmentAnything3BlockV1(WorkflowBlock):
             http_prompts: List[dict] = []
             for idx, class_name in enumerate(class_names):
                 prompt_data = {"type": "text", "text": class_name}
-                if confidence_thresholds is not None:
+                # Add per-prompt threshold if confidence_thresholds is set
+                if confidence_thresholds is not None and idx < len(confidence_thresholds):
                     prompt_data["output_prob_thresh"] = confidence_thresholds[idx]
                 http_prompts.append(prompt_data)
 
