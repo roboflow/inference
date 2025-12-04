@@ -1158,21 +1158,30 @@ async def init_rtc_peer_connection_with_loop(
         if channel.label == "video_upload":
             logger.info("Video upload channel established")
 
-            if video_processor.video_upload_handler is None:
-                video_processor.video_upload_handler = VideoFileUploadHandler()
+            video_processor.video_upload_handler = VideoFileUploadHandler()
+
+            if should_send_video:
+                # Video track output: add track now, recv() will wait for upload
                 video_processor._video_file_mode = True
+                peer_connection.addTrack(video_processor)
+            # else: data-only mode, will call process_video_file() when done
 
             @channel.on("message")
             def on_upload_message(message):
+                # Keep watchdog alive during upload
+                if video_processor.heartbeat_callback:
+                    video_processor.heartbeat_callback()
+
                 chunk_index, total_chunks, data = parse_video_file_chunk(message)
                 video_processor.video_upload_handler.handle_chunk(
                     chunk_index, total_chunks, data
                 )
 
-                # Start processing when upload completes (only once via state guard)
-                video_path = video_processor.video_upload_handler.try_start_processing()
-                if video_path:
-                    asyncio.create_task(video_processor.process_video_file(video_path))
+                # For data-only: start processing when upload completes
+                if not should_send_video:
+                    video_path = video_processor.video_upload_handler.try_start_processing()
+                    if video_path:
+                        asyncio.create_task(video_processor.process_video_file(video_path))
 
             return
 
