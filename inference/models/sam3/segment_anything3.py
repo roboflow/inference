@@ -150,7 +150,6 @@ def _filter_by_threshold(
     scores: List[float],
     threshold: float,
 ) -> Tuple[np.ndarray, List[float]]:
-    """Filter masks and scores by confidence threshold."""
     if masks_np.ndim != 3 or masks_np.shape[0] == 0:
         return masks_np, scores
 
