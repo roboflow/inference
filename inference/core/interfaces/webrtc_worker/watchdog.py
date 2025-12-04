@@ -48,7 +48,7 @@ class Watchdog:
         if (
             datetime.datetime.now() - self._last_log_ts
         ).total_seconds() > self._log_interval_seconds:
-            logger.info("Watchdog heartbeat (%s since last)", self._heartbeats)
+            logger.info("Watchdog heartbeat (%s since last)" % self._heartbeats)
             self._last_log_ts = datetime.datetime.now()
             self._heartbeats = 0
 
