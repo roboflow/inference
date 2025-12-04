@@ -3,7 +3,7 @@ import datetime
 import os
 import subprocess
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Callable, Dict, Optional
 
 from inference.core import logger
 from inference.core.env import (
@@ -31,6 +31,8 @@ from inference.core.env import (
     WEBRTC_MODAL_GCP_SECRET_NAME,
     WEBRTC_MODAL_IMAGE_NAME,
     WEBRTC_MODAL_IMAGE_TAG,
+    WEBRTC_MODAL_MIN_CPU_CORES,
+    WEBRTC_MODAL_MIN_RAM_MB,
     WEBRTC_MODAL_MODELS_PRELOAD_API_KEY,
     WEBRTC_MODAL_PRELOAD_HF_IDS,
     WEBRTC_MODAL_PRELOAD_MODELS,
@@ -38,8 +40,10 @@ from inference.core.env import (
     WEBRTC_MODAL_ROBOFLOW_INTERNAL_SERVICE_NAME,
     WEBRTC_MODAL_RTSP_PLACEHOLDER,
     WEBRTC_MODAL_RTSP_PLACEHOLDER_URL,
+    WEBRTC_MODAL_SHUTDOWN_RESERVE,
     WEBRTC_MODAL_TOKEN_ID,
     WEBRTC_MODAL_TOKEN_SECRET,
+    WEBRTC_MODAL_WATCHDOG_TIMEMOUT,
     WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
 )
 from inference.core.exceptions import RoboflowAPIUnsuccessfulRequestError
@@ -48,12 +52,11 @@ from inference.core.interfaces.webrtc_worker.entities import (
     WebRTCWorkerResult,
 )
 from inference.core.interfaces.webrtc_worker.utils import (
+    warmup_cuda,
     workflow_contains_instant_model,
     workflow_contains_preloaded_model,
 )
-from inference.core.interfaces.webrtc_worker.webrtc import (
-    init_rtc_peer_connection_with_loop,
-)
+from inference.core.interfaces.webrtc_worker.watchdog import Watchdog
 from inference.core.managers.base import ModelManager
 from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.core.roboflow_api import (
@@ -62,7 +65,7 @@ from inference.core.roboflow_api import (
 )
 from inference.core.version import __version__
 from inference.models.aliases import resolve_roboflow_model_alias
-from inference.models.owlv2.owlv2 import preload_owlv2_model
+from inference.models.owlv2.owlv2 import PRELOADED_HF_MODELS, preload_owlv2_model
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
 from inference.usage_tracking.collector import usage_collector
 from inference.usage_tracking.plan_details import WebRTCPlan
@@ -125,6 +128,8 @@ if modal is not None:
         "min_containers": WEBRTC_MODAL_FUNCTION_MIN_CONTAINERS,
         "buffer_containers": WEBRTC_MODAL_FUNCTION_BUFFER_CONTAINERS,
         "scaledown_window": WEBRTC_MODAL_FUNCTION_SCALEDOWN_WINDOW,
+        "memory": WEBRTC_MODAL_MIN_RAM_MB,
+        "cpu": WEBRTC_MODAL_MIN_CPU_CORES,
         "timeout": WEBRTC_MODAL_FUNCTION_TIME_LIMIT,
         "enable_memory_snapshot": WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT,
         "max_inputs": WEBRTC_MODAL_FUNCTION_MAX_INPUTS,
@@ -152,6 +157,7 @@ if modal is not None:
             "ROBOFLOW_INTERNAL_SERVICE_SECRET": ROBOFLOW_INTERNAL_SERVICE_SECRET,
             "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
             "TELEMETRY_USE_PERSISTENT_QUEUE": "False",
+            "TORCHINDUCTOR_COMPILE_THREADS": "1",
             "WEBRTC_MODAL_FUNCTION_BUFFER_CONTAINERS": str(
                 WEBRTC_MODAL_FUNCTION_BUFFER_CONTAINERS
             ),
@@ -165,6 +171,12 @@ if modal is not None:
             "WEBRTC_MODAL_FUNCTION_TIME_LIMIT": str(WEBRTC_MODAL_FUNCTION_TIME_LIMIT),
             "WEBRTC_MODAL_IMAGE_NAME": WEBRTC_MODAL_IMAGE_NAME,
             "WEBRTC_MODAL_IMAGE_TAG": WEBRTC_MODAL_IMAGE_TAG,
+            "WEBRTC_MODAL_MIN_CPU_CORES": str(
+                WEBRTC_MODAL_MIN_CPU_CORES if WEBRTC_MODAL_MIN_CPU_CORES else ""
+            ),
+            "WEBRTC_MODAL_MIN_RAM_MB": str(
+                WEBRTC_MODAL_MIN_RAM_MB if WEBRTC_MODAL_MIN_RAM_MB else ""
+            ),
             "WEBRTC_MODAL_MODELS_PRELOAD_API_KEY": (
                 str(WEBRTC_MODAL_MODELS_PRELOAD_API_KEY)
                 if WEBRTC_MODAL_MODELS_PRELOAD_API_KEY
@@ -172,9 +184,48 @@ if modal is not None:
             ),
             "WEBRTC_MODAL_RTSP_PLACEHOLDER": WEBRTC_MODAL_RTSP_PLACEHOLDER,
             "WEBRTC_MODAL_RTSP_PLACEHOLDER_URL": WEBRTC_MODAL_RTSP_PLACEHOLDER_URL,
+            "WEBRTC_MODAL_SHUTDOWN_RESERVE": str(WEBRTC_MODAL_SHUTDOWN_RESERVE),
+            "WEBRTC_MODAL_WATCHDOG_TIMEMOUT": str(WEBRTC_MODAL_WATCHDOG_TIMEMOUT),
         },
         "volumes": {MODEL_CACHE_DIR: rfcache_volume},
     }
+
+    async def run_rtc_peer_connection_with_watchdog(
+        webrtc_request: WebRTCWorkerRequest,
+        send_answer: Callable[[WebRTCWorkerResult], None],
+        model_manager: ModelManager,
+    ):
+        from inference.core.interfaces.webrtc_worker.webrtc import (
+            init_rtc_peer_connection_with_loop,
+        )
+
+        watchdog = Watchdog(
+            timeout_seconds=WEBRTC_MODAL_WATCHDOG_TIMEMOUT,
+        )
+
+        rtc_peer_connection_task = asyncio.create_task(
+            init_rtc_peer_connection_with_loop(
+                webrtc_request=webrtc_request,
+                send_answer=send_answer,
+                model_manager=model_manager,
+                heartbeat_callback=watchdog.heartbeat,
+            )
+        )
+
+        def on_timeout():
+            rtc_peer_connection_task.cancel()
+
+        watchdog.on_timeout = on_timeout
+        watchdog.start()
+
+        try:
+            await rtc_peer_connection_task
+        except asyncio.CancelledError as exc:
+            logger.info("WebRTC connection task was cancelled (%s)", exc)
+        except Exception as exc:
+            logger.error(exc)
+        finally:
+            watchdog.stop()
 
     class RTCPeerConnectionModal:
         _model_manager: Optional[ModelManager] = modal.parameter(
@@ -199,6 +250,9 @@ if modal is not None:
                     else ""
                 ),
             )
+            logger.info(
+                "Preloaded hf models: %s", ", ".join(PRELOADED_HF_MODELS.keys())
+            )
             _exec_session_started = datetime.datetime.now()
             webrtc_request.processing_session_started = _exec_session_started
             logger.info(
@@ -213,8 +267,8 @@ if modal is not None:
             logger.info("declared_fps: %s", webrtc_request.declared_fps)
             logger.info("rtsp_url: %s", webrtc_request.rtsp_url)
             logger.info("processing_timeout: %s", webrtc_request.processing_timeout)
+            logger.info("watchdog_timeout: %s", WEBRTC_MODAL_WATCHDOG_TIMEMOUT)
             logger.info("requested_plan: %s", webrtc_request.requested_plan)
-            logger.info("requested_gpu: %s", webrtc_request.requested_gpu)
             logger.info("requested_region: %s", webrtc_request.requested_region)
             logger.info(
                 "ICE servers: %s",
@@ -223,6 +277,13 @@ if modal is not None:
                     if webrtc_request.webrtc_config
                     else []
                 ),
+            )
+            logger.info(
+                "WEBRTC_MODAL_MIN_CPU_CORES: %s",
+                WEBRTC_MODAL_MIN_CPU_CORES or "not set",
+            )
+            logger.info(
+                "WEBRTC_MODAL_MIN_RAM_MB: %s", WEBRTC_MODAL_MIN_RAM_MB or "not set"
             )
             logger.info("MODAL_CLOUD_PROVIDER: %s", MODAL_CLOUD_PROVIDER)
             logger.info("MODAL_IMAGE_ID: %s", MODAL_IMAGE_ID)
@@ -251,12 +312,13 @@ if modal is not None:
                 return
 
             asyncio.run(
-                init_rtc_peer_connection_with_loop(
+                run_rtc_peer_connection_with_watchdog(
                     webrtc_request=webrtc_request,
                     send_answer=send_answer,
                     model_manager=self._model_manager,
                 )
             )
+
             _exec_session_stopped = datetime.datetime.now()
             logger.info(
                 "WebRTC session stopped at %s",
@@ -279,6 +341,8 @@ if modal is not None:
                 video_source = "rtsp"
             elif not webrtc_request.webrtc_realtime_processing:
                 video_source = "buffered browser stream"
+            else:
+                video_source = "realtime browser stream"
 
             usage_collector.record_usage(
                 source=workflow_id,
@@ -335,6 +399,7 @@ if modal is not None:
         # https://modal.com/docs/guide/memory-snapshot#gpu-memory-snapshot
         @modal.enter(snap=True)
         def start(self):
+            warmup_cuda(max_retries=10, retry_delay=0.5)
             self._gpu = check_nvidia_smi_gpu()
             logger.info("Starting GPU container on %s", self._gpu)
             logger.info("Preload hf ids: %s", self.preload_hf_ids)
@@ -373,6 +438,9 @@ if modal is not None:
     def spawn_rtc_peer_connection_modal(
         webrtc_request: WebRTCWorkerRequest,
     ) -> WebRTCWorkerResult:
+        requested_gpu: Optional[str] = None
+        requested_ram_mb: Optional[int] = None
+        requested_cpu_cores: Optional[int] = None
         webrtc_plans: Optional[Dict[str, WebRTCPlan]] = (
             usage_collector._plan_details.get_webrtc_plans(
                 api_key=webrtc_request.api_key
@@ -383,9 +451,11 @@ if modal is not None:
                 raise RoboflowAPIUnsuccessfulRequestError(
                     f"Unknown requested plan {webrtc_request.requested_plan}, available plans: {', '.join(webrtc_plans.keys())}"
                 )
-            webrtc_request.requested_gpu = webrtc_plans[
-                webrtc_request.requested_plan
-            ].gpu
+            requested_gpu = webrtc_plans[webrtc_request.requested_plan].gpu
+            requested_ram_mb = webrtc_plans[webrtc_request.requested_plan].ram_mb
+            requested_cpu_cores = webrtc_plans[webrtc_request.requested_plan].cpu_cores
+
+        # TODO: requested_gpu is replaced with requested_plan
         if (
             webrtc_plans
             and not webrtc_request.requested_plan
@@ -397,6 +467,7 @@ if modal is not None:
                     f"Requested gpu {webrtc_request.requested_gpu} not associated with any plan, available gpus: {', '.join(gpu_to_plan.keys())}"
                 )
             webrtc_request.requested_plan = gpu_to_plan[webrtc_request.requested_gpu]
+            requested_gpu = webrtc_plans[webrtc_request.requested_plan].gpu
 
         # https://modal.com/docs/reference/modal.Client#from_credentials
         client = modal.Client.from_credentials(
@@ -445,7 +516,7 @@ if modal is not None:
             logger.info("Parametrized preload models: %s", WEBRTC_MODAL_PRELOAD_MODELS)
             preload_models = WEBRTC_MODAL_PRELOAD_MODELS
 
-        if webrtc_request.requested_gpu:
+        if requested_gpu:
             RTCPeerConnectionModal = RTCPeerConnectionModalGPU
         else:
             RTCPeerConnectionModal = RTCPeerConnectionModalCPU
@@ -467,16 +538,16 @@ if modal is not None:
         cls_with_options = deployed_cls.with_options(
             timeout=webrtc_request.processing_timeout,
         )
-        if webrtc_request.requested_gpu is not None:
+        if requested_gpu is not None:
             logger.info(
                 "Spawning webrtc modal function with gpu %s",
-                webrtc_request.requested_gpu,
+                requested_gpu,
             )
             # Specify fallback GPU
             # TODO: with_options does not support gpu fallback
             # https://modal.com/docs/examples/gpu_fallbacks#set-fallback-gpus
             cls_with_options = cls_with_options.with_options(
-                gpu=webrtc_request.requested_gpu,
+                gpu=requested_gpu,
             )
         if webrtc_request.requested_region:
             logger.info(
@@ -485,6 +556,22 @@ if modal is not None:
             )
             cls_with_options = cls_with_options.with_options(
                 region=webrtc_request.requested_region,
+            )
+        if requested_ram_mb is not None:
+            logger.info(
+                "Spawning webrtc modal function with ram %s",
+                requested_ram_mb,
+            )
+            cls_with_options = cls_with_options.with_options(
+                ram=requested_ram_mb,
+            )
+        if requested_cpu_cores is not None:
+            logger.info(
+                "Spawning webrtc modal function with cpu cores %s",
+                requested_cpu_cores,
+            )
+            cls_with_options = cls_with_options.with_options(
+                cpu=requested_cpu_cores,
             )
         rtc_modal_obj: RTCPeerConnectionModal = cls_with_options(
             preload_hf_ids=preload_hf_ids,

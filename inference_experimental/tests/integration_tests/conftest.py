@@ -155,11 +155,16 @@ def dog_image_pil() -> Image.Image:
 
 @pytest.fixture(scope="function")
 def ocr_test_image_numpy() -> np.ndarray:
-    """Returns the OCR test image as a numpy array."""
     _download_if_not_exists(file_path=OCR_TEST_IMAGE_PATH, url=OCR_TEST_IMAGE_URL)
     image = cv2.imread(OCR_TEST_IMAGE_PATH)
     assert image is not None, "Could not load OCR test image"
     return image
+
+
+@pytest.fixture(scope="function")
+def ocr_test_image_torch() -> torch.Tensor:
+    _download_if_not_exists(file_path=OCR_TEST_IMAGE_PATH, url=OCR_TEST_IMAGE_URL)
+    return torchvision.io.read_image(OCR_TEST_IMAGE_PATH)
 
 
 @pytest.fixture(scope="function")

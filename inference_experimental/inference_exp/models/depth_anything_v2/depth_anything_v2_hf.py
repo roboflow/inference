@@ -20,13 +20,15 @@ class DepthAnythingV2HF(
         cls,
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
+        local_files_only: bool = True,
         **kwargs,
     ) -> "DepthAnythingV2HF":
-        model = AutoModelForDepthEstimation.from_pretrained(model_name_or_path).to(
-            device
-        )
+        model = AutoModelForDepthEstimation.from_pretrained(
+            model_name_or_path,
+            local_files_only=local_files_only,
+        ).to(device)
         processor = AutoImageProcessor.from_pretrained(
-            model_name_or_path, use_fast=True
+            model_name_or_path, local_files_only=local_files_only, use_fast=True
         )
         return cls(model=model, processor=processor, device=device)
 
