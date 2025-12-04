@@ -85,16 +85,19 @@ class BlockManifest(WorkflowBlockManifest):
         description="List of classes to recognise",
         examples=[["car", "person"], "$inputs.classes"],
     )
-    threshold: Union[Selector(kind=[FLOAT_KIND]), float] = Field(
-        default=0.5, description="Threshold for predicted mask scores", examples=[0.3]
+    confidence: Union[Selector(kind=[FLOAT_KIND]), float] = Field(
+        default=0.5,
+        title="Confidence",
+        description="Minimum confidence for predicted masks",
+        examples=[0.3],
     )
 
-    confidence_thresholds: Optional[
+    per_class_confidence: Optional[
         Union[List[float], Selector(kind=[LIST_OF_VALUES_KIND])]
     ] = Field(
         default=None,
-        title="Per-Class Confidence Thresholds",
-        description="List of thresholds per class (must match class_names length)",
+        title="Per-Class Confidence",
+        description="List of confidence thresholds per class (must match class_names length)",
         examples=[[0.3, 0.5, 0.7]],
     )
 
@@ -118,14 +121,14 @@ class BlockManifest(WorkflowBlockManifest):
         return v
 
     @model_validator(mode="after")
-    def _validate_confidence_thresholds_length(self) -> "BlockManifest":
+    def _validate_per_class_confidence_length(self) -> "BlockManifest":
         if (
             isinstance(self.class_names, list)
-            and isinstance(self.confidence_thresholds, list)
-            and len(self.confidence_thresholds) != len(self.class_names)
+            and isinstance(self.per_class_confidence, list)
+            and len(self.per_class_confidence) != len(self.class_names)
         ):
             raise ValueError(
-                f"confidence_thresholds length ({len(self.confidence_thresholds)}) "
+                f"per_class_confidence length ({len(self.per_class_confidence)}) "
                 f"must match class_names length ({len(self.class_names)})"
             )
         return self
@@ -172,8 +175,8 @@ class SegPreviewBlockV2(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         class_names: Optional[Union[List[str], str]],
-        threshold: float,
-        confidence_thresholds: Optional[List[float]] = None,
+        confidence: float,
+        per_class_confidence: Optional[List[float]] = None,
         apply_nms: bool = True,
         nms_iou_threshold: float = 0.9,
     ) -> BlockResult:
@@ -188,8 +191,8 @@ class SegPreviewBlockV2(WorkflowBlock):
         return self.run_via_request(
             images=images,
             class_names=class_names,
-            threshold=threshold,
-            confidence_thresholds=confidence_thresholds,
+            confidence=confidence,
+            per_class_confidence=per_class_confidence,
             apply_nms=apply_nms,
             nms_iou_threshold=nms_iou_threshold,
         )
@@ -198,8 +201,8 @@ class SegPreviewBlockV2(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         class_names: Optional[List[str]],
-        threshold: float,
-        confidence_thresholds: Optional[List[float]] = None,
+        confidence: float,
+        per_class_confidence: Optional[List[float]] = None,
         apply_nms: bool = True,
         nms_iou_threshold: float = 0.9,
     ) -> BlockResult:
@@ -221,8 +224,8 @@ class SegPreviewBlockV2(WorkflowBlock):
             http_prompts: List[dict] = []
             for idx, class_name in enumerate(class_names):
                 prompt_data = {"type": "text", "text": class_name}
-                if confidence_thresholds is not None:
-                    prompt_data["output_prob_thresh"] = confidence_thresholds[idx]
+                if per_class_confidence is not None:
+                    prompt_data["output_prob_thresh"] = per_class_confidence[idx]
                 http_prompts.append(prompt_data)
 
             # Prepare image for remote API (base64)
@@ -231,7 +234,7 @@ class SegPreviewBlockV2(WorkflowBlock):
             payload = {
                 "image": http_image,
                 "prompts": http_prompts,
-                "output_prob_thresh": threshold,
+                "output_prob_thresh": confidence,
                 "nms_iou_threshold": nms_iou_threshold if apply_nms else None,
             }
 
@@ -272,7 +275,7 @@ class SegPreviewBlockV2(WorkflowBlock):
                     prompt_class_ids=prompt_class_ids,
                     prompt_class_names=prompt_class_names,
                     prompt_detection_ids=prompt_detection_ids,
-                    threshold=threshold,
+                    confidence=confidence,
                     text_prompt=class_name,
                     specific_class_id=idx,
                 )
@@ -317,7 +320,7 @@ def convert_segmentation_response_to_inference_instances_seg_response(
     prompt_class_ids: List[Optional[int]],
     prompt_class_names: List[Optional[str]],
     prompt_detection_ids: List[Optional[str]],
-    threshold: float,
+    confidence: float,
     text_prompt: Optional[str] = None,
     specific_class_id: Optional[int] = None,
 ) -> InstanceSegmentationInferenceResponse:
@@ -344,7 +347,7 @@ def convert_segmentation_response_to_inference_instances_seg_response(
             if len(mask) < 3:
                 # skipping empty masks
                 continue
-            if prediction.confidence < threshold:
+            if prediction.confidence < confidence:
                 # skipping masks below threshold
                 continue
             x_coords = [coord[0] for coord in mask]
