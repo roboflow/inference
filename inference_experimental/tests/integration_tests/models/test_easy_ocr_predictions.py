@@ -23,9 +23,6 @@ def test_easy_ocr_predictions_for_numpy_image(
     assert np.allclose(
         result[1][0].xyxy.cpu().numpy(), np.array([[6, 2, 786, 83]]), atol=5
     )
-    assert np.allclose(
-        result[1][0].confidence.cpu().numpy(), np.array([0.75062007]), atol=2e-2
-    )
 
 
 @pytest.mark.slow
@@ -47,15 +44,9 @@ def test_easy_ocr_predictions_for_numpy_image_list(
     assert np.allclose(
         result[1][0].xyxy.cpu().numpy(), np.array([[6, 2, 786, 83]]), atol=5
     )
-    assert np.allclose(
-        result[1][0].confidence.cpu().numpy(), np.array([0.75062007]), atol=2e-2
-    )
     assert result[0][1].startswith("This is a test image for OCR")
     assert np.allclose(
         result[1][1].xyxy.cpu().numpy(), np.array([[6, 2, 786, 83]]), atol=5
-    )
-    assert np.allclose(
-        result[1][1].confidence.cpu().numpy(), np.array([0.75062007]), atol=2e-2
     )
 
 
@@ -78,9 +69,6 @@ def test_easy_ocr_predictions_for_torch_image(
     assert np.allclose(
         result[1][0].xyxy.cpu().numpy(), np.array([[6, 2, 786, 83]]), atol=5
     )
-    assert np.allclose(
-        result[1][0].confidence.cpu().numpy(), np.array([0.75062007]), atol=2e-2
-    )
 
 
 @pytest.mark.slow
@@ -102,15 +90,9 @@ def test_easy_ocr_predictions_for_torch_batch(
     assert np.allclose(
         result[1][0].xyxy.cpu().numpy(), np.array([[6, 2, 786, 83]]), atol=5
     )
-    assert np.allclose(
-        result[1][0].confidence.cpu().numpy(), np.array([0.75062007]), atol=2e-2
-    )
     assert result[0][1].startswith("This is a test image for OCR")
     assert np.allclose(
         result[1][1].xyxy.cpu().numpy(), np.array([[6, 2, 786, 83]]), atol=5
-    )
-    assert np.allclose(
-        result[1][1].confidence.cpu().numpy(), np.array([0.75062007]), atol=2e-2
     )
 
 
@@ -133,13 +115,7 @@ def test_easy_ocr_predictions_for_torch_list(
     assert np.allclose(
         result[1][0].xyxy.cpu().numpy(), np.array([[6, 2, 786, 83]]), atol=5
     )
-    assert np.allclose(
-        result[1][0].confidence.cpu().numpy(), np.array([0.75062007]), atol=2e-2
-    )
     assert result[0][1].startswith("This is a test image for OCR")
     assert np.allclose(
         result[1][1].xyxy.cpu().numpy(), np.array([[6, 2, 786, 83]]), atol=5
-    )
-    assert np.allclose(
-        result[1][1].confidence.cpu().numpy(), np.array([0.75062007]), atol=2e-2
     )

@@ -62,7 +62,6 @@ class EasyOCRTorch(
                 gpu=device_string,
             )
         except Exception as error:
-            raise error
             raise CorruptedModelPackageError(
                 message=f"EasyOCR model package is broken - could not parse model config file. Error: {error}"
                 f"If you attempt to run `inference-exp` locally - inspect the contents of local directory to check "
