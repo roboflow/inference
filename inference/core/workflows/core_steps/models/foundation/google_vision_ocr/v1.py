@@ -171,20 +171,15 @@ def _build_request_json(
     detection_type: str,
     language_hints: Optional[List[str]],
 ) -> dict:
-    request_json = {
-        "requests": [
-            {
-                "image": {"content": image.base64_image},
-                "features": [{"type": detection_type}],
-            }
-        ]
+    ocr_request = {
+        "image": {"content": image.base64_image},
+        "features": [{"type": detection_type}],
     }
 
     if language_hints is not None:
-        for r in request_json["requests"]:
-            r["imageContext"] = {"languageHints": language_hints}
+        ocr_request["imageContext"] = {"languageHints": language_hints}
 
-    return request_json
+    return {"requests": [ocr_request]}
 
 
 def _execute_proxied_google_vision_request(
