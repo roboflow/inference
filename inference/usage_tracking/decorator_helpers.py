@@ -127,6 +127,12 @@ def get_request_resource_id_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional
             return str(workflow_request.workflow_id)
     if "self" in func_kwargs:
         _self = func_kwargs["self"]
+        if hasattr(_self, "dataset_id") and hasattr(_self, "version_id"):
+            dataset_id = _self.dataset_id
+            version_id = _self.version_id
+            if version_id:
+                return f"{dataset_id}/{version_id}"
+            return str(dataset_id)
         if hasattr(_self, "model_id"):
             return str(_self.model_id)
         if hasattr(_self, "endpoint"):

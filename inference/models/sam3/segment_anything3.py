@@ -356,6 +356,7 @@ class SegmentAnything3(RoboflowCoreModel):
         np_image = load_image_rgb(image)
         return np_image
 
+    @usage_collector("model")
     def infer_from_request(self, request: Sam3InferenceRequest):
         # with self.sam3_lock:
         t1 = perf_counter()
@@ -373,7 +374,6 @@ class SegmentAnything3(RoboflowCoreModel):
         else:
             raise ValueError(f"Invalid request type {type(request)}")
 
-    @usage_collector("model")
     def segment_image(
         self,
         image: Optional[InferenceRequestImage],
