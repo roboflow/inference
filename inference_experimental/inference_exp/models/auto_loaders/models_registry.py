@@ -363,7 +363,8 @@ REGISTERED_MODELS: Dict[
         module_name="inference_exp.models.doctr.doctr_torch", class_name="DocTR"
     ),
     ("easy-ocr", STRUCTURED_OCR_TASK, BackendType.TORCH): LazyClass(
-        module_name="inference_exp.models.easy_ocr.easy_ocr_torch", class_name="EasyOCRTorch"
+        module_name="inference_exp.models.easy_ocr.easy_ocr_torch",
+        class_name="EasyOCRTorch",
     ),
 }
 

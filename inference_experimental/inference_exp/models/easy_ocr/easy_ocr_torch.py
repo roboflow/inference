@@ -1,16 +1,15 @@
-from typing import List, Tuple, Union, Optional
+from typing import List, Optional, Tuple, Union
 
 import easyocr
 import numpy as np
 import torch
-from pydantic import BaseModel
-
-from inference_exp import StructuredOCRModel, Detections
+from inference_exp import Detections, StructuredOCRModel
 from inference_exp.configuration import DEFAULT_DEVICE
-from inference_exp.entities import ImageDimensions, ColorFormat
-from inference_exp.errors import ModelRuntimeError, CorruptedModelPackageError
+from inference_exp.entities import ColorFormat, ImageDimensions
+from inference_exp.errors import CorruptedModelPackageError, ModelRuntimeError
 from inference_exp.models.common.model_packages import get_model_package_contents
 from inference_exp.utils.file_system import read_json
+from pydantic import BaseModel
 
 Point = Tuple[int, int]
 Coordinates = Tuple[Point, Point, Point, Point]
@@ -30,7 +29,9 @@ class EasyOcrConfig(BaseModel):
     recognition_network: str
 
 
-class EasyOCRTorch(StructuredOCRModel[List[np.ndarray], ImageDimensions, EasyOCRRawPrediction]):
+class EasyOCRTorch(
+    StructuredOCRModel[List[np.ndarray], ImageDimensions, EasyOCRRawPrediction]
+):
 
     @classmethod
     def from_pretrained(
@@ -40,10 +41,11 @@ class EasyOCRTorch(StructuredOCRModel[List[np.ndarray], ImageDimensions, EasyOCR
         **kwargs,
     ) -> "StructuredOCRModel":
         package_contents = get_model_package_contents(
-            model_package_dir=model_name_or_path,
-            elements=["easy-ocr-config.json"]
+            model_package_dir=model_name_or_path, elements=["easy-ocr-config.json"]
         )
-        config = parse_easy_ocr_config(config_path=package_contents["easy-ocr-config.json"])
+        config = parse_easy_ocr_config(
+            config_path=package_contents["easy-ocr-config.json"]
+        )
         device_string = device.type
         if device.type == "cuda" and device.index:
             device_string = f"{device_string}:{device.index}"
@@ -63,9 +65,9 @@ class EasyOCRTorch(StructuredOCRModel[List[np.ndarray], ImageDimensions, EasyOCR
             raise error
             raise CorruptedModelPackageError(
                 message=f"EasyOCR model package is broken - could not parse model config file. Error: {error}"
-                        f"If you attempt to run `inference-exp` locally - inspect the contents of local directory to check "
-                        f"model package - config file is corrupted. If you run the model on Roboflow platform - "
-                        f"contact us.",
+                f"If you attempt to run `inference-exp` locally - inspect the contents of local directory to check "
+                f"model package - config file is corrupted. If you run the model on Roboflow platform - "
+                f"contact us.",
                 help_url="https://todo",
             ) from error
         return cls(model=model, device=device)
@@ -86,7 +88,7 @@ class EasyOCRTorch(StructuredOCRModel[List[np.ndarray], ImageDimensions, EasyOCR
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
-        **kwargs
+        **kwargs,
     ) -> Tuple[List[np.ndarray], List[ImageDimensions]]:
         if isinstance(images, np.ndarray):
             input_color_format = input_color_format or "bgr"
@@ -144,7 +146,9 @@ class EasyOCRTorch(StructuredOCRModel[List[np.ndarray], ImageDimensions, EasyOCR
             help_url="https://todo",
         )
 
-    def forward(self, pre_processed_images: List[np.ndarray], **kwargs) -> List[EasyOCRRawPrediction]:
+    def forward(
+        self, pre_processed_images: List[np.ndarray], **kwargs
+    ) -> List[EasyOCRRawPrediction]:
         all_results = []
         for image in pre_processed_images:
             image_results_raw = self._model.readtext(image)
@@ -171,7 +175,9 @@ class EasyOCRTorch(StructuredOCRModel[List[np.ndarray], ImageDimensions, EasyOCR
         **kwargs,
     ) -> Tuple[List[str], List[Detections]]:
         rendered_texts, all_detections = [], []
-        for single_image_result, original_dimensions in zip(model_results, pre_processing_meta):
+        for single_image_result, original_dimensions in zip(
+            model_results, pre_processing_meta
+        ):
             whole_image_text = []
             xyxy = []
             confidence = []
@@ -209,8 +215,8 @@ def parse_easy_ocr_config(config_path: str) -> EasyOcrConfig:
     except Exception as error:
         raise CorruptedModelPackageError(
             message=f"EasyOCR model package is broken - could not parse model config file. Error: {error}"
-                    f"If you attempt to run `inference-exp` locally - inspect the contents of local directory to check "
-                    f"model package - config file is corrupted. If you run the model on Roboflow platform - "
-                    f"contact us.",
+            f"If you attempt to run `inference-exp` locally - inspect the contents of local directory to check "
+            f"model package - config file is corrupted. If you run the model on Roboflow platform - "
+            f"contact us.",
             help_url="https://todo",
         ) from error
