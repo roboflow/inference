@@ -304,10 +304,14 @@ class SegmentAnything3BlockV1(WorkflowBlock):
             for idx, class_name in enumerate(class_names):
                 # Add per-prompt threshold if confidence_thresholds is set
                 prompt_thresh = None
-                if confidence_thresholds is not None and idx < len(confidence_thresholds):
+                if confidence_thresholds is not None and idx < len(
+                    confidence_thresholds
+                ):
                     prompt_thresh = confidence_thresholds[idx]
                 unified_prompts.append(
-                    Sam3Prompt(type="text", text=class_name, output_prob_thresh=prompt_thresh)
+                    Sam3Prompt(
+                        type="text", text=class_name, output_prob_thresh=prompt_thresh
+                    )
                 )
 
             # Single batched request with all prompts
@@ -385,7 +389,9 @@ class SegmentAnything3BlockV1(WorkflowBlock):
             for idx, class_name in enumerate(class_names):
                 prompt_data = {"type": "text", "text": class_name}
                 # Add per-prompt threshold if confidence_thresholds is set
-                if confidence_thresholds is not None and idx < len(confidence_thresholds):
+                if confidence_thresholds is not None and idx < len(
+                    confidence_thresholds
+                ):
                     prompt_data["output_prob_thresh"] = confidence_thresholds[idx]
                 http_prompts.append(prompt_data)
 
