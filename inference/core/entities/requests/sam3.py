@@ -20,6 +20,11 @@ class Sam3Prompt(BaseModel):
     )
     text: Optional[str] = Field(default=None)
 
+    output_prob_thresh: Optional[float] = Field(
+        default=None,
+        description="Score threshold for this prompt's outputs. Overrides request-level threshold if set.",
+    )
+
     # Absolute-coordinate boxes (preferred) in pixels.
     # XYWH absolute pixels
     class Box(BaseModel):
@@ -60,11 +65,6 @@ class Sam3Prompt(BaseModel):
         if boxes is None or len(labels) != len(boxes):
             raise ValueError("box_labels must match boxes length when provided")
         return labels
-
-    output_prob_thresh: Optional[float] = Field(
-        default=None,
-        description="Score threshold for this prompt's outputs. Overrides request-level threshold if set.",
-    )
 
     @validator("output_prob_thresh")
     def _validate_output_prob_thresh(cls, v):
