@@ -11,15 +11,13 @@ from inference_exp.models.base.types import (
 )
 
 
-class DocumentParsingModel(
+class StructuredOCRModel(
     ABC, Generic[PreprocessedInputs, PreprocessingMetadata, RawPrediction]
 ):
 
     @classmethod
     @abstractmethod
-    def from_pretrained(
-        cls, model_name_or_path: str, **kwargs
-    ) -> "DocumentParsingModel":
+    def from_pretrained(cls, model_name_or_path: str, **kwargs) -> "StructuredOCRModel":
         pass
 
     @property

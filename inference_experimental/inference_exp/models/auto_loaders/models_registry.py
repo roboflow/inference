@@ -15,6 +15,7 @@ EMBEDDING_TASK = "embedding"
 CLASSIFICATION_TASK = "classification"
 MULTI_LABEL_CLASSIFICATION_TASK = "multi-label-classification"
 DEPTH_ESTIMATION_TASK = "depth-estimation"
+STRUCTURED_OCR_TASK = "structured-ocr"
 
 
 @dataclass(frozen=True)
@@ -356,8 +357,15 @@ REGISTERED_MODELS: Dict[
     ),
     ("depth-anything-v2", DEPTH_ESTIMATION_TASK, BackendType.HF): LazyClass(
         module_name="inference_exp.models.depth_anything_v2.depth_anything_v2_hf",
-        class_name="DepthAnythingV2HF"
-    )
+        class_name="DepthAnythingV2HF",
+    ),
+    ("doctr", STRUCTURED_OCR_TASK, BackendType.TORCH): LazyClass(
+        module_name="inference_exp.models.doctr.doctr_torch", class_name="DocTR"
+    ),
+    ("easy-ocr", STRUCTURED_OCR_TASK, BackendType.TORCH): LazyClass(
+        module_name="inference_exp.models.easy_ocr.easy_ocr_torch",
+        class_name="EasyOCRTorch",
+    ),
 }
 
 

@@ -245,10 +245,11 @@ def send_chunked_data(
             f"Sending response for frame {frame_id}: {total_chunks} chunk(s), {len(payload_bytes)} bytes"
         )
 
+    view = memoryview(payload_bytes)
     for chunk_index in range(total_chunks):
         start = chunk_index * chunk_size
         end = min(start + chunk_size, len(payload_bytes))
-        chunk_data = payload_bytes[start:end]
+        chunk_data = view[start:end]
 
         message = create_chunked_binary_message(
             frame_id, chunk_index, total_chunks, chunk_data
@@ -399,7 +400,9 @@ class VideoFrameProcessor:
 
         if self._data_mode == DataOutputMode.NONE:
             # Even empty responses use binary protocol
-            json_bytes = json.dumps(webrtc_output.model_dump()).encode("utf-8")
+            json_bytes = await asyncio.to_thread(
+                lambda: json.dumps(webrtc_output.model_dump()).encode("utf-8")
+            )
             send_chunked_data(self.data_channel, self._received_frames, json_bytes)
             return
 
@@ -465,15 +468,22 @@ class VideoFrameProcessor:
                     f"Received frame {frame_id}: {total_chunks} chunk(s), {len(jpeg_bytes)} bytes JPEG"
                 )
 
-            nparr = np.frombuffer(jpeg_bytes, np.uint8)
-            np_image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            def _decode_to_frame(jpeg_bytes: bytes) -> VideoFrame:
+                nparr = np.frombuffer(jpeg_bytes, np.uint8)
+                np_image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
-            if np_image is None:
-                logger.error(f"Failed to decode JPEG for frame {frame_id}")
+                if np_image is None:
+                    raise ValueError("cv2.imdecode returned None")
+
+                return VideoFrame.from_ndarray(np_image, format="bgr24")
+
+            try:
+                video_frame = await asyncio.to_thread(_decode_to_frame, jpeg_bytes)
+            except Exception as e:
+                logger.error(f"Failed to decode JPEG for frame {frame_id}: {e}")
                 return
 
-            video_frame = VideoFrame.from_ndarray(np_image, format="bgr24")
-            await self._data_frame_queue.put((frame_id, video_frame))
+            self._data_frame_queue.put_nowait((frame_id, video_frame))
 
             if frame_id % 100 == 1:
                 logger.info(f"Queued frame {frame_id}")
@@ -534,8 +544,10 @@ class VideoFrameProcessor:
                 )
 
                 # Send data via data channel
-                await self._send_data_output(
-                    workflow_output, frame_timestamp, frame, errors
+                asyncio.create_task(
+                    self._send_data_output(
+                        workflow_output, frame_timestamp, frame, errors
+                    )
                 )
 
         except asyncio.CancelledError:
