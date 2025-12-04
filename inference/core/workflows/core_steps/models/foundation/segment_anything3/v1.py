@@ -117,12 +117,12 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     confidence_thresholds: Optional[
-        Union[List[float], str, Selector(kind=[LIST_OF_VALUES_KIND, STRING_KIND])]
+        Union[List[float], Selector(kind=[LIST_OF_VALUES_KIND])]
     ] = Field(
         default=None,
         title="Per-Class Confidence Thresholds",
-        description="List of thresholds per class (must match class_names length) or comma-separated string",
-        examples=[[0.3, 0.5, 0.7], "0.3,0.5,0.7"],
+        description="List of thresholds per class (must match class_names length)",
+        examples=[[0.3, 0.5, 0.7]],
     )
 
     apply_nms: Union[Selector(kind=[BOOLEAN_KIND]), bool] = Field(
@@ -142,19 +142,6 @@ class BlockManifest(WorkflowBlockManifest):
     def _validate_nms_iou_threshold(cls, v):
         if isinstance(v, (int, float)) and (v < 0.0 or v > 1.0):
             raise ValueError("nms_iou_threshold must be between 0.0 and 1.0")
-        return v
-
-    @validator("confidence_thresholds", pre=True)
-    def _parse_confidence_thresholds(cls, v):
-        if v is None:
-            return None
-        if isinstance(v, str):
-            try:
-                return [float(x.strip()) for x in v.split(",") if x.strip()]
-            except ValueError:
-                raise ValueError(
-                    "confidence_thresholds string must be comma-separated floats"
-                )
         return v
 
     @classmethod
@@ -201,7 +188,7 @@ class SegmentAnything3BlockV1(WorkflowBlock):
         model_id: str,
         class_names: Optional[Union[List[str], str]],
         threshold: float,
-        confidence_thresholds: Optional[Union[List[float], str]] = None,
+        confidence_thresholds: Optional[List[float]] = None,
         apply_nms: bool = True,
         nms_iou_threshold: float = 0.9,
     ) -> BlockResult:
@@ -213,23 +200,12 @@ class SegmentAnything3BlockV1(WorkflowBlock):
         else:
             raise ValueError(f"Invalid class names type: {type(class_names)}")
 
-        parsed_thresholds = None
-        if confidence_thresholds is not None:
-            if isinstance(confidence_thresholds, str):
-                parsed_thresholds = [
-                    float(x.strip())
-                    for x in confidence_thresholds.split(",")
-                    if x.strip()
-                ]
-            else:
-                parsed_thresholds = confidence_thresholds
-
-            if parsed_thresholds and class_names:
-                if len(parsed_thresholds) != len(class_names):
-                    raise ValueError(
-                        f"confidence_thresholds length ({len(parsed_thresholds)}) "
-                        f"must match class_names length ({len(class_names)})"
-                    )
+        if confidence_thresholds is not None and class_names:
+            if len(confidence_thresholds) != len(class_names):
+                raise ValueError(
+                    f"confidence_thresholds length ({len(confidence_thresholds)}) "
+                    f"must match class_names length ({len(class_names)})"
+                )
 
         exec_mode = self._step_execution_mode
         if SAM3_EXEC_MODE == "local":
@@ -250,7 +226,7 @@ class SegmentAnything3BlockV1(WorkflowBlock):
                 model_id=model_id,
                 class_names=class_names,
                 threshold=threshold,
-                confidence_thresholds=parsed_thresholds,
+                confidence_thresholds=confidence_thresholds,
                 apply_nms=apply_nms,
                 nms_iou_threshold=nms_iou_threshold,
             )
@@ -260,7 +236,7 @@ class SegmentAnything3BlockV1(WorkflowBlock):
                 images=images,
                 class_names=class_names,
                 threshold=threshold,
-                confidence_thresholds=parsed_thresholds,
+                confidence_thresholds=confidence_thresholds,
                 apply_nms=apply_nms,
                 nms_iou_threshold=nms_iou_threshold,
             )
