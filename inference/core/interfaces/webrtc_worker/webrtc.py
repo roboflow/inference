@@ -607,6 +607,23 @@ class VideoFrameProcessor:
 
             logger.info(f"Video file processing complete: {frame_id} frames processed")
 
+            # Send completion signal via data channel
+            if self.data_channel and self.data_channel.readyState == "open":
+                completion_message = WebRTCOutput(
+                    serialized_output_data=None,
+                    video_metadata=WebRTCVideoMetadata(
+                        frame_id=frame_id,
+                        received_at=datetime.datetime.now().isoformat(),
+                    ),
+                    errors=[],
+                    processing_complete=True,
+                )
+                json_bytes = json.dumps(
+                    completion_message.model_dump(mode="json")
+                ).encode("utf-8")
+                send_chunked_data(self.data_channel, frame_id + 1, json_bytes)
+                logger.info("Sent processing_complete signal to client")
+
         except Exception as exc:
             logger.error(f"Error processing video file: {exc}", exc_info=True)
         finally:
