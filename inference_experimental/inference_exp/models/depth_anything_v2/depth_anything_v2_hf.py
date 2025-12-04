@@ -28,9 +28,7 @@ class DepthAnythingV2HF(
             local_files_only=local_files_only,
         ).to(device)
         processor = AutoImageProcessor.from_pretrained(
-            model_name_or_path,
-            local_files_only=local_files_only,
-            use_fast=True
+            model_name_or_path, local_files_only=local_files_only, use_fast=True
         )
         return cls(model=model, processor=processor, device=device)
 
