@@ -87,8 +87,8 @@ class BlockManifest(WorkflowBlockManifest):
     )
     confidence: Union[Selector(kind=[FLOAT_KIND]), float] = Field(
         default=0.5,
-        title="Confidence",
-        description="Minimum confidence for predicted masks",
+        title="Confidence Threshold",
+        description="Minimum confidence threshold for predicted masks",
         examples=[0.3],
     )
 
@@ -122,14 +122,21 @@ class BlockManifest(WorkflowBlockManifest):
 
     @model_validator(mode="after")
     def _validate_per_class_confidence_length(self) -> "BlockManifest":
-        if (
-            isinstance(self.class_names, list)
-            and isinstance(self.per_class_confidence, list)
-            and len(self.per_class_confidence) != len(self.class_names)
-        ):
+        if not isinstance(self.per_class_confidence, list):
+            return self
+
+        # Determine class_names length, handling both list and comma-separated string
+        if isinstance(self.class_names, list):
+            class_names_length = len(self.class_names)
+        elif isinstance(self.class_names, str):
+            class_names_length = len(self.class_names.split(","))
+        else:
+            return self
+
+        if len(self.per_class_confidence) != class_names_length:
             raise ValueError(
                 f"per_class_confidence length ({len(self.per_class_confidence)}) "
-                f"must match class_names length ({len(self.class_names)})"
+                f"must match class_names length ({class_names_length})"
             )
         return self
 
