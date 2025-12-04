@@ -1,15 +1,18 @@
 import numpy as np
 import pytest
 import torch
-
 from inference_exp.configuration import DEFAULT_DEVICE
 
 
 @pytest.mark.slow
 @pytest.mark.torch_models
-def test_depth_anything_v2_for_numpy_image(depth_anything_v2_small_package: str, dog_image_numpy: np.ndarray) -> None:
+def test_depth_anything_v2_for_numpy_image(
+    depth_anything_v2_small_package: str, dog_image_numpy: np.ndarray
+) -> None:
     # given
-    from inference_exp.models.depth_anything_v2.depth_anything_v2_hf import DepthAnythingV2HF
+    from inference_exp.models.depth_anything_v2.depth_anything_v2_hf import (
+        DepthAnythingV2HF,
+    )
 
     model = DepthAnythingV2HF.from_pretrained(
         depth_anything_v2_small_package,
@@ -27,9 +30,13 @@ def test_depth_anything_v2_for_numpy_image(depth_anything_v2_small_package: str,
 
 @pytest.mark.slow
 @pytest.mark.torch_models
-def test_depth_anything_v2_for_numpy_images_list(depth_anything_v2_small_package: str, dog_image_numpy: np.ndarray) -> None:
+def test_depth_anything_v2_for_numpy_images_list(
+    depth_anything_v2_small_package: str, dog_image_numpy: np.ndarray
+) -> None:
     # given
-    from inference_exp.models.depth_anything_v2.depth_anything_v2_hf import DepthAnythingV2HF
+    from inference_exp.models.depth_anything_v2.depth_anything_v2_hf import (
+        DepthAnythingV2HF,
+    )
 
     model = DepthAnythingV2HF.from_pretrained(
         depth_anything_v2_small_package,
@@ -49,9 +56,13 @@ def test_depth_anything_v2_for_numpy_images_list(depth_anything_v2_small_package
 
 @pytest.mark.slow
 @pytest.mark.torch_models
-def test_depth_anything_v2_for_torch_image(depth_anything_v2_small_package: str, dog_image_torch: torch.Tensor) -> None:
+def test_depth_anything_v2_for_torch_image(
+    depth_anything_v2_small_package: str, dog_image_torch: torch.Tensor
+) -> None:
     # given
-    from inference_exp.models.depth_anything_v2.depth_anything_v2_hf import DepthAnythingV2HF
+    from inference_exp.models.depth_anything_v2.depth_anything_v2_hf import (
+        DepthAnythingV2HF,
+    )
 
     model = DepthAnythingV2HF.from_pretrained(
         depth_anything_v2_small_package,
@@ -69,9 +80,13 @@ def test_depth_anything_v2_for_torch_image(depth_anything_v2_small_package: str,
 
 @pytest.mark.slow
 @pytest.mark.torch_models
-def test_depth_anything_v2_for_torch_batch(depth_anything_v2_small_package: str, dog_image_torch: torch.Tensor) -> None:
+def test_depth_anything_v2_for_torch_batch(
+    depth_anything_v2_small_package: str, dog_image_torch: torch.Tensor
+) -> None:
     # given
-    from inference_exp.models.depth_anything_v2.depth_anything_v2_hf import DepthAnythingV2HF
+    from inference_exp.models.depth_anything_v2.depth_anything_v2_hf import (
+        DepthAnythingV2HF,
+    )
 
     model = DepthAnythingV2HF.from_pretrained(
         depth_anything_v2_small_package,
@@ -91,9 +106,13 @@ def test_depth_anything_v2_for_torch_batch(depth_anything_v2_small_package: str,
 
 @pytest.mark.slow
 @pytest.mark.torch_models
-def test_depth_anything_v2_for_torch_list(depth_anything_v2_small_package: str, dog_image_torch: torch.Tensor) -> None:
+def test_depth_anything_v2_for_torch_list(
+    depth_anything_v2_small_package: str, dog_image_torch: torch.Tensor
+) -> None:
     # given
-    from inference_exp.models.depth_anything_v2.depth_anything_v2_hf import DepthAnythingV2HF
+    from inference_exp.models.depth_anything_v2.depth_anything_v2_hf import (
+        DepthAnythingV2HF,
+    )
 
     model = DepthAnythingV2HF.from_pretrained(
         depth_anything_v2_small_package,

@@ -54,7 +54,7 @@ GOOGLE_VISION_OCR_WORKFLOW = {
 }
 
 
-@pytest.mark.skipif(GOOGLE_VISION_API_KEY is None, reason="No OpenAI API key provided")
+@pytest.mark.skipif(GOOGLE_VISION_API_KEY is None, reason="No Google API key provided")
 @pytest.mark.flaky(retries=4, delay=1)
 def test_workflow_with_google_api_ocr(
     object_detection_service_url: str,

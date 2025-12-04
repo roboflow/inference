@@ -65,6 +65,7 @@ from inference.core.roboflow_api import (
 )
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2multipoly
+from inference.usage_tracking.collector import usage_collector
 
 
 def _to_numpy_masks(masks_any) -> np.ndarray:
@@ -499,6 +500,7 @@ class SegmentAnything3(RoboflowCoreModel):
         np_image = load_image_rgb(image)
         return np_image
 
+    @usage_collector("model")
     def infer_from_request(self, request: Sam3InferenceRequest):
         # with self.sam3_lock:
         t1 = perf_counter()
