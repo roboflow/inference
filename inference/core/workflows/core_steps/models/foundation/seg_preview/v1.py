@@ -223,10 +223,7 @@ class SegPreviewBlockV1(WorkflowBlock):
             http_prompts: List[dict] = []
             for idx, class_name in enumerate(class_names):
                 prompt_data = {"type": "text", "text": class_name}
-                # Add per-prompt threshold if confidence_thresholds is set
-                if confidence_thresholds is not None and idx < len(
-                    confidence_thresholds
-                ):
+                if confidence_thresholds is not None:
                     prompt_data["output_prob_thresh"] = confidence_thresholds[idx]
                 http_prompts.append(prompt_data)
 
