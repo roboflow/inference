@@ -3,7 +3,7 @@ from typing import Any, List, Literal, Optional, Type, Union
 
 import numpy as np
 import requests
-from pydantic import ConfigDict, Field, validator
+from pydantic import ConfigDict, Field, root_validator, validator
 
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
@@ -117,6 +117,21 @@ class BlockManifest(WorkflowBlockManifest):
             raise ValueError("nms_iou_threshold must be between 0.0 and 1.0")
         return v
 
+    @root_validator(pre=False)
+    def _validate_confidence_thresholds_length(cls, values):
+        class_names = values.get("class_names")
+        confidence_thresholds = values.get("confidence_thresholds")
+        if (
+            isinstance(class_names, list)
+            and isinstance(confidence_thresholds, list)
+            and len(confidence_thresholds) != len(class_names)
+        ):
+            raise ValueError(
+                f"confidence_thresholds length ({len(confidence_thresholds)}) "
+                f"must match class_names length ({len(class_names)})"
+            )
+        return values
+
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
         return ["images", "boxes"]
@@ -171,13 +186,6 @@ class SegPreviewBlockV1(WorkflowBlock):
             class_names = class_names
         else:
             raise ValueError(f"Invalid class names type: {type(class_names)}")
-
-        if confidence_thresholds is not None and class_names:
-            if len(confidence_thresholds) != len(class_names):
-                raise ValueError(
-                    f"confidence_thresholds length ({len(confidence_thresholds)}) "
-                    f"must match class_names length ({len(class_names)})"
-                )
 
         return self.run_via_request(
             images=images,
