@@ -575,6 +575,9 @@ class VideoFrameProcessor:
                 if self._check_termination():
                     break
 
+                if self.heartbeat_callback:
+                    self.heartbeat_callback()
+
                 ret, np_frame = cap.read()
                 if not ret:
                     logger.info("Reached end of video file")
