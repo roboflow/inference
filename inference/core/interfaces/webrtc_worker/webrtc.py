@@ -1183,9 +1183,13 @@ async def init_rtc_peer_connection_with_loop(
 
             @channel.on("message")
             def on_upload_message(message):
-                # Keep watchdog alive during upload
+                # Keep watchdog alive during upload and keepalive pings
                 if video_processor.heartbeat_callback:
                     video_processor.heartbeat_callback()
+
+                # Ignore keepalive pings (1-byte messages)
+                if len(message) <= 1:
+                    return
 
                 chunk_index, total_chunks, data = parse_video_file_chunk(message)
                 video_processor.video_upload_handler.handle_chunk(
