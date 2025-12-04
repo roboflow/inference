@@ -142,6 +142,7 @@ SNAKES_RFDETR_SEG_ONNX_STATIC_BS_STATIC_CROP_CENTER_CROP_URL = "https://storage.
 
 DEPTH_ANYTHING_V2_SMALL_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/depth-anything-v2.zip"
 DOCTR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/doctr-dbnet-rn50-crnn-vgg16.zip"
+EASY_OCR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/easy-ocr-english.zip"
 
 
 @pytest.fixture(scope="module")
@@ -1141,4 +1142,11 @@ def depth_anything_v2_small_package() -> str:
 def doctr_package() -> str:
     return download_model_package(
         model_package_zip_url=DOCTR_PACKAGE_URL, package_name="doctr"
+    )
+
+
+@pytest.fixture(scope="module")
+def easy_ocr_package() -> str:
+    return download_model_package(
+        model_package_zip_url=EASY_OCR_PACKAGE_URL, package_name="easy-ocr"
     )
