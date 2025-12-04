@@ -500,7 +500,6 @@ class VideoFrameProcessor:
                 if self._check_termination():
                     break
                 if self.heartbeat_callback:
-                    logger.info("Heartbeat callback")
                     self.heartbeat_callback()
 
                 # Get frame from appropriate source
@@ -577,7 +576,6 @@ class VideoFrameProcessor:
                     break
 
                 if self.heartbeat_callback:
-                    logger.info("Heartbeat callback")
                     self.heartbeat_callback()
 
                 ret, np_frame = cap.read()
