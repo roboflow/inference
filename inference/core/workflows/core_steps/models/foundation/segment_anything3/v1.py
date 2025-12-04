@@ -4,7 +4,7 @@ from typing import List, Literal, Optional, Type, Union
 import numpy as np
 import requests
 import supervision as sv
-from pydantic import ConfigDict, Field, validator
+from pydantic import ConfigDict, Field
 
 from inference.core import logger
 from inference.core.entities.requests.sam3 import Sam3Prompt, Sam3SegmentationRequest
@@ -116,48 +116,6 @@ class BlockManifest(WorkflowBlockManifest):
         default=0.5, description="Threshold for predicted mask scores", examples=[0.3]
     )
 
-    confidence_thresholds: Optional[
-        Union[List[float], str, Selector(kind=[LIST_OF_VALUES_KIND, STRING_KIND])]
-    ] = Field(
-        default=None,
-        title="Per-Class Confidence Thresholds",
-        description="List of thresholds per class (must match class_names length) or comma-separated string",
-        examples=[[0.3, 0.5, 0.7], "0.3,0.5,0.7"],
-    )
-
-    apply_nms: Union[Selector(kind=[BOOLEAN_KIND]), bool] = Field(
-        default=True,
-        title="Apply NMS",
-        description="Whether to apply Non-Maximum Suppression across prompts",
-    )
-
-    nms_iou_threshold: Union[Selector(kind=[FLOAT_KIND]), float] = Field(
-        default=0.9,
-        title="NMS IoU Threshold",
-        description="IoU threshold for cross-prompt NMS. Must be in [0.0, 1.0]",
-        examples=[0.5, 0.9],
-    )
-
-    @validator("nms_iou_threshold")
-    def _validate_nms_iou_threshold(cls, v):
-        if isinstance(v, (int, float)) and (v < 0.0 or v > 1.0):
-            raise ValueError("nms_iou_threshold must be between 0.0 and 1.0")
-        return v
-
-    @validator("confidence_thresholds", pre=True)
-    def _parse_confidence_thresholds(cls, v):
-        if v is None:
-            return None
-        if isinstance(v, str):
-            # Parse comma-separated string to list of floats
-            try:
-                return [float(x.strip()) for x in v.split(",") if x.strip()]
-            except ValueError:
-                raise ValueError(
-                    "confidence_thresholds string must be comma-separated floats"
-                )
-        return v
-
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
         return ["images", "boxes"]
@@ -202,9 +160,6 @@ class SegmentAnything3BlockV1(WorkflowBlock):
         model_id: str,
         class_names: Optional[Union[List[str], str]],
         threshold: float,
-        confidence_thresholds: Optional[Union[List[float], str]] = None,
-        apply_nms: bool = True,
-        nms_iou_threshold: float = 0.9,
     ) -> BlockResult:
 
         if isinstance(class_names, str):
@@ -213,26 +168,6 @@ class SegmentAnything3BlockV1(WorkflowBlock):
             class_names = class_names
         else:
             raise ValueError(f"Invalid class names type: {type(class_names)}")
-
-        # Parse confidence_thresholds if string
-        parsed_thresholds = None
-        if confidence_thresholds is not None:
-            if isinstance(confidence_thresholds, str):
-                parsed_thresholds = [
-                    float(x.strip())
-                    for x in confidence_thresholds.split(",")
-                    if x.strip()
-                ]
-            else:
-                parsed_thresholds = confidence_thresholds
-
-            # Validate length matches class_names
-            if parsed_thresholds and class_names:
-                if len(parsed_thresholds) != len(class_names):
-                    raise ValueError(
-                        f"confidence_thresholds length ({len(parsed_thresholds)}) "
-                        f"must match class_names length ({len(class_names)})"
-                    )
 
         exec_mode = self._step_execution_mode
         if SAM3_EXEC_MODE == "local":
@@ -253,9 +188,6 @@ class SegmentAnything3BlockV1(WorkflowBlock):
                 model_id=model_id,
                 class_names=class_names,
                 threshold=threshold,
-                confidence_thresholds=parsed_thresholds,
-                apply_nms=apply_nms,
-                nms_iou_threshold=nms_iou_threshold,
             )
         elif exec_mode is StepExecutionMode.REMOTE:
             logger.debug(f"Running SAM3 remotely")
@@ -263,9 +195,6 @@ class SegmentAnything3BlockV1(WorkflowBlock):
                 images=images,
                 class_names=class_names,
                 threshold=threshold,
-                confidence_thresholds=parsed_thresholds,
-                apply_nms=apply_nms,
-                nms_iou_threshold=nms_iou_threshold,
             )
         else:
             raise ValueError(
@@ -278,9 +207,6 @@ class SegmentAnything3BlockV1(WorkflowBlock):
         model_id: str,
         class_names: Optional[List[str]],
         threshold: float,
-        confidence_thresholds: Optional[List[float]] = None,
-        apply_nms: bool = True,
-        nms_iou_threshold: float = 0.9,
     ) -> BlockResult:
         predictions = []
         if class_names is None:
@@ -301,18 +227,8 @@ class SegmentAnything3BlockV1(WorkflowBlock):
 
             # Build unified prompt list: one per class name
             unified_prompts: List[Sam3Prompt] = []
-            for idx, class_name in enumerate(class_names):
-                # Add per-prompt threshold if confidence_thresholds is set
-                prompt_thresh = None
-                if confidence_thresholds is not None and idx < len(
-                    confidence_thresholds
-                ):
-                    prompt_thresh = confidence_thresholds[idx]
-                unified_prompts.append(
-                    Sam3Prompt(
-                        type="text", text=class_name, output_prob_thresh=prompt_thresh
-                    )
-                )
+            for class_name in class_names:
+                unified_prompts.append(Sam3Prompt(type="text", text=class_name))
 
             # Single batched request with all prompts
             inference_request = Sam3SegmentationRequest(
@@ -321,7 +237,6 @@ class SegmentAnything3BlockV1(WorkflowBlock):
                 api_key=self._api_key,
                 prompts=unified_prompts,
                 output_prob_thresh=threshold,
-                nms_iou_threshold=nms_iou_threshold if apply_nms else None,
             )
 
             sam3_response = self._model_manager.infer_from_request_sync(
@@ -366,9 +281,6 @@ class SegmentAnything3BlockV1(WorkflowBlock):
         images: Batch[WorkflowImageData],
         class_names: Optional[List[str]],
         threshold: float,
-        confidence_thresholds: Optional[List[float]] = None,
-        apply_nms: bool = True,
-        nms_iou_threshold: float = 0.9,
     ) -> BlockResult:
         predictions = []
         if class_names is None:
@@ -386,14 +298,8 @@ class SegmentAnything3BlockV1(WorkflowBlock):
 
             # Build unified prompt list payloads for HTTP
             http_prompts: List[dict] = []
-            for idx, class_name in enumerate(class_names):
-                prompt_data = {"type": "text", "text": class_name}
-                # Add per-prompt threshold if confidence_thresholds is set
-                if confidence_thresholds is not None and idx < len(
-                    confidence_thresholds
-                ):
-                    prompt_data["output_prob_thresh"] = confidence_thresholds[idx]
-                http_prompts.append(prompt_data)
+            for class_name in class_names:
+                http_prompts.append({"type": "text", "text": class_name})
 
             # Prepare image for remote API (base64)
             http_image = {"type": "base64", "value": single_image.base64_image}
@@ -402,7 +308,6 @@ class SegmentAnything3BlockV1(WorkflowBlock):
                 "image": http_image,
                 "prompts": http_prompts,
                 "output_prob_thresh": threshold,
-                "nms_iou_threshold": nms_iou_threshold if apply_nms else None,
             }
 
             try:
