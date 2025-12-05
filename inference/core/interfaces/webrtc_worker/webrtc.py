@@ -73,7 +73,7 @@ CHUNK_SIZE = 48 * 1024  # 48KB - safe for all WebRTC implementations
 
 # Backpressure thresholds for data channel buffer
 BUFFER_HIGH_THRESHOLD = 8 * 1024 * 1024  # 8MB - start waiting when buffer exceeds this
-BUFFER_CHECK_INTERVAL = 0.05  # 50ms between buffer checks
+BUFFER_CHECK_INTERVAL = 0.1  # 100ms between buffer checks
 
 
 def create_chunked_binary_message(
