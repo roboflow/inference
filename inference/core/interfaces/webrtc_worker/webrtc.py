@@ -453,7 +453,7 @@ class VideoFrameProcessor:
 
         # Send using binary chunked protocol
         json_bytes = json.dumps(webrtc_output.model_dump(mode="json")).encode("utf-8")
-        await send_chunked_data(self.data_channel, self._received_frames, json_bytes, heartbeat_callback=self.heartbeat_callback)
+        await send_chunked_data(self.data_channel, self._received_frames, json_bytes)
 
     async def _handle_data_channel_frame(self, message: bytes) -> None:
         """Handle incoming binary frame chunk from upstream_frames data channel.
