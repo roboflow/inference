@@ -242,7 +242,7 @@ if modal is not None:
         _function_call_number_on_container: Optional[int] = modal.parameter(
             default=0, init=False
         )
-        _cold_start: Optional[bool] = modal.parameter(default=False, init=False)
+        _cold_start: Optional[bool] = modal.parameter(default=True, init=False)
 
         @modal.method()
         def rtc_peer_connection_modal(
@@ -277,6 +277,11 @@ if modal is not None:
             webrtc_request.processing_session_started = _exec_session_started
             # Modal cancels based on time taken during entry hook
             if self._function_call_number_on_container == 1 and self._cold_start:
+                logger.info(
+                    "Subtracting container startup time (%s) from processing session started (%s)",
+                    self._container_startup_time_seconds,
+                    webrtc_request.processing_session_started,
+                )
                 webrtc_request.processing_session_started -= datetime.timedelta(
                     seconds=self._container_startup_time_seconds
                 )
@@ -317,9 +322,13 @@ if modal is not None:
             logger.info("MODAL_ENVIRONMENT: %s", MODAL_ENVIRONMENT)
             logger.info("MODAL_IDENTITY_TOKEN: %s", MODAL_IDENTITY_TOKEN)
 
+            answer_sent = False
+
             def send_answer(obj: WebRTCWorkerResult):
                 logger.info("Sending webrtc answer")
                 q.put(obj)
+                nonlocal answer_sent
+                answer_sent = True
 
             if webrtc_request.processing_timeout == 0:
                 error_msg = "Processing timeout is 0, skipping processing"
@@ -354,6 +363,9 @@ if modal is not None:
                 "WebRTC session stopped at %s",
                 _exec_session_stopped.isoformat(),
             )
+            if not answer_sent:
+                logger.error("WebRTC answer NOT sent")
+                raise Exception("WebRTC answer NOT sent")
             workflow_id = webrtc_request.workflow_configuration.workflow_id
             if not workflow_id:
                 if webrtc_request.workflow_configuration.workflow_specification:
@@ -410,7 +422,7 @@ if modal is not None:
             # TODO: pre-load models on CPU
             logger.info("Starting CPU container")
             self._gpu = "CPU"
-            self._cold_start = True
+            self._cold_start = False
 
     @app.cls(
         **{
@@ -430,7 +442,7 @@ if modal is not None:
         # https://modal.com/docs/guide/memory-snapshot#gpu-memory-snapshot
         @modal.enter(snap=True)
         def start(self):
-            self._cold_start = True
+            self._cold_start = False
             time_start = time.time()
             warmup_cuda(max_retries=10, retry_delay=0.5)
             self._gpu = check_nvidia_smi_gpu()
