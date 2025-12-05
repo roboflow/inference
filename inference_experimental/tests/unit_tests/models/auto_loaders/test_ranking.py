@@ -35,6 +35,35 @@ from inference_exp.weights_providers.entities import (
 from packaging.version import Version
 
 
+def test_rank_model_packages_when_trusted_source_flag_is_taken_into_account() -> None:
+    # given
+    model_packages = [
+        ModelPackageMetadata(
+            package_id="my-package-id-1",
+            backend=BackendType.TRT,
+            quantization=Quantization.FP32,
+            package_artefacts=[],
+            trusted_source=False,
+        ),
+        ModelPackageMetadata(
+            package_id="my-package-id-2",
+            backend=BackendType.TRT,
+            quantization=Quantization.FP32,
+            package_artefacts=[],
+            trusted_source=True,
+        ),
+    ]
+
+    # when
+    result = rank_model_packages(model_packages=model_packages)
+
+    # then
+    assert [e.package_id for e in result] == [
+        "my-package-id-2",
+        "my-package-id-1",
+    ]
+
+
 def test_rank_model_packages_when_backends_should_be_prioritised_correctly() -> None:
     # given
     model_packages = [
