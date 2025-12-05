@@ -1221,6 +1221,7 @@ async def init_rtc_peer_connection_with_loop(
 
                 # Ignore keepalive pings (1-byte messages)
                 if len(message) <= 1:
+                    channel.send(message)
                     return
 
                 chunk_index, total_chunks, data = parse_video_file_chunk(message)
