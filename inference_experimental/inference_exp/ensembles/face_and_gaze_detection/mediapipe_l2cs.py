@@ -8,7 +8,7 @@ from inference_exp.entities import ColorFormat
 from inference_exp.errors import ModelRuntimeError
 from inference_exp.models.l2cs.l2cs_onnx import (
     DEFAULT_GAZE_MAX_BATCH_SIZE,
-    GazeDetection,
+    L2CSGazeDetection,
     L2CSNetOnnx,
 )
 from inference_exp.models.mediapipe_face_detection.face_detection import (
@@ -67,7 +67,7 @@ class FaceAndGazeDetectionMPAndL2CS:
         input_color_format: Optional[ColorFormat] = None,
         conf_threshold: float = 0.25,
         **kwargs,
-    ) -> Tuple[List[KeyPoints], List[Detections], List[GazeDetection]]:
+    ) -> Tuple[List[KeyPoints], List[Detections], List[L2CSGazeDetection]]:
         key_points, detections = self._face_detector(
             images,
             input_color_format=input_color_format,
@@ -83,7 +83,7 @@ class FaceAndGazeDetectionMPAndL2CS:
         gaze_detections_dispatched = []
         for start, end in crops_images_bounds:
             gaze_detections_dispatched.append(
-                GazeDetection(
+                L2CSGazeDetection(
                     yaw=gaze_detections.yaw[start:end],
                     pitch=gaze_detections.pitch[start:end],
                 )
@@ -96,7 +96,7 @@ class FaceAndGazeDetectionMPAndL2CS:
         input_color_format: Optional[ColorFormat] = None,
         conf_threshold: float = 0.25,
         **kwargs,
-    ) -> Tuple[List[KeyPoints], List[Detections], List[GazeDetection]]:
+    ) -> Tuple[List[KeyPoints], List[Detections], List[L2CSGazeDetection]]:
         return self.infer(
             images=images,
             input_color_format=input_color_format,

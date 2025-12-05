@@ -17,6 +17,7 @@ MULTI_LABEL_CLASSIFICATION_TASK = "multi-label-classification"
 DEPTH_ESTIMATION_TASK = "depth-estimation"
 STRUCTURED_OCR_TASK = "structured-ocr"
 TEXT_ONLY_OCR_TASK = "text-only-ocr"
+GAZE_DETECTION_TASK = "gaze-detection"
 
 
 @dataclass(frozen=True)
@@ -378,6 +379,10 @@ REGISTERED_MODELS: Dict[
     ): LazyClass(
         module_name="inference_exp.models.mediapipe_face_detection.face_detection",
         class_name="MediaPipeFaceDetector",
+    ),
+    ("l2cs-net", GAZE_DETECTION_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_exp.models.l2cs.l2cs_onnx",
+        class_name="L2CSNetOnnx",
     ),
 }
 

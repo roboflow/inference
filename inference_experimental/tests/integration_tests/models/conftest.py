@@ -145,6 +145,7 @@ DOCTR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-pla
 EASY_OCR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/easy-ocr-english.zip"
 TROCR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/tr-ocr-small-printed.zip"
 MEDIAPIPE_FACE_DETECTOR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/mediapipe-face-detector.zip"
+L2CS_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/l2cs-net.zip"
 
 
 @pytest.fixture(scope="module")
@@ -1166,4 +1167,12 @@ def mediapipe_face_detector_package() -> str:
     return download_model_package(
         model_package_zip_url=MEDIAPIPE_FACE_DETECTOR_PACKAGE_URL,
         package_name="mediapipe-face-detector",
+    )
+
+
+@pytest.fixture(scope="module")
+def l2cs_package() -> str:
+    return download_model_package(
+        model_package_zip_url=L2CS_PACKAGE_URL,
+        package_name="l2cs",
     )
