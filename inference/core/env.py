@@ -208,6 +208,9 @@ CORE_MODEL_YOLO_WORLD_ENABLED = str2bool(
 
 # Enable experimental RFDETR backend (inference_exp) rollout, default is True
 USE_INFERENCE_EXP_MODELS = str2bool(os.getenv("USE_INFERENCE_EXP_MODELS", "False"))
+ALLOW_INFERENCE_EXP_UNTRUSTED_MODELS = str2bool(
+    os.getenv("ALLOW_INFERENCE_EXP_UNTRUSTED_MODELS", "False")
+)
 
 # ID of host device, default is None
 DEVICE_ID = os.getenv("DEVICE_ID", None)
@@ -719,6 +722,8 @@ WEBRTC_MODAL_APP_NAME = os.getenv(
 # seconds
 WEBRTC_MODAL_RESPONSE_TIMEOUT = int(os.getenv("WEBRTC_MODAL_RESPONSE_TIMEOUT", "60"))
 # seconds
+WEBRTC_MODAL_WATCHDOG_TIMEMOUT = int(os.getenv("WEBRTC_MODAL_WATCHDOG_TIMEMOUT", "60"))
+# seconds
 WEBRTC_MODAL_FUNCTION_TIME_LIMIT = int(
     os.getenv("WEBRTC_MODAL_FUNCTION_TIME_LIMIT", "3600")
 )
@@ -762,7 +767,18 @@ WEBRTC_MODAL_GCP_SECRET_NAME = os.getenv("WEBRTC_MODAL_GCP_SECRET_NAME")
 WEBRTC_MODAL_MODELS_PRELOAD_API_KEY = os.getenv("WEBRTC_MODAL_MODELS_PRELOAD_API_KEY")
 WEBRTC_MODAL_PRELOAD_MODELS = os.getenv("WEBRTC_MODAL_PRELOAD_MODELS")
 WEBRTC_MODAL_PRELOAD_HF_IDS = os.getenv("WEBRTC_MODAL_PRELOAD_HF_IDS")
-WEBRTC_MODAL_MIN_RAM_MB = int(os.getenv("WEBRTC_MODAL_MIN_RAM_MB", "4096"))
+try:
+    WEBRTC_MODAL_MIN_CPU_CORES = int(os.getenv("WEBRTC_MODAL_MIN_CPU_CORES"))
+except (ValueError, TypeError):
+    WEBRTC_MODAL_MIN_CPU_CORES = None
+try:
+    WEBRTC_MODAL_MIN_RAM_MB = int(os.getenv("WEBRTC_MODAL_MIN_RAM_MB"))
+except (ValueError, TypeError):
+    WEBRTC_MODAL_MIN_RAM_MB = None
+WEBRTC_MODAL_PUBLIC_STUN_SERVERS = os.getenv(
+    "WEBRTC_MODAL_PUBLIC_STUN_SERVERS",
+    "stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302,stun:stun2.l.google.com:19302,stun:stun3.l.google.com:19302,stun:stun4.l.google.com:19302",
+)
 
 HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED = str2bool(
     os.getenv("HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED", "True")

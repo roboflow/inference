@@ -112,7 +112,7 @@ def test_workflow_with_google_ocr_when_text_should_be_detected(
     ), "Expected that visualisation will change the output image"
     assert (
         len(result[0]["text_detections"]) == 3
-    ), "Expected 4 text regions to be detected"
+    ), "Expected 3 text regions to be detected"
 
 
 @pytest.mark.skipif(
@@ -153,3 +153,69 @@ def test_workflow_with_google_ocr_when_no_text_should_be_detected(
         dogs_image, result[0]["text_visualised"].numpy_image
     ), "Expected that visualisation will not change the output image"
     assert len(result[0]["text_detections"]) == 0, "Expected 0 text regions detected"
+
+
+GOOGLE_VISION_OCR_PROXY_WORKFLOW = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+    ],
+    "steps": [
+        {
+            "type": "roboflow_core/google_vision_ocr@v1",
+            "name": "google_vision_ocr",
+            "image": "$inputs.image",
+            "ocr_type": "text_detection",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "extracted_text",
+            "selector": "$steps.google_vision_ocr.text",
+        },
+        {
+            "type": "JsonField",
+            "name": "text_detections",
+            "selector": "$steps.google_vision_ocr.predictions",
+        },
+    ],
+}
+
+
+def test_workflow_with_google_ocr_without_api_key_via_proxy(
+    model_manager: ModelManager,
+    license_plate_image: np.ndarray,
+    roboflow_api_key: str,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": roboflow_api_key,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=GOOGLE_VISION_OCR_PROXY_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": [license_plate_image],
+        }
+    )
+
+    # then
+    assert len(result) == 1, "Single image given, expected single output"
+    assert set(result[0].keys()) == {
+        "extracted_text",
+        "text_detections",
+    }, "Expected all outputs to be delivered"
+    assert (
+        result[0]["extracted_text"] == "2398027\nKn\n239 8072"
+    ), "Extracted text should match reference"
+    assert (
+        len(result[0]["text_detections"]) == 3
+    ), "Expected 3 text regions to be detected"

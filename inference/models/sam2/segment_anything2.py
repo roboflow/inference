@@ -42,6 +42,7 @@ from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2multipoly
 from inference.core.utils.torchscript_guard import _temporarily_disable_torch_jit_script
+from inference.usage_tracking.collector import usage_collector
 
 if DEVICE is None:
     DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -176,6 +177,7 @@ class SegmentAnything2(RoboflowCoreModel):
                     safe_remove_from_dict(values=self.image_size_cache, key=cache_key)
             return embedding_dict, img_in.shape[:2], image_id
 
+    @usage_collector("model")
     def infer_from_request(self, request: Sam2InferenceRequest):
         """Performs inference based on the request type.
 

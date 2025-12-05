@@ -25,6 +25,7 @@ from pydantic import ValidationError
 
 from inference.core import logger
 from inference.core.env import (
+    WEBRTC_MODAL_PUBLIC_STUN_SERVERS,
     WEBRTC_MODAL_RTSP_PLACEHOLDER,
     WEBRTC_MODAL_RTSP_PLACEHOLDER_URL,
     WEBRTC_MODAL_SHUTDOWN_RESERVE,
@@ -161,10 +162,11 @@ def send_chunked_data(
             f"Sending response for frame {frame_id}: {total_chunks} chunk(s), {len(payload_bytes)} bytes"
         )
 
+    view = memoryview(payload_bytes)
     for chunk_index in range(total_chunks):
         start = chunk_index * chunk_size
         end = min(start + chunk_size, len(payload_bytes))
-        chunk_data = payload_bytes[start:end]
+        chunk_data = view[start:end]
 
         message = create_chunked_binary_message(
             frame_id, chunk_index, total_chunks, chunk_data
@@ -304,7 +306,9 @@ class VideoFrameProcessor:
 
         if self._data_mode == DataOutputMode.NONE:
             # Even empty responses use binary protocol
-            json_bytes = json.dumps(webrtc_output.model_dump()).encode("utf-8")
+            json_bytes = await asyncio.to_thread(
+                lambda: json.dumps(webrtc_output.model_dump()).encode("utf-8")
+            )
             send_chunked_data(self.data_channel, self._received_frames, json_bytes)
             return
 
@@ -370,15 +374,22 @@ class VideoFrameProcessor:
                     f"Received frame {frame_id}: {total_chunks} chunk(s), {len(jpeg_bytes)} bytes JPEG"
                 )
 
-            nparr = np.frombuffer(jpeg_bytes, np.uint8)
-            np_image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            def _decode_to_frame(jpeg_bytes: bytes) -> VideoFrame:
+                nparr = np.frombuffer(jpeg_bytes, np.uint8)
+                np_image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
-            if np_image is None:
-                logger.error(f"Failed to decode JPEG for frame {frame_id}")
+                if np_image is None:
+                    raise ValueError("cv2.imdecode returned None")
+
+                return VideoFrame.from_ndarray(np_image, format="bgr24")
+
+            try:
+                video_frame = await asyncio.to_thread(_decode_to_frame, jpeg_bytes)
+            except Exception as e:
+                logger.error(f"Failed to decode JPEG for frame {frame_id}: {e}")
                 return
 
-            video_frame = VideoFrame.from_ndarray(np_image, format="bgr24")
-            await self._data_frame_queue.put((frame_id, video_frame))
+            self._data_frame_queue.put_nowait((frame_id, video_frame))
 
             if frame_id % 100 == 1:
                 logger.info(f"Queued frame {frame_id}")
@@ -439,8 +450,10 @@ class VideoFrameProcessor:
                 )
 
                 # Send data via data channel
-                await self._send_data_output(
-                    workflow_output, frame_timestamp, frame, errors
+                asyncio.create_task(
+                    self._send_data_output(
+                        workflow_output, frame_timestamp, frame, errors
+                    )
                 )
 
         except asyncio.CancelledError:
@@ -633,6 +646,7 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
 
 async def _wait_ice_complete(peer_connection: RTCPeerConnectionWithLoop, timeout=2.0):
     if peer_connection.iceGatheringState == "complete":
+        logger.info("ICE gathering state already complete")
         return
     fut = asyncio.get_running_loop().create_future()
 
@@ -661,6 +675,7 @@ async def init_rtc_peer_connection_with_loop(
     shutdown_reserve: int = WEBRTC_MODAL_SHUTDOWN_RESERVE,
     heartbeat_callback: Optional[Callable[[], None]] = None,
 ) -> RTCPeerConnectionWithLoop:
+    logger.info("Initializing RTC peer connection with loop")
     # ice._mdns is instantiated on the module level, it has a lock that is bound to the event loop
     # avoid RuntimeError: asyncio.locks.Lock is bound to a different event loop
     if hasattr(ice, "_mdns"):
@@ -814,6 +829,15 @@ async def init_rtc_peer_connection_with_loop(
                     credential=ice_server.credential,
                 )
             )
+        # Always add public stun servers (if specified)
+        if WEBRTC_MODAL_PUBLIC_STUN_SERVERS:
+            for stun_server in WEBRTC_MODAL_PUBLIC_STUN_SERVERS.split(","):
+                try:
+                    ice_servers.append(RTCIceServer(urls=stun_server.strip()))
+                except Exception as e:
+                    logger.warning(
+                        "Failed to add public stun server '%s': %s", stun_server, e
+                    )
     else:
         ice_servers = None
     peer_connection = RTCPeerConnectionWithLoop(
@@ -946,9 +970,12 @@ async def init_rtc_peer_connection_with_loop(
     answer = await peer_connection.createAnswer()
     await peer_connection.setLocalDescription(answer)
 
-    logger.debug(f"WebRTC connection status: {peer_connection.connectionState}")
-
     await _wait_ice_complete(peer_connection, timeout=2.0)
+
+    logger.info(
+        "Initialized RTC peer connection with loop (status: %s), sending answer",
+        peer_connection.connectionState,
+    )
 
     send_answer(
         WebRTCWorkerResult(
@@ -959,7 +986,9 @@ async def init_rtc_peer_connection_with_loop(
         )
     )
 
+    logger.info("Answer sent, waiting for termination event")
     await terminate_event.wait()
+    logger.info("Termination event received, closing WebRTC connection")
     if player:
         logger.info("Stopping player")
         player.video.stop()

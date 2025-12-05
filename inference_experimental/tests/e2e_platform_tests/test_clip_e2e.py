@@ -99,7 +99,7 @@ def _test_clip_wrapper_vs_baseline_for_image_embeddings(
 
     # then
     similarity = torch.nn.functional.cosine_similarity(
-        baseline_embeddings, wrapper_embeddings
+        baseline_embeddings.cpu(), wrapper_embeddings.cpu()
     )
     assert similarity.item() > 0.99
 
