@@ -13,8 +13,8 @@ try:
     from mediapipe.tasks.python.components.containers import Detection
 except ImportError as import_error:
     raise MissingDependencyError(
-        message=f"Could not import face detection model from MediaPipe - this error means that some additional dependencies "
-        f"are not installed in the environment. If you run the `inference-exp` library directly in your Python "
+        message=f"Could not import face detection model from MediaPipe - this error means that some additional "
+        f"dependencies are not installed in the environment. If you run the `inference-exp` library directly in your Python "
         f"program, make sure the following extras of the package are installed: `mediapipe`."
         f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
         f"You can also contact Roboflow to get support.",
@@ -60,6 +60,10 @@ class MediaPipeFaceDetector(
     def key_points_classes(self) -> List[List[str]]:
         return [["right-eye", "left-eye", "nose", "mouth", "right-ear", "left-ear"]]
 
+    @property
+    def skeletons(self) -> List[List[Tuple[int, int]]]:
+        return [[(5, 1), (1, 2), (4, 0), (0, 2), (2, 3)]]
+
     def pre_process(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
@@ -84,7 +88,7 @@ class MediaPipeFaceDetector(
             images = images.permute(0, 2, 3, 1)
             preprocessed_images, dimensions = [], []
             for image in images:
-                np_image = image.cpu().numpy()
+                np_image = np.ascontiguousarray(image.cpu().numpy())
                 preprocessed_images.append(
                     mp.Image(
                         image_format=mp.ImageFormat.SRGB, data=np_image.astype(np.uint8)

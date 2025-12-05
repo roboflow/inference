@@ -19,6 +19,10 @@ DOG_IMAGE_URL = (
 )
 OCR_TEST_IMAGE_PATH = os.path.join(ASSETS_DIR, "ocr_test_image.png")
 OCR_TEST_IMAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/test-images/ocr_test_image.png"
+MAN_IMAGE_PATH = os.path.join(ASSETS_DIR, "man.jpg")
+MAN_IMAGE_URL = (
+    "https://storage.googleapis.com/roboflow-tests-assets/test-images/man.jpg"
+)
 BIKE_IMAGE_URL = "https://media.roboflow.com/inference/example-input-images/bike.jpg"
 BIKE_IMAGE_PATH = os.path.join(ASSETS_DIR, "bike.jpg")
 ASL_IMAGE_URL = (
@@ -165,6 +169,20 @@ def ocr_test_image_numpy() -> np.ndarray:
 def ocr_test_image_torch() -> torch.Tensor:
     _download_if_not_exists(file_path=OCR_TEST_IMAGE_PATH, url=OCR_TEST_IMAGE_URL)
     return torchvision.io.read_image(OCR_TEST_IMAGE_PATH)
+
+
+@pytest.fixture(scope="function")
+def man_image_numpy() -> np.ndarray:
+    _download_if_not_exists(file_path=MAN_IMAGE_PATH, url=MAN_IMAGE_URL)
+    image = cv2.imread(MAN_IMAGE_PATH)
+    assert image is not None, "Could not load OCR test image"
+    return image
+
+
+@pytest.fixture(scope="function")
+def man_image_torch() -> torch.Tensor:
+    _download_if_not_exists(file_path=MAN_IMAGE_PATH, url=MAN_IMAGE_URL)
+    return torchvision.io.read_image(MAN_IMAGE_PATH)
 
 
 @pytest.fixture(scope="function")

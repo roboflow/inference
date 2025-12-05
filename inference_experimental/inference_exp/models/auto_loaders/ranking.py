@@ -21,12 +21,14 @@ from inference_exp.weights_providers.entities import (
 )
 
 BACKEND_PRIORITY = {
-    BackendType.TRT: 6,
-    BackendType.TORCH: 5,
+    BackendType.TRT: 7,
+    BackendType.TORCH: 6,
     BackendType.HF: 5,
     BackendType.ONNX: 3,
-    BackendType.TORCH_SCRIPT: 2,
+    BackendType.TORCH_SCRIPT: 3,
+    BackendType.MEDIAPIPE: 2,
     BackendType.ULTRALYTICS: 1,
+    BackendType.CUSTOM: 0,
 }
 QUANTIZATION_PRIORITY = {
     Quantization.INT8: 4,
@@ -75,6 +77,7 @@ def rank_model_packages(
         )
         sorting_features.append(
             (
+                model_package.trusted_source,
                 BACKEND_PRIORITY.get(model_package.backend, 0),
                 QUANTIZATION_PRIORITY.get(model_package.quantization, 0),
                 BATCH_SIZE_PRIORITY[batch_mode],

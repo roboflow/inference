@@ -45,6 +45,7 @@ class RuntimeXRayResult:
     hf_transformers_available: bool
     ultralytics_available: bool
     trt_python_package_available: bool
+    mediapipe_available: bool
 
     def __str__(self) -> str:
         gpu_devices_str = ", ".join(self.gpu_devices)
@@ -57,7 +58,7 @@ class RuntimeXRayResult:
             f"available_onnx_execution_providers={self.available_onnx_execution_providers}, hf_transformers_available={self.hf_transformers_available}, "
             f"ultralytics_available={self.ultralytics_available}, "
             f"trt_python_package_available={self.trt_python_package_available}, torch_version={self.torch_version}, "
-            f"torchvision_version={self.torchvision_version})"
+            f"torchvision_version={self.torchvision_version}, mediapipe_available={self.mediapipe_available})"
         )
 
 
@@ -85,6 +86,7 @@ def x_ray_runtime_environment() -> RuntimeXRayResult:
     hf_transformers_available = is_hf_transformers_available()
     ultralytics_available = is_ultralytics_available()
     trt_python_package_available = is_trt_python_package_available()
+    mediapipe_available = is_mediapipe_available()
     return RuntimeXRayResult(
         gpu_available=len(gpu_devices) > 0,
         gpu_devices=gpu_devices,
@@ -103,6 +105,7 @@ def x_ray_runtime_environment() -> RuntimeXRayResult:
         hf_transformers_available=hf_transformers_available,
         ultralytics_available=ultralytics_available,
         trt_python_package_available=trt_python_package_available,
+        mediapipe_available=mediapipe_available,
     )
 
 
@@ -294,6 +297,16 @@ def get_driver_version() -> Optional[Version]:
 def is_trt_python_package_available() -> bool:
     try:
         import tensorrt
+
+        return True
+    except ImportError:
+        return False
+
+
+@cache
+def is_mediapipe_available() -> bool:
+    try:
+        import mediapipe
 
         return True
     except ImportError:

@@ -500,6 +500,28 @@ def parse_torch_script_model_package(
     )
 
 
+class MediapipeModelPackageV1(BaseModel):
+    type: Literal["mediapipe-model-package-v1"]
+    backend_type: Literal["mediapipe"] = Field(alias="backendType")
+
+
+def parse_mediapipe_model_package(
+    metadata: RoboflowModelPackageV1,
+) -> ModelPackageMetadata:
+    _ = MediapipeModelPackageV1.model_validate(metadata.package_manifest)
+    package_artefacts = parse_package_artefacts(
+        package_artefacts=metadata.package_files
+    )
+    return ModelPackageMetadata(
+        package_id=metadata.package_id,
+        backend=BackendType.MEDIAPIPE,
+        package_artefacts=package_artefacts,
+        quantization=Quantization.UNKNOWN,
+        trusted_source=metadata.trusted_source,
+        model_features=metadata.model_features,
+    )
+
+
 def validate_batch_settings(
     dynamic_batch_size: bool, static_batch_size: Optional[int]
 ) -> None:
@@ -539,6 +561,7 @@ MODEL_PACKAGE_PARSERS: Dict[
     "hf-model-package-v1": parse_hf_model_package,
     "ultralytics-model-package-v1": parse_ultralytics_model_package,
     "torch-script-model-package-v1": parse_torch_script_model_package,
+    "mediapipe-model-package-v1": parse_mediapipe_model_package,
 }
 
 
