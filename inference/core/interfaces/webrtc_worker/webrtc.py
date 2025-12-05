@@ -66,14 +66,13 @@ from inference.core.workflows.errors import WorkflowSyntaxError
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.usage_tracking.collector import usage_collector
 
-logging.getLogger("aiortc").setLevel(logging.DEBUG)
+logging.getLogger("aiortc").setLevel(logging.INFO)
 
 # WebRTC data channel chunking configuration
 CHUNK_SIZE = 48 * 1024  # 48KB - safe for all WebRTC implementations
 
-# Backpressure thresholds for data channel buffer
-BUFFER_HIGH_THRESHOLD = 8 * 1024 * 1024  # 8MB - start waiting when buffer exceeds this
-BUFFER_CHECK_INTERVAL = 0.1  # 100ms between buffer checks
+# Rate limiting for data channel sends (prevents SCTP buffer overflow)
+FRAME_SEND_DELAY = 0.05  # 50ms between frames = ~20 FPS max throughput
 
 
 def create_chunked_binary_message(
@@ -227,12 +226,11 @@ async def send_chunked_data(
     frame_id: int,
     payload_bytes: bytes,
     chunk_size: int = CHUNK_SIZE,
-    heartbeat_callback: Optional[Callable[[], None]] = None,
 ) -> None:
-    """Send payload via data channel with backpressure handling.
+    """Send payload via data channel with rate limiting.
 
-    Automatically chunks large payloads and waits when the data channel
-    buffer is too full to prevent connection failures.
+    Automatically chunks large payloads and rate limits to prevent
+    SCTP buffer overflow.
 
     Args:
         data_channel: RTCDataChannel to send on
@@ -255,17 +253,9 @@ async def send_chunked_data(
 
     view = memoryview(payload_bytes)
     for chunk_index in range(total_chunks):
-        # Backpressure: wait if buffer is too full
-        while data_channel.bufferedAmount > BUFFER_HIGH_THRESHOLD:
-            if data_channel.readyState != "open":
-                logger.warning(
-                    f"Channel closed while waiting to send frame {frame_id}"
-                )
-                return
-            logger.info(f"Waiting for buffer to be free: {data_channel.bufferedAmount} bytes")
-            if heartbeat_callback:
-                heartbeat_callback()
-            await asyncio.sleep(BUFFER_CHECK_INTERVAL)
+        if data_channel.readyState != "open":
+            logger.warning(f"Channel closed while sending frame {frame_id}")
+            return
 
         start = chunk_index * chunk_size
         end = min(start + chunk_size, len(payload_bytes))
@@ -275,6 +265,9 @@ async def send_chunked_data(
             frame_id, chunk_index, total_chunks, chunk_data
         )
         data_channel.send(message)
+
+    # Rate limit: wait after sending complete frame to prevent SCTP overflow
+    await asyncio.sleep(FRAME_SEND_DELAY)
 
 
 class RTCPeerConnectionWithLoop(RTCPeerConnection):
@@ -423,7 +416,7 @@ class VideoFrameProcessor:
             json_bytes = await asyncio.to_thread(
                 lambda: json.dumps(webrtc_output.model_dump()).encode("utf-8")
             )
-            await send_chunked_data(self.data_channel, self._received_frames, json_bytes, heartbeat_callback=self.heartbeat_callback)
+            await send_chunked_data(self.data_channel, self._received_frames, json_bytes)
             return
 
         if self._data_mode == DataOutputMode.ALL:
