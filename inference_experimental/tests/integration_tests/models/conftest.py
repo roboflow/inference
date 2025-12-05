@@ -144,6 +144,7 @@ DEPTH_ANYTHING_V2_SMALL_PACKAGE_URL = "https://storage.googleapis.com/roboflow-t
 DOCTR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/doctr-dbnet-rn50-crnn-vgg16.zip"
 EASY_OCR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/easy-ocr-english.zip"
 TROCR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/tr-ocr-small-printed.zip"
+MEDIAPIPE_FACE_DETECTOR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/mediapipe-face-detector.zip"
 
 
 @pytest.fixture(scope="module")
@@ -1157,4 +1158,12 @@ def easy_ocr_package() -> str:
 def tr_ocr_package() -> str:
     return download_model_package(
         model_package_zip_url=TROCR_PACKAGE_URL, package_name="tr-ocr"
+    )
+
+
+@pytest.fixture(scope="module")
+def mediapipe_face_detector_package() -> str:
+    return download_model_package(
+        model_package_zip_url=MEDIAPIPE_FACE_DETECTOR_PACKAGE_URL,
+        package_name="mediapipe-face-detector",
     )

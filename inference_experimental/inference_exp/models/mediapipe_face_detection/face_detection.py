@@ -88,7 +88,7 @@ class MediaPipeFaceDetector(
             images = images.permute(0, 2, 3, 1)
             preprocessed_images, dimensions = [], []
             for image in images:
-                np_image = image.cpu().numpy()
+                np_image = np.ascontiguousarray(image.cpu().numpy())
                 preprocessed_images.append(
                     mp.Image(
                         image_format=mp.ImageFormat.SRGB, data=np_image.astype(np.uint8)

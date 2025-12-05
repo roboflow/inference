@@ -60,7 +60,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install uv
           python -m uv venv
-          python -m uv pip install -e .[test,onnx-cu12,trt10,torch-cu124] --python .venv
+          python -m uv pip install -e .[test,onnx-cu12,trt10,torch-cu124,mediapipe] --python .venv
       - name: 🧪 Run E2E tests
         working-directory: inference_experimental
         timeout-minutes: 20
