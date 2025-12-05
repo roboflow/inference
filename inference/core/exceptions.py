@@ -220,3 +220,7 @@ class RetryRequestError(Exception):
 
 class WebRTCConfigurationError(Exception):
     pass
+
+
+class CreditsExceededError(Exception):
+    pass

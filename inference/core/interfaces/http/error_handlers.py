@@ -7,6 +7,7 @@ from inference.core.entities.responses.workflows import WorkflowErrorResponse
 from inference.core.exceptions import (
     ContentTypeInvalid,
     ContentTypeMissing,
+    CreditsExceededError,
     InferenceModelNotFound,
     InputImageLoadError,
     InvalidEnvironmentVariableError,
@@ -368,6 +369,15 @@ def with_route_exceptions(route):
                     "error_type": "WebRTCConfigurationError",
                 },
             )
+        except CreditsExceededError as error:
+            logger.error("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=402,
+                content={
+                    "message": "Not enough credits to perform this request.",
+                    "error_type": "CreditsExceededError",
+                },
+            )
         except Exception as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(status_code=500, content={"message": "Internal error."})
@@ -678,6 +688,15 @@ def with_route_exceptions_async(route):
                 content={
                     "message": str(error),
                     "error_type": "WebRTCConfigurationError",
+                },
+            )
+        except CreditsExceededError as error:
+            logger.error("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=402,
+                content={
+                    "message": "Not enough credits to perform this request.",
+                    "error_type": "CreditsExceededError",
                 },
             )
         except Exception as error:

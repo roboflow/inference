@@ -111,6 +111,7 @@ class UsageCollector:
             api_plan_endpoint_url=self._settings.api_plan_endpoint_url,
             webrtc_plans_endpoint_url=self._settings.webrtc_plans_endpoint_url,
             sqlite_cache_enabled=False,
+            api_plan_cache_ttl_seconds=self._settings.api_plan_cache_ttl_seconds,
         )
         if (LAMBDA or GCP_SERVERLESS) and REDIS_HOST:
             logger.debug("Persistence through RedisQueue")
@@ -137,6 +138,7 @@ class UsageCollector:
                 self._plan_details = PlanDetails(
                     api_plan_endpoint_url=self._settings.api_plan_endpoint_url,
                     webrtc_plans_endpoint_url=self._settings.webrtc_plans_endpoint_url,
+                    api_plan_cache_ttl_seconds=self._settings.api_plan_cache_ttl_seconds,
                 )
                 logger.debug("Cached plan details")
             except Exception as exc:
