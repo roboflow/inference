@@ -371,6 +371,14 @@ REGISTERED_MODELS: Dict[
         module_name="inference_exp.models.trocr.trocr_hf",
         class_name="TROcrHF",
     ),
+    (
+        "mediapipe-face-detector",
+        KEYPOINT_DETECTION_TASK,
+        BackendType.MEDIAPIPE,
+    ): LazyClass(
+        module_name="inference_exp.models.mediapipe_face_detection.face_detection",
+        class_name="MediaPipeFaceDetector",
+    ),
 }
 
 
