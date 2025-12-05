@@ -66,7 +66,7 @@ from inference.core.workflows.errors import WorkflowSyntaxError
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.usage_tracking.collector import usage_collector
 
-logging.getLogger("aiortc").setLevel(logging.WARNING)
+logging.getLogger("aiortc").setLevel(logging.DEBUG)
 
 # WebRTC data channel chunking configuration
 CHUNK_SIZE = 48 * 1024  # 48KB - safe for all WebRTC implementations
