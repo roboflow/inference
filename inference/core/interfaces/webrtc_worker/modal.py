@@ -240,6 +240,7 @@ if modal is not None:
         _function_call_number_on_container: Optional[int] = modal.parameter(
             default=0, init=False
         )
+        _cold_start: Optional[bool] = modal.parameter(default=False, init=False)
 
         @modal.method()
         def rtc_peer_connection_modal(
@@ -262,6 +263,7 @@ if modal is not None:
             logger.info(
                 "Preloaded hf models: %s", ", ".join(PRELOADED_HF_MODELS.keys())
             )
+            logger.info("Cold start: %s", self._cold_start)
             logger.info(
                 "Function call number on container: %s",
                 self._function_call_number_on_container,
@@ -272,7 +274,7 @@ if modal is not None:
             _exec_session_started = datetime.datetime.now()
             webrtc_request.processing_session_started = _exec_session_started
             # Modal cancels based on time taken during entry hook
-            if self._function_call_number_on_container == 1:
+            if self._function_call_number_on_container == 1 and self._cold_start:
                 webrtc_request.processing_session_started -= datetime.timedelta(
                     seconds=self._container_startup_time_seconds
                 )
@@ -406,6 +408,7 @@ if modal is not None:
             # TODO: pre-load models on CPU
             logger.info("Starting CPU container")
             self._gpu = "CPU"
+            self._cold_start = True
 
     @app.cls(
         **{
@@ -425,6 +428,7 @@ if modal is not None:
         # https://modal.com/docs/guide/memory-snapshot#gpu-memory-snapshot
         @modal.enter(snap=True)
         def start(self):
+            self._cold_start = True
             time_start = time.time()
             warmup_cuda(max_retries=10, retry_delay=0.5)
             self._gpu = check_nvidia_smi_gpu()
