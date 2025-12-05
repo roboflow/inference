@@ -71,6 +71,10 @@ logging.getLogger("aiortc").setLevel(logging.WARNING)
 # WebRTC data channel chunking configuration
 CHUNK_SIZE = 48 * 1024  # 48KB - safe for all WebRTC implementations
 
+# Backpressure thresholds for data channel buffer
+BUFFER_HIGH_THRESHOLD = 8 * 1024 * 1024  # 8MB - start waiting when buffer exceeds this
+BUFFER_CHECK_INTERVAL = 0.05  # 50ms between buffer checks
+
 
 def create_chunked_binary_message(
     frame_id: int, chunk_index: int, total_chunks: int, payload: bytes
@@ -218,13 +222,16 @@ class VideoFileUploadHandler:
             self._temp_file_path = None
 
 
-def send_chunked_data(
+async def send_chunked_data(
     data_channel: RTCDataChannel,
     frame_id: int,
     payload_bytes: bytes,
     chunk_size: int = CHUNK_SIZE,
 ) -> None:
-    """Send payload via data channel, automatically chunking if needed.
+    """Send payload via data channel with backpressure handling.
+
+    Automatically chunks large payloads and waits when the data channel
+    buffer is too full to prevent connection failures.
 
     Args:
         data_channel: RTCDataChannel to send on
@@ -247,6 +254,15 @@ def send_chunked_data(
 
     view = memoryview(payload_bytes)
     for chunk_index in range(total_chunks):
+        # Backpressure: wait if buffer is too full
+        while data_channel.bufferedAmount > BUFFER_HIGH_THRESHOLD:
+            if data_channel.readyState != "open":
+                logger.warning(
+                    f"Channel closed while waiting to send frame {frame_id}"
+                )
+                return
+            await asyncio.sleep(BUFFER_CHECK_INTERVAL)
+
         start = chunk_index * chunk_size
         end = min(start + chunk_size, len(payload_bytes))
         chunk_data = view[start:end]
@@ -403,7 +419,7 @@ class VideoFrameProcessor:
             json_bytes = await asyncio.to_thread(
                 lambda: json.dumps(webrtc_output.model_dump()).encode("utf-8")
             )
-            send_chunked_data(self.data_channel, self._received_frames, json_bytes)
+            await send_chunked_data(self.data_channel, self._received_frames, json_bytes)
             return
 
         if self._data_mode == DataOutputMode.ALL:
@@ -440,7 +456,7 @@ class VideoFrameProcessor:
 
         # Send using binary chunked protocol
         json_bytes = json.dumps(webrtc_output.model_dump(mode="json")).encode("utf-8")
-        send_chunked_data(self.data_channel, self._received_frames, json_bytes)
+        await send_chunked_data(self.data_channel, self._received_frames, json_bytes)
 
     async def _handle_data_channel_frame(self, message: bytes) -> None:
         """Handle incoming binary frame chunk from upstream_frames data channel.
@@ -633,7 +649,7 @@ class VideoFrameProcessor:
                 json_bytes = json.dumps(
                     completion_message.model_dump(mode="json")
                 ).encode("utf-8")
-                send_chunked_data(self.data_channel, frame_id + 1, json_bytes)
+                await send_chunked_data(self.data_channel, frame_id + 1, json_bytes)
                 logger.info("Sent processing_complete signal to client")
 
         except Exception as exc:
