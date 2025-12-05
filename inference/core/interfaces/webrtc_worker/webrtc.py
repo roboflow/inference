@@ -227,6 +227,7 @@ async def send_chunked_data(
     frame_id: int,
     payload_bytes: bytes,
     chunk_size: int = CHUNK_SIZE,
+    heartbeat_callback: Optional[Callable[[], None]] = None,
 ) -> None:
     """Send payload via data channel with backpressure handling.
 
@@ -261,6 +262,9 @@ async def send_chunked_data(
                     f"Channel closed while waiting to send frame {frame_id}"
                 )
                 return
+            logger.info(f"Waiting for buffer to be free: {data_channel.bufferedAmount} bytes")
+            if heartbeat_callback:
+                heartbeat_callback()
             await asyncio.sleep(BUFFER_CHECK_INTERVAL)
 
         start = chunk_index * chunk_size
@@ -419,7 +423,7 @@ class VideoFrameProcessor:
             json_bytes = await asyncio.to_thread(
                 lambda: json.dumps(webrtc_output.model_dump()).encode("utf-8")
             )
-            await send_chunked_data(self.data_channel, self._received_frames, json_bytes)
+            await send_chunked_data(self.data_channel, self._received_frames, json_bytes, heartbeat_callback=self.heartbeat_callback)
             return
 
         if self._data_mode == DataOutputMode.ALL:
@@ -456,7 +460,7 @@ class VideoFrameProcessor:
 
         # Send using binary chunked protocol
         json_bytes = json.dumps(webrtc_output.model_dump(mode="json")).encode("utf-8")
-        await send_chunked_data(self.data_channel, self._received_frames, json_bytes)
+        await send_chunked_data(self.data_channel, self._received_frames, json_bytes, heartbeat_callback=self.heartbeat_callback)
 
     async def _handle_data_channel_frame(self, message: bytes) -> None:
         """Handle incoming binary frame chunk from upstream_frames data channel.
