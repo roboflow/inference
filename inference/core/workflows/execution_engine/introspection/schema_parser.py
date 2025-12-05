@@ -420,6 +420,19 @@ def retrieve_selectors_from_union_definition(
         + union_definition.get(ONE_OF_KEY, [])
         + union_definition.get(ALL_OF_KEY, [])
     )
+    # Check if any union variant is an array or dict type
+    # This handles Union[List[...], Selector(...)] patterns
+    contains_array_type = False
+    contains_dict_type = False
+    for type_definition in union_types:
+        if type_definition.get("type") == "array" and ITEMS_KEY in type_definition:
+            contains_array_type = True
+        if (
+            type_definition.get("type") == "object"
+            and "additionalProperties" in type_definition
+        ):
+            contains_dict_type = True
+
     results = []
     for type_definition in union_types:
         result = retrieve_selectors_from_simple_property(
@@ -468,8 +481,8 @@ def retrieve_selectors_from_union_definition(
         property_name=property_name,
         property_description=property_description,
         allowed_references=merged_references,
-        is_list_element=is_list_element,
-        is_dict_element=is_dict_element,
+        is_list_element=is_list_element or contains_array_type,
+        is_dict_element=is_dict_element or contains_dict_type,
         dimensionality_offset=property_dimensionality_offset,
         is_dimensionality_reference_property=is_dimensionality_reference_property,
     )
