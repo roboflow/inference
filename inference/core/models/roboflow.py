@@ -2,11 +2,12 @@ import itertools
 import json
 import os
 import random
+import threading
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from threading import Lock
-from time import perf_counter
+from time import perf_counter, sleep
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import cv2
@@ -759,6 +760,22 @@ class RoboflowCoreModel(RoboflowInferenceModel):
         return CORE_MODEL_BUCKET
 
 
+def _log_progress_periodically(stop_event, operation_name, interval=30):
+    """Helper function to log periodic progress messages during long-running operations.
+
+    Args:
+        stop_event: Threading event to signal when to stop logging
+        operation_name: Name of the operation for the log message
+        interval: Seconds between progress messages (default: 30)
+    """
+    elapsed = 0
+    while not stop_event.is_set():
+        sleep(interval)
+        if not stop_event.is_set():
+            elapsed += interval
+            logger.info(f"{operation_name} still in progress... ({elapsed}s elapsed)")
+
+
 class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
     """Roboflow Inference Model that operates using an ONNX model file."""
 
@@ -784,13 +801,13 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             expanded_execution_providers = []
             for ep in self.onnxruntime_execution_providers:
                 if ep == "TensorrtExecutionProvider":
+                    cache_path = os.path.join(TENSORRT_CACHE_PATH, self.endpoint)
+                    logger.debug(f"Configuring TensorRT execution provider with FP16 enabled and cache at {cache_path}")
                     ep = (
                         "TensorrtExecutionProvider",
                         {
                             "trt_engine_cache_enable": True,
-                            "trt_engine_cache_path": os.path.join(
-                                TENSORRT_CACHE_PATH, self.endpoint
-                            ),
+                            "trt_engine_cache_path": cache_path,
                             "trt_fp16_enable": True,
                         },
                     )
@@ -920,25 +937,62 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
 
             if not self.load_weights:
                 providers = ["OpenVINOExecutionProvider", "CPUExecutionProvider"]
+
+            using_trt = has_trt(providers)
+            progress_thread = None
+            stop_progress = None
+
+            if using_trt:
+                logger.info("TensorRT execution provider detected")
+                trt_cache_path = None
+                for p in providers:
+                    if isinstance(p, tuple) and p[0] == "TensorrtExecutionProvider":
+                        trt_cache_path = p[1].get("trt_engine_cache_path")
+                        logger.info(f"TensorRT engine cache path: {trt_cache_path}")
+                        logger.info("TensorRT will compile ONNX model on first run - this may take several minutes")
+                        break
+
             try:
                 session_options = onnxruntime.SessionOptions()
                 session_options.log_severity_level = 3
                 # TensorRT does better graph optimization for its EP than onnx
-                if has_trt(providers):
+                if using_trt:
                     session_options.graph_optimization_level = (
                         onnxruntime.GraphOptimizationLevel.ORT_DISABLE_ALL
                     )
+                    logger.info("Starting ONNX Runtime session with TensorRT - compilation may occur now...")
+
+                    # Start periodic progress logging thread
+                    stop_progress = threading.Event()
+                    progress_thread = threading.Thread(
+                        target=_log_progress_periodically,
+                        args=(stop_progress, "TensorRT compilation", 30),
+                        daemon=True
+                    )
+                    progress_thread.start()
+
                 self.onnx_session = onnxruntime.InferenceSession(
                     self.cache_file(self.weights_file),
                     providers=providers,
                     sess_options=session_options,
                 )
+
+                if using_trt:
+                    # Stop progress logging
+                    if stop_progress:
+                        stop_progress.set()
+                    if progress_thread:
+                        progress_thread.join(timeout=1.0)
+
+                    logger.info(f"ONNX Runtime session created with TensorRT in {perf_counter() - t1_session:.2f} seconds")
             except Exception as e:
                 self.clear_cache()
                 raise ModelArtefactError(
                     f"Unable to load ONNX session. Cause: {e}"
                 ) from e
-            logger.debug(f"Session created in {perf_counter() - t1_session} seconds")
+
+            if not using_trt:
+                logger.debug(f"Session created in {perf_counter() - t1_session} seconds")
 
             if REQUIRED_ONNX_PROVIDERS:
                 available_providers = onnxruntime.get_available_providers()
