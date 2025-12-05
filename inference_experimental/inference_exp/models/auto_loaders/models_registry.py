@@ -16,6 +16,7 @@ CLASSIFICATION_TASK = "classification"
 MULTI_LABEL_CLASSIFICATION_TASK = "multi-label-classification"
 DEPTH_ESTIMATION_TASK = "depth-estimation"
 STRUCTURED_OCR_TASK = "structured-ocr"
+TEXT_ONLY_OCR_TASK = "text-only-ocr"
 
 
 @dataclass(frozen=True)
@@ -365,6 +366,10 @@ REGISTERED_MODELS: Dict[
     ("easy-ocr", STRUCTURED_OCR_TASK, BackendType.TORCH): LazyClass(
         module_name="inference_exp.models.easy_ocr.easy_ocr_torch",
         class_name="EasyOCRTorch",
+    ),
+    ("tr-ocr", TEXT_ONLY_OCR_TASK, BackendType.HF): LazyClass(
+        module_name="inference_exp.models.trocr.trocr_hf",
+        class_name="TROcrHF",
     ),
 }
 
