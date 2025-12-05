@@ -221,6 +221,9 @@ from inference.core.workflows.core_steps.models.foundation.openai.v2 import (
 from inference.core.workflows.core_steps.models.foundation.openai.v3 import (
     OpenAIBlockV3,
 )
+from inference.core.workflows.core_steps.models.foundation.openai.v4 import (
+    OpenAIBlockV4,
+)
 from inference.core.workflows.core_steps.models.foundation.perception_encoder.v1 import (
     PerceptionEncoderModelBlockV1,
 )
@@ -648,6 +651,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         OpenAIBlockV1,
         OpenAIBlockV2,
         OpenAIBlockV3,
+        OpenAIBlockV4,
         PathDeviationAnalyticsBlockV1,
         PathDeviationAnalyticsBlockV2,
         PixelateVisualizationBlockV1,
