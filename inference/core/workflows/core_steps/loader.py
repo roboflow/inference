@@ -671,7 +671,6 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         SegmentAnything3BlockV1,
         SegmentAnything3BlockV2,
         SegPreviewBlockV1,
-        SegPreviewBlockV2,
         StabilityAIInpaintingBlockV1,
         StabilityAIImageGenBlockV1,
         StabilityAIOutpaintingBlockV1,
