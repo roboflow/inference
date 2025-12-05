@@ -2,6 +2,7 @@ import asyncio
 import datetime
 import os
 import subprocess
+import time
 from pathlib import Path
 from typing import Callable, Dict, Optional
 
@@ -200,6 +201,7 @@ if modal is not None:
         )
 
         watchdog = Watchdog(
+            api_key=webrtc_request.api_key,
             timeout_seconds=WEBRTC_MODAL_WATCHDOG_TIMEMOUT,
         )
 
@@ -232,6 +234,12 @@ if modal is not None:
             default=None, init=False
         )
         _gpu: Optional[str] = modal.parameter(default=None, init=False)
+        _container_startup_time_seconds: Optional[float] = modal.parameter(
+            default=0, init=False
+        )
+        _function_call_number_on_container: Optional[int] = modal.parameter(
+            default=0, init=False
+        )
 
         @modal.method()
         def rtc_peer_connection_modal(
@@ -239,6 +247,7 @@ if modal is not None:
             webrtc_request: WebRTCWorkerRequest,
             q: modal.Queue,
         ):
+            self._function_call_number_on_container += 1
             logger.info("*** Spawning %s:", self.__class__.__name__)
             logger.info("Running on %s", self._gpu)
             logger.info("Inference tag: %s", docker_tag)
@@ -253,8 +262,20 @@ if modal is not None:
             logger.info(
                 "Preloaded hf models: %s", ", ".join(PRELOADED_HF_MODELS.keys())
             )
+            logger.info(
+                "Function call number on container: %s",
+                self._function_call_number_on_container,
+            )
+            logger.info(
+                "Container startup time: %s", self._container_startup_time_seconds
+            )
             _exec_session_started = datetime.datetime.now()
             webrtc_request.processing_session_started = _exec_session_started
+            # Modal cancels based on time taken during entry hook
+            if self._function_call_number_on_container == 1:
+                webrtc_request.processing_session_started -= datetime.timedelta(
+                    seconds=self._container_startup_time_seconds
+                )
             logger.info(
                 "WebRTC session started at %s", _exec_session_started.isoformat()
             )
@@ -311,13 +332,18 @@ if modal is not None:
                 send_answer(WebRTCWorkerResult(error_message=error_msg))
                 return
 
-            asyncio.run(
-                run_rtc_peer_connection_with_watchdog(
-                    webrtc_request=webrtc_request,
-                    send_answer=send_answer,
-                    model_manager=self._model_manager,
+            try:
+                asyncio.run(
+                    run_rtc_peer_connection_with_watchdog(
+                        webrtc_request=webrtc_request,
+                        send_answer=send_answer,
+                        model_manager=self._model_manager,
+                    )
                 )
-            )
+            except (modal.exception.InputCancellation, asyncio.CancelledError):
+                logger.warning("Modal function was cancelled")
+            except Exception as exc:
+                logger.error("Modal function failed with exception %s", exc)
 
             _exec_session_stopped = datetime.datetime.now()
             logger.info(
@@ -399,6 +425,7 @@ if modal is not None:
         # https://modal.com/docs/guide/memory-snapshot#gpu-memory-snapshot
         @modal.enter(snap=True)
         def start(self):
+            time_start = time.time()
             warmup_cuda(max_retries=10, retry_delay=0.5)
             self._gpu = check_nvidia_smi_gpu()
             logger.info("Starting GPU container on %s", self._gpu)
@@ -434,6 +461,8 @@ if modal is not None:
                             exc,
                         )
                 self._model_manager = model_manager
+            time_end = time.time()
+            self._container_startup_time_seconds = time_end - time_start
 
     def spawn_rtc_peer_connection_modal(
         webrtc_request: WebRTCWorkerRequest,

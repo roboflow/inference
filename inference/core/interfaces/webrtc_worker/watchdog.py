@@ -3,13 +3,19 @@ import threading
 import time
 from typing import Callable, Optional
 
+from inference.core.env import WEBRTC_MODAL_USAGE_QUOTA_ENABLED
+from inference.core.interfaces.webrtc_worker.utils import is_over_quota
 from inference.core.logger import logger
 
 
 class Watchdog:
     def __init__(
-        self, timeout_seconds: int, on_timeout: Optional[Callable[[], None]] = None
+        self,
+        api_key: str,
+        timeout_seconds: int,
+        on_timeout: Optional[Callable[[], None]] = None,
     ):
+        self._api_key = api_key
         self.timeout_seconds = timeout_seconds
         self.last_heartbeat = datetime.datetime.now()
         self.on_timeout: Optional[Callable[[], None]] = on_timeout
@@ -37,6 +43,10 @@ class Watchdog:
         while not self._stopping:
             if not self.is_alive():
                 logger.error("Watchdog timeout reached")
+                self.on_timeout()
+                break
+            if WEBRTC_MODAL_USAGE_QUOTA_ENABLED and is_over_quota(self._api_key):
+                logger.error("API key over quota")
                 self.on_timeout()
                 break
             time.sleep(1)
