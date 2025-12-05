@@ -22,7 +22,7 @@ class TROcrHF(TextOnlyOCRModel[torch.Tensor, torch.Tensor]):
             local_files_only=local_files_only,
         ).to(device)
         processor = TrOCRProcessor.from_pretrained(
-            model_name_or_path, local_files_only=local_files_only
+            model_name_or_path, local_files_only=local_files_only, use_fast=False
         )
         return cls(model=model, processor=processor, device=device)
 
