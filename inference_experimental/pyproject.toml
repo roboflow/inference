@@ -30,6 +30,7 @@ dependencies = [
   "segmentation-models-pytorch>=0.5.0,<1.0.0",
   "scikit-image>=0.24.0,<0.26.0",
   "easyocr~=1.7.2",
+  "sentencepiece>=0.2.0,<0.3.0",
 ]
 
 [project.optional-dependencies]
