@@ -233,9 +233,6 @@ from inference.core.workflows.core_steps.models.foundation.qwen.v1 import (
 from inference.core.workflows.core_steps.models.foundation.seg_preview.v1 import (
     SegPreviewBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.seg_preview.v2 import (
-    SegPreviewBlockV2,
-)
 from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
     SegmentAnything2BlockV1,
 )
