@@ -15,12 +15,14 @@ import aiohttp
 import backoff
 import requests
 from cachetools.func import ttl_cache
+from inference_exp.utils.download import download_files_to_directory
 from requests import Response, Timeout
 from requests_toolbelt import MultipartEncoder
 
 from inference.core import logger
 from inference.core.cache import cache
 from inference.core.cache.base import BaseCache
+from inference.core.cache.model_artifacts import get_cache_dir, initialise_cache
 from inference.core.entities.types import (
     DatasetID,
     ModelID,
@@ -827,6 +829,18 @@ def get_from_url(
     )
 
 
+def stream_url_to_cache(
+    url: str,
+    filename: str,
+    model_id: str,
+) -> None:
+    return _stream_url_to_cache(
+        url=url,
+        filename=filename,
+        model_id=model_id,
+    )
+
+
 @backoff.on_exception(
     backoff.constant,
     exception=RetryRequestError,
@@ -843,7 +857,7 @@ def _get_from_url(
             wrap_url(url),
             headers=build_roboflow_api_headers(),
             timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
-            verify=ROBOFLOW_API_VERIFY_SSL
+            verify=ROBOFLOW_API_VERIFY_SSL,
         )
 
     except (ConnectionError, Timeout, requests.exceptions.ConnectionError) as error:
@@ -891,6 +905,29 @@ def _get_from_url(
     if json_response:
         return response.json()
     return response
+
+
+def _stream_url_to_cache(
+    url: str,
+    filename: str,
+    model_id: str,
+) -> None:
+    initialise_cache(model_id=model_id)
+    cache_dir = get_cache_dir(model_id=model_id)
+    md5_hash = None
+
+    try:
+        download_files_to_directory(
+            target_dir=cache_dir,
+            files_specs=[(filename, url, md5_hash)],
+            verbose=True,
+            download_files_without_hash=True,
+            verify_hash_while_download=False,
+        )
+    except Exception as e:
+        raise RoboflowAPIUnsuccessfulRequestError(
+            f"Failed to download {filename}: {str(e)}"
+        ) from e
 
 
 def _add_params_to_url(url: str, params: List[Tuple[str, str]]) -> str:
@@ -981,5 +1018,5 @@ def post_to_roboflow_api(
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
-    
+
     return _make_request()
