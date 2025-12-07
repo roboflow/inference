@@ -140,6 +140,11 @@ SNAKES_RFDETR_SEG_ONNX_STATIC_BS_STATIC_CROP_LETTERBOX_URL = "https://storage.go
 SNAKES_RFDETR_SEG_TORCH_STATIC_CROP_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-seg-torch-static-crop-center-crop.zip"
 SNAKES_RFDETR_SEG_ONNX_STATIC_BS_STATIC_CROP_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-seg-onnx-static-bs-static-crop-center-crop.zip"
 
+DEPTH_ANYTHING_V2_SMALL_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/depth-anything-v2.zip"
+DOCTR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/doctr-dbnet-rn50-crnn-vgg16.zip"
+EASY_OCR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/easy-ocr-english.zip"
+TROCR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/tr-ocr-small-printed.zip"
+
 
 @pytest.fixture(scope="module")
 def original_clip_download_dir() -> str:
@@ -1123,4 +1128,33 @@ def snakes_rfdetr_seg_onnx_static_bs_static_crop_center_crop_package() -> str:
     return download_model_package(
         model_package_zip_url=SNAKES_RFDETR_SEG_ONNX_STATIC_BS_STATIC_CROP_CENTER_CROP_URL,
         package_name="snakes-rfdetr-seg-onnx-static-bs-static-crop-center-crop",
+    )
+
+
+@pytest.fixture(scope="module")
+def depth_anything_v2_small_package() -> str:
+    return download_model_package(
+        model_package_zip_url=DEPTH_ANYTHING_V2_SMALL_PACKAGE_URL,
+        package_name="depth-anything-v2-small",
+    )
+
+
+@pytest.fixture(scope="module")
+def doctr_package() -> str:
+    return download_model_package(
+        model_package_zip_url=DOCTR_PACKAGE_URL, package_name="doctr"
+    )
+
+
+@pytest.fixture(scope="module")
+def easy_ocr_package() -> str:
+    return download_model_package(
+        model_package_zip_url=EASY_OCR_PACKAGE_URL, package_name="easy-ocr"
+    )
+
+
+@pytest.fixture(scope="module")
+def tr_ocr_package() -> str:
+    return download_model_package(
+        model_package_zip_url=TROCR_PACKAGE_URL, package_name="tr-ocr"
     )

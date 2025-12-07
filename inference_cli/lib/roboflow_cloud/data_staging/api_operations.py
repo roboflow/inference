@@ -1620,17 +1620,17 @@ def _parse_bucket_path(bucket_path: str) -> Tuple[str, Optional[str]]:
         "s3://bucket/path/" -> ("s3://bucket/path/", None)
         "gs://bucket/" -> ("gs://bucket/", None)
     """
-    has_glob = any(char in bucket_path for char in ['*', '?', '[', ']'])
+    has_glob = any(char in bucket_path for char in ["*", "?", "[", "]"])
 
     if not has_glob:
         return bucket_path, None
 
-    parts = bucket_path.split('/')
+    parts = bucket_path.split("/")
     for i in range(len(parts) - 1, -1, -1):
-        if any(char in parts[i] for char in ['*', '?', '[', ']']):
+        if any(char in parts[i] for char in ["*", "?", "[", "]"]):
             continue
-        base_path = '/'.join(parts[:i+1]) + '/'
-        glob_pattern = '/'.join(parts[i+1:])
+        base_path = "/".join(parts[: i + 1]) + "/"
+        glob_pattern = "/".join(parts[i + 1 :])
         return base_path, glob_pattern
 
     return bucket_path, None
@@ -1682,10 +1682,14 @@ def _get_fs_kwargs(protocol: Optional[str] = None) -> dict:
     # Support both adlfs convention and Azure CLI standard naming
     if protocol in (None, "az", "abfs", "azure"):
         # Account name: try adlfs convention first, fall back to Azure CLI standard
-        azure_account = os.getenv("AZURE_STORAGE_ACCOUNT_NAME") or os.getenv("AZURE_STORAGE_ACCOUNT")
+        azure_account = os.getenv("AZURE_STORAGE_ACCOUNT_NAME") or os.getenv(
+            "AZURE_STORAGE_ACCOUNT"
+        )
 
         # Account key: try adlfs convention first, fall back to Azure CLI standard
-        azure_key = os.getenv("AZURE_STORAGE_ACCOUNT_KEY") or os.getenv("AZURE_STORAGE_KEY")
+        azure_key = os.getenv("AZURE_STORAGE_ACCOUNT_KEY") or os.getenv(
+            "AZURE_STORAGE_KEY"
+        )
 
         # SAS token: same name in both conventions
         azure_sas_token = os.getenv("AZURE_STORAGE_SAS_TOKEN")
@@ -1721,26 +1725,26 @@ def _match_glob_pattern(path: str, pattern: str) -> bool:
     import re
 
     # Convert glob pattern to regex
-    pattern_parts = pattern.split('/')
+    pattern_parts = pattern.split("/")
     regex_parts = []
 
     i = 0
     while i < len(pattern_parts):
         part = pattern_parts[i]
 
-        if part == '**':
+        if part == "**":
             # ** matches zero or more path segments
             # If it's at the start and followed by more parts, it's optional
             if i == 0 and i + 1 < len(pattern_parts):
                 # Make preceding path optional: either nothing or anything/
-                regex_parts.append('(?:.*/)?')
+                regex_parts.append("(?:.*/)?")
             else:
                 # Match any path segments
-                regex_parts.append('.*')
+                regex_parts.append(".*")
             i += 1
-        elif '*' in part:
+        elif "*" in part:
             # * matches any characters except /
-            part_regex = re.escape(part).replace(r'\*', '[^/]*')
+            part_regex = re.escape(part).replace(r"\*", "[^/]*")
             regex_parts.append(part_regex)
             i += 1
         else:
@@ -1749,13 +1753,13 @@ def _match_glob_pattern(path: str, pattern: str) -> bool:
             i += 1
 
     # Join with / but handle ** specially (already includes separator in regex)
-    regex_pattern = ''
+    regex_pattern = ""
     for j, part in enumerate(regex_parts):
-        if j > 0 and not regex_parts[j-1].endswith(')?'):
-            regex_pattern += '/'
+        if j > 0 and not regex_parts[j - 1].endswith(")?"):
+            regex_pattern += "/"
         regex_pattern += part
 
-    regex_pattern += '$'
+    regex_pattern += "$"
     return re.match(regex_pattern, path) is not None
 
 
@@ -1786,7 +1790,7 @@ def _list_and_filter_files_streaming(
         Exception: Other fsspec errors
     """
     protocol = base_path.split("://")[0]
-    base_without_protocol = base_path.split("://", 1)[1].rstrip('/')
+    base_without_protocol = base_path.split("://", 1)[1].rstrip("/")
 
     # Validate bucket/path exists before walking
     # This catches silent failures where fs.walk() would return empty
@@ -1831,14 +1835,20 @@ def _list_and_filter_files_streaming(
             if root_path == base_without_protocol:
                 relative_path = fname
             else:
-                relative_path = f"{root_path.removeprefix(base_without_protocol + '/')}/{fname}"
+                relative_path = (
+                    f"{root_path.removeprefix(base_without_protocol + '/')}/{fname}"
+                )
 
             # Check glob pattern if specified
             if glob_pattern and not _match_glob_pattern(relative_path, glob_pattern):
                 continue
 
             # Yield full path with protocol
-            full_path = f"{root}/{fname}" if root.startswith(f"{protocol}://") else f"{protocol}://{root}/{fname}"
+            full_path = (
+                f"{root}/{fname}"
+                if root.startswith(f"{protocol}://")
+                else f"{protocol}://{root}/{fname}"
+            )
             yield full_path
 
 
@@ -1866,11 +1876,12 @@ def _generate_presigned_urls_parallel(
     Returns:
         List of dicts with 'name' and 'url' keys
     """
-    from queue import Queue
-    from threading import Thread
-    from rich.progress import Progress, BarColumn, SpinnerColumn, TextColumn
     import multiprocessing
     import traceback
+    from queue import Queue
+    from threading import Thread
+
+    from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
 
     protocol = base_path.split("://")[0]
     file_queue = Queue(maxsize=0)  # Unlimited queue for continuous listing
@@ -1890,7 +1901,11 @@ def _generate_presigned_urls_parallel(
         # Special handling for Azure with SAS token
         # When authenticated with SAS token, fs.sign() fails because it needs account_key
         # Instead, use the existing SAS token (ignoring expiration_seconds parameter)
-        if protocol in ("az", "abfs", "azure") and hasattr(fs, 'sas_token') and fs.sas_token:
+        if (
+            protocol in ("az", "abfs", "azure")
+            and hasattr(fs, "sas_token")
+            and fs.sas_token
+        ):
             # Use adlfs built-in utilities to construct URL with existing SAS token
             path_without_protocol = file_path.split("://", 1)[1]
             container, blob, _ = fs.split_path(path_without_protocol)
@@ -1922,10 +1937,10 @@ def _generate_presigned_urls_parallel(
         except Exception as e:
             # Capture any errors from fs.walk() or file discovery
             error_info = {
-                'error': e,
-                'traceback': traceback.format_exc(),
-                'context': 'File discovery (fs.walk)',
-                'base_path': base_path
+                "error": e,
+                "traceback": traceback.format_exc(),
+                "context": "File discovery (fs.walk)",
+                "base_path": base_path,
             }
             exception_queue.put(error_info)
         finally:
@@ -1952,10 +1967,10 @@ def _generate_presigned_urls_parallel(
             except Exception as e:
                 # Capture errors from fs.sign() or URL generation
                 error_info = {
-                    'error': e,
-                    'traceback': traceback.format_exc(),
-                    'context': 'Presigned URL generation (fs.sign)',
-                    'file_path': file_path
+                    "error": e,
+                    "traceback": traceback.format_exc(),
+                    "context": "Presigned URL generation (fs.sign)",
+                    "file_path": file_path,
                 }
                 exception_queue.put(error_info)
             finally:
@@ -1972,7 +1987,7 @@ def _generate_presigned_urls_parallel(
         # Start producer thread
         producer_thread = Thread(
             target=producer,
-            args=(file_paths_generator, file_queue, progress, task, exception_queue)
+            args=(file_paths_generator, file_queue, progress, task, exception_queue),
         )
         producer_thread.start()
 
@@ -1981,7 +1996,9 @@ def _generate_presigned_urls_parallel(
 
         consumer_threads = []
         for _ in range(num_workers):
-            t = Thread(target=consumer, args=(file_queue, progress, task, exception_queue))
+            t = Thread(
+                target=consumer, args=(file_queue, progress, task, exception_queue)
+            )
             t.start()
             consumer_threads.append(t)
 
@@ -2009,9 +2026,9 @@ def _generate_presigned_urls_parallel(
         )
 
         # Add context-specific details
-        if 'base_path' in first_error:
+        if "base_path" in first_error:
             error_msg += f"Base path: {first_error['base_path']}\n"
-        if 'file_path' in first_error:
+        if "file_path" in first_error:
             error_msg += f"File: {first_error['file_path']}\n"
 
         # If multiple errors, mention it
@@ -2019,7 +2036,7 @@ def _generate_presigned_urls_parallel(
             error_msg += f"\n(Plus {len(errors) - 1} additional error(s))"
 
         # Re-raise the original exception with enhanced context
-        raise type(first_error['error'])(error_msg) from first_error['error']
+        raise type(first_error["error"])(error_msg) from first_error["error"]
 
     return results
 
@@ -2076,8 +2093,12 @@ def create_images_batch_from_cloud_storage(
         )
 
     if len(references) > MAX_IMAGE_REFERENCES_IN_INGEST_REQUEST:
-        num_chunks = (len(references) + MAX_IMAGE_REFERENCES_IN_INGEST_REQUEST - 1) // MAX_IMAGE_REFERENCES_IN_INGEST_REQUEST
-        print(f"Files will be split into {num_chunks} chunks of up to {MAX_IMAGE_REFERENCES_IN_INGEST_REQUEST} files each")
+        num_chunks = (
+            len(references) + MAX_IMAGE_REFERENCES_IN_INGEST_REQUEST - 1
+        ) // MAX_IMAGE_REFERENCES_IN_INGEST_REQUEST
+        print(
+            f"Files will be split into {num_chunks} chunks of up to {MAX_IMAGE_REFERENCES_IN_INGEST_REQUEST} files each"
+        )
 
     workspace = get_workspace(api_key=api_key)
 
@@ -2174,7 +2195,9 @@ def create_videos_batch_from_cloud_storage(
 
     print(f"Found {len(references)} video files")
     if len(references) > SUGGESTED_MAX_VIDEOS_IN_BATCH:
-        print(f"Warning: Found {len(references)} videos. Suggested max is {SUGGESTED_MAX_VIDEOS_IN_BATCH} videos per batch.")
+        print(
+            f"Warning: Found {len(references)} videos. Suggested max is {SUGGESTED_MAX_VIDEOS_IN_BATCH} videos per batch."
+        )
 
     workspace = get_workspace(api_key=api_key)
 

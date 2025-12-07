@@ -24,13 +24,6 @@ def test_import_resnet_onnx() -> None:
 
 
 @pytest.mark.onnx_extras
-def test_import_vit_onnx() -> None:
-    from inference_exp.models.vision_transformer.vit_classification_onnx import (
-        VITForClassificationOnnx,
-    )
-
-
-@pytest.mark.onnx_extras
 def test_import_yolonas_object_detection_onnx() -> None:
     from inference_exp.models.yolonas.yolonas_object_detection_onnx import (
         YOLONasForObjectDetectionOnnx,

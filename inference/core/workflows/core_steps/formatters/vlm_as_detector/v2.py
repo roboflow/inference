@@ -125,9 +125,11 @@ class BlockManifest(WorkflowBlockManifest):
             }
         },
     )
-    model_type: Literal["google-gemini", "anthropic-claude", "florence-2"] = Field(
-        description="Type of the model that generated prediction",
-        examples=[["google-gemini", "anthropic-claude", "florence-2"]],
+    model_type: Literal["openai", "google-gemini", "anthropic-claude", "florence-2"] = (
+        Field(
+            description="Type of the model that generated prediction",
+            examples=[["google-gemini", "anthropic-claude", "florence-2"]],
+        )
     )
     task_type: Literal[tuple(SUPPORTED_TASKS)] = Field(
         description="Task type to performed by model.",
@@ -234,7 +236,7 @@ def try_parse_json(content: str) -> Tuple[bool, dict]:
         return True, {}
 
 
-def parse_gemini_object_detection_response(
+def parse_llm_object_detection_response(
     image: WorkflowImageData,
     parsed_data: dict,
     classes: List[str],
@@ -353,8 +355,11 @@ def get_4digit_from_md5(input_string):
 
 
 REGISTERED_PARSERS = {
-    ("google-gemini", "object-detection"): parse_gemini_object_detection_response,
-    ("anthropic-claude", "object-detection"): parse_gemini_object_detection_response,
+    # LLMs
+    ("openai", "object-detection"): parse_llm_object_detection_response,
+    ("google-gemini", "object-detection"): parse_llm_object_detection_response,
+    ("anthropic-claude", "object-detection"): parse_llm_object_detection_response,
+    # Florence 2
     ("florence-2", "object-detection"): partial(
         parse_florence2_object_detection_response, florence_task_type="<OD>"
     ),
