@@ -34,7 +34,7 @@ jobs:
       matrix:
         python-version: ["3.12"]
         extras:
-          - { install: "onnx-cu12", marker: "onnx_extras", workers: "auto" }
+          - { install: "onnx-cu12,mediapipe", marker: "onnx_extras", workers: "auto" }
           - { install: "trt10", marker: "trt_extras", workers: "auto" }
           - { install: "torch-cu124,mediapipe", marker: "torch_models", workers: "auto" }
           - { install: "torch-cu124", marker: "hf_vlm_models", workers: "1" }

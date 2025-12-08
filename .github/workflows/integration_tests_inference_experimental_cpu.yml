@@ -39,7 +39,7 @@ jobs:
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
         extras:
-          - { install: "onnx-cpu", marker: "onnx_extras", workers: "auto" }
+          - { install: "onnx-cpu,mediapipe", marker: "onnx_extras", workers: "auto" }
           - { install: "torch-cpu,mediapipe", marker: "torch_models", workers: "2" }
     steps:
       - name: 🛎️ Checkout
