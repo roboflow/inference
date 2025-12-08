@@ -198,7 +198,8 @@ def parse_video_file_chunk(message: bytes) -> Tuple[int, int, bytes]:
         raise ValueError(f"Message too short: {len(message)} bytes")
     chunk_index, total_chunks = struct.unpack("<II", message[:8])
     return chunk_index, total_chunks, message[8:]
-  
+
+
 def warmup_cuda(
     max_retries: int = 10,
     retry_delay: float = 0.5,

@@ -104,9 +104,9 @@ class ChunkReassembler:
     """Helper to reassemble chunked binary messages."""
 
     def __init__(self):
-        self._chunks: Dict[
-            int, Dict[int, bytes]
-        ] = {}  # {frame_id: {chunk_index: data}}
+        self._chunks: Dict[int, Dict[int, bytes]] = (
+            {}
+        )  # {frame_id: {chunk_index: data}}
         self._total: Dict[int, int] = {}  # {frame_id: total_chunks}
 
     def add_chunk(
@@ -161,9 +161,7 @@ class VideoFileUploadHandler:
     def temp_file_path(self) -> Optional[str]:
         return self._temp_file_path
 
-    def handle_chunk(
-        self, chunk_index: int, total_chunks: int, data: bytes
-    ) -> None:
+    def handle_chunk(self, chunk_index: int, total_chunks: int, data: bytes) -> None:
         """Handle a chunk. Auto-completes when all chunks received."""
         if self._total_chunks is None:
             self._total_chunks = total_chunks
@@ -243,7 +241,9 @@ async def send_chunked_data(
         return
 
     while data_channel.bufferedAmount > DATA_CHANNEL_BUFFER_SIZE_LIMIT:
-        logger.info(f"Waiting for data channel buffer to drain. Data channel buffer size: {data_channel.bufferedAmount}")
+        logger.info(
+            f"Waiting for data channel buffer to drain. Data channel buffer size: {data_channel.bufferedAmount}"
+        )
         await asyncio.sleep(FRAME_SEND_DELAY)
 
     total_chunks = (
@@ -419,7 +419,9 @@ class VideoFrameProcessor:
             json_bytes = await asyncio.to_thread(
                 lambda: json.dumps(webrtc_output.model_dump()).encode("utf-8")
             )
-            await send_chunked_data(self.data_channel, self._received_frames, json_bytes)
+            await send_chunked_data(
+                self.data_channel, self._received_frames, json_bytes
+            )
             return
 
         if self._data_mode == DataOutputMode.ALL:
@@ -563,7 +565,10 @@ class VideoFrameProcessor:
                         break
 
                     # Drain queue if using PlayerStreamTrack (RTSP)
-                    if isinstance(self.track, PlayerStreamTrack) and self.realtime_processing:
+                    if (
+                        isinstance(self.track, PlayerStreamTrack)
+                        and self.realtime_processing
+                    ):
                         while self.track._queue.qsize() > 30:
                             logger.info("Draining queue: %s", self.track._queue.qsize())
                             self.track._queue.get_nowait()
@@ -1090,12 +1095,9 @@ async def init_rtc_peer_connection_with_loop(
                     chunk_index, total_chunks, data
                 )
 
-
                 video_path = video_processor.video_upload_handler.try_start_processing()
                 if video_path:
-                    player = MediaPlayer(
-                        video_path, loop=False
-                    )
+                    player = MediaPlayer(video_path, loop=False)
                     player._throttle_playback = False
                     video_processor.set_track(track=player.video)
                     if not should_send_video:
