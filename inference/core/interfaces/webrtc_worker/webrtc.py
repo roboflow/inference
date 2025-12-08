@@ -1,6 +1,5 @@
 import asyncio
 import datetime
-import fractions
 import json
 import logging
 import struct
@@ -18,7 +17,7 @@ from aiortc import (
     VideoStreamTrack,
 )
 from aiortc.contrib.media import MediaPlayer, MediaRelay, PlayerStreamTrack
-from aiortc.mediastreams import MediaStreamError
+from aiortc.mediastreams import MediaStreamError, MediaStreamTrack
 from aiortc.rtcrtpreceiver import RemoteStreamTrack
 from av import VideoFrame
 from av import logging as av_logging
@@ -302,11 +301,12 @@ class VideoFrameProcessor:
         terminate_event: Optional[asyncio.Event] = None,
         use_data_channel_frames: bool = False,
         heartbeat_callback: Optional[Callable[[], None]] = None,
+        realtime_processing: bool = True,
     ):
         self._loop = asyncio_loop
         self._termination_date = termination_date
         self._terminate_event = terminate_event
-        self.track: Optional[RemoteStreamTrack] = None
+        self.track: Optional[MediaStreamTrack] = None
         self._track_active: bool = False
         self._av_logging_set: bool = False
         self._received_frames = 0
@@ -325,7 +325,8 @@ class VideoFrameProcessor:
 
         # Video file upload support
         self.video_upload_handler: Optional[VideoFileUploadHandler] = None
-        self._video_file_mode = False
+        self._track_ready_event: asyncio.Event = asyncio.Event()
+        self.realtime_processing = realtime_processing
 
         if data_output is None:
             self.data_output = None
@@ -359,9 +360,10 @@ class VideoFrameProcessor:
             model_manager=model_manager,
         )
 
-    def set_track(self, track: RemoteStreamTrack):
+    def set_track(self, track: MediaStreamTrack):
         if not self.track:
             self.track = track
+            self._track_ready_event.set()
 
     def close(self):
         self._track_active = False
@@ -369,10 +371,6 @@ class VideoFrameProcessor:
         # Clean up video upload handler if present
         if self.video_upload_handler is not None:
             self.video_upload_handler.cleanup()
-        # Clean up video capture if present
-        if hasattr(self, "_video_capture") and self._video_capture is not None:
-            self._video_capture.release()
-            self._video_capture = None
 
     def _check_termination(self):
         """Check if we should terminate based on timeout"""
@@ -454,6 +452,26 @@ class VideoFrameProcessor:
         # Send using binary chunked protocol
         json_bytes = json.dumps(webrtc_output.model_dump(mode="json")).encode("utf-8")
         await send_chunked_data(self.data_channel, self._received_frames, json_bytes)
+
+    async def _send_processing_complete(self):
+        """Send final message indicating processing is complete."""
+        if not self.data_channel or self.data_channel.readyState != "open":
+            return
+
+        completion_output = WebRTCOutput(
+            processing_complete=True,
+            video_metadata=WebRTCVideoMetadata(
+                frame_id=self._received_frames,
+                received_at=datetime.datetime.now().isoformat(),
+            ),
+        )
+        json_bytes = json.dumps(completion_output.model_dump()).encode("utf-8")
+        await send_chunked_data(
+            self.data_channel, self._received_frames + 1, json_bytes
+        )
+        logger.info(
+            f"Sent processing_complete signal after {self._received_frames} frames"
+        )
 
     async def _handle_data_channel_frame(self, message: bytes) -> None:
         """Handle incoming binary frame chunk from upstream_frames data channel.
@@ -540,8 +558,9 @@ class VideoFrameProcessor:
                         break
 
                     # Drain queue if using PlayerStreamTrack (RTSP)
-                    if isinstance(self.track, PlayerStreamTrack):
+                    if isinstance(self.track, PlayerStreamTrack) and self.realtime_processing:
                         while self.track._queue.qsize() > 30:
+                            logger.info("Draining queue: %s", self.track._queue.qsize())
                             self.track._queue.get_nowait()
 
                     frame = await self.track.recv()
@@ -569,90 +588,9 @@ class VideoFrameProcessor:
             logger.info("Stream ended in data-only processing")
         except Exception as exc:
             logger.error("Error in data-only processing: %s", exc)
-
-    async def process_video_file(self, video_path: str) -> None:
-        """Process a video file through the workflow.
-
-        Reads frames from the video file using cv2.VideoCapture and sends
-        processed results via data channel.
-
-        Args:
-            video_path: Path to the video file to process
-        """
-        if not self._av_logging_set:
-            av_logging.set_libav_level(av_logging.ERROR)
-            self._av_logging_set = True
-
-        logger.info(f"Starting video file processing: {video_path}")
-
-        cap = cv2.VideoCapture(video_path)
-        if not cap.isOpened():
-            logger.error(f"Failed to open video file: {video_path}")
-            return
-
-        try:
-            fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            logger.info(f"Video info: fps={fps}, total_frames={total_frames}")
-
-            frame_id = 0
-            while not self._stop_processing:
-                if self._check_termination():
-                    break
-
-                if self.heartbeat_callback:
-                    self.heartbeat_callback()
-
-                ret, np_frame = cap.read()
-                if not ret:
-                    logger.info("Reached end of video file")
-                    break
-
-                frame_id += 1
-                self._received_frames = frame_id
-                frame_timestamp = datetime.datetime.now()
-
-                # Convert numpy frame to VideoFrame
-                video_frame = VideoFrame.from_ndarray(np_frame, format="bgr24")
-
-                workflow_output, _, errors = await self._process_frame_async(
-                    frame=video_frame,
-                    frame_id=frame_id,
-                    render_output=False,
-                    include_errors_on_frame=False,
-                )
-
-                # Send data via data channel
-                await self._send_data_output(
-                    workflow_output, frame_timestamp, video_frame, errors
-                )
-
-                if frame_id % 100 == 0:
-                    logger.info(f"Processed frame {frame_id}/{total_frames}")
-
-            logger.info(f"Video file processing complete: {frame_id} frames processed")
-
-            # Send completion signal via data channel
-            if self.data_channel and self.data_channel.readyState == "open":
-                completion_message = WebRTCOutput(
-                    serialized_output_data=None,
-                    video_metadata=WebRTCVideoMetadata(
-                        frame_id=frame_id,
-                        received_at=datetime.datetime.now().isoformat(),
-                    ),
-                    errors=[],
-                    processing_complete=True,
-                )
-                json_bytes = json.dumps(
-                    completion_message.model_dump(mode="json")
-                ).encode("utf-8")
-                await send_chunked_data(self.data_channel, frame_id + 1, json_bytes)
-                logger.info("Sent processing_complete signal to client")
-
-        except Exception as exc:
-            logger.error(f"Error processing video file: {exc}", exc_info=True)
         finally:
-            cap.release()
+            # Send completion signal to client
+            await self._send_processing_complete()
 
     @staticmethod
     def _ensure_workflow_specification(
@@ -757,6 +695,7 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
         terminate_event: Optional[asyncio.Event] = None,
         use_data_channel_frames: bool = False,
         heartbeat_callback: Optional[Callable[[], None]] = None,
+        realtime_processing: bool = True,
         *args,
         **kwargs,
     ):
@@ -775,6 +714,7 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
             use_data_channel_frames=use_data_channel_frames,
             model_manager=model_manager,
             heartbeat_callback=heartbeat_callback,
+            realtime_processing=realtime_processing,
         )
 
     async def _auto_detect_stream_output(
@@ -807,11 +747,14 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
         if self._check_termination():
             raise MediaStreamError("Processing terminated due to timeout")
 
-        # Video file upload mode: wait for upload, then read from file
-        if self._video_file_mode:
-            return await self._recv_from_video_file()
+        # Wait for track to be ready (video file upload case)
+        if self.track is None:
+            logger.info("Waiting for track to be ready...")
+            await self._track_ready_event.wait()
+            if self.track is None:
+                raise MediaStreamError("Track not available after wait")
 
-        # Drain queue if using PlayerStreamTrack (RTSP)
+        # Drain queue if using PlayerStreamTrack (RTSP/video file)
         if isinstance(self.track, PlayerStreamTrack):
             while self.track._queue.qsize() > 30:
                 self.track._queue.get_nowait()
@@ -835,84 +778,6 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
         new_frame.time_base = frame.time_base
 
         await self._send_data_output(workflow_output, frame_timestamp, frame, errors)
-
-        return new_frame
-
-    async def _recv_from_video_file(self) -> VideoFrame:
-        """Read and process frames from uploaded video file.
-
-        Waits for upload completion, then reads frames sequentially.
-        Returns processed frames for video track output.
-        """
-        # Wait for upload to complete (only on first call)
-        if not hasattr(self, "_video_capture") or self._video_capture is None:
-            if self.video_upload_handler is None:
-                raise MediaStreamError("Video upload handler not initialized")
-
-            logger.info("Waiting for video file upload to complete...")
-            await self.video_upload_handler.upload_complete_event.wait()
-
-            video_path = self.video_upload_handler.temp_file_path
-            if not video_path:
-                raise MediaStreamError("No video file path after upload complete")
-
-            logger.info(f"Opening uploaded video file: {video_path}")
-            self._video_capture = cv2.VideoCapture(video_path)
-            if not self._video_capture.isOpened():
-                raise MediaStreamError(f"Failed to open video file: {video_path}")
-
-            self._video_fps = self._video_capture.get(cv2.CAP_PROP_FPS) or 30.0
-            self._video_total_frames = int(
-                self._video_capture.get(cv2.CAP_PROP_FRAME_COUNT)
-            )
-            self._video_pts = 0
-            logger.info(
-                f"Video opened: fps={self._video_fps}, total_frames={self._video_total_frames}"
-            )
-
-        # Read next frame
-        ret, np_frame = self._video_capture.read()
-        if not ret:
-            logger.info("Reached end of video file")
-            self._video_capture.release()
-            self._video_capture = None
-            # Clean up temp file
-            if self.video_upload_handler:
-                self.video_upload_handler.cleanup()
-            raise MediaStreamError("End of video file")
-
-        self._received_frames += 1
-        frame_timestamp = datetime.datetime.now()
-
-        # Convert numpy frame to VideoFrame
-        frame = VideoFrame.from_ndarray(np_frame, format="bgr24")
-        frame.pts = self._video_pts
-        frame.time_base = fractions.Fraction(1, int(self._video_fps))
-        self._video_pts += 1
-
-        # Auto-detect stream output on first frame
-        if self.stream_output is None and self._received_frames == 1:
-            await self._auto_detect_stream_output(frame, self._received_frames)
-
-        # Process frame
-        workflow_output, new_frame, errors = await self._process_frame_async(
-            frame=frame,
-            frame_id=self._received_frames,
-            stream_output=self.stream_output,
-            render_output=True,
-            include_errors_on_frame=True,
-        )
-
-        new_frame.pts = frame.pts
-        new_frame.time_base = frame.time_base
-
-        # Send data output
-        await self._send_data_output(workflow_output, frame_timestamp, frame, errors)
-
-        if self._received_frames % 100 == 0:
-            logger.info(
-                f"Video file processing: {self._received_frames}/{self._video_total_frames}"
-            )
 
         return new_frame
 
@@ -1019,6 +884,7 @@ async def init_rtc_peer_connection_with_loop(
                 terminate_event=terminate_event,
                 use_data_channel_frames=webrtc_request.use_data_channel_frames,
                 heartbeat_callback=heartbeat_callback,
+                realtime_processing=webrtc_request.webrtc_realtime_processing,
             )
         else:
             # No video track - use base VideoFrameProcessor
@@ -1035,6 +901,7 @@ async def init_rtc_peer_connection_with_loop(
                 terminate_event=terminate_event,
                 use_data_channel_frames=webrtc_request.use_data_channel_frames,
                 heartbeat_callback=heartbeat_callback,
+                realtime_processing=webrtc_request.webrtc_realtime_processing,
             )
     except (
         ValidationError,
@@ -1201,10 +1068,8 @@ async def init_rtc_peer_connection_with_loop(
             video_processor.video_upload_handler = VideoFileUploadHandler()
 
             if should_send_video:
-                # Video track output: add track now, recv() will wait for upload
-                video_processor._video_file_mode = True
+                # Video track output: add track now, recv() will wait for track to be set
                 peer_connection.addTrack(video_processor)
-            # else: data-only mode, will call process_video_file() when done
 
             @channel.on("message")
             def on_upload_message(message):
@@ -1222,11 +1087,18 @@ async def init_rtc_peer_connection_with_loop(
                     chunk_index, total_chunks, data
                 )
 
-                # For data-only: start processing when upload completes
-                if not should_send_video:
-                    video_path = video_processor.video_upload_handler.try_start_processing()
-                    if video_path:
-                        asyncio.create_task(video_processor.process_video_file(video_path))
+
+                video_path = video_processor.video_upload_handler.try_start_processing()
+                if video_path:
+                    player = MediaPlayer(
+                        video_path, loop=False
+                    )
+                    player._throttle_playback = False
+                    video_processor.set_track(track=player.video)
+                    if not should_send_video:
+                        # For DATA_ONLY, start data-only processing task
+                        logger.info("Starting data-only processing for video file")
+                        asyncio.create_task(video_processor.process_frames_data_only())
 
             return
 
