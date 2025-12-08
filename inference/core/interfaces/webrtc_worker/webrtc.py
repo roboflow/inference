@@ -583,7 +583,6 @@ class VideoFrameProcessor:
                         and self.realtime_processing
                     ):
                         while self.track._queue.qsize() > 30:
-                            logger.info("Draining queue: %s", self.track._queue.qsize())
                             self.track._queue.get_nowait()
 
                     frame = await self.track.recv()
