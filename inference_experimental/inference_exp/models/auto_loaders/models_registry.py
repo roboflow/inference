@@ -16,6 +16,8 @@ CLASSIFICATION_TASK = "classification"
 MULTI_LABEL_CLASSIFICATION_TASK = "multi-label-classification"
 DEPTH_ESTIMATION_TASK = "depth-estimation"
 STRUCTURED_OCR_TASK = "structured-ocr"
+TEXT_ONLY_OCR_TASK = "text-only-ocr"
+GAZE_DETECTION_TASK = "gaze-detection"
 
 
 @dataclass(frozen=True)
@@ -365,6 +367,22 @@ REGISTERED_MODELS: Dict[
     ("easy-ocr", STRUCTURED_OCR_TASK, BackendType.TORCH): LazyClass(
         module_name="inference_exp.models.easy_ocr.easy_ocr_torch",
         class_name="EasyOCRTorch",
+    ),
+    ("tr-ocr", TEXT_ONLY_OCR_TASK, BackendType.HF): LazyClass(
+        module_name="inference_exp.models.trocr.trocr_hf",
+        class_name="TROcrHF",
+    ),
+    (
+        "mediapipe-face-detector",
+        KEYPOINT_DETECTION_TASK,
+        BackendType.MEDIAPIPE,
+    ): LazyClass(
+        module_name="inference_exp.models.mediapipe_face_detection.face_detection",
+        class_name="MediaPipeFaceDetector",
+    ),
+    ("l2cs-net", GAZE_DETECTION_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_exp.models.l2cs.l2cs_onnx",
+        class_name="L2CSNetOnnx",
     ),
 }
 
