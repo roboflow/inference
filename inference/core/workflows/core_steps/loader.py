@@ -243,9 +243,6 @@ from inference.core.workflows.core_steps.models.foundation.segment_anything3.v1 
 from inference.core.workflows.core_steps.models.foundation.segment_anything3.v2 import (
     SegmentAnything3BlockV2,
 )
-from inference.core.workflows.core_steps.models.foundation.segment_anything3_3d.v1 import (
-    SegmentAnything3_3D_ObjectsBlockV1,
-)
 from inference.core.workflows.core_steps.models.foundation.smolvlm.v1 import (
     SmolVLM2BlockV1,
 )
