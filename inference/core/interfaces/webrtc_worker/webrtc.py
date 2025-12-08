@@ -246,7 +246,7 @@ async def send_chunked_data(
         sleep_count += 1
         if sleep_count % 10 == 0:
             logger.debug(
-                f"Waiting for data channel buffer to drain. Data channel buffer size: {data_channel.bufferedAmount}"
+                "Waiting for data channel buffer to drain. Data channel buffer size: %s", data_channel.bufferedAmount
             )
         if heartbeat_callback:
             heartbeat_callback()
