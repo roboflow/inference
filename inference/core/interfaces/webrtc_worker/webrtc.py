@@ -593,10 +593,10 @@ class VideoFrameProcessor:
                     workflow_output, frame_timestamp, frame, errors
                 )
 
-        except asyncio.CancelledError:
-            logger.info("Data-only processing cancelled")
-        except MediaStreamError:
-            logger.info("Stream ended in data-only processing")
+        except asyncio.CancelledError as exc:
+            logger.info("Data-only processing cancelled: %s", exc)
+        except MediaStreamError as exc:
+            logger.info("Stream ended in data-only processing: %s", exc)
         except Exception as exc:
             logger.error("Error in data-only processing: %s", exc)
         finally:

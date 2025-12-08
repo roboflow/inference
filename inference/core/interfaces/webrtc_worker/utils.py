@@ -17,6 +17,7 @@ from inference.core.interfaces.webrtc_worker.entities import VIDEO_FILE_HEADER_S
 from inference.core.utils.roboflow import get_model_id_chunks
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.models.aliases import resolve_roboflow_model_alias
+from inference.usage_tracking.collector import usage_collector
 
 logging.getLogger("aiortc").setLevel(logging.WARNING)
 
@@ -224,3 +225,13 @@ def warmup_cuda(
         raise RuntimeError(f"CUDA initialization failed after {max_retries} attempts")
 
     logger.info("CUDA initialization succeeded")
+
+
+def is_over_quota(api_key: str) -> bool:
+    api_key_plan_details = usage_collector._plan_details.get_api_key_plan(
+        api_key=api_key
+    )
+    is_over_quota = api_key_plan_details.get(
+        usage_collector._plan_details._over_quota_col_name
+    )
+    return is_over_quota
