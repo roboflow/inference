@@ -4,6 +4,7 @@ from typing import List, Optional, Tuple, Union
 import numpy as np
 import torch
 import torchvision
+from groundingdino.util.inference import load_model, predict
 from inference_exp import Detections
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat, ImageDimensions
@@ -15,7 +16,6 @@ from inference_exp.models.common.model_packages import get_model_package_content
 from torch import nn
 from torchvision import transforms
 from torchvision.ops import box_convert
-from groundingdino.util.inference import load_model, predict
 
 
 class GroundingDinoForObjectDetectionTorch(
@@ -43,7 +43,7 @@ class GroundingDinoForObjectDetectionTorch(
         model = load_model(
             model_config_path=model_package_content["config.py"],
             model_checkpoint_path=model_package_content["weights.pth"],
-            **loader_kwargs
+            **loader_kwargs,
         ).to(device)
         return cls(model=model, device=device)
 

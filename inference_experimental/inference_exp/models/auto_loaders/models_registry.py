@@ -385,7 +385,11 @@ REGISTERED_MODELS: Dict[
         module_name="inference_exp.models.l2cs.l2cs_onnx",
         class_name="L2CSNetOnnx",
     ),
-    ("grounding-dino", OPEN_VOCABULARY_OBJECT_DETECTION_TASK, BackendType.TORCH): LazyClass(
+    (
+        "grounding-dino",
+        OPEN_VOCABULARY_OBJECT_DETECTION_TASK,
+        BackendType.TORCH,
+    ): LazyClass(
         module_name="inference_exp.models.grounding_dino.grounding_dino_torch",
         class_name="GroundingDinoForObjectDetectionTorch",
     ),
