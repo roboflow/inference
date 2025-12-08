@@ -1,6 +1,7 @@
 import ctypes
 import datetime
 import logging
+import struct
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -12,9 +13,11 @@ from inference.core import logger
 from inference.core.env import DEBUG_WEBRTC_PROCESSING_LATENCY
 from inference.core.interfaces.camera.entities import VideoFrame as InferenceVideoFrame
 from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
+from inference.core.interfaces.webrtc_worker.entities import VIDEO_FILE_HEADER_SIZE
 from inference.core.utils.roboflow import get_model_id_chunks
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.models.aliases import resolve_roboflow_model_alias
+from inference.usage_tracking.collector import usage_collector
 
 logging.getLogger("aiortc").setLevel(logging.WARNING)
 
@@ -185,6 +188,19 @@ def workflow_contains_preloaded_model(
     return False
 
 
+# Video File Upload Protocol
+# Header: [chunk_index:u32][total_chunks:u32][payload]
+def parse_video_file_chunk(message: bytes) -> Tuple[int, int, bytes]:
+    """Parse video file chunk message.
+
+    Returns: (chunk_index, total_chunks, payload)
+    """
+    if len(message) < VIDEO_FILE_HEADER_SIZE:
+        raise ValueError(f"Message too short: {len(message)} bytes")
+    chunk_index, total_chunks = struct.unpack("<II", message[:8])
+    return chunk_index, total_chunks, message[8:]
+
+
 def warmup_cuda(
     max_retries: int = 10,
     retry_delay: float = 0.5,
@@ -209,3 +225,13 @@ def warmup_cuda(
         raise RuntimeError(f"CUDA initialization failed after {max_retries} attempts")
 
     logger.info("CUDA initialization succeeded")
+
+
+def is_over_quota(api_key: str) -> bool:
+    api_key_plan_details = usage_collector._plan_details.get_api_key_plan(
+        api_key=api_key
+    )
+    is_over_quota = api_key_plan_details.get(
+        usage_collector._plan_details._over_quota_col_name
+    )
+    return is_over_quota

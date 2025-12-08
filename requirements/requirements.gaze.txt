@@ -1,1 +1,1 @@
-mediapipe>=0.9,<0.11
+rf-mediapipe>=0.9,<0.11

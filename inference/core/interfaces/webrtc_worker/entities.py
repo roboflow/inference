@@ -72,6 +72,7 @@ class WebRTCOutput(BaseModel):
     serialized_output_data: Optional[Dict[str, Any]] = None
     video_metadata: Optional[WebRTCVideoMetadata] = None
     errors: List[str] = Field(default_factory=list)
+    processing_complete: bool = False  # Signals end of video file processing
 
 
 class WebRTCWorkerResult(BaseModel):
@@ -93,3 +94,18 @@ class DataOutputMode(str, Enum):
     NONE = "none"  # None or [] -> no data sent
     ALL = "all"  # ["*"] -> send all (skip images)
     SPECIFIC = "specific"  # ["field1", "field2"] -> send only these
+
+
+# Video File Upload Protocol
+# Binary header: [chunk_index:u32][total_chunks:u32][payload]
+VIDEO_FILE_HEADER_SIZE = 8
+
+
+class VideoFileUploadState(str, Enum):
+    """State of video file upload."""
+
+    IDLE = "idle"
+    UPLOADING = "uploading"
+    COMPLETE = "complete"
+    PROCESSING = "processing"
+    ERROR = "error"

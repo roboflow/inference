@@ -2,7 +2,9 @@ import asyncio
 import datetime
 import os
 import subprocess
+import time
 from pathlib import Path
+from queue import Empty
 from typing import Callable, Dict, Optional
 
 from inference.core import logger
@@ -43,9 +45,14 @@ from inference.core.env import (
     WEBRTC_MODAL_SHUTDOWN_RESERVE,
     WEBRTC_MODAL_TOKEN_ID,
     WEBRTC_MODAL_TOKEN_SECRET,
+    WEBRTC_MODAL_USAGE_QUOTA_ENABLED,
+    WEBRTC_MODAL_WATCHDOG_TIMEMOUT,
     WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
 )
-from inference.core.exceptions import RoboflowAPIUnsuccessfulRequestError
+from inference.core.exceptions import (
+    RoboflowAPITimeoutError,
+    RoboflowAPIUnsuccessfulRequestError,
+)
 from inference.core.interfaces.webrtc_worker.entities import (
     WebRTCWorkerRequest,
     WebRTCWorkerResult,
@@ -156,6 +163,9 @@ if modal is not None:
             "ROBOFLOW_INTERNAL_SERVICE_SECRET": ROBOFLOW_INTERNAL_SERVICE_SECRET,
             "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
             "TELEMETRY_USE_PERSISTENT_QUEUE": "False",
+            "TELEMETRY_API_PLAN_CACHE_TTL_SECONDS": str(
+                os.getenv("TELEMETRY_API_PLAN_CACHE_TTL_SECONDS", 60)
+            ),
             "TORCHINDUCTOR_COMPILE_THREADS": "1",
             "WEBRTC_MODAL_FUNCTION_BUFFER_CONTAINERS": str(
                 WEBRTC_MODAL_FUNCTION_BUFFER_CONTAINERS
@@ -184,6 +194,8 @@ if modal is not None:
             "WEBRTC_MODAL_RTSP_PLACEHOLDER": WEBRTC_MODAL_RTSP_PLACEHOLDER,
             "WEBRTC_MODAL_RTSP_PLACEHOLDER_URL": WEBRTC_MODAL_RTSP_PLACEHOLDER_URL,
             "WEBRTC_MODAL_SHUTDOWN_RESERVE": str(WEBRTC_MODAL_SHUTDOWN_RESERVE),
+            "WEBRTC_MODAL_USAGE_QUOTA_ENABLED": str(WEBRTC_MODAL_USAGE_QUOTA_ENABLED),
+            "WEBRTC_MODAL_WATCHDOG_TIMEMOUT": str(WEBRTC_MODAL_WATCHDOG_TIMEMOUT),
         },
         "volumes": {MODEL_CACHE_DIR: rfcache_volume},
     }
@@ -192,13 +204,14 @@ if modal is not None:
         webrtc_request: WebRTCWorkerRequest,
         send_answer: Callable[[WebRTCWorkerResult], None],
         model_manager: ModelManager,
-    ):
+    ) -> int:
         from inference.core.interfaces.webrtc_worker.webrtc import (
             init_rtc_peer_connection_with_loop,
         )
 
         watchdog = Watchdog(
-            timeout_seconds=30,
+            api_key=webrtc_request.api_key,
+            timeout_seconds=WEBRTC_MODAL_WATCHDOG_TIMEMOUT,
         )
 
         rtc_peer_connection_task = asyncio.create_task(
@@ -210,27 +223,40 @@ if modal is not None:
             )
         )
 
-        def on_timeout():
-            logger.info("Watchdog timeout reached")
-            rtc_peer_connection_task.cancel()
+        def on_timeout(message: Optional[str] = ""):
+            msg = "Cancelled by watchdog"
+            if message:
+                msg += f": {message}"
+            rtc_peer_connection_task.cancel(msg)
 
         watchdog.on_timeout = on_timeout
         watchdog.start()
 
         try:
             await rtc_peer_connection_task
+            logger.info("Task completed uninterrupted")
+        except modal.exception.InputCancellation:
+            logger.warning("Modal function was cancelled")
         except asyncio.CancelledError as exc:
             logger.info("WebRTC connection task was cancelled (%s)", exc)
         except Exception as exc:
             logger.error(exc)
         finally:
             watchdog.stop()
+            return watchdog._heartbeats
 
     class RTCPeerConnectionModal:
         _model_manager: Optional[ModelManager] = modal.parameter(
             default=None, init=False
         )
         _gpu: Optional[str] = modal.parameter(default=None, init=False)
+        _container_startup_time_seconds: Optional[float] = modal.parameter(
+            default=0, init=False
+        )
+        _function_call_number_on_container: Optional[int] = modal.parameter(
+            default=0, init=False
+        )
+        _cold_start: Optional[bool] = modal.parameter(default=True, init=False)
 
         @modal.method()
         def rtc_peer_connection_modal(
@@ -238,6 +264,7 @@ if modal is not None:
             webrtc_request: WebRTCWorkerRequest,
             q: modal.Queue,
         ):
+            self._function_call_number_on_container += 1
             logger.info("*** Spawning %s:", self.__class__.__name__)
             logger.info("Running on %s", self._gpu)
             logger.info("Inference tag: %s", docker_tag)
@@ -252,8 +279,26 @@ if modal is not None:
             logger.info(
                 "Preloaded hf models: %s", ", ".join(PRELOADED_HF_MODELS.keys())
             )
+            logger.info("Cold start: %s", self._cold_start)
+            logger.info(
+                "Function call number on container: %s",
+                self._function_call_number_on_container,
+            )
+            logger.info(
+                "Container startup time: %s", self._container_startup_time_seconds
+            )
             _exec_session_started = datetime.datetime.now()
             webrtc_request.processing_session_started = _exec_session_started
+            # Modal cancels based on time taken during entry hook
+            if self._function_call_number_on_container == 1 and self._cold_start:
+                logger.info(
+                    "Subtracting container startup time (%s) from processing session started (%s)",
+                    self._container_startup_time_seconds,
+                    webrtc_request.processing_session_started,
+                )
+                webrtc_request.processing_session_started -= datetime.timedelta(
+                    seconds=self._container_startup_time_seconds
+                )
             logger.info(
                 "WebRTC session started at %s", _exec_session_started.isoformat()
             )
@@ -266,6 +311,7 @@ if modal is not None:
             logger.info("declared_fps: %s", webrtc_request.declared_fps)
             logger.info("rtsp_url: %s", webrtc_request.rtsp_url)
             logger.info("processing_timeout: %s", webrtc_request.processing_timeout)
+            logger.info("watchdog_timeout: %s", WEBRTC_MODAL_WATCHDOG_TIMEMOUT)
             logger.info("requested_plan: %s", webrtc_request.requested_plan)
             logger.info("requested_region: %s", webrtc_request.requested_region)
             logger.info(
@@ -292,6 +338,7 @@ if modal is not None:
 
             def send_answer(obj: WebRTCWorkerResult):
                 logger.info("Sending webrtc answer")
+                # Queue with no limit, below will never block
                 q.put(obj)
 
             if webrtc_request.processing_timeout == 0:
@@ -309,19 +356,26 @@ if modal is not None:
                 send_answer(WebRTCWorkerResult(error_message=error_msg))
                 return
 
-            asyncio.run(
-                run_rtc_peer_connection_with_watchdog(
-                    webrtc_request=webrtc_request,
-                    send_answer=send_answer,
-                    model_manager=self._model_manager,
+            try:
+                heartbeats = asyncio.run(
+                    run_rtc_peer_connection_with_watchdog(
+                        webrtc_request=webrtc_request,
+                        send_answer=send_answer,
+                        model_manager=self._model_manager,
+                    )
                 )
-            )
+            except (asyncio.CancelledError, modal.exception.InputCancellation):
+                logger.warning("Modal function was cancelled")
 
             _exec_session_stopped = datetime.datetime.now()
             logger.info(
                 "WebRTC session stopped at %s",
                 _exec_session_stopped.isoformat(),
             )
+            if heartbeats == 0:
+                raise Exception(
+                    "WebRTC worker was terminated before processing a single frame"
+                )
             workflow_id = webrtc_request.workflow_configuration.workflow_id
             if not workflow_id:
                 if webrtc_request.workflow_configuration.workflow_specification:
@@ -378,6 +432,7 @@ if modal is not None:
             # TODO: pre-load models on CPU
             logger.info("Starting CPU container")
             self._gpu = "CPU"
+            self._cold_start = False
 
     @app.cls(
         **{
@@ -397,6 +452,8 @@ if modal is not None:
         # https://modal.com/docs/guide/memory-snapshot#gpu-memory-snapshot
         @modal.enter(snap=True)
         def start(self):
+            self._cold_start = False
+            time_start = time.time()
             warmup_cuda(max_retries=10, retry_delay=0.5)
             self._gpu = check_nvidia_smi_gpu()
             logger.info("Starting GPU container on %s", self._gpu)
@@ -432,6 +489,8 @@ if modal is not None:
                             exc,
                         )
                 self._model_manager = model_manager
+            time_end = time.time()
+            self._container_startup_time_seconds = time_end - time_start
 
     def spawn_rtc_peer_connection_modal(
         webrtc_request: WebRTCWorkerRequest,
@@ -583,11 +642,21 @@ if modal is not None:
                 app.name,
             )
             # https://modal.com/docs/reference/modal.Function#spawn
-            rtc_modal_obj.rtc_peer_connection_modal.spawn(
-                webrtc_request=webrtc_request,
-                q=q,
+            function_call: modal.FunctionCall = (
+                rtc_modal_obj.rtc_peer_connection_modal.spawn(
+                    webrtc_request=webrtc_request,
+                    q=q,
+                )
             )
-            answer = WebRTCWorkerResult.model_validate(
-                q.get(block=True, timeout=WEBRTC_MODAL_RESPONSE_TIMEOUT)
-            )
+            try:
+                answer = WebRTCWorkerResult.model_validate(
+                    q.get(block=True, timeout=WEBRTC_MODAL_RESPONSE_TIMEOUT)
+                )
+            except Empty:
+                logger.error("Modal function call timed out, terminating containers")
+                function_call.cancel(terminate_containers=True)
+                raise RoboflowAPITimeoutError("Modal function call timed out")
+            except Exception as exc:
+                logger.error(exc)
+                raise exc
             return answer

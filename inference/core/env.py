@@ -722,6 +722,8 @@ WEBRTC_MODAL_APP_NAME = os.getenv(
 # seconds
 WEBRTC_MODAL_RESPONSE_TIMEOUT = int(os.getenv("WEBRTC_MODAL_RESPONSE_TIMEOUT", "60"))
 # seconds
+WEBRTC_MODAL_WATCHDOG_TIMEMOUT = int(os.getenv("WEBRTC_MODAL_WATCHDOG_TIMEMOUT", "60"))
+# seconds
 WEBRTC_MODAL_FUNCTION_TIME_LIMIT = int(
     os.getenv("WEBRTC_MODAL_FUNCTION_TIME_LIMIT", "3600")
 )
@@ -776,6 +778,15 @@ except (ValueError, TypeError):
 WEBRTC_MODAL_PUBLIC_STUN_SERVERS = os.getenv(
     "WEBRTC_MODAL_PUBLIC_STUN_SERVERS",
     "stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302,stun:stun2.l.google.com:19302,stun:stun3.l.google.com:19302,stun:stun4.l.google.com:19302",
+)
+WEBRTC_MODAL_USAGE_QUOTA_ENABLED = str2bool(
+    os.getenv("WEBRTC_MODAL_USAGE_QUOTA_ENABLED", "False")
+)
+WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY = float(
+    os.getenv("WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY", "0.1")
+)
+WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT = int(
+    os.getenv("WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT", str(1024 * 1024))  # 1MB
 )
 
 HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED = str2bool(
