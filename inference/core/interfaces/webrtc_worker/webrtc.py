@@ -243,6 +243,7 @@ async def send_chunked_data(
         return
 
     while data_channel.bufferedAmount > DATA_CHANNEL_BUFFER_SIZE_LIMIT:
+        logger.info(f"Waiting for data channel buffer to drain. Data channel buffer size: {data_channel.bufferedAmount}")
         await asyncio.sleep(FRAME_SEND_DELAY)
 
     total_chunks = (
