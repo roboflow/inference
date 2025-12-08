@@ -14,7 +14,6 @@ from hydra.utils import instantiate
 from omegaconf import OmegaConf
 from PIL import Image, ImageDraw
 
-from inference.core import logger
 from inference.core.cache.model_artifacts import get_cache_dir
 from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.entities.requests.sam3_3d import Sam3_3D_Objects_InferenceRequest
@@ -60,14 +59,9 @@ class Sam3_3D_ObjectsPipelineSingleton:
     def __new__(cls, config_key: str):
         with cls._lock:
             if config_key not in cls._instances:
-                logger.info(
-                    "Creating new SAM3_3D pipeline instance (this may take a while)..."
-                )
                 instance = super().__new__(cls)
                 instance.config_key = config_key
                 cls._instances[config_key] = instance
-            else:
-                logger.info("Using cached SAM3_3D pipeline instance")
             return cls._instances[config_key]
 
 
@@ -99,7 +93,6 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
         singleton = Sam3_3D_ObjectsPipelineSingleton(config_key)
 
         if not hasattr(singleton, "pipeline"):
-            logger.info("Initializing SAM3_3D pipeline...")
             self.pipeline_config = OmegaConf.load(str(pipeline_config_path))
             self.pipeline_config["device"] = DEVICE
             self.pipeline_config["workspace_dir"] = str(tdfy_dir)
@@ -128,7 +121,6 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
             )
             self.pipeline_config["dinov2_ckpt_path"] = str(dinov2_ckpt_path)
             singleton.pipeline = instantiate(self.pipeline_config)
-            logger.info("SAM3_3D pipeline initialization complete")
 
         # Reference the singleton's pipeline
         self.pipeline = singleton.pipeline
@@ -155,32 +147,26 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
         lock_dir = MODEL_CACHE_DIR + "/_file_locks"
         os.makedirs(lock_dir, exist_ok=True)
         lock_file = os.path.join(lock_dir, f"{os.path.basename(self.cache_dir)}.lock")
-        try:
-            lock = FileLock(lock_file, timeout=120)
-            with lock:
-                api_data = get_roboflow_model_data(
-                    api_key=self.api_key,
-                    model_id="sam3-3d-weights-vc6vz/1",
-                    endpoint_type=ModelEndpointType.ORT,
-                    device_id=self.device_id,
-                )["ort"]
-                if "weights" not in api_data:
-                    raise ModelArtefactError(
-                        f"`weights` key not available in Roboflow API response while downloading model weights."
-                    )
-                for weights_url_key in api_data["weights"]:
-                    weights_url = api_data["weights"][weights_url_key]
-                    filename = weights_url.split("?")[0].split("/")[-1]
-                    logger.info(f"Downloading SAM3_3D model file: {filename}")
-                    stream_url_to_cache(
-                        url=weights_url,
-                        filename=filename,
-                        model_id=self.endpoint,
-                    )
-                    logger.info(f"Successfully downloaded: {filename}")
-        except Exception as e:
-            logger.error(f"Error downloading SAM3_3D model artifacts: {e}")
-            raise
+        lock = FileLock(lock_file, timeout=120)
+        with lock:
+            api_data = get_roboflow_model_data(
+                api_key=self.api_key,
+                model_id="sam3-3d-weights-vc6vz/1",
+                endpoint_type=ModelEndpointType.ORT,
+                device_id=self.device_id,
+            )["ort"]
+            if "weights" not in api_data:
+                raise ModelArtefactError(
+                    f"`weights` key not available in Roboflow API response while downloading model weights."
+                )
+            for weights_url_key in api_data["weights"]:
+                weights_url = api_data["weights"][weights_url_key]
+                filename = weights_url.split("?")[0].split("/")[-1]
+                stream_url_to_cache(
+                    url=weights_url,
+                    filename=filename,
+                    model_id=self.endpoint,
+                )
 
     def infer_from_request(
         self, request: Sam3_3D_Objects_InferenceRequest
