@@ -207,26 +207,7 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
             mask_np = mask_np[..., None]
         rgba_image = np.concatenate([image_np, mask_np], axis=-1)
         return rgba_image.astype(np.uint8)
-    """
-    def create_3d(
-        self,
-        image: Optional[InferenceRequestImage],
-        mask_input: Optional[Union[np.ndarray, List[List[List[float]]]]] = None,
-        **kwargs,
-    ):
 
-        with torch.inference_mode():
-            if image is None or mask_input is None:
-                raise ValueError("Must provide image and mask!")
-
-            rgba_image = self.merge_image_and_mask(image, mask_input)
-
-            result = self.pipeline.run(
-                image=rgba_image,
-                mask=None,
-            )
-            return result
-        """
     def create_3d(
         self,
         image: Optional[InferenceRequestImage],
@@ -252,7 +233,6 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
                 outputs.append(result)
 
             if len(outputs) == 1:
-                # Single object: reuse pipeline output directly
                 result = outputs[0]
                 scene_gs = ready_gaussian_for_video_rendering(result["gs"])
                 return {
@@ -278,68 +258,25 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
         """Detect if mask_input is a single mask or list of masks."""
         if not mask_input:
             return True
-        # If first element is a number, it's a flat list [x1,y1,x2,y2,...]
         if isinstance(mask_input[0], (int, float)):
             return True
-        # If first element is a 2-element list [x,y], it's [[x1,y1], [x2,y2], ...]
         if isinstance(mask_input[0], list) and len(mask_input[0]) == 2:
             if isinstance(mask_input[0][0], (int, float)):
                 return True
-        # Otherwise it's a list of masks
         return False
 
 def convert_tensor_to_list(tensor_data: torch.Tensor) -> Optional[List[float]]:
     if tensor_data is None:
         return None
     if isinstance(tensor_data, torch.Tensor):
-        # Flatten the tensor to ensure we get a 1D list of floats
         return tensor_data.cpu().flatten().tolist()
     return tensor_data
 
-"""
 def convert_3d_objects_result_to_api_response(
     raw_result: Dict[str, Any],
     inference_time: float,
 ) -> Sam3_3D_Objects_Response:
 
-    # Extract and convert mesh (GLB)
-    mesh_glb_bytes = None
-    glb_mesh = raw_result.pop("glb", None)
-    if glb_mesh is not None:
-        glb_buffer = BytesIO()
-        glb_mesh.export(glb_buffer, "glb")
-        glb_buffer.seek(0)
-        mesh_glb_bytes = glb_buffer.getvalue()
-
-    # Extract and convert Gaussian splatting
-    gaussian_ply_bytes = None
-    gaussian = raw_result.pop("gs", None)
-    if gaussian is not None:
-        gaussian_buffer = BytesIO()
-        gaussian.save_ply(gaussian_buffer)
-        gaussian_buffer.seek(0)
-        gaussian_ply_bytes = gaussian_buffer.getvalue()
-
-    metadata = Sam3_3D_Objects_Metadata(
-        rotation=convert_tensor_to_list(raw_result.get("rotation")),
-        translation=convert_tensor_to_list(raw_result.get("translation")),
-        scale=convert_tensor_to_list(raw_result.get("scale")),
-    )
-
-    return Sam3_3D_Objects_Response(
-        mesh_glb=mesh_glb_bytes,
-        gaussian_ply=gaussian_ply_bytes,
-        metadata=metadata,
-        time=inference_time,
-    )
-"""
-
-def convert_3d_objects_result_to_api_response(
-    raw_result: Dict[str, Any],
-    inference_time: float,
-) -> Sam3_3D_Objects_Response:
-
-    # Extract and convert GLB (scene for multi-object, single mesh for single object)
     mesh_glb_bytes = None
     glb = raw_result.pop("glb", None)
     if glb is not None:
@@ -348,7 +285,6 @@ def convert_3d_objects_result_to_api_response(
         glb_buffer.seek(0)
         mesh_glb_bytes = glb_buffer.getvalue()
 
-    # Extract and convert combined Gaussian splatting
     gaussian_ply_bytes = None
     gaussian = raw_result.pop("gs", None)
     if gaussian is not None:
@@ -357,7 +293,6 @@ def convert_3d_objects_result_to_api_response(
         gaussian_buffer.seek(0)
         gaussian_ply_bytes = gaussian_buffer.getvalue()
 
-    # Extract and convert individual objects list
     objects = []
     outputs_list = raw_result.pop("objects", [])
     for output in outputs_list:

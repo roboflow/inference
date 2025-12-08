@@ -244,25 +244,16 @@ def convert_mask_input_to_flat_polygons(
     Raises:
         ValueError: If the input format is invalid or contains no detections
     """
-    # If it's a list, check if it's a single mask or multiple masks
     if isinstance(mask_input, list):
         if len(mask_input) == 0:
             raise ValueError("Empty mask input provided.")
-
-        # Check if it's a flat list of numbers (single mask)
         if isinstance(mask_input[0], (int, float)):
             return [mask_input]
-
-        # Check if it's a list of flat lists (multiple masks)
         if isinstance(mask_input[0], list):
-            # Verify each is a flat list of numbers
             if len(mask_input[0]) > 0 and isinstance(mask_input[0][0], (int, float)):
                 return mask_input
-
-        # Otherwise return as-is (assume it's already in correct format)
         return mask_input
 
-    # If it's sv.Detections, extract polygons from all detections
     if isinstance(mask_input, sv.Detections):
         if len(mask_input) == 0:
             raise ValueError("sv.Detections contains no detections. Cannot extract mask polygon.")
@@ -270,7 +261,6 @@ def convert_mask_input_to_flat_polygons(
         detection_data = mask_input.data
         all_polygons = []
 
-        # Try to get polygons from the data dictionary first
         if POLYGON_KEY_IN_SV_DETECTIONS in detection_data:
             polygons = detection_data[POLYGON_KEY_IN_SV_DETECTIONS]
 
@@ -282,7 +272,6 @@ def convert_mask_input_to_flat_polygons(
             if all_polygons:
                 return all_polygons
 
-        # Try to get masks from the mask attribute and convert to polygons
         if mask_input.mask is not None and len(mask_input.mask) > 0:
             for binary_mask in mask_input.mask:
                 flat_polygon = _convert_binary_mask_to_flat_polygon(binary_mask)
@@ -306,20 +295,16 @@ def convert_mask_input_to_flat_polygons(
 def _convert_single_polygon_to_flat(polygon) -> Optional[List[float]]:
     """Convert a single polygon to flat COCO format."""
     if isinstance(polygon, np.ndarray):
-        # If it's a numpy array of shape (N, 2), flatten it
         if polygon.ndim == 2 and polygon.shape[1] == 2:
             return polygon.flatten().tolist()
-        # If it's already flat, convert to list
         elif polygon.ndim == 1:
             return polygon.tolist()
     elif isinstance(polygon, list):
-        # If it's a list of coordinate pairs, flatten it
         if len(polygon) > 0 and isinstance(polygon[0], (list, tuple, np.ndarray)):
             flat_polygon = []
             for point in polygon:
                 flat_polygon.extend([float(point[0]), float(point[1])])
             return flat_polygon
-        # If it's already flat
         else:
             return [float(x) for x in polygon]
     return None
@@ -327,13 +312,11 @@ def _convert_single_polygon_to_flat(polygon) -> Optional[List[float]]:
 
 def _convert_binary_mask_to_flat_polygon(binary_mask: np.ndarray) -> Optional[List[float]]:
     """Convert a binary mask to flat COCO polygon format."""
-    # Ensure mask is uint8 for findContours
     if binary_mask.dtype != np.uint8:
         binary_mask = (binary_mask > 0).astype(np.uint8) * 255
     elif binary_mask.max() <= 1:
         binary_mask = binary_mask * 255
 
-    # Find contours using OpenCV
     contours, _ = cv2.findContours(
         binary_mask,
         cv2.RETR_EXTERNAL,
@@ -346,8 +329,6 @@ def _convert_binary_mask_to_flat_polygon(binary_mask: np.ndarray) -> Optional[Li
     # Get the largest contour (in case there are multiple)
     largest_contour = max(contours, key=cv2.contourArea)
 
-    # Convert contour to flat COCO format [x1, y1, x2, y2, ...]
-    # OpenCV contours are shape (N, 1, 2), we need to flatten to [x1, y1, x2, y2, ...]
     flat_polygon = []
     for point in largest_contour:
         flat_polygon.extend([float(point[0][0]), float(point[0][1])])
