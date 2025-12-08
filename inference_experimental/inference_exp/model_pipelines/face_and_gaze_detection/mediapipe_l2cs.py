@@ -93,6 +93,10 @@ class FaceAndGazeDetectionMPAndL2CS:
     def key_points_classes(self) -> List[List[str]]:
         return self._face_detector.key_points_classes
 
+    @property
+    def skeletons(self) -> List[List[Tuple[int, int]]]:
+        return [[(5, 1), (1, 2), (4, 0), (0, 2), (2, 3)]]
+
     def infer(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],

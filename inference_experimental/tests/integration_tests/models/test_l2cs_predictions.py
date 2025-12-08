@@ -1,7 +1,10 @@
 import numpy as np
+import pytest
 import torch
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
 def test_l2cs_predictions_for_numpy_image(
     l2cs_package: str, man_image_numpy: np.ndarray
 ) -> None:
@@ -18,6 +21,8 @@ def test_l2cs_predictions_for_numpy_image(
     assert np.allclose(results.pitch.cpu().numpy(), np.array([-0.1138916]), atol=0.05)
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
 def test_l2cs_predictions_for_numpy_images_list(
     l2cs_package: str, man_image_numpy: np.ndarray
 ) -> None:
@@ -38,6 +43,8 @@ def test_l2cs_predictions_for_numpy_images_list(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
 def test_l2cs_predictions_for_torch_image(
     l2cs_package: str, man_image_torch: torch.Tensor
 ) -> None:
@@ -54,6 +61,8 @@ def test_l2cs_predictions_for_torch_image(
     assert np.allclose(results.pitch.cpu().numpy(), np.array([-0.1138916]), atol=0.05)
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
 def test_l2cs_predictions_for_torch_batch(
     l2cs_package: str, man_image_torch: torch.Tensor
 ) -> None:
@@ -74,6 +83,8 @@ def test_l2cs_predictions_for_torch_batch(
     )
 
 
+@pytest.mark.slow
+@pytest.mark.onnx_extras
 def test_l2cs_predictions_for_torch_listh(
     l2cs_package: str, man_image_torch: torch.Tensor
 ) -> None:

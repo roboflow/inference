@@ -155,5 +155,5 @@ def prepare_model_parameters(
                 help_url="https://todo",
             ) from error
     if isinstance(model_parameters, str):
-        model_parameters = PipelineModelParameters(models_id_or_path=model_parameters)
+        model_parameters = PipelineModelParameters(model_id_or_path=model_parameters)
     return model_parameters
