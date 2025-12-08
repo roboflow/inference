@@ -264,7 +264,7 @@ async def send_chunked_data(
     view = memoryview(payload_bytes)
     for chunk_index in range(total_chunks):
         if data_channel.readyState != "open":
-            logger.warning(f"Channel closed while sending frame {frame_id}")
+            logger.warning("Channel closed while sending frame %s", frame_id)
             return
 
         start = chunk_index * chunk_size
