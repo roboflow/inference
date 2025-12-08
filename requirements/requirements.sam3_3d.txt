@@ -21,4 +21,4 @@ lightning>=2.2.1
 flash_attn==2.7.4.post1
 diff_gaussian_rasterization @ git+https://github.com/autonomousvision/mip-splatting.git@dda02ab5ecf45d6edb8c540d9bb65c7e451345a9#subdirectory=submodules/diff-gaussian-rasterization
 gsplat @ git+https://github.com/nerfstudio-project/gsplat.git@2323de5905d5e90e035f792fe65bad0fedd413e7
-tdfy @ git+https://github.com/roboflow/tdfy.git@41da44d3b52cfa534a2473fad415285bb1e50252
+tdfy @ git+https://github.com/roboflow/tdfy.git@a9753d31d8359dff372879b9f2697279a6b29d21

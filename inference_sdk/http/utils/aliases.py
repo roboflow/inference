@@ -33,10 +33,6 @@ QWEN_ALIASES = {
     "qwen25-vl-7b": "qwen-pretrains/1",
 }
 
-SAM3_3D_ALIASES = {
-    "sam3-3d-objects": "sam3-3d-weights-vc6vz/1",
-}
-
 REGISTERED_ALIASES = {
     "yolov8n-640": "coco/3",
     "yolov8n-1280": "coco/9",
@@ -95,7 +91,6 @@ REGISTERED_ALIASES = {
     **YOLOV11_ALIASES,
     **QWEN_ALIASES,
     **RFDETR_ALIASES,
-    **SAM3_3D_ALIASES,
 }
 
 OCR_ENDPOINTS = {

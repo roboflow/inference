@@ -26,6 +26,7 @@ from inference.core.utils.image_utils import load_image_rgb
 from filelock import FileLock
 from inference.core.entities.requests.sam3_3d import Sam3_3D_Objects_InferenceRequest
 from inference.core.entities.responses.sam3_3d import (
+    Sam3_3D_Object_Item,
     Sam3_3D_Objects_Metadata,
     Sam3_3D_Objects_Response,
 )
@@ -44,6 +45,11 @@ import tdfy.sam3d_v1
 
 if DEVICE is None:
     DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
+
+from tdfy.sam3d_v1.inference_utils import make_scene, ready_gaussian_for_video_rendering
+
+import trimesh
+from pytorch3d.transforms import quaternion_to_matrix
 
 
 class Sam3_3D_ObjectsPipelineSingleton:
@@ -201,7 +207,7 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
             mask_np = mask_np[..., None]
         rgba_image = np.concatenate([image_np, mask_np], axis=-1)
         return rgba_image.astype(np.uint8)
-
+    """
     def create_3d(
         self,
         image: Optional[InferenceRequestImage],
@@ -220,7 +226,67 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
                 mask=None,
             )
             return result
+        """
+    def create_3d(
+        self,
+        image: Optional[InferenceRequestImage],
+        mask_input: Optional[Union[np.ndarray, List[List[List[float]]], List[List[float]]]] = None,
+        **kwargs,
+    ):
+        with torch.inference_mode():
+            if image is None or mask_input is None:
+                raise ValueError("Must provide image and mask!")
 
+            if self._is_single_mask(mask_input):
+                masks = [mask_input]
+            else:
+                masks = mask_input
+
+            outputs = []
+            for mask in masks:
+                rgba_image = self.merge_image_and_mask(image, mask)
+                result = self.pipeline.run(
+                    image=rgba_image,
+                    mask=None,
+                )
+                outputs.append(result)
+
+            if len(outputs) == 1:
+                # Single object: reuse pipeline output directly
+                result = outputs[0]
+                scene_gs = ready_gaussian_for_video_rendering(result["gs"])
+                return {
+                    "gs": scene_gs,
+                    "glb": result["glb"],
+                    "objects": outputs,
+                }
+            else:
+                # Multiple objects: combine gaussians and meshes
+                scene_gs = make_scene(*outputs)
+                scene_gs = ready_gaussian_for_video_rendering(scene_gs)
+                scene_glb = make_scene_glb(*outputs)
+
+                return {
+                    "gs": scene_gs,
+                    "glb": scene_glb,
+                    "objects": outputs,
+                }
+            
+    
+
+    def _is_single_mask(self, mask_input):
+        """Detect if mask_input is a single mask or list of masks."""
+        if not mask_input:
+            return True
+        # If first element is a number, it's a flat list [x1,y1,x2,y2,...]
+        if isinstance(mask_input[0], (int, float)):
+            return True
+        # If first element is a 2-element list [x,y], it's [[x1,y1], [x2,y2], ...]
+        if isinstance(mask_input[0], list) and len(mask_input[0]) == 2:
+            if isinstance(mask_input[0][0], (int, float)):
+                return True
+        # Otherwise it's a list of masks
+        return False
 
 def convert_tensor_to_list(tensor_data: torch.Tensor) -> Optional[List[float]]:
     if tensor_data is None:
@@ -230,7 +296,7 @@ def convert_tensor_to_list(tensor_data: torch.Tensor) -> Optional[List[float]]:
         return tensor_data.cpu().flatten().tolist()
     return tensor_data
 
-
+"""
 def convert_3d_objects_result_to_api_response(
     raw_result: Dict[str, Any],
     inference_time: float,
@@ -266,3 +332,112 @@ def convert_3d_objects_result_to_api_response(
         metadata=metadata,
         time=inference_time,
     )
+"""
+
+def convert_3d_objects_result_to_api_response(
+    raw_result: Dict[str, Any],
+    inference_time: float,
+) -> Sam3_3D_Objects_Response:
+
+    # Extract and convert GLB (scene for multi-object, single mesh for single object)
+    mesh_glb_bytes = None
+    glb = raw_result.pop("glb", None)
+    if glb is not None:
+        glb_buffer = BytesIO()
+        glb.export(glb_buffer, "glb")
+        glb_buffer.seek(0)
+        mesh_glb_bytes = glb_buffer.getvalue()
+
+    # Extract and convert combined Gaussian splatting
+    gaussian_ply_bytes = None
+    gaussian = raw_result.pop("gs", None)
+    if gaussian is not None:
+        gaussian_buffer = BytesIO()
+        gaussian.save_ply(gaussian_buffer)
+        gaussian_buffer.seek(0)
+        gaussian_ply_bytes = gaussian_buffer.getvalue()
+
+    # Extract and convert individual objects list
+    objects = []
+    outputs_list = raw_result.pop("objects", [])
+    for output in outputs_list:
+        obj_glb_bytes = None
+        obj_glb = output.get("glb")
+        if obj_glb is not None:
+            obj_glb_buffer = BytesIO()
+            obj_glb.export(obj_glb_buffer, "glb")
+            obj_glb_buffer.seek(0)
+            obj_glb_bytes = obj_glb_buffer.getvalue()
+
+        obj_ply_bytes = None
+        obj_gs = output.get("gs")
+        if obj_gs is not None:
+            obj_ply_buffer = BytesIO()
+            obj_gs.save_ply(obj_ply_buffer)
+            obj_ply_buffer.seek(0)
+            obj_ply_bytes = obj_ply_buffer.getvalue()
+
+        obj_metadata = Sam3_3D_Objects_Metadata(
+            rotation=convert_tensor_to_list(output.get("rotation")),
+            translation=convert_tensor_to_list(output.get("translation")),
+            scale=convert_tensor_to_list(output.get("scale")),
+        )
+
+        objects.append(Sam3_3D_Object_Item(
+            mesh_glb=obj_glb_bytes,
+            gaussian_ply=obj_ply_bytes,
+            metadata=obj_metadata,
+        ))
+
+    return Sam3_3D_Objects_Response(
+        mesh_glb=mesh_glb_bytes,
+        gaussian_ply=gaussian_ply_bytes,
+        objects=objects,
+        time=inference_time,
+    )
+
+def transform_glb_to_world(glb_mesh, rotation, translation, scale):
+    """
+    Transform a GLB mesh from local to world coordinates.
+    
+    Note: to_glb() already applies z-up to y-up rotation, so we just need
+    to apply the pose transform (rotation, translation, scale).
+    
+    Based on export_transformed_mesh_glb from layout_post_optimization_utils.py
+    """
+    quat = rotation.squeeze()
+    quat_normalized = quat / quat.norm()
+    R = quaternion_to_matrix(quat_normalized).cpu().numpy()
+    t = translation.squeeze().cpu().numpy()
+    s = scale.squeeze().cpu().numpy()[0]
+
+    verts = torch.from_numpy(glb_mesh.vertices.copy()).float()
+
+    center = verts.mean(dim=0)
+
+    verts = verts - center
+    verts = verts * s
+    verts = verts @ torch.from_numpy(R.T).float()
+    verts = verts + center
+    verts = verts + torch.from_numpy(t).float()
+    
+    glb_mesh.vertices = verts.numpy()
+    return glb_mesh
+
+
+def make_scene_glb(*outputs):
+    scene = trimesh.Scene()
+    
+    for i, output in enumerate(outputs):
+        glb = output["glb"]
+        glb = glb.copy()
+        
+        glb = transform_glb_to_world(
+            glb,
+            output["rotation"],
+            output["translation"],
+            output["scale"],
+        )
+        scene.add_geometry(glb, node_name=f"object_{i}")
+    
+    return scene
