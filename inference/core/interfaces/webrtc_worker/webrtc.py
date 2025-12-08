@@ -72,6 +72,7 @@ CHUNK_SIZE = 48 * 1024  # 48KB - safe for all WebRTC implementations
 
 # Rate limiting for data channel sends (prevents SCTP buffer overflow)
 FRAME_SEND_DELAY = 0.05  # 50ms between frames = ~20 FPS max throughput
+DATA_CHANNEL_BUFFER_SIZE_LIMIT = 1024 * 1024  # 1MB
 
 
 def create_chunked_binary_message(
@@ -241,6 +242,9 @@ async def send_chunked_data(
         logger.warning(f"Cannot send response for frame {frame_id}, channel not open")
         return
 
+    while data_channel.bufferedAmount > DATA_CHANNEL_BUFFER_SIZE_LIMIT:
+        await asyncio.sleep(FRAME_SEND_DELAY)
+
     total_chunks = (
         len(payload_bytes) + chunk_size - 1
     ) // chunk_size  # Ceiling division
@@ -266,7 +270,7 @@ async def send_chunked_data(
         data_channel.send(message)
 
     # Rate limit: wait after sending complete frame to prevent SCTP overflow
-    await asyncio.sleep(FRAME_SEND_DELAY)
+    # await asyncio.sleep(FRAME_SEND_DELAY)
 
 
 class RTCPeerConnectionWithLoop(RTCPeerConnection):
