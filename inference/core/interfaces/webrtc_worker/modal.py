@@ -49,7 +49,10 @@ from inference.core.env import (
     WEBRTC_MODAL_WATCHDOG_TIMEMOUT,
     WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
 )
-from inference.core.exceptions import RoboflowAPIUnsuccessfulRequestError
+from inference.core.exceptions import (
+    RoboflowAPITimeoutError,
+    RoboflowAPIUnsuccessfulRequestError,
+)
 from inference.core.interfaces.webrtc_worker.entities import (
     WebRTCWorkerRequest,
     WebRTCWorkerResult,
@@ -353,13 +356,16 @@ if modal is not None:
                 send_answer(WebRTCWorkerResult(error_message=error_msg))
                 return
 
-            heartbeats = asyncio.run(
-                run_rtc_peer_connection_with_watchdog(
-                    webrtc_request=webrtc_request,
-                    send_answer=send_answer,
-                    model_manager=self._model_manager,
+            try:
+                heartbeats = asyncio.run(
+                    run_rtc_peer_connection_with_watchdog(
+                        webrtc_request=webrtc_request,
+                        send_answer=send_answer,
+                        model_manager=self._model_manager,
+                    )
                 )
-            )
+            except (asyncio.CancelledError, modal.exception.InputCancellation):
+                logger.warning("Modal function was cancelled")
 
             _exec_session_stopped = datetime.datetime.now()
             logger.info(
@@ -370,7 +376,9 @@ if modal is not None:
                 logger.warning(
                     "WebRTC worker was terminated before processing a single frame"
                 )
-                raise Exception("Premature WebRTC worker termination")
+                raise modal.exception.InputCancellation(
+                    "Premature WebRTC worker termination"
+                )
             workflow_id = webrtc_request.workflow_configuration.workflow_id
             if not workflow_id:
                 if webrtc_request.workflow_configuration.workflow_specification:
@@ -650,7 +658,7 @@ if modal is not None:
             except Empty:
                 logger.error("Modal function call timed out, terminating containers")
                 function_call.cancel(terminate_containers=True)
-                raise Exception("Modal function call timed out")
+                raise RoboflowAPITimeoutError("Modal function call timed out")
             except Exception as exc:
                 logger.error(exc)
                 raise exc
