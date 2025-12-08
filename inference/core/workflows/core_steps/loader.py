@@ -246,6 +246,9 @@ from inference.core.workflows.core_steps.models.foundation.segment_anything3.v2 
 from inference.core.workflows.core_steps.models.foundation.smolvlm.v1 import (
     SmolVLM2BlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.segment_anything3_3d.v1 import (
+    SegmentAnything3_3D_ObjectsBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.stability_ai.image_gen.v1 import (
     StabilityAIImageGenBlockV1,
 )
@@ -509,11 +512,6 @@ from inference.core.workflows.execution_engine.entities.types import (
     Kind,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
-
-if SAM3_3D_OBJECTS_ENABLED:
-    from inference.core.workflows.core_steps.models.foundation.segment_anything3_3d.v1 import (
-        SegmentAnything3_3D_ObjectsBlockV1,
-    )
 
 REGISTERED_INITIALIZERS = {
     "api_key": API_KEY,
