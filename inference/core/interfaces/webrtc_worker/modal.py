@@ -4,6 +4,7 @@ import os
 import subprocess
 import time
 from pathlib import Path
+from queue import Empty
 from typing import Callable, Dict, Optional
 
 from inference.core import logger
@@ -200,7 +201,7 @@ if modal is not None:
         webrtc_request: WebRTCWorkerRequest,
         send_answer: Callable[[WebRTCWorkerResult], None],
         model_manager: ModelManager,
-    ):
+    ) -> int:
         from inference.core.interfaces.webrtc_worker.webrtc import (
             init_rtc_peer_connection_with_loop,
         )
@@ -219,20 +220,27 @@ if modal is not None:
             )
         )
 
-        def on_timeout():
-            rtc_peer_connection_task.cancel()
+        def on_timeout(message: Optional[str] = ""):
+            msg = "Cancelled by watchdog"
+            if message:
+                msg += f": {message}"
+            rtc_peer_connection_task.cancel(msg)
 
         watchdog.on_timeout = on_timeout
         watchdog.start()
 
         try:
             await rtc_peer_connection_task
+            logger.info("Task completed uninterrupted")
+        except modal.exception.InputCancellation:
+            logger.warning("Modal function was cancelled")
         except asyncio.CancelledError as exc:
             logger.info("WebRTC connection task was cancelled (%s)", exc)
         except Exception as exc:
             logger.error(exc)
         finally:
             watchdog.stop()
+            return watchdog._heartbeats
 
     class RTCPeerConnectionModal:
         _model_manager: Optional[ModelManager] = modal.parameter(
@@ -325,15 +333,10 @@ if modal is not None:
             logger.info("MODAL_ENVIRONMENT: %s", MODAL_ENVIRONMENT)
             logger.info("MODAL_IDENTITY_TOKEN: %s", MODAL_IDENTITY_TOKEN)
 
-            answer_sent = False
-
             def send_answer(obj: WebRTCWorkerResult):
                 logger.info("Sending webrtc answer")
                 # Queue with no limit, below will never block
                 q.put(obj)
-                logger.info(q.info())
-                nonlocal answer_sent
-                answer_sent = True
 
             if webrtc_request.processing_timeout == 0:
                 error_msg = "Processing timeout is 0, skipping processing"
@@ -350,27 +353,24 @@ if modal is not None:
                 send_answer(WebRTCWorkerResult(error_message=error_msg))
                 return
 
-            try:
-                asyncio.run(
-                    run_rtc_peer_connection_with_watchdog(
-                        webrtc_request=webrtc_request,
-                        send_answer=send_answer,
-                        model_manager=self._model_manager,
-                    )
+            heartbeats = asyncio.run(
+                run_rtc_peer_connection_with_watchdog(
+                    webrtc_request=webrtc_request,
+                    send_answer=send_answer,
+                    model_manager=self._model_manager,
                 )
-            except (modal.exception.InputCancellation, asyncio.CancelledError):
-                logger.warning("Modal function was cancelled")
-            except Exception as exc:
-                logger.error("Modal function failed with exception %s", exc)
+            )
 
             _exec_session_stopped = datetime.datetime.now()
             logger.info(
                 "WebRTC session stopped at %s",
                 _exec_session_stopped.isoformat(),
             )
-            if not answer_sent:
-                logger.error("WebRTC answer NOT sent")
-                raise Exception("WebRTC answer NOT sent")
+            if heartbeats == 0:
+                logger.warning(
+                    "WebRTC worker was terminated before processing a single frame"
+                )
+                raise Exception("Premature WebRTC worker termination")
             workflow_id = webrtc_request.workflow_configuration.workflow_id
             if not workflow_id:
                 if webrtc_request.workflow_configuration.workflow_specification:
@@ -637,11 +637,21 @@ if modal is not None:
                 app.name,
             )
             # https://modal.com/docs/reference/modal.Function#spawn
-            rtc_modal_obj.rtc_peer_connection_modal.spawn(
-                webrtc_request=webrtc_request,
-                q=q,
+            function_call: modal.FunctionCall = (
+                rtc_modal_obj.rtc_peer_connection_modal.spawn(
+                    webrtc_request=webrtc_request,
+                    q=q,
+                )
             )
-            answer = WebRTCWorkerResult.model_validate(
-                q.get(block=True, timeout=WEBRTC_MODAL_RESPONSE_TIMEOUT)
-            )
+            try:
+                answer = WebRTCWorkerResult.model_validate(
+                    q.get(block=True, timeout=WEBRTC_MODAL_RESPONSE_TIMEOUT)
+                )
+            except Empty:
+                logger.error("Modal function call timed out, terminating containers")
+                function_call.cancel(terminate_containers=True)
+                raise Exception("Modal function call timed out")
+            except Exception as exc:
+                logger.error(exc)
+                raise exc
             return answer
