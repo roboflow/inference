@@ -65,13 +65,13 @@ from inference.core.workflows.errors import WorkflowSyntaxError
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.usage_tracking.collector import usage_collector
 
-logging.getLogger("aiortc").setLevel(logging.INFO)
+logging.getLogger("aiortc").setLevel(logging.WARNING)
 
 # WebRTC data channel chunking configuration
 CHUNK_SIZE = 48 * 1024  # 48KB - safe for all WebRTC implementations
 
 # Rate limiting for data channel sends (prevents SCTP buffer overflow)
-FRAME_SEND_DELAY = 0.1  # 100ms between frames when over bugger limit
+DATA_CHANNEL_BUFFER_DRAINING_DELAY = 0.1  # 100ms between data channel buffer draining checks
 DATA_CHANNEL_BUFFER_SIZE_LIMIT = 1024 * 1024  # 1MB
 
 
@@ -241,13 +241,16 @@ async def send_chunked_data(
         logger.warning(f"Cannot send response for frame {frame_id}, channel not open")
         return
 
+    sleep_count = 0
     while data_channel.bufferedAmount > DATA_CHANNEL_BUFFER_SIZE_LIMIT:
-        logger.info(
-            f"Waiting for data channel buffer to drain. Data channel buffer size: {data_channel.bufferedAmount}"
-        )
+        sleep_count += 1
+        if sleep_count % 10 == 0:
+            logger.debug(
+                f"Waiting for data channel buffer to drain. Data channel buffer size: {data_channel.bufferedAmount}"
+            )
         if heartbeat_callback:
             heartbeat_callback()
-        await asyncio.sleep(FRAME_SEND_DELAY)
+        await asyncio.sleep(DATA_CHANNEL_BUFFER_DRAINING_DELAY)
 
     total_chunks = (
         len(payload_bytes) + chunk_size - 1
@@ -272,9 +275,6 @@ async def send_chunked_data(
             frame_id, chunk_index, total_chunks, chunk_data
         )
         data_channel.send(message)
-
-    # Rate limit: wait after sending complete frame to prevent SCTP overflow
-    # await asyncio.sleep(FRAME_SEND_DELAY)
 
 
 class RTCPeerConnectionWithLoop(RTCPeerConnection):
