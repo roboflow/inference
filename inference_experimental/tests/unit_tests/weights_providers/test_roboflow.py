@@ -31,15 +31,9 @@ from inference_exp.weights_providers.roboflow import (
     get_one_page_of_model_metadata,
     get_roboflow_model,
     handle_response_errors,
-    parse_hf_model_package,
     parse_model_package_metadata,
-    parse_onnx_model_package,
-    parse_torch_model_package,
-    parse_trt_model_package,
-    parse_ultralytics_model_package,
 )
 from packaging.version import Version
-from pydantic import ValidationError
 from requests import Response
 from requests_mock import Mocker
 
@@ -56,6 +50,62 @@ def test_as_version_when_invalid_version_provided() -> None:
     # when
     with pytest.raises(ModelMetadataConsistencyError):
         _ = as_version(value="invalid")
+
+
+def test_parse_mediapipe_model_package_when_package_is_valid() -> None:
+    # given
+    metadata = RoboflowModelPackageV1(
+        type="external-model-package-v1",
+        packageId="my-package-id",
+        packageManifest={
+            "type": "mediapipe-model-package-v1",
+            "backendType": "mediapipe",
+        },
+        packageFiles=[
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
+        ],
+        trustedSource=True,
+    )
+
+    # when
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result == ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.MEDIAPIPE,
+        package_artefacts=[
+            FileDownloadSpecs(
+                download_url="https://dummy.com", file_handle="some", md5_hash="some"
+            ),
+        ],
+        quantization=Quantization.UNKNOWN,
+        trusted_source=True,
+    )
+
+
+def test_parse_mediapipe_model_package_when_package_is_invalid() -> None:
+    # given
+    metadata = RoboflowModelPackageV1(
+        type="external-model-package-v1",
+        packageId="my-package-id",
+        packageManifest={
+            "type": "mediapipe-model-package-v1",
+            "backendType": "invalid",
+        },
+        packageFiles=[
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
+        ],
+        trustedSource=True,
+    )
+
+    # when
+    with pytest.raises(ModelMetadataConsistencyError):
+        _ = parse_model_package_metadata(metadata=metadata)
 
 
 def test_parse_ultralytics_model_package() -> None:

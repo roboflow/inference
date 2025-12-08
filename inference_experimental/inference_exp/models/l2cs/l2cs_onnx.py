@@ -42,7 +42,7 @@ DEFAULT_GAZE_MAX_BATCH_SIZE = 8
 
 
 @dataclass
-class GazeDetection:
+class L2CSGazeDetection:
     yaw: torch.Tensor
     pitch: torch.Tensor
 
@@ -77,10 +77,10 @@ class L2CSNetOnnx:
         )
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
-            elements=["L2CSNet_gaze360_resnet50_90bins.onnx"],
+            elements=["weights.onnx"],
         )
         session = onnxruntime.InferenceSession(
-            path_or_bytes=model_package_content["L2CSNet_gaze360_resnet50_90bins.onnx"],
+            path_or_bytes=model_package_content["weights.onnx"],
             providers=onnx_execution_providers,
         )
         input_name = session.get_inputs()[0].name
@@ -122,11 +122,15 @@ class L2CSNetOnnx:
             ]
         )
 
+    @property
+    def device(self) -> torch.device:
+        return self._device
+
     def infer(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         **kwargs,
-    ) -> GazeDetection:
+    ) -> L2CSGazeDetection:
         pre_processed_images = self.pre_process(images, **kwargs)
         model_results = self.forward(pre_processed_images, **kwargs)
         return self.post_process(model_results, **kwargs)
@@ -198,12 +202,12 @@ class L2CSNetOnnx:
         self,
         model_results: Tuple[torch.Tensor, torch.Tensor],
         **kwargs,
-    ) -> GazeDetection:
-        return GazeDetection(yaw=model_results[0], pitch=model_results[1])
+    ) -> L2CSGazeDetection:
+        return L2CSGazeDetection(yaw=model_results[0], pitch=model_results[1])
 
     def __call__(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         **kwargs,
-    ) -> GazeDetection:
+    ) -> L2CSGazeDetection:
         return self.infer(images, **kwargs)
