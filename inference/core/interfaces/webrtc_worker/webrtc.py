@@ -26,6 +26,7 @@ from pydantic import ValidationError
 from inference.core import logger
 from inference.core.env import (
     WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY,
+    WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT,
     WEBRTC_MODAL_PUBLIC_STUN_SERVERS,
     WEBRTC_MODAL_RTSP_PLACEHOLDER,
     WEBRTC_MODAL_RTSP_PLACEHOLDER_URL,
@@ -70,9 +71,6 @@ logging.getLogger("aiortc").setLevel(logging.WARNING)
 
 # WebRTC data channel chunking configuration
 CHUNK_SIZE = 48 * 1024  # 48KB - safe for all WebRTC implementations
-
-# Rate limiting for data channel sends (prevents SCTP buffer overflow)
-DATA_CHANNEL_BUFFER_SIZE_LIMIT = 1024 * 1024  # 1MB
 
 
 def create_chunked_binary_message(
@@ -149,7 +147,6 @@ class VideoFileUploadHandler:
     """
 
     def __init__(self):
-        import tempfile
 
         self._chunks: Dict[int, bytes] = {}
         self._total_chunks: Optional[int] = None
@@ -174,6 +171,7 @@ class VideoFileUploadHandler:
             logger.info("Upload progress: %s/%s chunks", len(self._chunks), total_chunks)
 
         # Auto-complete when all chunks received
+        # TODO: Handle the file writing without keeping all chunks in memory
         if len(self._chunks) == total_chunks:
             self._write_to_temp_file()
             self._state = VideoFileUploadState.COMPLETE
@@ -242,7 +240,7 @@ async def send_chunked_data(
         return
 
     sleep_count = 0
-    while data_channel.bufferedAmount > DATA_CHANNEL_BUFFER_SIZE_LIMIT:
+    while data_channel.bufferedAmount > WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT:
         sleep_count += 1
         if sleep_count % 10 == 0:
             logger.debug(
