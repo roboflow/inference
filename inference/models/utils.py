@@ -19,8 +19,8 @@ from inference.core.env import (
     MOONDREAM2_ENABLED,
     PALIGEMMA_ENABLED,
     QWEN_2_5_ENABLED,
-    SMOLVLM2_ENABLED,
     SAM3_3D_OBJECTS_ENABLED,
+    SMOLVLM2_ENABLED,
     USE_INFERENCE_EXP_MODELS,
 )
 from inference.core.models.base import Model

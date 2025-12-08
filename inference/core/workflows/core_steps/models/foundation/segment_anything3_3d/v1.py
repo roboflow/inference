@@ -180,8 +180,8 @@ class SegmentAnything3_3D_ObjectsBlockV1(WorkflowBlock):
             )
 
             # Run inference
-            response: Sam3_3D_Objects_Response = self._model_manager.infer_from_request_sync(
-                model_id, inference_request
+            response: Sam3_3D_Objects_Response = (
+                self._model_manager.infer_from_request_sync(model_id, inference_request)
             )
 
             # Convert binary data to base64 strings for workflow output
@@ -189,32 +189,38 @@ class SegmentAnything3_3D_ObjectsBlockV1(WorkflowBlock):
 
             mesh_glb_b64 = None
             if response.mesh_glb is not None:
-                mesh_glb_b64 = base64.b64encode(response.mesh_glb).decode('utf-8')
+                mesh_glb_b64 = base64.b64encode(response.mesh_glb).decode("utf-8")
 
             gaussian_ply_b64 = None
             if response.gaussian_ply is not None:
-                gaussian_ply_b64 = base64.b64encode(response.gaussian_ply).decode('utf-8')
+                gaussian_ply_b64 = base64.b64encode(response.gaussian_ply).decode(
+                    "utf-8"
+                )
 
             # Convert individual objects
             objects_list = []
             for obj in response.objects:
                 obj_mesh_b64 = None
                 if obj.mesh_glb is not None:
-                    obj_mesh_b64 = base64.b64encode(obj.mesh_glb).decode('utf-8')
+                    obj_mesh_b64 = base64.b64encode(obj.mesh_glb).decode("utf-8")
 
                 obj_gaussian_b64 = None
                 if obj.gaussian_ply is not None:
-                    obj_gaussian_b64 = base64.b64encode(obj.gaussian_ply).decode('utf-8')
+                    obj_gaussian_b64 = base64.b64encode(obj.gaussian_ply).decode(
+                        "utf-8"
+                    )
 
-                objects_list.append({
-                    "mesh_glb": obj_mesh_b64,
-                    "gaussian_ply": obj_gaussian_b64,
-                    "metadata": {
-                        "rotation": obj.metadata.rotation,
-                        "translation": obj.metadata.translation,
-                        "scale": obj.metadata.scale,
-                    },
-                })
+                objects_list.append(
+                    {
+                        "mesh_glb": obj_mesh_b64,
+                        "gaussian_ply": obj_gaussian_b64,
+                        "metadata": {
+                            "rotation": obj.metadata.rotation,
+                            "translation": obj.metadata.translation,
+                            "scale": obj.metadata.scale,
+                        },
+                    }
+                )
 
             result = {
                 "mesh_glb": mesh_glb_b64,
@@ -256,7 +262,9 @@ def convert_mask_input_to_flat_polygons(
 
     if isinstance(mask_input, sv.Detections):
         if len(mask_input) == 0:
-            raise ValueError("sv.Detections contains no detections. Cannot extract mask polygon.")
+            raise ValueError(
+                "sv.Detections contains no detections. Cannot extract mask polygon."
+            )
 
         detection_data = mask_input.data
         all_polygons = []
@@ -310,7 +318,9 @@ def _convert_single_polygon_to_flat(polygon) -> Optional[List[float]]:
     return None
 
 
-def _convert_binary_mask_to_flat_polygon(binary_mask: np.ndarray) -> Optional[List[float]]:
+def _convert_binary_mask_to_flat_polygon(
+    binary_mask: np.ndarray,
+) -> Optional[List[float]]:
     """Convert a binary mask to flat COCO polygon format."""
     if binary_mask.dtype != np.uint8:
         binary_mask = (binary_mask > 0).astype(np.uint8) * 255
@@ -318,9 +328,7 @@ def _convert_binary_mask_to_flat_polygon(binary_mask: np.ndarray) -> Optional[Li
         binary_mask = binary_mask * 255
 
     contours, _ = cv2.findContours(
-        binary_mask,
-        cv2.RETR_EXTERNAL,
-        cv2.CHAIN_APPROX_SIMPLE
+        binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
     )
 
     if not contours:

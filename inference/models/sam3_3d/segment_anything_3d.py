@@ -1,19 +1,28 @@
+import os
 import sys
+import weakref
+from io import BytesIO
 from pathlib import Path
 from threading import Lock
 from time import perf_counter
 from typing import Any, Dict, List, Optional, Tuple, TypedDict, Union
-import weakref
-from io import BytesIO
-import os
 
 import numpy as np
 import torch
-
-from inference.core.cache.model_artifacts import get_cache_dir
+from filelock import FileLock
+from hydra.utils import instantiate
+from omegaconf import OmegaConf
+from PIL import Image, ImageDraw
 
 from inference.core import logger
+from inference.core.cache.model_artifacts import get_cache_dir
 from inference.core.entities.requests.inference import InferenceRequestImage
+from inference.core.entities.requests.sam3_3d import Sam3_3D_Objects_InferenceRequest
+from inference.core.entities.responses.sam3_3d import (
+    Sam3_3D_Object_Item,
+    Sam3_3D_Objects_Metadata,
+    Sam3_3D_Objects_Response,
+)
 from inference.core.env import DEVICE, MODEL_CACHE_DIR
 from inference.core.exceptions import ModelArtefactError
 from inference.core.models.roboflow import RoboflowCoreModel
@@ -23,16 +32,6 @@ from inference.core.roboflow_api import (
     stream_url_to_cache,
 )
 from inference.core.utils.image_utils import load_image_rgb
-from filelock import FileLock
-from inference.core.entities.requests.sam3_3d import Sam3_3D_Objects_InferenceRequest
-from inference.core.entities.responses.sam3_3d import (
-    Sam3_3D_Object_Item,
-    Sam3_3D_Objects_Metadata,
-    Sam3_3D_Objects_Response,
-)
-from omegaconf import OmegaConf
-from hydra.utils import instantiate
-from PIL import Image, ImageDraw
 
 if torch.cuda.is_available():
     device_count = torch.cuda.device_count()
@@ -41,15 +40,15 @@ else:
     os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 from importlib.resources import files
+
 import tdfy.sam3d_v1
 
 if DEVICE is None:
     DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
-from tdfy.sam3d_v1.inference_utils import make_scene, ready_gaussian_for_video_rendering
-
 import trimesh
 from pytorch3d.transforms import quaternion_to_matrix
+from tdfy.sam3d_v1.inference_utils import make_scene, ready_gaussian_for_video_rendering
 
 
 class Sam3_3D_ObjectsPipelineSingleton:
@@ -89,17 +88,11 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
         pipeline_config_path = tdfy_dir / "checkpoints_configs" / "pipeline.yaml"
         moge_checkpoint_path = self.cache_dir / "moge-vitl.pth"
         ss_generator_checkpoint_path = self.cache_dir / "ss_generator.ckpt"
-        slat_generator_checkpoint_path = (
-            self.cache_dir / "slat_generator.ckpt"
-        )
+        slat_generator_checkpoint_path = self.cache_dir / "slat_generator.ckpt"
         ss_decoder_checkpoint_path = self.cache_dir / "ss_decoder.ckpt"
         slat_decoder_checkpoint_path = self.cache_dir / "slat_decoder_gs.ckpt"
-        slat_decodergs4_checkpoint_path = (
-            self.cache_dir / "slat_decoder_gs_4.ckpt"
-        )
-        slat_decoder_mesh_checkpoint_path = (
-            self.cache_dir / "slat_decoder_mesh.pt"
-        )
+        slat_decodergs4_checkpoint_path = self.cache_dir / "slat_decoder_gs_4.ckpt"
+        slat_decoder_mesh_checkpoint_path = self.cache_dir / "slat_decoder_mesh.pt"
         dinov2_ckpt_path = self.cache_dir / "dinov2_vitl14_reg4_pretrain.pth"
 
         config_key = f"{DEVICE}_{pipeline_config_path}"
@@ -147,7 +140,15 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
         Returns:
             list: A list of required files for inference, e.g., ["environment.json"].
         """
-        return ["moge-vitl.pth", "ss_generator.ckpt", "slat_generator.ckpt", "ss_decoder.ckpt", "slat_decoder_gs.ckpt", "slat_decoder_gs_4.ckpt", "slat_decoder_mesh.pt"]
+        return [
+            "moge-vitl.pth",
+            "ss_generator.ckpt",
+            "slat_generator.ckpt",
+            "ss_decoder.ckpt",
+            "slat_decoder_gs.ckpt",
+            "slat_decoder_gs_4.ckpt",
+            "slat_decoder_mesh.pt",
+        ]
 
     def download_model_from_roboflow_api(self) -> None:
         """Override parent method to use streaming downloads for large SAM3_3D model files."""
@@ -155,7 +156,7 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
         os.makedirs(lock_dir, exist_ok=True)
         lock_file = os.path.join(lock_dir, f"{os.path.basename(self.cache_dir)}.lock")
         try:
-            lock = FileLock(lock_file, timeout = 120)
+            lock = FileLock(lock_file, timeout=120)
             with lock:
                 api_data = get_roboflow_model_data(
                     api_key=self.api_key,
@@ -211,7 +212,9 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
     def create_3d(
         self,
         image: Optional[InferenceRequestImage],
-        mask_input: Optional[Union[np.ndarray, List[List[List[float]]], List[List[float]]]] = None,
+        mask_input: Optional[
+            Union[np.ndarray, List[List[List[float]]], List[List[float]]]
+        ] = None,
         **kwargs,
     ):
         with torch.inference_mode():
@@ -251,8 +254,6 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
                     "glb": scene_glb,
                     "objects": outputs,
                 }
-            
-    
 
     def _is_single_mask(self, mask_input):
         """Detect if mask_input is a single mask or list of masks."""
@@ -265,12 +266,14 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
                 return True
         return False
 
+
 def convert_tensor_to_list(tensor_data: torch.Tensor) -> Optional[List[float]]:
     if tensor_data is None:
         return None
     if isinstance(tensor_data, torch.Tensor):
         return tensor_data.cpu().flatten().tolist()
     return tensor_data
+
 
 def convert_3d_objects_result_to_api_response(
     raw_result: Dict[str, Any],
@@ -318,11 +321,13 @@ def convert_3d_objects_result_to_api_response(
             scale=convert_tensor_to_list(output.get("scale")),
         )
 
-        objects.append(Sam3_3D_Object_Item(
-            mesh_glb=obj_glb_bytes,
-            gaussian_ply=obj_ply_bytes,
-            metadata=obj_metadata,
-        ))
+        objects.append(
+            Sam3_3D_Object_Item(
+                mesh_glb=obj_glb_bytes,
+                gaussian_ply=obj_ply_bytes,
+                metadata=obj_metadata,
+            )
+        )
 
     return Sam3_3D_Objects_Response(
         mesh_glb=mesh_glb_bytes,
@@ -331,13 +336,14 @@ def convert_3d_objects_result_to_api_response(
         time=inference_time,
     )
 
+
 def transform_glb_to_world(glb_mesh, rotation, translation, scale):
     """
     Transform a GLB mesh from local to world coordinates.
-    
+
     Note: to_glb() already applies z-up to y-up rotation, so we just need
     to apply the pose transform (rotation, translation, scale).
-    
+
     Based on export_transformed_mesh_glb from layout_post_optimization_utils.py
     """
     quat = rotation.squeeze()
@@ -355,18 +361,18 @@ def transform_glb_to_world(glb_mesh, rotation, translation, scale):
     verts = verts @ torch.from_numpy(R.T).float()
     verts = verts + center
     verts = verts + torch.from_numpy(t).float()
-    
+
     glb_mesh.vertices = verts.numpy()
     return glb_mesh
 
 
 def make_scene_glb(*outputs):
     scene = trimesh.Scene()
-    
+
     for i, output in enumerate(outputs):
         glb = output["glb"]
         glb = glb.copy()
-        
+
         glb = transform_glb_to_world(
             glb,
             output["rotation"],
@@ -374,5 +380,5 @@ def make_scene_glb(*outputs):
             output["scale"],
         )
         scene.add_geometry(glb, node_name=f"object_{i}")
-    
+
     return scene
