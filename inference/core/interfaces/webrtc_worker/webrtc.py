@@ -147,7 +147,6 @@ class VideoFileUploadHandler:
     """
 
     def __init__(self):
-
         self._chunks: Dict[int, bytes] = {}
         self._total_chunks: Optional[int] = None
         self._temp_file_path: Optional[str] = None
@@ -168,7 +167,9 @@ class VideoFileUploadHandler:
         self._chunks[chunk_index] = data
 
         if chunk_index % 100 == 0:
-            logger.info("Upload progress: %s/%s chunks", len(self._chunks), total_chunks)
+            logger.info(
+                "Upload progress: %s/%s chunks", len(self._chunks), total_chunks
+            )
 
         # Auto-complete when all chunks received
         # TODO: Handle the file writing without keeping all chunks in memory
@@ -244,7 +245,8 @@ async def send_chunked_data(
         sleep_count += 1
         if sleep_count % 10 == 0:
             logger.debug(
-                "Waiting for data channel buffer to drain. Data channel buffer size: %s", data_channel.bufferedAmount
+                "Waiting for data channel buffer to drain. Data channel buffer size: %s",
+                data_channel.bufferedAmount,
             )
         if heartbeat_callback:
             heartbeat_callback()
