@@ -122,6 +122,10 @@ class L2CSNetOnnx:
             ]
         )
 
+    @property
+    def device(self) -> torch.device:
+        return self._device
+
     def infer(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
