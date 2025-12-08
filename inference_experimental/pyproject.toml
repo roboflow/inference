@@ -31,7 +31,7 @@ dependencies = [
   "scikit-image>=0.24.0,<0.26.0",
   "easyocr~=1.7.2",
   "sentencepiece>=0.2.0,<0.3.0",
-  "rf_groundingdino==0.2.0"
+  "rf_groundingdino==0.3.0"
 ]
 
 [project.optional-dependencies]

@@ -18,6 +18,7 @@ DEPTH_ESTIMATION_TASK = "depth-estimation"
 STRUCTURED_OCR_TASK = "structured-ocr"
 TEXT_ONLY_OCR_TASK = "text-only-ocr"
 GAZE_DETECTION_TASK = "gaze-detection"
+OPEN_VOCABULARY_OBJECT_DETECTION_TASK = "open-vocabulary-object-detection"
 
 
 @dataclass(frozen=True)
@@ -383,6 +384,10 @@ REGISTERED_MODELS: Dict[
     ("l2cs-net", GAZE_DETECTION_TASK, BackendType.ONNX): LazyClass(
         module_name="inference_exp.models.l2cs.l2cs_onnx",
         class_name="L2CSNetOnnx",
+    ),
+    ("grounding-dino", OPEN_VOCABULARY_OBJECT_DETECTION_TASK, BackendType.TORCH): LazyClass(
+        module_name="inference_exp.models.grounding_dino.grounding_dino_torch",
+        class_name="GroundingDinoForObjectDetectionTorch",
     ),
 }
 
