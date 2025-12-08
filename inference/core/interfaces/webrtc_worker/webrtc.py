@@ -71,7 +71,9 @@ logging.getLogger("aiortc").setLevel(logging.WARNING)
 CHUNK_SIZE = 48 * 1024  # 48KB - safe for all WebRTC implementations
 
 # Rate limiting for data channel sends (prevents SCTP buffer overflow)
-DATA_CHANNEL_BUFFER_DRAINING_DELAY = 0.1  # 100ms between data channel buffer draining checks
+DATA_CHANNEL_BUFFER_DRAINING_DELAY = (
+    0.1  # 100ms between data channel buffer draining checks
+)
 DATA_CHANNEL_BUFFER_SIZE_LIMIT = 1024 * 1024  # 1MB
 
 
