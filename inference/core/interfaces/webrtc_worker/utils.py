@@ -1,6 +1,7 @@
 import ctypes
 import datetime
 import logging
+import struct
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -12,6 +13,7 @@ from inference.core import logger
 from inference.core.env import DEBUG_WEBRTC_PROCESSING_LATENCY
 from inference.core.interfaces.camera.entities import VideoFrame as InferenceVideoFrame
 from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
+from inference.core.interfaces.webrtc_worker.entities import VIDEO_FILE_HEADER_SIZE
 from inference.core.utils.roboflow import get_model_id_chunks
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.models.aliases import resolve_roboflow_model_alias
@@ -184,6 +186,19 @@ def workflow_contains_preloaded_model(
         if model_id in preload_models or resolved_model_id in preload_models:
             return True
     return False
+
+
+# Video File Upload Protocol
+# Header: [chunk_index:u32][total_chunks:u32][payload]
+def parse_video_file_chunk(message: bytes) -> Tuple[int, int, bytes]:
+    """Parse video file chunk message.
+
+    Returns: (chunk_index, total_chunks, payload)
+    """
+    if len(message) < VIDEO_FILE_HEADER_SIZE:
+        raise ValueError(f"Message too short: {len(message)} bytes")
+    chunk_index, total_chunks = struct.unpack("<II", message[:8])
+    return chunk_index, total_chunks, message[8:]
 
 
 def warmup_cuda(
