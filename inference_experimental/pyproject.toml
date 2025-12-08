@@ -31,6 +31,7 @@ dependencies = [
   "scikit-image>=0.24.0,<0.26.0",
   "easyocr~=1.7.2",
   "sentencepiece>=0.2.0,<0.3.0",
+  "rf_groundingdino==0.2.0"
 ]
 
 [project.optional-dependencies]
@@ -82,9 +83,6 @@ onnx-jp6-cu126 = [
 ]
 mediapipe = [
   "rf-mediapipe>=0.9,<0.11"
-]
-grounding-dino = [
-  "rf_groundingdino==0.2.0"
 ]
 trt10 = [
   "tensorrt-cu12>=10.0.0,<11.0.0; platform_system == 'Linux' or platform_system == 'Windows'",
