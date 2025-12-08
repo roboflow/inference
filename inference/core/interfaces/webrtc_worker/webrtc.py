@@ -71,7 +71,7 @@ logging.getLogger("aiortc").setLevel(logging.INFO)
 CHUNK_SIZE = 48 * 1024  # 48KB - safe for all WebRTC implementations
 
 # Rate limiting for data channel sends (prevents SCTP buffer overflow)
-FRAME_SEND_DELAY = 0.05  # 50ms between frames = ~20 FPS max throughput
+FRAME_SEND_DELAY = 0.1  # 100ms between frames when over bugger limit
 DATA_CHANNEL_BUFFER_SIZE_LIMIT = 1024 * 1024  # 1MB
 
 
@@ -224,6 +224,7 @@ async def send_chunked_data(
     frame_id: int,
     payload_bytes: bytes,
     chunk_size: int = CHUNK_SIZE,
+    heartbeat_callback: Optional[Callable[[], None]] = None,
 ) -> None:
     """Send payload via data channel with rate limiting.
 
@@ -244,6 +245,8 @@ async def send_chunked_data(
         logger.info(
             f"Waiting for data channel buffer to drain. Data channel buffer size: {data_channel.bufferedAmount}"
         )
+        if heartbeat_callback:
+            heartbeat_callback()
         await asyncio.sleep(FRAME_SEND_DELAY)
 
     total_chunks = (
@@ -420,7 +423,7 @@ class VideoFrameProcessor:
                 lambda: json.dumps(webrtc_output.model_dump()).encode("utf-8")
             )
             await send_chunked_data(
-                self.data_channel, self._received_frames, json_bytes
+                self.data_channel, self._received_frames, json_bytes, heartbeat_callback=self.heartbeat_callback
             )
             return
 
@@ -458,7 +461,7 @@ class VideoFrameProcessor:
 
         # Send using binary chunked protocol
         json_bytes = json.dumps(webrtc_output.model_dump(mode="json")).encode("utf-8")
-        await send_chunked_data(self.data_channel, self._received_frames, json_bytes)
+        await send_chunked_data(self.data_channel, self._received_frames, json_bytes, heartbeat_callback=self.heartbeat_callback)
 
     async def _send_processing_complete(self):
         """Send final message indicating processing is complete."""
