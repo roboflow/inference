@@ -192,7 +192,7 @@ class VideoFileUploadHandler:
             self._temp_file_path = f.name
 
         logger.info(
-            f"Video upload complete: {total_size} bytes -> {self._temp_file_path}"
+            "Video upload complete: {total_size} bytes -> %s", self._temp_file_path
         )
         self._chunks.clear()  # Free memory
 
