@@ -329,12 +329,11 @@ if modal is not None:
 
             def send_answer(obj: WebRTCWorkerResult):
                 logger.info("Sending webrtc answer")
-                try:
-                    q.put(obj, timeout=WEBRTC_MODAL_RESPONSE_TIMEOUT)
-                    nonlocal answer_sent
-                    answer_sent = True
-                except Exception as exc:
-                    logger.warning("Timeout while sending webrtc answer: %s", exc)
+                # Queue with no limit, below will never block
+                q.put(obj)
+                logger.info(q.info())
+                nonlocal answer_sent
+                answer_sent = True
 
             if webrtc_request.processing_timeout == 0:
                 error_msg = "Processing timeout is 0, skipping processing"
