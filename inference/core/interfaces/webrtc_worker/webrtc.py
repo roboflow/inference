@@ -171,7 +171,7 @@ class VideoFileUploadHandler:
         self._chunks[chunk_index] = data
 
         if chunk_index % 100 == 0:
-            logger.info(f"Upload progress: {len(self._chunks)}/{total_chunks} chunks")
+            logger.info("Upload progress: %s/%s chunks", len(self._chunks), total_chunks)
 
         # Auto-complete when all chunks received
         if len(self._chunks) == total_chunks:
