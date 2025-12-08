@@ -488,7 +488,7 @@ class VideoFrameProcessor:
             self.data_channel, self._received_frames + 1, json_bytes
         )
         logger.info(
-            f"Sent processing_complete signal after {self._received_frames} frames"
+            "Sent processing_complete signal after %s frames", self._received_frames
         )
 
     async def _handle_data_channel_frame(self, message: bytes) -> None:
