@@ -25,6 +25,7 @@ from pydantic import ValidationError
 
 from inference.core import logger
 from inference.core.env import (
+    WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY,
     WEBRTC_MODAL_PUBLIC_STUN_SERVERS,
     WEBRTC_MODAL_RTSP_PLACEHOLDER,
     WEBRTC_MODAL_RTSP_PLACEHOLDER_URL,
@@ -71,9 +72,6 @@ logging.getLogger("aiortc").setLevel(logging.WARNING)
 CHUNK_SIZE = 48 * 1024  # 48KB - safe for all WebRTC implementations
 
 # Rate limiting for data channel sends (prevents SCTP buffer overflow)
-DATA_CHANNEL_BUFFER_DRAINING_DELAY = (
-    0.1  # 100ms between data channel buffer draining checks
-)
 DATA_CHANNEL_BUFFER_SIZE_LIMIT = 1024 * 1024  # 1MB
 
 
@@ -252,7 +250,7 @@ async def send_chunked_data(
             )
         if heartbeat_callback:
             heartbeat_callback()
-        await asyncio.sleep(DATA_CHANNEL_BUFFER_DRAINING_DELAY)
+        await asyncio.sleep(WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY)
 
     total_chunks = (
         len(payload_bytes) + chunk_size - 1
