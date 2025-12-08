@@ -373,11 +373,8 @@ if modal is not None:
                 _exec_session_stopped.isoformat(),
             )
             if heartbeats == 0:
-                logger.warning(
+                raise Exception(
                     "WebRTC worker was terminated before processing a single frame"
-                )
-                raise modal.exception.InputCancellation(
-                    "Premature WebRTC worker termination"
                 )
             workflow_id = webrtc_request.workflow_configuration.workflow_id
             if not workflow_id:
