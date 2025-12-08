@@ -580,11 +580,9 @@ class VideoFrameProcessor:
                     include_errors_on_frame=False,
                 )
 
-                # Send data via data channel
-                asyncio.create_task(
-                    self._send_data_output(
-                        workflow_output, frame_timestamp, frame, errors
-                    )
+                # Send data via data channel (await for backpressure)
+                await self._send_data_output(
+                    workflow_output, frame_timestamp, frame, errors
                 )
 
         except asyncio.CancelledError:
