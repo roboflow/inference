@@ -220,7 +220,6 @@ class WebRTCSession:
         # Public APIs
         self.video = _VideoStream(self, self._video_queue)
 
-
     def _init_connection(self) -> None:
         """Initialize event loop, thread, and WebRTC connection."""
         # Start event loop in background thread
@@ -584,7 +583,9 @@ class WebRTCSession:
         logger.debug("No TURN configuration provided, proceeding without TURN server")
         return None
 
-    def _handle_datachannel_video_frame(self, serialized_data: Any, metadata: Optional[VideoMetadata]) -> None:
+    def _handle_datachannel_video_frame(
+        self, serialized_data: Any, metadata: Optional[VideoMetadata]
+    ) -> None:
         """Handle video frame received through data channel.
 
         Args:
@@ -754,7 +755,11 @@ class WebRTCSession:
                         # filter out video frames if video is sent through datachannel
                         filtered_data = serialized_data
                         if self._video_through_datachannel:
-                            filtered_data = {k: v for k, v in serialized_data.items() if k not in self._config.stream_output}
+                            filtered_data = {
+                                k: v
+                                for k, v in serialized_data.items()
+                                if k not in self._config.stream_output
+                            }
                         self._invoke_data_handler(
                             self._data_global_handler, filtered_data, metadata
                         )
@@ -824,7 +829,9 @@ class WebRTCSession:
         # (rtsp_url for RTSP, declared_fps for webcam, stream_output/data_output overrides for VideoFile)
         payload.update(self._source.get_initialization_params(self._config))
         # Check if video is will be sent through datachannel instead of video track
-        self._video_through_datachannel = bool(self._config.stream_output and not payload.get("stream_output")) 
+        self._video_through_datachannel = bool(
+            self._config.stream_output and not payload.get("stream_output")
+        )
 
         # Call server to initialize worker
         url = f"{self._api_url}/initialise_webrtc_worker"
