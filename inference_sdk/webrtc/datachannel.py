@@ -13,6 +13,9 @@ from inference_sdk.webrtc.config import (
 if TYPE_CHECKING:
     from aiortc import RTCDataChannel
 
+# Pre-compiled struct for parsing 12-byte header (3 x uint32 little-endian)
+_HEADER_STRUCT = struct.Struct("<III")
+
 
 def _parse_chunked_binary_message(message: bytes) -> Tuple[int, int, int, bytes]:
     """Parse a binary message with standard 12-byte header.
@@ -25,7 +28,7 @@ def _parse_chunked_binary_message(message: bytes) -> Tuple[int, int, int, bytes]
     if len(message) < 12:
         raise ValueError(f"Message too short: {len(message)} bytes (expected >= 12)")
 
-    frame_id, chunk_index, total_chunks = struct.unpack("<III", message[0:12])
+    frame_id, chunk_index, total_chunks = _HEADER_STRUCT.unpack(message[0:12])
     payload = message[12:]
     return frame_id, chunk_index, total_chunks, payload
 

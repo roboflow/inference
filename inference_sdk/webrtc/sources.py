@@ -6,7 +6,7 @@ for different video streaming sources (webcam, RTSP, video files, manual frames)
 
 import asyncio
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -75,7 +75,7 @@ class StreamSource(ABC):
 class _OpenCVVideoTrack(VideoStreamTrack):
     """Base class for video tracks that use OpenCV capture.
 
-    This consolidates common logic for webcam and video file tracks.
+    This consolidates common logic for webcam tracks.
     """
 
     def __init__(self, source: Any, error_name: str):
@@ -128,7 +128,7 @@ class _OpenCVVideoTrack(VideoStreamTrack):
 class _WebcamVideoTrack(_OpenCVVideoTrack):
     """aiortc VideoStreamTrack that reads frames from OpenCV webcam."""
 
-    def __init__(self, device_id: int, resolution: Optional[tuple[int, int]]):
+    def __init__(self, device_id: int, resolution: Optional[Tuple[int, int]]):
         super().__init__(device_id, "webcam device")
 
         if resolution:
@@ -144,7 +144,7 @@ class WebcamSource(StreamSource):
     """
 
     def __init__(
-        self, device_id: int = 0, resolution: Optional[tuple[int, int]] = None
+        self, device_id: int = 0, resolution: Optional[Tuple[int, int]] = None
     ):
         """Initialize webcam source.
 
@@ -195,15 +195,13 @@ class RTSPSource(StreamSource):
             url: RTSP URL (e.g., "rtsp://camera.local/stream")
                 Credentials can be included: "rtsp://user:pass@host/stream"
         """
-        self.url = url
-        self._validate_url()
-
-    def _validate_url(self) -> None:
-        """Validate that the URL is a valid RTSP URL."""
-        if not self.url.startswith(("rtsp://", "rtsps://")):
+        if not url.startswith(("rtsp://", "rtsps://")):
             raise InvalidParameterError(
-                f"Invalid RTSP URL: {self.url}. Must start with rtsp:// or rtsps://"
+                f"Invalid RTSP URL: {url}. Must start with rtsp:// or rtsps://"
             )
+        self.url = url
+
+        
 
     async def configure_peer_connection(self, pc: RTCPeerConnection) -> None:
         """Add receive-only video transceiver (server sends video to us)."""
@@ -242,7 +240,7 @@ class VideoFileSource(StreamSource):
         self._upload_channel: Optional["RTCDataChannel"] = None
         self._uploader: Optional[VideoFileUploader] = None
         self._upload_started: asyncio.Event = asyncio.Event()
-        self._upload_complete: asyncio.Event = asyncio.Event()
+        # self._upload_complete: asyncio.Event = asyncio.Event()
 
     async def configure_peer_connection(self, pc: RTCPeerConnection) -> None:
         """Create video_upload datachannel only (no video transceiver).
@@ -294,7 +292,7 @@ class VideoFileSource(StreamSource):
 
         self._uploader = VideoFileUploader(self.path, self._upload_channel)
         await self._uploader.upload(on_progress=self.on_upload_progress)
-        self._upload_complete.set()
+        # self._upload_complete.set()
 
     async def cleanup(self) -> None:
         """No cleanup needed - upload channel is managed by peer connection."""

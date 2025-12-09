@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+import functools
 import inspect
 import json
 import queue
@@ -11,7 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from queue import Queue
-from typing import TYPE_CHECKING, Any, Callable, Iterator, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, Iterator, List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -108,7 +109,7 @@ class _VideoStream:
         self._initial_frame_timeout = initial_frame_timeout
         self._first_frame_received = False
 
-    def __call__(self) -> Iterator[tuple[np.ndarray, VideoMetadata]]:
+    def __call__(self) -> Iterator[Tuple[np.ndarray, VideoMetadata]]:
         """Iterate over video frames with metadata.
 
         Automatically starts the session if not already started.
@@ -211,7 +212,7 @@ class WebRTCSession:
 
         # Callback handlers
         self._frame_handlers: List[Callable] = []
-        self._data_field_handlers: dict[str, List[Callable]] = {}
+        self._data_field_handlers: Dict[str, List[Callable]] = {}
         self._data_global_handler: Optional[Callable] = None
 
         # Chunk reassembly for binary messages
@@ -515,6 +516,20 @@ class WebRTCSession:
                     except Exception:
                         logger.warning("Error in frame handler", exc_info=True)
 
+    @staticmethod
+    @functools.lru_cache(maxsize=100)
+    def _data_handler_length(handler: Callable) -> int:
+        """Get the number of parameters expected by a data handler.
+
+        Args:
+            handler: The handler callable to inspect
+
+        Returns:
+            The number of parameters expected by the handler
+        """
+        sig = inspect.signature(handler)
+        return len(sig.parameters)
+
     def _invoke_data_handler(
         self, handler: Callable, value: Any, metadata: Optional[VideoMetadata]
     ) -> None:  # noqa: ANN401
@@ -530,33 +545,15 @@ class WebRTCSession:
             metadata: Optional video metadata to pass
         """
         try:
-            sig = inspect.signature(handler)
-            params = list(sig.parameters.values())
-
-            # Check number of parameters (excluding *args, **kwargs)
-            positional_params = [
-                p
-                for p in params
-                if p.kind
-                in (
-                    inspect.Parameter.POSITIONAL_ONLY,
-                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                )
-            ]
-
-            if len(positional_params) >= 2:
+            if WebRTCSession._data_handler_length(handler) >= 2:
                 # Handler expects both value and metadata
                 handler(value, metadata)
             else:
                 # Handler expects only value
                 handler(value)
         except Exception:
-            # Fallback: try calling with just the value
-            try:
-                handler(value)
-            except Exception:
-                logger.exception(f"Failed to invoke handler {handler}")
-                raise
+            logger.exception(f"Failed to invoke handler {handler}. The handler should have 2 parameters with value and metadata.")
+            raise
 
     async def _get_turn_config(self) -> Optional[dict]:
         """Get TURN configuration from user-provided config.
@@ -574,11 +571,6 @@ class WebRTCSession:
             logger.debug("Using user-provided TURN configuration")
             return self._config.turn_server
 
-        # 2. Skip TURN for localhost connections
-        if self._api_url.startswith(("http://localhost", "http://127.0.0.1")):
-            logger.debug("Skipping TURN for localhost connection")
-            return None
-
         # 3. No TURN config provided
         logger.debug("No TURN configuration provided, proceeding without TURN server")
         return None
@@ -593,25 +585,26 @@ class WebRTCSession:
             metadata: Video metadata for the frame
         """
         for output_name in self._config.stream_output:
-            if output_name and output_name in serialized_data:
-                img_data = serialized_data[output_name]
-                if isinstance(img_data, dict) and img_data.get("type") == "base64":
-                    try:
-                        # Decode base64 image and queue it
-                        frame = _decode_base64_image(img_data["value"])
-                        # Backpressure: drop oldest frame if queue full
-                        if self._video_queue.full():
-                            try:
-                                self._video_queue.get_nowait()
-                            except Exception:
-                                pass
-                        self._video_queue.put_nowait((frame, metadata))
-                    except Exception:
-                        logger.warning(
-                            f"Failed to decode base64 image from {output_name}",
-                            exc_info=True,
-                        )
-                    break  # Only process first matching image
+            if not output_name or output_name not in serialized_data:
+                continue
+            img_data = serialized_data[output_name]
+            if isinstance(img_data, dict) and img_data.get("type") == "base64":
+                try:
+                    # Decode base64 image and queue it
+                    frame = _decode_base64_image(img_data["value"])
+                    # Backpressure: drop oldest frame if queue full
+                    if self._video_queue.full():
+                        try:
+                            self._video_queue.get_nowait()
+                        except Exception:
+                            pass
+                    self._video_queue.put_nowait((frame, metadata))
+                except Exception:
+                    logger.warning(
+                        f"Failed to decode base64 image from {output_name}",
+                        exc_info=True,
+                    )
+                break  # Only process first matching image
 
     async def _init(self) -> None:
         """Initialize WebRTC connection.
@@ -798,7 +791,7 @@ class WebRTCSession:
             await asyncio.sleep(0.1)
 
         # Build server initialization payload
-        wf_conf: dict[str, Any] = {
+        wf_conf: Dict[str, Any] = {
             "type": "WorkflowConfiguration",
             "image_input_name": self._image_input_name,
             "workflows_parameters": self._config.workflow_parameters,
@@ -838,7 +831,7 @@ class WebRTCSession:
         headers = {"Content-Type": "application/json"}
         resp = requests.post(url, json=payload, headers=headers, timeout=90)
         resp.raise_for_status()
-        ans: dict[str, Any] = resp.json()
+        ans: Dict[str, Any] = resp.json()
 
         # Set remote description
         answer = RTCSessionDescription(sdp=ans["sdp"], type=ans["type"])
