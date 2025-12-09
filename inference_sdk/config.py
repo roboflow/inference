@@ -19,8 +19,12 @@ WEBRTC_EVENT_LOOP_SHUTDOWN_TIMEOUT = float(
 )
 
 # Video file upload via datachannel
-WEBRTC_VIDEO_UPLOAD_CHUNK_SIZE = int(os.getenv("WEBRTC_VIDEO_UPLOAD_CHUNK_SIZE", "49152"))  # 48KB - safe for WebRTC
-WEBRTC_VIDEO_UPLOAD_BUFFER_LIMIT = int(os.getenv("WEBRTC_VIDEO_UPLOAD_BUFFER_LIMIT", "262144"))  # 256KB max buffered before backpressure
+WEBRTC_VIDEO_UPLOAD_CHUNK_SIZE = int(
+    os.getenv("WEBRTC_VIDEO_UPLOAD_CHUNK_SIZE", "49152")
+)  # 48KB - safe for WebRTC
+WEBRTC_VIDEO_UPLOAD_BUFFER_LIMIT = int(
+    os.getenv("WEBRTC_VIDEO_UPLOAD_BUFFER_LIMIT", "262144")
+)  # 256KB max buffered before backpressure
 
 
 class InferenceSDKDeprecationWarning(Warning):

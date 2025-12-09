@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 
-
 @dataclass
 class StreamConfig:
     """Unified configuration for all WebRTC stream types.
