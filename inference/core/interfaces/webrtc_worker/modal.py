@@ -204,14 +204,10 @@ if modal is not None:
         webrtc_request: WebRTCWorkerRequest,
         send_answer: Callable[[WebRTCWorkerResult], None],
         model_manager: ModelManager,
-    ) -> bool:
+        watchdog: Watchdog,
+    ):
         from inference.core.interfaces.webrtc_worker.webrtc import (
             init_rtc_peer_connection_with_loop,
-        )
-
-        watchdog = Watchdog(
-            api_key=webrtc_request.api_key,
-            timeout_seconds=WEBRTC_MODAL_WATCHDOG_TIMEMOUT,
         )
 
         rtc_peer_connection_task = asyncio.create_task(
@@ -238,12 +234,11 @@ if modal is not None:
         except modal.exception.InputCancellation:
             logger.warning("Modal function was cancelled")
         except asyncio.CancelledError as exc:
-            logger.info("WebRTC connection task was cancelled (%s)", exc)
+            logger.warning("WebRTC connection task was cancelled (%s)", exc)
         except Exception as exc:
             logger.error(exc)
         finally:
             watchdog.stop()
-            return watchdog.heartbeat_occurred
 
     class RTCPeerConnectionModal:
         _model_manager: Optional[ModelManager] = modal.parameter(
@@ -356,23 +351,35 @@ if modal is not None:
                 send_answer(WebRTCWorkerResult(error_message=error_msg))
                 return
 
+            watchdog = Watchdog(
+                api_key=webrtc_request.api_key,
+                timeout_seconds=WEBRTC_MODAL_WATCHDOG_TIMEMOUT,
+            )
+
             try:
-                heartbeat_occurred = asyncio.run(
+                asyncio.run(
                     run_rtc_peer_connection_with_watchdog(
                         webrtc_request=webrtc_request,
                         send_answer=send_answer,
                         model_manager=self._model_manager,
+                        watchdog=watchdog,
                     )
                 )
-            except (asyncio.CancelledError, modal.exception.InputCancellation):
+            except modal.exception.InputCancellation:
                 logger.warning("Modal function was cancelled")
+            except asyncio.CancelledError as exc:
+                logger.warning("WebRTC connection task was cancelled (%s)", exc)
+            except Exception as exc:
+                logger.warning("Unhandled exception: %s", exc)
+            finally:
+                watchdog.stop()
 
             _exec_session_stopped = datetime.datetime.now()
             logger.info(
                 "WebRTC session stopped at %s",
                 _exec_session_stopped.isoformat(),
             )
-            if not heartbeat_occurred:
+            if not watchdog.heartbeat_occurred:
                 raise Exception(
                     "WebRTC worker was terminated before processing a single frame"
                 )
