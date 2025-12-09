@@ -237,8 +237,9 @@ class VideoFileSource(StreamSource):
         self.on_upload_progress = on_upload_progress
         self._upload_channel: Optional["RTCDataChannel"] = None
         self._uploader: Optional[VideoFileUploader] = None
-        self._upload_started: asyncio.Event = asyncio.Event()
-        # self._upload_complete: asyncio.Event = asyncio.Event()
+        # Note: _upload_started is created lazily in configure_peer_connection()
+        # to avoid Python 3.9 issue where asyncio.Event binds to wrong event loop
+        self._upload_started: Optional[asyncio.Event] = None
 
     async def configure_peer_connection(self, pc: RTCPeerConnection) -> None:
         """Create video_upload datachannel only (no video transceiver).
@@ -246,6 +247,9 @@ class VideoFileSource(StreamSource):
         Frames will be received as base64 via the inference datachannel,
         not via a WebRTC video track.
         """
+        # Create event in the async context to bind to correct event loop (Python 3.9 compat)
+        self._upload_started = asyncio.Event()
+
         # Create upload channel - server will create VideoFileUploadHandler
         self._upload_channel = pc.createDataChannel("video_upload")
 
