@@ -383,7 +383,7 @@ if modal is not None:
                 "WebRTC session stopped at %s",
                 _exec_session_stopped.isoformat(),
             )
-            if not watchdog.heartbeat_occurred:
+            if watchdog.total_heartbeats == 0:
                 raise Exception(
                     "WebRTC worker was terminated before processing a single frame"
                 )

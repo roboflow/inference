@@ -63,7 +63,7 @@ from inference.core.roboflow_api import get_workflow_specification
 from inference.core.workflows.core_steps.common.serializers import (
     serialize_wildcard_kind,
 )
-from inference.core.workflows.errors import WorkflowSyntaxError, WorkflowError
+from inference.core.workflows.errors import WorkflowError, WorkflowSyntaxError
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.usage_tracking.collector import usage_collector
 

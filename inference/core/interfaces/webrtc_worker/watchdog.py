@@ -24,7 +24,11 @@ class Watchdog:
         self._last_log_ts = datetime.datetime.now()
         self._log_interval_seconds = 10
         self._heartbeats = 0
-        self.heartbeat_occurred = False
+        self._total_heartbeats = 0
+
+    @property
+    def total_heartbeats(self) -> int:
+        return self._total_heartbeats
 
     def start(self):
         logger.info("Starting watchdog with timeout %s", self.timeout_seconds)
@@ -44,25 +48,27 @@ class Watchdog:
         while not self._stopping:
             if not self.is_alive():
                 logger.error(
-                    "Watchdog timeout reached, heartbeats: %s", self._heartbeats
+                    "Watchdog timeout reached, heartbeats: %s", self._total_heartbeats
                 )
                 self.on_timeout(
-                    message=f"Timeout reached, heartbeats: {self._heartbeats}"
+                    message=f"Timeout reached, heartbeats: {self._total_heartbeats}"
                 )
                 break
             if WEBRTC_MODAL_USAGE_QUOTA_ENABLED and is_over_quota(self._api_key):
-                logger.error("API key over quota, heartbeats: %s", self._heartbeats)
+                logger.error(
+                    "API key over quota, heartbeats: %s", self._total_heartbeats
+                )
                 self.on_timeout(
-                    message=f"API key over quota, heartbeats: {self._heartbeats}"
+                    message=f"API key over quota, heartbeats: {self._total_heartbeats}"
                 )
                 break
             time.sleep(1)
-        logger.info("Watchdog thread stopped, heartbeats: %s", self._heartbeats)
+        logger.info("Watchdog thread stopped, heartbeats: %s", self._total_heartbeats)
 
     def heartbeat(self):
         self.last_heartbeat = datetime.datetime.now()
         self._heartbeats += 1
-        self.heartbeat_occurred = True
+        self._total_heartbeats += 1
         if (
             datetime.datetime.now() - self._last_log_ts
         ).total_seconds() > self._log_interval_seconds:
