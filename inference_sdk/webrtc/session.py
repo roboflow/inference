@@ -559,6 +559,7 @@ class WebRTCSession:
                 f"Failed to invoke handler {handler}. The handler should have 2 parameters with signature: handler(value, metadata) or handler(value)."
             )
             raise
+
     @staticmethod
     def _to_list(value: Any) -> List[Any]:
         """Convert value to list if it is not already a list."""
@@ -586,7 +587,9 @@ class WebRTCSession:
         # 2. Auto-fetch from Roboflow API for Roboflow-hosted connections
         elif self._api_url in ALL_ROBOFLOW_API_URLS:
             try:
-                logger.debug("Fetching TURN config from Roboflow API for serverless connection")
+                logger.debug(
+                    "Fetching TURN config from Roboflow API for serverless connection"
+                )
                 response = requests.get(
                     f"{RF_API_BASE_URL}/webrtc_turn_config",
                     params={"api_key": self._api_key},
@@ -600,10 +603,27 @@ class WebRTCSession:
                 return None
         # standardize the TURN config to the iceServers format
         if turn_config and "iceServers" in turn_config:
-            turn_config = RTCConfiguration(iceServers=[RTCIceServer(urls=WebRTCSession._to_list(server.get("urls", [])), username=server.get("username"), credential=server.get("credential")) for server in turn_config["iceServers"]])
+            turn_config = RTCConfiguration(
+                iceServers=[
+                    RTCIceServer(
+                        urls=WebRTCSession._to_list(server.get("urls", [])),
+                        username=server.get("username"),
+                        credential=server.get("credential"),
+                    )
+                    for server in turn_config["iceServers"]
+                ]
+            )
             logger.debug("Successfully converted TURN config to iceServers format")
         elif turn_config and "urls" in turn_config:
-            turn_config = RTCConfiguration(iceServers=[RTCIceServer(urls=[turn_config["urls"]], username=turn_config["username"], credential=turn_config["credential"])])
+            turn_config = RTCConfiguration(
+                iceServers=[
+                    RTCIceServer(
+                        urls=[turn_config["urls"]],
+                        username=turn_config["username"],
+                        credential=turn_config["credential"],
+                    )
+                ]
+            )
             logger.debug("Successfully converted TURN config to iceServers format")
         return turn_config
 
@@ -656,7 +676,6 @@ class WebRTCSession:
 
         # Fetch TURN configuration (auto-fetch or user-provided)
         turn_config = await self._get_turn_config()
-
 
         pc = RTCPeerConnection(configuration=turn_config)
         relay = MediaRelay()
@@ -836,7 +855,16 @@ class WebRTCSession:
         # Add WebRTC config if available (auto-fetched or user-provided)
         # Server accepts webrtc_config with iceServers array format
         if turn_config:
-            payload["webrtc_config"] = {"iceServers": [{"urls": ice_server.urls, "username": ice_server.username, "credential": ice_server.credential} for ice_server in turn_config.iceServers]}
+            payload["webrtc_config"] = {
+                "iceServers": [
+                    {
+                        "urls": ice_server.urls,
+                        "username": ice_server.username,
+                        "credential": ice_server.credential,
+                    }
+                    for ice_server in turn_config.iceServers
+                ]
+            }
 
         # Add FPS if provided
         if self._config.declared_fps:

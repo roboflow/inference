@@ -24,6 +24,7 @@ DEFAULT_MAX_INPUT_SIZE = 1024
 # just to not break the code
 ALL_ROBOFLOW_API_URLS = ALL_ROBOFLOW_API_URLS
 
+
 @dataclass(frozen=True)
 class ServerInfo(DataClassJsonMixin):
     """Dataclass for Information about the inference server.
