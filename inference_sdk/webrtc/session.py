@@ -14,10 +14,10 @@ from enum import Enum
 from queue import Queue
 from typing import TYPE_CHECKING, Any, Callable, Dict, Iterator, List, Optional, Tuple
 
-from aiortc import RTCConfiguration, RTCIceServer
 import cv2
 import numpy as np
 import requests
+from aiortc import RTCConfiguration, RTCIceServer
 
 from inference_sdk.config import (
     ALL_ROBOFLOW_API_URLS,
