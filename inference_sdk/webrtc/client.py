@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Optional, Union
 
+from inference_sdk.http.errors import InvalidParameterError
+from inference_sdk.utils.decorators import experimental
 from inference_sdk.webrtc.config import StreamConfig
 from inference_sdk.webrtc.session import WebRTCSession
 from inference_sdk.webrtc.sources import StreamSource
@@ -16,6 +18,11 @@ class WebRTCClient:
     (webcam, RTSP, video files, manual frames).
     """
 
+    @experimental(
+        info="WebRTC SDK is experimental and under active development. "
+        "API may change in future releases. Please report issues at "
+        "https://github.com/roboflow/inference/issues"
+    )
     def __init__(self, api_url: str, api_key: Optional[str]) -> None:
         """Initialize WebRTC client.
 
@@ -48,40 +55,45 @@ class WebRTCClient:
             WebRTCSession context manager
 
         Raises:
-            ValueError: If workflow/workspace parameters are invalid
+            InvalidParameterError: If workflow/workspace parameters are invalid
 
         Examples:
-            # Webcam streaming
+            # Pattern 1: Using run() with decorators (recommended, auto-cleanup)
             from inference_sdk.webrtc import WebcamSource
 
-            with client.webrtc.stream(
+            session = client.webrtc.stream(
                 source=WebcamSource(resolution=(1920, 1080)),
                 workflow="object-detection",
                 workspace="my-workspace"
-            ) as session:
-                for frame in session.video():
-                    cv2.imshow("Frame", frame)
+            )
 
-            # RTSP streaming
+            @session.on_frame
+            def process_frame(frame, metadata):
+                cv2.imshow("Frame", frame)
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    session.close()
+
+            session.run()  # Auto-closes on exception or stream end
+
+            # Pattern 2: Using video() iterator (requires context manager or explicit close)
             from inference_sdk.webrtc import RTSPSource
 
+            # Option A: With context manager (recommended)
             with client.webrtc.stream(
                 source=RTSPSource("rtsp://camera.local/stream"),
                 workflow=workflow_spec_dict
             ) as session:
-                @session.on_data("predictions")
-                def handle_predictions(data):
-                    print("Got predictions:", data)
+                for frame, metadata in session.video():
+                    cv2.imshow("Frame", frame)
+                    if cv2.waitKey(1) & 0xFF == ord('q'):
+                        break
+            # Auto-cleanup on exit
 
-                session.wait()
-
-            # Manual frame sending
-            from inference_sdk.webrtc import ManualSource
-
-            manual = ManualSource()
-            with client.webrtc.stream(source=manual, ...) as session:
-                for frame in my_frames:
-                    manual.send(frame)
+            # Option B: Manual cleanup (not recommended)
+            session = client.webrtc.stream(source=RTSPSource("rtsp://..."), ...)
+            for frame, metadata in session.video():
+                process(frame)
+            session.close()  # Must call close() explicitly!
         """
         # Validate workflow configuration
         workflow_config = self._parse_workflow_config(workflow, workspace)
@@ -113,12 +125,12 @@ class WebRTCClient:
             Dictionary with workflow configuration
 
         Raises:
-            ValueError: If configuration is invalid
+            InvalidParameterError: If configuration is invalid
         """
         if isinstance(workflow, str):
             # Workflow ID mode - requires workspace
             if not workspace:
-                raise ValueError(
+                raise InvalidParameterError(
                     "workspace parameter required when workflow is an ID string"
                 )
             return {"workflow_id": workflow, "workspace_name": workspace}
@@ -126,6 +138,6 @@ class WebRTCClient:
             # Workflow specification mode
             return {"workflow_specification": workflow}
         else:
-            raise ValueError(
+            raise InvalidParameterError(
                 f"workflow must be a string (ID) or dict (specification), got {type(workflow)}"
             )

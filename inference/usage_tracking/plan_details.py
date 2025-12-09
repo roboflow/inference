@@ -4,6 +4,7 @@ import sqlite3
 from typing import Dict, Optional, Union
 
 import requests
+from pydantic import BaseModel
 
 from inference.core.env import MODEL_CACHE_DIR
 from inference.core.logger import logger
@@ -11,17 +12,27 @@ from inference.core.utils.sqlite_wrapper import SQLiteWrapper
 from inference.usage_tracking.payload_helpers import APIKey, APIKeyHash, sha256_hash
 
 
+class WebRTCPlan(BaseModel):
+    gpu: Optional[str] = None
+    cpu_cores: Optional[int] = None
+    ram_mb: Optional[int] = None
+
+
 class PlanDetails(SQLiteWrapper):
     def __init__(
         self,
         api_plan_endpoint_url: str,
+        webrtc_plans_endpoint_url: str,
         db_file_path: str = os.path.join(MODEL_CACHE_DIR, "usage.db"),
         table_name: str = "api_keys_plans",
         sqlite_connection: Optional[sqlite3.Connection] = None,
         sqlite_cache_enabled: bool = True,
+        api_plan_cache_ttl_seconds: int = 86400,
     ):
         self._api_plan_endpoint_url = api_plan_endpoint_url
-        self._cache_ttl_seconds = 86400
+        self._webrtc_plans_endpoint_url = webrtc_plans_endpoint_url
+        self._webrtc_plans: Dict[str, WebRTCPlan] = {}
+        self._cache_ttl_seconds = api_plan_cache_ttl_seconds
 
         self._columns = {}
 
@@ -171,9 +182,8 @@ class PlanDetails(SQLiteWrapper):
             logger.debug("Could not parse api key plan '%s'", response.content)
         except Exception as exc:
             logger.debug(
-                "Could not obtain api key plan from %s for %s - %s",
+                "Could not obtain api key plan from %s - %s",
                 self._api_plan_endpoint_url,
-                api_key,
                 exc,
             )
 
@@ -228,3 +238,55 @@ class PlanDetails(SQLiteWrapper):
             )
 
         return api_key_plan
+
+    def get_webrtc_plans(
+        self,
+        api_key: APIKey,
+    ) -> Dict[str, WebRTCPlan]:
+        if self._webrtc_plans:
+            return self._webrtc_plans
+
+        ssl_verify = True
+        if "localhost" in self._api_plan_endpoint_url.lower():
+            ssl_verify = False
+        if "127.0.0.1" in self._api_plan_endpoint_url.lower():
+            ssl_verify = False
+
+        try:
+            response = requests.get(
+                self._webrtc_plans_endpoint_url,
+                verify=ssl_verify,
+                headers={"Authorization": f"Bearer {api_key}"},
+                timeout=1,
+            )
+            if response.status_code != 200:
+                logger.debug(
+                    "Got %s from %s",
+                    response.status_code,
+                    self._webrtc_plans_endpoint_url,
+                )
+                return {}
+
+            webrtc_plans_from_api: Dict[str, Dict[str, Union[str, int]]] = (
+                response.json()
+            )
+            if not isinstance(webrtc_plans_from_api, dict):
+                logger.debug("Got non-dict from %s", self._webrtc_plans_endpoint_url)
+                return {}
+
+            for k, v in webrtc_plans_from_api.items():
+                try:
+                    self._webrtc_plans[k] = WebRTCPlan(**v)
+                except Exception as exc:
+                    logger.debug("Failed to parse webrtc plan '%s' - %s", k, exc)
+            return self._webrtc_plans
+
+        except requests.exceptions.JSONDecodeError:
+            logger.debug("Could not parse webrtc plans '%s'", response.content)
+        except Exception as exc:
+            logger.debug(
+                "Could not obtain webrtc plans from %s - %s",
+                self._webrtc_plans_endpoint_url,
+                exc,
+            )
+        return {}

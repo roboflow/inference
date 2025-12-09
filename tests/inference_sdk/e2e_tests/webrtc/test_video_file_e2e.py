@@ -92,23 +92,23 @@ def test_video_file_e2e_with_passthrough_workflow(inference_server):
         image_input="image",
         config=config,
     ) as session:
-        # Verify session established
-        assert session._pc is not None, "Peer connection should be established"
-        assert session._loop is not None, "Event loop should be running"
-
-        # Collect some processed frames
+        # Collect some processed frames (session will auto-start on first use)
         frames_received = []
-        for i, frame in enumerate(session.video()):
-            frames_received.append(frame)
+        for i, (frame, metadata) in enumerate(session.video()):
+            frames_received.append((frame, metadata))
             if i >= 2:  # Get 3 frames
                 break
 
         # Validate we received processed frames
         assert len(frames_received) == 3, "Should receive 3 processed frames"
 
-        for frame in frames_received:
+        for frame, metadata in frames_received:
             # Frames should be numpy arrays
             assert isinstance(frame, np.ndarray), "Frame should be numpy array"
+
+            # Metadata should be VideoMetadata
+            assert metadata is not None, "Should have metadata"
+            assert metadata.frame_id is not None, "Should have frame_id"
 
             # Should be BGR format (H, W, 3) - cropped to 80x80
             assert frame.shape == (

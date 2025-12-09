@@ -1,7 +1,7 @@
 python-dotenv<=2.0.0
 requests
 pytest
-pillow 
+pillow
 requests_toolbelt
 requests-mock==1.11.0
 rich>=13.0.0,<15.0.0
@@ -11,3 +11,4 @@ httpx~=0.28.1
 uvicorn<=0.22.0
 aioresponses>=0.7.6
 supervision>=0.26
+pycocotools>=2.0.10

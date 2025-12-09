@@ -37,9 +37,7 @@ from functools import partial
 from multiprocessing import Process
 
 
-
 if __name__ == "__main__":
-
     print("Starting Stream Manager...")
     stream_manager_process = Process(
         target=partial(start, expected_warmed_up_pipelines=0),

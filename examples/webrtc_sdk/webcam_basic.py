@@ -88,7 +88,7 @@ def main() -> None:
     #     print(f"Frame {metadata.frame_id} predictions: {predictions}")
 
     # Run the session (auto-starts, blocks until close() is called or stream ends)
-    # Session automatically closes on exception
+    # Automatically closes on exception or when stream ends
     session.run()
 
 

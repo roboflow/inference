@@ -24,7 +24,6 @@ from inference.core.env import (
     CLIP_MODEL_ID,
     ONNXRUNTIME_EXECUTION_PROVIDERS,
     REQUIRED_ONNX_PROVIDERS,
-    TENSORRT_CACHE_PATH,
 )
 from inference.core.exceptions import OnnxProviderNotAvailable
 from inference.core.models.roboflow import OnnxRoboflowCoreModel

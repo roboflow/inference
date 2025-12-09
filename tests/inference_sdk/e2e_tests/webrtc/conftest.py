@@ -82,7 +82,6 @@ def inference_server():
             time.sleep(0.5)
 
     if not server_ready:
-        server_process.terminate()
         stream_manager_process.terminate()
         raise TimeoutError(
             f"Inference server failed to start within {max_wait} seconds"

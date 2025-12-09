@@ -17,6 +17,10 @@ class TelemetrySettings(BaseSettings):
         f"{METRICS_COLLECTOR_BASE_URL}/usage/inference"
     )
     api_plan_endpoint_url: str = wrap_url(f"{METRICS_COLLECTOR_BASE_URL}/usage/plan")
+    api_plan_cache_ttl_seconds: int = Field(default=86400, ge=60, le=86400)
+    webrtc_plans_endpoint_url: str = wrap_url(
+        f"{METRICS_COLLECTOR_BASE_URL}/webrtc_plans"
+    )
     flush_interval: int = Field(default=10, ge=10, le=300)
     use_persistent_queue: Optional[bool] = True
     queue_size: int = Field(default=10, ge=10, le=10000)

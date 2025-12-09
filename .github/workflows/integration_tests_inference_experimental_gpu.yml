@@ -29,14 +29,14 @@ jobs:
   integration-tests-inference-experimental-gpu:
     name: ${{ matrix.extras.marker }}:${{ matrix.python-version }}
     runs-on: Roboflow-GPU-VM-Runner
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       matrix:
         python-version: ["3.12"]
         extras:
-          - { install: "onnx-cu12", marker: "onnx_extras", workers: "auto" }
+          - { install: "onnx-cu12,mediapipe", marker: "onnx_extras", workers: "auto" }
           - { install: "trt10", marker: "trt_extras", workers: "auto" }
-          - { install: "torch-cu124", marker: "torch_models", workers: "auto" }
+          - { install: "torch-cu124,mediapipe", marker: "torch_models", workers: "auto" }
           - { install: "torch-cu124", marker: "hf_vlm_models", workers: "1" }
     steps:
       - name: 🛎️ Checkout
@@ -98,7 +98,7 @@ jobs:
       - name: 🧪 Run tests marked `${{ matrix.extras.marker }}`
         if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
         working-directory: inference_experimental
-        timeout-minutes: 20
+        timeout-minutes: 25
         run: |
           source .venv/bin/activate
           python -m pytest -n ${{ matrix.extras.workers }} -m "${{ matrix.extras.marker }} and not cpu_only" tests/integration_tests

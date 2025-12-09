@@ -1,22 +1,32 @@
 """WebRTC session management."""
 
 import asyncio
+import base64
+import functools
 import inspect
 import json
-import logging
 import queue
-import sys
+import struct
 import threading
 from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
 from queue import Queue
-from typing import TYPE_CHECKING, Any, Callable, Iterator, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, Iterator, List, Optional, Tuple
 
+import cv2
 import numpy as np
 import requests
 
+from inference_sdk.config import (
+    WEBRTC_EVENT_LOOP_SHUTDOWN_TIMEOUT,
+    WEBRTC_INITIAL_FRAME_TIMEOUT,
+    WEBRTC_VIDEO_QUEUE_MAX_SIZE,
+)
+from inference_sdk.utils.logging import get_logger
 from inference_sdk.webrtc.config import StreamConfig
-from inference_sdk.webrtc.sources import StreamSource
+from inference_sdk.webrtc.datachannel import ChunkReassembler
+from inference_sdk.webrtc.sources import StreamSource, VideoFileSource
 
 if TYPE_CHECKING:
     from aiortc import RTCDataChannel, RTCPeerConnection
@@ -35,7 +45,29 @@ def _check_webrtc_dependencies():
         ) from e
 
 
-logger = logging.getLogger(__name__)
+logger = get_logger("webrtc.session")
+
+
+def _decode_base64_image(base64_str: str) -> np.ndarray:
+    """Decode base64 image string to BGR numpy array.
+
+    Args:
+        base64_str: Base64-encoded image data (JPEG or PNG)
+
+    Returns:
+        BGR numpy array (H, W, 3) uint8
+    """
+    img_bytes = base64.b64decode(base64_str)
+    nparr = np.frombuffer(img_bytes, np.uint8)
+    return cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+
+class SessionState(Enum):
+    """WebRTC session lifecycle states."""
+
+    NOT_STARTED = "not_started"
+    STARTED = "started"
+    CLOSED = "closed"
 
 
 @dataclass
@@ -63,23 +95,6 @@ class VideoMetadata:
     measured_fps: Optional[float] = None
 
 
-# Configuration constants
-DEFAULT_INITIAL_FRAME_TIMEOUT = 30.0  # seconds to wait for first video frame
-VIDEO_QUEUE_MAX_SIZE = 8  # maximum number of frames to buffer
-EVENT_LOOP_SHUTDOWN_TIMEOUT = 2.0  # seconds to wait for event loop thread to stop
-
-_RF_API_BASE_URL = "https://api.roboflow.com"
-
-# Configure basic logging if root logger has no handlers
-# This ensures users see important errors even without explicit logging setup
-if not logging.root.handlers:
-    handler = logging.StreamHandler(sys.stderr)
-    handler.setFormatter(logging.Formatter("%(levelname)s [%(name)s] %(message)s"))
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
-    logger.propagate = False
-
-
 class _VideoStream:
     """Wrapper for video frame queue providing iterator interface."""
 
@@ -87,18 +102,19 @@ class _VideoStream:
         self,
         session: "WebRTCSession",
         frames: "Queue[Optional[tuple[np.ndarray, VideoMetadata]]]",
-        initial_frame_timeout: float = DEFAULT_INITIAL_FRAME_TIMEOUT,
+        initial_frame_timeout: float = WEBRTC_INITIAL_FRAME_TIMEOUT,
     ):
         self._session = session
         self._frames = frames
         self._initial_frame_timeout = initial_frame_timeout
         self._first_frame_received = False
 
-    def __call__(self) -> Iterator[tuple[np.ndarray, VideoMetadata]]:
+    def __call__(self) -> Iterator[Tuple[np.ndarray, VideoMetadata]]:
         """Iterate over video frames with metadata.
 
         Automatically starts the session if not already started.
-        Yields tuples of (BGR numpy array, VideoMetadata) until the stream ends (None received).
+        Yields tuples of (BGR numpy array, VideoMetadata) until the stream ends (None received)
+        or session is closed.
         The metadata is extracted directly from the video frame (pts, time_base, etc.).
 
         Raises:
@@ -106,6 +122,10 @@ class _VideoStream:
         """
         self._session._ensure_started()
         while True:
+            # Check if session was closed (e.g., from a handler)
+            if self._session._state == SessionState.CLOSED:
+                break
+
             # Use timeout only for first frame to detect server not sending
             timeout = (
                 self._initial_frame_timeout if not self._first_frame_received else None
@@ -170,6 +190,10 @@ class WebRTCSession:
             workflow_config: Workflow configuration dict
             stream_config: Stream configuration
         """
+
+        self._state: SessionState = SessionState.NOT_STARTED
+        self._state_lock: threading.Lock = threading.Lock()
+
         self._api_url = api_url.rstrip("/")
         self._api_key = api_key
         self._source = source
@@ -182,17 +206,17 @@ class WebRTCSession:
         self._loop_thread: Optional[threading.Thread] = None
         self._pc: Optional["RTCPeerConnection"] = None
         self._video_queue: "Queue[Optional[tuple[np.ndarray, VideoMetadata]]]" = Queue(
-            maxsize=VIDEO_QUEUE_MAX_SIZE
+            maxsize=WEBRTC_VIDEO_QUEUE_MAX_SIZE
         )
-
-        # Lifecycle state tracking
-        self._state: str = "not_started"  # States: "not_started", "started", "closed"
-        self._state_lock: threading.Lock = threading.Lock()
+        self._video_through_datachannel = False
 
         # Callback handlers
         self._frame_handlers: List[Callable] = []
-        self._data_field_handlers: dict[str, List[Callable]] = {}
+        self._data_field_handlers: Dict[str, List[Callable]] = {}
         self._data_global_handler: Optional[Callable] = None
+
+        # Chunk reassembly for binary messages
+        self._chunk_reassembler = ChunkReassembler()
 
         # Public APIs
         self.video = _VideoStream(self, self._video_queue)
@@ -240,10 +264,10 @@ class WebRTCSession:
     def _ensure_started(self) -> None:
         """Ensure connection is started (thread-safe, idempotent)."""
         with self._state_lock:
-            if self._state == "not_started":
-                self._state = "started"
+            if self._state == SessionState.NOT_STARTED:
+                self._state = SessionState.STARTED
                 self._init_connection()
-            elif self._state == "closed":
+            elif self._state == SessionState.CLOSED:
                 raise RuntimeError("Cannot use closed WebRTCSession")
 
     def _parse_video_metadata(
@@ -263,9 +287,7 @@ class WebRTCSession:
         try:
             return VideoMetadata(
                 frame_id=video_metadata_dict["frame_id"],
-                received_at=datetime.fromisoformat(
-                    video_metadata_dict["received_at"]
-                ),
+                received_at=datetime.fromisoformat(video_metadata_dict["received_at"]),
                 pts=video_metadata_dict.get("pts"),
                 time_base=video_metadata_dict.get("time_base"),
                 declared_fps=video_metadata_dict.get("declared_fps"),
@@ -289,9 +311,15 @@ class WebRTCSession:
             session.close()  # Explicit cleanup (or let __del__ handle it)
         """
         with self._state_lock:
-            if self._state == "closed":
+            if self._state == SessionState.CLOSED:
                 return  # Already closed, nothing to do
-            self._state = "closed"
+            self._state = SessionState.CLOSED
+
+        # Signal video iterator to stop by putting None sentinel
+        try:
+            self._video_queue.put_nowait(None)
+        except Exception:
+            pass  # Queue might be full, but that's okay
 
         # Cleanup resources (nested finally ensures all cleanup steps execute)
         try:
@@ -310,12 +338,30 @@ class WebRTCSession:
                 if self._loop:
                     self._loop.call_soon_threadsafe(self._loop.stop)
                 if self._loop_thread:
-                    self._loop_thread.join(timeout=EVENT_LOOP_SHUTDOWN_TIMEOUT)
+                    self._loop_thread.join(timeout=WEBRTC_EVENT_LOOP_SHUTDOWN_TIMEOUT)
+
+    def __enter__(self) -> "WebRTCSession":
+        """Enter context manager - returns self.
+
+        Returns:
+            WebRTCSession: The session instance for use in with statement.
+        """
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Exit context manager - automatically closes the session.
+
+        Args:
+            exc_type: Exception type if an exception occurred, None otherwise.
+            exc_val: Exception value if an exception occurred, None otherwise.
+            exc_tb: Exception traceback if an exception occurred, None otherwise.
+        """
+        self.close()
 
     def __del__(self) -> None:
         """Cleanup if user forgot to close. Not guaranteed to run immediately."""
         try:
-            if hasattr(self, "_state") and self._state == "started":
+            if self._state == SessionState.STARTED:
                 logger.warning(
                     "WebRTCSession was not properly closed. "
                     "Consider calling session.close() explicitly for immediate cleanup."
@@ -436,9 +482,9 @@ class WebRTCSession:
         registered frame handlers for each frame. Automatically starts
         the session if not already started.
 
-        The session automatically closes if an exception occurs during
-        frame processing, ensuring resources are cleaned up before
-        re-raising the exception.
+        The session automatically closes when this method exits, whether
+        normally or due to an exception, ensuring resources are always
+        cleaned up.
 
         Blocks until either:
         - close() is called (e.g., from a callback)
@@ -459,10 +505,9 @@ class WebRTCSession:
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     session.close()  # Exits run() and cleans up
 
-            session.run()  # Auto-starts, blocks here
+            session.run()  # Auto-starts, auto-closes, blocks here
         """
-        try:
-            self._ensure_started()
+        with self:
             for frame, metadata in self.video():
                 # Invoke all registered frame handlers with both parameters
                 for handler in self._frame_handlers:
@@ -470,14 +515,20 @@ class WebRTCSession:
                         handler(frame, metadata)
                     except Exception:
                         logger.warning("Error in frame handler", exc_info=True)
-        except KeyboardInterrupt:
-            logger.info("Interrupted by user, closing session")
-            self.close()
-            raise
-        except Exception:
-            logger.error("Exception in run(), closing session", exc_info=True)
-            self.close()
-            raise
+
+    @staticmethod
+    @functools.lru_cache(maxsize=100)
+    def _data_handler_length(handler: Callable) -> int:
+        """Get the number of parameters expected by a data handler.
+
+        Args:
+            handler: The handler callable to inspect
+
+        Returns:
+            The number of parameters expected by the handler
+        """
+        sig = inspect.signature(handler)
+        return len(sig.parameters)
 
     def _invoke_data_handler(
         self, handler: Callable, value: Any, metadata: Optional[VideoMetadata]
@@ -494,42 +545,25 @@ class WebRTCSession:
             metadata: Optional video metadata to pass
         """
         try:
-            sig = inspect.signature(handler)
-            params = list(sig.parameters.values())
-
-            # Check number of parameters (excluding *args, **kwargs)
-            positional_params = [
-                p
-                for p in params
-                if p.kind
-                in (
-                    inspect.Parameter.POSITIONAL_ONLY,
-                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                )
-            ]
-
-            if len(positional_params) >= 2:
+            if WebRTCSession._data_handler_length(handler) >= 2:
                 # Handler expects both value and metadata
                 handler(value, metadata)
             else:
                 # Handler expects only value
                 handler(value)
         except Exception:
-            # Fallback: try calling with just the value
-            try:
-                handler(value)
-            except Exception:
-                logger.exception(f"Failed to invoke handler {handler}")
-                raise
+            logger.exception(
+                f"Failed to invoke handler {handler}. The handler should have 2 parameters with signature: handler(value, metadata) or handler(value)."
+            )
+            raise
 
     async def _get_turn_config(self) -> Optional[dict]:
-        """Fetch TURN configuration from server or use user-provided config.
+        """Get TURN configuration from user-provided config.
 
         Priority order:
         1. User-provided config via StreamConfig.turn_server (highest priority)
-        2. Auto-fetch from server endpoint /webrtc_turn_config
-        3. Skip TURN for localhost connections
-        4. Graceful fallback to None if unavailable
+        2. Skip TURN for non-serverless connections
+        3. Return None if not provided
 
         Returns:
             TURN configuration dict or None
@@ -539,35 +573,40 @@ class WebRTCSession:
             logger.debug("Using user-provided TURN configuration")
             return self._config.turn_server
 
-        # 2. Skip TURN for localhost connections
-        if not self._api_url.startswith(("https://serverless.roboflow.com")):
-            logger.debug("Skipping TURN for localhost connection")
-            return None
+        # 2. No TURN config provided
+        logger.debug("No TURN configuration provided, proceeding without TURN server")
+        return None
 
-        # 3. Try to auto-fetch from server
-        try:
-            logger.debug("Attempting to fetch TURN config from server")
-            response = requests.get(
-                f"{_RF_API_BASE_URL}/webrtc_turn_config", params={"api_key": self._api_key}, timeout=5
-            )
-            response.raise_for_status()
-            data = response.json()
+    def _handle_datachannel_video_frame(
+        self, serialized_data: Any, metadata: Optional[VideoMetadata]
+    ) -> None:
+        """Handle video frame received through data channel.
 
-            turn_config = {
-                "urls": data["urls"],
-                "username": data["username"],
-                "credential": data["credential"],
-            }
-            logger.info("Successfully fetched TURN configuration from server")
-            return turn_config
-        except Exception as e:
-            # 4. Graceful fallback - proceed without TURN
-            logger.info(
-                f"TURN configuration not available ({e.__class__.__name__}), "
-                "proceeding without TURN server",
-                exc_info=True,
-            )
-            return None
+        Args:
+            serialized_data: The serialized output data containing base64 image
+            metadata: Video metadata for the frame
+        """
+        for output_name in self._config.stream_output:
+            if not output_name or output_name not in serialized_data:
+                continue
+            img_data = serialized_data[output_name]
+            if isinstance(img_data, dict) and img_data.get("type") == "base64":
+                try:
+                    # Decode base64 image and queue it
+                    frame = _decode_base64_image(img_data["value"])
+                    # Backpressure: drop oldest frame if queue full
+                    if self._video_queue.full():
+                        try:
+                            self._video_queue.get_nowait()
+                        except Exception:
+                            pass
+                    self._video_queue.put_nowait((frame, metadata))
+                except Exception:
+                    logger.warning(
+                        f"Failed to decode base64 image from {output_name}",
+                        exc_info=True,
+                    )
+                break  # Only process first matching image
 
     async def _init(self) -> None:
         """Initialize WebRTC connection.
@@ -660,7 +699,37 @@ class WebRTCSession:
         @ch.on("message")
         def _on_data_message(message: Any) -> None:  # noqa: ANN401
             try:
+                # Handle both bytes and str messages
+                if isinstance(message, bytes):
+                    # Check if it's a chunked binary message
+                    if len(message) >= 12:
+                        try:
+                            # Try to reassemble chunks
+                            complete_payload, _ = self._chunk_reassembler.add_chunk(
+                                message
+                            )
+                            if complete_payload is None:
+                                # Not all chunks received yet
+                                return
+                            # Parse the complete JSON from reassembled payload
+                            message = complete_payload.decode("utf-8")
+                        except (struct.error, ValueError):
+                            # Not a chunked message, try to decode as regular UTF-8
+                            message = message.decode("utf-8")
+                    else:
+                        # Too short to be chunked, decode as regular UTF-8
+                        message = message.decode("utf-8")
+
                 parsed_message = json.loads(message)
+
+                # Handle processing_complete signal (video file finished)
+                if parsed_message.get("processing_complete"):
+                    logger.info("Received processing_complete signal")
+                    try:
+                        self._video_queue.put_nowait(None)
+                    except Exception:
+                        pass
+                    return
 
                 # Extract video metadata if present (for data handlers)
                 metadata = self._parse_video_metadata(
@@ -670,11 +739,24 @@ class WebRTCSession:
                 # Get serialized output data
                 serialized_data = parsed_message.get("serialized_output_data")
 
+                # Check for base64 image in stream_output fields (for VideoFileSource)
+                # This enables receiving frames via data channel instead of video track
+                if serialized_data and self._video_through_datachannel:
+                    self._handle_datachannel_video_frame(serialized_data, metadata)
+
                 # Call global handler if registered
                 if self._data_global_handler:
                     try:
+                        # filter out video frames if video is sent through datachannel
+                        filtered_data = serialized_data
+                        if self._video_through_datachannel:
+                            filtered_data = {
+                                k: v
+                                for k, v in serialized_data.items()
+                                if k not in self._config.stream_output
+                            }
                         self._invoke_data_handler(
-                            self._data_global_handler, serialized_data, metadata
+                            self._data_global_handler, filtered_data, metadata
                         )
                     except Exception:
                         logger.warning(
@@ -711,7 +793,7 @@ class WebRTCSession:
             await asyncio.sleep(0.1)
 
         # Build server initialization payload
-        wf_conf: dict[str, Any] = {
+        wf_conf: Dict[str, Any] = {
             "type": "WorkflowConfiguration",
             "image_input_name": self._image_input_name,
             "workflows_parameters": self._config.workflow_parameters,
@@ -739,18 +821,26 @@ class WebRTCSession:
             payload["declared_fps"] = self._config.declared_fps
 
         # Merge source-specific parameters
-        # (rtsp_url for RTSP, declared_fps for webcam, etc.)
-        payload.update(self._source.get_initialization_params())
+        # (rtsp_url for RTSP, declared_fps for webcam, stream_output/data_output overrides for VideoFile)
+        payload.update(self._source.get_initialization_params(self._config))
+        # Check if video is will be sent through datachannel instead of video track
+        self._video_through_datachannel = bool(
+            self._config.stream_output and not payload.get("stream_output")
+        )
 
         # Call server to initialize worker
         url = f"{self._api_url}/initialise_webrtc_worker"
         headers = {"Content-Type": "application/json"}
         resp = requests.post(url, json=payload, headers=headers, timeout=90)
         resp.raise_for_status()
-        ans: dict[str, Any] = resp.json()
+        ans: Dict[str, Any] = resp.json()
 
         # Set remote description
         answer = RTCSessionDescription(sdp=ans["sdp"], type=ans["type"])
         await pc.setRemoteDescription(answer)
+
+        # Start video file upload if applicable
+        if isinstance(self._source, VideoFileSource):
+            asyncio.ensure_future(self._source.start_upload())
 
         self._pc = pc

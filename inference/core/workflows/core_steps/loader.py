@@ -164,6 +164,9 @@ from inference.core.workflows.core_steps.math.cosine_similarity.v1 import (
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v1 import (
     AnthropicClaudeBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v2 import (
+    AnthropicClaudeBlockV2,
+)
 from inference.core.workflows.core_steps.models.foundation.clip.v1 import (
     ClipModelBlockV1,
 )
@@ -192,6 +195,9 @@ from inference.core.workflows.core_steps.models.foundation.gaze.v1 import GazeBl
 from inference.core.workflows.core_steps.models.foundation.google_gemini.v1 import (
     GoogleGeminiBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.google_gemini.v2 import (
+    GoogleGeminiBlockV2,
+)
 from inference.core.workflows.core_steps.models.foundation.google_vision_ocr.v1 import (
     GoogleVisionOCRBlockV1,
 )
@@ -215,6 +221,9 @@ from inference.core.workflows.core_steps.models.foundation.openai.v2 import (
 from inference.core.workflows.core_steps.models.foundation.openai.v3 import (
     OpenAIBlockV3,
 )
+from inference.core.workflows.core_steps.models.foundation.openai.v4 import (
+    OpenAIBlockV4,
+)
 from inference.core.workflows.core_steps.models.foundation.perception_encoder.v1 import (
     PerceptionEncoderModelBlockV1,
 )
@@ -226,6 +235,12 @@ from inference.core.workflows.core_steps.models.foundation.seg_preview.v1 import
 )
 from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
     SegmentAnything2BlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.segment_anything3.v1 import (
+    SegmentAnything3BlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.segment_anything3.v2 import (
+    SegmentAnything3BlockV2,
 )
 from inference.core.workflows.core_steps.models.foundation.smolvlm.v1 import (
     SmolVLM2BlockV1,
@@ -289,6 +304,9 @@ from inference.core.workflows.core_steps.secrets_providers.environment_secrets_s
 )
 from inference.core.workflows.core_steps.sinks.email_notification.v1 import (
     EmailNotificationBlockV1,
+)
+from inference.core.workflows.core_steps.sinks.email_notification.v2 import (
+    EmailNotificationBlockV2,
 )
 from inference.core.workflows.core_steps.sinks.local_file.v1 import LocalFileSinkBlockV1
 from inference.core.workflows.core_steps.sinks.onvif_movement.v1 import ONVIFSinkBlockV1
@@ -573,6 +591,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DimensionCollapseBlockV1,
         FirstNonEmptyOrDefaultBlockV1,
         AnthropicClaudeBlockV1,
+        AnthropicClaudeBlockV2,
         CosineSimilarityBlockV1,
         BackgroundColorVisualizationBlockV1,
         BarcodeDetectorBlockV1,
@@ -604,6 +623,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         Florence2BlockV1,
         Florence2BlockV2,
         GoogleGeminiBlockV1,
+        GoogleGeminiBlockV2,
         GoogleVisionOCRBlockV1,
         GridVisualizationBlockV1,
         HaloVisualizationBlockV1,
@@ -628,6 +648,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         OpenAIBlockV1,
         OpenAIBlockV2,
         OpenAIBlockV3,
+        OpenAIBlockV4,
         PathDeviationAnalyticsBlockV1,
         PathDeviationAnalyticsBlockV2,
         PixelateVisualizationBlockV1,
@@ -647,6 +668,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         SIFTComparisonBlockV1,
         SIFTComparisonBlockV2,
         SegmentAnything2BlockV1,
+        SegmentAnything3BlockV1,
+        SegmentAnything3BlockV2,
         SegPreviewBlockV1,
         StabilityAIInpaintingBlockV1,
         StabilityAIImageGenBlockV1,
@@ -666,6 +689,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DataAggregatorBlockV1,
         CSVFormatterBlockV1,
         EmailNotificationBlockV1,
+        EmailNotificationBlockV2,
         LocalFileSinkBlockV1,
         TraceVisualizationBlockV1,
         ReferencePathVisualizationBlockV1,

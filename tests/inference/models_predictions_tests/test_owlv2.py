@@ -455,7 +455,7 @@ def test_infer_with_numpy_image_uses_image_after_sizing() -> None:
             _ = image.image_as_numpy
             image.unload_numpy_image()
             self.after_unload = image.image is None and image._image_as_numpy is None
-            return "hash"
+            return "hash", ()
 
         def infer_from_embed(self, *args, **kwargs):
             return []

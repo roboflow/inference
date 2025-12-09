@@ -154,8 +154,8 @@ def mock_rtc_peer_connection():
             self._frame_idx += 1
             return frame
 
-    with patch("inference_sdk.webrtc.session.RTCPeerConnection", MockRTCPeerConnection), \
-         patch("inference_sdk.webrtc.session.MediaRelay") as mock_relay:
+    with patch("aiortc.RTCPeerConnection", MockRTCPeerConnection), \
+         patch("aiortc.contrib.media.MediaRelay") as mock_relay:
 
         # Mock MediaRelay to pass through the track
         mock_relay_instance = Mock()
@@ -167,24 +167,9 @@ def mock_rtc_peer_connection():
 
 @pytest.fixture
 def mock_server_endpoints():
-    """Mock server HTTP endpoints for TURN config and worker initialization."""
+    """Mock server HTTP endpoints for worker initialization."""
 
-    with patch("requests.get") as mock_get, \
-         patch("requests.post") as mock_post:
-
-        # Mock TURN config response
-        def get_side_effect(url, **kwargs):
-            response = Mock()
-            if "webrtc_turn_config" in url:
-                response.json.return_value = {
-                    "urls": "turn:turn.example.com:3478",
-                    "username": "test_user",
-                    "credential": "test_credential"
-                }
-                response.raise_for_status = Mock()
-            else:
-                response.raise_for_status = Mock(side_effect=Exception("Not found"))
-            return response
+    with patch("requests.post") as mock_post:
 
         # Mock worker initialization response
         def post_side_effect(url, **kwargs):
@@ -199,10 +184,9 @@ def mock_server_endpoints():
                 response.raise_for_status = Mock(side_effect=Exception("Not found"))
             return response
 
-        mock_get.side_effect = get_side_effect
         mock_post.side_effect = post_side_effect
 
-        yield {"get": mock_get, "post": mock_post}
+        yield {"post": mock_post}
 
 
 @pytest.fixture

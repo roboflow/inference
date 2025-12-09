@@ -7,6 +7,7 @@ from inference.core.entities.responses.workflows import WorkflowErrorResponse
 from inference.core.exceptions import (
     ContentTypeInvalid,
     ContentTypeMissing,
+    CreditsExceededError,
     InferenceModelNotFound,
     InputImageLoadError,
     InvalidEnvironmentVariableError,
@@ -28,6 +29,7 @@ from inference.core.exceptions import (
     RoboflowAPITimeoutError,
     RoboflowAPIUnsuccessfulRequestError,
     ServiceConfigurationError,
+    WebRTCConfigurationError,
     WorkspaceLoadError,
 )
 from inference.core.interfaces.stream_manager.api.errors import (
@@ -358,6 +360,24 @@ def with_route_exceptions(route):
                     "inner_error_type": error.inner_error_type,
                 },
             )
+        except WebRTCConfigurationError as error:
+            logger.error("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=400,
+                content={
+                    "message": str(error),
+                    "error_type": "WebRTCConfigurationError",
+                },
+            )
+        except CreditsExceededError as error:
+            logger.error("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=402,
+                content={
+                    "message": "Not enough credits to perform this request.",
+                    "error_type": "CreditsExceededError",
+                },
+            )
         except Exception as error:
             logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(status_code=500, content={"message": "Internal error."})
@@ -659,6 +679,24 @@ def with_route_exceptions_async(route):
                     "message": error.public_message,
                     "error_type": error.__class__.__name__,
                     "inner_error_type": error.inner_error_type,
+                },
+            )
+        except WebRTCConfigurationError as error:
+            logger.error("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=400,
+                content={
+                    "message": str(error),
+                    "error_type": "WebRTCConfigurationError",
+                },
+            )
+        except CreditsExceededError as error:
+            logger.error("%s: %s", type(error).__name__, error)
+            resp = JSONResponse(
+                status_code=402,
+                content={
+                    "message": "Not enough credits to perform this request.",
+                    "error_type": "CreditsExceededError",
                 },
             )
         except Exception as error:

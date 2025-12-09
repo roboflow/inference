@@ -35,8 +35,9 @@ class StreamConfig:
     turn_server: Optional[Dict[str, str]] = None
     """TURN server configuration: {"urls": "turn:...", "username": "...", "credential": "..."}
 
-    If not provided, the SDK will automatically attempt to fetch TURN configuration
-    from the server endpoint. TURN is automatically skipped for localhost connections.
+    Provide this configuration when your network requires a TURN server for WebRTC connectivity.
+    TURN is automatically skipped for localhost connections. If not provided, the connection
+    will attempt to establish directly without TURN relay.
     """
 
     # Workflow parameters

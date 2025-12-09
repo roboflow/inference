@@ -5,7 +5,7 @@ from datetime import datetime
 from unittest.mock import MagicMock, patch
 import numpy as np
 
-from inference_sdk.webrtc.session import VideoMetadata, WebRTCSession
+from inference_sdk.webrtc.session import VideoMetadata, WebRTCSession, SessionState
 
 
 @pytest.fixture
@@ -28,24 +28,24 @@ class TestSessionLifecycle:
 
     def test_session_starts_in_not_started_state(self, mock_session):
         """Test that session is created in not_started state."""
-        assert mock_session._state == "not_started"
+        assert mock_session._state == SessionState.NOT_STARTED
 
     def test_close_is_idempotent(self, mock_session):
         """Test that close() can be called multiple times safely."""
-        mock_session._state = "started"  # Simulate started state
+        mock_session._state = SessionState.STARTED  # Simulate started state
         mock_session.close()
-        assert mock_session._state == "closed"
+        assert mock_session._state == SessionState.CLOSED
 
         # Second call should be a no-op
         mock_session.close()
-        assert mock_session._state == "closed"
+        assert mock_session._state == SessionState.CLOSED
 
     def test_ensure_started_changes_state(self, mock_session):
         """Test that _ensure_started() transitions from not_started to started."""
         with patch.object(mock_session, "_init_connection"):
-            assert mock_session._state == "not_started"
+            assert mock_session._state == SessionState.NOT_STARTED
             mock_session._ensure_started()
-            assert mock_session._state == "started"
+            assert mock_session._state == SessionState.STARTED
 
     def test_ensure_started_is_idempotent(self, mock_session):
         """Test that _ensure_started() can be called multiple times."""
@@ -59,7 +59,7 @@ class TestSessionLifecycle:
 
     def test_ensure_started_raises_on_closed_session(self, mock_session):
         """Test that _ensure_started() raises error if session is closed."""
-        mock_session._state = "closed"
+        mock_session._state = SessionState.CLOSED
 
         with pytest.raises(RuntimeError, match="Cannot use closed WebRTCSession"):
             mock_session._ensure_started()
@@ -79,7 +79,7 @@ class TestRunMethod:
             test_frame = np.zeros((100, 100, 3), dtype=np.uint8)
             test_metadata = VideoMetadata(frame_id=1, received_at=datetime.now())
             mock_session._video_queue.put((test_frame, test_metadata))
-            mock_session._state = "started"
+            mock_session._state = SessionState.STARTED
 
             mock_session.run()
 
@@ -96,14 +96,14 @@ class TestRunMethod:
             if len(frame_count) >= 2:
                 mock_session.close()
 
-        # Put multiple frames in queue
-        for i in range(10):
+        # Put multiple frames in queue (use put_nowait to avoid blocking on full queue)
+        for i in range(5):
             test_frame = np.zeros((100, 100, 3), dtype=np.uint8)
             test_metadata = VideoMetadata(frame_id=i, received_at=datetime.now())
-            mock_session._video_queue.put((test_frame, test_metadata))
+            mock_session._video_queue.put_nowait((test_frame, test_metadata))
 
         # Mock state as started
-        mock_session._state = "started"
+        mock_session._state = SessionState.STARTED
 
         mock_session.run()
 
@@ -130,7 +130,7 @@ class TestRunMethod:
         test_metadata = VideoMetadata(frame_id=1, received_at=datetime.now())
         mock_session._video_queue.put((test_frame, test_metadata))
 
-        mock_session._state = "started"
+        mock_session._state = SessionState.STARTED
 
         # Run should not raise despite first handler failing
         mock_session.run()
@@ -141,7 +141,7 @@ class TestRunMethod:
 
     def test_run_closes_session_on_exception(self, mock_session):
         """Test that run() closes session if exception occurs."""
-        mock_session._state = "started"
+        mock_session._state = SessionState.STARTED
 
         # Mock video() to raise an exception
         def raise_exception():
@@ -158,7 +158,7 @@ class TestRunMethod:
 
     def test_run_closes_session_on_keyboard_interrupt(self, mock_session):
         """Test that run() closes session on Ctrl+C."""
-        mock_session._state = "started"
+        mock_session._state = SessionState.STARTED
 
         # Mock video() to raise KeyboardInterrupt
         def raise_interrupt():
@@ -328,15 +328,15 @@ class TestCloseMethod:
             calls.append(1)
             mock_session.close()
 
-        # Put frames in queue
+        # Put frames in queue (use put_nowait to avoid blocking on full queue)
         for i in range(5):
             test_frame = np.zeros((100, 100, 3), dtype=np.uint8)
             test_metadata = VideoMetadata(frame_id=i, received_at=datetime.now())
-            mock_session._video_queue.put((test_frame, test_metadata))
+            mock_session._video_queue.put_nowait((test_frame, test_metadata))
 
-        mock_session._state = "started"
+        mock_session._state = SessionState.STARTED
         mock_session.run()
 
         # Should have stopped after first frame
         assert len(calls) == 1
-        assert mock_session._state == "closed"
+        assert mock_session._state == SessionState.CLOSED

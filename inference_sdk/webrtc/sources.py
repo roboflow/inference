@@ -6,13 +6,23 @@ for different video streaming sources (webcam, RTSP, video files, manual frames)
 
 import asyncio
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple
 
-import av
 import cv2
 import numpy as np
 from aiortc import RTCPeerConnection, VideoStreamTrack
 from av import VideoFrame
+
+from inference_sdk.http.errors import InvalidParameterError
+from inference_sdk.webrtc.datachannel import VideoFileUploader
+
+if TYPE_CHECKING:
+    from aiortc import RTCDataChannel
+
+    from inference_sdk.webrtc.config import StreamConfig
+
+# Type alias for upload progress callback
+UploadProgressCallback = Callable[[int, int], None]  # (uploaded_chunks, total_chunks)
 
 
 class StreamSource(ABC):
@@ -39,14 +49,17 @@ class StreamSource(ABC):
         pass
 
     @abstractmethod
-    def get_initialization_params(self) -> Dict[str, Any]:
+    def get_initialization_params(self, config: "StreamConfig") -> Dict[str, Any]:
         """Get parameters to send to server in /initialise_webrtc_worker payload.
+
+        Args:
+            config: Stream configuration with stream_output, data_output, etc.
 
         Returns:
             Dictionary of parameters specific to this source type.
             Examples:
             - RTSP: {"rtsp_url": "rtsp://..."}
-            - Video file: {"video_path": "/path/to/file"}
+            - Video file: {"stream_output": [], "data_output": [...]}
             - Webcam/Manual: {} (empty, no server-side source)
         """
         pass
@@ -62,7 +75,7 @@ class StreamSource(ABC):
 class _OpenCVVideoTrack(VideoStreamTrack):
     """Base class for video tracks that use OpenCV capture.
 
-    This consolidates common logic for webcam and video file tracks.
+    This consolidates common logic for webcam tracks.
     """
 
     def __init__(self, source: Any, error_name: str):
@@ -115,7 +128,7 @@ class _OpenCVVideoTrack(VideoStreamTrack):
 class _WebcamVideoTrack(_OpenCVVideoTrack):
     """aiortc VideoStreamTrack that reads frames from OpenCV webcam."""
 
-    def __init__(self, device_id: int, resolution: Optional[tuple[int, int]]):
+    def __init__(self, device_id: int, resolution: Optional[Tuple[int, int]]):
         super().__init__(device_id, "webcam device")
 
         if resolution:
@@ -131,7 +144,7 @@ class WebcamSource(StreamSource):
     """
 
     def __init__(
-        self, device_id: int = 0, resolution: Optional[tuple[int, int]] = None
+        self, device_id: int = 0, resolution: Optional[Tuple[int, int]] = None
     ):
         """Initialize webcam source.
 
@@ -155,9 +168,9 @@ class WebcamSource(StreamSource):
         # Add track to send video
         pc.addTrack(self._track)
 
-    def get_initialization_params(self) -> Dict[str, Any]:
+    def get_initialization_params(self, config: "StreamConfig") -> Dict[str, Any]:
         """Return FPS if available."""
-        params = {}
+        params: Dict[str, Any] = {}
         if self._declared_fps:
             params["declared_fps"] = self._declared_fps
         return params
@@ -182,15 +195,11 @@ class RTSPSource(StreamSource):
             url: RTSP URL (e.g., "rtsp://camera.local/stream")
                 Credentials can be included: "rtsp://user:pass@host/stream"
         """
-        self.url = url
-        self._validate_url()
-
-    def _validate_url(self) -> None:
-        """Validate that the URL is a valid RTSP URL."""
-        if not self.url.startswith(("rtsp://", "rtsps://")):
-            raise ValueError(
-                f"Invalid RTSP URL: {self.url}. Must start with rtsp:// or rtsps://"
+        if not url.startswith(("rtsp://", "rtsps://")):
+            raise InvalidParameterError(
+                f"Invalid RTSP URL: {url}. Must start with rtsp:// or rtsps://"
             )
+        self.url = url
 
     async def configure_peer_connection(self, pc: RTCPeerConnection) -> None:
         """Add receive-only video transceiver (server sends video to us)."""
@@ -198,99 +207,98 @@ class RTSPSource(StreamSource):
         # Add receive-only transceiver
         pc.addTransceiver("video", direction="recvonly")
 
-    def get_initialization_params(self) -> Dict[str, Any]:
+    def get_initialization_params(self, config: "StreamConfig") -> Dict[str, Any]:
         """Return RTSP URL for server to capture."""
         # Server needs to know the RTSP URL to capture
         return {"rtsp_url": self.url}
 
 
-class _VideoFileTrack(VideoStreamTrack):
-    """aiortc VideoStreamTrack that reads frames from a video file using PyAV.
-
-    Uses PyAV instead of OpenCV to preserve original video timestamps and time_base.
-    """
-
-    def __init__(self, path: str):
-        super().__init__()
-        try:
-            self._container = av.open(path)
-        except Exception as e:
-            raise RuntimeError(f"Could not open video file: {path}") from e
-
-        if not self._container.streams.video:
-            raise RuntimeError(f"No video stream found in: {path}")
-
-        self._stream = self._container.streams.video[0]
-        self._stream.thread_type = "AUTO"  # Enable multi-threaded decoding
-        self._decoder = self._container.decode(self._stream)
-
-    async def recv(self) -> VideoFrame:  # type: ignore[override]
-        """Read next frame from video file with aiortc pacing."""
-        try:
-            frame = next(self._decoder)
-            # Call next_timestamp() for pacing (asyncio.sleep), but keep original timing
-            # This preserves the video's original pts/time_base while preventing frames
-            # from decoding too fast
-            await self.next_timestamp()
-            return frame
-        except StopIteration:
-            # End of file - use Exception (not RuntimeError) for EOF
-            raise Exception("End of video file")
-
-    def get_declared_fps(self) -> Optional[float]:
-        """Get the FPS from the video stream."""
-        if self._stream.average_rate:
-            return float(self._stream.average_rate)
-        return None
-
-    def release(self) -> None:
-        """Release the PyAV container."""
-        try:
-            if hasattr(self, "_container") and self._container:
-                self._container.close()
-        except Exception:
-            pass
-
-
 class VideoFileSource(StreamSource):
     """Stream source for video files.
 
-    This source creates a local video track that reads frames from
-    a video file and sends them to the server.
+    Uploads video file via datachannel to the server, which processes it
+    and streams results back. This is more efficient than frame-by-frame
+    streaming for pre-recorded video files.
     """
 
-    def __init__(self, path: str):
+    def __init__(
+        self,
+        path: str,
+        on_upload_progress: Optional[UploadProgressCallback] = None,
+    ):
         """Initialize video file source.
 
         Args:
-            path: Path to video file (any format supported by PyAV/FFmpeg)
+            path: Path to video file (any format supported by FFmpeg)
+            on_upload_progress: Optional callback called during upload with
+                (uploaded_chunks, total_chunks). Use to track upload progress.
         """
         self.path = path
-        self._track: Optional[_VideoFileTrack] = None
-        self._declared_fps: Optional[float] = None
+        self.on_upload_progress = on_upload_progress
+        self._upload_channel: Optional["RTCDataChannel"] = None
+        self._uploader: Optional[VideoFileUploader] = None
+        # Note: _upload_started is created lazily in configure_peer_connection()
+        # to avoid Python 3.9 issue where asyncio.Event binds to wrong event loop
+        self._upload_started: Optional[asyncio.Event] = None
 
     async def configure_peer_connection(self, pc: RTCPeerConnection) -> None:
-        """Create video file track and add it to the peer connection."""
-        # Create track that reads from video file
-        self._track = _VideoFileTrack(self.path)
+        """Create video_upload datachannel only (no video transceiver).
 
-        # Capture FPS for server
-        self._declared_fps = self._track.get_declared_fps()
+        Frames will be received as base64 via the inference datachannel,
+        not via a WebRTC video track.
+        """
+        # Create event in the async context to bind to correct event loop (Python 3.9 compat)
+        self._upload_started = asyncio.Event()
 
-        # Add track to send video
-        pc.addTrack(self._track)
+        # Create upload channel - server will create VideoFileUploadHandler
+        self._upload_channel = pc.createDataChannel("video_upload")
 
-    def get_initialization_params(self) -> Dict[str, Any]:
-        """Return metadata about video source."""
-        params = {"video_source": "file"}
-        if self._declared_fps:
-            params["declared_fps"] = self._declared_fps
-        return params
+        # NO video transceiver - pure data channel mode
+        # Frames will be received as base64 via inference datachannel
+
+        # Setup channel open handler to signal upload can start
+        @self._upload_channel.on("open")
+        def on_open() -> None:
+            self._upload_started.set()
+
+    def get_initialization_params(self, config: "StreamConfig") -> Dict[str, Any]:
+        """Return params that force data-only mode for video file processing.
+
+        Merges stream_output into data_output so frames are received as base64
+        via the inference datachannel instead of WebRTC video track.
+        """
+        # Merge stream_output into data_output (receive frames as base64)
+        data_output = list(config.data_output or [])
+        if config.stream_output:
+            for field in config.stream_output:
+                if field and field not in data_output:
+                    data_output.append(field)
+
+        return {
+            "stream_output": [],  # No video track
+            "data_output": data_output,  # Receive frames via data channel
+            "webrtc_realtime_processing": False,  # Process all frames, don't drop
+        }
+
+    async def start_upload(self) -> None:
+        """Start uploading the video file.
+
+        Called by session after connection is established.
+        Uses self.on_upload_progress if provided.
+        """
+        # Wait for channel to open
+        await self._upload_started.wait()
+
+        if not self._upload_channel:
+            raise RuntimeError("Upload channel not configured")
+
+        self._uploader = VideoFileUploader(self.path, self._upload_channel)
+        await self._uploader.upload(on_progress=self.on_upload_progress)
+        # self._upload_complete.set()
 
     async def cleanup(self) -> None:
-        """Release video file resources."""
-        if self._track:
-            self._track.release()
+        """No cleanup needed - upload channel is managed by peer connection."""
+        pass
 
 
 # Configuration constants for manual source
@@ -314,7 +322,7 @@ class ManualSource(StreamSource):
         self._track = _ManualTrack()
         pc.addTrack(self._track)
 
-    def get_initialization_params(self) -> Dict[str, Any]:
+    def get_initialization_params(self, config: "StreamConfig") -> Dict[str, Any]:
         """Return manual mode flag."""
         return {"manual_mode": True}
 
