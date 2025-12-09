@@ -201,8 +201,6 @@ class RTSPSource(StreamSource):
             )
         self.url = url
 
-        
-
     async def configure_peer_connection(self, pc: RTCPeerConnection) -> None:
         """Add receive-only video transceiver (server sends video to us)."""
         # Don't create a local track - we're receiving video from server

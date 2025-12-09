@@ -552,7 +552,9 @@ class WebRTCSession:
                 # Handler expects only value
                 handler(value)
         except Exception:
-            logger.exception(f"Failed to invoke handler {handler}. The handler should have 2 parameters with value and metadata.")
+            logger.exception(
+                f"Failed to invoke handler {handler}. The handler should have 2 parameters with value and metadata."
+            )
             raise
 
     async def _get_turn_config(self) -> Optional[dict]:
