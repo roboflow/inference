@@ -24,6 +24,7 @@ class Watchdog:
         self._last_log_ts = datetime.datetime.now()
         self._log_interval_seconds = 10
         self._heartbeats = 0
+        self.heartbeat_occurred = False
 
     def start(self):
         logger.info("Starting watchdog with timeout %s", self.timeout_seconds)
@@ -61,6 +62,7 @@ class Watchdog:
     def heartbeat(self):
         self.last_heartbeat = datetime.datetime.now()
         self._heartbeats += 1
+        self.heartbeat_occurred = True
         if (
             datetime.datetime.now() - self._last_log_ts
         ).total_seconds() > self._log_interval_seconds:
