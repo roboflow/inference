@@ -11,6 +11,21 @@ WORKFLOW_RUN_RETRIES_ENABLED = str2bool(
 EXECUTION_ID_HEADER = os.getenv("EXECUTION_ID_HEADER", "execution_id")
 PROCESSING_TIME_HEADER = os.getenv("PROCESSING_TIME_HEADER", "X-Processing-Time")
 
+# WebRTC configuration
+WEBRTC_INITIAL_FRAME_TIMEOUT = float(os.getenv("WEBRTC_INITIAL_FRAME_TIMEOUT", "90.0"))
+WEBRTC_VIDEO_QUEUE_MAX_SIZE = int(os.getenv("WEBRTC_VIDEO_QUEUE_MAX_SIZE", "8"))
+WEBRTC_EVENT_LOOP_SHUTDOWN_TIMEOUT = float(
+    os.getenv("WEBRTC_EVENT_LOOP_SHUTDOWN_TIMEOUT", "2.0")
+)
+
+# Video file upload via datachannel
+WEBRTC_VIDEO_UPLOAD_CHUNK_SIZE = int(
+    os.getenv("WEBRTC_VIDEO_UPLOAD_CHUNK_SIZE", "49152")
+)  # 48KB - safe for WebRTC
+WEBRTC_VIDEO_UPLOAD_BUFFER_LIMIT = int(
+    os.getenv("WEBRTC_VIDEO_UPLOAD_BUFFER_LIMIT", "262144")
+)  # 256KB max buffered before backpressure
+
 
 class InferenceSDKDeprecationWarning(Warning):
     """Class used for warning of deprecated features in the Inference SDK"""
