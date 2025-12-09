@@ -63,7 +63,7 @@ from inference.core.roboflow_api import get_workflow_specification
 from inference.core.workflows.core_steps.common.serializers import (
     serialize_wildcard_kind,
 )
-from inference.core.workflows.errors import WorkflowSyntaxError
+from inference.core.workflows.errors import WorkflowSyntaxError, WorkflowError
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.usage_tracking.collector import usage_collector
 
@@ -975,6 +975,16 @@ async def init_rtc_peer_connection_with_loop(
                 error_message=str(error),
                 error_context=str(error.context),
                 inner_error=str(error.inner_error),
+            )
+        )
+        return
+    except WorkflowError as error:
+        # heartbeat to indicate caller error
+        heartbeat_callback()
+        send_answer(
+            WebRTCWorkerResult(
+                exception_type=WorkflowError.__name__,
+                error_message=str(error),
             )
         )
         return
