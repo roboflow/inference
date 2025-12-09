@@ -1017,7 +1017,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
         max_detections: int = MAX_DETECTIONS,
         **kwargs,
     ):
-        logger.info("Inferring OWLv2 model")
+        logger.debug("Inferring OWLv2 model")
         result = self.owlv2.infer_from_embedding_dict(
             image,
             self.train_data_dict,
@@ -1026,7 +1026,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
             max_detections=max_detections,
             **kwargs,
         )
-        logger.info("OWLv2 model inference complete")
+        logger.debug("OWLv2 model inference complete")
         return result
 
     def draw_predictions(
