@@ -63,7 +63,7 @@ from inference.core.roboflow_api import get_workflow_specification
 from inference.core.workflows.core_steps.common.serializers import (
     serialize_wildcard_kind,
 )
-from inference.core.workflows.errors import WorkflowSyntaxError
+from inference.core.workflows.errors import WorkflowError, WorkflowSyntaxError
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.usage_tracking.collector import usage_collector
 
@@ -927,6 +927,8 @@ async def init_rtc_peer_connection_with_loop(
         KeyError,
         NotImplementedError,
     ) as error:
+        # heartbeat to indicate caller error
+        heartbeat_callback()
         send_answer(
             WebRTCWorkerResult(
                 exception_type=error.__class__.__name__,
@@ -935,6 +937,8 @@ async def init_rtc_peer_connection_with_loop(
         )
         return
     except WebRTCConfigurationError as error:
+        # heartbeat to indicate caller error
+        heartbeat_callback()
         send_answer(
             WebRTCWorkerResult(
                 exception_type=error.__class__.__name__,
@@ -943,6 +947,8 @@ async def init_rtc_peer_connection_with_loop(
         )
         return
     except RoboflowAPINotAuthorizedError:
+        # heartbeat to indicate caller error
+        heartbeat_callback()
         send_answer(
             WebRTCWorkerResult(
                 exception_type=RoboflowAPINotAuthorizedError.__name__,
@@ -951,6 +957,8 @@ async def init_rtc_peer_connection_with_loop(
         )
         return
     except RoboflowAPINotNotFoundError:
+        # heartbeat to indicate caller error
+        heartbeat_callback()
         send_answer(
             WebRTCWorkerResult(
                 exception_type=RoboflowAPINotNotFoundError.__name__,
@@ -959,12 +967,24 @@ async def init_rtc_peer_connection_with_loop(
         )
         return
     except WorkflowSyntaxError as error:
+        # heartbeat to indicate caller error
+        heartbeat_callback()
         send_answer(
             WebRTCWorkerResult(
                 exception_type=WorkflowSyntaxError.__name__,
                 error_message=str(error),
                 error_context=str(error.context),
                 inner_error=str(error.inner_error),
+            )
+        )
+        return
+    except WorkflowError as error:
+        # heartbeat to indicate caller error
+        heartbeat_callback()
+        send_answer(
+            WebRTCWorkerResult(
+                exception_type=WorkflowError.__name__,
+                error_message=str(error),
             )
         )
         return
