@@ -204,7 +204,7 @@ if modal is not None:
         webrtc_request: WebRTCWorkerRequest,
         send_answer: Callable[[WebRTCWorkerResult], None],
         model_manager: ModelManager,
-    ) -> int:
+    ) -> bool:
         from inference.core.interfaces.webrtc_worker.webrtc import (
             init_rtc_peer_connection_with_loop,
         )
@@ -243,7 +243,7 @@ if modal is not None:
             logger.error(exc)
         finally:
             watchdog.stop()
-            return watchdog._heartbeats
+            return watchdog.heartbeat_occurred
 
     class RTCPeerConnectionModal:
         _model_manager: Optional[ModelManager] = modal.parameter(
@@ -357,7 +357,7 @@ if modal is not None:
                 return
 
             try:
-                heartbeats = asyncio.run(
+                heartbeat_occurred = asyncio.run(
                     run_rtc_peer_connection_with_watchdog(
                         webrtc_request=webrtc_request,
                         send_answer=send_answer,
@@ -372,7 +372,7 @@ if modal is not None:
                 "WebRTC session stopped at %s",
                 _exec_session_stopped.isoformat(),
             )
-            if heartbeats == 0:
+            if not heartbeat_occurred:
                 raise Exception(
                     "WebRTC worker was terminated before processing a single frame"
                 )
