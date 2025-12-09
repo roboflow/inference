@@ -14,11 +14,14 @@ from enum import Enum
 from queue import Queue
 from typing import TYPE_CHECKING, Any, Callable, Dict, Iterator, List, Optional, Tuple
 
+from aiortc import RTCConfiguration, RTCIceServer
 import cv2
 import numpy as np
 import requests
 
 from inference_sdk.config import (
+    ALL_ROBOFLOW_API_URLS,
+    RF_API_BASE_URL,
     WEBRTC_EVENT_LOOP_SHUTDOWN_TIMEOUT,
     WEBRTC_INITIAL_FRAME_TIMEOUT,
     WEBRTC_VIDEO_QUEUE_MAX_SIZE,
@@ -556,26 +559,53 @@ class WebRTCSession:
                 f"Failed to invoke handler {handler}. The handler should have 2 parameters with signature: handler(value, metadata) or handler(value)."
             )
             raise
+    @staticmethod
+    def _to_list(value: Any) -> List[Any]:
+        """Convert value to list if it is not already a list."""
+        if isinstance(value, list):
+            return value
+        return [value]
 
-    async def _get_turn_config(self) -> Optional[dict]:
-        """Get TURN configuration from user-provided config.
+    async def _get_turn_config(self) -> Optional[RTCConfiguration]:
+        """Get TURN configuration from user-provided config or Roboflow API.
 
         Priority order:
         1. User-provided config via StreamConfig.turn_server (highest priority)
-        2. Skip TURN for non-serverless connections
-        3. Return None if not provided
+        2. Auto-fetch from Roboflow API for serverless connections
+        3. Return None for non-serverless connections
 
         Returns:
             TURN configuration dict or None
         """
+        turn_config = None
         # 1. Use user-provided config if available
         if self._config.turn_server:
+            turn_config = self._config.turn_server
             logger.debug("Using user-provided TURN configuration")
-            return self._config.turn_server
 
-        # 2. No TURN config provided
-        logger.debug("No TURN configuration provided, proceeding without TURN server")
-        return None
+        # 2. Auto-fetch from Roboflow API for Roboflow-hosted connections
+        elif self._api_url in ALL_ROBOFLOW_API_URLS:
+            try:
+                logger.debug("Fetching TURN config from Roboflow API for serverless connection")
+                response = requests.get(
+                    f"{RF_API_BASE_URL}/webrtc_turn_config",
+                    params={"api_key": self._api_key},
+                    timeout=5,
+                )
+                response.raise_for_status()
+                turn_config = response.json()
+                logger.debug("Successfully fetched TURN config from Roboflow API")
+            except Exception as e:
+                logger.warning(f"Failed to fetch TURN config from Roboflow API: {e}")
+                return None
+        # standardize the TURN config to the iceServers format
+        if turn_config and "iceServers" in turn_config:
+            turn_config = RTCConfiguration(iceServers=[RTCIceServer(urls=WebRTCSession._to_list(server.get("urls", [])), username=server.get("username"), credential=server.get("credential")) for server in turn_config["iceServers"]])
+            logger.debug("Successfully converted TURN config to iceServers format")
+        elif turn_config and "urls" in turn_config:
+            turn_config = RTCConfiguration(iceServers=[RTCIceServer(urls=[turn_config["urls"]], username=turn_config["username"], credential=turn_config["credential"])])
+            logger.debug("Successfully converted TURN config to iceServers format")
+        return turn_config
 
     def _handle_datachannel_video_frame(
         self, serialized_data: Any, metadata: Optional[VideoMetadata]
@@ -627,17 +657,8 @@ class WebRTCSession:
         # Fetch TURN configuration (auto-fetch or user-provided)
         turn_config = await self._get_turn_config()
 
-        # Create peer connection with TURN config if available
-        configuration = None
-        if turn_config:
-            ice = RTCIceServer(
-                urls=[turn_config.get("urls")],
-                username=turn_config.get("username"),
-                credential=turn_config.get("credential"),
-            )
-            configuration = RTCConfiguration(iceServers=[ice])
 
-        pc = RTCPeerConnection(configuration=configuration)
+        pc = RTCPeerConnection(configuration=turn_config)
         relay = MediaRelay()
 
         # Setup video receiver for frames from server
@@ -812,9 +833,10 @@ class WebRTCSession:
             "data_output": self._config.data_output,
         }
 
-        # Add TURN config if available (auto-fetched or user-provided)
+        # Add WebRTC config if available (auto-fetched or user-provided)
+        # Server accepts webrtc_config with iceServers array format
         if turn_config:
-            payload["webrtc_turn_config"] = turn_config
+            payload["webrtc_config"] = {"iceServers": [{"urls": ice_server.urls, "username": ice_server.username, "credential": ice_server.credential} for ice_server in turn_config.iceServers]}
 
         # Add FPS if provided
         if self._config.declared_fps:
