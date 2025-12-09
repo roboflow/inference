@@ -333,6 +333,10 @@ if modal is not None:
 
             def send_answer(obj: WebRTCWorkerResult):
                 logger.info("Sending webrtc answer")
+                if obj.error_message:
+                    logger.error(
+                        "Error: %s (%s)", obj.error_message, obj.exception_type
+                    )
                 # Queue with no limit, below will never block
                 q.put(obj)
 
