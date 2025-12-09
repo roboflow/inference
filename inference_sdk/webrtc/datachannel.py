@@ -5,9 +5,9 @@ import os
 import struct
 from typing import TYPE_CHECKING, Callable, Dict, Optional, Tuple
 
-from inference_sdk.webrtc.config import (
-    VIDEO_UPLOAD_BUFFER_LIMIT,
-    VIDEO_UPLOAD_CHUNK_SIZE,
+from inference_sdk.config import (
+    WEBRTC_VIDEO_UPLOAD_BUFFER_LIMIT,
+    WEBRTC_VIDEO_UPLOAD_CHUNK_SIZE,
 )
 
 if TYPE_CHECKING:
@@ -115,8 +115,8 @@ class VideoFileUploader:
         self,
         path: str,
         channel: "RTCDataChannel",
-        chunk_size: int = VIDEO_UPLOAD_CHUNK_SIZE,
-        buffer_limit: int = VIDEO_UPLOAD_BUFFER_LIMIT,
+        chunk_size: int = WEBRTC_VIDEO_UPLOAD_CHUNK_SIZE,
+        buffer_limit: int = WEBRTC_VIDEO_UPLOAD_BUFFER_LIMIT,
     ):
         """Initialize video file uploader.
 

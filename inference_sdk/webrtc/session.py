@@ -553,7 +553,7 @@ class WebRTCSession:
                 handler(value)
         except Exception:
             logger.exception(
-                f"Failed to invoke handler {handler}. The handler should have 2 parameters with value and metadata."
+                f"Failed to invoke handler {handler}. The handler should have 2 parameters with signature: handler(value, metadata) or handler(value)."
             )
             raise
 

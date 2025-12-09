@@ -3,10 +3,6 @@
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-# TODO: Move to environment variables
-# Video file upload via datachannel
-VIDEO_UPLOAD_CHUNK_SIZE = 48 * 1024  # 48KB - safe for WebRTC
-VIDEO_UPLOAD_BUFFER_LIMIT = 256 * 1024  # 256KB max buffered before backpressure
 
 
 @dataclass
