@@ -40,38 +40,8 @@ def test_video_file_session_basic(
         stream_config=sample_stream_config
     ) as session:
         session._ensure_started()
-        # Verify track was created
-        assert source._track is not None
-        assert source._track._container is not None
-        assert source._track._stream is not None
-
-
-def test_video_file_fps_detection(
-    enable_all_mocks,
-    test_video_path,
-    sample_workflow_config,
-    sample_stream_config
-):
-    """Test that video file FPS is detected correctly.
-
-    Validates that FPS from the video file is read by the track.
-    """
-    source = VideoFileSource(str(test_video_path))
-
-    with WebRTCSession(
-        api_url="http://test-server.com",
-        api_key="test-key",
-        source=source,
-        image_input_name="image",
-        workflow_config=sample_workflow_config,
-        stream_config=sample_stream_config
-    ) as session:
-        session._ensure_started()
-        # Verify track was created and FPS was detected
-        assert source._track is not None
-        fps = source._track.get_declared_fps()
-        assert fps is not None, "Should detect FPS from video file"
-        assert fps > 0, "FPS should be positive"
+        # Verify upload channel was created (VideoFileSource uses data channel, not video track)
+        assert source._upload_channel is not None
 
 
 def test_video_file_with_stream_config_variations(
@@ -149,7 +119,7 @@ def test_video_file_cleanup(
 ):
     """Test that video file resources are properly cleaned up.
 
-    Validates that PyAV container is released on session exit.
+    Validates that upload channel exists during session and cleanup is handled.
     """
     source = VideoFileSource(str(test_video_path))
 
@@ -162,13 +132,10 @@ def test_video_file_cleanup(
         stream_config=sample_stream_config
     ) as session:
         session._ensure_started()
-        track = source._track
-        assert track._container is not None, "Container should exist during session"
-        # PyAV containers don't have a simple "is_open" check, but we can verify it exists
+        # VideoFileSource uses data channel upload, not video track
+        assert source._upload_channel is not None, "Upload channel should exist during session"
 
-    # After exiting context, container should be closed (we verify cleanup was called)
-    # Note: PyAV containers don't expose a simple "is_closed" property,
-    # but attempting to use them after close will raise an error
+    # After exiting context, cleanup is handled by peer connection closing
 
 
 def test_video_file_real_properties(test_video_path):
