@@ -1,7 +1,17 @@
 """WebRTC data channel binary chunking utilities."""
 
+import asyncio
+import os
 import struct
-from typing import Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Callable, Dict, Optional, Tuple
+
+from inference_sdk.webrtc.config import (
+    VIDEO_UPLOAD_BUFFER_LIMIT,
+    VIDEO_UPLOAD_CHUNK_SIZE,
+)
+
+if TYPE_CHECKING:
+    from aiortc import RTCDataChannel
 
 
 def _parse_chunked_binary_message(message: bytes) -> Tuple[int, int, int, bytes]:
@@ -66,3 +76,104 @@ class ChunkReassembler:
             return complete_payload, frame_id
 
         return None, None
+
+
+def create_video_upload_chunk(
+    chunk_index: int, total_chunks: int, data: bytes
+) -> bytes:
+    """Create a video upload chunk message.
+
+    Format: [chunk_index:u32][total_chunks:u32][payload]
+    All integers are uint32 little-endian.
+
+    Args:
+        chunk_index: Zero-based index of this chunk
+        total_chunks: Total number of chunks in the file
+        data: Chunk payload bytes
+
+    Returns:
+        Binary message with 8-byte header + payload
+    """
+    return struct.pack("<II", chunk_index, total_chunks) + data
+
+
+class VideoFileUploader:
+    """Uploads a video file through a WebRTC datachannel in chunks.
+
+    Protocol: [chunk_index:u32][total_chunks:u32][payload]
+    Server auto-completes when all chunks received.
+
+    Features:
+    - Backpressure handling via bufferedAmount monitoring
+    - Progress callback support
+    """
+
+    def __init__(
+        self,
+        path: str,
+        channel: "RTCDataChannel",
+        chunk_size: int = VIDEO_UPLOAD_CHUNK_SIZE,
+        buffer_limit: int = VIDEO_UPLOAD_BUFFER_LIMIT,
+    ):
+        """Initialize video file uploader.
+
+        Args:
+            path: Path to the video file to upload
+            channel: RTCDataChannel to send chunks through
+            chunk_size: Size of each chunk in bytes (default 48KB)
+            buffer_limit: Max buffered bytes before applying backpressure
+        """
+        self._path = path
+        self._channel = channel
+        self._chunk_size = chunk_size
+        self._buffer_limit = buffer_limit
+        self._file_size = os.path.getsize(path)
+        self._total_chunks = (self._file_size + chunk_size - 1) // chunk_size
+        self._uploaded_chunks = 0
+
+    @property
+    def total_chunks(self) -> int:
+        """Total number of chunks to upload."""
+        return self._total_chunks
+
+    @property
+    def uploaded_chunks(self) -> int:
+        """Number of chunks uploaded so far."""
+        return self._uploaded_chunks
+
+    @property
+    def file_size(self) -> int:
+        """Size of the file in bytes."""
+        return self._file_size
+
+    async def upload(
+        self, on_progress: Optional[Callable[[int, int], None]] = None
+    ) -> None:
+        """Upload the file in chunks with backpressure handling.
+
+        Args:
+            on_progress: Optional callback called after each chunk with
+                (uploaded_chunks, total_chunks)
+
+        Raises:
+            RuntimeError: If channel closes during upload
+        """
+        with open(self._path, "rb") as f:
+            for chunk_idx in range(self._total_chunks):
+                if self._channel.readyState != "open":
+                    raise RuntimeError("Upload channel closed during upload")
+
+                chunk_data = f.read(self._chunk_size)
+                message = create_video_upload_chunk(
+                    chunk_idx, self._total_chunks, chunk_data
+                )
+
+                # Backpressure: wait for buffer to drain
+                while self._channel.bufferedAmount > self._buffer_limit:
+                    await asyncio.sleep(0.01)
+
+                self._channel.send(message)
+                self._uploaded_chunks = chunk_idx + 1
+
+                if on_progress:
+                    on_progress(self._uploaded_chunks, self._total_chunks)

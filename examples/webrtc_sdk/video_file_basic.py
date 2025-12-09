@@ -10,7 +10,8 @@ Usage:
       [--api-url http://localhost:9001] \\
       [--api-key <ROBOFLOW_API_KEY>] \\
       [--stream-output <output_name>] \\
-      [--data-output <output_name>]
+      [--data-output <output_name>] \\
+      [--file-output /path/to/output.mp4]
 
 Press 'q' in the preview window to exit.
 """
@@ -46,7 +47,20 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Name of the workflow output to receive via data channel",
     )
+    p.add_argument(
+        "--file-output",
+        default=None,
+        help="Path to save output video file (optional)",
+    )
     return p.parse_args()
+
+
+def get_video_fps(video_path: str) -> float:
+    """Get FPS from source video using OpenCV."""
+    cap = cv2.VideoCapture(video_path)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    cap.release()
+    return fps if fps > 0 else 30.0
 
 
 def main() -> None:
@@ -70,9 +84,22 @@ def main() -> None:
         config=config,
     )
 
+    # Video writer state (for optional file output)
+    writer = None
+    fps = get_video_fps(args.video_path) if args.file_output else None
+
     # Register frame handler
     @session.on_frame
     def show_frame(frame, metadata):
+        nonlocal writer
+        # Save to file if output path specified
+        if args.file_output:
+            if writer is None:
+                h, w = frame.shape[:2]
+                fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+                writer = cv2.VideoWriter(args.file_output, fourcc, fps, (w, h))
+            writer.write(frame)
+
         cv2.imshow("WebRTC SDK - Video File", frame)
         if cv2.waitKey(1) & 0xFF == ord("q"):
             session.close()  # Close session and cleanup resources
@@ -91,6 +118,11 @@ def main() -> None:
     # Run the session (auto-starts, blocks until close() is called or stream ends)
     # Automatically closes on exception or when stream ends
     session.run()
+
+    # Cleanup video writer
+    if writer:
+        writer.release()
+        print(f"Saved output to {args.file_output}")
 
 
 if __name__ == "__main__":

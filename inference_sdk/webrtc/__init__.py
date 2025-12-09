@@ -7,6 +7,7 @@ from .sources import (  # noqa: F401
     ManualSource,
     RTSPSource,
     StreamSource,
+    UploadProgressCallback,
     VideoFileSource,
     WebcamSource,
 )
@@ -23,4 +24,6 @@ __all__ = [
     "RTSPSource",
     "VideoFileSource",
     "ManualSource",
+    # Type aliases
+    "UploadProgressCallback",
 ]

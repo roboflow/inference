@@ -1,6 +1,7 @@
 """WebRTC session management."""
 
 import asyncio
+import base64
 import inspect
 import json
 import queue
@@ -12,6 +13,7 @@ from enum import Enum
 from queue import Queue
 from typing import TYPE_CHECKING, Any, Callable, Iterator, List, Optional
 
+import cv2
 import numpy as np
 import requests
 
@@ -23,7 +25,7 @@ from inference_sdk.config import (
 from inference_sdk.utils.logging import get_logger
 from inference_sdk.webrtc.config import StreamConfig
 from inference_sdk.webrtc.datachannel import ChunkReassembler
-from inference_sdk.webrtc.sources import StreamSource
+from inference_sdk.webrtc.sources import StreamSource, VideoFileSource
 
 if TYPE_CHECKING:
     from aiortc import RTCDataChannel, RTCPeerConnection
@@ -43,6 +45,20 @@ def _check_webrtc_dependencies():
 
 
 logger = get_logger("webrtc.session")
+
+
+def _decode_base64_image(base64_str: str) -> np.ndarray:
+    """Decode base64 image string to BGR numpy array.
+
+    Args:
+        base64_str: Base64-encoded image data (JPEG or PNG)
+
+    Returns:
+        BGR numpy array (H, W, 3) uint8
+    """
+    img_bytes = base64.b64decode(base64_str)
+    nparr = np.frombuffer(img_bytes, np.uint8)
+    return cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
 
 class SessionState(Enum):
@@ -191,6 +207,7 @@ class WebRTCSession:
         self._video_queue: "Queue[Optional[tuple[np.ndarray, VideoMetadata]]]" = Queue(
             maxsize=WEBRTC_VIDEO_QUEUE_MAX_SIZE
         )
+        self._video_through_datachannel = False
 
         # Callback handlers
         self._frame_handlers: List[Callable] = []
@@ -202,6 +219,7 @@ class WebRTCSession:
 
         # Public APIs
         self.video = _VideoStream(self, self._video_queue)
+
 
     def _init_connection(self) -> None:
         """Initialize event loop, thread, and WebRTC connection."""
@@ -566,6 +584,34 @@ class WebRTCSession:
         logger.debug("No TURN configuration provided, proceeding without TURN server")
         return None
 
+    def _handle_datachannel_video_frame(self, serialized_data: Any, metadata: Optional[VideoMetadata]) -> None:
+        """Handle video frame received through data channel.
+
+        Args:
+            serialized_data: The serialized output data containing base64 image
+            metadata: Video metadata for the frame
+        """
+        for output_name in self._config.stream_output:
+            if output_name and output_name in serialized_data:
+                img_data = serialized_data[output_name]
+                if isinstance(img_data, dict) and img_data.get("type") == "base64":
+                    try:
+                        # Decode base64 image and queue it
+                        frame = _decode_base64_image(img_data["value"])
+                        # Backpressure: drop oldest frame if queue full
+                        if self._video_queue.full():
+                            try:
+                                self._video_queue.get_nowait()
+                            except Exception:
+                                pass
+                        self._video_queue.put_nowait((frame, metadata))
+                    except Exception:
+                        logger.warning(
+                            f"Failed to decode base64 image from {output_name}",
+                            exc_info=True,
+                        )
+                    break  # Only process first matching image
+
     async def _init(self) -> None:
         """Initialize WebRTC connection.
 
@@ -680,6 +726,15 @@ class WebRTCSession:
 
                 parsed_message = json.loads(message)
 
+                # Handle processing_complete signal (video file finished)
+                if parsed_message.get("processing_complete"):
+                    logger.info("Received processing_complete signal")
+                    try:
+                        self._video_queue.put_nowait(None)
+                    except Exception:
+                        pass
+                    return
+
                 # Extract video metadata if present (for data handlers)
                 metadata = self._parse_video_metadata(
                     parsed_message.get("video_metadata")
@@ -688,11 +743,20 @@ class WebRTCSession:
                 # Get serialized output data
                 serialized_data = parsed_message.get("serialized_output_data")
 
+                # Check for base64 image in stream_output fields (for VideoFileSource)
+                # This enables receiving frames via data channel instead of video track
+                if serialized_data and self._video_through_datachannel:
+                    self._handle_datachannel_video_frame(serialized_data, metadata)
+
                 # Call global handler if registered
                 if self._data_global_handler:
                     try:
+                        # filter out video frames if video is sent through datachannel
+                        filtered_data = serialized_data
+                        if self._video_through_datachannel:
+                            filtered_data = {k: v for k, v in serialized_data.items() if k not in self._config.stream_output}
                         self._invoke_data_handler(
-                            self._data_global_handler, serialized_data, metadata
+                            self._data_global_handler, filtered_data, metadata
                         )
                     except Exception:
                         logger.warning(
@@ -757,8 +821,10 @@ class WebRTCSession:
             payload["declared_fps"] = self._config.declared_fps
 
         # Merge source-specific parameters
-        # (rtsp_url for RTSP, declared_fps for webcam, etc.)
-        payload.update(self._source.get_initialization_params())
+        # (rtsp_url for RTSP, declared_fps for webcam, stream_output/data_output overrides for VideoFile)
+        payload.update(self._source.get_initialization_params(self._config))
+        # Check if video is will be sent through datachannel instead of video track
+        self._video_through_datachannel = bool(self._config.stream_output and not payload.get("stream_output")) 
 
         # Call server to initialize worker
         url = f"{self._api_url}/initialise_webrtc_worker"
@@ -770,5 +836,9 @@ class WebRTCSession:
         # Set remote description
         answer = RTCSessionDescription(sdp=ans["sdp"], type=ans["type"])
         await pc.setRemoteDescription(answer)
+
+        # Start video file upload if applicable
+        if isinstance(self._source, VideoFileSource):
+            asyncio.ensure_future(self._source.start_upload())
 
         self._pc = pc
