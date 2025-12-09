@@ -62,13 +62,15 @@ def get_video_fps(video_path: str) -> float:
     cap.release()
     return fps if fps > 0 else 30.0
 
+def upload_progress(uploaded_chunks: int, total_chunks: int) -> None:
+    print(f"Upload progress: {uploaded_chunks} / {total_chunks}")
 
 def main() -> None:
     args = parse_args()
     client = InferenceHTTPClient.init(api_url=args.api_url, api_key=args.api_key)
 
     # Prepare source
-    source = VideoFileSource(args.video_path)
+    source = VideoFileSource(args.video_path, on_upload_progress=upload_progress)
 
     # Prepare config
     stream_output = [args.stream_output] if args.stream_output else []
