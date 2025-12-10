@@ -250,13 +250,15 @@ class WebRTCSession:
                     f"Troubleshooting:\n"
                     f"  - For self-hosted inference, ensure the server is started with WebRTC enabled\n"
                     f"  - For Roboflow Cloud, use a dedicated inference server URL (not serverless.roboflow.com)\n"
-                    f"  - Verify the --api-url parameter points to the correct server"
+                    f"  - Verify the --api-url parameter points to the correct server\n"
+                    f"Response: {e.response.text}"
                 ) from e
             else:
                 raise RuntimeError(
                     f"Failed to initialize WebRTC session (HTTP {e.response.status_code}).\n"
                     f"API URL: {self._api_url}\n"
-                    f"Error: {e}"
+                    f"Error: {e}\n"
+                    f"Response: {e.response.text}"
                 ) from e
         except Exception as e:
             raise RuntimeError(
