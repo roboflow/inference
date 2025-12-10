@@ -29,6 +29,7 @@ from inference.core.roboflow_api import (
     get_roboflow_base_lora,
     get_roboflow_instant_model_data,
     get_roboflow_model_data,
+    stream_url_to_cache,
 )
 from inference.core.utils.image_utils import load_image_rgb
 
@@ -250,12 +251,9 @@ class TransformerModel(RoboflowInferenceModel):
                     filename = weights_url.split("?")[0].split("/")[-1]
                     if filename.endswith(".npz"):
                         continue
-                    model_weights_response = get_from_url(
-                        weights_url, json_response=False
-                    )
-                    save_bytes_in_cache(
-                        content=model_weights_response.content,
-                        file=filename,
+                    stream_url_to_cache(
+                        url=weights_url,
+                        filename=filename,
                         model_id=self.endpoint,
                     )
                     if filename.endswith("tar.gz"):
@@ -382,12 +380,11 @@ class LoRATransformerModel(TransformerModel):
             )
 
         weights_url = api_data["weights"]["model"]
-        model_weights_response = get_from_url(weights_url, json_response=False)
         filename = weights_url.split("?")[0].split("/")[-1]
         assert filename.endswith("tar.gz")
-        save_bytes_in_cache(
-            content=model_weights_response.content,
-            file=filename,
+        stream_url_to_cache(
+            url=weights_url,
+            filename=filename,
             model_id=base_dir,
         )
         tar_file_path = get_cache_file_path(filename, base_dir)
