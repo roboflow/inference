@@ -57,7 +57,7 @@ from inference_exp.models.base.classification import (
     MultiLabelClassificationModel,
 )
 from inference_exp.models.base.depth_estimation import DepthEstimationModel
-from inference_exp.models.base.documents_parsing import DocumentParsingModel
+from inference_exp.models.base.documents_parsing import StructuredOCRModel
 from inference_exp.models.base.embeddings import TextImageEmbeddingModel
 from inference_exp.models.base.instance_segmentation import InstanceSegmentationModel
 from inference_exp.models.base.keypoints_detection import KeyPointsDetectionModel
@@ -79,7 +79,7 @@ AnyModel = Union[
     ClassificationModel,
     MultiLabelClassificationModel,
     DepthEstimationModel,
-    DocumentParsingModel,
+    StructuredOCRModel,
     TextImageEmbeddingModel,
     InstanceSegmentationModel,
     KeyPointsDetectionModel,
@@ -653,7 +653,9 @@ def create_symlinks_to_shared_blobs(
         link_name = os.path.join(model_dir, file_handle)
         target_path = shared_files_mapping[file_handle]
         result[file_handle] = link_name
-        if os.path.exists(link_name):
+        if os.path.exists(link_name) and (
+            not os.path.islink(link_name) or os.path.realpath(link_name) == target_path
+        ):
             continue
         handle_symlink_creation(
             target_path=target_path,

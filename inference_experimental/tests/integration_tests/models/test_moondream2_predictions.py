@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-import torch
+import torch.mps
 from inference_exp import Detections
 from inference_exp.models.moondream2.moondream2_hf import MoonDream2HF, Points
 
@@ -12,6 +12,7 @@ def moondream2_model(moondream2_path: str) -> MoonDream2HF:
 
 @pytest.mark.slow
 @pytest.mark.hf_vlm_models
+@pytest.mark.skipif(torch.mps.is_available(), reason="Model won't run on Apple device")
 def test_detect(moondream2_model: MoonDream2HF, dog_image_numpy: np.ndarray):
     # when
     detections = moondream2_model.detect(
@@ -27,6 +28,7 @@ def test_detect(moondream2_model: MoonDream2HF, dog_image_numpy: np.ndarray):
 
 @pytest.mark.slow
 @pytest.mark.hf_vlm_models
+@pytest.mark.skipif(torch.mps.is_available(), reason="Model won't run on Apple device")
 def test_caption(moondream2_model: MoonDream2HF, dog_image_numpy: np.ndarray):
     # when
     caption = moondream2_model.caption(images=dog_image_numpy)
@@ -39,6 +41,7 @@ def test_caption(moondream2_model: MoonDream2HF, dog_image_numpy: np.ndarray):
 
 @pytest.mark.slow
 @pytest.mark.hf_vlm_models
+@pytest.mark.skipif(torch.mps.is_available(), reason="Model won't run on Apple device")
 def test_query(moondream2_model: MoonDream2HF, dog_image_numpy: np.ndarray):
     # when
     answer = moondream2_model.query(
@@ -53,6 +56,7 @@ def test_query(moondream2_model: MoonDream2HF, dog_image_numpy: np.ndarray):
 
 @pytest.mark.slow
 @pytest.mark.hf_vlm_models
+@pytest.mark.skipif(torch.mps.is_available(), reason="Model won't run on Apple device")
 def test_point(moondream2_model: MoonDream2HF, dog_image_numpy: np.ndarray):
     # when
     points = moondream2_model.point(images=dog_image_numpy, classes=["dog", "person"])

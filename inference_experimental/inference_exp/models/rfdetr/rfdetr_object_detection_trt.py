@@ -78,7 +78,7 @@ class RFDetrForObjectDetectionTRT(
     ) -> "RFDetrForObjectDetectionTRT":
         if device.type != "cuda":
             raise ModelRuntimeError(
-                message="TRT engine only runs on CUDA device - {device} device detected.",
+                message=f"TRT engine only runs on CUDA device - {device} device detected.",
                 help_url="https://todo",
             )
         model_package_content = get_model_package_contents(

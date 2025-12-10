@@ -57,6 +57,9 @@ setuptools.setup(
         ),
     ),
     install_requires=read_requirements(["requirements/requirements.sdk.http.txt"]),
+    extras_require={
+        "webrtc": read_requirements(["requirements/requirements.sdk.webrtc.txt"]),
+    },
     classifiers=[
         "Development Status :: 5 - Production/Stable",
         "Intended Audience :: Developers",

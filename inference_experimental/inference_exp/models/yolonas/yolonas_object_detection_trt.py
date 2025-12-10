@@ -126,15 +126,11 @@ class YOLONasForObjectDetectionTRT(
                 message=f"Implementation assume 2 model outputs, found: {len(outputs)}.",
                 help_url="https://todo",
             )
-        if "output0" not in outputs or "output1" not in outputs:
-            raise CorruptedModelPackageError(
-                message=f"Expected model outputs to be named `output0` and `output1`, but found: {outputs}.",
-                help_url="https://todo",
-            )
+        # git rid of outputs order and names verification, as YOLO-NAS clearly produces different outputs
         return cls(
             engine=engine,
             input_name=inputs[0],
-            output_names=["output0", "output1"],
+            output_names=outputs,
             class_names=class_names,
             inference_config=inference_config,
             trt_config=trt_config,
