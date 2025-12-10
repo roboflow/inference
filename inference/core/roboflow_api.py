@@ -907,8 +907,12 @@ def _get_from_url(
     return response
 
 
-def _check_range_request_support(url: str, timeout: int = 10) -> bool:
-    """Check if server supports range requests by making a test request."""
+def _test_range_request(url: str, timeout: int = 10) -> bool:
+    """Test if server actually honors range requests by making a real range GET request.
+
+    Note: We can't rely on Accept-Ranges header alone because some servers/CDNs
+    advertise range support but return 200 (full file) instead of 206 (partial).
+    """
     try:
         headers = {"Range": "bytes=0-0"}
         response = requests.get(url, headers=headers, stream=True, timeout=timeout)
@@ -921,7 +925,7 @@ def _check_range_request_support(url: str, timeout: int = 10) -> bool:
         )
         return False
     except Exception as e:
-        logger.warning(f"Failed to check range request support: {e}. Falling back to single-threaded download.")
+        logger.warning(f"Failed to test range request support: {e}. Falling back to single-threaded download.")
         return False
 
 
@@ -935,7 +939,7 @@ def _stream_url_to_cache(
     md5_hash = None
 
     # Check if server supports range requests, use single thread if not
-    max_threads = 8 if _check_range_request_support(url) else 1
+    max_threads = 8 if _test_range_request(url) else 1
 
     try:
         download_files_to_directory(
