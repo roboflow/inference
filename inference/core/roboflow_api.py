@@ -919,10 +919,7 @@ def _test_range_request(url: str, timeout: int = 10) -> bool:
         response.close()
         if response.status_code == 206:
             return True
-        logger.warning(
-            f"Server returned {response.status_code} instead of 206 for range request. "
-            f"Falling back to single-threaded download."
-        )
+        
         return False
     except Exception as e:
         logger.warning(f"Failed to test range request support: {e}. Falling back to single-threaded download.")
@@ -938,7 +935,6 @@ def _stream_url_to_cache(
     cache_dir = get_cache_dir(model_id=model_id)
     md5_hash = None
 
-    # Check if server supports range requests, use single thread if not
     max_threads = 8 if _test_range_request(url) else 1
 
     try:
