@@ -1,37 +1,21 @@
-import os
+import os.path
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
 import torchvision
+from groundingdino.util.inference import load_model, predict
 from inference_exp import Detections
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat, ImageDimensions
-from inference_exp.errors import MissingDependencyError, ModelRuntimeError
+from inference_exp.errors import ModelRuntimeError
 from inference_exp.models.base.object_detection import (
     OpenVocabularyObjectDetectionModel,
 )
 from inference_exp.models.common.model_packages import get_model_package_contents
-from inference_exp.utils.download import download_files_to_directory
 from torch import nn
 from torchvision import transforms
 from torchvision.ops import box_convert
-
-try:
-    from groundingdino.util.inference import load_model, predict
-except ImportError as import_error:
-    raise MissingDependencyError(
-        message=f"Could not import GroundingDino model - this error means that some additional dependencies "
-        f"are not installed in the environment. If you run the `inference-exp` library directly in your Python "
-        f"program, make sure the following extras of the package are installed: `grounding-dino`."
-        f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
-        f"You can also contact Roboflow to get support.",
-        help_url="https://todo",
-    ) from import_error
-
-
-DEFAULT_CONFIG_URL = "https://raw.githubusercontent.com/roboflow/GroundingDINO/main/groundingdino/config/GroundingDINO_SwinT_OGC.py"
-DEFAULT_CONFIG_MD5 = "bdb07fc17b611d622633d133d2cf873a"
 
 
 class GroundingDinoForObjectDetectionTorch(
@@ -50,23 +34,16 @@ class GroundingDinoForObjectDetectionTorch(
     ) -> "GroundingDinoForObjectDetectionTorch":
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
-            elements=["groundingdino_swint_ogc.pth"],
+            elements=["weights.pth", "config.py"],
         )
-        config_path = os.path.join(model_name_or_path, "GroundingDINO_SwinT_OGC.py")
-        if not os.path.exists(config_path):
-            download_files_to_directory(
-                target_dir=model_name_or_path,
-                files_specs=[
-                    (
-                        "GroundingDINO_SwinT_OGC.py",
-                        DEFAULT_CONFIG_URL,
-                        DEFAULT_CONFIG_MD5,
-                    )
-                ],
-            )
+        text_encoder_dir = os.path.join(model_name_or_path, "text_encoder")
+        loader_kwargs = {}
+        if os.path.isdir(text_encoder_dir):
+            loader_kwargs["text_encoder_type"] = text_encoder_dir
         model = load_model(
-            model_config_path=config_path,
-            model_checkpoint_path=model_package_content["groundingdino_swint_ogc.pth"],
+            model_config_path=model_package_content["config.py"],
+            model_checkpoint_path=model_package_content["weights.pth"],
+            **loader_kwargs,
         ).to(device)
         return cls(model=model, device=device)
 
@@ -176,19 +153,20 @@ class GroundingDinoForObjectDetectionTorch(
             text_threshold = conf_thresh
         caption = ". ".join(classes)
         all_boxes, all_logits, all_phrases = [], [], []
-        for image in pre_processed_images:
-            boxes, logits, phrases = predict(
-                model=self._model,
-                image=image,
-                caption=caption,
-                box_threshold=conf_thresh,
-                text_threshold=text_threshold,
-                device=self._device,
-                remove_combined=True,
-            )
-            all_boxes.append(boxes)
-            all_logits.append(logits)
-            all_phrases.append(phrases)
+        with torch.inference_mode():
+            for image in pre_processed_images:
+                boxes, logits, phrases = predict(
+                    model=self._model,
+                    image=image,
+                    caption=caption,
+                    box_threshold=conf_thresh,
+                    text_threshold=text_threshold,
+                    device=self._device,
+                    remove_combined=True,
+                )
+                all_boxes.append(boxes)
+                all_logits.append(logits)
+                all_phrases.append(phrases)
         return all_boxes, all_logits, all_phrases, classes
 
     def post_process(

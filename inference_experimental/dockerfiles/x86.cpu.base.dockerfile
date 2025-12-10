@@ -14,7 +14,7 @@ WORKDIR /build
 
 COPY uv.lock uv.lock
 COPY pyproject.toml pyproject.toml
-RUN UV_PROJECT_ENVIRONMENT=/usr/local $HOME/.local/bin/uv sync --locked --extra torch-cpu --extra onnx-cpu --extra mediapipe --extra grounding-dino
+RUN UV_PROJECT_ENVIRONMENT=/usr/local $HOME/.local/bin/uv sync --locked --extra torch-cpu --extra onnx-cpu --extra mediapipe
 COPY inference_exp inference_exp
 RUN $HOME/.local/bin/uv build
 RUN WHEEL=$(ls dist/inference_exp-*.whl) && $HOME/.local/bin/uv pip install --system "${WHEEL}"

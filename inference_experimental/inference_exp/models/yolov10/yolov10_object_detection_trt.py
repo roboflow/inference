@@ -66,6 +66,7 @@ class YOLOv10ForObjectDetectionTRT(
         cls,
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
+        engine_host_code_allowed: bool = False,
         **kwargs,
     ) -> "YOLOv10ForObjectDetectionTRT":
         if device.type != "cuda":
@@ -100,7 +101,10 @@ class YOLOv10ForObjectDetectionTRT(
         cuda.init()
         cuda_device = cuda.Device(device.index or 0)
         with use_primary_cuda_context(cuda_device=cuda_device) as cuda_context:
-            engine = load_model(model_path=model_package_content["engine.plan"])
+            engine = load_model(
+                model_path=model_package_content["engine.plan"],
+                engine_host_code_allowed=engine_host_code_allowed,
+            )
             execution_context = engine.create_execution_context()
         inputs, outputs = get_engine_inputs_and_outputs(engine=engine)
         if len(inputs) != 1:

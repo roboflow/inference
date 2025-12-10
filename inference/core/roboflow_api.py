@@ -15,14 +15,12 @@ import aiohttp
 import backoff
 import requests
 from cachetools.func import ttl_cache
-from inference_exp.utils.download import download_files_to_directory
 from requests import Response, Timeout
 from requests_toolbelt import MultipartEncoder
 
 from inference.core import logger
 from inference.core.cache import cache
 from inference.core.cache.base import BaseCache
-from inference.core.cache.model_artifacts import get_cache_dir, initialise_cache
 from inference.core.entities.types import (
     DatasetID,
     ModelID,
@@ -826,18 +824,6 @@ def get_from_url(
         url=url,
         json_response=json_response,
         verify_content_length=verify_content_length,
-    )
-
-
-def stream_url_to_cache(
-    url: str,
-    filename: str,
-    model_id: str,
-) -> None:
-    return _stream_url_to_cache(
-        url=url,
-        filename=filename,
-        model_id=model_id,
     )
 
 
