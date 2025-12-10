@@ -400,10 +400,10 @@ def ensure_jetson_l4t_declared_for_jetson_hardware(
     if any(device == "orin" for device in gpu_devices) and l4t_version is None:
         raise RuntimeIntrospectionError(
             message="Inconsistency in environment setup detected - GPU device name indicate that you run the code"
-                    "on Jetson device, but L4T version cannot be established, which is important for `inference-exp` "
-                    "to work correctly. Please set environment variable `RUNNING_ON_JETSON=True`, as well as "
-                    "`L4T_VERSION=<your-l4t-version>`. Optionally you may also set `JETSON_MODULE` variable "
-                    f"to one of the values: {JETSON_DEVICES_TABLE}. If that does not solve your issue - contact "
-                    f"Roboflow immediately.",
-            help_url="https://todo"
+            "on Jetson device, but L4T version cannot be established, which is important for `inference-exp` "
+            "to work correctly. Please set environment variable `RUNNING_ON_JETSON=True`, as well as "
+            "`L4T_VERSION=<your-l4t-version>`. Optionally you may also set `JETSON_MODULE` variable "
+            f"to one of the values: {JETSON_DEVICES_TABLE}. If that does not solve your issue - contact "
+            f"Roboflow immediately.",
+            help_url="https://todo",
         )
