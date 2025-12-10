@@ -278,6 +278,7 @@ def safe_execute_download(
     if (
         expected_file_size is None
         or expected_file_size < MIN_SIZE_FOR_THREADED_DOWNLOAD
+        or max_threads_per_download <= 1
     ):
         stream_download(
             url=download_url,
@@ -508,6 +509,11 @@ def download_chunk(
                     help_url="https://todo",
                 )
             response.raise_for_status()
+            if response.status_code != 206:
+                raise RetryError(
+                    message=f"Server does not support range requests (returned {response.status_code} instead of 206)",
+                    help_url="https://todo",
+                )
             _handle_stream_download(
                 response=response,
                 target_path=target_path,
