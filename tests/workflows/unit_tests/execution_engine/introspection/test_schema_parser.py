@@ -611,5 +611,5 @@ def test_parse_block_manifest_when_manifest_defines_union_of_list_with_selectors
     assert selector_def.is_dict_element is False
 
     all_kinds = {k.name for ref in selector_def.allowed_references for k in ref.kind}
-    assert "string" in all_kinds
-    assert "list_of_values" in all_kinds
+    assert STRING_KIND.name in all_kinds
+    assert LIST_OF_VALUES_KIND.name in all_kinds
