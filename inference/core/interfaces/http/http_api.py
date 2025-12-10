@@ -2845,14 +2845,16 @@ class HttpInterface(BaseInterface):
                 router as builder_router,
             )
 
-            # Allow CORS on only the API, but not the builder UI/iframe (where the CSRF is passed)
+            # Allow CORS on builder API and workflow endpoints needed by the builder UI
+            # Enables Private Network Access for Chrome 142+ (local development)
             app.add_middleware(
                 PathAwareCORSMiddleware,
-                match_paths=r"^/build/api.*",
+                match_paths=r"^/(build/api|workflows/).*",
                 allow_origins=[BUILDER_ORIGIN],
                 allow_methods=["*"],
                 allow_headers=["*"],
                 allow_credentials=True,
+                allow_private_network=True,
             )
 
             # Attach all routes from builder to the /build prefix
