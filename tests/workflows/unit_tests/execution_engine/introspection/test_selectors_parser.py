@@ -164,10 +164,10 @@ def test_get_step_selectors_when_compound_selectors_defined() -> None:
     ), "Selector definition must hold in terms of property name"
 
 
-def test_get_step_selectors_when_union_of_list_or_selector_receives_selector() -> None:
-    """Test Union[List[str], Selector(...)] pattern when value is a selector to a list."""
-    # given
-
+def test_get_step_selectors_when_union_of_list_str_or_selector_receives_selector() -> (
+    None
+):
+    # Union[List[str], Selector] with a selector value
     class Manifest(WorkflowBlockManifest):
         type: Literal["UnionListTest"]
         name: str = Field(description="name field")
@@ -179,29 +179,19 @@ def test_get_step_selectors_when_union_of_list_or_selector_receives_selector() -
         def describe_outputs(cls) -> List[OutputDefinition]:
             return []
 
-    step_manifest = Manifest(
-        type="UnionListTest", name="my_step", tags="$inputs.tags"
-    )
-
-    # when
+    step_manifest = Manifest(type="UnionListTest", name="my_step", tags="$inputs.tags")
     selectors = get_step_selectors(step_manifest=step_manifest)
 
-    # then
-    assert len(selectors) == 1, "One selector should be found"
+    assert len(selectors) == 1
     assert selectors[0].value == "$inputs.tags"
-    assert selectors[0].definition.property_name == "tags"
-    assert (
-        selectors[0].definition.is_list_element is True
-    ), "Should be marked as list element due to Union[List[...], Selector(...)]"
-    assert selectors[0].index is None, "Direct selector should not have index"
+    assert selectors[0].definition.is_list_element is False
+    assert selectors[0].index is None
 
 
-def test_get_step_selectors_when_union_of_list_or_selector_receives_literal_list() -> (
+def test_get_step_selectors_when_union_of_list_str_or_selector_receives_literal_list() -> (
     None
 ):
-    """Test Union[List[str], Selector(...)] pattern when value is a literal list."""
-    # given
-
+    # Union[List[str], Selector] with a literal list - no selectors
     class Manifest(WorkflowBlockManifest):
         type: Literal["UnionListTest"]
         name: str = Field(description="name field")
@@ -216,22 +206,15 @@ def test_get_step_selectors_when_union_of_list_or_selector_receives_literal_list
     step_manifest = Manifest(
         type="UnionListTest", name="my_step", tags=["tag1", "tag2", "tag3"]
     )
-
-    # when
     selectors = get_step_selectors(step_manifest=step_manifest)
 
-    # then
-    assert (
-        len(selectors) == 0
-    ), "No selectors should be found in literal list without selectors"
+    assert len(selectors) == 0
 
 
-def test_get_step_selectors_when_union_of_list_or_selector_receives_mixed_list() -> (
+def test_get_step_selectors_when_union_of_list_str_or_selector_receives_list_with_selector_like_strings() -> (
     None
 ):
-    """Test Union[List[str], Selector(...)] when list contains both literals and selectors."""
-    # given
-
+    # List[str] should NOT parse selector-like strings - they're just strings
     class Manifest(WorkflowBlockManifest):
         type: Literal["UnionListTest"]
         name: str = Field(description="name field")
@@ -248,15 +231,63 @@ def test_get_step_selectors_when_union_of_list_or_selector_receives_mixed_list()
         name="my_step",
         tags=["literal_tag", "$inputs.tag", "$inputs.another_tag"],
     )
-
-    # when
     selectors = get_step_selectors(step_manifest=step_manifest)
 
-    # then
-    assert len(selectors) == 2, "Two selectors should be found in the mixed list"
+    # these look like selectors but List[str] means they're literal strings
+    assert len(selectors) == 0
+
+
+def test_get_step_selectors_when_union_of_list_with_selectors_or_selector_receives_mixed_list() -> (
+    None
+):
+    # List[Union[Selector, str]] SHOULD parse selectors inside the list
+    class Manifest(WorkflowBlockManifest):
+        type: Literal["UnionListTest"]
+        name: str = Field(description="name field")
+        registration_tags: Union[
+            List[Union[Selector(kind=[STRING_KIND]), str]],
+            Selector(kind=[LIST_OF_VALUES_KIND]),
+        ] = Field(description="Tags with selectors inside the list")
+
+        @classmethod
+        def describe_outputs(cls) -> List[OutputDefinition]:
+            return []
+
+    step_manifest = Manifest(
+        type="UnionListTest",
+        name="my_step",
+        registration_tags=["literal_tag", "$inputs.tag", "$inputs.another_tag"],
+    )
+    selectors = get_step_selectors(step_manifest=step_manifest)
+
+    assert len(selectors) == 2
     assert selectors[0].value == "$inputs.tag"
-    assert selectors[0].index == 1, "First selector is at index 1"
+    assert selectors[0].index == 1
     assert selectors[1].value == "$inputs.another_tag"
-    assert selectors[1].index == 2, "Second selector is at index 2"
-    assert selectors[0].definition.is_list_element is True
-    assert selectors[1].definition.is_list_element is True
+    assert selectors[1].index == 2
+
+
+def test_get_step_selectors_when_union_of_list_with_selectors_or_selector_receives_direct_selector() -> (
+    None
+):
+    # Union[List[Union[Selector, str]], Selector] with a direct selector
+    class Manifest(WorkflowBlockManifest):
+        type: Literal["UnionListTest"]
+        name: str = Field(description="name field")
+        registration_tags: Union[
+            List[Union[Selector(kind=[STRING_KIND]), str]],
+            Selector(kind=[LIST_OF_VALUES_KIND]),
+        ] = Field(description="Tags with selectors inside the list")
+
+        @classmethod
+        def describe_outputs(cls) -> List[OutputDefinition]:
+            return []
+
+    step_manifest = Manifest(
+        type="UnionListTest", name="my_step", registration_tags="$inputs.tags"
+    )
+    selectors = get_step_selectors(step_manifest=step_manifest)
+
+    assert len(selectors) == 1
+    assert selectors[0].value == "$inputs.tags"
+    assert selectors[0].index is None

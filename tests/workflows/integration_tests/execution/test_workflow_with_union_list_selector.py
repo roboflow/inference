@@ -1,11 +1,4 @@
-"""Integration tests for Union[List[...], Selector(...)] patterns in workflow blocks.
-
-This test verifies that blocks can properly handle properties defined as
-Union[List[T], Selector(...)] where the value can be either:
-- A literal list: ["tag1", "tag2"]
-- A selector to a list: $inputs.tags
-- A mixed list with literals and selectors: ["literal", "$inputs.tag"]
-"""
+"""Integration tests for Union[List[...], Selector(...)] patterns."""
 
 import numpy as np
 import pytest

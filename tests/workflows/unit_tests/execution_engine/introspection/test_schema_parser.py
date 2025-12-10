@@ -535,16 +535,11 @@ def test_parse_block_manifest_when_manifest_defines_selector_inside_dictionary()
     )
 
 
-def test_parse_block_manifest_when_manifest_defines_union_of_list_or_selector() -> (
+def test_parse_block_manifest_when_manifest_defines_union_of_list_str_or_selector() -> (
     None
 ):
-    """Test that Union[List[...], Selector(...)] properly sets is_list_element=True.
-
-    This is a regression test for the bug where the schema parser would not detect
-    that a property could receive a list when defined as Union[List[T], Selector(...)].
-    """
-    # given
-
+    # Union[List[str], Selector] should have is_list_element=False
+    # because List[str] doesn't allow selectors inside
     class Manifest(WorkflowBlockManifest):
         type: Literal["MyManifest"]
         name: str = Field(description="name field")
@@ -556,10 +551,8 @@ def test_parse_block_manifest_when_manifest_defines_union_of_list_or_selector() 
         def describe_outputs(cls) -> List[OutputDefinition]:
             return []
 
-    # when
     manifest_metadata = parse_block_manifest(manifest_type=Manifest)
 
-    # then
     assert manifest_metadata == BlockManifestMetadata(
         primitive_types={
             "name": PrimitiveTypeDefinition(
@@ -584,10 +577,39 @@ def test_parse_block_manifest_when_manifest_defines_union_of_list_or_selector() 
                         points_to_batch={False},
                     ),
                 ],
-                is_list_element=True,
+                is_list_element=False,
                 is_dict_element=False,
                 dimensionality_offset=0,
                 is_dimensionality_reference_property=False,
             )
         },
     )
+
+
+def test_parse_block_manifest_when_manifest_defines_union_of_list_with_selectors_or_selector() -> (
+    None
+):
+    # Union[List[Union[Selector, str]], Selector] should have is_list_element=True
+    # because List items can contain selectors (like DatasetUpload.registration_tags)
+    class Manifest(WorkflowBlockManifest):
+        type: Literal["MyManifest"]
+        name: str = Field(description="name field")
+        registration_tags: Union[
+            List[Union[Selector(kind=[STRING_KIND]), str]],
+            Selector(kind=[LIST_OF_VALUES_KIND]),
+        ] = Field(description="Tags with selectors inside the list")
+
+        @classmethod
+        def describe_outputs(cls) -> List[OutputDefinition]:
+            return []
+
+    manifest_metadata = parse_block_manifest(manifest_type=Manifest)
+
+    assert "registration_tags" in manifest_metadata.selectors
+    selector_def = manifest_metadata.selectors["registration_tags"]
+    assert selector_def.is_list_element is True
+    assert selector_def.is_dict_element is False
+
+    all_kinds = {k.name for ref in selector_def.allowed_references for k in ref.kind}
+    assert "string" in all_kinds
+    assert "list_of_values" in all_kinds
