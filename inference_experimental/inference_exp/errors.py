@@ -109,10 +109,6 @@ class ModelImplementationLoaderError(ModelLoadingError):
     pass
 
 
-class MissingModelDependencyError(ModelLoadingError):
-    pass
-
-
 class CorruptedModelPackageError(ModelLoadingError):
     pass
 
@@ -122,4 +118,12 @@ class MissingDependencyError(BaseInferenceError):
 
 
 class InvalidParameterError(BaseInferenceError):
+    pass
+
+
+class ModelPipelineInitializationError(ModelLoadingError):
+    pass
+
+
+class ModelPipelineNotFound(ModelPipelineInitializationError):
     pass
