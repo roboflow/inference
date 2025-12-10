@@ -219,12 +219,19 @@ class VideoFileSource(StreamSource):
     Uploads video file via datachannel to the server, which processes it
     and streams results back. This is more efficient than frame-by-frame
     streaming for pre-recorded video files.
+
+    Supports two output modes:
+    - Datachannel mode (default): Frames received as base64 JSON via datachannel.
+      Higher bandwidth but includes all workflow output data inline.
+    - Video track mode: Frames received via WebRTC video track with hardware-
+      accelerated codec (H.264/VP8). Lower bandwidth, workflow data sent separately.
     """
 
     def __init__(
         self,
         path: str,
         on_upload_progress: Optional[UploadProgressCallback] = None,
+        use_video_track: bool = False,
     ):
         """Initialize video file source.
 
@@ -232,9 +239,13 @@ class VideoFileSource(StreamSource):
             path: Path to video file (any format supported by FFmpeg)
             on_upload_progress: Optional callback called during upload with
                 (uploaded_chunks, total_chunks). Use to track upload progress.
+            use_video_track: If True, receive processed video via WebRTC video
+                track (lower bandwidth, hardware-accelerated codec). If False
+                (default), receive frames as base64 via datachannel.
         """
         self.path = path
         self.on_upload_progress = on_upload_progress
+        self.use_video_track = use_video_track
         self._upload_channel: Optional["RTCDataChannel"] = None
         self._uploader: Optional[VideoFileUploader] = None
         # Note: _upload_started is created lazily in configure_peer_connection()
@@ -242,10 +253,10 @@ class VideoFileSource(StreamSource):
         self._upload_started: Optional[asyncio.Event] = None
 
     async def configure_peer_connection(self, pc: RTCPeerConnection) -> None:
-        """Create video_upload datachannel only (no video transceiver).
+        """Configure peer connection for video file upload.
 
-        Frames will be received as base64 via the inference datachannel,
-        not via a WebRTC video track.
+        Creates video_upload datachannel for file transfer. In video track mode,
+        also adds a receive-only transceiver for processed video output.
         """
         # Create event in the async context to bind to correct event loop (Python 3.9 compat)
         self._upload_started = asyncio.Event()
@@ -253,8 +264,9 @@ class VideoFileSource(StreamSource):
         # Create upload channel - server will create VideoFileUploadHandler
         self._upload_channel = pc.createDataChannel("video_upload")
 
-        # NO video transceiver - pure data channel mode
-        # Frames will be received as base64 via inference datachannel
+        # Add receive-only transceiver for video track output mode
+        if self.use_video_track:
+            pc.addTransceiver("video", direction="recvonly")
 
         # Setup channel open handler to signal upload can start
         @self._upload_channel.on("open")
@@ -262,23 +274,31 @@ class VideoFileSource(StreamSource):
             self._upload_started.set()
 
     def get_initialization_params(self, config: "StreamConfig") -> Dict[str, Any]:
-        """Return params that force data-only mode for video file processing.
+        """Return params for video file processing mode.
 
-        Merges stream_output into data_output so frames are received as base64
-        via the inference datachannel instead of WebRTC video track.
+        In video track mode, preserves stream_output for video track rendering.
+        In datachannel mode (default), merges stream_output into data_output
+        so frames are received as base64 via the inference datachannel.
         """
-        # Merge stream_output into data_output (receive frames as base64)
+        params: Dict[str, Any] = {
+            "webrtc_realtime_processing": False,  # Process all frames, don't drop
+            "video_file_upload": True,  # Signal to server that video will be uploaded
+        }
+
+        if self.use_video_track:
+            # Video track mode: keep stream_output for video track rendering
+            return params
+
+        # Datachannel mode (default): merge stream_output into data_output
         data_output = list(config.data_output or [])
         if config.stream_output:
             for field in config.stream_output:
                 if field and field not in data_output:
                     data_output.append(field)
 
-        return {
-            "stream_output": [],  # No video track
-            "data_output": data_output,  # Receive frames via data channel
-            "webrtc_realtime_processing": False,  # Process all frames, don't drop
-        }
+        params["stream_output"] = []  # No video track
+        params["data_output"] = data_output  # Receive frames via data channel
+        return params
 
     async def start_upload(self) -> None:
         """Start uploading the video file.

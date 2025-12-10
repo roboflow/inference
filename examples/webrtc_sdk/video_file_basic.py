@@ -70,7 +70,7 @@ def main() -> None:
     client = InferenceHTTPClient.init(api_url=args.api_url, api_key=args.api_key)
 
     # Prepare source
-    source = VideoFileSource(args.video_path, on_upload_progress=upload_progress)
+    source = VideoFileSource(args.video_path, on_upload_progress=upload_progress,use_video_track=True)
 
     # Prepare config
     stream_output = [args.stream_output] if args.stream_output else []

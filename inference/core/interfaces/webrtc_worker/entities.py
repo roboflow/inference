@@ -42,6 +42,9 @@ class WebRTCWorkerRequest(BaseModel):
     use_data_channel_frames: bool = (
         False  # When True, expect frames via data channel instead of media track
     )
+    video_file_upload: bool = (
+        False  # When True, video will be uploaded via datachannel then processed
+    )
     processing_timeout: Optional[int] = WEBRTC_MODAL_FUNCTION_TIME_LIMIT
     processing_session_started: Optional[datetime.datetime] = None
     requested_plan: Optional[str] = "webrtc-gpu-small"
