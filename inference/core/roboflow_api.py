@@ -15,12 +15,14 @@ import aiohttp
 import backoff
 import requests
 from cachetools.func import ttl_cache
+from inference_exp.utils.download import download_files_to_directory
 from requests import Response, Timeout
 from requests_toolbelt import MultipartEncoder
 
 from inference.core import logger
 from inference.core.cache import cache
 from inference.core.cache.base import BaseCache
+from inference.core.cache.model_artifacts import get_cache_dir, initialise_cache
 from inference.core.entities.types import (
     DatasetID,
     ModelID,
@@ -912,6 +914,32 @@ def _test_range_request(url: str, timeout: int = 10) -> bool:
             f"Failed to test range request support: {e}. Falling back to single-threaded download."
         )
         return False
+
+
+def stream_url_to_cache(
+    url: str,
+    filename: str,
+    model_id: str,
+) -> None:
+    initialise_cache(model_id=model_id)
+    cache_dir = get_cache_dir(model_id=model_id)
+    md5_hash = None
+
+    max_threads = 8 if _test_range_request(url) else 1
+
+    try:
+        download_files_to_directory(
+            target_dir=cache_dir,
+            files_specs=[(filename, url, md5_hash)],
+            verbose=True,
+            download_files_without_hash=True,
+            verify_hash_while_download=False,
+            max_threads_per_download=max_threads,
+        )
+    except Exception as e:
+        raise RoboflowAPIUnsuccessfulRequestError(
+            f"Failed to download {filename}: {str(e)}"
+        ) from e
 
 
 def _add_params_to_url(url: str, params: List[Tuple[str, str]]) -> str:
