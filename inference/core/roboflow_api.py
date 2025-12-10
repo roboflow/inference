@@ -907,6 +907,24 @@ def _get_from_url(
     return response
 
 
+def _check_range_request_support(url: str, timeout: int = 10) -> bool:
+    """Check if server supports range requests by making a test request."""
+    try:
+        headers = {"Range": "bytes=0-0"}
+        response = requests.get(url, headers=headers, stream=True, timeout=timeout)
+        response.close()
+        if response.status_code == 206:
+            return True
+        logger.warning(
+            f"Server returned {response.status_code} instead of 206 for range request. "
+            f"Falling back to single-threaded download."
+        )
+        return False
+    except Exception as e:
+        logger.warning(f"Failed to check range request support: {e}. Falling back to single-threaded download.")
+        return False
+
+
 def _stream_url_to_cache(
     url: str,
     filename: str,
@@ -916,6 +934,9 @@ def _stream_url_to_cache(
     cache_dir = get_cache_dir(model_id=model_id)
     md5_hash = None
 
+    # Check if server supports range requests, use single thread if not
+    max_threads = 8 if _check_range_request_support(url) else 1
+
     try:
         download_files_to_directory(
             target_dir=cache_dir,
@@ -923,6 +944,7 @@ def _stream_url_to_cache(
             verbose=True,
             download_files_without_hash=True,
             verify_hash_while_download=False,
+            max_threads_per_download=max_threads,
         )
     except Exception as e:
         raise RoboflowAPIUnsuccessfulRequestError(

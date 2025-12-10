@@ -278,6 +278,7 @@ def safe_execute_download(
     if (
         expected_file_size is None
         or expected_file_size < MIN_SIZE_FOR_THREADED_DOWNLOAD
+        or max_threads_per_download <= 1
     ):
         stream_download(
             url=download_url,
