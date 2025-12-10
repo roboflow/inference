@@ -905,11 +905,14 @@ def _test_range_request(url: str, timeout: int = 10) -> bool:
         response.close()
         if response.status_code == 206:
             return True
-        
+
         return False
     except Exception as e:
-        logger.warning(f"Failed to test range request support: {e}. Falling back to single-threaded download.")
+        logger.warning(
+            f"Failed to test range request support: {e}. Falling back to single-threaded download."
+        )
         return False
+
 
 def _add_params_to_url(url: str, params: List[Tuple[str, str]]) -> str:
     if len(params) == 0:
