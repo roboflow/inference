@@ -6,7 +6,10 @@ import numpy as np
 from dataclasses_json import DataClassJsonMixin
 from PIL import Image
 
-from inference_sdk.config import WORKFLOW_RUN_RETRIES_ENABLED
+from inference_sdk.config import (  # noqa: F401
+    ALL_ROBOFLOW_API_URLS,
+    WORKFLOW_RUN_RETRIES_ENABLED,
+)
 from inference_sdk.http.errors import ModelTaskTypeNotSupportedError
 from inference_sdk.http.utils.iterables import remove_empty_values
 
@@ -20,15 +23,6 @@ OBJECT_DETECTION_TASK = "object-detection"
 INSTANCE_SEGMENTATION_TASK = "instance-segmentation"
 KEYPOINTS_DETECTION_TASK = "keypoint-detection"
 DEFAULT_MAX_INPUT_SIZE = 1024
-
-ALL_ROBOFLOW_API_URLS = {
-    "https://detect.roboflow.com",
-    "https://outline.roboflow.com",
-    "https://classify.roboflow.com",
-    "https://infer.roboflow.com",
-    "https://serverless.roboflow.com",
-    "https://serverless.roboflow.one",
-}
 
 
 @dataclass(frozen=True)
