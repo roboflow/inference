@@ -56,6 +56,7 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
+            "access_third_party": True,
             "ui_manifest": {
                 "section": "model",
                 "icon": "fa-brands fa-google",

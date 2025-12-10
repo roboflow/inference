@@ -33,6 +33,7 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "MIT",
             "block_type": "math",
+            "access_third_party": False,
             "ui_manifest": {
                 "section": "advanced",
                 "icon": "far fa-calculator-simple",

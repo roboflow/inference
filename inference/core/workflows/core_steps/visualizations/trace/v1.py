@@ -36,6 +36,7 @@ class TraceManifest(ColorableVisualizationManifest):
             "license": "Apache-2.0",
             "block_type": "visualization",
             "search_keywords": ["annotator"],
+            "access_third_party": False,
             "ui_manifest": {
                 "section": "visualization",
                 "icon": "far fa-scribble",

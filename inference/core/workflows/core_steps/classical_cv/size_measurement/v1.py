@@ -65,6 +65,7 @@ class SizeMeasurementManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "transformation",
+            "access_third_party": False,
             "ui_manifest": {
                 "section": "classical_cv",
                 "icon": "far fa-ruler",

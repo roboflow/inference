@@ -69,6 +69,17 @@ def test_getting_blocks_descriptions_using_new_post_endpoint(server_url) -> None
     assert (
         "dynamic_block_definition_schema" in response_data
     ), "Expected key `dynamic_block_definition_schema` to be present in response"
+    # Assert all blocks have access_third_party property
+    blocks = response_data["blocks"]
+    blocks_missing_flag = [
+        block["manifest_type_identifier"]
+        for block in blocks
+        if "access_third_party" not in block["block_schema"]
+        or not isinstance(block["block_schema"]["access_third_party"], bool)
+    ]
+    assert (
+        not blocks_missing_flag
+    ), f"All blocks must declare boolean `access_third_party` flag. Missing in: {blocks_missing_flag}"
 
 
 def test_getting_blocks_descriptions_using_new_post_endpoint_using_existing_execution_engine_version(server_url: str) -> None:

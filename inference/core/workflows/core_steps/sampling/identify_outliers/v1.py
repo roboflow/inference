@@ -35,6 +35,7 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "MIT",
             "block_type": "video",
+            "access_third_party": False,
             "ui_manifest": {
                 "section": "video",
                 "icon": "far fa-chart-scatter-bubble",

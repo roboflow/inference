@@ -81,6 +81,7 @@ class BlockManifest(WorkflowBlockManifest):
                 "outpainting",
                 "image generation",
             ],
+            "access_third_party": True,
             "ui_manifest": {
                 "section": "model",
                 "icon": "far fa-palette",

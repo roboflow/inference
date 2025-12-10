@@ -68,6 +68,7 @@ class BlockManifest(WorkflowBlockManifest):
             "license": "Apache-2.0",
             "block_type": "model",
             "search_keywords": ["LMM", "ChatGPT"],
+            "access_third_party": True,
             "ui_manifest": {
                 "section": "model",
                 "icon": "fal fa-atom",

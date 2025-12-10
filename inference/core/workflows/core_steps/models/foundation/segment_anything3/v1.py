@@ -79,6 +79,7 @@ class BlockManifest(WorkflowBlockManifest):
             "block_type": "model",
             # "search_keywords": ["SAM3", "META"],
             "search_keywords": ["Sam3"],
+            "access_third_party": False,
             "ui_manifest": {
                 "section": "model",
                 # "icon": "fa-brands fa-meta",

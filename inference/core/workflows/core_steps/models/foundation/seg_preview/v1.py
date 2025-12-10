@@ -61,6 +61,7 @@ class BlockManifest(WorkflowBlockManifest):
             "license": "Apache-2.0",
             "block_type": "model",
             "search_keywords": ["Seg Preview"],
+            "access_third_party": False,
             "ui_manifest": {
                 "section": "model",
                 "icon": "fa-solid fa-eye",

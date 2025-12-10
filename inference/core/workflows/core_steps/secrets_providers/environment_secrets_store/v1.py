@@ -56,6 +56,7 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "secrets_provider",
+            "access_third_party": False,
             "ui_manifest": {
                 "section": "advanced",
                 "icon": "far fa-key",

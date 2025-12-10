@@ -47,6 +47,7 @@ class BlockManifest(WorkflowBlockManifest):
                 "labels",
                 "coordinates",
             ],
+            "access_third_party": False,
             "ui_manifest": {
                 "section": "advanced",
                 "icon": "fal fa-gear-code",

@@ -73,6 +73,7 @@ class BlockManifest(WorkflowBlockManifest):
             "license": "Apache-2.0",
             "block_type": "model",
             "search_keywords": ["SAM2", "META"],
+            "access_third_party": False,
             "ui_manifest": {
                 "section": "model",
                 "icon": "fa-brands fa-meta",

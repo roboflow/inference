@@ -65,6 +65,7 @@ class BlockManifest(WorkflowBlockManifest):
                 "HuggingFace",
             ],
             "is_vlm_block": True,
+            "access_third_party": False,
             "ui_manifest": {
                 "section": "model",
                 "icon": "fal fa-atom",

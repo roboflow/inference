@@ -158,6 +158,7 @@ class BlockManifest(WorkflowBlockManifest):
             "beta": True,
             "is_vlm_block": True,
             "task_type_property": "task_type",
+            "access_third_party": True,
             "ui_manifest": {
                 "section": "model",
                 "icon": "fa-brands fa-google",

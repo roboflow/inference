@@ -64,6 +64,7 @@ class BlockManifest(WorkflowBlockManifest):
             "license": "Apache-2.0",
             "block_type": "model",
             "search_keywords": ["LMM"],
+            "access_third_party": False,
             "ui_manifest": {
                 "section": "model",
                 "icon": "fal fa-atom",

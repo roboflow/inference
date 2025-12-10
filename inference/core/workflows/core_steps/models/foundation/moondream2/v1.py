@@ -63,6 +63,7 @@ class BlockManifest(WorkflowBlockManifest):
                 "VLM",
                 "object detection",
             ],
+            "access_third_party": False,
             "ui_manifest": {
                 "section": "model",
                 "icon": "fal fa-atom",

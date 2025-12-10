@@ -66,6 +66,7 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": SHORT_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "transformation",
+            "access_third_party": False,
             "ui_manifest": {
                 "section": "flow_control",
                 "icon": "far fa-filter",

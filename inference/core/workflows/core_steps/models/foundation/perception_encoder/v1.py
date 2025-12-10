@@ -50,6 +50,7 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "MIT",
             "block_type": "model",
+            "access_third_party": False,
             "ui_manifest": {
                 "section": "model",
                 "icon": "far fa-paperclip",

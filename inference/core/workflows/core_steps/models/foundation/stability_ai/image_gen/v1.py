@@ -56,6 +56,7 @@ class BlockManifest(WorkflowBlockManifest):
                 "image variation",
                 "image generation",
             ],
+            "access_third_party": False,
             "ui_manifest": {
                 "section": "model",
                 "icon": "far fa-palette",

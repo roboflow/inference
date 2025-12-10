@@ -64,6 +64,7 @@ class RateLimiterManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "flow_control",
+            "access_third_party": False,
             "ui_manifest": {
                 "section": "flow_control",
                 "icon": "far fa-clock",
