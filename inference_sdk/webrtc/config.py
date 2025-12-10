@@ -43,3 +43,17 @@ class StreamConfig:
     # Workflow parameters
     workflow_parameters: Dict[str, Any] = field(default_factory=dict)
     """Parameters to pass to the workflow execution"""
+
+    # Serverless configuration
+    requested_plan: Optional[str] = None
+    """Requested compute plan for serverless processing (e.g., 'webrtc-gpu-small').
+
+    Only applicable when connecting to Roboflow serverless endpoints.
+    """
+
+    requested_region: Optional[str] = None
+    """Requested region for processing (e.g., 'us', 'eu').
+
+    Must be a valid Modal region. Only applicable when connecting to Roboflow serverless endpoints.
+    See: https://modal.com/docs/guide/region-selection#region-options
+    """
