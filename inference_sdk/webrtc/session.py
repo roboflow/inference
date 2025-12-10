@@ -23,7 +23,6 @@ from inference_sdk.config import (
     ALL_ROBOFLOW_API_URLS,
     RF_API_BASE_URL,
     WEBRTC_EVENT_LOOP_SHUTDOWN_TIMEOUT,
-    WEBRTC_INITIAL_FRAME_TIMEOUT,
     WEBRTC_VIDEO_QUEUE_MAX_SIZE,
 )
 from inference_sdk.utils.logging import get_logger
@@ -105,12 +104,9 @@ class _VideoStream:
         self,
         session: "WebRTCSession",
         frames: "Queue[Optional[tuple[np.ndarray, VideoMetadata]]]",
-        initial_frame_timeout: float = WEBRTC_INITIAL_FRAME_TIMEOUT,
     ):
         self._session = session
         self._frames = frames
-        self._initial_frame_timeout = initial_frame_timeout
-        self._first_frame_received = False
 
     def __call__(self) -> Iterator[Tuple[np.ndarray, VideoMetadata]]:
         """Iterate over video frames with metadata.
@@ -119,9 +115,6 @@ class _VideoStream:
         Yields tuples of (BGR numpy array, VideoMetadata) until the stream ends (None received)
         or session is closed.
         The metadata is extracted directly from the video frame (pts, time_base, etc.).
-
-        Raises:
-            TimeoutError: If first frame not received within timeout period
         """
         self._session._ensure_started()
         while True:
@@ -129,27 +122,11 @@ class _VideoStream:
             if self._session._state == SessionState.CLOSED:
                 break
 
-            # Use timeout only for first frame to detect server not sending
-            timeout = (
-                self._initial_frame_timeout if not self._first_frame_received else None
-            )
-
-            try:
-                frame_data = self._frames.get(timeout=timeout)
-            except queue.Empty:
-                raise TimeoutError(
-                    f"No video frames received within {self._initial_frame_timeout}s timeout.\n"
-                    "This likely means the server is not sending video.\n"
-                    "Troubleshooting:\n"
-                    "  - Check that stream_output is configured in your StreamConfig\n"
-                    "  - Verify the workflow outputs match your configuration\n"
-                    "  - Ensure the server has WebRTC enabled and is processing frames"
-                )
+            frame_data = self._frames.get()
 
             if frame_data is None:
                 break
 
-            self._first_frame_received = True
             yield frame_data
 
 
