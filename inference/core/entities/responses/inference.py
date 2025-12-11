@@ -117,6 +117,46 @@ class InstanceSegmentationPrediction(BaseModel):
     )
 
 
+class InstanceSegmentationRLEPrediction(BaseModel):
+    """Instance segmentation prediction with RLE mask.
+
+    Attributes:
+        x (float): The center x-axis pixel coordinate of the prediction.
+        y (float): The center y-axis pixel coordinate of the prediction.
+        width (float): The width of the prediction bounding box in number of pixels.
+        height (float): The height of the prediction bounding box in number of pixels.
+        confidence (float): The detection confidence as a fraction between 0 and 1.
+        class_name (str): The predicted class label.
+        class_id (int): The class id of the prediction.
+        rle (dict): RLE-encoded mask in COCO format {"size": [H, W], "counts": "..."}.
+    """
+
+    x: float = Field(description="The center x-axis pixel coordinate of the prediction")
+    y: float = Field(description="The center y-axis pixel coordinate of the prediction")
+    width: float = Field(
+        description="The width of the prediction bounding box in number of pixels"
+    )
+    height: float = Field(
+        description="The height of the prediction bounding box in number of pixels"
+    )
+    confidence: float = Field(
+        description="The detection confidence as a fraction between 0 and 1"
+    )
+    class_name: str = Field(alias="class", description="The predicted class label")
+    class_id: int = Field(description="The class id of the prediction")
+    rle: dict = Field(
+        description="RLE-encoded mask in COCO format: {'size': [H, W], 'counts': '...'}"
+    )
+    detection_id: str = Field(
+        description="Unique identifier of detection",
+        default_factory=lambda: str(uuid4()),
+    )
+    parent_id: Optional[str] = Field(
+        description="Identifier of parent image region",
+        default=None,
+    )
+
+
 class ClassificationPrediction(BaseModel):
     """Classification prediction.
 

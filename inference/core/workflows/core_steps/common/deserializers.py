@@ -38,6 +38,8 @@ from inference.core.workflows.execution_engine.constants import (
     PATH_DEVIATION_KEY_IN_SV_DETECTIONS,
     POLYGON_KEY_IN_INFERENCE_RESPONSE,
     POLYGON_KEY_IN_SV_DETECTIONS,
+    RLE_MASK_KEY_IN_INFERENCE_RESPONSE,
+    RLE_MASK_KEY_IN_SV_DETECTIONS,
     ROOT_PARENT_COORDINATES_KEY,
     ROOT_PARENT_DIMENSIONS_KEY,
     ROOT_PARENT_ID_KEY,
@@ -305,6 +307,155 @@ def deserialize_detections_kind(
         )
     return _attach_optional_key_points_detections(
         raw_detections=detections["predictions"],
+        parsed_detections=parsed_detections,
+    )
+
+
+def deserialize_rle_detections_kind(
+    parameter: str,
+    detections: Any,
+) -> sv.Detections:
+    if isinstance(detections, sv.Detections):
+        return detections
+    if not isinstance(detections, dict):
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            f"detections, but invalid type of data found.",
+            context="workflow_execution | runtime_input_validation",
+        )
+    if "predictions" not in detections or "image" not in detections:
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            f"detections, but dictionary misses required keys.",
+            context="workflow_execution | runtime_input_validation",
+        )
+
+    predictions_list = detections["predictions"]
+    if len(predictions_list) == 0:
+        return sv.Detections.empty()
+
+    height, width = detections["image"]["height"], detections["image"]["width"]
+
+    xyxy_list = []
+    confidence_list = []
+    class_id_list = []
+    class_name_list = []
+    rle_masks_list = []
+    detection_ids = []
+    parent_ids = []
+    tracker_ids = []
+
+    for pred in predictions_list:
+        # Extract bbox from center+dimensions format
+        x = pred["x"]
+        y = pred["y"]
+        w = pred["width"]
+        h = pred["height"]
+        x1 = x - w / 2
+        y1 = y - h / 2
+        x2 = x + w / 2
+        y2 = y + h / 2
+
+        xyxy_list.append([x1, y1, x2, y2])
+        confidence_list.append(pred["confidence"])
+        class_id_list.append(pred["class_id"])
+        class_name_list.append(pred.get("class", pred.get("class_name", "")))
+        detection_ids.append(pred.get(DETECTION_ID_KEY, str(uuid4())))
+        parent_ids.append(pred.get(PARENT_ID_KEY, parameter))
+
+        # Extract tracker_id if present
+        if "tracker_id" in pred:
+            tracker_ids.append(pred["tracker_id"])
+
+        # Extract RLE mask
+        rle = pred.get(RLE_MASK_KEY_IN_INFERENCE_RESPONSE)
+        if rle is not None:
+            rle_masks_list.append(rle)
+
+    parsed_detections = sv.Detections(
+        xyxy=np.array(xyxy_list, dtype=np.float32),
+        confidence=np.array(confidence_list, dtype=np.float32),
+        class_id=np.array(class_id_list, dtype=int),
+        tracker_id=np.array(tracker_ids, dtype=int) if tracker_ids else None,
+    )
+    parsed_detections["class_name"] = np.array(class_name_list)
+    parsed_detections[DETECTION_ID_KEY] = np.array(detection_ids)
+    parsed_detections[PARENT_ID_KEY] = np.array(parent_ids)
+    parsed_detections[IMAGE_DIMENSIONS_KEY] = np.array(
+        [[height, width]] * len(parsed_detections)
+    )
+
+    # Store RLE masks in data
+    if rle_masks_list and len(rle_masks_list) == len(parsed_detections):
+        parsed_detections[RLE_MASK_KEY_IN_SV_DETECTIONS] = np.array(
+            rle_masks_list, dtype=object
+        )
+
+    # Attach parent coordinates and dimensions if present
+    _attach_parent_coordinates_and_dimensions(
+        parameter=parameter,
+        raw_detections=predictions_list,
+        parsed_detections=parsed_detections,
+        origin_key=PARENT_ORIGIN_KEY,
+        coordinates_key=PARENT_COORDINATES_KEY,
+        dimensions_key=PARENT_DIMENSIONS_KEY,
+    )
+
+    # Attach root parent coordinates if present
+    root_parent_ids = [
+        pred.get(ROOT_PARENT_ID_KEY, parameter) for pred in predictions_list
+    ]
+    if root_parent_ids:
+        parsed_detections.data[ROOT_PARENT_ID_KEY] = np.array(root_parent_ids)
+        _attach_parent_coordinates_and_dimensions(
+            parameter=parameter,
+            raw_detections=predictions_list,
+            parsed_detections=parsed_detections,
+            origin_key=ROOT_PARENT_ORIGIN_KEY,
+            coordinates_key=ROOT_PARENT_COORDINATES_KEY,
+            dimensions_key=ROOT_PARENT_DIMENSIONS_KEY,
+        )
+
+    # Attach optional elements (same as deserialize_detections_kind)
+    optional_elements_keys = [
+        (PATH_DEVIATION_KEY_IN_INFERENCE_RESPONSE, PATH_DEVIATION_KEY_IN_SV_DETECTIONS),
+        (TIME_IN_ZONE_KEY_IN_INFERENCE_RESPONSE, TIME_IN_ZONE_KEY_IN_SV_DETECTIONS),
+        (POLYGON_KEY_IN_INFERENCE_RESPONSE, POLYGON_KEY_IN_SV_DETECTIONS),
+        (
+            BOUNDING_RECT_ANGLE_KEY_IN_INFERENCE_RESPONSE,
+            BOUNDING_RECT_ANGLE_KEY_IN_SV_DETECTIONS,
+        ),
+        (
+            BOUNDING_RECT_RECT_KEY_IN_INFERENCE_RESPONSE,
+            BOUNDING_RECT_RECT_KEY_IN_SV_DETECTIONS,
+        ),
+        (
+            BOUNDING_RECT_HEIGHT_KEY_IN_INFERENCE_RESPONSE,
+            BOUNDING_RECT_HEIGHT_KEY_IN_SV_DETECTIONS,
+        ),
+        (
+            BOUNDING_RECT_WIDTH_KEY_IN_INFERENCE_RESPONSE,
+            BOUNDING_RECT_WIDTH_KEY_IN_SV_DETECTIONS,
+        ),
+        (DETECTED_CODE_KEY, DETECTED_CODE_KEY),
+        (SPEED_KEY_IN_INFERENCE_RESPONSE, SPEED_KEY_IN_SV_DETECTIONS),
+        (SMOOTHED_SPEED_KEY_IN_INFERENCE_RESPONSE, SMOOTHED_SPEED_KEY_IN_SV_DETECTIONS),
+        (
+            SMOOTHED_VELOCITY_KEY_IN_INFERENCE_RESPONSE,
+            SMOOTHED_VELOCITY_KEY_IN_SV_DETECTIONS,
+        ),
+        (VELOCITY_KEY_IN_INFERENCE_RESPONSE, VELOCITY_KEY_IN_SV_DETECTIONS),
+    ]
+    for raw_detection_key, parsed_detection_key in optional_elements_keys:
+        parsed_detections = _attach_optional_detection_element(
+            raw_detections=predictions_list,
+            parsed_detections=parsed_detections,
+            raw_detection_key=raw_detection_key,
+            parsed_detection_key=parsed_detection_key,
+        )
+
+    return _attach_optional_key_points_detections(
+        raw_detections=predictions_list,
         parsed_detections=parsed_detections,
     )
 
