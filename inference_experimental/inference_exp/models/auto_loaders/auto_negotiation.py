@@ -21,7 +21,11 @@ from inference_exp.models.auto_loaders.constants import (
     NMS_IOU_THRESHOLD_KEY,
     NMS_MAX_DETECTIONS_KEY,
 )
-from inference_exp.models.auto_loaders.entities import ModelArchitecture, TaskType
+from inference_exp.models.auto_loaders.entities import (
+    BackendType,
+    ModelArchitecture,
+    TaskType,
+)
 from inference_exp.models.auto_loaders.models_registry import (
     model_implementation_exists,
 )
@@ -35,7 +39,6 @@ from inference_exp.runtime_introspection.core import (
 )
 from inference_exp.utils.onnx_introspection import get_selected_onnx_execution_providers
 from inference_exp.weights_providers.entities import (
-    BackendType,
     JetsonEnvironmentRequirements,
     ModelPackageMetadata,
     Quantization,
@@ -239,7 +242,7 @@ def remove_packages_not_matching_implementation(
             model_architecture=model_architecture,
             task_type=task_type,
             backend=model_package.backend,
-            model_features=model_package.model_features,
+            model_features=set(model_package.model_features),
         ):
             verbose_info(
                 message=f"Model package with id `{model_package.package_id}` is filtered out as `inference-exp` "

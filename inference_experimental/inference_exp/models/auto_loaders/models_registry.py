@@ -2,9 +2,12 @@ from dataclasses import dataclass, field
 from typing import Dict, Optional, Set, Tuple, Union
 
 from inference_exp.errors import ModelImplementationLoaderError
-from inference_exp.models.auto_loaders.entities import ModelArchitecture, TaskType
+from inference_exp.models.auto_loaders.entities import (
+    BackendType,
+    ModelArchitecture,
+    TaskType,
+)
 from inference_exp.utils.imports import LazyClass
-from inference_exp.weights_providers.entities import BackendType
 
 OBJECT_DETECTION_TASK = "object-detection"
 INSTANCE_SEGMENTATION_TASK = "instance-segmentation"

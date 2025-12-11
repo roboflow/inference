@@ -9,6 +9,7 @@ from typing import Callable, Dict, List, Optional, Set, Tuple, Union
 
 import torch
 from filelock import FileLock
+from inference_exp import DependencyModelParameters
 from inference_exp.configuration import DEFAULT_DEVICE, INFERENCE_HOME
 from inference_exp.errors import (
     CorruptedModelPackageError,
@@ -19,6 +20,11 @@ from inference_exp.errors import (
     UnauthorizedModelAccessError,
 )
 from inference_exp.logger import LOGGER, verbose_info
+from inference_exp.models.auto_loaders.access_manager import (
+    AccessIdentifiers,
+    LiberalModelAccessManager,
+    ModelAccessManager,
+)
 from inference_exp.models.auto_loaders.auto_negotiation import (
     negotiate_model_packages,
     parse_backend_type,
@@ -28,8 +34,17 @@ from inference_exp.models.auto_loaders.auto_resolution_cache import (
     AutoResolutionCacheEntry,
     BaseAutoLoadMetadataCache,
 )
+from inference_exp.models.auto_loaders.constants import (
+    MODEL_DEPENDENCIES_KEY,
+    MODEL_DEPENDENCIES_SUB_DIR,
+)
+from inference_exp.models.auto_loaders.dependency_models import (
+    prepare_dependency_model_parameters,
+)
 from inference_exp.models.auto_loaders.entities import (
     MODEL_CONFIG_FILE_NAME,
+    AnyModel,
+    BackendType,
     InferenceModelConfig,
     ModelArchitecture,
     TaskType,
@@ -47,45 +62,18 @@ from inference_exp.models.auto_loaders.presentation_utils import (
     render_table_with_model_overview,
     render_table_with_model_packages,
 )
-from inference_exp.models.auto_loaders.storage_manager import (
-    AccessIdentifiers,
-    LiberalModelStorageManager,
-    ModelStorageManager,
-)
-from inference_exp.models.base.classification import (
-    ClassificationModel,
-    MultiLabelClassificationModel,
-)
-from inference_exp.models.base.depth_estimation import DepthEstimationModel
-from inference_exp.models.base.documents_parsing import StructuredOCRModel
-from inference_exp.models.base.embeddings import TextImageEmbeddingModel
-from inference_exp.models.base.instance_segmentation import InstanceSegmentationModel
-from inference_exp.models.base.keypoints_detection import KeyPointsDetectionModel
-from inference_exp.models.base.object_detection import ObjectDetectionModel
 from inference_exp.runtime_introspection.core import x_ray_runtime_environment
 from inference_exp.utils.download import FileHandle, download_files_to_directory
 from inference_exp.utils.file_system import dump_json, read_json
 from inference_exp.utils.hashing import hash_dict_content
 from inference_exp.weights_providers.core import get_model_from_provider
 from inference_exp.weights_providers.entities import (
-    BackendType,
+    ModelDependency,
     ModelPackageMetadata,
     Quantization,
 )
 from rich.console import Console
 from rich.text import Text
-
-AnyModel = Union[
-    ClassificationModel,
-    MultiLabelClassificationModel,
-    DepthEstimationModel,
-    StructuredOCRModel,
-    TextImageEmbeddingModel,
-    InstanceSegmentationModel,
-    KeyPointsDetectionModel,
-    ObjectDetectionModel,
-]
-
 
 MODEL_TYPES_TO_LOAD_FROM_CHECKPOINT = {
     "rfdetr-base",
@@ -226,15 +214,18 @@ class AutoModel:
         use_auto_resolution_cache: bool = True,
         auto_resolution_cache: Optional[AutoResolutionCache] = None,
         allow_direct_local_storage_loading: bool = True,
-        model_storage_manager: Optional[ModelStorageManager] = None,
+        model_access_manager: Optional[ModelAccessManager] = None,
         nms_fusion_preferences: Optional[Union[bool, dict]] = None,
         model_type: Optional[str] = None,
         task_type: Optional[str] = None,
+        allow_loading_dependency_models: bool = True,
+        dependency_models_params: Optional[dict] = None,
+        point_model_directory: Optional[Callable[[str], None]] = None,
         **kwargs,
     ) -> AnyModel:
-        if model_storage_manager is None:
-            model_storage_manager = LiberalModelStorageManager()
-        if model_storage_manager.is_model_access_forbidden(
+        if model_access_manager is None:
+            model_access_manager = LiberalModelAccessManager()
+        if model_access_manager.is_model_access_forbidden(
             model_id=model_id_or_path, api_key=api_key
         ):
             raise UnauthorizedModelAccessError(
@@ -255,7 +246,7 @@ class AutoModel:
                     package_id=package_id,
                     api_key=api_key,
                 )
-                model_storage_manager.on_file_created(
+                model_access_manager.on_file_created(
                     file_path=file_path,
                     access_identifiers=access_identifiers,
                 )
@@ -264,7 +255,7 @@ class AutoModel:
                 file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
                 verbose=verbose,
                 on_file_created=register_file_created_for_model_package,
-                on_file_deleted=model_storage_manager.on_file_deleted,
+                on_file_deleted=model_access_manager.on_file_deleted,
             )
         model_init_kwargs = {
             "onnx_execution_providers": onnx_execution_providers,
@@ -296,14 +287,23 @@ class AutoModel:
                     "nms_fusion_preferences": nms_fusion_preferences,
                 }
             )
+            model_from_access_manager = model_access_manager.retrieve_model_instance(
+                model_id=model_id_or_path,
+                package_id=model_package_id,
+                api_key=api_key,
+                loading_parameter_digest=auto_negotiation_hash,
+            )
+            if model_from_access_manager:
+                return model_from_access_manager
             model_from_cache = attempt_loading_model_with_auto_load_cache(
                 use_auto_resolution_cache=use_auto_resolution_cache,
                 auto_resolution_cache=auto_resolution_cache,
                 auto_negotiation_hash=auto_negotiation_hash,
-                model_storage_manager=model_storage_manager,
+                model_access_manager=model_access_manager,
                 model_name_or_path=model_id_or_path,
                 model_init_kwargs=model_init_kwargs,
                 api_key=api_key,
+                allow_loading_dependency_models=allow_loading_dependency_models,
                 verbose=verbose,
             )
             if model_from_cache:
@@ -314,11 +314,52 @@ class AutoModel:
                     model_id=model_id_or_path,
                     api_key=api_key,
                 )
+                if (
+                    model_metadata.model_dependencies
+                    and not allow_loading_dependency_models
+                ):
+                    raise CorruptedModelPackageError(
+                        message=f"Could not load model {model_id_or_path} as it defines another models which are "
+                        f"it's dependency, but the auto-loader prevents loading dependencies at certain "
+                        f"nesting depth to avoid excessive resolution procedure. This is a limitation of "
+                        f"current implementation. Provide us the context of your use-case to get help.",
+                        help_url="https://todo",
+                    )
+                if model_metadata.model_id != model_id_or_path:
+                    model_access_manager.on_model_alias_discovered(
+                        alias=model_id_or_path,
+                        model_id=model_metadata.model_id,
+                    )
+                model_dependencies = model_metadata.model_dependencies or []
+                for model_dependency in model_dependencies:
+                    model_access_manager.on_model_dependency_discovered(
+                        base_model_id=model_dependency.model_id,
+                        base_model_package_id=model_dependency.model_package_id,
+                        dependent_model_id=model_metadata.model_id,
+                    )
+                for model_package in model_metadata.model_packages:
+                    package_access_identifiers = AccessIdentifiers(
+                        model_id=model_metadata.model_id,
+                        package_id=model_package.package_id,
+                        api_key=api_key,
+                    )
+                    model_access_manager.on_model_package_access_granted(
+                        package_access_identifiers
+                    )
             except UnauthorizedModelAccessError as error:
-                model_storage_manager.on_model_access_forbidden(
+                model_access_manager.on_model_access_forbidden(
                     model_id=model_id_or_path, api_key=api_key
                 )
                 raise error
+            # here we verify if de-aliasing or access confirmation from auth master changed something
+            model_from_access_manager = model_access_manager.retrieve_model_instance(
+                model_id=model_id_or_path,
+                package_id=model_package_id,
+                api_key=api_key,
+                loading_parameter_digest=auto_negotiation_hash,
+            )
+            if model_from_access_manager:
+                return model_from_access_manager
             matching_model_packages = negotiate_model_packages(
                 model_architecture=model_metadata.model_architecture,
                 task_type=model_metadata.task_type,
@@ -334,21 +375,82 @@ class AutoModel:
                 nms_fusion_preferences=nms_fusion_preferences,
                 verbose=verbose,
             )
+            model_dependencies_instances = {}
+            model_dependencies_directories = {}
+            dependency_models_params = dependency_models_params or {}
+            for model_dependency in model_dependencies:
+                dependency_params = dependency_models_params.get(
+                    model_dependency.name, {}
+                )
+                dependency_params["model_id_or_path"] = model_dependency.model_id
+                dependency_params["model_package_id"] = (
+                    model_dependency.model_package_id
+                )
+                resolved_model_parameters = prepare_dependency_model_parameters(
+                    model_parameters=dependency_params
+                )
+                verbose_info(
+                    message=f"Initialising dependent model: {model_dependency.model_id}",
+                    verbose_requested=verbose,
+                )
+
+                def model_directory_pointer(model_dir: str) -> None:
+                    model_dependencies_directories[model_dependency.name] = model_dir
+
+                dependency_instance = AnyModel.from_pretrained(
+                    model_id_or_path=resolved_model_parameters.model_id_or_path,
+                    weights_provider=weights_provider,
+                    api_key=api_key,
+                    model_package_id=resolved_model_parameters.model_package_id,
+                    backend=resolved_model_parameters.backend,
+                    batch_size=resolved_model_parameters.batch_size,
+                    quantization=resolved_model_parameters.quantization,
+                    onnx_execution_providers=resolved_model_parameters.onnx_execution_providers,
+                    device=resolved_model_parameters.device,
+                    default_onnx_trt_options=resolved_model_parameters.default_onnx_trt_options,
+                    max_package_loading_attempts=max_package_loading_attempts,
+                    verbose=verbose,
+                    model_download_file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
+                    allow_untrusted_packages=allow_untrusted_packages,
+                    trt_engine_host_code_allowed=trt_engine_host_code_allowed,
+                    allow_local_code_packages=allow_local_code_packages,
+                    verify_hash_while_download=verify_hash_while_download,
+                    download_files_without_hash=download_files_without_hash,
+                    use_auto_resolution_cache=use_auto_resolution_cache,
+                    auto_resolution_cache=auto_resolution_cache,
+                    allow_direct_local_storage_loading=allow_direct_local_storage_loading,
+                    model_access_manager=model_access_manager,
+                    nms_fusion_preferences=resolved_model_parameters.nms_fusion_preferences,
+                    model_type=resolved_model_parameters.model_type,
+                    task_type=resolved_model_parameters.task_type,
+                    allow_loading_dependency_models=False,
+                    dependency_models_params=None,
+                    point_model_directory=model_directory_pointer,
+                    **resolved_model_parameters.kwargs,
+                )
+                model_dependencies_instances[model_dependency.name] = (
+                    dependency_instance
+                )
+
             return attempt_loading_matching_model_packages(
                 model_id=model_id_or_path,
                 model_architecture=model_metadata.model_architecture,
                 task_type=model_metadata.task_type,
                 matching_model_packages=matching_model_packages,
                 model_init_kwargs=model_init_kwargs,
-                model_storage_manager=model_storage_manager,
+                model_access_manager=model_access_manager,
                 auto_negotiation_hash=auto_negotiation_hash,
                 api_key=api_key,
+                model_dependencies=model_metadata.model_dependencies,
+                model_dependencies_instances=model_dependencies_instances,
+                model_dependencies_directories=model_dependencies_directories,
                 max_package_loading_attempts=max_package_loading_attempts,
                 model_download_file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
                 verify_hash_while_download=verify_hash_while_download,
                 download_files_without_hash=download_files_without_hash,
                 auto_resolution_cache=auto_resolution_cache,
                 use_auto_resolution_cache=use_auto_resolution_cache,
+                point_model_directory=point_model_directory,
                 verbose=verbose,
             )
         if not allow_direct_local_storage_loading:
@@ -376,10 +478,11 @@ def attempt_loading_model_with_auto_load_cache(
     use_auto_resolution_cache: bool,
     auto_resolution_cache: AutoResolutionCache,
     auto_negotiation_hash: str,
-    model_storage_manager: ModelStorageManager,
+    model_access_manager: ModelAccessManager,
     model_name_or_path: str,
     model_init_kwargs: dict,
     api_key: Optional[str],
+    allow_loading_dependency_models: bool,
     verbose: bool = False,
 ) -> Optional[AnyModel]:
     if not use_auto_resolution_cache:
@@ -397,7 +500,7 @@ def attempt_loading_model_with_auto_load_cache(
             verbose_requested=verbose,
         )
         return None
-    if not model_storage_manager.is_model_package_access_granted(
+    if not model_access_manager.is_model_package_access_granted(
         model_id=cache_entry.model_id,
         package_id=cache_entry.model_package_id,
         api_key=api_key,
@@ -447,16 +550,20 @@ def attempt_loading_matching_model_packages(
     task_type: Optional[TaskType],
     matching_model_packages: List[ModelPackageMetadata],
     model_init_kwargs: dict,
-    model_storage_manager: ModelStorageManager,
+    model_access_manager: ModelAccessManager,
     auto_resolution_cache: AutoResolutionCache,
     auto_negotiation_hash: str,
     api_key: Optional[str],
+    model_dependencies: Optional[List[ModelDependency]],
+    model_dependencies_instances: Dict[str, AnyModel],
+    model_dependencies_directories: Dict[str, str],
     max_package_loading_attempts: Optional[int] = None,
     model_download_file_lock_acquire_timeout: int = 10,
     verbose: bool = True,
     verify_hash_while_download: bool = True,
     download_files_without_hash: bool = False,
     use_auto_resolution_cache: bool = True,
+    point_model_directory: Optional[Callable[[str], None]] = None,
 ) -> AnyModel:
     if max_package_loading_attempts is not None:
         matching_model_packages = matching_model_packages[:max_package_loading_attempts]
@@ -478,7 +585,7 @@ def attempt_loading_matching_model_packages(
             verbose_requested=verbose,
         )
         try:
-            model = initialize_model(
+            model, model_package_cache_dir = initialize_model(
                 model_id=model_id,
                 model_architecture=model_architecture,
                 task_type=task_type,
@@ -487,27 +594,33 @@ def attempt_loading_matching_model_packages(
                 model_init_kwargs=model_init_kwargs,
                 auto_resolution_cache=auto_resolution_cache,
                 auto_negotiation_hash=auto_negotiation_hash,
+                model_dependencies=model_dependencies,
+                model_dependencies_instances=model_dependencies_instances,
+                model_dependencies_directories=model_dependencies_directories,
                 verify_hash_while_download=verify_hash_while_download,
                 download_files_without_hash=download_files_without_hash,
-                on_model_package_dir_created=partial(
-                    model_storage_manager.on_model_package_access_granted,
-                    access_identifiers=access_identifiers,
-                ),
                 on_file_created=partial(
-                    model_storage_manager.on_file_created,
+                    model_access_manager.on_file_created,
                     access_identifiers=access_identifiers,
                 ),
                 on_file_renamed=partial(
-                    model_storage_manager.on_file_renamed,
+                    model_access_manager.on_file_renamed,
                     access_identifiers=access_identifiers,
                 ),
                 on_symlink_created=partial(
-                    model_storage_manager.on_symlink_created,
+                    model_access_manager.on_symlink_created,
                     access_identifiers=access_identifiers,
                 ),
-                on_symlink_deleted=model_storage_manager.on_symlink_deleted,
+                on_symlink_deleted=model_access_manager.on_symlink_deleted,
                 use_auto_resolution_cache=use_auto_resolution_cache,
             )
+            model_access_manager.on_model_loaded(
+                model=model,
+                access_identifiers=access_identifiers,
+                model_storage_path=model_package_cache_dir,
+            )
+            if point_model_directory:
+                point_model_directory(model_package_cache_dir)
             return model
         except Exception as error:
             LOGGER.warning(
@@ -545,16 +658,18 @@ def initialize_model(
     model_init_kwargs: dict,
     auto_resolution_cache: AutoResolutionCache,
     auto_negotiation_hash: str,
+    model_dependencies: Optional[List[ModelDependency]],
+    model_dependencies_instances: Dict[str, AnyModel],
+    model_dependencies_directories: Dict[str, str],
     model_download_file_lock_acquire_timeout: int = 10,
     verify_hash_while_download: bool = True,
     download_files_without_hash: bool = False,
-    on_model_package_dir_created: Optional[Callable[[str], None]] = None,
     on_file_created: Optional[Callable[[str], None]] = None,
     on_file_renamed: Optional[Callable[[str, str], None]] = None,
     on_symlink_created: Optional[Callable[[str, str], None]] = None,
     on_symlink_deleted: Optional[Callable[[str], None]] = None,
     use_auto_resolution_cache: bool = True,
-) -> AnyModel:
+) -> Tuple[AnyModel, str]:
     model_class = resolve_model_class(
         model_architecture=model_architecture,
         task_type=task_type,
@@ -583,8 +698,6 @@ def initialize_model(
         package_id=model_package.package_id,
     )
     os.makedirs(model_package_cache_dir, exist_ok=True)
-    if on_model_package_dir_created:
-        on_model_package_dir_created(model_package_cache_dir)
     shared_files_mapping = download_files_to_directory(
         target_dir=shared_blobs_dir,
         files_specs=file_specs_with_hash,
@@ -624,6 +737,15 @@ def initialize_model(
     resolved_files.update(model_specific_files_mapping.values())
     resolved_files.update(symlinks_mapping.values())
     resolved_files.add(config_path)
+    dependencies_resolved_files = handle_dependencies_directories_creation(
+        model_package_cache_dir=model_package_cache_dir,
+        model_dependencies_directories=model_dependencies_directories,
+        model_download_file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
+        on_symlink_created=on_symlink_created,
+        on_symlink_deleted=on_symlink_deleted,
+    )
+    resolved_files.update(dependencies_resolved_files)
+    model_init_kwargs[MODEL_DEPENDENCIES_KEY] = model_dependencies_instances
     model = model_class.from_pretrained(model_package_cache_dir, **model_init_kwargs)
     dump_auto_resolution_cache(
         use_auto_resolution_cache=use_auto_resolution_cache,
@@ -635,8 +757,9 @@ def initialize_model(
         task_type=task_type,
         backend_type=model_package.backend,
         resolved_files=resolved_files,
+        model_dependencies=model_dependencies,
     )
-    return model
+    return model, model_package_cache_dir
 
 
 def create_symlinks_to_shared_blobs(
@@ -715,6 +838,65 @@ def dump_model_config_for_offline_use(
             on_file_created(config_path)
 
 
+def handle_dependencies_directories_creation(
+    model_package_cache_dir: str,
+    model_dependencies_directories: Dict[str, str],
+    model_download_file_lock_acquire_timeout: int = 10,
+    on_symlink_created: Optional[Callable[[str, str], None]] = None,
+    on_symlink_deleted: Optional[Callable[[str], None]] = None,
+) -> Set[str]:
+    resolved_files = set()
+    if not model_dependencies_directories:
+        return resolved_files
+    for dependency_name, dependency_directory in model_dependencies_directories.items():
+        dependency_files = scan_dependency_directory_for_resolved_files(
+            dependency_directory=dependency_directory
+        )
+        resolved_files.update(dependency_files)
+        dependencies_sub_dir = os.path.join(
+            model_package_cache_dir, MODEL_DEPENDENCIES_SUB_DIR
+        )
+        target_dependency_dir = os.path.join(dependencies_sub_dir, dependency_name)
+        os.makedirs(dependencies_sub_dir, exist_ok=True)
+        dependency_lock_path = os.path.join(
+            dependencies_sub_dir, f".{dependency_name}.lock"
+        )
+        with FileLock(
+            dependency_lock_path, timeout=model_download_file_lock_acquire_timeout
+        ):
+            if os.path.exists(target_dependency_dir) and os.path.islink(
+                target_dependency_dir
+            ):
+                os.remove(target_dependency_dir)
+                if on_symlink_deleted:
+                    on_symlink_deleted(target_dependency_dir)
+            if not os.path.exists(target_dependency_dir):
+                # Question: is it ok to only try to remove symlink and avoid doing anything else
+                # if we encounter actual file / dir there?
+                os.symlink(dependency_directory, target_dependency_dir)
+                if on_symlink_created:
+                    on_symlink_created(dependency_directory, target_dependency_dir)
+    return resolved_files
+
+
+def scan_dependency_directory_for_resolved_files(
+    dependency_directory: str,
+) -> List[str]:
+    # we do not follow symlinks here, as the assumption is that we only support one level of nesting
+    # for packages, wo when we have dependency - this model must not have dependencies, so
+    # we will not encounter directories which are symlinks to be followed.
+    results = []
+    for current_dir, _, files in os.walk(dependency_directory):
+        for file in files:
+            if file.startswith(".") and file.endswith(".lock"):
+                continue
+            full_path = os.path.abspath(os.path.join(current_dir, file))
+            results.append(full_path)
+            if os.path.islink(full_path):
+                results.append(os.readlink(full_path))
+    return results
+
+
 def dump_auto_resolution_cache(
     use_auto_resolution_cache: bool,
     auto_resolution_cache: AutoResolutionCache,
@@ -725,6 +907,7 @@ def dump_auto_resolution_cache(
     task_type: TaskType,
     backend_type: Optional[BackendType],
     resolved_files: Set[str],
+    model_dependencies: Optional[List[ModelDependency]],
 ) -> None:
     if not use_auto_resolution_cache:
         return None
@@ -736,6 +919,7 @@ def dump_auto_resolution_cache(
         task_type=task_type,
         backend_type=backend_type,
         created_at=datetime.now(),
+        model_dependencies=model_dependencies,
     )
     auto_resolution_cache.register(
         auto_negotiation_hash=auto_negotiation_hash, cache_entry=cache_content

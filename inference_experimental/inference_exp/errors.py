@@ -121,6 +121,10 @@ class InvalidParameterError(BaseInferenceError):
     pass
 
 
+class DependencyModelParametersValidationError(ModelLoadingError):
+    pass
+
+
 class ModelPipelineInitializationError(ModelLoadingError):
     pass
 
