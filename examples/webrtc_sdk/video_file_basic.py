@@ -78,7 +78,7 @@ def main() -> None:
     source = VideoFileSource(
         args.video_path,
         on_upload_progress=upload_progress,
-        use_datachannel_frames=False,  # Use video track for lower bandwidth
+        # use_datachannel_frames=False,  # Use video track for lower bandwidth
         realtime_processing=args.realtime_processing,
     )
 
