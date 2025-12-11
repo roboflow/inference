@@ -331,7 +331,9 @@ ENV VERSION_CHECK_MODE=once \
     API_LOGGING_ENABLED=True \
     DISABLE_WORKFLOW_ENDPOINTS=false \
     ALLOW_INFERENCE_EXP_UNTRUSTED_MODELS=True \
-    USE_INFERENCE_EXP_MODELS=False
+    USE_INFERENCE_EXP_MODELS=False \
+    RUNNING_ON_JETSON=True \
+    L4T_VERSION=36.4.0
 
 LABEL org.opencontainers.image.description="Inference Server - Jetson 6.2.0 (PyTorch from source, numpy 2.x)"
 
