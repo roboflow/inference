@@ -75,18 +75,29 @@ def convert_mask_to_binary(mask_input: Any, image_shape: Tuple[int, int]) -> np.
 def _normalize_binary_mask(
     mask: np.ndarray, image_shape: Tuple[int, int]
 ) -> np.ndarray:
+    """Normalize mask to uint8 with values 0/255. Returns input unchanged if already correct."""
     if mask.ndim == 3:
         mask = mask[:, :, 0]
+
+    h, w = image_shape
+    needs_resize = mask.shape[0] != h or mask.shape[1] != w
+
+    # Check if already in correct format (uint8, 0/255 range, correct size)
+    if mask.dtype == np.uint8 and mask.max() > 1 and not needs_resize:
+        return mask
+
+    # Convert to uint8 0/255
     if mask.dtype == np.bool_:
         mask = mask.astype(np.uint8) * 255
     elif mask.dtype != np.uint8:
         mask = ((mask > 0).astype(np.uint8)) * 255
     elif mask.max() <= 1:
         mask = mask * 255
-    h, w = image_shape
-    if mask.shape[0] != h or mask.shape[1] != w:
+
+    if needs_resize:
         mask = cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
-    return mask.astype(np.uint8)
+
+    return mask
 
 
 def _parse_polygon_to_points(polygon: List) -> List[Tuple[float, float]]:
@@ -123,13 +134,21 @@ def _is_single_mask_input(mask_input: Any) -> bool:
         return True
     if isinstance(mask_input, list):
         first = mask_input[0]
+        # Flat polygon: [x1, y1, x2, y2, ...]
         if isinstance(first, (int, float)):
             return True
+        # List of RLE dicts
         if isinstance(first, dict) and "counts" in first:
             return False
-        if isinstance(first, (list, tuple, np.ndarray)):
+        # List of 2D numpy arrays (binary masks) -> multiple masks
+        if isinstance(first, np.ndarray) and first.ndim == 2:
+            return False
+        # Check list/tuple elements
+        if isinstance(first, (list, tuple)):
+            # [[x1, y1], [x2, y2], ...] -> single polygon as points
             if len(first) == 2 and isinstance(first[0], (int, float)):
                 return True
+            # [[x1, y1, x2, ...], [x1, y1, x2, ...]] -> multiple flat polygons
             if len(first) > 2 and isinstance(first[0], (int, float)):
                 return False
     return True
@@ -306,6 +325,11 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
                 raise ValueError("Must provide image and mask!")
 
             image_np = load_image_rgb(image)
+            if image_np.dtype != np.uint8:
+                if image_np.max() <= 1:
+                    image_np = (image_np * 255).astype(np.uint8)
+                else:
+                    image_np = image_np.astype(np.uint8)
             image_shape = (image_np.shape[0], image_np.shape[1])
 
             # Convert to list of binary masks
