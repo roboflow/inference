@@ -19,6 +19,7 @@ from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_parent_origin,
     deserialize_point_kind,
     deserialize_rgb_color_kind,
+    deserialize_rle_detections_kind,
     deserialize_timestamp,
     deserialize_zone_kind,
 )
@@ -1055,3 +1056,257 @@ def test_deserialize_detections_kind_with_root_parent_origin_metadata() -> None:
     assert np.allclose(result.data["root_parent_coordinates"], np.array([[150, 200]]))
     assert "root_parent_dimensions" in result.data
     assert np.allclose(result.data["root_parent_dimensions"], np.array([[400, 900]]))
+
+
+def test_deserialize_rle_detections_kind_when_sv_detections_given() -> None:
+    # given
+    detections = sv.Detections.empty()
+
+    # when
+    result = deserialize_rle_detections_kind(
+        parameter="my_param",
+        detections=detections,
+    )
+
+    # then
+    assert result is detections, "Expected object not to be touched"
+
+
+def test_deserialize_rle_detections_kind_when_invalid_data_type_given() -> None:
+    # when
+    with pytest.raises(RuntimeInputError):
+        _ = deserialize_rle_detections_kind(
+            parameter="my_param",
+            detections="INVALID",
+        )
+
+
+def test_deserialize_rle_detections_kind_when_malformed_data_type_given() -> None:
+    # when
+    with pytest.raises(RuntimeInputError):
+        _ = deserialize_rle_detections_kind(
+            parameter="my_param",
+            detections={
+                "image": {"height": 100, "width": 300},
+                # lack of predictions
+            },
+        )
+
+
+def test_deserialize_rle_detections_kind_when_serialized_empty_detections_given() -> (
+    None
+):
+    # given
+    detections = {
+        "image": {"height": 100, "width": 300},
+        "predictions": [],
+    }
+
+    # when
+    result = deserialize_rle_detections_kind(
+        parameter="my_param",
+        detections=detections,
+    )
+
+    # then
+    assert isinstance(result, sv.Detections)
+    assert len(result) == 0
+
+
+def test_deserialize_rle_detections_kind_when_serialized_non_empty_rle_detections_given() -> (
+    None
+):
+    # given
+    detections = {
+        "image": {
+            "width": 168,
+            "height": 192,
+        },
+        "predictions": [
+            {
+                "width": 1.0,
+                "height": 1.0,
+                "x": 1.5,
+                "y": 1.5,
+                "confidence": 0.1,
+                "class_id": 1,
+                "tracker_id": 1,
+                "class": "cat",
+                "detection_id": "first",
+                "parent_id": "image",
+                "rle_mask": {"size": [192, 168], "counts": "abc123"},
+            },
+        ],
+    }
+
+    # when
+    result = deserialize_rle_detections_kind(
+        parameter="my_param",
+        detections=detections,
+    )
+
+    # then
+    assert isinstance(result, sv.Detections)
+    assert len(result) == 1
+    assert np.allclose(result.xyxy, np.array([[1, 1, 2, 2]]))
+    assert result.data["class_name"] == np.array(["cat"])
+    assert result.data["detection_id"] == np.array(["first"])
+    assert result.data["parent_id"] == np.array(["image"])
+    assert np.allclose(result.data["image_dimensions"], np.array([[192, 168]]))
+    assert "rle_mask" in result.data
+    assert result.data["rle_mask"][0] == {"size": [192, 168], "counts": "abc123"}
+
+
+def test_deserialize_rle_detections_kind_with_multiple_detections() -> None:
+    # given
+    detections = {
+        "image": {
+            "width": 168,
+            "height": 192,
+        },
+        "predictions": [
+            {
+                "width": 1.0,
+                "height": 1.0,
+                "x": 1.5,
+                "y": 1.5,
+                "confidence": 0.1,
+                "class_id": 1,
+                "class": "cat",
+                "detection_id": "first",
+                "parent_id": "image",
+                "rle_mask": {"size": [192, 168], "counts": "abc123"},
+            },
+            {
+                "width": 2.0,
+                "height": 2.0,
+                "x": 3.0,
+                "y": 3.0,
+                "confidence": 0.9,
+                "class_id": 2,
+                "class": "dog",
+                "detection_id": "second",
+                "parent_id": "image",
+                "rle_mask": {"size": [192, 168], "counts": "def456"},
+            },
+        ],
+    }
+
+    # when
+    result = deserialize_rle_detections_kind(
+        parameter="my_param",
+        detections=detections,
+    )
+
+    # then
+    assert isinstance(result, sv.Detections)
+    assert len(result) == 2
+    assert np.allclose(result.xyxy, np.array([[1, 1, 2, 2], [2, 2, 4, 4]]))
+    assert list(result.data["class_name"]) == ["cat", "dog"]
+    assert list(result.data["detection_id"]) == ["first", "second"]
+    assert result.data["rle_mask"][0] == {"size": [192, 168], "counts": "abc123"}
+    assert result.data["rle_mask"][1] == {"size": [192, 168], "counts": "def456"}
+
+
+def test_deserialize_rle_detections_kind_with_parent_origin_metadata() -> None:
+    # given
+    detections = {
+        "image": {
+            "width": 1200,
+            "height": 900,
+        },
+        "predictions": [
+            {
+                "width": 10,
+                "height": 20,
+                "x": 150,
+                "y": 200,
+                "confidence": 0.1,
+                "class_id": 1,
+                "class": "cat",
+                "detection_id": "first",
+                "parent_id": "crop_id",
+                "parent_origin": {
+                    "offset_x": 50,
+                    "offset_y": 75,
+                    "width": 800,
+                    "height": 600,
+                },
+                "rle_mask": {"size": [900, 1200], "counts": "abc123"},
+            },
+        ],
+    }
+
+    # when
+    result = deserialize_rle_detections_kind(
+        parameter="my_param",
+        detections=detections,
+    )
+
+    # then
+    assert isinstance(result, sv.Detections)
+    assert len(result) == 1
+    assert result.data["parent_id"] == np.array(["crop_id"])
+    assert "parent_coordinates" in result.data
+    assert np.allclose(result.data["parent_coordinates"], np.array([[50, 75]]))
+    assert "parent_dimensions" in result.data
+    assert np.allclose(result.data["parent_dimensions"], np.array([[600, 800]]))
+    assert "rle_mask" in result.data
+
+
+def test_deserialize_rle_detections_kind_with_root_parent_origin_metadata() -> None:
+    # given
+    detections = {
+        "image": {
+            "width": 1200,
+            "height": 900,
+        },
+        "predictions": [
+            {
+                "width": 10,
+                "height": 20,
+                "x": 150,
+                "y": 200,
+                "confidence": 0.1,
+                "class_id": 1,
+                "class": "cat",
+                "detection_id": "first",
+                "parent_id": "crop_id",
+                "parent_origin": {
+                    "offset_x": 50,
+                    "offset_y": 75,
+                    "width": 800,
+                    "height": 600,
+                },
+                "root_parent_id": "original_image",
+                "root_parent_origin": {
+                    "offset_x": 150,
+                    "offset_y": 200,
+                    "width": 900,
+                    "height": 400,
+                },
+                "rle_mask": {"size": [900, 1200], "counts": "abc123"},
+            },
+        ],
+    }
+
+    # when
+    result = deserialize_rle_detections_kind(
+        parameter="my_param",
+        detections=detections,
+    )
+
+    # then
+    assert isinstance(result, sv.Detections)
+    assert len(result) == 1
+    assert result.data["parent_id"] == np.array(["crop_id"])
+    assert "parent_coordinates" in result.data
+    assert np.allclose(result.data["parent_coordinates"], np.array([[50, 75]]))
+    assert "parent_dimensions" in result.data
+    assert np.allclose(result.data["parent_dimensions"], np.array([[600, 800]]))
+    assert result.data["root_parent_id"] == np.array(["original_image"])
+    assert "root_parent_coordinates" in result.data
+    assert np.allclose(result.data["root_parent_coordinates"], np.array([[150, 200]]))
+    assert "root_parent_dimensions" in result.data
+    assert np.allclose(result.data["root_parent_dimensions"], np.array([[400, 900]]))
+    assert "rle_mask" in result.data
