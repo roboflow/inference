@@ -231,7 +231,8 @@ class VideoFileSource(StreamSource):
         self,
         path: str,
         on_upload_progress: Optional[UploadProgressCallback] = None,
-        use_video_track: bool = False,
+        use_datachannel_frames: bool = True,
+        realtime_processing: bool = False,
     ):
         """Initialize video file source.
 
@@ -239,13 +240,19 @@ class VideoFileSource(StreamSource):
             path: Path to video file (any format supported by FFmpeg)
             on_upload_progress: Optional callback called during upload with
                 (uploaded_chunks, total_chunks). Use to track upload progress.
-            use_video_track: If True, receive processed video via WebRTC video
-                track (lower bandwidth, hardware-accelerated codec). If False
-                (default), receive frames as base64 via datachannel.
+            use_datachannel_frames: If enabled, frames are received through the
+                datachannel. It consumes much more network bandwidth, but it
+                provides guaranteed in-order and high quality delivery of the
+                frames. If False, frames are received via WebRTC video track
+                with hardware-accelerated codec (lower bandwidth).
+            realtime_processing: If True, process frames at original video FPS
+                (throttled playback for live preview). If False (default),
+                process all frames as fast as possible (batch mode).
         """
         self.path = path
         self.on_upload_progress = on_upload_progress
-        self.use_video_track = use_video_track
+        self.use_datachannel_frames = use_datachannel_frames
+        self.realtime_processing = realtime_processing
         self._upload_channel: Optional["RTCDataChannel"] = None
         self._uploader: Optional[VideoFileUploader] = None
         # Note: _upload_started is created lazily in configure_peer_connection()
@@ -264,8 +271,8 @@ class VideoFileSource(StreamSource):
         # Create upload channel - server will create VideoFileUploadHandler
         self._upload_channel = pc.createDataChannel("video_upload")
 
-        # Add receive-only transceiver for video track output mode
-        if self.use_video_track:
+        # Add receive-only transceiver for video track output mode (when not using datachannel)
+        if not self.use_datachannel_frames:
             pc.addTransceiver("video", direction="recvonly")
 
         # Setup channel open handler to signal upload can start
@@ -276,16 +283,16 @@ class VideoFileSource(StreamSource):
     def get_initialization_params(self, config: "StreamConfig") -> Dict[str, Any]:
         """Return params for video file processing mode.
 
-        In video track mode, preserves stream_output for video track rendering.
         In datachannel mode (default), merges stream_output into data_output
         so frames are received as base64 via the inference datachannel.
+        In video track mode, preserves stream_output for video track rendering.
         """
         params: Dict[str, Any] = {
-            "webrtc_realtime_processing": False,  # Process all frames, don't drop
+            "webrtc_realtime_processing": self.realtime_processing,
             "video_file_upload": True,  # Signal to server that video will be uploaded
         }
 
-        if self.use_video_track:
+        if not self.use_datachannel_frames:
             # Video track mode: keep stream_output for video track rendering
             return params
 

@@ -52,6 +52,11 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Path to save output video file (optional)",
     )
+    p.add_argument(
+        "--realtime-processing",
+        action="store_true",
+        help="Process at original video FPS (default: process as fast as possible)",
+    )
     return p.parse_args()
 
 
@@ -70,7 +75,12 @@ def main() -> None:
     client = InferenceHTTPClient.init(api_url=args.api_url, api_key=args.api_key)
 
     # Prepare source
-    source = VideoFileSource(args.video_path, on_upload_progress=upload_progress,use_video_track=True)
+    source = VideoFileSource(
+        args.video_path,
+        on_upload_progress=upload_progress,
+        use_datachannel_frames=False,  # Use video track for lower bandwidth
+        realtime_processing=args.realtime_processing,
+    )
 
     # Prepare config
     stream_output = [args.stream_output] if args.stream_output else []

@@ -1125,7 +1125,7 @@ async def init_rtc_peer_connection_with_loop(
                 video_path = video_processor.video_upload_handler.try_start_processing()
                 if video_path:
                     player = MediaPlayer(video_path, loop=False)
-                    player._throttle_playback = False
+                    player._throttle_playback = webrtc_request.webrtc_realtime_processing
                     video_processor.set_track(track=player.video)
                     if not should_send_video:
                         # For DATA_ONLY, start data-only processing task
