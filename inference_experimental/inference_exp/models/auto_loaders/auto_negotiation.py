@@ -242,7 +242,7 @@ def remove_packages_not_matching_implementation(
             model_architecture=model_architecture,
             task_type=task_type,
             backend=model_package.backend,
-            model_features=set(model_package.model_features),
+            model_features=model_package.model_features,
         ):
             verbose_info(
                 message=f"Model package with id `{model_package.package_id}` is filtered out as `inference-exp` "

@@ -6,9 +6,6 @@ if os.environ.get("PYTORCH_ENABLE_MPS_FALLBACK") is None:
 from inference_exp.entities import ColorFormat
 from inference_exp.model_pipelines.auto_loaders.core import AutoModelPipeline
 from inference_exp.models.auto_loaders.core import AutoModel
-from inference_exp.models.auto_loaders.dependency_models import (
-    DependencyModelParameters,
-)
 from inference_exp.models.base.classification import (
     ClassificationModel,
     ClassificationPrediction,

@@ -396,6 +396,22 @@ REGISTERED_MODELS: Dict[
         module_name="inference_exp.models.grounding_dino.grounding_dino_torch",
         class_name="GroundingDinoForObjectDetectionTorch",
     ),
+    (
+        "owlv2",
+        OPEN_VOCABULARY_OBJECT_DETECTION_TASK,
+        BackendType.HF,
+    ): LazyClass(
+        module_name="inference_exp.models.owlv2.owlv2_hf",
+        class_name="OWLv2HF",
+    ),
+    (
+        "roboflow-instant",
+        OBJECT_DETECTION_TASK,
+        BackendType.HF,
+    ): LazyClass(
+        module_name="inference_exp.models.roboflow_instant.roboflow_instant_hf",
+        class_name="RoboflowInstantHF",
+    ),
 }
 
 

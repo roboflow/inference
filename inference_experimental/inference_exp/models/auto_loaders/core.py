@@ -9,7 +9,6 @@ from typing import Callable, Dict, List, Optional, Set, Tuple, Union
 
 import torch
 from filelock import FileLock
-from inference_exp import DependencyModelParameters
 from inference_exp.configuration import DEFAULT_DEVICE, INFERENCE_HOME
 from inference_exp.errors import (
     CorruptedModelPackageError,
@@ -114,8 +113,10 @@ class AutoModel:
             task_type=model_metadata.task_type,
             weights_provider=weights_provider,
             registered_packages=len(model_metadata.model_packages),
+            model_dependencies=model_metadata.model_dependencies,
         )
         console.print(model_overview_table)
+        console.print("\n")
         packages_overview_table = render_table_with_model_packages(
             model_packages=model_metadata.model_packages,
             model_packages_size=model_packages_size,
@@ -305,6 +306,16 @@ class AutoModel:
                 api_key=api_key,
                 allow_loading_dependency_models=allow_loading_dependency_models,
                 verbose=verbose,
+                weights_provider=weights_provider,
+                max_package_loading_attempts=max_package_loading_attempts,
+                model_download_file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
+                allow_untrusted_packages=allow_untrusted_packages,
+                trt_engine_host_code_allowed=trt_engine_host_code_allowed,
+                allow_local_code_packages=allow_local_code_packages,
+                verify_hash_while_download=verify_hash_while_download,
+                download_files_without_hash=download_files_without_hash,
+                allow_direct_local_storage_loading=allow_direct_local_storage_loading,
+                dependency_models_params=dependency_models_params,
             )
             if model_from_cache:
                 return model_from_cache
@@ -397,7 +408,7 @@ class AutoModel:
                 def model_directory_pointer(model_dir: str) -> None:
                     model_dependencies_directories[model_dependency.name] = model_dir
 
-                dependency_instance = AnyModel.from_pretrained(
+                dependency_instance = AutoModel.from_pretrained(
                     model_id_or_path=resolved_model_parameters.model_id_or_path,
                     weights_provider=weights_provider,
                     api_key=api_key,
@@ -484,6 +495,16 @@ def attempt_loading_model_with_auto_load_cache(
     api_key: Optional[str],
     allow_loading_dependency_models: bool,
     verbose: bool = False,
+    weights_provider: str = "roboflow",
+    max_package_loading_attempts: Optional[int] = None,
+    model_download_file_lock_acquire_timeout: int = 10,
+    allow_untrusted_packages: bool = False,
+    trt_engine_host_code_allowed: bool = True,
+    allow_local_code_packages: bool = True,
+    verify_hash_while_download: bool = True,
+    download_files_without_hash: bool = False,
+    allow_direct_local_storage_loading: bool = True,
+    dependency_models_params: Optional[dict] = None,
 ) -> Optional[AnyModel]:
     if not use_auto_resolution_cache:
         return None
@@ -513,6 +534,60 @@ def attempt_loading_model_with_auto_load_cache(
         )
         return None
     try:
+        model_dependencies = cache_entry.model_dependencies or []
+        if model_dependencies and not allow_loading_dependency_models:
+            raise CorruptedModelPackageError(
+                message=f"Could not load model {cache_entry.model_id} as it defines another models which are "
+                f"it's dependency, but the auto-loader prevents loading dependencies at certain "
+                f"nesting depth to avoid excessive resolution procedure. This is a limitation of "
+                f"current implementation. Provide us the context of your use-case to get help.",
+                help_url="https://todo",
+            )
+        model_dependencies_instances = {}
+        dependency_models_params = dependency_models_params or {}
+        for model_dependency in model_dependencies:
+            dependency_params = dependency_models_params.get(model_dependency.name, {})
+            dependency_params["model_id_or_path"] = model_dependency.model_id
+            dependency_params["model_package_id"] = model_dependency.model_package_id
+            resolved_model_parameters = prepare_dependency_model_parameters(
+                model_parameters=dependency_params
+            )
+            verbose_info(
+                message=f"Initialising dependent model: {model_dependency.model_id}",
+                verbose_requested=verbose,
+            )
+
+            dependency_instance = AutoModel.from_pretrained(
+                model_id_or_path=resolved_model_parameters.model_id_or_path,
+                weights_provider=weights_provider,
+                api_key=api_key,
+                model_package_id=resolved_model_parameters.model_package_id,
+                backend=resolved_model_parameters.backend,
+                batch_size=resolved_model_parameters.batch_size,
+                quantization=resolved_model_parameters.quantization,
+                onnx_execution_providers=resolved_model_parameters.onnx_execution_providers,
+                device=resolved_model_parameters.device,
+                default_onnx_trt_options=resolved_model_parameters.default_onnx_trt_options,
+                max_package_loading_attempts=max_package_loading_attempts,
+                verbose=verbose,
+                model_download_file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
+                allow_untrusted_packages=allow_untrusted_packages,
+                trt_engine_host_code_allowed=trt_engine_host_code_allowed,
+                allow_local_code_packages=allow_local_code_packages,
+                verify_hash_while_download=verify_hash_while_download,
+                download_files_without_hash=download_files_without_hash,
+                use_auto_resolution_cache=use_auto_resolution_cache,
+                auto_resolution_cache=auto_resolution_cache,
+                allow_direct_local_storage_loading=allow_direct_local_storage_loading,
+                model_access_manager=model_access_manager,
+                nms_fusion_preferences=resolved_model_parameters.nms_fusion_preferences,
+                model_type=resolved_model_parameters.model_type,
+                task_type=resolved_model_parameters.task_type,
+                allow_loading_dependency_models=False,
+                dependency_models_params=None,
+                **resolved_model_parameters.kwargs,
+            )
+            model_dependencies_instances[model_dependency.name] = dependency_instance
         model_class = resolve_model_class(
             model_architecture=cache_entry.model_architecture,
             task_type=cache_entry.task_type,
@@ -522,6 +597,7 @@ def attempt_loading_model_with_auto_load_cache(
             model_id=cache_entry.model_id,
             package_id=cache_entry.model_package_id,
         )
+        model_init_kwargs[MODEL_DEPENDENCIES_KEY] = model_dependencies_instances
         model = model_class.from_pretrained(
             model_package_cache_dir, **model_init_kwargs
         )

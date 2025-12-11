@@ -1,6 +1,5 @@
 from typing import List, Optional, Union
 
-from inference_exp import DependencyModelParameters
 from inference_exp.errors import ModelPipelineInitializationError
 from inference_exp.logger import verbose_info
 from inference_exp.model_pipelines.auto_loaders.pipelines_registry import (
@@ -12,6 +11,7 @@ from inference_exp.models.auto_loaders.access_manager import ModelAccessManager
 from inference_exp.models.auto_loaders.auto_resolution_cache import AutoResolutionCache
 from inference_exp.models.auto_loaders.core import AutoModel
 from inference_exp.models.auto_loaders.dependency_models import (
+    DependencyModelParameters,
     prepare_dependency_model_parameters,
 )
 from inference_exp.models.auto_loaders.entities import AnyModel
