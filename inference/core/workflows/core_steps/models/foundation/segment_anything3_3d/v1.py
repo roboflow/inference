@@ -180,6 +180,7 @@ def extract_masks_from_input(mask_input: Any) -> Any:
 
 def _format_response(response: Sam3_3D_Objects_Response) -> dict:
     """Format response with base64 encoded outputs."""
+
     def encode(data):
         return base64.b64encode(data).decode("utf-8") if data else None
 

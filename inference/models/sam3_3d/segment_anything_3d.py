@@ -35,6 +35,7 @@ from inference.core.utils.image_utils import load_image_rgb
 
 try:
     import pycocotools.mask as mask_utils
+
     PYCOCOTOOLS_AVAILABLE = True
 except ImportError:
     PYCOCOTOOLS_AVAILABLE = False
@@ -52,7 +53,9 @@ def convert_mask_to_binary(mask_input: Any, image_shape: Tuple[int, int]) -> np.
 
     if isinstance(mask_input, dict) and "counts" in mask_input:
         if not PYCOCOTOOLS_AVAILABLE:
-            raise ImportError("pycocotools required for RLE. Install: pip install pycocotools")
+            raise ImportError(
+                "pycocotools required for RLE. Install: pip install pycocotools"
+            )
         rle = dict(mask_input)
         if isinstance(rle.get("counts"), str):
             rle["counts"] = rle["counts"].encode("utf-8")
@@ -69,7 +72,9 @@ def convert_mask_to_binary(mask_input: Any, image_shape: Tuple[int, int]) -> np.
     raise TypeError(f"Unsupported mask type: {type(mask_input)}")
 
 
-def _normalize_binary_mask(mask: np.ndarray, image_shape: Tuple[int, int]) -> np.ndarray:
+def _normalize_binary_mask(
+    mask: np.ndarray, image_shape: Tuple[int, int]
+) -> np.ndarray:
     if mask.ndim == 3:
         mask = mask[:, :, 0]
     if mask.dtype == np.bool_:
@@ -92,9 +97,15 @@ def _parse_polygon_to_points(polygon: List) -> List[Tuple[float, float]]:
             return []
         if polygon.ndim == 2 and polygon.shape[1] == 2:
             return [(float(p[0]), float(p[1])) for p in polygon]
-        return [(float(polygon[i]), float(polygon[i + 1])) for i in range(0, len(polygon), 2)]
+        return [
+            (float(polygon[i]), float(polygon[i + 1]))
+            for i in range(0, len(polygon), 2)
+        ]
     if isinstance(polygon[0], (int, float)):
-        return [(float(polygon[i]), float(polygon[i + 1])) for i in range(0, len(polygon), 2)]
+        return [
+            (float(polygon[i]), float(polygon[i + 1]))
+            for i in range(0, len(polygon), 2)
+        ]
     if isinstance(polygon[0], (list, tuple, np.ndarray)):
         return [(float(p[0]), float(p[1])) for p in polygon]
     return []
@@ -102,7 +113,9 @@ def _parse_polygon_to_points(polygon: List) -> List[Tuple[float, float]]:
 
 def _is_single_mask_input(mask_input: Any) -> bool:
     """Check if input is single mask vs list of masks."""
-    if mask_input is None or (isinstance(mask_input, (list, np.ndarray)) and len(mask_input) == 0):
+    if mask_input is None or (
+        isinstance(mask_input, (list, np.ndarray)) and len(mask_input) == 0
+    ):
         return True
     if isinstance(mask_input, np.ndarray):
         return mask_input.ndim == 2
@@ -120,6 +133,7 @@ def _is_single_mask_input(mask_input: Any) -> bool:
             if len(first) > 2 and isinstance(first[0], (int, float)):
                 return False
     return True
+
 
 if torch.cuda.is_available():
     device_count = torch.cuda.device_count()
