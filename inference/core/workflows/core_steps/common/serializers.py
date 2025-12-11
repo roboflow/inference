@@ -36,6 +36,8 @@ from inference.core.workflows.execution_engine.constants import (
     POLYGON_KEY,
     POLYGON_KEY_IN_INFERENCE_RESPONSE,
     POLYGON_KEY_IN_SV_DETECTIONS,
+    RLE_MASK_KEY_IN_INFERENCE_RESPONSE,
+    RLE_MASK_KEY_IN_SV_DETECTIONS,
     ROOT_PARENT_COORDINATES_KEY,
     ROOT_PARENT_DIMENSIONS_KEY,
     ROOT_PARENT_ID_KEY,
@@ -59,10 +61,6 @@ from inference.core.workflows.execution_engine.entities.base import (
     ParentOrigin,
     VideoMetadata,
     WorkflowImageData,
-)
-from inference.core.workflows.execution_engine.constants import (
-    RLE_MASK_KEY_IN_INFERENCE_RESPONSE,
-    RLE_MASK_KEY_IN_SV_DETECTIONS,
 )
 
 MIN_SECRET_LENGTH_TO_REVEAL_PREFIX = 8
