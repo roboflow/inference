@@ -829,18 +829,6 @@ def get_from_url(
     )
 
 
-def stream_url_to_cache(
-    url: str,
-    filename: str,
-    model_id: str,
-) -> None:
-    return _stream_url_to_cache(
-        url=url,
-        filename=filename,
-        model_id=model_id,
-    )
-
-
 @backoff.on_exception(
     backoff.constant,
     exception=RetryRequestError,
