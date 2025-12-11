@@ -3,9 +3,10 @@ from unittest import mock
 from unittest.mock import MagicMock, mock_open
 
 import pytest
-from inference_exp.errors import JetsonTypeResolutionError
+from inference_exp.errors import JetsonTypeResolutionError, RuntimeIntrospectionError
 from inference_exp.runtime_introspection import core
 from inference_exp.runtime_introspection.core import (
+    ensure_jetson_l4t_declared_for_jetson_hardware,
     get_available_gpu_devices,
     get_available_gpu_devices_cc,
     get_cuda_version,
@@ -935,3 +936,24 @@ def test_get_torchvision_version_when_torch_available_but_version_parsable(
 
     # then
     assert result == expected_result
+
+
+def test_ensure_jetson_l4t_declared_for_jetson_hardware_when_invalid_configuration() -> (
+    None
+):
+    # when
+    with pytest.raises(RuntimeIntrospectionError):
+        ensure_jetson_l4t_declared_for_jetson_hardware(
+            gpu_devices=["some", "orin"],
+            l4t_version=None,
+        )
+
+
+def test_ensure_jetson_l4t_declared_for_jetson_hardware_when_valid_configuration() -> (
+    None
+):
+    # when
+    ensure_jetson_l4t_declared_for_jetson_hardware(
+        gpu_devices=["some"],
+        l4t_version=None,
+    )
