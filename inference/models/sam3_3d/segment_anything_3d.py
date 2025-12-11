@@ -7,6 +7,7 @@ from threading import Lock
 from time import perf_counter
 from typing import Any, Dict, List, Optional, Tuple, TypedDict, Union
 
+import cv2
 import numpy as np
 import torch
 from filelock import FileLock
@@ -31,6 +32,94 @@ from inference.core.roboflow_api import (
     stream_url_to_cache,
 )
 from inference.core.utils.image_utils import load_image_rgb
+
+try:
+    import pycocotools.mask as mask_utils
+    PYCOCOTOOLS_AVAILABLE = True
+except ImportError:
+    PYCOCOTOOLS_AVAILABLE = False
+
+
+def convert_mask_to_binary(mask_input: Any, image_shape: Tuple[int, int]) -> np.ndarray:
+    """Convert polygon, RLE, or binary mask to binary mask (H, W) with values 0/255."""
+    height, width = image_shape
+
+    if isinstance(mask_input, np.ndarray):
+        return _normalize_binary_mask(mask_input, image_shape)
+
+    if isinstance(mask_input, Image.Image):
+        return _normalize_binary_mask(np.array(mask_input.convert("L")), image_shape)
+
+    if isinstance(mask_input, dict) and "counts" in mask_input:
+        if not PYCOCOTOOLS_AVAILABLE:
+            raise ImportError("pycocotools required for RLE. Install: pip install pycocotools")
+        rle = dict(mask_input)
+        if isinstance(rle.get("counts"), str):
+            rle["counts"] = rle["counts"].encode("utf-8")
+        return _normalize_binary_mask(mask_utils.decode(rle), image_shape)
+
+    if isinstance(mask_input, list):
+        points = _parse_polygon_to_points(mask_input)
+        if not points or len(points) < 3:
+            return np.zeros((height, width), dtype=np.uint8)
+        mask = Image.new("L", (width, height), 0)
+        ImageDraw.Draw(mask).polygon(points, outline=255, fill=255)
+        return np.array(mask, dtype=np.uint8)
+
+    raise TypeError(f"Unsupported mask type: {type(mask_input)}")
+
+
+def _normalize_binary_mask(mask: np.ndarray, image_shape: Tuple[int, int]) -> np.ndarray:
+    if mask.ndim == 3:
+        mask = mask[:, :, 0]
+    if mask.dtype == np.bool_:
+        mask = mask.astype(np.uint8) * 255
+    elif mask.dtype != np.uint8:
+        mask = ((mask > 0).astype(np.uint8)) * 255
+    elif mask.max() <= 1:
+        mask = mask * 255
+    h, w = image_shape
+    if mask.shape[0] != h or mask.shape[1] != w:
+        mask = cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
+    return mask.astype(np.uint8)
+
+
+def _parse_polygon_to_points(polygon: List) -> List[Tuple[float, float]]:
+    if polygon is None or (isinstance(polygon, list) and len(polygon) == 0):
+        return []
+    if isinstance(polygon, np.ndarray):
+        if polygon.size == 0:
+            return []
+        if polygon.ndim == 2 and polygon.shape[1] == 2:
+            return [(float(p[0]), float(p[1])) for p in polygon]
+        return [(float(polygon[i]), float(polygon[i + 1])) for i in range(0, len(polygon), 2)]
+    if isinstance(polygon[0], (int, float)):
+        return [(float(polygon[i]), float(polygon[i + 1])) for i in range(0, len(polygon), 2)]
+    if isinstance(polygon[0], (list, tuple, np.ndarray)):
+        return [(float(p[0]), float(p[1])) for p in polygon]
+    return []
+
+
+def _is_single_mask_input(mask_input: Any) -> bool:
+    """Check if input is single mask vs list of masks."""
+    if mask_input is None or (isinstance(mask_input, (list, np.ndarray)) and len(mask_input) == 0):
+        return True
+    if isinstance(mask_input, np.ndarray):
+        return mask_input.ndim == 2
+    if isinstance(mask_input, dict) and "counts" in mask_input:
+        return True
+    if isinstance(mask_input, list):
+        first = mask_input[0]
+        if isinstance(first, (int, float)):
+            return True
+        if isinstance(first, dict) and "counts" in first:
+            return False
+        if isinstance(first, (list, tuple, np.ndarray)):
+            if len(first) == 2 and isinstance(first[0], (int, float)):
+                return True
+            if len(first) > 2 and isinstance(first[0], (int, float)):
+                return False
+    return True
 
 if torch.cuda.is_available():
     device_count = torch.cuda.device_count()
@@ -180,45 +269,42 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
                 inference_time=inference_time,
             )
 
-    def merge_image_and_mask(self, image, mask_input):
-        image_np = load_image_rgb(image)
-        image_height, image_width = image_np.shape[:2]
-        mask = Image.new("L", (image_width, image_height), 0)
-        draw = ImageDraw.Draw(mask)
-        polygon = [
-            (mask_input[i], mask_input[i + 1]) for i in range(0, len(mask_input), 2)
-        ]
-        draw.polygon(polygon, outline=255, fill=255)
-        mask_np = np.array(mask)
-        if mask_np.ndim == 2:
-            mask_np = mask_np[..., None]
-        rgba_image = np.concatenate([image_np, mask_np], axis=-1)
-        return rgba_image.astype(np.uint8)
-
     def create_3d(
         self,
         image: Optional[InferenceRequestImage],
-        mask_input: Optional[
-            Union[np.ndarray, List[List[List[float]]], List[List[float]]]
-        ] = None,
+        mask_input: Optional[Any] = None,
         **kwargs,
     ):
+        """
+        Generate 3D from image and mask(s).
+
+        Args:
+            image: Input image
+            mask_input: Mask in any supported format:
+                - np.ndarray (H,W) or (N,H,W): Binary mask(s)
+                - List[float]: COCO polygon [x1,y1,x2,y2,...]
+                - List[List[float]]: Multiple polygons
+                - Dict with 'counts'/'size': RLE mask
+                - List[Dict]: Multiple RLE masks
+        """
         with torch.inference_mode():
             if image is None or mask_input is None:
                 raise ValueError("Must provide image and mask!")
 
-            if self._is_single_mask(mask_input):
-                masks = [mask_input]
+            image_np = load_image_rgb(image)
+            image_shape = (image_np.shape[0], image_np.shape[1])
+
+            # Convert to list of binary masks
+            if _is_single_mask_input(mask_input):
+                masks = [convert_mask_to_binary(mask_input, image_shape)]
+            elif isinstance(mask_input, np.ndarray) and mask_input.ndim == 3:
+                masks = [convert_mask_to_binary(m, image_shape) for m in mask_input]
             else:
-                masks = mask_input
+                masks = [convert_mask_to_binary(m, image_shape) for m in mask_input]
 
             outputs = []
             for mask in masks:
-                rgba_image = self.merge_image_and_mask(image, mask)
-                result = self.pipeline.run(
-                    image=rgba_image,
-                    mask=None,
-                )
+                result = self.pipeline.run(image=image_np, mask=mask)
                 outputs.append(result)
 
             if len(outputs) == 1:
@@ -230,27 +316,14 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
                     "objects": outputs,
                 }
             else:
-                # Multiple objects: combine gaussians and meshes
                 scene_gs = make_scene(*outputs)
                 scene_gs = ready_gaussian_for_video_rendering(scene_gs)
                 scene_glb = make_scene_glb(*outputs)
-
                 return {
                     "gs": scene_gs,
                     "glb": scene_glb,
                     "objects": outputs,
                 }
-
-    def _is_single_mask(self, mask_input):
-        """Detect if mask_input is a single mask or list of masks."""
-        if not mask_input:
-            return True
-        if isinstance(mask_input[0], (int, float)):
-            return True
-        if isinstance(mask_input[0], list) and len(mask_input[0]) == 2:
-            if isinstance(mask_input[0][0], (int, float)):
-                return True
-        return False
 
 
 def convert_tensor_to_list(tensor_data: torch.Tensor) -> Optional[List[float]]:
