@@ -475,8 +475,8 @@ class SegmentAnything3BlockV3(WorkflowBlock):
             output_format=output_format,
         )
 
-    def _build_rle_prediction(
-        self,
+    @staticmethod
+    def build_rle_prediction(
         rle: dict,
         bbox: List[float],
         pred_confidence: float,
@@ -497,8 +497,8 @@ class SegmentAnything3BlockV3(WorkflowBlock):
             }
         )
 
-    def _build_rle_detections(
-        self,
+    @staticmethod
+    def build_rle_detections(
         predictions: List[InstanceSegmentationRLEPrediction],
         image_height: int,
         image_width: int,
@@ -556,7 +556,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
                     continue
 
                 bbox = mask_utils.toBbox(rle)
-                pred = self._build_rle_prediction(
+                pred = self.build_rle_prediction(
                     rle=rle,
                     bbox=bbox,
                     pred_confidence=prediction.confidence,
@@ -565,7 +565,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
                 )
                 predictions.append(pred)
 
-        return self._build_rle_detections(predictions, image_height, image_width)
+        return self.build_rle_detections(predictions, image_height, image_width)
 
     def _convert_rle_json_response_to_sv_detections(
         self,
@@ -593,7 +593,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
                     continue
 
                 bbox = mask_utils.toBbox(rle)
-                pred = self._build_rle_prediction(
+                pred = self.build_rle_prediction(
                     rle=rle,
                     bbox=bbox,
                     pred_confidence=pred_confidence,
@@ -602,10 +602,10 @@ class SegmentAnything3BlockV3(WorkflowBlock):
                 )
                 predictions.append(pred)
 
-        return self._build_rle_detections(predictions, image_height, image_width)
+        return self.build_rle_detections(predictions, image_height, image_width)
 
-    def _build_polygon_prediction(
-        self,
+    @staticmethod
+    def build_polygon_prediction(
         mask: List[List[float]],
         pred_confidence: float,
         class_name: str,
@@ -653,7 +653,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
                     continue
 
                 for mask in prediction.masks:
-                    pred = self._build_polygon_prediction(
+                    pred = self.build_polygon_prediction(
                         mask, prediction.confidence, class_name, idx
                     )
                     if pred:
@@ -686,7 +686,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
                     continue
 
                 for mask in prediction.get("masks", []):
-                    pred = self._build_polygon_prediction(
+                    pred = self.build_polygon_prediction(
                         mask, pred_confidence, class_name, idx
                     )
                     if pred:
@@ -697,7 +697,8 @@ class SegmentAnything3BlockV3(WorkflowBlock):
             image=InferenceResponseImage(width=image_width, height=image_height),
         )
 
-    def _decode_rle_masks(self, rle_list: np.ndarray) -> np.ndarray:
+    @staticmethod
+    def decode_rle_masks(rle_list: np.ndarray) -> np.ndarray:
         masks = [mask_utils.decode(rle).astype(bool) for rle in rle_list]
         return np.array(masks)
 
@@ -711,7 +712,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
                 and RLE_MASK_KEY_IN_SV_DETECTIONS in detection.data
             ):
                 rle_masks = detection.data[RLE_MASK_KEY_IN_SV_DETECTIONS]
-                detection.mask = self._decode_rle_masks(rle_masks)
+                detection.mask = self.decode_rle_masks(rle_masks)
         return predictions
 
     def _post_process_result(
