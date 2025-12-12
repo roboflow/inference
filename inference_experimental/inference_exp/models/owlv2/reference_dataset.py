@@ -1,3 +1,4 @@
+import hashlib
 import os.path
 import re
 import urllib.parse
@@ -14,28 +15,11 @@ from inference_exp.configuration import (
     IDEMPOTENT_API_REQUEST_CODES_TO_RETRY,
 )
 from inference_exp.errors import ModelInputError, ModelRuntimeError, RetryError
-from pydantic import BaseModel, ConfigDict, Field
 from requests import Timeout
 from tldextract import tldextract
 from tldextract.tldextract import ExtractResult
 
 BASE64_DATA_TYPE_PATTERN = re.compile(r"^data:image\/[a-z]+;base64,")
-
-
-class ReferenceBoundingBox(BaseModel):
-    x: Union[float, int]
-    y: Union[float, str]
-    w: Union[float, str]
-    h: Union[float, str]
-    cls: str
-    negative: bool = Field(default=False)
-
-
-class ReferenceExample(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    image: Union[np.ndarray, torch.Tensor, str, bytes]
-    boxes: List[ReferenceBoundingBox]
 
 
 class LazyImageWrapper:
@@ -111,6 +95,17 @@ class LazyImageWrapper:
         )
         self._image_in_memory = image
         return image
+
+    def get_hash(self, unload_image_if_loaded: bool = True) -> str:
+        if self._image_hash is not None:
+            return self._image_hash
+        if self._image_reference is not None:
+            self._image_hash = hash_function(value=self._image_reference)
+        else:
+            self._image_hash = hash_function(value=self.as_numpy().tobytes())
+            if unload_image_if_loaded:
+                self.unload_image()
+        return self._image_hash
 
     def unload_image(self) -> None:
         if self._image_in_memory is not None and self._image_reference is not None:
@@ -285,3 +280,13 @@ def _get_from_url(url: str, timeout: int = 5) -> bytes:
             message=f"Connectivity error",
             help_url="https://todo",
         )
+
+
+def compute_image_hash(image: Union[torch.Tensor, np.ndarray]) -> str:
+    if isinstance(image, torch.Tensor):
+        image = image.cpu().numpy()
+    return hash_function(value=image.tobytes())
+
+
+def hash_function(value: Union[str, bytes]) -> str:
+    return hashlib.sha1(value).hexdigest()

@@ -1,18 +1,46 @@
-from typing import List, Tuple, Union
+from collections import defaultdict
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
 import torchvision
 from inference_exp import Detections, OpenVocabularyObjectDetectionModel
-from inference_exp.configuration import DEFAULT_DEVICE
+from inference_exp.configuration import (
+    ALLOW_LOCAL_STORAGE_ACCESS_FOR_REFERENCE_DATA,
+    ALLOW_NON_HTTPS_URL_INPUT,
+    ALLOW_URL_INPUT,
+    ALLOW_URL_INPUT_WITHOUT_FQDN,
+    BLACKLISTED_DESTINATIONS_FOR_URL_INPUT,
+    DEFAULT_DEVICE,
+    WHITELISTED_DESTINATIONS_FOR_URL_INPUT,
+)
 from inference_exp.entities import ImageDimensions
+from inference_exp.errors import ModelInputError
 from inference_exp.models.base.types import PreprocessedInputs, PreprocessingMetadata
 from inference_exp.models.common.roboflow.pre_processing import (
     extract_input_images_dimensions,
 )
-from inference_exp.models.owlv2.reference_dataset import ReferenceExample
+from inference_exp.models.owlv2.entities import (
+    ImageEmbeddings,
+    LazyReferenceExample,
+    ReferenceExample,
+    ReferenceExamplesClassEmbeddings,
+    ReferenceExamplesEmbeddings,
+)
+from inference_exp.models.owlv2.reference_dataset import (
+    LazyImageWrapper,
+    compute_image_hash,
+)
 from transformers import Owlv2ForObjectDetection, Owlv2Processor
-from transformers.models.owlv2.modeling_owlv2 import Owlv2ObjectDetectionOutput
+from transformers.models.owlv2.modeling_owlv2 import Owlv2ObjectDetectionOutput, box_iou
+
+POSITIVE_EXAMPLE = "positive"
+NEGATIVE_EXAMPLE = "negative"
+
+Query = Dict[
+    str,
+    Tuple[Union[int, float], Union[int, float], Union[int, float], Union[int, float]],
+]
 
 
 class OWLv2HF(
@@ -27,8 +55,18 @@ class OWLv2HF(
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
         local_files_only: bool = True,
+        allow_url_input: bool = ALLOW_URL_INPUT,
+        allow_non_https_url: bool = ALLOW_NON_HTTPS_URL_INPUT,
+        allow_url_without_fqdn: bool = ALLOW_URL_INPUT_WITHOUT_FQDN,
+        whitelisted_domains: Optional[List[str]] = None,
+        blacklisted_domains: Optional[List[str]] = None,
+        allow_local_storage_access_for_reference_images: bool = ALLOW_LOCAL_STORAGE_ACCESS_FOR_REFERENCE_DATA,
         **kwargs,
     ) -> "OpenVocabularyObjectDetectionModel":
+        if whitelisted_domains is None:
+            whitelisted_domains = WHITELISTED_DESTINATIONS_FOR_URL_INPUT
+        if blacklisted_domains is None:
+            blacklisted_domains = BLACKLISTED_DESTINATIONS_FOR_URL_INPUT
         processor = Owlv2Processor.from_pretrained(
             model_name_or_path,
             local_files_only=local_files_only,
@@ -42,6 +80,12 @@ class OWLv2HF(
             model=model,
             processor=processor,
             device=device,
+            allow_url_input=allow_url_input,
+            allow_non_https_url=allow_non_https_url,
+            allow_url_without_fqdn=allow_url_without_fqdn,
+            whitelisted_domains=whitelisted_domains,
+            blacklisted_domains=blacklisted_domains,
+            allow_local_storage_access_for_reference_images=allow_local_storage_access_for_reference_images,
         )
 
     def __init__(
@@ -49,10 +93,24 @@ class OWLv2HF(
         model: Owlv2ForObjectDetection,
         processor: Owlv2Processor,
         device: torch.device,
+        allow_url_input: bool,
+        allow_non_https_url: bool,
+        allow_url_without_fqdn: bool,
+        whitelisted_domains: Optional[List[str]],
+        blacklisted_domains: Optional[List[str]],
+        allow_local_storage_access_for_reference_images: bool,
     ):
         self._model = model
         self._processor = processor
         self._device = device
+        self._allow_url_input = allow_url_input
+        self._allow_non_https_url = allow_non_https_url
+        self._allow_url_without_fqdn = allow_url_without_fqdn
+        self._whitelisted_domains = whitelisted_domains
+        self._blacklisted_domains = blacklisted_domains
+        self._allow_local_storage_access_for_reference_images = (
+            allow_local_storage_access_for_reference_images
+        )
 
     def optimize_for_inference(self) -> None:
         self._model.owlv2.vision_model = torch.compile(self._model.owlv2.vision_model)
@@ -121,5 +179,350 @@ class OWLv2HF(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         reference_examples: List[ReferenceExample],
+        confidence_threshold: float = 0.99,
+        iou_threshold: float = 0.3,
+        max_detections: int = 300,
     ) -> List[Detections]:
-        pass
+        reference_embeddings = self.prepare_reference_examples_embeddings(
+            reference_examples=reference_examples,
+            iou_threshold=iou_threshold,
+        )
+        return self.infer_with_reference_examples_embeddings(
+            images=images,
+            class_embeddings=reference_embeddings.class_embeddings,
+            confidence_threshold=confidence_threshold,
+            iou_threshold=iou_threshold,
+            max_detections=max_detections,
+        )
+
+    def infer_with_reference_examples_embeddings(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        class_embeddings: Dict[str, ReferenceExamplesClassEmbeddings],
+        confidence_threshold: float = 0.99,
+        iou_threshold: float = 0.3,
+        max_detections: int = 300,
+    ) -> List[Detections]:
+        if isinstance(images, torch.Tensor):
+            if len(images.shape) == 3:
+                images = [images]
+            else:
+                images = torch.unbind(images, dim=0)
+        results = []
+        for image in images:
+            image_embedding = self.embed_image(image=image)
+            result = self.infer_for_precomputed_embeddings(
+                image_embedding=image_embedding,
+                class_embeddings=class_embeddings,
+                confidence_threshold=confidence_threshold,
+                iou_threshold=iou_threshold,
+                max_detections=max_detections,
+            )
+            results.append(result)
+        return results
+
+    def infer_for_precomputed_embeddings(
+        self,
+        image_embedding: ImageEmbeddings,
+        class_embeddings: Dict[str, ReferenceExamplesClassEmbeddings],
+        confidence_threshold: float = 0.99,
+        iou_threshold: float = 0.3,
+        max_detections: int = 300,
+    ) -> Detections:
+        image_embedding = image_embedding.to(self._device)
+        class_mapping, class_names = make_class_mapping(
+            class_names=class_embeddings.keys()
+        )
+        all_predicted_boxes, all_predicted_classes, all_predicted_scores = [], [], []
+        for class_name, reference_examples_class_embeddings in class_embeddings.items():
+            boxes, classes, scores = get_class_predictions_from_embeds(
+                reference_examples_class_embeddings=reference_examples_class_embeddings,
+                image_class_embeddings=image_embedding.image_class_embeddings,
+                image_boxes=image_embedding.boxes,
+                confidence_threshold=confidence_threshold,
+                class_mapping=class_mapping,
+                class_name=class_name,
+                iou_threshold=iou_threshold,
+            )
+            all_predicted_boxes.append(boxes)
+            all_predicted_classes.append(classes)
+            all_predicted_scores.append(scores)
+
+        if not all_predicted_boxes:
+            return Detections(
+                xyxy=torch.empty((0, 4), dtype=torch.int32, device=self._device),
+                confidence=torch.empty((0,), dtype=torch.float32, device=self._device),
+                class_id=torch.empty((0,), dtype=torch.int32, device=self._device),
+            )
+        all_predicted_boxes = torch.cat(all_predicted_boxes, dim=0)
+        all_predicted_classes = torch.cat(all_predicted_classes, dim=0)
+        all_predicted_scores = torch.cat(all_predicted_scores, dim=0)
+        # run nms on all predictions
+        survival_indices = torchvision.ops.nms(
+            to_corners(all_predicted_boxes), all_predicted_scores, iou_threshold
+        )
+        all_predicted_boxes = all_predicted_boxes[survival_indices]
+        all_predicted_classes = all_predicted_classes[survival_indices]
+        all_predicted_scores = all_predicted_scores[survival_indices]
+        if len(all_predicted_boxes) > max_detections:
+            all_predicted_boxes = all_predicted_boxes[:max_detections]
+            all_predicted_classes = all_predicted_classes[:max_detections]
+            all_predicted_scores = all_predicted_scores[:max_detections]
+        return Detections(
+            xyxy=all_predicted_boxes,
+            confidence=all_predicted_scores,
+            class_id=all_predicted_classes,
+        )
+
+    def prepare_reference_examples_embeddings(
+        self,
+        reference_examples: List[ReferenceExample],
+        iou_threshold: float,
+        return_image_embeddings: bool = False,
+    ) -> ReferenceExamplesEmbeddings:
+        lazy_reference_examples = [
+            LazyReferenceExample(
+                image=LazyImageWrapper.init(
+                    image=example.image,
+                    allow_url_input=self._allow_url_input,
+                    allow_non_https_url=self._allow_non_https_url,
+                    allow_url_without_fqdn=self._allow_url_without_fqdn,
+                    whitelisted_domains=self._whitelisted_domains,
+                    blacklisted_domains=self._blacklisted_domains,
+                    allow_local_storage_access=self._allow_local_storage_access_for_reference_images,
+                ),
+                boxes=example.boxes,
+            )
+            for example in reference_examples
+        ]
+        class_embeddings_dict = defaultdict(
+            lambda: {POSITIVE_EXAMPLE: [], NEGATIVE_EXAMPLE: []}
+        )
+        bool_to_literal = {True: POSITIVE_EXAMPLE, False: NEGATIVE_EXAMPLE}
+        image_embeddings_to_be_returned = {}
+        for reference_example in lazy_reference_examples:
+            image_embeddings = self.embed_image(image=reference_example.image)
+            if return_image_embeddings:
+                image_embeddings_to_be_returned[image_embeddings.image_hash] = (
+                    image_embeddings
+                )
+            coordinates = [
+                bbox.to_tuple(image_wh=image_embeddings.image_size_wh)
+                for bbox in reference_example.boxes
+            ]
+            classes = [box.cls for box in reference_example.boxes]
+            is_positive = [not box.negative for box in reference_example.boxes]
+            query = {image_embeddings.image_hash: coordinates}
+            image_class_embeddings_matching_query = self.query_images_for_bboxes(
+                query=query,
+                images_embeddings={image_embeddings.image_hash: image_embeddings},
+                iou_threshold=iou_threshold,
+            )
+            if image_class_embeddings_matching_query is None:
+                continue
+            for embedding, class_name, is_pos in zip(
+                image_class_embeddings_matching_query, classes, is_positive
+            ):
+                class_embeddings_dict[class_name][bool_to_literal[is_pos]].append(
+                    embedding
+                )
+        class_embeddings = {
+            class_name: ReferenceExamplesClassEmbeddings(
+                positive=(
+                    torch.stack(embeddings[POSITIVE_EXAMPLE])
+                    if embeddings[POSITIVE_EXAMPLE]
+                    else None
+                ),
+                negative=(
+                    torch.stack(embeddings[NEGATIVE_EXAMPLE])
+                    if embeddings[NEGATIVE_EXAMPLE]
+                    else None
+                ),
+            )
+            for class_name, embeddings in class_embeddings_dict.items()
+        }
+        return ReferenceExamplesEmbeddings(
+            class_embeddings=class_embeddings,
+            image_embeddings=(
+                image_embeddings_to_be_returned if return_image_embeddings else None
+            ),
+        )
+
+    @torch.inference_mode()
+    def query_images_for_bboxes(
+        self,
+        query: Query,
+        images_embeddings: Dict[str, ImageEmbeddings],
+        iou_threshold: float,
+    ) -> Optional[torch.Tensor]:
+        query_embeddings = []
+        for image_hash, query_boxes in query.items():
+            image_embeddings = images_embeddings.get(image_hash)
+            if image_embeddings is None:
+                raise ModelInputError(
+                    message="Could not find image embeddings matching bounding boxes query for OWLv2 model. This "
+                    "means that most likely, model API was used incorrectly.",
+                    help_url="https://todo",
+                )
+            image_embeddings = image_embeddings.to(self._device)
+            query_boxes_tensor = torch.tensor(
+                query_boxes,
+                dtype=image_embeddings.boxes.dtype,
+                device=self._device,
+            )
+            if image_embeddings.boxes.numel() == 0 or query_boxes_tensor.numel() == 0:
+                continue
+            iou, _ = box_iou(
+                boxes1=to_corners(image_embeddings.boxes),
+                boxes2=to_corners(query_boxes_tensor),
+            )  # 3000, k
+            ious, indices = torch.max(iou, dim=0)
+            # filter for only iou > 0.4
+            iou_mask = ious > iou_threshold
+            indices = indices[iou_mask]
+            if not indices.numel() > 0:
+                continue
+            matching_image_embeddings = image_embeddings.image_class_embeddings[indices]
+            query_embeddings.append(matching_image_embeddings)
+        if not query_embeddings:
+            return None
+        return torch.cat(query_embeddings, dim=0)
+
+    @torch.inference_mode()
+    def embed_image(
+        self,
+        image: Union[torch.Tensor, np.ndarray, LazyImageWrapper],
+        unload_after_use: bool = True,
+    ) -> ImageEmbeddings:
+        if isinstance(image, LazyImageWrapper):
+            image_hash = image.get_hash(unload_image_if_loaded=False)
+            image_instance = image.as_numpy()
+            if unload_after_use:
+                image.unload_image()
+        else:
+            image_hash = compute_image_hash(image=image)
+            image_instance = image
+        pixel_values, image_dimensions = self.pre_process(image_instance)
+        device_type = self._device.type
+        with torch.autocast(
+            device_type=device_type, dtype=torch.float16, enabled=device_type == "cuda"
+        ):
+            image_embeds, *_ = self._model.image_embedder(pixel_values=pixel_values)
+            batch_size, h, w, dim = image_embeds.shape
+            image_features = image_embeds.reshape(batch_size, h * w, dim)
+            objectness = self._model.objectness_predictor(image_features)
+            boxes = self._model.box_predictor(image_features, feature_map=image_embeds)
+        image_class_embeddings = self._model.class_head.dense0(image_features)
+        image_class_embeddings /= (
+            torch.linalg.norm(image_class_embeddings, ord=2, dim=-1, keepdim=True)
+            + 1e-6
+        )
+        logit_shift = self._model.class_head.logit_shift(image_features)
+        logit_scale = (
+            self._model.class_head.elu(
+                self._model.class_head.logit_scale(image_features)
+            )
+            + 1
+        )
+        objectness = objectness.sigmoid()
+        return ImageEmbeddings(
+            image_hash=image_hash,
+            objectness=objectness,
+            boxes=boxes,
+            image_class_embeddings=image_class_embeddings,
+            logit_shift=logit_shift,
+            logit_scale=logit_scale,
+            image_size_wh=(image_dimensions[0].width, image_dimensions[0].height),
+        )
+
+
+def to_corners(box: torch.Tensor) -> torch.Tensor:
+    cx, cy, w, h = box.unbind(-1)
+    x1 = cx - w / 2
+    y1 = cy - h / 2
+    x2 = cx + w / 2
+    y2 = cy + h / 2
+    return torch.stack([x1, y1, x2, y2], dim=-1)
+
+
+def make_class_mapping(
+    class_names: Iterable[str],
+) -> Tuple[Dict[Tuple[str, str], int], List[str]]:
+    class_names = sorted(class_names)
+    class_map_positive = {
+        (class_name, POSITIVE_EXAMPLE): i for i, class_name in enumerate(class_names)
+    }
+    class_map_negative = {
+        (class_name, NEGATIVE_EXAMPLE): i + len(class_names)
+        for i, class_name in enumerate(class_names)
+    }
+    class_map = {**class_map_positive, **class_map_negative}
+    return class_map, class_names
+
+
+def get_class_predictions_from_embeds(
+    reference_examples_class_embeddings: ReferenceExamplesClassEmbeddings,
+    image_class_embeddings: torch.Tensor,
+    image_boxes: torch.Tensor,
+    confidence_threshold: float,
+    class_mapping: Dict[Tuple[str, str], int],
+    class_name: str,
+    iou_threshold: float,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    predicted_boxes_per_class = []
+    predicted_class_indices_per_class = []
+    predicted_scores_per_class = []
+    positive_arr_per_class = []
+    if reference_examples_class_embeddings.positive is not None:
+        pred_logits = torch.einsum(
+            "sd,nd->ns",
+            image_class_embeddings,
+            reference_examples_class_embeddings.positive,
+        )
+        prediction_scores = pred_logits.max(dim=0)[0]
+        prediction_scores = (prediction_scores + 1) / 2
+        score_mask = prediction_scores > confidence_threshold
+        predicted_boxes_per_class.append(image_boxes[score_mask])
+        scores = prediction_scores[score_mask]
+        predicted_scores_per_class.append(scores)
+        class_ind = class_mapping[(class_name, POSITIVE_EXAMPLE)]
+        predicted_class_indices_per_class.append(class_ind * torch.ones_like(scores))
+        positive_arr_per_class.append(torch.ones_like(scores))
+    if reference_examples_class_embeddings.negative is not None:
+        pred_logits = torch.einsum(
+            "sd,nd->ns",
+            image_class_embeddings,
+            reference_examples_class_embeddings.positive,
+        )
+        prediction_scores = pred_logits.max(dim=0)[0]
+        prediction_scores = (prediction_scores + 1) / 2
+        score_mask = prediction_scores > confidence_threshold
+        predicted_boxes_per_class.append(image_boxes[score_mask])
+        scores = prediction_scores[score_mask]
+        predicted_scores_per_class.append(scores)
+        class_ind = class_mapping[(class_name, NEGATIVE_EXAMPLE)]
+        predicted_class_indices_per_class.append(class_ind * torch.ones_like(scores))
+        positive_arr_per_class.append(torch.zeros_like(scores))
+    if not predicted_boxes_per_class:
+        return (
+            torch.empty((0, 4)),
+            torch.empty((0,)),
+            torch.empty((0,)),
+        )
+    # concat tensors
+    pred_boxes = torch.cat(predicted_boxes_per_class, dim=0).float()
+    pred_classes = torch.cat(predicted_class_indices_per_class, dim=0).float()
+    pred_scores = torch.cat(predicted_scores_per_class, dim=0).float()
+    positive = torch.cat(positive_arr_per_class, dim=0).float()
+    # nms
+    survival_indices = torchvision.ops.nms(
+        to_corners(pred_boxes), pred_scores, iou_threshold
+    )
+    # filter to post-nms
+    pred_boxes = pred_boxes[survival_indices, :]
+    pred_classes = pred_classes[survival_indices]
+    pred_scores = pred_scores[survival_indices]
+    positive = positive[survival_indices]
+    is_positive = positive == 1
+    # return only positive elements of tensor
+    return pred_boxes[is_positive], pred_classes[is_positive], pred_scores[is_positive]
