@@ -38,6 +38,8 @@ from inference.core.workflows.execution_engine.constants import (
     PATH_DEVIATION_KEY_IN_SV_DETECTIONS,
     POLYGON_KEY_IN_INFERENCE_RESPONSE,
     POLYGON_KEY_IN_SV_DETECTIONS,
+    RLE_MASK_KEY_IN_INFERENCE_RESPONSE,
+    RLE_MASK_KEY_IN_SV_DETECTIONS,
     ROOT_PARENT_COORDINATES_KEY,
     ROOT_PARENT_DIMENSIONS_KEY,
     ROOT_PARENT_ID_KEY,
@@ -307,6 +309,32 @@ def deserialize_detections_kind(
         raw_detections=detections["predictions"],
         parsed_detections=parsed_detections,
     )
+
+
+def deserialize_rle_detections_kind(
+    parameter: str,
+    detections: Any,
+) -> sv.Detections:
+    parsed_detections = deserialize_detections_kind(
+        parameter=parameter,
+        detections=detections,
+    )
+    if len(parsed_detections) == 0:
+        return parsed_detections
+
+    if isinstance(detections, dict) and "predictions" in detections:
+        rle_masks_list = []
+        for pred in detections["predictions"]:
+            rle = pred.get(RLE_MASK_KEY_IN_INFERENCE_RESPONSE)
+            if rle is not None:
+                rle_masks_list.append(rle)
+
+        if rle_masks_list and len(rle_masks_list) == len(parsed_detections):
+            parsed_detections[RLE_MASK_KEY_IN_SV_DETECTIONS] = np.array(
+                rle_masks_list, dtype=object
+            )
+
+    return parsed_detections
 
 
 def _attach_parent_coordinates_and_dimensions(

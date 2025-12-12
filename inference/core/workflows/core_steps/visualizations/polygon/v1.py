@@ -17,6 +17,7 @@ from inference.core.workflows.execution_engine.entities.base import WorkflowImag
 from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
+    RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
@@ -61,6 +62,7 @@ class PolygonManifest(ColorableVisualizationManifest):
     predictions: Selector(
         kind=[
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
         ]
     ) = Field(  # type: ignore
         description="Predictions",
