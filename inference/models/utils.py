@@ -19,6 +19,7 @@ from inference.core.env import (
     MOONDREAM2_ENABLED,
     PALIGEMMA_ENABLED,
     QWEN_2_5_ENABLED,
+    SAM3_3D_OBJECTS_ENABLED,
     SMOLVLM2_ENABLED,
     USE_INFERENCE_EXP_MODELS,
 )
@@ -495,6 +496,23 @@ except:
         "Your `inference` configuration does not support Moondream2."
         "Use pip install 'inference[transformers]' to install missing requirements."
         "To suppress this warning, set MOONDREAM2_ENABLED to False.",
+        category=ModelDependencyMissing,
+    )
+
+try:
+    if SAM3_3D_OBJECTS_ENABLED:
+        from inference.models.sam3_3d.segment_anything_3d import (
+            SegmentAnything3_3D_Objects,
+        )
+
+        ROBOFLOW_MODEL_TYPES[("3d-reconstruction", "sam3-3d-objects")] = (
+            SegmentAnything3_3D_Objects
+        )
+except:
+    warnings.warn(
+        "Your `inference` configuration does not support SAM3_3D_Objects model. "
+        "Use pip install 'inference[sam3_3d]' to install missing requirements."
+        "To suppress this warning, set SAM3_3D_OBJECTS_ENABLED to False.",
         category=ModelDependencyMissing,
     )
 

@@ -5,6 +5,7 @@ from inference.core.env import (
     ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES,
     ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
     API_KEY,
+    SAM3_3D_OBJECTS_ENABLED,
     WORKFLOW_BLOCKS_WRITE_DIRECTORY,
     WORKFLOWS_STEP_EXECUTION_MODE,
 )
@@ -241,6 +242,9 @@ from inference.core.workflows.core_steps.models.foundation.segment_anything3.v1 
 )
 from inference.core.workflows.core_steps.models.foundation.segment_anything3.v2 import (
     SegmentAnything3BlockV2,
+)
+from inference.core.workflows.core_steps.models.foundation.segment_anything3_3d.v1 import (
+    SegmentAnything3_3D_ObjectsBlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.smolvlm.v1 import (
     SmolVLM2BlockV1,
@@ -670,6 +674,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         SegmentAnything2BlockV1,
         SegmentAnything3BlockV1,
         SegmentAnything3BlockV2,
+        SegmentAnything3_3D_ObjectsBlockV1,
         SegPreviewBlockV1,
         StabilityAIInpaintingBlockV1,
         StabilityAIImageGenBlockV1,
