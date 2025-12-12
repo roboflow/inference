@@ -97,6 +97,7 @@ from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_optional_string_kind,
     deserialize_point_kind,
     deserialize_rgb_color_kind,
+    deserialize_rle_detections_kind,
     deserialize_string_kind,
     deserialize_timestamp,
     deserialize_video_metadata_kind,
@@ -105,6 +106,7 @@ from inference.core.workflows.core_steps.common.deserializers import (
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.serializers import (
     serialise_image,
+    serialise_rle_sv_detections,
     serialise_sv_detections,
     serialize_secret,
     serialize_timestamp,
@@ -221,6 +223,9 @@ from inference.core.workflows.core_steps.models.foundation.openai.v2 import (
 from inference.core.workflows.core_steps.models.foundation.openai.v3 import (
     OpenAIBlockV3,
 )
+from inference.core.workflows.core_steps.models.foundation.openai.v4 import (
+    OpenAIBlockV4,
+)
 from inference.core.workflows.core_steps.models.foundation.perception_encoder.v1 import (
     PerceptionEncoderModelBlockV1,
 )
@@ -235,6 +240,12 @@ from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 
 )
 from inference.core.workflows.core_steps.models.foundation.segment_anything3.v1 import (
     SegmentAnything3BlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.segment_anything3.v2 import (
+    SegmentAnything3BlockV2,
+)
+from inference.core.workflows.core_steps.models.foundation.segment_anything3.v3 import (
+    SegmentAnything3BlockV3,
 )
 from inference.core.workflows.core_steps.models.foundation.smolvlm.v1 import (
     SmolVLM2BlockV1,
@@ -487,6 +498,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     PREDICTION_TYPE_KIND,
     QR_CODE_DETECTION_KIND,
     RGB_COLOR_KIND,
+    RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     ROBOFLOW_API_KEY_KIND,
     ROBOFLOW_MANAGED_KEY,
     ROBOFLOW_MODEL_ID_KIND,
@@ -519,6 +531,7 @@ KINDS_SERIALIZERS = {
     VIDEO_METADATA_KIND.name: serialize_video_metadata_kind,
     OBJECT_DETECTION_PREDICTION_KIND.name: serialise_sv_detections,
     INSTANCE_SEGMENTATION_PREDICTION_KIND.name: serialise_sv_detections,
+    RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND.name: serialise_rle_sv_detections,
     KEYPOINT_DETECTION_PREDICTION_KIND.name: serialise_sv_detections,
     QR_CODE_DETECTION_KIND.name: serialise_sv_detections,
     BAR_CODE_DETECTION_KIND.name: serialise_sv_detections,
@@ -531,6 +544,7 @@ KINDS_DESERIALIZERS = {
     VIDEO_METADATA_KIND.name: deserialize_video_metadata_kind,
     OBJECT_DETECTION_PREDICTION_KIND.name: deserialize_detections_kind,
     INSTANCE_SEGMENTATION_PREDICTION_KIND.name: deserialize_detections_kind,
+    RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND.name: deserialize_rle_detections_kind,
     KEYPOINT_DETECTION_PREDICTION_KIND.name: deserialize_detections_kind,
     QR_CODE_DETECTION_KIND.name: deserialize_detections_kind,
     BAR_CODE_DETECTION_KIND.name: deserialize_detections_kind,
@@ -642,6 +656,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         OpenAIBlockV1,
         OpenAIBlockV2,
         OpenAIBlockV3,
+        OpenAIBlockV4,
         PathDeviationAnalyticsBlockV1,
         PathDeviationAnalyticsBlockV2,
         PixelateVisualizationBlockV1,
@@ -662,6 +677,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         SIFTComparisonBlockV2,
         SegmentAnything2BlockV1,
         SegmentAnything3BlockV1,
+        SegmentAnything3BlockV2,
+        SegmentAnything3BlockV3,
         SegPreviewBlockV1,
         StabilityAIInpaintingBlockV1,
         StabilityAIImageGenBlockV1,

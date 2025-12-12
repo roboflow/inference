@@ -1,14 +1,14 @@
-from typing import List, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
 from inference_exp import Detections, KeyPoints
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
-from inference_exp.errors import ModelRuntimeError
+from inference_exp.errors import ModelPipelineInitializationError, ModelRuntimeError
 from inference_exp.models.l2cs.l2cs_onnx import (
     DEFAULT_GAZE_MAX_BATCH_SIZE,
-    GazeDetection,
+    L2CSGazeDetection,
     L2CSNetOnnx,
 )
 from inference_exp.models.mediapipe_face_detection.face_detection import (
@@ -19,39 +19,71 @@ from inference_exp.models.mediapipe_face_detection.face_detection import (
 class FaceAndGazeDetectionMPAndL2CS:
 
     @classmethod
+    def with_models(
+        cls, models: List[Any], **kwargs
+    ) -> "FaceAndGazeDetectionMPAndL2CS":
+        if len(models) != 2:
+            raise ModelPipelineInitializationError(
+                message="Model pipeline `face-and-gaze-detection` requires two models tu run - face detector "
+                "and gaze detector. If you run `inference` locally, verify the parameter of pipeline loader "
+                "to make sure that two models parameters' are provided. If you use Roboflow hosted solution, "
+                "contact us to get help.",
+                help_url="https://todo",
+            )
+        face_detector, gaze_detector = models
+        if not isinstance(face_detector, MediaPipeFaceDetector):
+            raise ModelPipelineInitializationError(
+                message="Model pipeline `face-and-gaze-detection` requires first model to be `MediaPipeFaceDetector` - "
+                "if you run `inference` locally, make sure that you initialized the pipeline pointing model of "
+                "matching type.",
+                help_url="https://todo",
+            )
+        if not isinstance(gaze_detector, L2CSNetOnnx):
+            raise ModelPipelineInitializationError(
+                message="Model pipeline `face-and-gaze-detection` requires second model to be `L2CSNet` - "
+                "if you run `inference` locally, make sure that you initialized the pipeline pointing model of "
+                "matching type.",
+                help_url="https://todo",
+            )
+        return FaceAndGazeDetectionMPAndL2CS.from_pretrained(
+            face_detector=face_detector, gaze_detector=gaze_detector, **kwargs
+        )
+
+    @classmethod
     def from_pretrained(
         cls,
-        face_detection_model_name_or_path: str,
-        gaze_detection_model_name_or_path: str,
+        face_detector: Union[str, MediaPipeFaceDetector],
+        gaze_detector: Union[str, L2CSNetOnnx],
         onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
         default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
         max_batch_size: int = DEFAULT_GAZE_MAX_BATCH_SIZE,
         **kwargs,
     ) -> "FaceAndGazeDetectionMPAndL2CS":
-        face_detector = MediaPipeFaceDetector.from_pretrained(
-            model_name_or_path=face_detection_model_name_or_path
-        )
-        gaze_detector = L2CSNetOnnx.from_pretrained(
-            model_name_or_path=gaze_detection_model_name_or_path,
-            onnx_execution_providers=onnx_execution_providers,
-            default_onnx_trt_options=default_onnx_trt_options,
-            device=device,
-            max_batch_size=max_batch_size,
-        )
+        if isinstance(face_detector, str):
+            face_detector = MediaPipeFaceDetector.from_pretrained(
+                model_name_or_path=face_detector
+            )
+        if isinstance(gaze_detector, str):
+            gaze_detector = L2CSNetOnnx.from_pretrained(
+                model_name_or_path=gaze_detector,
+                onnx_execution_providers=onnx_execution_providers,
+                default_onnx_trt_options=default_onnx_trt_options,
+                device=device,
+                max_batch_size=max_batch_size,
+            )
         return cls(
-            face_detector=face_detector, gaze_detector=gaze_detector, device=device
+            face_detector=face_detector,
+            gaze_detector=gaze_detector,
         )
 
     def __init__(
         self,
         face_detector: MediaPipeFaceDetector,
         gaze_detector: L2CSNetOnnx,
-        device: torch.device,
     ):
         self._face_detector = face_detector
         self._gaze_detector = gaze_detector
-        self._device = device
 
     @property
     def class_names(self) -> List[str]:
@@ -61,13 +93,17 @@ class FaceAndGazeDetectionMPAndL2CS:
     def key_points_classes(self) -> List[List[str]]:
         return self._face_detector.key_points_classes
 
+    @property
+    def skeletons(self) -> List[List[Tuple[int, int]]]:
+        return [[(5, 1), (1, 2), (4, 0), (0, 2), (2, 3)]]
+
     def infer(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
         conf_threshold: float = 0.25,
         **kwargs,
-    ) -> Tuple[List[KeyPoints], List[Detections], List[GazeDetection]]:
+    ) -> Tuple[List[KeyPoints], List[Detections], List[L2CSGazeDetection]]:
         key_points, detections = self._face_detector(
             images,
             input_color_format=input_color_format,
@@ -77,13 +113,13 @@ class FaceAndGazeDetectionMPAndL2CS:
         crops, crops_images_bounds = crop_images_to_detections(
             images=images,
             detections=detections,
-            device=self._device,
+            device=self._gaze_detector.device,
         )
         gaze_detections = self._gaze_detector(crops, input_color_format="rgb", **kwargs)
         gaze_detections_dispatched = []
         for start, end in crops_images_bounds:
             gaze_detections_dispatched.append(
-                GazeDetection(
+                L2CSGazeDetection(
                     yaw=gaze_detections.yaw[start:end],
                     pitch=gaze_detections.pitch[start:end],
                 )
@@ -96,7 +132,7 @@ class FaceAndGazeDetectionMPAndL2CS:
         input_color_format: Optional[ColorFormat] = None,
         conf_threshold: float = 0.25,
         **kwargs,
-    ) -> Tuple[List[KeyPoints], List[Detections], List[GazeDetection]]:
+    ) -> Tuple[List[KeyPoints], List[Detections], List[L2CSGazeDetection]]:
         return self.infer(
             images=images,
             input_color_format=input_color_format,

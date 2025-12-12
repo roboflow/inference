@@ -51,6 +51,7 @@ from inference.core.roboflow_api import (
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2multipoly
 from inference.core.utils.torchscript_guard import _temporarily_disable_torch_jit_script
+from inference.usage_tracking.collector import usage_collector
 
 # from sam3.model.sam1_task_predictor import SAM3InteractiveImagePredictor
 # from sam3.sam3_video_model_builder import build_sam3_tracking_predictor
@@ -186,6 +187,7 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
                     safe_remove_from_dict(values=self.image_size_cache, key=cache_key)
             return embedding_dict, img_in.shape[:2], image_id
 
+    @usage_collector("model")
     def infer_from_request(self, request: Sam2InferenceRequest):
         """Performs inference based on the request type.
 

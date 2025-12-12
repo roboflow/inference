@@ -8,7 +8,7 @@ from typing import List, Optional, Set, Tuple
 
 import torch
 from inference_exp.configuration import L4T_VERSION, RUNNING_ON_JETSON
-from inference_exp.errors import JetsonTypeResolutionError
+from inference_exp.errors import JetsonTypeResolutionError, RuntimeIntrospectionError
 from inference_exp.logger import LOGGER
 from inference_exp.utils.environment import str2bool
 from packaging.version import InvalidVersion, Version
@@ -45,6 +45,7 @@ class RuntimeXRayResult:
     hf_transformers_available: bool
     ultralytics_available: bool
     trt_python_package_available: bool
+    mediapipe_available: bool
 
     def __str__(self) -> str:
         gpu_devices_str = ", ".join(self.gpu_devices)
@@ -57,7 +58,7 @@ class RuntimeXRayResult:
             f"available_onnx_execution_providers={self.available_onnx_execution_providers}, hf_transformers_available={self.hf_transformers_available}, "
             f"ultralytics_available={self.ultralytics_available}, "
             f"trt_python_package_available={self.trt_python_package_available}, torch_version={self.torch_version}, "
-            f"torchvision_version={self.torchvision_version})"
+            f"torchvision_version={self.torchvision_version}, mediapipe_available={self.mediapipe_available})"
         )
 
 
@@ -73,6 +74,10 @@ def x_ray_runtime_environment() -> RuntimeXRayResult:
         os_version = get_os_version()
     driver_version = get_driver_version()
     gpu_devices = get_available_gpu_devices()
+    ensure_jetson_l4t_declared_for_jetson_hardware(
+        gpu_devices=gpu_devices,
+        l4t_version=l4t_version,
+    )
     gpu_devices_cc = get_available_gpu_devices_cc()
     torch_available = is_torch_available()
     torch_version = get_torch_version()
@@ -85,6 +90,7 @@ def x_ray_runtime_environment() -> RuntimeXRayResult:
     hf_transformers_available = is_hf_transformers_available()
     ultralytics_available = is_ultralytics_available()
     trt_python_package_available = is_trt_python_package_available()
+    mediapipe_available = is_mediapipe_available()
     return RuntimeXRayResult(
         gpu_available=len(gpu_devices) > 0,
         gpu_devices=gpu_devices,
@@ -103,6 +109,7 @@ def x_ray_runtime_environment() -> RuntimeXRayResult:
         hf_transformers_available=hf_transformers_available,
         ultralytics_available=ultralytics_available,
         trt_python_package_available=trt_python_package_available,
+        mediapipe_available=mediapipe_available,
     )
 
 
@@ -301,6 +308,16 @@ def is_trt_python_package_available() -> bool:
 
 
 @cache
+def is_mediapipe_available() -> bool:
+    try:
+        import mediapipe
+
+        return True
+    except ImportError:
+        return False
+
+
+@cache
 def is_torch_available() -> bool:
     try:
         import torch
@@ -371,3 +388,22 @@ def is_ultralytics_available() -> bool:
         return True
     except ImportError:
         return False
+
+
+def ensure_jetson_l4t_declared_for_jetson_hardware(
+    gpu_devices: List[str],
+    l4t_version: Optional[Version],
+) -> None:
+    # this function is needed to increase likelihood that in cases when
+    # runtime x-ray rely on env variables (like when on Jetson in container we
+    # cannot inspect hardware in a reliable way) - the xray is correct
+    if any(device == "orin" for device in gpu_devices) and l4t_version is None:
+        raise RuntimeIntrospectionError(
+            message="Inconsistency in environment setup detected - GPU device name indicate that you run the code"
+            "on Jetson device, but L4T version cannot be established, which is important for `inference-exp` "
+            "to work correctly. Please set environment variable `RUNNING_ON_JETSON=True`, as well as "
+            "`L4T_VERSION=<your-l4t-version>`. Optionally you may also set `JETSON_MODULE` variable "
+            f"to one of the values: {JETSON_DEVICES_TABLE}. If that does not solve your issue - contact "
+            f"Roboflow immediately.",
+            help_url="https://todo",
+        )

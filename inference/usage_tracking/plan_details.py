@@ -14,6 +14,8 @@ from inference.usage_tracking.payload_helpers import APIKey, APIKeyHash, sha256_
 
 class WebRTCPlan(BaseModel):
     gpu: Optional[str] = None
+    cpu_cores: Optional[int] = None
+    ram_mb: Optional[int] = None
 
 
 class PlanDetails(SQLiteWrapper):
@@ -25,11 +27,12 @@ class PlanDetails(SQLiteWrapper):
         table_name: str = "api_keys_plans",
         sqlite_connection: Optional[sqlite3.Connection] = None,
         sqlite_cache_enabled: bool = True,
+        api_plan_cache_ttl_seconds: int = 86400,
     ):
         self._api_plan_endpoint_url = api_plan_endpoint_url
         self._webrtc_plans_endpoint_url = webrtc_plans_endpoint_url
         self._webrtc_plans: Dict[str, WebRTCPlan] = {}
-        self._cache_ttl_seconds = 86400
+        self._cache_ttl_seconds = api_plan_cache_ttl_seconds
 
         self._columns = {}
 
