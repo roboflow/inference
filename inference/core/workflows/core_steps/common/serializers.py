@@ -361,151 +361,15 @@ def serialise_rle_sv_detections(detections: sv.Detections) -> dict:
             "This serializer requires RLE masks to be present."
         )
 
-    serialized_detections = []
-    image_dimensions = None
+    result = serialise_sv_detections(detections=detections)
 
-    for idx, (xyxy, mask, confidence, class_id, tracker_id, data) in enumerate(
-        detections
-    ):
-        detection_dict = {}
-        image_dimensions = data.get(IMAGE_DIMENSIONS_KEY)
-        if isinstance(xyxy, np.ndarray):
-            xyxy = xyxy.astype(float).tolist()
-        x1, y1, x2, y2 = xyxy
-        detection_dict[WIDTH_KEY] = abs(x2 - x1)
-        detection_dict[HEIGHT_KEY] = abs(y2 - y1)
-        detection_dict[X_KEY] = x1 + detection_dict[WIDTH_KEY] / 2
-        detection_dict[Y_KEY] = y1 + detection_dict[HEIGHT_KEY] / 2
+    for idx, detection_dict in enumerate(result["predictions"]):
+        detection_dict.pop(POLYGON_KEY, None)
 
-        detection_dict[CONFIDENCE_KEY] = float(confidence)
-        detection_dict[CLASS_ID_KEY] = int(class_id)
-
-        # Use RLE mask
         if idx < len(rle_masks):
             rle = rle_masks[idx]
-            # Convert counts to string if it's bytes (pycocotools returns bytes)
             if isinstance(rle.get("counts"), bytes):
                 rle = {"size": rle["size"], "counts": rle["counts"].decode("utf-8")}
             detection_dict[RLE_MASK_KEY_IN_INFERENCE_RESPONSE] = rle
 
-        if tracker_id is not None:
-            detection_dict[TRACKER_ID_KEY] = int(tracker_id)
-        detection_dict[CLASS_NAME_KEY] = str(data["class_name"])
-        detection_dict[DETECTION_ID_KEY] = str(data[DETECTION_ID_KEY])
-        if PATH_DEVIATION_KEY_IN_SV_DETECTIONS in data:
-            detection_dict[PATH_DEVIATION_KEY_IN_INFERENCE_RESPONSE] = data[
-                PATH_DEVIATION_KEY_IN_SV_DETECTIONS
-            ]
-        if TIME_IN_ZONE_KEY_IN_SV_DETECTIONS in data:
-            detection_dict[TIME_IN_ZONE_KEY_IN_INFERENCE_RESPONSE] = data[
-                TIME_IN_ZONE_KEY_IN_SV_DETECTIONS
-            ]
-        if POLYGON_KEY_IN_SV_DETECTIONS in data:
-            detection_dict[POLYGON_KEY_IN_INFERENCE_RESPONSE] = (
-                data[POLYGON_KEY_IN_SV_DETECTIONS]
-                .astype(float)
-                .round()
-                .astype(int)
-                .tolist()
-            )
-        if (
-            BOUNDING_RECT_ANGLE_KEY_IN_SV_DETECTIONS in data
-            and BOUNDING_RECT_RECT_KEY_IN_SV_DETECTIONS in data
-            and BOUNDING_RECT_HEIGHT_KEY_IN_SV_DETECTIONS in data
-            and BOUNDING_RECT_WIDTH_KEY_IN_SV_DETECTIONS in data
-        ):
-            detection_dict[BOUNDING_RECT_ANGLE_KEY_IN_INFERENCE_RESPONSE] = data[
-                BOUNDING_RECT_ANGLE_KEY_IN_SV_DETECTIONS
-            ]
-            detection_dict[BOUNDING_RECT_RECT_KEY_IN_INFERENCE_RESPONSE] = data[
-                BOUNDING_RECT_RECT_KEY_IN_SV_DETECTIONS
-            ]
-            detection_dict[BOUNDING_RECT_HEIGHT_KEY_IN_INFERENCE_RESPONSE] = data[
-                BOUNDING_RECT_HEIGHT_KEY_IN_SV_DETECTIONS
-            ]
-            detection_dict[BOUNDING_RECT_WIDTH_KEY_IN_INFERENCE_RESPONSE] = data[
-                BOUNDING_RECT_WIDTH_KEY_IN_SV_DETECTIONS
-            ]
-
-        if PARENT_ID_KEY in data:
-            detection_dict[PARENT_ID_KEY] = str(data[PARENT_ID_KEY])
-
-        # Add parent origin metadata if detection is based on a crop/slice
-        if (
-            PARENT_ID_KEY in data
-            and ROOT_PARENT_ID_KEY in data
-            and str(data[PARENT_ID_KEY]) != str(data[ROOT_PARENT_ID_KEY])
-        ):
-            _attach_parent_metadata_to_detection_dict(
-                detection_dict=detection_dict,
-                data=data,
-                coordinates_key=PARENT_COORDINATES_KEY,
-                dimensions_key=PARENT_DIMENSIONS_KEY,
-                origin_key=PARENT_ORIGIN_KEY,
-            )
-
-            detection_dict[ROOT_PARENT_ID_KEY] = str(data[ROOT_PARENT_ID_KEY])
-
-            _attach_parent_metadata_to_detection_dict(
-                detection_dict=detection_dict,
-                data=data,
-                coordinates_key=ROOT_PARENT_COORDINATES_KEY,
-                dimensions_key=ROOT_PARENT_DIMENSIONS_KEY,
-                origin_key=ROOT_PARENT_ORIGIN_KEY,
-            )
-
-        if (
-            KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS in data
-            and KEYPOINTS_CLASS_NAME_KEY_IN_SV_DETECTIONS in data
-            and KEYPOINTS_CONFIDENCE_KEY_IN_SV_DETECTIONS in data
-            and KEYPOINTS_XY_KEY_IN_SV_DETECTIONS in data
-        ):
-            kp_class_id = data[KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS]
-            kp_class_name = data[KEYPOINTS_CLASS_NAME_KEY_IN_SV_DETECTIONS]
-            kp_confidence = data[KEYPOINTS_CONFIDENCE_KEY_IN_SV_DETECTIONS]
-            kp_xy = data[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS]
-            detection_dict[KEYPOINTS_KEY_IN_INFERENCE_RESPONSE] = []
-            for (
-                keypoint_class_id,
-                keypoint_class_name,
-                keypoint_confidence,
-                (x, y),
-            ) in zip(kp_class_id, kp_class_name, kp_confidence, kp_xy):
-                detection_dict[KEYPOINTS_KEY_IN_INFERENCE_RESPONSE].append(
-                    {
-                        "class_id": int(keypoint_class_id),
-                        "class": str(keypoint_class_name),
-                        "confidence": float(keypoint_confidence),
-                        "x": float(x),
-                        "y": float(y),
-                    }
-                )
-        if DETECTED_CODE_KEY in data:
-            detection_dict[DETECTED_CODE_KEY] = data[DETECTED_CODE_KEY]
-        if VELOCITY_KEY_IN_SV_DETECTIONS in data:
-            detection_dict[VELOCITY_KEY_IN_INFERENCE_RESPONSE] = data[
-                VELOCITY_KEY_IN_SV_DETECTIONS
-            ].tolist()
-        if SPEED_KEY_IN_SV_DETECTIONS in data:
-            detection_dict[SPEED_KEY_IN_INFERENCE_RESPONSE] = data[
-                SPEED_KEY_IN_SV_DETECTIONS
-            ].astype(float)
-        if SMOOTHED_VELOCITY_KEY_IN_SV_DETECTIONS in data:
-            detection_dict[SMOOTHED_VELOCITY_KEY_IN_INFERENCE_RESPONSE] = data[
-                SMOOTHED_VELOCITY_KEY_IN_SV_DETECTIONS
-            ].tolist()
-        if SMOOTHED_SPEED_KEY_IN_SV_DETECTIONS in data:
-            detection_dict[SMOOTHED_SPEED_KEY_IN_INFERENCE_RESPONSE] = data[
-                SMOOTHED_SPEED_KEY_IN_SV_DETECTIONS
-            ].astype(float)
-        serialized_detections.append(detection_dict)
-    image_metadata = {
-        "width": None,
-        "height": None,
-    }
-    if image_dimensions is not None:
-        image_metadata = {
-            "width": image_dimensions[1].item(),
-            "height": image_dimensions[0].item(),
-        }
-    return {"image": image_metadata, "predictions": serialized_detections}
+    return result
