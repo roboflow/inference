@@ -72,65 +72,7 @@ class Point3D(Point):
     z: float = Field(description="The z-axis pixel coordinate of the point")
 
 
-class InstanceSegmentationPrediction(BaseModel):
-    """Instance Segmentation prediction.
-
-    Attributes:
-        x (float): The center x-axis pixel coordinate of the prediction.
-        y (float): The center y-axis pixel coordinate of the prediction.
-        width (float): The width of the prediction bounding box in number of pixels.
-        height (float): The height of the prediction bounding box in number of pixels.
-        confidence (float): The detection confidence as a fraction between 0 and 1.
-        class_name (str): The predicted class label.
-        class_confidence (Union[float, None]): The class label confidence as a fraction between 0 and 1.
-        points (List[Point]): The list of points that make up the instance polygon.
-        class_id: int = Field(description="The class id of the prediction")
-    """
-
-    x: float = Field(description="The center x-axis pixel coordinate of the prediction")
-    y: float = Field(description="The center y-axis pixel coordinate of the prediction")
-    width: float = Field(
-        description="The width of the prediction bounding box in number of pixels"
-    )
-    height: float = Field(
-        description="The height of the prediction bounding box in number of pixels"
-    )
-    confidence: float = Field(
-        description="The detection confidence as a fraction between 0 and 1"
-    )
-    class_name: str = Field(alias="class", description="The predicted class label")
-
-    class_confidence: Union[float, None] = Field(
-        None, description="The class label confidence as a fraction between 0 and 1"
-    )
-    points: List[Point] = Field(
-        description="The list of points that make up the instance polygon"
-    )
-    class_id: int = Field(description="The class id of the prediction")
-    detection_id: str = Field(
-        description="Unique identifier of detection",
-        default_factory=lambda: str(uuid4()),
-    )
-    parent_id: Optional[str] = Field(
-        description="Identifier of parent image region. Useful when stack of detection-models is in use to refer the RoI being the input to inference",
-        default=None,
-    )
-
-
-class InstanceSegmentationRLEPrediction(BaseModel):
-    """Instance segmentation prediction with RLE mask.
-
-    Attributes:
-        x (float): The center x-axis pixel coordinate of the prediction.
-        y (float): The center y-axis pixel coordinate of the prediction.
-        width (float): The width of the prediction bounding box in number of pixels.
-        height (float): The height of the prediction bounding box in number of pixels.
-        confidence (float): The detection confidence as a fraction between 0 and 1.
-        class_name (str): The predicted class label.
-        class_id (int): The class id of the prediction.
-        rle (dict): RLE-encoded mask in COCO format {"size": [H, W], "counts": "..."}.
-    """
-
+class InstanceSegmentationBasePrediction(BaseModel):
     x: float = Field(description="The center x-axis pixel coordinate of the prediction")
     y: float = Field(description="The center y-axis pixel coordinate of the prediction")
     width: float = Field(
@@ -144,9 +86,6 @@ class InstanceSegmentationRLEPrediction(BaseModel):
     )
     class_name: str = Field(alias="class", description="The predicted class label")
     class_id: int = Field(description="The class id of the prediction")
-    rle: dict = Field(
-        description="RLE-encoded mask in COCO format: {'size': [H, W], 'counts': '...'}"
-    )
     detection_id: str = Field(
         description="Unique identifier of detection",
         default_factory=lambda: str(uuid4()),
@@ -154,6 +93,21 @@ class InstanceSegmentationRLEPrediction(BaseModel):
     parent_id: Optional[str] = Field(
         description="Identifier of parent image region",
         default=None,
+    )
+
+
+class InstanceSegmentationPrediction(InstanceSegmentationBasePrediction):
+    class_confidence: Union[float, None] = Field(
+        None, description="The class label confidence as a fraction between 0 and 1"
+    )
+    points: List[Point] = Field(
+        description="The list of points that make up the instance polygon"
+    )
+
+
+class InstanceSegmentationRLEPrediction(InstanceSegmentationBasePrediction):
+    rle: dict = Field(
+        description="RLE-encoded mask in COCO format: {'size': [H, W], 'counts': '...'}"
     )
 
 
