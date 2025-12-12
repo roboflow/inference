@@ -66,7 +66,7 @@ You can use text prompts for open-vocabulary segmentation - just specify class n
 segment those objects in the image.
 
 This block supports two output formats:
-- **masks** (default): Returns masks in RLE (Run-Length Encoding) format, which is more memory-efficient
+- **rle** (default): Returns masks in RLE (Run-Length Encoding) format, which is more memory-efficient
 - **polygons**: Returns polygon coordinates for each mask
 
 RLE format is recommended for high-resolution images or workflows with many detections.
@@ -148,11 +148,11 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[0.5, 0.9],
     )
 
-    output_format: Literal["masks", "polygons"] = Field(
-        default="masks",
+    output_format: Literal["rle", "polygons"] = Field(
+        default="rle",
         title="Output Format",
-        description="'masks' returns efficient RLE encoding (recommended), 'polygons' returns polygon coordinates",
-        examples=["masks", "polygons"],
+        description="'rle' returns efficient RLE encoding (recommended), 'polygons' returns polygon coordinates",
+        examples=["rle", "polygons"],
     )
 
     @validator("nms_iou_threshold")
@@ -232,7 +232,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
         per_class_confidence: Optional[List[float]] = None,
         apply_nms: bool = True,
         nms_iou_threshold: float = 0.9,
-        output_format: Literal["masks", "polygons"] = "masks",
+        output_format: Literal["rle", "polygons"] = "rle",
     ) -> BlockResult:
 
         if isinstance(class_names, str):
@@ -289,7 +289,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
         per_class_confidence: Optional[List[float]] = None,
         apply_nms: bool = True,
         nms_iou_threshold: float = 0.9,
-        output_format: Literal["masks", "polygons"] = "masks",
+        output_format: Literal["rle", "polygons"] = "rle",
     ) -> BlockResult:
         if class_names is None:
             class_names = []
@@ -302,7 +302,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
         )
 
         # Determine format to request from model
-        model_format = "rle" if output_format == "masks" else "polygon"
+        model_format = "rle" if output_format == "rle" else "polygon"
 
         all_detections = []
         for single_image in images:
@@ -336,7 +336,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
             image_width = single_image.numpy_image.shape[1]
             image_height = single_image.numpy_image.shape[0]
 
-            if output_format == "masks":
+            if output_format == "rle":
                 # RLE output: build sv.Detections with RLE in data
                 detections = self._convert_rle_response_to_sv_detections(
                     sam3_response=sam3_response,
@@ -379,7 +379,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
         per_class_confidence: Optional[List[float]] = None,
         apply_nms: bool = True,
         nms_iou_threshold: float = 0.9,
-        output_format: Literal["masks", "polygons"] = "masks",
+        output_format: Literal["rle", "polygons"] = "rle",
     ) -> BlockResult:
         if class_names is None:
             class_names = []
@@ -388,7 +388,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
 
         endpoint = f"{API_BASE_URL}/inferenceproxy/seg-preview"
         api_key = self._api_key
-        model_format = "rle" if output_format == "masks" else "polygon"
+        model_format = "rle" if output_format == "rle" else "polygon"
 
         all_detections = []
         for single_image in images:
@@ -438,7 +438,7 @@ class SegmentAnything3BlockV3(WorkflowBlock):
             image_width = single_image.numpy_image.shape[1]
             image_height = single_image.numpy_image.shape[0]
 
-            if output_format == "masks":
+            if output_format == "rle":
                 # RLE output
                 detections = self._convert_rle_json_response_to_sv_detections(
                     resp_json=resp_json,
@@ -718,11 +718,11 @@ class SegmentAnything3BlockV3(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         predictions: List[sv.Detections],
-        output_format: Literal["masks", "polygons"],
+        output_format: Literal["rle", "polygons"],
     ) -> BlockResult:
         prediction_type = (
             "rle-instance-segmentation"
-            if output_format == "masks"
+            if output_format == "rle"
             else "instance-segmentation"
         )
         predictions = attach_prediction_type_info_to_sv_detections_batch(
@@ -733,6 +733,6 @@ class SegmentAnything3BlockV3(WorkflowBlock):
             images=images,
             predictions=predictions,
         )
-        if output_format == "masks":
+        if output_format == "rle":
             predictions = self._decode_and_cache_rle_masks(predictions)
         return [{"predictions": prediction} for prediction in predictions]
