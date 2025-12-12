@@ -10,6 +10,7 @@ from inference_exp.models.base.types import PreprocessedInputs, PreprocessingMet
 from inference_exp.models.common.roboflow.pre_processing import (
     extract_input_images_dimensions,
 )
+from inference_exp.models.owlv2.reference_dataset import ReferenceExample
 from transformers import Owlv2ForObjectDetection, Owlv2Processor
 from transformers.models.owlv2.modeling_owlv2 import Owlv2ObjectDetectionOutput
 
@@ -115,3 +116,10 @@ class OWLv2HF(
                 )
             )
         return results
+
+    def infer_with_reference_examples(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        reference_examples: List[ReferenceExample],
+    ) -> List[Detections]:
+        pass
