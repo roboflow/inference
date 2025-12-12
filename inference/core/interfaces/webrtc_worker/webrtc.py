@@ -773,7 +773,7 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
                 raise MediaStreamError("Track not available after wait")
 
         # Drain queue if using PlayerStreamTrack (RTSP/video file)
-        if isinstance(self.track, PlayerStreamTrack):
+        if isinstance(self.track, PlayerStreamTrack) and self.realtime_processing:
             while self.track._queue.qsize() > 30:
                 self.track._queue.get_nowait()
 
@@ -1025,6 +1025,12 @@ async def init_rtc_peer_connection_with_loop(
 
     relay = MediaRelay()
 
+    # Add video track early for SDP negotiation when stream_output is requested
+    # The track source will be set later by the appropriate handler (RTSP, on_track, video_upload)
+    if should_send_video:
+        logger.info("Adding video track early for SDP negotiation")
+        peer_connection.addTrack(video_processor)
+
     player: Optional[MediaPlayer] = None
     if webrtc_request.rtsp_url:
         if webrtc_request.rtsp_url == WEBRTC_MODAL_RTSP_PLACEHOLDER:
@@ -1041,11 +1047,8 @@ async def init_rtc_peer_connection_with_loop(
         )
         video_processor.set_track(track=player.video)
 
-        # Only add video track if we should send video back
-        if should_send_video:
-            peer_connection.addTrack(video_processor)
-        else:
-            # For DATA_ONLY, start data-only processing task
+        # For DATA_ONLY mode, start data-only processing task
+        if not should_send_video:
             logger.info("Starting data-only processing for RTSP stream")
             asyncio.create_task(video_processor.process_frames_data_only())
 
@@ -1058,12 +1061,8 @@ async def init_rtc_peer_connection_with_loop(
         )
         video_processor.set_track(track=relayed_track)
 
-        # Only add video track back if we should send video
-        if should_send_video:
-            logger.info("Adding video track to send back")
-            peer_connection.addTrack(video_processor)
-        else:
-            # No video track - start data-only processing task
+        # For DATA_ONLY mode, start data-only processing task
+        if not should_send_video:
             logger.info("Starting data-only processing (no video track)")
             asyncio.create_task(video_processor.process_frames_data_only())
 
@@ -1105,9 +1104,7 @@ async def init_rtc_peer_connection_with_loop(
 
             video_processor.video_upload_handler = VideoFileUploadHandler()
 
-            if should_send_video:
-                # Video track output: add track now, recv() will wait for track to be set
-                peer_connection.addTrack(video_processor)
+            # Note: track is already added early for SDP negotiation when should_send_video=True
 
             @channel.on("message")
             def on_upload_message(message):
@@ -1128,7 +1125,9 @@ async def init_rtc_peer_connection_with_loop(
                 video_path = video_processor.video_upload_handler.try_start_processing()
                 if video_path:
                     player = MediaPlayer(video_path, loop=False)
-                    player._throttle_playback = False
+                    player._throttle_playback = (
+                        webrtc_request.webrtc_realtime_processing
+                    )
                     video_processor.set_track(track=player.video)
                     if not should_send_video:
                         # For DATA_ONLY, start data-only processing task
