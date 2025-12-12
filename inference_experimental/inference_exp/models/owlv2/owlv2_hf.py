@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union, Iterable
 
 import numpy as np
 import torch
@@ -20,6 +20,8 @@ from inference_exp.models.base.types import PreprocessedInputs, PreprocessingMet
 from inference_exp.models.common.roboflow.pre_processing import (
     extract_input_images_dimensions,
 )
+from inference_exp.models.owlv2.cache import OwlV2ClassEmbeddingsCache, OwlV2ClassEmbeddingsCacheNullObject, \
+    OwlV2ImageEmbeddingsCache, OwlV2ImageEmbeddingsCacheNullObject, hash_reference_examples
 from inference_exp.models.owlv2.entities import (
     ImageEmbeddings,
     LazyReferenceExample,
@@ -55,14 +57,21 @@ class OWLv2HF(
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
         local_files_only: bool = True,
+        owlv2_class_embeddings_cache: Optional[OwlV2ClassEmbeddingsCache] = None,
+        owlv2_images_embeddings_cache: Optional[OwlV2ImageEmbeddingsCache] = None,
         allow_url_input: bool = ALLOW_URL_INPUT,
         allow_non_https_url: bool = ALLOW_NON_HTTPS_URL_INPUT,
         allow_url_without_fqdn: bool = ALLOW_URL_INPUT_WITHOUT_FQDN,
         whitelisted_domains: Optional[List[str]] = None,
         blacklisted_domains: Optional[List[str]] = None,
         allow_local_storage_access_for_reference_images: bool = ALLOW_LOCAL_STORAGE_ACCESS_FOR_REFERENCE_DATA,
+        owlv2_enforce_model_compilation: bool = False,
         **kwargs,
     ) -> "OpenVocabularyObjectDetectionModel":
+        if owlv2_class_embeddings_cache is None:
+            owlv2_class_embeddings_cache = OwlV2ClassEmbeddingsCacheNullObject()
+        if owlv2_images_embeddings_cache:
+            owlv2_images_embeddings_cache = OwlV2ImageEmbeddingsCacheNullObject()
         if whitelisted_domains is None:
             whitelisted_domains = WHITELISTED_DESTINATIONS_FOR_URL_INPUT
         if blacklisted_domains is None:
@@ -76,10 +85,12 @@ class OWLv2HF(
             model_name_or_path,
             local_files_only=local_files_only,
         ).to(device)
-        return cls(
+        instance = cls(
             model=model,
             processor=processor,
             device=device,
+            owlv2_class_embeddings_cache=owlv2_class_embeddings_cache,
+            owlv2_images_embeddings_cache=owlv2_images_embeddings_cache,
             allow_url_input=allow_url_input,
             allow_non_https_url=allow_non_https_url,
             allow_url_without_fqdn=allow_url_without_fqdn,
@@ -87,12 +98,17 @@ class OWLv2HF(
             blacklisted_domains=blacklisted_domains,
             allow_local_storage_access_for_reference_images=allow_local_storage_access_for_reference_images,
         )
+        if owlv2_enforce_model_compilation:
+            instance.optimize_for_inference()
+        return instance
 
     def __init__(
         self,
         model: Owlv2ForObjectDetection,
         processor: Owlv2Processor,
         device: torch.device,
+        owlv2_class_embeddings_cache: OwlV2ClassEmbeddingsCache,
+        owlv2_images_embeddings_cache: OwlV2ImageEmbeddingsCache,
         allow_url_input: bool,
         allow_non_https_url: bool,
         allow_url_without_fqdn: bool,
@@ -103,6 +119,8 @@ class OWLv2HF(
         self._model = model
         self._processor = processor
         self._device = device
+        self._owlv2_class_embeddings_cache = owlv2_class_embeddings_cache
+        self._owlv2_images_embeddings_cache = owlv2_images_embeddings_cache
         self._allow_url_input = allow_url_input
         self._allow_non_https_url = allow_non_https_url
         self._allow_url_without_fqdn = allow_url_without_fqdn
@@ -111,13 +129,17 @@ class OWLv2HF(
         self._allow_local_storage_access_for_reference_images = (
             allow_local_storage_access_for_reference_images
         )
+        self._compiled = False
 
     def optimize_for_inference(self) -> None:
+        if self._compiled:
+            return None
         self._model.owlv2.vision_model = torch.compile(self._model.owlv2.vision_model)
         example_image = torch.randint(
             low=0, high=255, size=(3, 128, 128), dtype=torch.uint8
         ).to(self._device)
         _ = self.infer(example_image, ["some", "other"])
+        self._compiled = True
 
     def pre_process(
         self,
@@ -235,7 +257,7 @@ class OWLv2HF(
         )
         all_predicted_boxes, all_predicted_classes, all_predicted_scores = [], [], []
         for class_name, reference_examples_class_embeddings in class_embeddings.items():
-            boxes, classes, scores = get_class_predictions_from_embeds(
+            boxes, classes, scores = get_class_predictions_from_embedings(
                 reference_examples_class_embeddings=reference_examples_class_embeddings,
                 image_class_embeddings=image_embedding.image_class_embeddings,
                 image_boxes=image_embedding.boxes,
@@ -268,8 +290,12 @@ class OWLv2HF(
             all_predicted_boxes = all_predicted_boxes[:max_detections]
             all_predicted_classes = all_predicted_classes[:max_detections]
             all_predicted_scores = all_predicted_scores[:max_detections]
+        xyxy = xywh_normalized_to_xyxy(
+            boxes_xywh=all_predicted_boxes,
+            image_size_wh=image_embedding.image_size_wh
+        )
         return Detections(
-            xyxy=all_predicted_boxes,
+            xyxy=xyxy,
             confidence=all_predicted_scores,
             class_id=all_predicted_classes,
         )
@@ -295,6 +321,14 @@ class OWLv2HF(
             )
             for example in reference_examples
         ]
+        examples_hash_key = hash_reference_examples(reference_examples=lazy_reference_examples)
+        cached_embeddings = self._owlv2_class_embeddings_cache.retrieve_embeddings(key=examples_hash_key)
+        if cached_embeddings is not None and not return_image_embeddings:
+            cached_embeddings = {k: v.to(self._device) for k, v in cached_embeddings.items()}
+            return ReferenceExamplesEmbeddings(
+                class_embeddings=cached_embeddings,
+                image_embeddings=None,
+            )
         class_embeddings_dict = defaultdict(
             lambda: {POSITIVE_EXAMPLE: [], NEGATIVE_EXAMPLE: []}
         )
@@ -341,6 +375,7 @@ class OWLv2HF(
             )
             for class_name, embeddings in class_embeddings_dict.items()
         }
+        self._owlv2_class_embeddings_cache.save_embeddings(key=examples_hash_key, embeddings=class_embeddings)
         return ReferenceExamplesEmbeddings(
             class_embeddings=class_embeddings,
             image_embeddings=(
@@ -395,13 +430,16 @@ class OWLv2HF(
         unload_after_use: bool = True,
     ) -> ImageEmbeddings:
         if isinstance(image, LazyImageWrapper):
-            image_hash = image.get_hash(unload_image_if_loaded=False)
+            image_hash = image.get_hash()
             image_instance = image.as_numpy()
             if unload_after_use:
                 image.unload_image()
         else:
             image_hash = compute_image_hash(image=image)
             image_instance = image
+        cached_embeddings = self._owlv2_images_embeddings_cache.retrieve_embeddings(key=image_hash)
+        if cached_embeddings:
+            return cached_embeddings
         pixel_values, image_dimensions = self.pre_process(image_instance)
         device_type = self._device.type
         with torch.autocast(
@@ -425,7 +463,7 @@ class OWLv2HF(
             + 1
         )
         objectness = objectness.sigmoid()
-        return ImageEmbeddings(
+        embeddings = ImageEmbeddings(
             image_hash=image_hash,
             objectness=objectness,
             boxes=boxes,
@@ -434,6 +472,8 @@ class OWLv2HF(
             logit_scale=logit_scale,
             image_size_wh=(image_dimensions[0].width, image_dimensions[0].height),
         )
+        self._owlv2_images_embeddings_cache.save_embeddings(embeddings=embeddings)
+        return embeddings
 
 
 def to_corners(box: torch.Tensor) -> torch.Tensor:
@@ -460,7 +500,7 @@ def make_class_mapping(
     return class_map, class_names
 
 
-def get_class_predictions_from_embeds(
+def get_class_predictions_from_embedings(
     reference_examples_class_embeddings: ReferenceExamplesClassEmbeddings,
     image_class_embeddings: torch.Tensor,
     image_boxes: torch.Tensor,
@@ -526,3 +566,16 @@ def get_class_predictions_from_embeds(
     is_positive = positive == 1
     # return only positive elements of tensor
     return pred_boxes[is_positive], pred_classes[is_positive], pred_scores[is_positive]
+
+
+def xywh_normalized_to_xyxy(boxes_xywh: torch.Tensor, image_size_wh: Tuple[int, int]) -> torch.Tensor:
+    max_dim = max(image_size_wh)
+    x_center = boxes_xywh[..., 0] * max_dim
+    y_center = boxes_xywh[..., 1] * max_dim
+    box_width = boxes_xywh[..., 2] * max_dim
+    box_height = boxes_xywh[..., 3] * max_dim
+    x1 = x_center - box_width / 2
+    y1 = y_center - box_height / 2
+    x2 = x_center + box_width / 2
+    y2 = y_center + box_height / 2
+    return torch.stack([x1, y1, x2, y2], dim=-1).to(device=boxes_xywh.device)

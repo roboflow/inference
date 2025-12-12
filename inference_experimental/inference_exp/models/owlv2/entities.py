@@ -23,11 +23,12 @@ class ReferenceBoundingBox(BaseModel):
     ]:
         if image_wh is None or self.absolute is False:
             return self.x, self.y, self.w, self.h
+        max_dim = max(image_wh)
         return (
-            self.x / image_wh[0],
-            self.y / image_wh[1],
-            self.w / image_wh[0],
-            self.h / image_wh[1],
+            self.x / max_dim,
+            self.y / max_dim,
+            self.w / max_dim,
+            self.h / max_dim,
         )
 
 

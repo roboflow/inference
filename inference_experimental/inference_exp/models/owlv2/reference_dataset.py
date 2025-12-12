@@ -96,15 +96,13 @@ class LazyImageWrapper:
         self._image_in_memory = image
         return image
 
-    def get_hash(self, unload_image_if_loaded: bool = True) -> str:
+    def get_hash(self) -> str:
         if self._image_hash is not None:
             return self._image_hash
         if self._image_reference is not None:
             self._image_hash = hash_function(value=self._image_reference)
         else:
             self._image_hash = hash_function(value=self.as_numpy().tobytes())
-            if unload_image_if_loaded:
-                self.unload_image()
         return self._image_hash
 
     def unload_image(self) -> None:
