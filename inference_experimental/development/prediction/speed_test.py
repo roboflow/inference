@@ -5,7 +5,7 @@ from typing import List, Optional
 
 import numpy as np
 from inference_exp import AutoModel
-from inference_exp.models.auto_loaders.core import AnyModel
+from inference_exp.models.auto_loaders.entities import AnyModel
 from tqdm import tqdm
 
 from .dataset import download_dataset

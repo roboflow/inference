@@ -7,6 +7,7 @@ from inference_exp.utils.download import get_content_length
 from inference_exp.weights_providers.entities import (
     FileDownloadSpecs,
     JetsonEnvironmentRequirements,
+    ModelDependency,
     ModelPackageMetadata,
     Quantization,
     ServerEnvironmentRequirements,
@@ -24,6 +25,7 @@ def render_table_with_model_overview(
     task_type: Optional[str],
     weights_provider: str,
     registered_packages: int,
+    model_dependencies: Optional[List[ModelDependency]],
 ) -> Table:
     table = Table(title="Model overview", show_header=False, box=None)
     table.add_column(justify="left", no_wrap=True, style="bold green4")
@@ -37,6 +39,14 @@ def render_table_with_model_overview(
     table.add_row("Task:", task_type or "N/A")
     table.add_row("Weights provider:", weights_provider)
     table.add_row("Number of packages:", str(registered_packages))
+    if model_dependencies:
+        model_dependencies_str = ", ".join(
+            [
+                f"{dependency.name}: {dependency.model_id} (package: {dependency.model_package_id or 'N/A'})"
+                for dependency in model_dependencies
+            ]
+        )
+        table.add_row("Model dependencies", model_dependencies_str)
     return table
 
 

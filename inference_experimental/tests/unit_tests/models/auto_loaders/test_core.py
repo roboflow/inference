@@ -25,8 +25,7 @@ from inference_exp.models.auto_loaders.core import (
     load_class_from_path,
     parse_model_config,
 )
-from inference_exp.models.auto_loaders.entities import InferenceModelConfig
-from inference_exp.weights_providers.entities import BackendType
+from inference_exp.models.auto_loaders.entities import BackendType, InferenceModelConfig
 
 
 def test_load_class_from_path_when_valid_python_module_provided(
@@ -209,6 +208,7 @@ def test_dump_auto_resolution_cache_when_cache_disabled() -> None:
         task_type="object-detection",
         backend_type=BackendType.ONNX,
         resolved_files={"some/file.txt"},
+        model_dependencies=None,
     )
 
     # then
@@ -235,6 +235,7 @@ def test_dump_auto_resolution_cache_when_cache_enabled(
         task_type="object-detection",
         backend_type=BackendType.ONNX,
         resolved_files={"some/file.txt"},
+        model_dependencies=None,
     )
 
     # then

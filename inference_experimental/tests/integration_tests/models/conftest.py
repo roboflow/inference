@@ -146,6 +146,10 @@ EASY_OCR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-
 TROCR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/tr-ocr-small-printed.zip"
 MEDIAPIPE_FACE_DETECTOR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/mediapipe-face-detector.zip"
 L2CS_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/l2cs-net.zip"
+OWLv2_PACKAGE_URL = (
+    "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/owlv2.zip"
+)
+INSTANT_MODEL_COIN_COUNTING_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/instant-model-coin-counting.zip"
 
 
 @pytest.fixture(scope="module")
@@ -1175,4 +1179,20 @@ def l2cs_package() -> str:
     return download_model_package(
         model_package_zip_url=L2CS_PACKAGE_URL,
         package_name="l2cs",
+    )
+
+
+@pytest.fixture(scope="module")
+def owlv2_package() -> str:
+    return download_model_package(
+        model_package_zip_url=OWLv2_PACKAGE_URL,
+        package_name="owl-v2",
+    )
+
+
+@pytest.fixture(scope="module")
+def rf_instant_model_coin_counting_package() -> str:
+    return download_model_package(
+        model_package_zip_url=INSTANT_MODEL_COIN_COUNTING_PACKAGE_URL,
+        package_name="rf-instant-coin-counting",
     )
