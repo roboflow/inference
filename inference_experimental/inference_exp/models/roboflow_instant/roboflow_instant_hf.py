@@ -99,10 +99,12 @@ class RoboflowInstantHF(ObjectDetectionModel):
     def pre_process(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        max_detections: int = 300,
         **kwargs,
     ) -> Tuple[List[ImageEmbeddings], List[ImageDimensions]]:
         images_embeddings, images_dimensions = self._feature_extractor.embed_images(
-            images=images
+            images=images,
+            max_detections=max_detections,
         )
         return images_embeddings, images_dimensions
 

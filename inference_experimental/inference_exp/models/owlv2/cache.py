@@ -1,8 +1,9 @@
 import hashlib
 import json
 from abc import ABC, abstractmethod
+from collections import OrderedDict
 from threading import Lock
-from typing import Dict, List, Optional, OrderedDict
+from typing import Dict, List, Optional
 
 import torch
 from inference_exp.errors import EnvironmentConfigurationError
@@ -42,6 +43,16 @@ class OwlV2ClassEmbeddingsCacheNullObject(OwlV2ClassEmbeddingsCache):
 
 
 class InMemoryOwlV2ClassEmbeddingsCache(OwlV2ClassEmbeddingsCache):
+
+    @classmethod
+    def init(
+        cls, size_limit: Optional[int], send_to_cpu: bool = True
+    ) -> "InMemoryOwlV2ClassEmbeddingsCache":
+        return cls(
+            state=OrderedDict(),
+            size_limit=size_limit,
+            send_to_cpu=send_to_cpu,
+        )
 
     def __init__(
         self,
@@ -107,6 +118,16 @@ class OwlV2ImageEmbeddingsCacheNullObject(OwlV2ImageEmbeddingsCache):
 
 
 class InMemoryOwlV2ImageEmbeddingsCache(OwlV2ImageEmbeddingsCache):
+
+    @classmethod
+    def init(
+        cls, size_limit: Optional[int], send_to_cpu: bool = True
+    ) -> "InMemoryOwlV2ImageEmbeddingsCache":
+        return cls(
+            state=OrderedDict(),
+            size_limit=size_limit,
+            send_to_cpu=send_to_cpu,
+        )
 
     def __init__(
         self,

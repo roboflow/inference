@@ -74,7 +74,7 @@ class OWLv2HF(
     ) -> "OpenVocabularyObjectDetectionModel":
         if owlv2_class_embeddings_cache is None:
             owlv2_class_embeddings_cache = OwlV2ClassEmbeddingsCacheNullObject()
-        if owlv2_images_embeddings_cache:
+        if owlv2_images_embeddings_cache is None:
             owlv2_images_embeddings_cache = OwlV2ImageEmbeddingsCacheNullObject()
         if whitelisted_domains is None:
             whitelisted_domains = WHITELISTED_DESTINATIONS_FOR_URL_INPUT
@@ -195,7 +195,7 @@ class OWLv2HF(
             results.append(
                 Detections(
                     xyxy=boxes[keep].contiguous().int(),
-                    class_id=labels[keep].contiguous(),
+                    class_id=labels[keep].contiguous().int(),
                     confidence=scores[keep].contiguous(),
                 )
             )
@@ -229,7 +229,9 @@ class OWLv2HF(
         iou_threshold: float = 0.3,
         max_detections: int = 300,
     ) -> List[Detections]:
-        images_embeddings, images_dimensions = self.embed_images(images=images)
+        images_embeddings, images_dimensions = self.embed_images(
+            images=images, max_detections=max_detections
+        )
         images_predictions = self.forward_pass_with_precomputed_embeddings(
             images_embeddings=images_embeddings,
             class_embeddings=class_embeddings,
@@ -277,6 +279,11 @@ class OWLv2HF(
                 all_predicted_boxes.append(boxes)
                 all_predicted_classes.append(classes)
                 all_predicted_scores.append(scores)
+            if not all_predicted_boxes:
+                results.append(
+                    (torch.empty((0,)), torch.empty((0,)), torch.empty((0,)))
+                )
+                continue
             all_predicted_boxes = torch.cat(all_predicted_boxes, dim=0)
             all_predicted_classes = torch.cat(all_predicted_classes, dim=0)
             all_predicted_scores = torch.cat(all_predicted_scores, dim=0)
@@ -328,9 +335,9 @@ class OWLv2HF(
             )
             results.append(
                 Detections(
-                    xyxy=xyxy,
+                    xyxy=xyxy.int(),
                     confidence=all_predicted_scores,
-                    class_id=all_predicted_classes,
+                    class_id=all_predicted_classes.int(),
                 )
             )
         return results
@@ -469,16 +476,21 @@ class OWLv2HF(
     def embed_images(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        max_detections: int = 300,
     ) -> Tuple[List[ImageEmbeddings], List[ImageDimensions]]:
         if isinstance(images, torch.Tensor):
             if len(images.shape) == 3:
                 images = [images]
             else:
                 images = torch.unbind(images, dim=0)
+        elif not isinstance(images, list):
+            images = [images]
         results = []
         image_dimensions = []
         for image in images:
-            image_embedding = self.embed_image(image=image)
+            image_embedding = self.embed_image(
+                image=image, max_detections=max_detections
+            )
             results.append(image_embedding)
             image_dimensions.append(
                 ImageDimensions(
@@ -492,6 +504,7 @@ class OWLv2HF(
     def embed_image(
         self,
         image: Union[torch.Tensor, np.ndarray, LazyImageWrapper],
+        max_detections: int = 300,
         unload_after_use: bool = True,
     ) -> ImageEmbeddings:
         if isinstance(image, LazyImageWrapper):
@@ -530,6 +543,16 @@ class OWLv2HF(
             + 1
         )
         objectness = objectness.sigmoid()
+        objectness, boxes, image_class_embeddings, logit_shift, logit_scale = (
+            filter_tensors_by_objectness(
+                objectness,
+                boxes,
+                image_class_embeddings,
+                logit_shift,
+                logit_scale,
+                max_detections,
+            )
+        )
         embeddings = ImageEmbeddings(
             image_hash=image_hash,
             objectness=objectness,
@@ -565,6 +588,27 @@ def make_class_mapping(
     }
     class_map = {**class_map_positive, **class_map_negative}
     return class_map, class_names
+
+
+def filter_tensors_by_objectness(
+    objectness: torch.Tensor,
+    boxes: torch.Tensor,
+    image_class_embeds: torch.Tensor,
+    logit_shift: torch.Tensor,
+    logit_scale: torch.Tensor,
+    max_detections: int,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    objectness = objectness.squeeze(0)
+    objectness, objectness_indices = torch.topk(objectness, max_detections, dim=0)
+    boxes = boxes.squeeze(0)
+    image_class_embeds = image_class_embeds.squeeze(0)
+    logit_shift = logit_shift.squeeze(0).squeeze(1)
+    logit_scale = logit_scale.squeeze(0).squeeze(1)
+    boxes = boxes[objectness_indices]
+    image_class_embeds = image_class_embeds[objectness_indices]
+    logit_shift = logit_shift[objectness_indices]
+    logit_scale = logit_scale[objectness_indices]
+    return objectness, boxes, image_class_embeds, logit_shift, logit_scale
 
 
 def get_class_predictions_from_embedings(
