@@ -6,6 +6,9 @@ import torch
 from inference_exp.models.owlv2.reference_dataset import LazyImageWrapper
 from pydantic import BaseModel, ConfigDict, Field
 
+POSITIVE_EXAMPLE = "positive"
+NEGATIVE_EXAMPLE = "negative"
+
 
 class ReferenceBoundingBox(BaseModel):
     x: Union[float, int]
@@ -87,3 +90,22 @@ class ReferenceExamplesClassEmbeddings:
 class ReferenceExamplesEmbeddings:
     class_embeddings: Dict[str, ReferenceExamplesClassEmbeddings]
     image_embeddings: Optional[Dict[str, ImageEmbeddings]]
+
+    @classmethod
+    def from_class_embeddings_dict(
+        cls,
+        class_embeddings: Dict[str, Dict[str, torch.Tensor]],
+        device: torch.device,
+    ) -> "ReferenceExamplesEmbeddings":
+        result = {}
+        for class_name, examples_class_embeddings in class_embeddings.items():
+            positive, negative = None, None
+            if POSITIVE_EXAMPLE in examples_class_embeddings:
+                positive = examples_class_embeddings[POSITIVE_EXAMPLE]
+            if NEGATIVE_EXAMPLE in examples_class_embeddings:
+                negative = examples_class_embeddings[NEGATIVE_EXAMPLE]
+            single_class_embeddings = ReferenceExamplesClassEmbeddings(
+                positive=positive, negative=negative
+            ).to(device=device)
+            result[class_name] = single_class_embeddings
+        return cls(class_embeddings=result, image_embeddings=None)

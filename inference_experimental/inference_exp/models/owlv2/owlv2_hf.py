@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import Dict, List, Optional, Tuple, Union, Iterable
+from typing import Dict, Iterable, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -20,9 +20,16 @@ from inference_exp.models.base.types import PreprocessedInputs, PreprocessingMet
 from inference_exp.models.common.roboflow.pre_processing import (
     extract_input_images_dimensions,
 )
-from inference_exp.models.owlv2.cache import OwlV2ClassEmbeddingsCache, OwlV2ClassEmbeddingsCacheNullObject, \
-    OwlV2ImageEmbeddingsCache, OwlV2ImageEmbeddingsCacheNullObject, hash_reference_examples
+from inference_exp.models.owlv2.cache import (
+    OwlV2ClassEmbeddingsCache,
+    OwlV2ClassEmbeddingsCacheNullObject,
+    OwlV2ImageEmbeddingsCache,
+    OwlV2ImageEmbeddingsCacheNullObject,
+    hash_reference_examples,
+)
 from inference_exp.models.owlv2.entities import (
+    NEGATIVE_EXAMPLE,
+    POSITIVE_EXAMPLE,
     ImageEmbeddings,
     LazyReferenceExample,
     ReferenceExample,
@@ -35,9 +42,6 @@ from inference_exp.models.owlv2.reference_dataset import (
 )
 from transformers import Owlv2ForObjectDetection, Owlv2Processor
 from transformers.models.owlv2.modeling_owlv2 import Owlv2ObjectDetectionOutput, box_iou
-
-POSITIVE_EXAMPLE = "positive"
-NEGATIVE_EXAMPLE = "negative"
 
 Query = Dict[
     str,
@@ -225,80 +229,111 @@ class OWLv2HF(
         iou_threshold: float = 0.3,
         max_detections: int = 300,
     ) -> List[Detections]:
-        if isinstance(images, torch.Tensor):
-            if len(images.shape) == 3:
-                images = [images]
-            else:
-                images = torch.unbind(images, dim=0)
-        results = []
-        for image in images:
-            image_embedding = self.embed_image(image=image)
-            result = self.infer_for_precomputed_embeddings(
-                image_embedding=image_embedding,
-                class_embeddings=class_embeddings,
-                confidence_threshold=confidence_threshold,
-                iou_threshold=iou_threshold,
-                max_detections=max_detections,
-            )
-            results.append(result)
-        return results
+        images_embeddings, images_dimensions = self.embed_images(images=images)
+        images_predictions = self.forward_pass_with_precomputed_embeddings(
+            images_embeddings=images_embeddings,
+            class_embeddings=class_embeddings,
+            confidence_threshold=confidence_threshold,
+            iou_threshold=iou_threshold,
+        )
+        return self.post_process_predictions_for_precomputed_embeddings(
+            predictions=images_predictions,
+            images_dimensions=images_dimensions,
+            max_detections=max_detections,
+            iou_threshold=iou_threshold,
+        )
 
-    def infer_for_precomputed_embeddings(
+    def forward_pass_with_precomputed_embeddings(
         self,
-        image_embedding: ImageEmbeddings,
+        images_embeddings: List[ImageEmbeddings],
         class_embeddings: Dict[str, ReferenceExamplesClassEmbeddings],
         confidence_threshold: float = 0.99,
         iou_threshold: float = 0.3,
-        max_detections: int = 300,
-    ) -> Detections:
-        image_embedding = image_embedding.to(self._device)
-        class_mapping, class_names = make_class_mapping(
-            class_names=class_embeddings.keys()
-        )
-        all_predicted_boxes, all_predicted_classes, all_predicted_scores = [], [], []
-        for class_name, reference_examples_class_embeddings in class_embeddings.items():
-            boxes, classes, scores = get_class_predictions_from_embedings(
-                reference_examples_class_embeddings=reference_examples_class_embeddings,
-                image_class_embeddings=image_embedding.image_class_embeddings,
-                image_boxes=image_embedding.boxes,
-                confidence_threshold=confidence_threshold,
-                class_mapping=class_mapping,
-                class_name=class_name,
-                iou_threshold=iou_threshold,
+    ) -> List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
+        results = []
+        for image_embedding in images_embeddings:
+            image_embedding = image_embedding.to(self._device)
+            class_mapping, class_names = make_class_mapping(
+                class_names=class_embeddings.keys()
             )
-            all_predicted_boxes.append(boxes)
-            all_predicted_classes.append(classes)
-            all_predicted_scores.append(scores)
+            all_predicted_boxes, all_predicted_classes, all_predicted_scores = (
+                [],
+                [],
+                [],
+            )
+            for (
+                class_name,
+                reference_examples_class_embeddings,
+            ) in class_embeddings.items():
+                boxes, classes, scores = get_class_predictions_from_embedings(
+                    reference_examples_class_embeddings=reference_examples_class_embeddings,
+                    image_class_embeddings=image_embedding.image_class_embeddings,
+                    image_boxes=image_embedding.boxes,
+                    confidence_threshold=confidence_threshold,
+                    class_mapping=class_mapping,
+                    class_name=class_name,
+                    iou_threshold=iou_threshold,
+                )
+                all_predicted_boxes.append(boxes)
+                all_predicted_classes.append(classes)
+                all_predicted_scores.append(scores)
+            all_predicted_boxes = torch.cat(all_predicted_boxes, dim=0)
+            all_predicted_classes = torch.cat(all_predicted_classes, dim=0)
+            all_predicted_scores = torch.cat(all_predicted_scores, dim=0)
+            results.append(
+                (all_predicted_boxes, all_predicted_classes, all_predicted_scores)
+            )
+        return results
 
-        if not all_predicted_boxes:
-            return Detections(
-                xyxy=torch.empty((0, 4), dtype=torch.int32, device=self._device),
-                confidence=torch.empty((0,), dtype=torch.float32, device=self._device),
-                class_id=torch.empty((0,), dtype=torch.int32, device=self._device),
+    def post_process_predictions_for_precomputed_embeddings(
+        self,
+        predictions: List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]],
+        images_dimensions: List[ImageDimensions],
+        max_detections: int = 300,
+        iou_threshold: float = 0.3,
+    ) -> List[Detections]:
+        results = []
+        for image_predictions, image_dimensions in zip(predictions, images_dimensions):
+            all_predicted_boxes, all_predicted_classes, all_predicted_scores = (
+                image_predictions
             )
-        all_predicted_boxes = torch.cat(all_predicted_boxes, dim=0)
-        all_predicted_classes = torch.cat(all_predicted_classes, dim=0)
-        all_predicted_scores = torch.cat(all_predicted_scores, dim=0)
-        # run nms on all predictions
-        survival_indices = torchvision.ops.nms(
-            to_corners(all_predicted_boxes), all_predicted_scores, iou_threshold
-        )
-        all_predicted_boxes = all_predicted_boxes[survival_indices]
-        all_predicted_classes = all_predicted_classes[survival_indices]
-        all_predicted_scores = all_predicted_scores[survival_indices]
-        if len(all_predicted_boxes) > max_detections:
-            all_predicted_boxes = all_predicted_boxes[:max_detections]
-            all_predicted_classes = all_predicted_classes[:max_detections]
-            all_predicted_scores = all_predicted_scores[:max_detections]
-        xyxy = xywh_normalized_to_xyxy(
-            boxes_xywh=all_predicted_boxes,
-            image_size_wh=image_embedding.image_size_wh
-        )
-        return Detections(
-            xyxy=xyxy,
-            confidence=all_predicted_scores,
-            class_id=all_predicted_classes,
-        )
+            if all_predicted_boxes.numel() == 0:
+                results.append(
+                    Detections(
+                        xyxy=torch.empty(
+                            (0, 4), dtype=torch.int32, device=self._device
+                        ),
+                        confidence=torch.empty(
+                            (0,), dtype=torch.float32, device=self._device
+                        ),
+                        class_id=torch.empty(
+                            (0,), dtype=torch.int32, device=self._device
+                        ),
+                    )
+                )
+                continue
+            survival_indices = torchvision.ops.nms(
+                to_corners(all_predicted_boxes), all_predicted_scores, iou_threshold
+            )
+            all_predicted_boxes = all_predicted_boxes[survival_indices]
+            all_predicted_classes = all_predicted_classes[survival_indices]
+            all_predicted_scores = all_predicted_scores[survival_indices]
+            if len(all_predicted_boxes) > max_detections:
+                all_predicted_boxes = all_predicted_boxes[:max_detections]
+                all_predicted_classes = all_predicted_classes[:max_detections]
+                all_predicted_scores = all_predicted_scores[:max_detections]
+            xyxy = xywh_normalized_to_xyxy(
+                boxes_xywh=all_predicted_boxes,
+                image_size_wh=(image_dimensions.width, image_dimensions.height),
+            )
+            results.append(
+                Detections(
+                    xyxy=xyxy,
+                    confidence=all_predicted_scores,
+                    class_id=all_predicted_classes,
+                )
+            )
+        return results
 
     def prepare_reference_examples_embeddings(
         self,
@@ -321,10 +356,16 @@ class OWLv2HF(
             )
             for example in reference_examples
         ]
-        examples_hash_key = hash_reference_examples(reference_examples=lazy_reference_examples)
-        cached_embeddings = self._owlv2_class_embeddings_cache.retrieve_embeddings(key=examples_hash_key)
+        examples_hash_key = hash_reference_examples(
+            reference_examples=lazy_reference_examples
+        )
+        cached_embeddings = self._owlv2_class_embeddings_cache.retrieve_embeddings(
+            key=examples_hash_key
+        )
         if cached_embeddings is not None and not return_image_embeddings:
-            cached_embeddings = {k: v.to(self._device) for k, v in cached_embeddings.items()}
+            cached_embeddings = {
+                k: v.to(self._device) for k, v in cached_embeddings.items()
+            }
             return ReferenceExamplesEmbeddings(
                 class_embeddings=cached_embeddings,
                 image_embeddings=None,
@@ -375,7 +416,9 @@ class OWLv2HF(
             )
             for class_name, embeddings in class_embeddings_dict.items()
         }
-        self._owlv2_class_embeddings_cache.save_embeddings(key=examples_hash_key, embeddings=class_embeddings)
+        self._owlv2_class_embeddings_cache.save_embeddings(
+            key=examples_hash_key, embeddings=class_embeddings
+        )
         return ReferenceExamplesEmbeddings(
             class_embeddings=class_embeddings,
             image_embeddings=(
@@ -423,6 +466,28 @@ class OWLv2HF(
             return None
         return torch.cat(query_embeddings, dim=0)
 
+    def embed_images(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+    ) -> Tuple[List[ImageEmbeddings], List[ImageDimensions]]:
+        if isinstance(images, torch.Tensor):
+            if len(images.shape) == 3:
+                images = [images]
+            else:
+                images = torch.unbind(images, dim=0)
+        results = []
+        image_dimensions = []
+        for image in images:
+            image_embedding = self.embed_image(image=image)
+            results.append(image_embedding)
+            image_dimensions.append(
+                ImageDimensions(
+                    height=image_embedding.image_size_wh[1],
+                    width=image_embedding.image_size_wh[0],
+                )
+            )
+        return results, image_dimensions
+
     @torch.inference_mode()
     def embed_image(
         self,
@@ -437,7 +502,9 @@ class OWLv2HF(
         else:
             image_hash = compute_image_hash(image=image)
             image_instance = image
-        cached_embeddings = self._owlv2_images_embeddings_cache.retrieve_embeddings(key=image_hash)
+        cached_embeddings = self._owlv2_images_embeddings_cache.retrieve_embeddings(
+            key=image_hash
+        )
         if cached_embeddings:
             return cached_embeddings
         pixel_values, image_dimensions = self.pre_process(image_instance)
@@ -568,7 +635,9 @@ def get_class_predictions_from_embedings(
     return pred_boxes[is_positive], pred_classes[is_positive], pred_scores[is_positive]
 
 
-def xywh_normalized_to_xyxy(boxes_xywh: torch.Tensor, image_size_wh: Tuple[int, int]) -> torch.Tensor:
+def xywh_normalized_to_xyxy(
+    boxes_xywh: torch.Tensor, image_size_wh: Tuple[int, int]
+) -> torch.Tensor:
     max_dim = max(image_size_wh)
     x_center = boxes_xywh[..., 0] * max_dim
     y_center = boxes_xywh[..., 1] * max_dim
