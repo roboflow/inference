@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import torch
@@ -90,7 +90,7 @@ def set_execution_provider_defaults(
     device: torch.device,
     enable_fp16: bool = True,
     default_onnx_trt_options: bool = True,
-) -> List[Union[str, tuple]]:
+) -> List[Union[str, tuple[str, dict[str, Any]]]]:
     result = []
     device_id_options = {}
     if device.index is not None:

@@ -393,6 +393,22 @@ REGISTERED_MODELS: Dict[
         module_name="inference_exp.models.grounding_dino.grounding_dino_torch",
         class_name="GroundingDinoForObjectDetectionTorch",
     ),
+    (
+        "dinov3_probe",
+        MULTI_LABEL_CLASSIFICATION_TASK,
+        BackendType.ONNX,
+    ): LazyClass(
+        module_name="inference_exp.models.dinov3.dinov3_classification_onnx",
+        class_name="DinoV3ForMultiLabelClassificationOnnx",
+    ),
+    (
+        "dinov3_probe",
+        CLASSIFICATION_TASK,
+        BackendType.ONNX,
+    ): LazyClass(
+        module_name="inference_exp.models.dinov3.dinov3_classification_onnx",
+        class_name="DinoV3ForClassificationOnnx",
+    ),
 }
 
 
