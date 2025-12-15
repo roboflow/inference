@@ -708,6 +708,48 @@ INSTANCE_SEGMENTATION_PREDICTION_KIND = Kind(
 )
 
 
+RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND_DOCS = """
+This kind represents instance segmentation prediction with RLE (Run-Length Encoding) masks
+in form of [`sv.Detections(...)`](https://supervision.roboflow.com/latest/detection/core/) object.
+
+The masks are stored in `sv.Detections.data["rle_mask"]` as a numpy array of RLE dictionaries
+in COCO format: `{"size": [H, W], "counts": "encoded_string"}`.
+
+When visualization blocks need numpy masks, they decode RLE on-demand using pycocotools.
+
+Example:
+```
+sv.Detections(
+    xyxy=array([[        127,         189,         322,         303]]),
+    mask=None,  # Initially None, populated lazily when needed
+    confidence=array([    0.95898]),
+    class_id=array([6]),
+    tracker_id=None,
+    data={
+        'class_name': array(['person'], dtype='<U6'),
+        'detection_id': array(['51dfa8d5-261c-4dcb-ab30-9aafe9b52379'], dtype='<U36'),
+        'parent_id': array(['image.[0]'], dtype='<U9'),
+        'image_dimensions': array([[425, 640]]),
+        'prediction_type': array(['rle-instance-segmentation'], dtype='<U26'),
+        'rle_masks': array([{'size': [425, 640], 'counts': 'encoded_rle_string'}], dtype=object),
+        # ... other standard fields
+    }
+)
+```
+
+**SERIALISATION:**
+Entity details similar to InstanceSegmentationInferenceResponse, but with RLE masks instead of polygons.
+RLE format follows COCO standard and can be decoded using pycocotools.mask.decode().
+"""
+RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND = Kind(
+    name="rle_instance_segmentation_prediction",
+    description="Prediction with detected bounding boxes and RLE-encoded segmentation masks in form of sv.Detections(...) object",
+    docs=RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND_DOCS,
+    serialised_data_type="dict",
+    internal_data_type="sv.Detections",
+)
+
+
 KEYPOINT_DETECTION_PREDICTION_KIND_DOCS = """
 This kind represents single keypoints prediction in form of 
 [`sv.Detections(...)`](https://supervision.roboflow.com/latest/detection/core/) object.
