@@ -5,7 +5,7 @@ import os.path
 import re
 from datetime import datetime
 from functools import partial
-from typing import Callable, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 import torch
 from filelock import FileLock
@@ -82,6 +82,12 @@ MODEL_TYPES_TO_LOAD_FROM_CHECKPOINT = {
     "rfdetr-large",
     "rfdetr-seg-preview",
 }
+
+DEFAULT_KWARGS_PARAMS_TO_BE_FORWARDED_TO_DEPENDENT_MODELS = [
+    "owlv2_enforce_model_compilation",
+    "owlv2_class_embeddings_cache",
+    "owlv2_images_embeddings_cache",
+]
 
 
 class AutoModel:
@@ -222,6 +228,7 @@ class AutoModel:
         allow_loading_dependency_models: bool = True,
         dependency_models_params: Optional[dict] = None,
         point_model_directory: Optional[Callable[[str], None]] = None,
+        forwarded_kwargs: Optional[List[str]] = None,
         **kwargs,
     ) -> AnyModel:
         if model_access_manager is None:
@@ -296,6 +303,13 @@ class AutoModel:
             )
             if model_from_access_manager:
                 return model_from_access_manager
+            if forwarded_kwargs is None:
+                forwarded_kwargs = (
+                    DEFAULT_KWARGS_PARAMS_TO_BE_FORWARDED_TO_DEPENDENT_MODELS
+                )
+            forwarded_kwargs_values = {
+                name: kwargs[name] for name in forwarded_kwargs if name in kwargs
+            }
             model_from_cache = attempt_loading_model_with_auto_load_cache(
                 use_auto_resolution_cache=use_auto_resolution_cache,
                 auto_resolution_cache=auto_resolution_cache,
@@ -305,6 +319,7 @@ class AutoModel:
                 model_init_kwargs=model_init_kwargs,
                 api_key=api_key,
                 allow_loading_dependency_models=allow_loading_dependency_models,
+                forwarded_kwargs_values=forwarded_kwargs_values,
                 verbose=verbose,
                 weights_provider=weights_provider,
                 max_package_loading_attempts=max_package_loading_attempts,
@@ -408,6 +423,10 @@ class AutoModel:
                 def model_directory_pointer(model_dir: str) -> None:
                     model_dependencies_directories[model_dependency.name] = model_dir
 
+                for name, value in forwarded_kwargs_values.items():
+                    if name not in resolved_model_parameters.model_extra:
+                        resolved_model_parameters.model_extra[name] = value
+
                 dependency_instance = AutoModel.from_pretrained(
                     model_id_or_path=resolved_model_parameters.model_id_or_path,
                     weights_provider=weights_provider,
@@ -494,6 +513,7 @@ def attempt_loading_model_with_auto_load_cache(
     model_init_kwargs: dict,
     api_key: Optional[str],
     allow_loading_dependency_models: bool,
+    forwarded_kwargs_values: Dict[str, Any],
     verbose: bool = False,
     weights_provider: str = "roboflow",
     max_package_loading_attempts: Optional[int] = None,
@@ -552,11 +572,14 @@ def attempt_loading_model_with_auto_load_cache(
             resolved_model_parameters = prepare_dependency_model_parameters(
                 model_parameters=dependency_params
             )
+
+            for name, value in forwarded_kwargs_values.items():
+                if name not in resolved_model_parameters.model_extra:
+                    resolved_model_parameters.model_extra[name] = value
             verbose_info(
                 message=f"Initialising dependent model: {model_dependency.model_id}",
                 verbose_requested=verbose,
             )
-
             dependency_instance = AutoModel.from_pretrained(
                 model_id_or_path=resolved_model_parameters.model_id_or_path,
                 weights_provider=weights_provider,
