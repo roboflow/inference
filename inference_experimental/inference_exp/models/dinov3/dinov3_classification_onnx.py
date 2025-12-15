@@ -1,9 +1,14 @@
 from threading import Lock
-from typing import Any, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
-from inference_exp import ClassificationModel, ClassificationPrediction
+from inference_exp import (
+    ClassificationModel,
+    ClassificationPrediction,
+    MultiLabelClassificationModel,
+    MultiLabelClassificationPrediction,
+)
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.entities import ColorFormat
 from inference_exp.errors import (
@@ -57,7 +62,7 @@ class DinoV3ForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor
         **kwargs,
     ) -> "DinoV3ForClassificationOnnx":
         if onnx_execution_providers is None:
-            onnx_execution_providers = get_selected_onnx_execution_providers()
+            onnx_execution_providers = get_selected_onnx_execution_providers()  # type: ignore
         if not onnx_execution_providers:
             raise EnvironmentConfigurationError(
                 message=f"Could not initialize model - selected backend is ONNX which requires execution provider to "
@@ -100,7 +105,10 @@ class DinoV3ForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor
             },
         )
 
-        if inference_config.post_processing.type != "softmax":
+        if (
+            not inference_config.post_processing
+            or inference_config.post_processing.type != "softmax"
+        ):
             raise CorruptedModelPackageError(
                 message="Expected Softmax to be the post-processing",
                 help_url="https://todo",
@@ -163,12 +171,12 @@ class DinoV3ForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor
         )[0]
 
     def forward(
-        self, pre_processed_images: PreprocessedInputs, **kwargs
+        self, pre_processed_images: PreprocessedInputs, **kwargs  # type: ignore
     ) -> torch.Tensor:
         with self._session_thread_lock:
             return run_session_with_batch_size_limit(
                 session=self._session,
-                inputs={self._input_name: pre_processed_images},
+                inputs={self._input_name: pre_processed_images},  # type: ignore
                 min_batch_size=self._input_batch_size,
                 max_batch_size=self._input_batch_size,
             )[0]
@@ -178,7 +186,10 @@ class DinoV3ForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor
         model_results: torch.Tensor,
         **kwargs,
     ) -> ClassificationPrediction:
-        if self._inference_config.post_processing.fused:
+        if (
+            self._inference_config.post_processing
+            and self._inference_config.post_processing.fused
+        ):
             confidence = model_results
         else:
             confidence = torch.nn.functional.softmax(model_results, dim=-1)
@@ -188,7 +199,9 @@ class DinoV3ForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor
         )
 
 
-class DinoV3ForMultiLabelClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):
+class DinoV3ForMultiLabelClassificationOnnx(
+    MultiLabelClassificationModel[torch.Tensor, torch.Tensor]
+):
 
     @classmethod
     def from_pretrained(
@@ -200,7 +213,7 @@ class DinoV3ForMultiLabelClassificationOnnx(ClassificationModel[torch.Tensor, to
         **kwargs,
     ) -> "DinoV3ForMultiLabelClassificationOnnx":
         if onnx_execution_providers is None:
-            onnx_execution_providers = get_selected_onnx_execution_providers()
+            onnx_execution_providers = get_selected_onnx_execution_providers()  # type: ignore
         if not onnx_execution_providers:
             raise EnvironmentConfigurationError(
                 message=f"Could not initialize model - selected backend is ONNX which requires execution provider to "
@@ -243,7 +256,10 @@ class DinoV3ForMultiLabelClassificationOnnx(ClassificationModel[torch.Tensor, to
             },
         )
 
-        if inference_config.post_processing.type != "sigmoid":
+        if (
+            inference_config.post_processing
+            and inference_config.post_processing.type != "sigmoid"
+        ):
             raise CorruptedModelPackageError(
                 message="Expected Sigmoid to be the post-processing",
                 help_url="https://todo",
@@ -306,12 +322,12 @@ class DinoV3ForMultiLabelClassificationOnnx(ClassificationModel[torch.Tensor, to
         )[0]
 
     def forward(
-        self, pre_processed_images: PreprocessedInputs, **kwargs
+        self, pre_processed_images: PreprocessedInputs, **kwargs  # type: ignore
     ) -> torch.Tensor:
         with self._session_thread_lock:
             return run_session_with_batch_size_limit(
                 session=self._session,
-                inputs={self._input_name: pre_processed_images},
+                inputs={self._input_name: pre_processed_images},  # type: ignore
                 min_batch_size=self._input_batch_size,
                 max_batch_size=self._input_batch_size,
             )[0]
@@ -319,13 +335,25 @@ class DinoV3ForMultiLabelClassificationOnnx(ClassificationModel[torch.Tensor, to
     def post_process(
         self,
         model_results: torch.Tensor,
+        confidence: float = 0.5,
         **kwargs,
-    ) -> ClassificationPrediction:
-        if self._inference_config.post_processing.fused:
-            confidence = model_results
+    ) -> List[MultiLabelClassificationPrediction]:
+        if (
+            self._inference_config.post_processing
+            and self._inference_config.post_processing.fused
+        ):
+            model_results = model_results
         else:
-            confidence = torch.nn.functional.softmax(model_results, dim=-1)
-        return ClassificationPrediction(
-            class_id=confidence.argmax(dim=-1),
-            confidence=confidence,
-        )
+            model_results = torch.nn.functional.sigmoid(model_results)
+        results = []
+        for batch_element_confidence in model_results:
+            predicted_classes = torch.argwhere(
+                batch_element_confidence >= confidence
+            ).squeeze(dim=-1)
+            results.append(
+                MultiLabelClassificationPrediction(
+                    class_ids=predicted_classes,
+                    confidence=batch_element_confidence,
+                )
+            )
+        return results
