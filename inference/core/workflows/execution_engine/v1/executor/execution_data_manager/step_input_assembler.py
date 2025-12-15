@@ -138,6 +138,7 @@ def construct_non_simd_step_compound_list_input(
 ) -> Tuple[List[Any], bool]:
     result = []
     contains_empty_step_output_selector = False
+    has_non_list_elements = False
     for nested_definition in parameter_spec.iterate_through_definitions():
         nested_value, value_contains_empty_selector = (
             construct_non_simd_step_non_compound_input(
@@ -147,6 +148,23 @@ def construct_non_simd_step_compound_list_input(
                 execution_cache=execution_cache,
             )
         )
+
+        # Validation: prevent mixing literals with LIST_OF_VALUES selectors
+        # Pattern like ["literal", "$inputs.list_selector"] should error
+        # But ["literal", "$inputs.string_selector"] should work
+        if isinstance(nested_value, list):
+            if has_non_list_elements or len(result) > 0:
+                from inference.core.workflows.errors import ExecutionEngineRuntimeError
+                raise ExecutionEngineRuntimeError(
+                    public_message=f"Cannot mix literal values and list selectors in array parameter "
+                    f"'{parameter_spec.parameter_specification.parameter_name}' for step '{step_node.name}'. "
+                    f"Use either a list of literals/string selectors like ['tag1', '$inputs.tag2'] "
+                    f"or a single selector to a list like '$inputs.tags', but not both.",
+                    context="workflow_execution | step_input_assembly",
+                )
+        else:
+            has_non_list_elements = True
+
         result.append(nested_value)
         contains_empty_step_output_selector = (
             contains_empty_step_output_selector or value_contains_empty_selector

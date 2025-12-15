@@ -366,6 +366,27 @@ def retrieve_selectors_from_simple_property(
         )
     if ITEMS_KEY in property_definition:
         if is_list_element or is_dict_element:
+            # Allow STRING_KIND selectors within arrays for patterns like:
+            # ["literal", "$inputs.string_selector"]
+            # But block deeper nesting and LIST_OF_VALUES selectors in mixed arrays
+            items_def = property_definition[ITEMS_KEY]
+            if (
+                is_list_element
+                and REFERENCE_KEY in items_def
+                and _is_string_kind_selector(items_def)
+            ):
+                # Allow STRING_KIND selectors in first-level list elements
+                return retrieve_selectors_from_simple_property(
+                    property_name=property_name,
+                    property_description=property_description,
+                    property_definition=items_def,
+                    property_dimensionality_offset=property_dimensionality_offset,
+                    is_dimensionality_reference_property=is_dimensionality_reference_property,
+                    inputs_accepting_batches=inputs_accepting_batches,
+                    inputs_accepting_batches_and_scalars=inputs_accepting_batches_and_scalars,
+                    inputs_enforcing_auto_batch_casting=inputs_enforcing_auto_batch_casting,
+                    is_list_element=True,
+                )
             # ignoring nested references above first level of depth
             return None
         return retrieve_selectors_from_simple_property(
@@ -393,6 +414,37 @@ def retrieve_selectors_from_simple_property(
             inputs_enforcing_auto_batch_casting=inputs_enforcing_auto_batch_casting,
         )
     return None
+
+
+def _is_string_kind_selector(property_definition: dict) -> bool:
+    """Check if a property definition is a STRING_KIND selector.
+
+    This is used to allow STRING_KIND selectors within arrays while
+    blocking LIST_OF_VALUES_KIND selectors in mixed arrays.
+
+    Args:
+        property_definition: The property definition dict from the schema
+
+    Returns:
+        True if this is a STRING_KIND selector, False otherwise
+    """
+    if REFERENCE_KEY not in property_definition:
+        return False
+
+    kinds = property_definition.get(KIND_KEY, [])
+    if not kinds:
+        return False
+
+    # Check if all kinds are STRING_KIND
+    # We import the constant here to avoid circular imports
+    from inference.core.workflows.execution_engine.entities.types import STRING_KIND
+
+    for kind_def in kinds:
+        kind_obj = Kind.model_validate(kind_def)
+        if kind_obj.name == STRING_KIND.name:
+            return True
+
+    return False
 
 
 def property_defines_union(property_definition: dict) -> bool:
