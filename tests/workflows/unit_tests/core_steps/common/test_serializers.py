@@ -8,6 +8,7 @@ import supervision as sv
 from inference.core.workflows.core_steps.common.serializers import (
     mask_to_polygon,
     serialise_image,
+    serialise_rle_sv_detections,
     serialise_sv_detections,
     serialize_wildcard_kind,
 )
@@ -945,6 +946,177 @@ def test_serialise_sv_detections_when_empty_mask_detected() -> None:
                         "y": 19.0,
                     },
                 ],
+            },
+        ],
+    }
+
+
+def test_serialise_rle_sv_detections() -> None:
+    # given
+    rle_mask_1 = {"size": [192, 168], "counts": "abc123"}
+    rle_mask_2 = {"size": [192, 168], "counts": "def456"}
+    detections = sv.Detections(
+        xyxy=np.array([[1, 1, 2, 2], [3, 3, 4, 4]], dtype=np.float64),
+        class_id=np.array([1, 2]),
+        confidence=np.array([0.1, 0.9], dtype=np.float64),
+        tracker_id=np.array([1, 2]),
+        data={
+            "class_name": np.array(["cat", "dog"]),
+            "detection_id": np.array(["first", "second"]),
+            "parent_id": np.array(["image", "image"]),
+            "image_dimensions": np.array(
+                [
+                    [192, 168],
+                    [192, 168],
+                ]
+            ),
+            "rle_mask": np.array([rle_mask_1, rle_mask_2], dtype=object),
+        },
+    )
+
+    # when
+    result = serialise_rle_sv_detections(detections=detections)
+
+    # then
+    assert result == {
+        "image": {
+            "width": 168,
+            "height": 192,
+        },
+        "predictions": [
+            {
+                "width": 1.0,
+                "height": 1.0,
+                "x": 1.5,
+                "y": 1.5,
+                "confidence": 0.1,
+                "class_id": 1,
+                "rle_mask": {"size": [192, 168], "counts": "abc123"},
+                "tracker_id": 1,
+                "class": "cat",
+                "detection_id": "first",
+                "parent_id": "image",
+            },
+            {
+                "width": 1.0,
+                "height": 1.0,
+                "x": 3.5,
+                "y": 3.5,
+                "confidence": 0.9,
+                "class_id": 2,
+                "rle_mask": {"size": [192, 168], "counts": "def456"},
+                "tracker_id": 2,
+                "class": "dog",
+                "detection_id": "second",
+                "parent_id": "image",
+            },
+        ],
+    }
+
+
+def test_serialise_rle_sv_detections_with_bytes_counts() -> None:
+    # given - RLE mask with bytes counts (as returned by pycocotools)
+    rle_mask = {"size": [192, 168], "counts": b"abc123"}
+    detections = sv.Detections(
+        xyxy=np.array([[1, 1, 2, 2]], dtype=np.float64),
+        class_id=np.array([1]),
+        confidence=np.array([0.1], dtype=np.float64),
+        data={
+            "class_name": np.array(["cat"]),
+            "detection_id": np.array(["first"]),
+            "parent_id": np.array(["image"]),
+            "image_dimensions": np.array([[192, 168]]),
+            "rle_mask": np.array([rle_mask], dtype=object),
+        },
+    )
+
+    # when
+    result = serialise_rle_sv_detections(detections=detections)
+
+    # then - counts should be converted to string
+    assert result["predictions"][0]["rle_mask"] == {
+        "size": [192, 168],
+        "counts": "abc123",
+    }
+
+
+def test_serialise_rle_sv_detections_raises_when_no_rle_masks() -> None:
+    # given - detections without RLE masks
+    detections = sv.Detections(
+        xyxy=np.array([[1, 1, 2, 2]], dtype=np.float64),
+        class_id=np.array([1]),
+        confidence=np.array([0.1], dtype=np.float64),
+        data={
+            "class_name": np.array(["cat"]),
+            "detection_id": np.array(["first"]),
+            "parent_id": np.array(["image"]),
+            "image_dimensions": np.array([[192, 168]]),
+        },
+    )
+
+    # when / then
+    try:
+        serialise_rle_sv_detections(detections=detections)
+        assert False, "Expected ValueError to be raised"
+    except ValueError as e:
+        assert "No RLE masks found" in str(e)
+
+
+def test_serialise_rle_sv_detections_with_parent_origin() -> None:
+    # given
+    rle_mask = {"size": [192, 168], "counts": "abc123"}
+    detections = sv.Detections(
+        xyxy=np.array([[1, 1, 2, 2]], dtype=np.float64),
+        class_id=np.array([1]),
+        confidence=np.array([0.1], dtype=np.float64),
+        data={
+            "class_name": np.array(["cat"]),
+            "detection_id": np.array(["first"]),
+            "parent_id": np.array(["crop_id"]),
+            "root_parent_id": np.array(["original_image"]),
+            "parent_coordinates": np.array([[50, 75]]),
+            "parent_dimensions": np.array([[600, 800]]),
+            "root_parent_coordinates": np.array([[150, 200]]),
+            "root_parent_dimensions": np.array([[1080, 1920]]),
+            "image_dimensions": np.array([[192, 168]]),
+            "rle_mask": np.array([rle_mask], dtype=object),
+        },
+    )
+
+    # when
+    result = serialise_rle_sv_detections(detections=detections)
+
+    # then
+    assert result == {
+        "image": {
+            "width": 168,
+            "height": 192,
+        },
+        "predictions": [
+            {
+                "width": 1.0,
+                "height": 1.0,
+                "x": 1.5,
+                "y": 1.5,
+                "confidence": 0.1,
+                "class_id": 1,
+                "rle_mask": {"size": [192, 168], "counts": "abc123"},
+                "class": "cat",
+                "detection_id": "first",
+                "parent_id": "crop_id",
+                "parent_origin": {
+                    "offset_x": 50,
+                    "offset_y": 75,
+                    "width": 800,
+                    "height": 600,
+                },
+                "root_parent_id": "original_image",
+                "root_parent_origin": {
+                    "offset_x": 150,
+                    "offset_y": 200,
+                    "width": 1920,
+                    "height": 1080,
+                },
             },
         ],
     }

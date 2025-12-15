@@ -36,6 +36,8 @@ from inference.core.workflows.execution_engine.constants import (
     POLYGON_KEY,
     POLYGON_KEY_IN_INFERENCE_RESPONSE,
     POLYGON_KEY_IN_SV_DETECTIONS,
+    RLE_MASK_KEY_IN_INFERENCE_RESPONSE,
+    RLE_MASK_KEY_IN_SV_DETECTIONS,
     ROOT_PARENT_COORDINATES_KEY,
     ROOT_PARENT_DIMENSIONS_KEY,
     ROOT_PARENT_ID_KEY,
@@ -349,3 +351,25 @@ def serialize_secret(secret: str) -> str:
 
 def serialize_timestamp(timestamp: datetime) -> str:
     return timestamp.isoformat()
+
+
+def serialise_rle_sv_detections(detections: sv.Detections) -> dict:
+    rle_masks = detections.data.get(RLE_MASK_KEY_IN_SV_DETECTIONS)
+    if rle_masks is None:
+        raise ValueError(
+            "No RLE masks found in detections.data['rle_mask']. "
+            "This serializer requires RLE masks to be present."
+        )
+
+    result = serialise_sv_detections(detections=detections)
+
+    for idx, detection_dict in enumerate(result["predictions"]):
+        detection_dict.pop(POLYGON_KEY, None)
+
+        if idx < len(rle_masks):
+            rle = rle_masks[idx]
+            if isinstance(rle.get("counts"), bytes):
+                rle = {"size": rle["size"], "counts": rle["counts"].decode("utf-8")}
+            detection_dict[RLE_MASK_KEY_IN_INFERENCE_RESPONSE] = rle
+
+    return result
