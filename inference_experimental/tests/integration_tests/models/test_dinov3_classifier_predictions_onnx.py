@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 import torch
+from torchvision.transforms.functional import resize
 
 
 @pytest.mark.slow
@@ -9,6 +10,7 @@ def test_classification_onnx_static_package_numpy(
     dinov3_classification_onnx_static_package: str,
     chess_piece_image_numpy: np.ndarray,
 ) -> None:
+    # given
     from inference_exp.models.dinov3.dinov3_classification_onnx import (
         DinoV3ForClassificationOnnx,
     )
@@ -18,11 +20,19 @@ def test_classification_onnx_static_package_numpy(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
+    # when
     predictions = model(chess_piece_image_numpy)
 
-    assert predictions.confidence.shape[-1] > 0
-    assert predictions.class_id.shape[0] == 1
-    assert predictions.class_id == 1
+    # then
+    assert torch.allclose(
+        predictions.confidence.cpu(),
+        torch.tensor([0.3554, 0.6446]).cpu(),
+        atol=0.0001,
+    )
+    assert torch.allclose(
+        predictions.class_id.cpu(),
+        torch.tensor([1], dtype=torch.int64).cpu(),
+    )
 
 
 @pytest.mark.slow
@@ -31,6 +41,7 @@ def test_classification_onnx_static_package_numpy_no_detection(
     dinov3_classification_onnx_static_package: str,
     flowers_image_numpy: np.ndarray,
 ) -> None:
+    # given
     from inference_exp.models.dinov3.dinov3_classification_onnx import (
         DinoV3ForClassificationOnnx,
     )
@@ -40,11 +51,19 @@ def test_classification_onnx_static_package_numpy_no_detection(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
+    # when
     predictions = model(flowers_image_numpy)
 
-    assert predictions.confidence.shape[-1] > 0
-    assert predictions.class_id.shape[0] == 1
-    assert predictions.class_id == 0
+    # then
+    assert torch.allclose(
+        predictions.confidence.cpu(),
+        torch.tensor([0.5260, 0.4740]).cpu(),
+        atol=0.0001,
+    )
+    assert torch.allclose(
+        predictions.class_id.cpu(),
+        torch.tensor([0], dtype=torch.int64).cpu(),
+    )
 
 
 @pytest.mark.slow
@@ -53,6 +72,7 @@ def test_classification_onnx_static_package_numpy_custom_image_size(
     dinov3_classification_onnx_static_package: str,
     chess_piece_image_numpy: np.ndarray,
 ) -> None:
+    # given
     from inference_exp.models.dinov3.dinov3_classification_onnx import (
         DinoV3ForClassificationOnnx,
     )
@@ -62,10 +82,19 @@ def test_classification_onnx_static_package_numpy_custom_image_size(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
+    # when
     predictions = model(chess_piece_image_numpy, image_size=(100, 100))
 
-    assert predictions.confidence.shape[-1] > 0
-    assert predictions.class_id.shape[0] == 1
+    # then
+    assert torch.allclose(
+        predictions.confidence.cpu(),
+        torch.tensor([0.3554, 0.6446]).cpu(),
+        atol=0.0001,
+    )
+    assert torch.allclose(
+        predictions.class_id.cpu(),
+        torch.tensor([1], dtype=torch.int64).cpu(),
+    )
 
 
 @pytest.mark.slow
@@ -73,7 +102,9 @@ def test_classification_onnx_static_package_numpy_custom_image_size(
 def test_classification_onnx_static_package_batch_numpy(
     dinov3_classification_onnx_static_package: str,
     chess_piece_image_numpy: np.ndarray,
+    flowers_image_numpy: np.ndarray,
 ) -> None:
+    # given
     from inference_exp.models.dinov3.dinov3_classification_onnx import (
         DinoV3ForClassificationOnnx,
     )
@@ -83,9 +114,19 @@ def test_classification_onnx_static_package_batch_numpy(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model([chess_piece_image_numpy, chess_piece_image_numpy])
+    # when
+    predictions = model([chess_piece_image_numpy, flowers_image_numpy])
 
-    assert predictions.class_id.shape[0] == 2
+    # then
+    assert torch.allclose(
+        predictions.confidence.cpu(),
+        torch.tensor([[0.3554, 0.6446], [0.5260, 0.4740]]).cpu(),
+        atol=0.0001,
+    )
+    assert torch.allclose(
+        predictions.class_id.cpu(),
+        torch.tensor([1, 0], dtype=torch.int64).cpu(),
+    )
 
 
 @pytest.mark.slow
@@ -94,6 +135,7 @@ def test_classification_onnx_static_package_torch_tensor(
     dinov3_classification_onnx_static_package: str,
     chess_piece_image_torch: torch.Tensor,
 ) -> None:
+    # given
     from inference_exp.models.dinov3.dinov3_classification_onnx import (
         DinoV3ForClassificationOnnx,
     )
@@ -103,10 +145,19 @@ def test_classification_onnx_static_package_torch_tensor(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
+    # when
     predictions = model(chess_piece_image_torch)
 
-    assert predictions.confidence.shape[-1] > 0
-    assert predictions.class_id.shape[0] == 1
+    # then
+    assert torch.allclose(
+        predictions.confidence.cpu(),
+        torch.tensor([0.3556, 0.6444]).cpu(),
+        atol=0.0001,
+    )
+    assert torch.allclose(
+        predictions.class_id.cpu(),
+        torch.tensor([1], dtype=torch.int64).cpu(),
+    )
 
 
 @pytest.mark.slow
@@ -114,7 +165,9 @@ def test_classification_onnx_static_package_torch_tensor(
 def test_classification_onnx_static_package_batch_torch_tensor_stack(
     dinov3_classification_onnx_static_package: str,
     chess_piece_image_torch: torch.Tensor,
+    flowers_image_torch: torch.Tensor,
 ) -> None:
+    # given
     from inference_exp.models.dinov3.dinov3_classification_onnx import (
         DinoV3ForClassificationOnnx,
     )
@@ -123,12 +176,22 @@ def test_classification_onnx_static_package_batch_torch_tensor_stack(
         model_name_or_path=dinov3_classification_onnx_static_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
+    target_h, target_w = chess_piece_image_torch.shape[-2:]
+    flowers_resized = resize(flowers_image_torch, [target_h, target_w])
 
-    predictions = model(
-        torch.stack([chess_piece_image_torch, chess_piece_image_torch], dim=0)
+    # when
+    predictions = model(torch.stack([chess_piece_image_torch, flowers_resized], dim=0))
+
+    # then
+    assert torch.allclose(
+        predictions.confidence.cpu(),
+        torch.tensor([[0.3556, 0.6444], [0.5260, 0.4740]]).cpu(),
+        atol=0.0001,
     )
-
-    assert predictions.class_id.shape[0] == 2
+    assert torch.allclose(
+        predictions.class_id.cpu(),
+        torch.tensor([1, 0], dtype=torch.int64).cpu(),
+    )
 
 
 @pytest.mark.slow
@@ -136,7 +199,9 @@ def test_classification_onnx_static_package_batch_torch_tensor_stack(
 def test_classification_onnx_static_package_batch_torch_tensor_list(
     dinov3_classification_onnx_static_package: str,
     chess_piece_image_torch: torch.Tensor,
+    flowers_image_torch: torch.Tensor,
 ) -> None:
+    # given
     from inference_exp.models.dinov3.dinov3_classification_onnx import (
         DinoV3ForClassificationOnnx,
     )
@@ -146,9 +211,19 @@ def test_classification_onnx_static_package_batch_torch_tensor_list(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model([chess_piece_image_torch, chess_piece_image_torch])
+    # when
+    predictions = model([chess_piece_image_torch, flowers_image_torch])
 
-    assert predictions.class_id.shape[0] == 2
+    # then
+    assert torch.allclose(
+        predictions.confidence.cpu(),
+        torch.tensor([[0.3556, 0.6444], [0.5259, 0.4741]]).cpu(),
+        atol=0.0001,
+    )
+    assert torch.allclose(
+        predictions.class_id.cpu(),
+        torch.tensor([1, 0], dtype=torch.int64).cpu(),
+    )
 
 
 @pytest.mark.slow
@@ -157,6 +232,7 @@ def test_multi_label_onnx_static_package_numpy(
     dinov3_multi_label_onnx_static_package: str,
     chess_set_image_numpy: np.ndarray,
 ) -> None:
+    # given
     from inference_exp.models.dinov3.dinov3_classification_onnx import (
         DinoV3ForMultiLabelClassificationOnnx,
     )
@@ -166,11 +242,34 @@ def test_multi_label_onnx_static_package_numpy(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
+    # when
     predictions = model(chess_set_image_numpy)
 
-    assert len(predictions) == 1
-    assert hasattr(predictions[0], "class_ids")
-    assert hasattr(predictions[0], "confidence")
+    # then
+    assert torch.allclose(
+        predictions[0].confidence.cpu(),
+        torch.tensor(
+            [
+                0.9897,
+                0.8594,
+                0.9919,
+                0.9998,
+                0.9996,
+                1.0000,
+                0.9999,
+                0.9979,
+                0.9978,
+                0.9999,
+                1.0000,
+                0.9955,
+            ]
+        ).cpu(),
+        atol=0.0001,
+    )
+    assert torch.allclose(
+        predictions[0].class_ids.cpu(),
+        torch.tensor([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], dtype=torch.int64).cpu(),
+    )
 
 
 @pytest.mark.slow
@@ -179,6 +278,7 @@ def test_multi_label_onnx_static_package_numpy_custom_image_size(
     dinov3_multi_label_onnx_static_package: str,
     chess_set_image_numpy: np.ndarray,
 ) -> None:
+    # given
     from inference_exp.models.dinov3.dinov3_classification_onnx import (
         DinoV3ForMultiLabelClassificationOnnx,
     )
@@ -188,11 +288,34 @@ def test_multi_label_onnx_static_package_numpy_custom_image_size(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
+    # when
     predictions = model(chess_set_image_numpy, image_size=(100, 100))
 
-    assert len(predictions) == 1
-    assert hasattr(predictions[0], "class_ids")
-    assert hasattr(predictions[0], "confidence")
+    # then
+    assert torch.allclose(
+        predictions[0].confidence.cpu(),
+        torch.tensor(
+            [
+                0.9897,
+                0.8594,
+                0.9919,
+                0.9998,
+                0.9996,
+                1.0000,
+                0.9999,
+                0.9979,
+                0.9978,
+                0.9999,
+                1.0000,
+                0.9955,
+            ]
+        ).cpu(),
+        atol=0.0001,
+    )
+    assert torch.allclose(
+        predictions[0].class_ids.cpu(),
+        torch.tensor([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], dtype=torch.int64).cpu(),
+    )
 
 
 @pytest.mark.slow
@@ -200,7 +323,9 @@ def test_multi_label_onnx_static_package_numpy_custom_image_size(
 def test_multi_label_onnx_static_package_batch_numpy(
     dinov3_multi_label_onnx_static_package: str,
     chess_set_image_numpy: np.ndarray,
+    chess_piece_image_numpy: np.ndarray,
 ) -> None:
+    # given
     from inference_exp.models.dinov3.dinov3_classification_onnx import (
         DinoV3ForMultiLabelClassificationOnnx,
     )
@@ -210,9 +335,58 @@ def test_multi_label_onnx_static_package_batch_numpy(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model([chess_set_image_numpy, chess_set_image_numpy])
+    # when
+    predictions = model([chess_set_image_numpy, chess_piece_image_numpy])
 
-    assert len(predictions) == 2
+    # then
+    assert torch.allclose(
+        predictions[0].confidence.cpu(),
+        torch.tensor(
+            [
+                0.9897,
+                0.8594,
+                0.9919,
+                0.9998,
+                0.9996,
+                1.0000,
+                0.9999,
+                0.9979,
+                0.9978,
+                0.9999,
+                1.0000,
+                0.9955,
+            ]
+        ).cpu(),
+        atol=0.0001,
+    )
+    assert torch.allclose(
+        predictions[0].class_ids.cpu(),
+        torch.tensor([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], dtype=torch.int64).cpu(),
+    )
+    assert torch.allclose(
+        predictions[1].confidence.cpu(),
+        torch.tensor(
+            [
+                -5.9605e-08,
+                -5.9605e-08,
+                6.2674e-05,
+                -5.9605e-08,
+                1.4901e-07,
+                1.1027e-06,
+                4.6372e-03,
+                4.4006e-04,
+                9.9946e-01,
+                2.2224e-04,
+                -5.9605e-08,
+                1.1921e-07,
+            ]
+        ).cpu(),
+        atol=0.0001,
+    )
+    assert torch.allclose(
+        predictions[1].class_ids.cpu(),
+        torch.tensor([8], dtype=torch.int64).cpu(),
+    )
 
 
 @pytest.mark.slow
@@ -221,6 +395,7 @@ def test_multi_label_onnx_static_package_torch_tensor(
     dinov3_multi_label_onnx_static_package: str,
     chess_set_image_torch: torch.Tensor,
 ) -> None:
+    # given
     from inference_exp.models.dinov3.dinov3_classification_onnx import (
         DinoV3ForMultiLabelClassificationOnnx,
     )
@@ -230,11 +405,34 @@ def test_multi_label_onnx_static_package_torch_tensor(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
+    # when
     predictions = model(chess_set_image_torch)
 
-    assert len(predictions) == 1
-    assert hasattr(predictions[0], "class_ids")
-    assert hasattr(predictions[0], "confidence")
+    # then
+    assert torch.allclose(
+        predictions[0].confidence.cpu(),
+        torch.tensor(
+            [
+                0.9883,
+                0.8467,
+                0.9904,
+                0.9998,
+                0.9995,
+                1.0000,
+                0.9999,
+                0.9980,
+                0.9973,
+                0.9999,
+                1.0000,
+                0.9949,
+            ]
+        ).cpu(),
+        atol=0.0001,
+    )
+    assert torch.allclose(
+        predictions[0].class_ids.cpu(),
+        torch.tensor([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], dtype=torch.int64).cpu(),
+    )
 
 
 @pytest.mark.slow
@@ -242,7 +440,9 @@ def test_multi_label_onnx_static_package_torch_tensor(
 def test_multi_label_onnx_static_package_batch_torch_tensor_stack(
     dinov3_multi_label_onnx_static_package: str,
     chess_set_image_torch: torch.Tensor,
+    chess_piece_image_torch: torch.Tensor,
 ) -> None:
+    # given
     from inference_exp.models.dinov3.dinov3_classification_onnx import (
         DinoV3ForMultiLabelClassificationOnnx,
     )
@@ -252,11 +452,60 @@ def test_multi_label_onnx_static_package_batch_torch_tensor_stack(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
+    # when
     predictions = model(
-        torch.stack([chess_set_image_torch, chess_set_image_torch], dim=0)
+        torch.stack([chess_set_image_torch, chess_piece_image_torch], dim=0)
     )
 
-    assert len(predictions) == 2
+    # then
+    assert torch.allclose(
+        predictions[0].confidence.cpu(),
+        torch.tensor(
+            [
+                0.9883,
+                0.8467,
+                0.9904,
+                0.9998,
+                0.9995,
+                1.0000,
+                0.9999,
+                0.9980,
+                0.9973,
+                0.9999,
+                1.0000,
+                0.9949,
+            ]
+        ).cpu(),
+        atol=0.0001,
+    )
+    assert torch.allclose(
+        predictions[0].class_ids.cpu(),
+        torch.tensor([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], dtype=torch.int64).cpu(),
+    )
+    assert torch.allclose(
+        predictions[1].confidence.cpu(),
+        torch.tensor(
+            [
+                -5.9605e-08,
+                -5.9605e-08,
+                5.3078e-05,
+                -5.9605e-08,
+                5.9605e-08,
+                1.3411e-06,
+                5.6942e-03,
+                3.9130e-04,
+                9.9953e-01,
+                2.3118e-04,
+                -5.9605e-08,
+                1.7881e-07,
+            ]
+        ).cpu(),
+        atol=0.0001,
+    )
+    assert torch.allclose(
+        predictions[1].class_ids.cpu(),
+        torch.tensor([8], dtype=torch.int64).cpu(),
+    )
 
 
 @pytest.mark.slow
@@ -264,7 +513,9 @@ def test_multi_label_onnx_static_package_batch_torch_tensor_stack(
 def test_multi_label_onnx_static_package_batch_torch_tensor_list(
     dinov3_multi_label_onnx_static_package: str,
     chess_set_image_torch: torch.Tensor,
+    chess_piece_image_torch: torch.Tensor,
 ) -> None:
+    # given
     from inference_exp.models.dinov3.dinov3_classification_onnx import (
         DinoV3ForMultiLabelClassificationOnnx,
     )
@@ -274,6 +525,55 @@ def test_multi_label_onnx_static_package_batch_torch_tensor_list(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model([chess_set_image_torch, chess_set_image_torch])
+    # when
+    predictions = model([chess_set_image_torch, chess_piece_image_torch])
 
-    assert len(predictions) == 2
+    # then
+    assert torch.allclose(
+        predictions[0].confidence.cpu(),
+        torch.tensor(
+            [
+                0.9883,
+                0.8467,
+                0.9904,
+                0.9998,
+                0.9995,
+                1.0000,
+                0.9999,
+                0.9980,
+                0.9973,
+                0.9999,
+                1.0000,
+                0.9949,
+            ]
+        ).cpu(),
+        atol=0.0001,
+    )
+    assert torch.allclose(
+        predictions[0].class_ids.cpu(),
+        torch.tensor([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], dtype=torch.int64).cpu(),
+    )
+    assert torch.allclose(
+        predictions[1].confidence.cpu(),
+        torch.tensor(
+            [
+                -5.9605e-08,
+                -5.9605e-08,
+                5.3078e-05,
+                -5.9605e-08,
+                5.9605e-08,
+                1.3411e-06,
+                5.6942e-03,
+                3.9130e-04,
+                9.9953e-01,
+                2.3118e-04,
+                -5.9605e-08,
+                1.7881e-07,
+            ]
+        ).cpu(),
+        atol=0.0001,
+    )
+    assert torch.allclose(
+        predictions[1].class_ids.cpu(),
+        torch.tensor([8], dtype=torch.int64).cpu(),
+    )
