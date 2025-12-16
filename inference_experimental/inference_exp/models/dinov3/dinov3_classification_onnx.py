@@ -79,18 +79,11 @@ class DinoV3ForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor
         )
 
         required_files = ["class_names.txt", "inference_config.json"]
-        try:
-            model_package_content = get_model_package_contents(
-                model_package_dir=model_name_or_path,
-                elements=required_files + ["weights.onnx"],
-            )
-            weights_file = "weights.onnx"
-        except:
-            model_package_content = get_model_package_contents(
-                model_package_dir=model_name_or_path,
-                elements=required_files + ["best.onnx"],
-            )
-            weights_file = "best.onnx"
+        weights_file = "weights.onnx"
+        model_package_content = get_model_package_contents(
+            model_package_dir=model_name_or_path,
+            elements=required_files + [weights_file],
+        )
 
         class_names = parse_class_names_file(
             class_names_path=model_package_content["class_names.txt"]
@@ -230,18 +223,11 @@ class DinoV3ForMultiLabelClassificationOnnx(
         )
 
         required_files = ["class_names.txt", "inference_config.json"]
-        try:
-            model_package_content = get_model_package_contents(
-                model_package_dir=model_name_or_path,
-                elements=required_files + ["weights.onnx"],
-            )
-            weights_file = "weights.onnx"
-        except:
-            model_package_content = get_model_package_contents(
-                model_package_dir=model_name_or_path,
-                elements=required_files + ["best.onnx"],
-            )
-            weights_file = "best.onnx"
+        weights_file = "weights.onnx"
+        model_package_content = get_model_package_contents(
+            model_package_dir=model_name_or_path,
+            elements=required_files + [weights_file],
+        )
 
         class_names = parse_class_names_file(
             class_names_path=model_package_content["class_names.txt"]

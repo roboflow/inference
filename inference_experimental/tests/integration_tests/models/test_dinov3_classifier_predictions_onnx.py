@@ -22,6 +22,29 @@ def test_classification_onnx_static_package_numpy(
 
     assert predictions.confidence.shape[-1] > 0
     assert predictions.class_id.shape[0] == 1
+    assert predictions.class_id == 1
+
+
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+def test_classification_onnx_static_package_numpy_no_detection(
+    dinov3_classification_onnx_static_package: str,
+    flowers_image_numpy: np.ndarray,
+) -> None:
+    from inference_exp.models.dinov3.dinov3_classification_onnx import (
+        DinoV3ForClassificationOnnx,
+    )
+
+    model = DinoV3ForClassificationOnnx.from_pretrained(
+        model_name_or_path=dinov3_classification_onnx_static_package,
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+    )
+
+    predictions = model(flowers_image_numpy)
+
+    assert predictions.confidence.shape[-1] > 0
+    assert predictions.class_id.shape[0] == 1
+    assert predictions.class_id == 0
 
 
 @pytest.mark.slow
