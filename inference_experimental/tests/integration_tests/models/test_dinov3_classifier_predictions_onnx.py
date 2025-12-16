@@ -101,7 +101,9 @@ def test_classification_onnx_static_package_batch_torch_tensor_stack(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model(torch.stack([chess_piece_image_torch, chess_piece_image_torch], dim=0))
+    predictions = model(
+        torch.stack([chess_piece_image_torch, chess_piece_image_torch], dim=0)
+    )
 
     assert predictions.class_id.shape[0] == 2
 
@@ -227,7 +229,9 @@ def test_multi_label_onnx_static_package_batch_torch_tensor_stack(
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
 
-    predictions = model(torch.stack([chess_set_image_torch, chess_set_image_torch], dim=0))
+    predictions = model(
+        torch.stack([chess_set_image_torch, chess_set_image_torch], dim=0)
+    )
 
     assert len(predictions) == 2
 

@@ -141,7 +141,7 @@ class AutoModelPipeline:
 
 
 def prepare_model_parameters(
-    model_parameters: Union[str, dict, PipelineModelParameters]
+    model_parameters: Union[str, dict, PipelineModelParameters],
 ) -> PipelineModelParameters:
     if isinstance(model_parameters, dict):
         try:
