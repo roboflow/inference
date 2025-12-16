@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 import pytest
 import torch
 from inference_exp.models.auto_loaders import ranking
+from inference_exp.models.auto_loaders.entities import BackendType
 from inference_exp.models.auto_loaders.ranking import (
     rank_cuda_versions,
     rank_model_packages,
@@ -24,7 +25,6 @@ from inference_exp.models.auto_loaders.ranking import (
 )
 from inference_exp.runtime_introspection.core import RuntimeXRayResult
 from inference_exp.weights_providers.entities import (
-    BackendType,
     JetsonEnvironmentRequirements,
     ModelPackageMetadata,
     ONNXPackageDetails,

@@ -10,8 +10,8 @@ from inference_exp.errors import (
     RetryError,
     UnauthorizedModelAccessError,
 )
+from inference_exp.models.auto_loaders.entities import BackendType
 from inference_exp.weights_providers.entities import (
-    BackendType,
     FileDownloadSpecs,
     JetsonEnvironmentRequirements,
     ModelPackageMetadata,

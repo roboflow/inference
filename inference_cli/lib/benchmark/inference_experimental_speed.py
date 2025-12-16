@@ -6,7 +6,7 @@ import numpy as np
 import torch
 from inference_exp import AutoModel
 from inference_exp.configuration import DEFAULT_DEVICE
-from inference_exp.models.auto_loaders.core import AnyModel
+from inference_exp.models.auto_loaders.entities import AnyModel
 from supervision.utils.file import read_yaml_file
 from tqdm import tqdm
 
