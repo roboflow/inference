@@ -1190,6 +1190,7 @@ def dinov3_classification_onnx_static_package() -> str:
     return download_model_package(
         model_package_zip_url=DINOV3_CLASSIFICATION_ONNX_STATIC_URL,
         package_name="dinov3-classification-onnx-static",
+    )
 
 
 @pytest.fixture(scope="module")
@@ -1197,6 +1198,7 @@ def dinov3_multi_label_onnx_static_package() -> str:
     return download_model_package(
         model_package_zip_url=DINOV3_MULTI_LABEL_ONNX_STATIC_URL,
         package_name="dinov3-multi-label-onnx-static",
+    )
 
 
 @pytest.fixture(scope="module")
