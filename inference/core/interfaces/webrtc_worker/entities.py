@@ -39,9 +39,7 @@ class WebRTCWorkerRequest(BaseModel):
     data_output: Optional[List[str]] = Field(default=None)
     declared_fps: Optional[float] = None
     rtsp_url: Optional[str] = None
-    use_data_channel_frames: bool = (
-        False  # When True, expect frames via data channel instead of media track
-    )
+    force_video_sendonly: bool = False  # Force sendonly direction for video track (e.g., file uploads)
     processing_timeout: Optional[int] = WEBRTC_MODAL_FUNCTION_TIME_LIMIT
     processing_session_started: Optional[datetime.datetime] = None
     requested_plan: Optional[str] = "webrtc-gpu-small"
