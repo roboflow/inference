@@ -82,6 +82,12 @@ from inference.core.workflows.core_steps.classical_cv.template_matching.v1 impor
 from inference.core.workflows.core_steps.classical_cv.threshold.v1 import (
     ImageThresholdBlockV1,
 )
+from inference.core.workflows.core_steps.classical_cv.motion_detection.v1 import (
+    MotionDetectionBlockV1,
+)
+from inference.core.workflows.core_steps.classical_cv.background_subtraction.v1 import (
+    BackgroundSubtractionBlockV1,
+)
 from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_boolean_kind,
     deserialize_bytes_kind,
@@ -641,6 +647,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ImagePreprocessingBlockV1,
         ImageSlicerBlockV1,
         ImageThresholdBlockV1,
+        MotionDetectionBlockV1,
+        BackgroundSubtractionBlockV1,
         JSONParserBlockV1,
         LMMBlockV1,
         LMMForClassificationBlockV1,
