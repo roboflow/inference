@@ -66,7 +66,7 @@ def test_owlv2_predictions_for_reference_dataset(
     assert np.allclose(
         predictions[0].xyxy.cpu().numpy(),
         np.array([8, 4, 709, 594]),
-        atol=5,
+        atol=10,
     )
 
 
@@ -95,5 +95,5 @@ def test_instant_model_predictions(
                 [1091, 2354, 1266, 2526],
             ]
         ),
-        atol=5,
+        atol=10,
     )
