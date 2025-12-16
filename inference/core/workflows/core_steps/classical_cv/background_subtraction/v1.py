@@ -1,11 +1,11 @@
+import copy
 from typing import List, Literal, Optional, Tuple, Type, Union
 
 import cv2
 import numpy as np
+import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
 from shapely.geometry import Polygon
-import copy
-import supervision as sv
 
 from inference.core.workflows.core_steps.visualizations.common.base import (
     OUTPUT_IMAGE_KEY,
@@ -18,8 +18,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     IMAGE_KIND,
     INTEGER_KIND,
-    ZONE_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    ZONE_KIND,
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -33,6 +33,7 @@ LONG_DESCRIPTION: str = """
 This block uses background subtraction to detect motion in an image in order to highlight areas of motion.
 The output of the block can be used to train and infer on motion based models.
 """
+
 
 class BackgroundSubtractionManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/background_subtraction@v1"]
@@ -91,6 +92,7 @@ class BackgroundSubtractionManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
 
+
 class BackgroundSubtractionBlockV1(WorkflowBlock):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -104,11 +106,15 @@ class BackgroundSubtractionBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[BackgroundSubtractionManifest]:
         return BackgroundSubtractionManifest
 
-    def run(self, image: WorkflowImageData, threshold: int, history: int, *args, **kwargs) -> BlockResult:
+    def run(
+        self, image: WorkflowImageData, threshold: int, history: int, *args, **kwargs
+    ) -> BlockResult:
         if not self.backSub or self.threshold != threshold or self.history != history:
             self.threshold = threshold
             self.history = history
-            self.backSub = cv2.createBackgroundSubtractorMOG2(history=history, varThreshold=threshold, detectShadows=True)
+            self.backSub = cv2.createBackgroundSubtractorMOG2(
+                history=history, varThreshold=threshold, detectShadows=True
+            )
 
         frame = image.numpy_image
 

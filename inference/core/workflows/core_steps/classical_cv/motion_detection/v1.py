@@ -1,12 +1,12 @@
+import copy
 import json
 from typing import List, Literal, Optional, Tuple, Type, Union
 
 import cv2
 import numpy as np
+import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
 from shapely.geometry import Polygon
-import copy
-import supervision as sv
 
 from inference.core.workflows.core_steps.visualizations.common.base import (
     OUTPUT_IMAGE_KEY,
@@ -19,9 +19,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     IMAGE_KIND,
     INTEGER_KIND,
-    ZONE_KIND,
-    OBJECT_DETECTION_PREDICTION_KIND,
     LIST_OF_VALUES_KIND,
+    OBJECT_DETECTION_PREDICTION_KIND,
+    ZONE_KIND,
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -41,6 +41,7 @@ of the motion detection to a specific area of the image.
 Motion detection is extremely useful for generating alerts and file uploads. Additionally, inference
 can be conditionally run based on motion detection to save compute resources.
 """
+
 
 class MotionDetectionManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/motion_detection@v1"]
@@ -147,6 +148,7 @@ class MotionDetectionManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
 
+
 class MotionDetectionBlockV1(WorkflowBlock):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -160,20 +162,37 @@ class MotionDetectionBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[MotionDetectionManifest]:
         return MotionDetectionManifest
 
-    def run(self, image: WorkflowImageData, minimum_contour_area: int, morphological_kernel_size: int, threshold: int, history: int, suppress_first_detections: bool, detection_zone: Optional[Union[str, List[Tuple[int,int]]]], *args, **kwargs) -> BlockResult:
+    def run(
+        self,
+        image: WorkflowImageData,
+        minimum_contour_area: int,
+        morphological_kernel_size: int,
+        threshold: int,
+        history: int,
+        suppress_first_detections: bool,
+        detection_zone: Optional[Union[str, List[Tuple[int, int]]]],
+        *args,
+        **kwargs,
+    ) -> BlockResult:
 
-        if type(detection_zone)==str:
+        if type(detection_zone) == str:
             try:
                 detection_zone = json.loads(detection_zone)
             except Exception as e:
-                raise ValueError(f"Could not parse zone as a valid json: {detection_zone}")
+                raise ValueError(
+                    f"Could not parse zone as a valid json: {detection_zone}"
+                )
 
         if not self.backSub or self.threshold != threshold or self.history != history:
             self.threshold = threshold
             self.history = history
-            self.backSub = cv2.createBackgroundSubtractorMOG2(history=history, varThreshold=threshold, detectShadows=True)
+            self.backSub = cv2.createBackgroundSubtractorMOG2(
+                history=history, varThreshold=threshold, detectShadows=True
+            )
 
-        frames_initialized = self.frame_count >= history or not suppress_first_detections
+        frames_initialized = (
+            self.frame_count >= history or not suppress_first_detections
+        )
         if not frames_initialized:
             self.frame_count += 1
             return {
@@ -193,20 +212,28 @@ class MotionDetectionBlockV1(WorkflowBlock):
         _, mask_thresh = cv2.threshold(fg_mask, 32, 255, cv2.THRESH_BINARY)
 
         # apply morphological filtering to ignore changes due to noise
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (morphological_kernel_size, morphological_kernel_size))
+        kernel = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE, (morphological_kernel_size, morphological_kernel_size)
+        )
         mask_morph = cv2.morphologyEx(mask_thresh, cv2.MORPH_OPEN, kernel)
 
         # create contours around filtered areas
-        contours, hierarchy = cv2.findContours(mask_morph, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, hierarchy = cv2.findContours(
+            mask_morph, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
 
         # apply minimum contour size and filter out 0 length contours
-        large_contours = [cnt for cnt in contours if cv2.contourArea(cnt) > minimum_contour_area and len(cnt)>0]
+        large_contours = [
+            cnt
+            for cnt in contours
+            if cv2.contourArea(cnt) > minimum_contour_area and len(cnt) > 0
+        ]
 
         # clip contours if a detection zone is provided
-        if detection_zone and len(detection_zone)>0:
-            large_contours = clip_contours_to_contour(large_contours,detection_zone)
+        if detection_zone and len(detection_zone) > 0:
+            large_contours = clip_contours_to_contour(large_contours, detection_zone)
 
-        if len(large_contours)>0:
+        if len(large_contours) > 0:
             # draw contours on output image
             frame_ct = cv2.drawContours(frame, large_contours, -1, (0, 255, 0), 2)
             # create output workflow image
@@ -222,18 +249,22 @@ class MotionDetectionBlockV1(WorkflowBlock):
         xyxy_boxes = []
         for cnt in large_contours:
             x, y, w, h = cv2.boundingRect(cnt)
-            xyxy_boxes.append([x,y,x+w,y+h])
+            xyxy_boxes.append([x, y, x + w, y + h])
 
         # convert to sv detections
-        detections = sv.Detections(
-            xyxy=np.array(xyxy_boxes),
-            confidence=np.array([1]*len(xyxy_boxes)),
-            class_id=np.array([0]*len(xyxy_boxes)),
-            data={'class_name': np.array(["motion"]*len(xyxy_boxes))}
-        ) if len(xyxy_boxes)>0 else sv.Detections.empty()
+        detections = (
+            sv.Detections(
+                xyxy=np.array(xyxy_boxes),
+                confidence=np.array([1] * len(xyxy_boxes)),
+                class_id=np.array([0] * len(xyxy_boxes)),
+                data={"class_name": np.array(["motion"] * len(xyxy_boxes))},
+            )
+            if len(xyxy_boxes) > 0
+            else sv.Detections.empty()
+        )
 
         # if contours exist, there's motion
-        motion = len(large_contours)>0
+        motion = len(large_contours) > 0
 
         # alarm flips to true only if there was no motion before and motion now
         alarm = True if not self.last_motion and motion else False
@@ -246,9 +277,9 @@ class MotionDetectionBlockV1(WorkflowBlock):
             "alarm": alarm,
         }
 
+
 def clip_contours_to_contour(
-    contours: List[np.ndarray],
-    clip_contour: np.ndarray
+    contours: List[np.ndarray], clip_contour: np.ndarray
 ) -> List[np.ndarray]:
     """
     Clip OpenCV contours to another contour and return clipped OpenCV contours.
@@ -280,24 +311,23 @@ def clip_contours_to_contour(
                 continue
 
             # Extract coordinates based on geometry type
-            if clipped.geom_type == 'Polygon':
+            if clipped.geom_type == "Polygon":
                 coords = list(clipped.exterior.coords[:-1])
                 if len(coords) >= 3:
                     result.append(list_to_contour(coords))
 
-            elif clipped.geom_type == 'MultiPolygon':
+            elif clipped.geom_type == "MultiPolygon":
                 for geom in clipped.geoms:
                     coords = list(geom.exterior.coords[:-1])
                     if len(coords) >= 3:
                         result.append(list_to_contour(coords))
-
 
         except:
             continue
 
     return result
 
+
 def list_to_contour(list_of_tuples):
     points = [[int(n) for n in xy_tuple] for xy_tuple in list_of_tuples]
     return np.array(points).reshape(-1, 1, 2)
-
