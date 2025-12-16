@@ -14,10 +14,11 @@ from inference_exp.errors import (
     UnauthorizedModelAccessError,
 )
 from inference_exp.models.auto_loaders import auto_resolution_cache, core
-from inference_exp.models.auto_loaders.storage_manager import (
+from inference_exp.models.auto_loaders.access_manager import (
     AccessIdentifiers,
-    ModelStorageManager,
+    ModelAccessManager,
 )
+from inference_exp.models.auto_loaders.entities import AnyModel
 from requests_mock import Mocker
 
 
@@ -25,13 +26,13 @@ from requests_mock import Mocker
 @pytest.mark.cpu_only
 def test_auto_loading_when_model_access_is_forbidden() -> None:
     # given
-    model_storage_manager = MagicMock()
-    model_storage_manager.is_model_access_forbidden.return_value = True
+    model_access_manager = MagicMock()
+    model_access_manager.is_model_access_forbidden.return_value = True
 
     # when
     with pytest.raises(UnauthorizedModelAccessError):
         AutoModel.from_pretrained(
-            "yolov8n-640", model_storage_manager=model_storage_manager
+            "yolov8n-640", model_access_manager=model_access_manager
         )
 
 
@@ -164,7 +165,7 @@ MOCKED_WEIGHTS_PROVIDER_RESPONSE = {
 }
 
 
-class AccumulativeModelStorageManager(ModelStorageManager):
+class AccumulativeModelAccessManager(ModelAccessManager):
 
     def __init__(self):
         self.on_model_access_forbidden_calls = []
@@ -182,10 +183,10 @@ class AccumulativeModelStorageManager(ModelStorageManager):
         )
 
     def on_model_package_access_granted(
-        self, dir_path: str, access_identifiers: AccessIdentifiers
+        self, access_identifiers: AccessIdentifiers
     ) -> None:
         self.on_model_package_access_granted_calls.append(
-            {"dir_path": dir_path, "access_identifiers": access_identifiers}
+            {"access_identifiers": access_identifiers}
         )
 
     def on_file_created(
@@ -245,6 +246,31 @@ class AccumulativeModelStorageManager(ModelStorageManager):
             for p in self.on_model_package_access_granted_calls
         )
 
+    def retrieve_model_instance(
+        self,
+        model_id: str,
+        package_id: Optional[str],
+        api_key: Optional[str],
+        loading_parameter_digest: Optional[str],
+    ) -> Optional[AnyModel]:
+        return None
+
+    def on_model_loaded(
+        self,
+        model: AnyModel,
+        access_identifiers: AccessIdentifiers,
+        model_storage_path: str,
+    ) -> None:
+        pass
+
+    def on_model_alias_discovered(self, alias: str, model_id: str) -> None:
+        pass
+
+    def on_model_dependency_discovered(
+        self, base_model_id: str, dependent_model_id: str
+    ) -> None:
+        pass
+
 
 @pytest.mark.timeout(60)
 @pytest.mark.slow
@@ -266,7 +292,7 @@ def test_auto_loading_with_weights_provider_in_base_scenario(
         YOLOv8ForObjectDetectionOnnx,
     )
 
-    storage_manager = AccumulativeModelStorageManager()
+    storage_manager = AccumulativeModelAccessManager()
     shared_blobs_dir_path = os.path.join(empty_local_dir, "shared-blobs")
     generate_shared_blobs_path_mock.side_effect = lambda: shared_blobs_dir_path
     generate_model_package_cache_path_mock.side_effect = lambda model_id, package_id: (
@@ -296,7 +322,7 @@ def test_auto_loading_with_weights_provider_in_base_scenario(
 
     # when
     model = AutoModel.from_pretrained(
-        "yolov8n-640", model_storage_manager=storage_manager
+        "yolov8n-640", model_access_manager=storage_manager
     )
 
     # then
@@ -310,17 +336,13 @@ def test_auto_loading_with_weights_provider_in_base_scenario(
     assert (
         len(storage_manager.on_file_created_calls) == 5
     ), "Expected to create 3 model files from download, one model config and one cache entry"
-    assert len(storage_manager.on_model_package_access_granted_calls) == 1
+    assert len(storage_manager.on_model_package_access_granted_calls) == 2
     expected_model_package_dir = os.path.join(
         empty_local_dir,
         "models-cache",
         "yolov8n-640",
         "8fdaa3c2756a28aa404901ebcb6492bd",
     )
-    assert storage_manager.on_model_package_access_granted_calls[0] == {
-        "dir_path": expected_model_package_dir,
-        "access_identifiers": expected_access_identifiers,
-    }
     all_symlinks = [p["link_name"] for p in storage_manager.on_symlink_created_calls]
     assert len(all_symlinks) == 3
     shared_blobs_dir_content = [
@@ -357,7 +379,7 @@ def test_auto_loading_with_weights_provider_when_cache_for_the_exact_model_and_a
         YOLOv8ForObjectDetectionOnnx,
     )
 
-    storage_manager = AccumulativeModelStorageManager()
+    storage_manager = AccumulativeModelAccessManager()
     shared_blobs_dir_path = os.path.join(empty_local_dir, "shared-blobs")
     generate_shared_blobs_path_mock.side_effect = lambda: shared_blobs_dir_path
     generate_model_package_cache_path_mock.side_effect = lambda model_id, package_id: (
@@ -389,10 +411,10 @@ def test_auto_loading_with_weights_provider_when_cache_for_the_exact_model_and_a
     )
 
     # when
-    _ = AutoModel.from_pretrained("yolov8n-640", model_storage_manager=storage_manager)
+    _ = AutoModel.from_pretrained("yolov8n-640", model_access_manager=storage_manager)
     storage_manager.on_file_created_calls = []
     model = AutoModel.from_pretrained(
-        "yolov8n-640", model_storage_manager=storage_manager
+        "yolov8n-640", model_access_manager=storage_manager
     )
 
     # then
@@ -423,7 +445,7 @@ def test_auto_loading_with_weights_provider_when_cache_for_the_exact_model_but_d
         YOLOv8ForObjectDetectionOnnx,
     )
 
-    storage_manager = AccumulativeModelStorageManager()
+    storage_manager = AccumulativeModelAccessManager()
     shared_blobs_dir_path = os.path.join(empty_local_dir, "shared-blobs")
     generate_shared_blobs_path_mock.side_effect = lambda: shared_blobs_dir_path
     generate_model_package_cache_path_mock.side_effect = lambda model_id, package_id: (
@@ -455,10 +477,10 @@ def test_auto_loading_with_weights_provider_when_cache_for_the_exact_model_but_d
     )
 
     # when
-    _ = AutoModel.from_pretrained("yolov8n-640", model_storage_manager=storage_manager)
+    _ = AutoModel.from_pretrained("yolov8n-640", model_access_manager=storage_manager)
     storage_manager.on_file_created_calls = []
     model = AutoModel.from_pretrained(
-        "yolov8n-640", api_key="different", model_storage_manager=storage_manager
+        "yolov8n-640", api_key="different", model_access_manager=storage_manager
     )
 
     # then
@@ -496,7 +518,7 @@ def test_auto_loading_with_weights_provider_when_api_denoted_forbidden(
     requests_mock: Mocker,
 ) -> None:
     # given
-    storage_manager = AccumulativeModelStorageManager()
+    storage_manager = AccumulativeModelAccessManager()
     shared_blobs_dir_path = os.path.join(empty_local_dir, "shared-blobs")
     generate_shared_blobs_path_mock.side_effect = lambda: shared_blobs_dir_path
     generate_model_package_cache_path_mock.side_effect = lambda model_id, package_id: (
@@ -529,11 +551,11 @@ def test_auto_loading_with_weights_provider_when_api_denoted_forbidden(
     # when
     with pytest.raises(UnauthorizedModelAccessError):
         _ = AutoModel.from_pretrained(
-            "yolov8n-640", model_storage_manager=storage_manager
+            "yolov8n-640", model_access_manager=storage_manager
         )
     with pytest.raises(UnauthorizedModelAccessError):
         _ = AutoModel.from_pretrained(
-            "yolov8n-640", model_storage_manager=storage_manager
+            "yolov8n-640", model_access_manager=storage_manager
         )
 
     # then
@@ -563,7 +585,7 @@ def test_auto_loading_with_weights_provider_when_api_denoted_forbidden_for_one_k
         YOLOv8ForObjectDetectionOnnx,
     )
 
-    storage_manager = AccumulativeModelStorageManager()
+    storage_manager = AccumulativeModelAccessManager()
     shared_blobs_dir_path = os.path.join(empty_local_dir, "shared-blobs")
     generate_shared_blobs_path_mock.side_effect = lambda: shared_blobs_dir_path
     generate_model_package_cache_path_mock.side_effect = lambda model_id, package_id: (
@@ -599,11 +621,11 @@ def test_auto_loading_with_weights_provider_when_api_denoted_forbidden_for_one_k
 
     # when
     model = AutoModel.from_pretrained(
-        "yolov8n-640", api_key="another", model_storage_manager=storage_manager
+        "yolov8n-640", api_key="another", model_access_manager=storage_manager
     )
     with pytest.raises(UnauthorizedModelAccessError):
         _ = AutoModel.from_pretrained(
-            "yolov8n-640", model_storage_manager=storage_manager
+            "yolov8n-640", model_access_manager=storage_manager
         )
 
     # then
@@ -617,17 +639,13 @@ def test_auto_loading_with_weights_provider_when_api_denoted_forbidden_for_one_k
     assert (
         len(storage_manager.on_file_created_calls) == 5
     ), "Expected to create 3 model files from download, one model config and one cache entry"
-    assert len(storage_manager.on_model_package_access_granted_calls) == 1
+    assert len(storage_manager.on_model_package_access_granted_calls) == 2
     expected_model_package_dir = os.path.join(
         empty_local_dir,
         "models-cache",
         "yolov8n-640",
         "8fdaa3c2756a28aa404901ebcb6492bd",
     )
-    assert storage_manager.on_model_package_access_granted_calls[0] == {
-        "dir_path": expected_model_package_dir,
-        "access_identifiers": expected_access_identifiers,
-    }
     all_symlinks = [p["link_name"] for p in storage_manager.on_symlink_created_calls]
     assert len(all_symlinks) == 3
     shared_blobs_dir_content = [

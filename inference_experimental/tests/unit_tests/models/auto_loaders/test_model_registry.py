@@ -4,12 +4,12 @@ from unittest.mock import MagicMock
 import pytest
 from inference_exp.errors import ModelImplementationLoaderError
 from inference_exp.models.auto_loaders import models_registry
+from inference_exp.models.auto_loaders.entities import BackendType
 from inference_exp.models.auto_loaders.models_registry import (
     RegistryEntry,
     model_implementation_exists,
     resolve_model_class,
 )
-from inference_exp.weights_providers.entities import BackendType
 
 
 def test_model_implementation_exists_when_model_exists() -> None:

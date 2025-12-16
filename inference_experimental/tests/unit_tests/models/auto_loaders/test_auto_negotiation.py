@@ -38,9 +38,9 @@ from inference_exp.models.auto_loaders.auto_negotiation import (
     verify_trt_package_compatibility_with_cuda_device,
     verify_versions_up_to_major_and_minor,
 )
+from inference_exp.models.auto_loaders.entities import BackendType
 from inference_exp.runtime_introspection.core import RuntimeXRayResult
 from inference_exp.weights_providers.entities import (
-    BackendType,
     FileDownloadSpecs,
     JetsonEnvironmentRequirements,
     ModelPackageMetadata,

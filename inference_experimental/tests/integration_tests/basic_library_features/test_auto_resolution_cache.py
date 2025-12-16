@@ -11,7 +11,7 @@ from inference_exp.models.auto_loaders.auto_resolution_cache import (
     BaseAutoLoadMetadataCache,
     generate_auto_resolution_cache_path,
 )
-from inference_exp.weights_providers.entities import BackendType
+from inference_exp.models.auto_loaders.entities import BackendType
 
 
 @pytest.mark.torch_models
