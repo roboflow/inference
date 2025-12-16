@@ -1,6 +1,6 @@
 [project]
 name = "inference-exp"
-version = "0.17.1"
+version = "0.17.2"
 description = "Experimental vresion of inference package which is supposed to evolve into inference 1.0"
 readme = "README.md"
 requires-python = ">=3.9,<3.13"
