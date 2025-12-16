@@ -2,9 +2,12 @@ from dataclasses import dataclass, field
 from typing import Dict, Optional, Set, Tuple, Union
 
 from inference_exp.errors import ModelImplementationLoaderError
-from inference_exp.models.auto_loaders.entities import ModelArchitecture, TaskType
+from inference_exp.models.auto_loaders.entities import (
+    BackendType,
+    ModelArchitecture,
+    TaskType,
+)
 from inference_exp.utils.imports import LazyClass
-from inference_exp.weights_providers.entities import BackendType
 
 OBJECT_DETECTION_TASK = "object-detection"
 INSTANCE_SEGMENTATION_TASK = "instance-segmentation"
@@ -408,6 +411,20 @@ REGISTERED_MODELS: Dict[
     ): LazyClass(
         module_name="inference_exp.models.dinov3.dinov3_classification_onnx",
         class_name="DinoV3ForClassificationOnnx",
+        "owlv2",
+        OPEN_VOCABULARY_OBJECT_DETECTION_TASK,
+        BackendType.HF,
+    ): LazyClass(
+        module_name="inference_exp.models.owlv2.owlv2_hf",
+        class_name="OWLv2HF",
+    ),
+    (
+        "roboflow-instant",
+        OBJECT_DETECTION_TASK,
+        BackendType.HF,
+    ): LazyClass(
+        module_name="inference_exp.models.roboflow_instant.roboflow_instant_hf",
+        class_name="RoboflowInstantHF",
     ),
 }
 

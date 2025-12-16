@@ -19,10 +19,11 @@ from inference_exp.errors import (
     UnauthorizedModelAccessError,
 )
 from inference_exp.logger import LOGGER
+from inference_exp.models.auto_loaders.entities import BackendType
 from inference_exp.weights_providers.entities import (
-    BackendType,
     FileDownloadSpecs,
     JetsonEnvironmentRequirements,
+    ModelDependency,
     ModelMetadata,
     ModelPackageMetadata,
     ONNXPackageDetails,
@@ -57,12 +58,22 @@ class RoboflowModelPackageV1(BaseModel):
     trusted_source: bool = Field(alias="trustedSource", default=False)
 
 
+class RoboflowModelDependencyV1(BaseModel):
+    type: Literal["model-dependency-v1"]
+    name: str
+    model_id: str = Field(alias="modelId")
+    model_package_id: Optional[str] = Field(alias="modelPackageId", default=None)
+
+
 class RoboflowModelMetadata(BaseModel):
     type: Literal["external-model-metadata-v1"]
     model_id: str = Field(alias="modelId")
     model_architecture: str = Field(alias="modelArchitecture")
     model_variant: Optional[str] = Field(alias="modelVariant", default=None)
     task_type: Optional[str] = Field(alias="taskType", default=None)
+    model_dependencies: Optional[List[RoboflowModelDependencyV1]] = Field(
+        alias="modelDependencies", default=None
+    )
     model_packages: List[Union[RoboflowModelPackageV1, dict]] = Field(
         alias="modelPackages",
     )
@@ -77,12 +88,24 @@ def get_roboflow_model(model_id: str, api_key: Optional[str] = None) -> ModelMet
         if parsed_model_package is None:
             continue
         parsed_model_packages.append(parsed_model_package)
+    model_dependencies = None
+    if model_metadata.model_dependencies:
+        model_dependencies = []
+        for declared_dependency in model_metadata.model_dependencies:
+            model_dependencies.append(
+                ModelDependency(
+                    name=declared_dependency.name,
+                    model_id=declared_dependency.model_id,
+                    model_package_id=declared_dependency.model_package_id,
+                )
+            )
     return ModelMetadata(
         model_id=model_metadata.model_id,
         model_architecture=model_metadata.model_architecture,
         model_packages=parsed_model_packages,
         task_type=model_metadata.task_type,
         model_variant=model_metadata.model_variant,
+        model_dependencies=model_dependencies,
     )
 
 

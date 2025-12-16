@@ -11,10 +11,10 @@ from inference_exp.runtime_introspection.core import x_ray_runtime_environment
 from inference_exp.utils.download import download_files_to_directory
 from inference_exp.weights_providers.core import get_model_from_provider
 from inference_exp.weights_providers.entities import (
-    BackendType,
     ModelPackageMetadata,
     Quantization,
 )
+from inference_exp.models.auto_loaders.entities import BackendType
 
 from .engine_builder import EngineBuilder
 

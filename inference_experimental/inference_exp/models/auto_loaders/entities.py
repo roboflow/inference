@@ -1,11 +1,48 @@
 from dataclasses import dataclass
-from typing import Optional
+from enum import Enum
+from typing import Optional, Union
 
-from inference_exp.weights_providers.entities import BackendType
+from inference_exp.models.base.classification import (
+    ClassificationModel,
+    MultiLabelClassificationModel,
+)
+from inference_exp.models.base.depth_estimation import DepthEstimationModel
+from inference_exp.models.base.documents_parsing import StructuredOCRModel
+from inference_exp.models.base.embeddings import TextImageEmbeddingModel
+from inference_exp.models.base.instance_segmentation import InstanceSegmentationModel
+from inference_exp.models.base.keypoints_detection import KeyPointsDetectionModel
+from inference_exp.models.base.object_detection import (
+    ObjectDetectionModel,
+    OpenVocabularyObjectDetectionModel,
+)
 
 ModelArchitecture = str
 TaskType = Optional[str]
 MODEL_CONFIG_FILE_NAME = "model_config.json"
+
+
+class BackendType(str, Enum):
+    TORCH = "torch"
+    TORCH_SCRIPT = "torch-script"
+    ONNX = "onnx"
+    TRT = "trt"
+    HF = "hugging-face"
+    ULTRALYTICS = "ultralytics"
+    MEDIAPIPE = "mediapipe"
+    CUSTOM = "custom"
+
+
+AnyModel = Union[
+    ClassificationModel,
+    MultiLabelClassificationModel,
+    DepthEstimationModel,
+    StructuredOCRModel,
+    TextImageEmbeddingModel,
+    InstanceSegmentationModel,
+    KeyPointsDetectionModel,
+    ObjectDetectionModel,
+    OpenVocabularyObjectDetectionModel,
+]
 
 
 @dataclass(frozen=True)

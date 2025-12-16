@@ -17,6 +17,10 @@ MAN_IMAGE_PATH = os.path.join(ASSETS_DIR, "man.jpg")
 MAN_IMAGE_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/test-images/man.jpg"
 )
+COIN_COUNTING_IMAGE_URL = (
+    "https://media.roboflow.com/inference/example-input-images/image-coin-counting.jpg"
+)
+COIN_COUNTING_IMAGE_PATH = os.path.join(ASSETS_DIR, "image-coin-counting.jpg")
 
 
 @pytest.fixture()
@@ -45,6 +49,16 @@ def man_image_numpy() -> np.ndarray:
     _download_if_not_exists(file_path=MAN_IMAGE_PATH, url=MAN_IMAGE_URL)
     image = cv2.imread(MAN_IMAGE_PATH)
     assert image is not None, "Could not load OCR test image"
+    return image
+
+
+@pytest.fixture(scope="function")
+def coins_counting_image_numpy() -> np.ndarray:
+    _download_if_not_exists(
+        file_path=COIN_COUNTING_IMAGE_PATH, url=COIN_COUNTING_IMAGE_URL
+    )
+    image = cv2.imread(COIN_COUNTING_IMAGE_PATH)
+    assert image is not None, "Could not load test image"
     return image
 
 

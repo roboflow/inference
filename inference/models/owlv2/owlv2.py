@@ -949,7 +949,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
                         api_data["model"], json_response=False
                     )
                 else:
-                    logger.info("Getting OWLv2 model data for")
+                    logger.info("Getting OWLv2 model data for %s", self.endpoint)
                     api_data = get_roboflow_instant_model_data(
                         api_key=self.api_key,
                         model_id=self.endpoint,
