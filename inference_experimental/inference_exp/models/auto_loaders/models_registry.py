@@ -411,6 +411,8 @@ REGISTERED_MODELS: Dict[
     ): LazyClass(
         module_name="inference_exp.models.dinov3.dinov3_classification_onnx",
         class_name="DinoV3ForClassificationOnnx",
+    ),
+    (
         "owlv2",
         OPEN_VOCABULARY_OBJECT_DETECTION_TASK,
         BackendType.HF,
