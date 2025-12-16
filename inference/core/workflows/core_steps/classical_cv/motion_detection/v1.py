@@ -1,3 +1,4 @@
+import json
 from typing import List, Literal, Optional, Tuple, Type, Union
 
 import cv2
@@ -20,6 +21,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     ZONE_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    LIST_OF_VALUES_KIND,
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -50,9 +52,8 @@ class MotionDetectionManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "classical_computer_vision",
-            "section": "video",
             "ui_manifest": {
-                "section": "classical_cv",
+                "section": "video",
                 "icon": "far fa-bell-exclamation",
                 "blockPriority": 8,
                 "opencv": True,
@@ -75,7 +76,7 @@ class MotionDetectionManifest(WorkflowBlockManifest):
         default=200,
     )
 
-    morphological_kernel_size: Selector(kind=[INTEGER_KIND]) = Field(
+    morphological_kernel_size: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         title="Morphological Kernel Size",
         description="The size of the kernel used for morphological operations to combine contours.",
         examples=[3],
@@ -83,7 +84,7 @@ class MotionDetectionManifest(WorkflowBlockManifest):
         default=3,
     )
 
-    threshold: Selector(kind=[INTEGER_KIND]) = Field(
+    threshold: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         title="Threshold",
         description="The threshold value for the squared Mahalanobis distance for background subtraction."
         " Smaller values increase sensitivity to motion.",
@@ -92,7 +93,7 @@ class MotionDetectionManifest(WorkflowBlockManifest):
         default=16,
     )
 
-    history: Selector(kind=[INTEGER_KIND]) = Field(
+    history: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         title="History",
         description="The number of previous frames to use for background subtraction.",
         examples=[30],
@@ -100,9 +101,9 @@ class MotionDetectionManifest(WorkflowBlockManifest):
         default=30,
     )
 
-    detection_zone: Selector(kind=[ZONE_KIND]) = Field(  # type: ignore
+    detection_zone: Union[list, str, Selector(kind=[ZONE_KIND]), Selector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
         title="Detection Zone",
-        description="An optional polygon zone in a format [(x1, y1), (x2, y2), (x3, y3), ...];"
+        description="An optional polygon zone in a format [[x1, y1], [x2, y2], [x3, y3], ...];"
         " each zone must consist of more than 3 points",
         examples=["$inputs.zones"],
         default=None,
@@ -159,7 +160,14 @@ class MotionDetectionBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[MotionDetectionManifest]:
         return MotionDetectionManifest
 
-    def run(self, image: WorkflowImageData, minimum_contour_area: int, morphological_kernel_size: int, threshold: int, history: int, suppress_first_detections: bool, detection_zone: List[Tuple[int, int]], *args, **kwargs) -> BlockResult:
+    def run(self, image: WorkflowImageData, minimum_contour_area: int, morphological_kernel_size: int, threshold: int, history: int, suppress_first_detections: bool, detection_zone: Optional[Union[str, List[Tuple[int,int]]]], *args, **kwargs) -> BlockResult:
+
+        if type(detection_zone)==str:
+            try:
+                detection_zone = json.loads(detection_zone)
+            except Exception as e:
+                raise ValueError(f"Could not parse zone as a valid json: {detection_zone}")
+
         if not self.backSub or self.threshold != threshold or self.history != history:
             self.threshold = threshold
             self.history = history
@@ -168,24 +176,25 @@ class MotionDetectionBlockV1(WorkflowBlock):
         frames_initialized = self.frame_count >= history or not suppress_first_detections
         if not frames_initialized:
             self.frame_count += 1
-            print(f"Motion Detection: Initializing background model {self.frame_count}/{history}")
             return {
                 OUTPUT_IMAGE_KEY: copy.copy(image),
                 "motion": False,
                 "detections": sv.Detections.empty(),
                 "alarm": False,
             }
-        else:
-            print(self.frame_count, history, suppress_first_detections)
 
         frame = image.numpy_image
 
         # apply background subtraction
         fg_mask = self.backSub.apply(frame)
 
+        # filter out the minimal grayscale values to reduce noise
+        # not exposing this as a param for simplicity - overall sensitivity can be adjusted via the main threshold param
+        _, mask_thresh = cv2.threshold(fg_mask, 32, 255, cv2.THRESH_BINARY)
+
         # apply morphological filtering to ignore changes due to noise
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (morphological_kernel_size, morphological_kernel_size))
-        mask_morph = cv2.morphologyEx(fg_mask, cv2.MORPH_OPEN, kernel)
+        mask_morph = cv2.morphologyEx(mask_thresh, cv2.MORPH_OPEN, kernel)
 
         # create contours around filtered areas
         contours, hierarchy = cv2.findContours(mask_morph, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)

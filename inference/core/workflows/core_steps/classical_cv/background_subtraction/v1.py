@@ -44,10 +44,9 @@ class BackgroundSubtractionManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "classical_computer_vision",
-            "section": "video",
             "ui_manifest": {
-                "section": "classical_cv",
-                "icon": "far fa-bell-exclamation",
+                "section": "video",
+                "icon": "far fa-circle-minus",
                 "blockPriority": 8,
                 "opencv": True,
                 "video": True,
@@ -62,7 +61,7 @@ class BackgroundSubtractionManifest(WorkflowBlockManifest):
         validation_alias=AliasChoices("image", "images"),
     )
 
-    threshold: Selector(kind=[INTEGER_KIND]) = Field(
+    threshold: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         title="Threshold",
         description="The threshold value for the squared Mahalanobis distance for background subtraction."
         " Smaller values increase sensitivity to motion.",
@@ -71,7 +70,7 @@ class BackgroundSubtractionManifest(WorkflowBlockManifest):
         default=16,
     )
 
-    history: Selector(kind=[INTEGER_KIND]) = Field(
+    history: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         title="History",
         description="The number of previous frames to use for background subtraction.",
         examples=[30],
