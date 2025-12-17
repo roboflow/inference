@@ -1,11 +1,8 @@
-import copy
-from typing import List, Literal, Optional, Tuple, Type, Union
+from typing import List, Literal, Optional, Type, Union
 
 import cv2
 import numpy as np
-import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
-from shapely.geometry import Polygon
 
 from inference.core.workflows.core_steps.visualizations.common.base import (
     OUTPUT_IMAGE_KEY,
@@ -15,11 +12,8 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BOOLEAN_KIND,
     IMAGE_KIND,
     INTEGER_KIND,
-    OBJECT_DETECTION_PREDICTION_KIND,
-    ZONE_KIND,
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
