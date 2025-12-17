@@ -439,6 +439,25 @@ class VideoFrameProcessor:
 
         # Send using binary chunked protocol
         json_bytes = json.dumps(webrtc_output.model_dump(mode="json")).encode("utf-8")
+
+        # Periodic diagnostic logging (every 100 frames)
+        if self._received_frames % 100 == 1:
+            import psutil
+
+            pc_state = self.peer_connection.connectionState if self.peer_connection else "N/A"
+            ice_state = self.peer_connection.iceConnectionState if self.peer_connection else "N/A"
+            dc_buffer = self.data_channel.bufferedAmount if self.data_channel else 0
+            rss_mb = psutil.Process().memory_info().rss / (1024**2)
+
+            logger.info(
+                "WebRTC stats at frame %s: mem=%sMB | buf=%s | pc=%s | ice=%s",
+                self._received_frames,
+                int(rss_mb),
+                dc_buffer,
+                pc_state,
+                ice_state,
+            )
+
         await send_chunked_data(
             self.data_channel,
             self._received_frames,
@@ -471,48 +490,14 @@ class VideoFrameProcessor:
 
         This is used when stream_output=[] and no video track is needed.
         """
-        import psutil
-        import time
-
         # Silencing swscaler warnings in multi-threading environment
         if not self._av_logging_set:
             av_logging.set_libav_level(av_logging.ERROR)
             self._av_logging_set = True
 
-        # Get container memory limit (cgroups) or fall back to system memory
-        process = psutil.Process()
-
-        def get_container_memory_limit_gb() -> float:
-            """Get container memory limit from cgroups (v1 or v2)."""
-            try:
-                # cgroups v2 (newer)
-                with open("/sys/fs/cgroup/memory.max", "r") as f:
-                    limit = f.read().strip()
-                    if limit != "max":
-                        return int(limit) / (1024**3)
-            except FileNotFoundError:
-                pass
-            try:
-                # cgroups v1 (older)
-                with open("/sys/fs/cgroup/memory/memory.limit_in_bytes", "r") as f:
-                    limit = int(f.read().strip())
-                    # Check if it's not the "unlimited" value
-                    if limit < 9223372036854771712:
-                        return limit / (1024**3)
-            except FileNotFoundError:
-                pass
-            # Fallback to system memory
-            return psutil.virtual_memory().total / (1024**3)
-
-        total_mem_gb = get_container_memory_limit_gb()
-
-        logger.info(f"Starting data-only frame processing. Container memory limit: {total_mem_gb:.1f} GB")
-
-        # Diagnostic tracking
-        start_time = time.monotonic()
-        last_log_time = start_time
-        frames_since_last_log = 0
-        LOG_INTERVAL = 5.0  # Log every 5 seconds
+        logger.info(
+            "Starting data-only frame processing. This mode is used when stream_output=[] and no video track is needed."
+        )
 
         try:
             while not self._stop_processing:
@@ -526,18 +511,15 @@ class VideoFrameProcessor:
                     break
 
                 # Drain queue if using PlayerStreamTrack (RTSP)
-                queue_size = 0
-                if isinstance(self.track, PlayerStreamTrack):
-                    queue_size = self.track._queue.qsize()
-                    if self.realtime_processing:
-                        while queue_size > 30:
-                            self.track._queue.get_nowait()
-                            queue_size = self.track._queue.qsize()
+                if (
+                    isinstance(self.track, PlayerStreamTrack)
+                    and self.realtime_processing
+                ):
+                    while self.track._queue.qsize() > 30:
+                        self.track._queue.get_nowait()
 
-                frame_start = time.monotonic()
                 frame = await self.track.recv()
                 self._received_frames += 1
-                frames_since_last_log += 1
 
                 frame_timestamp = datetime.datetime.now()
 
@@ -548,76 +530,19 @@ class VideoFrameProcessor:
                     include_errors_on_frame=False,
                 )
 
-                processing_time_ms = (time.monotonic() - frame_start) * 1000
-
                 # Send data via data channel (await for backpressure)
                 await self._send_data_output(
                     workflow_output, frame_timestamp, frame, errors
                 )
-
-                # === PERIODIC DIAGNOSTICS ===
-                now = time.monotonic()
-                if now - last_log_time >= LOG_INTERVAL:
-                    elapsed = now - last_log_time
-                    fps = frames_since_last_log / elapsed if elapsed > 0 else 0
-
-                    # Memory stats (relative to container limit)
-                    mem_info = process.memory_info()
-                    rss_gb = mem_info.rss / (1024**3)
-                    mem_percent = (rss_gb / total_mem_gb * 100) if total_mem_gb > 0 else 0
-
-                    # Data channel stats
-                    dc_buffer = 0
-                    dc_state = "N/A"
-                    if self.data_channel:
-                        dc_buffer = self.data_channel.bufferedAmount
-                        dc_state = self.data_channel.readyState
-
-                    # WebRTC connection stats (for debugging sudden closes)
-                    pc_state = "N/A"
-                    ice_state = "N/A"
-                    if self.peer_connection:
-                        pc_state = self.peer_connection.connectionState
-                        ice_state = self.peer_connection.iceConnectionState
-
-                    # Track state
-                    track_state = self.track.readyState if self.track else "N/A"
-
-                    logger.info(
-                        f"DIAG | frame={self._received_frames} | fps={fps:.1f} | proc_ms={processing_time_ms:.0f} | "
-                        f"mem={rss_gb:.1f}/{total_mem_gb:.1f}GB ({mem_percent:.0f}%) | queue={queue_size} | "
-                        f"pc={pc_state} | ice={ice_state} | dc={dc_state} (buf={dc_buffer}) | track={track_state}"
-                    )
-
-                    last_log_time = now
-                    frames_since_last_log = 0
 
         except asyncio.CancelledError as exc:
             logger.info("Data-only processing cancelled: %s", exc)
         except MediaStreamError as exc:
             logger.info("Stream ended in data-only processing: %s", exc)
         except Exception as exc:
-            logger.error("Error in data-only processing: %s", exc, exc_info=True)
+            logger.error("Error in data-only processing: %s", exc)
         finally:
-            # Final diagnostics
-            total_time = time.monotonic() - start_time
-            final_rss_gb = process.memory_info().rss / (1024**3)
-
-            # Final WebRTC states
-            final_pc_state = "N/A"
-            final_ice_state = "N/A"
-            final_dc_state = "N/A"
-            if self.peer_connection:
-                final_pc_state = self.peer_connection.connectionState
-                final_ice_state = self.peer_connection.iceConnectionState
-            if self.data_channel:
-                final_dc_state = self.data_channel.readyState
-
-            avg_fps = self._received_frames / total_time if total_time > 0 else 0
-            logger.info(
-                f"DIAG FINAL | frames={self._received_frames} | time={total_time:.1f}s | avg_fps={avg_fps:.1f} | "
-                f"mem={final_rss_gb:.1f}GB | pc={final_pc_state} | ice={final_ice_state} | dc={final_dc_state}"
-            )
+            # Send completion signal to client
             await self._send_processing_complete()
 
     @staticmethod
