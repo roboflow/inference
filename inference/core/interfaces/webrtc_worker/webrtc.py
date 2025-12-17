@@ -470,10 +470,6 @@ class VideoFrameProcessor:
 
         This is used when stream_output=[] and no video track is needed.
         """
-        import time
-
-        import psutil
-
         # Silencing swscaler warnings in multi-threading environment
         if not self._av_logging_set:
             av_logging.set_libav_level(av_logging.ERROR)
@@ -482,13 +478,6 @@ class VideoFrameProcessor:
         logger.info(
             "Starting data-only frame processing. This mode is used when stream_output=[] and no video track is needed."
         )
-
-        # Diagnostic tracking
-        process = psutil.Process()
-        start_time = time.monotonic()
-        last_log_time = start_time
-        frames_since_last_log = 0
-        LOG_INTERVAL = 5.0  # Log every 5 seconds
 
         try:
             while not self._stop_processing:
@@ -501,27 +490,16 @@ class VideoFrameProcessor:
                 if not self.track or self.track.readyState == "ended":
                     break
 
-                # === QUEUE SIZE LOGGING ===
-                queue_size = 0
-                if isinstance(self.track, PlayerStreamTrack):
-                    queue_size = self.track._queue.qsize()
-                    if self.realtime_processing:
-                        drained_count = 0
-                        while queue_size > 30:
-                            self.track._queue.get_nowait()
-                            drained_count += 1
-                            queue_size = self.track._queue.qsize()
-                        if drained_count > 0:
-                            logger.warning(
-                                "Drained %d frames from queue (lag detected), remaining: %d",
-                                drained_count,
-                                queue_size,
-                            )
+                # Drain queue if using PlayerStreamTrack (RTSP)
+                if (
+                    isinstance(self.track, PlayerStreamTrack)
+                    and self.realtime_processing
+                ):
+                    while self.track._queue.qsize() > 30:
+                        self.track._queue.get_nowait()
 
-                frame_start = time.monotonic()
                 frame = await self.track.recv()
                 self._received_frames += 1
-                frames_since_last_log += 1
 
                 frame_timestamp = datetime.datetime.now()
 
@@ -532,61 +510,19 @@ class VideoFrameProcessor:
                     include_errors_on_frame=False,
                 )
 
-                processing_time = time.monotonic() - frame_start
-
                 # Send data via data channel (await for backpressure)
                 await self._send_data_output(
                     workflow_output, frame_timestamp, frame, errors
                 )
-
-                # === PERIODIC DIAGNOSTICS ===
-                now = time.monotonic()
-                if now - last_log_time >= LOG_INTERVAL:
-                    elapsed = now - last_log_time
-                    fps = frames_since_last_log / elapsed if elapsed > 0 else 0
-
-                    # Memory stats
-                    mem_info = process.memory_info()
-                    rss_mb = mem_info.rss / (1024 * 1024)
-
-                    # Data channel stats
-                    dc_buffer = 0
-                    dc_state = "N/A"
-                    if self.data_channel:
-                        dc_buffer = self.data_channel.bufferedAmount
-                        dc_state = self.data_channel.readyState
-
-                    logger.info(
-                        "DIAG | frames=%d | fps=%.1f | queue=%d | "
-                        "mem_rss=%.1fMB | dc_buffer=%d | dc_state=%s | "
-                        "last_process_ms=%.1f",
-                        self._received_frames,
-                        fps,
-                        queue_size,
-                        rss_mb,
-                        dc_buffer,
-                        dc_state,
-                        processing_time * 1000,
-                    )
-
-                    last_log_time = now
-                    frames_since_last_log = 0
 
         except asyncio.CancelledError as exc:
             logger.info("Data-only processing cancelled: %s", exc)
         except MediaStreamError as exc:
             logger.info("Stream ended in data-only processing: %s", exc)
         except Exception as exc:
-            logger.error("Error in data-only processing: %s", exc, exc_info=True)
+            logger.error("Error in data-only processing: %s", exc)
         finally:
-            # Final stats
-            total_time = time.monotonic() - start_time
-            logger.info(
-                "DIAG FINAL | total_frames=%d | total_time=%.1fs | avg_fps=%.1f",
-                self._received_frames,
-                total_time,
-                self._received_frames / total_time if total_time > 0 else 0,
-            )
+            # Send completion signal to client
             await self._send_processing_complete()
 
     @staticmethod
