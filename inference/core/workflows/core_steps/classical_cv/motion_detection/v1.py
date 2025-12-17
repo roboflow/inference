@@ -231,7 +231,9 @@ class MotionDetectionBlockV1(WorkflowBlock):
 
         # clip contours if a detection zone is provided
         if detection_zone and len(detection_zone) > 0:
-            filtered_contours = clip_contours_to_contour(filtered_contours, detection_zone)
+            filtered_contours = clip_contours_to_contour(
+                filtered_contours, detection_zone
+            )
 
         if len(filtered_contours) > 0:
             # draw contours on output image

@@ -145,7 +145,9 @@ def test_workflow_with_motion_detection(
         results.append(result)
 
     # then
-    assert len(results) == len(frames), f"Expected {len(frames)} results, got {len(results)}"
+    assert len(results) == len(
+        frames
+    ), f"Expected {len(frames)} results, got {len(results)}"
 
     # Check structure of first result
     first_result = results[0][0]
@@ -162,9 +164,9 @@ def test_workflow_with_motion_detection(
             motion_detected_in_later_frames = True
             break
 
-    assert motion_detected_in_later_frames, (
-        "Expected motion to be detected in later frames when history is full"
-    )
+    assert (
+        motion_detected_in_later_frames
+    ), "Expected motion to be detected in later frames when history is full"
 
     # Verify that detections is a valid object
     last_result = results[-1][0]
@@ -210,10 +212,18 @@ def test_workflow_with_motion_detection_batch_processing(
 
     # then
     assert isinstance(result, list), "Expected result to be a list"
-    assert len(result) == len(batch_frames), f"Expected {len(batch_frames)} results, got {len(result)}"
+    assert len(result) == len(
+        batch_frames
+    ), f"Expected {len(batch_frames)} results, got {len(result)}"
 
     # Verify all results have the required outputs
     for i, frame_result in enumerate(result):
-        assert "motion_detected" in frame_result, f"Frame {i}: Expected 'motion_detected' in outputs"
-        assert "detections" in frame_result, f"Frame {i}: Expected 'detections' in outputs"
-        assert "output_image" in frame_result, f"Frame {i}: Expected 'output_image' in outputs"
+        assert (
+            "motion_detected" in frame_result
+        ), f"Frame {i}: Expected 'motion_detected' in outputs"
+        assert (
+            "detections" in frame_result
+        ), f"Frame {i}: Expected 'detections' in outputs"
+        assert (
+            "output_image" in frame_result
+        ), f"Frame {i}: Expected 'output_image' in outputs"

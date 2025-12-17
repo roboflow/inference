@@ -125,7 +125,9 @@ def test_workflow_with_background_subtraction(
         results.append(result)
 
     # then
-    assert len(results) == len(frames), f"Expected {len(frames)} results, got {len(results)}"
+    assert len(results) == len(
+        frames
+    ), f"Expected {len(frames)} results, got {len(results)}"
 
     # Check structure of first result
     first_result = results[0][0]
@@ -136,26 +138,36 @@ def test_workflow_with_background_subtraction(
     assert output_image is not None, "Expected output_image to be present"
 
     # Get the numpy array from the WorkflowImageData
-    output_array = output_image.numpy_image if hasattr(output_image, 'numpy_image') else output_image
+    output_array = (
+        output_image.numpy_image
+        if hasattr(output_image, "numpy_image")
+        else output_image
+    )
 
     # Check image dimensions match input
-    assert output_array.shape[0] == 240, f"Expected height 240, got {output_array.shape[0]}"
-    assert output_array.shape[1] == 320, f"Expected width 320, got {output_array.shape[1]}"
+    assert (
+        output_array.shape[0] == 240
+    ), f"Expected height 240, got {output_array.shape[0]}"
+    assert (
+        output_array.shape[1] == 320
+    ), f"Expected width 320, got {output_array.shape[1]}"
 
     # Early frames (before history is full) may not show much motion
     # Check later frames where background model is established
     motion_detected_later = False
     for result in results[30:]:  # Check last 10 frames
         output_img = result[0]["output_image"]
-        output_arr = output_img.numpy_image if hasattr(output_img, 'numpy_image') else output_img
+        output_arr = (
+            output_img.numpy_image if hasattr(output_img, "numpy_image") else output_img
+        )
         # Check if there are any non-zero pixels (indicating detected motion)
         if np.any(output_arr > 0):
             motion_detected_later = True
             break
 
-    assert motion_detected_later, (
-        "Expected motion to be highlighted in output masks in later frames"
-    )
+    assert (
+        motion_detected_later
+    ), "Expected motion to be highlighted in output masks in later frames"
 
 
 def test_workflow_with_background_subtraction_batch_processing(
@@ -192,19 +204,29 @@ def test_workflow_with_background_subtraction_batch_processing(
 
     # then
     assert isinstance(result, list), "Expected result to be a list"
-    assert len(result) == len(batch_frames), f"Expected {len(batch_frames)} results, got {len(result)}"
+    assert len(result) == len(
+        batch_frames
+    ), f"Expected {len(batch_frames)} results, got {len(result)}"
 
     # Verify all results have the required outputs
     for i, frame_result in enumerate(result):
-        assert "output_image" in frame_result, f"Frame {i}: Expected 'output_image' in outputs"
+        assert (
+            "output_image" in frame_result
+        ), f"Frame {i}: Expected 'output_image' in outputs"
 
         output_img = frame_result["output_image"]
         assert output_img is not None, f"Frame {i}: Expected output_image to be present"
 
         # Verify image dimensions
-        output_arr = output_img.numpy_image if hasattr(output_img, 'numpy_image') else output_img
-        assert output_arr.shape[0] == 240, f"Frame {i}: Expected height 240, got {output_arr.shape[0]}"
-        assert output_arr.shape[1] == 320, f"Frame {i}: Expected width 320, got {output_arr.shape[1]}"
+        output_arr = (
+            output_img.numpy_image if hasattr(output_img, "numpy_image") else output_img
+        )
+        assert (
+            output_arr.shape[0] == 240
+        ), f"Frame {i}: Expected height 240, got {output_arr.shape[0]}"
+        assert (
+            output_arr.shape[1] == 320
+        ), f"Frame {i}: Expected width 320, got {output_arr.shape[1]}"
 
 
 def test_background_subtraction_with_different_thresholds(
@@ -274,7 +296,9 @@ def test_background_subtraction_with_different_thresholds(
         )
 
         output_img = result[0]["output_image"]
-        output_arr = output_img.numpy_image if hasattr(output_img, 'numpy_image') else output_img
+        output_arr = (
+            output_img.numpy_image if hasattr(output_img, "numpy_image") else output_img
+        )
         results_by_threshold[threshold] = output_arr
 
     # Verify that lower thresholds (more sensitive) produce more detected pixels

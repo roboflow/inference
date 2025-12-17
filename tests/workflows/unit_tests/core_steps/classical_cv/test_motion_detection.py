@@ -143,7 +143,7 @@ def test_motion_detection_block_detects_moving_object() -> None:
         x_pos = int(progress * (width - 30))
         y_pos = (height - 30) // 2
 
-        frame[y_pos:y_pos+30, x_pos:x_pos+30] = 255  # White rectangle
+        frame[y_pos : y_pos + 30, x_pos : x_pos + 30] = 255  # White rectangle
         frames.append(frame)
 
     # when - run through all frames
@@ -166,7 +166,9 @@ def test_motion_detection_block_detects_moving_object() -> None:
     # then
     # First 30 frames should not detect motion (building background model)
     for i in range(30):
-        assert results[i]["motion"] is False, f"Frame {i}: Should not detect motion while building history"
+        assert (
+            results[i]["motion"] is False
+        ), f"Frame {i}: Should not detect motion while building history"
 
     # Later frames should detect motion
     motion_detected = False
@@ -196,7 +198,9 @@ def test_motion_detection_block_alarm_on_motion_start() -> None:
     alarm = True if not block.last_motion and current_motion else False
 
     # then
-    assert alarm is True, "Alarm should trigger when motion transitions from False to True"
+    assert (
+        alarm is True
+    ), "Alarm should trigger when motion transitions from False to True"
 
 
 def test_motion_detection_block_no_alarm_on_continuous_motion() -> None:
@@ -213,7 +217,9 @@ def test_motion_detection_block_no_alarm_on_continuous_motion() -> None:
     alarm = True if not block.last_motion and current_motion else False
 
     # then
-    assert alarm is False, "Alarm should not trigger when motion is continuous (both True)"
+    assert (
+        alarm is False
+    ), "Alarm should not trigger when motion is continuous (both True)"
 
     # Update state for next frame
     block.last_motion = current_motion
@@ -267,7 +273,9 @@ def test_motion_detection_block_with_minimum_contour_area() -> None:
     )
 
     # then
-    assert output["motion"] is False, "Small motion should be filtered by minimum_contour_area"
+    assert (
+        output["motion"] is False
+    ), "Small motion should be filtered by minimum_contour_area"
     assert output["detections"].is_empty()
 
 
@@ -516,4 +524,6 @@ def test_motion_detection_block_changes_threshold() -> None:
 
     # then
     assert first_subtractor is same_subtractor, "Same threshold should reuse subtractor"
-    assert different_subtractor is not first_subtractor, "Different threshold should recreate subtractor"
+    assert (
+        different_subtractor is not first_subtractor
+    ), "Different threshold should recreate subtractor"
