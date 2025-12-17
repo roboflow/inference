@@ -3,7 +3,6 @@ from typing import List, Literal, Optional, Tuple, Type, Union
 
 import cv2
 import numpy as np
-import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
 from shapely.geometry import Polygon
 
