@@ -479,12 +479,34 @@ class VideoFrameProcessor:
             av_logging.set_libav_level(av_logging.ERROR)
             self._av_logging_set = True
 
-        # Get system memory info for Modal allocation verification
+        # Get container memory limit (cgroups) or fall back to system memory
         process = psutil.Process()
-        sys_mem = psutil.virtual_memory()
-        total_mem_gb = sys_mem.total / (1024**3)
 
-        logger.info(f"Starting data-only frame processing. Total system memory: {total_mem_gb:.1f} GB")
+        def get_container_memory_limit_gb() -> float:
+            """Get container memory limit from cgroups (v1 or v2)."""
+            try:
+                # cgroups v2 (newer)
+                with open("/sys/fs/cgroup/memory.max", "r") as f:
+                    limit = f.read().strip()
+                    if limit != "max":
+                        return int(limit) / (1024**3)
+            except FileNotFoundError:
+                pass
+            try:
+                # cgroups v1 (older)
+                with open("/sys/fs/cgroup/memory/memory.limit_in_bytes", "r") as f:
+                    limit = int(f.read().strip())
+                    # Check if it's not the "unlimited" value
+                    if limit < 9223372036854771712:
+                        return limit / (1024**3)
+            except FileNotFoundError:
+                pass
+            # Fallback to system memory
+            return psutil.virtual_memory().total / (1024**3)
+
+        total_mem_gb = get_container_memory_limit_gb()
+
+        logger.info(f"Starting data-only frame processing. Container memory limit: {total_mem_gb:.1f} GB")
 
         # Diagnostic tracking
         start_time = time.monotonic()
@@ -539,10 +561,10 @@ class VideoFrameProcessor:
                     elapsed = now - last_log_time
                     fps = frames_since_last_log / elapsed if elapsed > 0 else 0
 
-                    # Memory stats
+                    # Memory stats (relative to container limit)
                     mem_info = process.memory_info()
                     rss_gb = mem_info.rss / (1024**3)
-                    mem_percent = psutil.virtual_memory().percent
+                    mem_percent = (rss_gb / total_mem_gb * 100) if total_mem_gb > 0 else 0
 
                     # Data channel stats
                     dc_buffer = 0
