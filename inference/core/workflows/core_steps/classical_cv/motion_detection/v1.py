@@ -88,7 +88,7 @@ class MotionDetectionManifest(WorkflowBlockManifest):
     threshold: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         title="Threshold",
         description="The threshold value for the squared Mahalanobis distance for background subtraction."
-        " Smaller values increase sensitivity to motion.",
+        " Smaller values increase sensitivity to motion. Recommended values are 8-32.",
         examples=[16],
         validation_alias=AliasChoices("threshold"),
         default=16,
@@ -96,7 +96,8 @@ class MotionDetectionManifest(WorkflowBlockManifest):
 
     history: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         title="History",
-        description="The number of previous frames to use for background subtraction.",
+        description="The number of previous frames to use for background subtraction. Larger values make the model"
+        " less sensitive to quick changes in the background, smaller values allow for more adaptation.",
         examples=[30],
         validation_alias=AliasChoices("history"),
         default=30,
@@ -153,9 +154,7 @@ class MotionDetectionBlockV1(WorkflowBlock):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.last_motion = False
-        self.backSub = None
-        self.threshold = None
-        self.history = None
+        self.back_sub = None
         self.frame_count = 0
 
     @classmethod
@@ -181,11 +180,9 @@ class MotionDetectionBlockV1(WorkflowBlock):
             except Exception as e:
                 raise ValueError(f"Could not parse detection zone as a valid json")
 
-        if not self.backSub or self.threshold != threshold or self.history != history:
-            self.threshold = threshold
-            self.history = history
+        if not self.back_sub:
             self.frame_count = 0
-            self.backSub = cv2.createBackgroundSubtractorMOG2(
+            self.back_sub = cv2.createBackgroundSubtractorMOG2(
                 history=history, varThreshold=threshold, detectShadows=True
             )
 
@@ -204,7 +201,7 @@ class MotionDetectionBlockV1(WorkflowBlock):
         frame = image.numpy_image
 
         # apply background subtraction
-        mask = self.backSub.apply(frame)
+        mask = self.back_sub.apply(frame)
 
         # filter out the minimal grayscale values to reduce noise
         # not exposing this as a param for simplicity - overall sensitivity can be adjusted via the main threshold param

@@ -59,7 +59,7 @@ class BackgroundSubtractionManifest(WorkflowBlockManifest):
     threshold: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         title="Threshold",
         description="The threshold value for the squared Mahalanobis distance for background subtraction."
-        " Smaller values increase sensitivity to motion.",
+        " Smaller values increase sensitivity to motion. Recommended values are 8-32.",
         examples=[16],
         validation_alias=AliasChoices("threshold"),
         default=16,
@@ -67,7 +67,8 @@ class BackgroundSubtractionManifest(WorkflowBlockManifest):
 
     history: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         title="History",
-        description="The number of previous frames to use for background subtraction.",
+        description="The number of previous frames to use for background subtraction. Larger values make the model"
+        " less sensitive to quick changes in the background, smaller values allow for more adaptation.",
         examples=[30],
         validation_alias=AliasChoices("history"),
         default=30,
@@ -90,9 +91,7 @@ class BackgroundSubtractionManifest(WorkflowBlockManifest):
 class BackgroundSubtractionBlockV1(WorkflowBlock):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.backSub = None
-        self.threshold = None
-        self.history = None
+        self.back_sub = None
 
     @classmethod
     def get_manifest(cls) -> Type[BackgroundSubtractionManifest]:
@@ -101,17 +100,15 @@ class BackgroundSubtractionBlockV1(WorkflowBlock):
     def run(
         self, image: WorkflowImageData, threshold: int, history: int, *args, **kwargs
     ) -> BlockResult:
-        if not self.backSub or self.threshold != threshold or self.history != history:
-            self.threshold = threshold
-            self.history = history
-            self.backSub = cv2.createBackgroundSubtractorMOG2(
+        if not self.back_sub:
+            self.back_sub = cv2.createBackgroundSubtractorMOG2(
                 history=history, varThreshold=threshold, detectShadows=True
             )
 
         frame = image.numpy_image
 
         # apply background subtraction
-        fg_mask = self.backSub.apply(frame)
+        fg_mask = self.back_sub.apply(frame)
 
         # workflows require 3 channel images
         color_mask = np.stack((fg_mask,) * 3, axis=-1)
