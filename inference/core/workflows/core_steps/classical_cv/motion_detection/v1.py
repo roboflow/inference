@@ -150,6 +150,8 @@ class MotionDetectionManifest(WorkflowBlockManifest):
 
 
 class MotionDetectionBlockV1(WorkflowBlock):
+    NOISE_FILTER_THRESHOLD = 32
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.last_motion = False
@@ -209,7 +211,9 @@ class MotionDetectionBlockV1(WorkflowBlock):
 
         # filter out the minimal grayscale values to reduce noise
         # not exposing this as a param for simplicity - overall sensitivity can be adjusted via the main threshold param
-        _, mask_thresh = cv2.threshold(mask, 32, 255, cv2.THRESH_BINARY)
+        _, mask_thresh = cv2.threshold(
+            mask, self.NOISE_FILTER_THRESHOLD, 255, cv2.THRESH_BINARY
+        )
 
         # apply morphological filtering to ignore changes due to noise
         kernel = cv2.getStructuringElement(
