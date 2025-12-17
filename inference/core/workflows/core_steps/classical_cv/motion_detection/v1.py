@@ -184,6 +184,7 @@ class MotionDetectionBlockV1(WorkflowBlock):
         if not self.backSub or self.threshold != threshold or self.history != history:
             self.threshold = threshold
             self.history = history
+            self.frame_count = 0
             self.backSub = cv2.createBackgroundSubtractorMOG2(
                 history=history, varThreshold=threshold, detectShadows=True
             )
