@@ -28,6 +28,7 @@ class WebRTCConfig(BaseModel):
 class WebRTCWorkerRequest(BaseModel):
     api_key: Optional[str] = None
     workflow_configuration: WorkflowConfiguration
+    is_preview: bool = False
     webrtc_offer: WebRTCOffer
     webrtc_config: Optional[WebRTCConfig] = None
     # TODO: to be removed, replaced with webrtc_config
