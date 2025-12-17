@@ -1,17 +1,11 @@
-import copy
 import json
 from typing import List, Literal, Optional, Tuple, Type, Union
 
 import cv2
 import numpy as np
-import shapely
 import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
 from shapely.geometry import Polygon
-
-from inference.core.workflows.core_steps.visualizations.common.base import (
-    OUTPUT_IMAGE_KEY,
-)
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
@@ -154,6 +148,7 @@ class MotionDetectionBlockV1(WorkflowBlock):
         self.last_motion = False
         self.back_sub = None
         self.frame_count = 0
+        self._kernel_cache = {}  # Cache morphological kernels by size
 
     @classmethod
     def get_manifest(cls) -> Type[MotionDetectionManifest]:
@@ -202,9 +197,12 @@ class MotionDetectionBlockV1(WorkflowBlock):
         mask = self.back_sub.apply(frame)
 
         # apply morphological filtering to ignore changes due to noise
-        kernel = cv2.getStructuringElement(
-            cv2.MORPH_ELLIPSE, (morphological_kernel_size, morphological_kernel_size)
-        )
+        # Use cached kernel to avoid recreating the same kernel repeatedly
+        if morphological_kernel_size not in self._kernel_cache:
+            self._kernel_cache[morphological_kernel_size] = cv2.getStructuringElement(
+                cv2.MORPH_ELLIPSE, (morphological_kernel_size, morphological_kernel_size)
+            )
+        kernel = self._kernel_cache[morphological_kernel_size]
         mask_morph = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
 
         # create contours around filtered areas
@@ -213,10 +211,11 @@ class MotionDetectionBlockV1(WorkflowBlock):
         )
 
         # apply minimum contour size and filter out 0 length contours
+        # Check length first (cheaper) before computing area
         filtered_contours = [
             contour
             for contour in contours
-            if cv2.contourArea(contour) > minimum_contour_area and len(contour) > 0
+            if len(contour) > 0 and cv2.contourArea(contour) > minimum_contour_area
         ]
 
         # clip contours if a detection zone is provided
@@ -231,18 +230,22 @@ class MotionDetectionBlockV1(WorkflowBlock):
         for contour in filtered_contours:
             perimeter = cv2.arcLength(contour, True)
             epsilon = 0.01 * perimeter
-            simplified_contours.append(cv2.approxPolyDP(contour, epsilon, True))
-        simplified_contours = [cnt for cnt in simplified_contours if len(cnt) >= 3]
+            approx = cv2.approxPolyDP(contour, epsilon, True)
+            # Only keep contours with at least 3 vertices
+            if len(approx) >= 3:
+                simplified_contours.append(approx)
 
-        # get bounding boxes
+        # get bounding boxes and polygons
         mask_height, mask_width, _ = frame.shape
         xyxy_boxes = []
         polygons = []
         for cnt in simplified_contours:
             x, y, w, h = cv2.boundingRect(cnt)
             xyxy_boxes.append([int(x), int(y), int(x + w), int(y + h)])
+            # Extract polygon coordinates, handling both squeezed and unsqueezed formats
             polygon = np.squeeze(cnt)
-            mask = sv.polygon_to_mask(polygon,(mask_width,mask_height))
+            if polygon.ndim == 1:  # Single point case, skip
+                continue
             polygons.append(polygon.tolist())
 
         # convert to sv detections
@@ -318,12 +321,23 @@ def clip_contours_to_contour(
                     if len(coords) >= 3:
                         result.append(list_to_contour(coords))
 
-        except:
+        except Exception:
+            # Silently skip contours that fail shapely operations
+            # (e.g., self-intersecting polygons)
             continue
 
     return result
 
 
-def list_to_contour(list_of_tuples):
-    points = [[int(n) for n in xy_tuple] for xy_tuple in list_of_tuples]
-    return np.array(points).reshape(-1, 1, 2)
+def list_to_contour(list_of_tuples: List[Tuple]) -> np.ndarray:
+    """
+    Convert a list of (x, y) tuples to an OpenCV contour format.
+
+    Args:
+        list_of_tuples: List of coordinate tuples [(x1, y1), (x2, y2), ...]
+
+    Returns:
+        NumPy array of shape (N, 1, 2) suitable for OpenCV operations
+    """
+    points = np.array([[int(xy[0]), int(xy[1])] for xy in list_of_tuples], dtype=np.int32)
+    return points.reshape(-1, 1, 2)
