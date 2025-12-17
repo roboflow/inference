@@ -470,8 +470,9 @@ class VideoFrameProcessor:
 
         This is used when stream_output=[] and no video track is needed.
         """
-        import psutil
         import time
+
+        import psutil
 
         # Silencing swscaler warnings in multi-threading environment
         if not self._av_logging_set:
