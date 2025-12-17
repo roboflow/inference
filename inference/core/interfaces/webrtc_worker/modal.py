@@ -631,7 +631,7 @@ if modal is not None:
                 requested_ram_mb,
             )
             cls_with_options = cls_with_options.with_options(
-                ram=requested_ram_mb,
+                memory=requested_ram_mb,
             )
         if requested_cpu_cores is not None:
             logger.info(
