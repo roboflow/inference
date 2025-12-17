@@ -1,5 +1,5 @@
 import hashlib
-from typing import Generator, List, Optional, Tuple, TypeVar, Union
+from typing import Dict, Generator, List, Optional, Tuple, TypeVar, Union
 
 import numpy as np
 import torch
@@ -7,9 +7,15 @@ from inference_exp import ColorFormat
 from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.errors import CorruptedModelPackageError, ModelInputError
 from inference_exp.models.common.model_packages import get_model_package_contents
+from inference_exp.models.sam.cache import (
+    SamImageEmbeddingsCache,
+    SamImageEmbeddingsCacheNullObject,
+    SamLowResolutionMasksCache,
+    SamLowResolutionMasksCacheNullObject,
+)
 from inference_exp.models.sam.entities import SAMImageEmbeddings
 from inference_exp.utils.file_system import read_json
-from segment_anything import SamPredictor, sam_model_registry
+from segment_anything import sam_model_registry
 from segment_anything.modeling import Sam
 from segment_anything.utils.transforms import ResizeLongestSide
 
@@ -28,7 +34,13 @@ class SAMTorch:
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
         max_batch_size: int = MAX_SAM_BATCH_SIZE,
+        sam_image_embeddings_cache: Optional[SamImageEmbeddingsCache] = None,
+        sam_low_resolution_masks_cache: Optional[SamLowResolutionMasksCache] = None,
     ) -> "SAMTorch":
+        if sam_image_embeddings_cache is None:
+            sam_image_embeddings_cache = SamImageEmbeddingsCacheNullObject()
+        if sam_low_resolution_masks_cache is None:
+            sam_low_resolution_masks_cache = SamLowResolutionMasksCacheNullObject()
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
             elements=[
@@ -64,6 +76,8 @@ class SAMTorch:
             transform=transform,
             device=device,
             max_batch_size=max_batch_size,
+            sam_image_embeddings_cache=sam_image_embeddings_cache,
+            sam_low_resolution_masks_cache=sam_low_resolution_masks_cache,
         )
 
     def __init__(
@@ -72,16 +86,21 @@ class SAMTorch:
         transform: ResizeLongestSide,
         device: torch.device,
         max_batch_size: int,
+        sam_image_embeddings_cache: SamImageEmbeddingsCache,
+        sam_low_resolution_masks_cache: SamLowResolutionMasksCache,
     ):
         self._model = model
         self._transform = transform
         self._device = device
         self._max_batch_size = max_batch_size
+        self._sam_image_embeddings_cache = sam_image_embeddings_cache
+        self._sam_low_resolution_masks_cache = sam_low_resolution_masks_cache
 
     def embed_images(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
+        use_embeddings_cache: bool = True,
         **kwargs,
     ) -> List[SAMImageEmbeddings]:
         model_input_images, image_hashes, original_image_sizes = (
@@ -91,20 +110,55 @@ class SAMTorch:
                 **kwargs,
             )
         )
-        result_embeddings = self.forward_image_embeddings(
-            model_input_images=model_input_images
-        )
+        embeddings_from_cache: Dict[int, SAMImageEmbeddings] = {}
+        images_to_compute = []
+        for idx, (image, image_hash) in enumerate(
+            zip(model_input_images, image_hashes)
+        ):
+            cache_content = None
+            if use_embeddings_cache:
+                cache_content = self._sam_image_embeddings_cache.retrieve_embeddings(
+                    key=image_hash
+                )
+            if cache_content is not None:
+                cache_content = cache_content.to(device=self._device)
+                embeddings_from_cache[idx] = cache_content
+            else:
+                images_to_compute.append(image)
+        if len(images_to_compute) > 0:
+            images_to_compute = torch.stack(images_to_compute, dim=0)
+            computed_embeddings = self.forward_image_embeddings(
+                model_input_images=images_to_compute,
+            )
+            computed_embeddings_idx = 0
+            result_embeddings = []
+            for i in range(len(model_input_images)):
+                if i in embeddings_from_cache:
+                    result_embeddings.append(embeddings_from_cache[i].embeddings)
+                else:
+                    result_embeddings.append(
+                        computed_embeddings[computed_embeddings_idx]
+                    )
+                    computed_embeddings_idx += 1
+        else:
+            result_embeddings = [
+                embeddings_from_cache[i].embeddings
+                for i in range(len(model_input_images))
+            ]
         results = []
         for image_hash, image_size, image_embeddings in zip(
             image_hashes, original_image_sizes, result_embeddings
         ):
-            results.append(
-                SAMImageEmbeddings(
-                    image_hash=image_hash,
-                    image_size_hw=image_size,
-                    embeddings=image_embeddings,
-                )
+            result = SAMImageEmbeddings(
+                image_hash=image_hash,
+                image_size_hw=image_size,
+                embeddings=image_embeddings,
             )
+            results.append(result)
+            if use_embeddings_cache:
+                self._sam_image_embeddings_cache.save_embeddings(
+                    key=image_hash, embeddings=result
+                )
         return results
 
     def pre_process_images(
@@ -119,13 +173,13 @@ class SAMTorch:
                 image_hashes = [compute_image_hash(image=image) for image in images]
                 if input_color_format == "bgr":
                     images = images[:, :-1, :, :].contiguous()
-                original_image_sizes = [images.shape[2:4]] * images.shape[0]
+                original_image_sizes = [tuple(images.shape[2:4])] * images.shape[0]
                 model_input_images = self._transform.apply_image_torch(image=images)
             else:
                 image_hashes = [compute_image_hash(image=images)]
                 if input_color_format == "bgr":
                     images = images[::-1, :, :].contiguous()
-                original_image_sizes = [images.shape[1:3]]
+                original_image_sizes = [tuple(images.shape[1:3])]
                 model_input_images = self._transform.apply_image_torch(
                     image=images.unsqueeze(dim=0)
                 )
@@ -135,17 +189,26 @@ class SAMTorch:
                 original_image_sizes = []
                 model_input_images = []
                 for image in images:
-                    original_image_sizes.append(image.shape[:2])
-                    if input_color_format in {None, "bgr"}:
-                        image = np.ascontiguousarray(image[:, :, ::-1])
-                    input_image = self._transform.apply_image(image=image)
-                    input_image = (
-                        torch.as_tensor(input_image, device=self._device)
-                        .permute(2, 0, 1)
-                        .contiguous()
-                    )
-                    model_input_images.append(input_image)
-                model_input_images = torch.cat(model_input_images, dim=0)
+                    if isinstance(image, np.ndarray):
+                        original_image_sizes.append(image.shape[:2])
+                        if input_color_format in {None, "bgr"}:
+                            image = np.ascontiguousarray(image[:, :, ::-1])
+                        input_image = self._transform.apply_image(image=image)
+                        input_image = (
+                            torch.as_tensor(input_image, device=self._device)
+                            .permute(2, 0, 1)
+                            .contiguous()
+                        )
+                        model_input_images.append(input_image)
+                    else:
+                        original_image_sizes.append(tuple(image.shape[1:3]))
+                        if input_color_format == "bgr":
+                            image = image[::-1, :, :].contiguous()
+                        input_image = self._transform.apply_image_torch(
+                            image=image.unsqueeze(dim=0)
+                        )[0]
+                        model_input_images.append(input_image)
+                model_input_images = torch.stack(model_input_images, dim=0)
             else:
                 image_hashes = [compute_image_hash(image=images)]
                 original_image_sizes = [images.shape[:2]]
@@ -169,9 +232,11 @@ class SAMTorch:
                 i : i + self._max_batch_size
             ].contiguous()
             pre_processed_images_batch = self._model.preprocess(input_images_batch)
-            batch_embeddings = self._model.image_encoder(pre_processed_images_batch)
+            batch_embeddings = self._model.image_encoder(pre_processed_images_batch).to(
+                device=self._device
+            )
             result_embeddings.append(batch_embeddings)
-        return torch.stack(result_embeddings, dim=0)
+        return torch.cat(result_embeddings, dim=0)
 
     def segment_images(
         self,
@@ -188,8 +253,12 @@ class SAMTorch:
         multi_mask_output: bool = True,
         return_logits: bool = False,
         input_color_format: Optional[ColorFormat] = None,
+        mask_threshold: Optional[float] = None,
+        enforce_mask_input: bool = False,
+        use_mask_input_cache: bool = True,
+        use_embeddings_cache: bool = True,
         **kwargs,
-    ) -> None:
+    ) -> List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
         if images is None and embeddings is None:
             raise ModelInputError(
                 message="Attempted to use SAM model segment_images(...) method not providing valid input - "
@@ -202,15 +271,38 @@ class SAMTorch:
             embeddings = self.embed_images(
                 images=images,
                 input_color_format=input_color_format,
+                use_embeddings_cache=use_embeddings_cache,
                 **kwargs,
             )
-        embeddings = [e.to(self._device) for e in embeddings]
+        else:
+            embeddings = maybe_wrap_in_list(value=embeddings)
+        embeddings_tensors = [e.embeddings.to(self._device) for e in embeddings]
         image_hashes = [e.image_hash for e in embeddings]
         original_image_sizes = [e.image_size_hw for e in embeddings]
         point_coordinates = maybe_wrap_in_list(value=point_coordinates)
         point_labels = maybe_wrap_in_list(value=point_labels)
         boxes = maybe_wrap_in_list(value=boxes)
         mask_input = maybe_wrap_in_list(value=mask_input)
+        masks_from_the_cache = [
+            (
+                self._sam_low_resolution_masks_cache.retrieve_mask(key=image_hash)
+                if use_mask_input_cache
+                else None
+            )
+            for image_hash in image_hashes
+        ]
+        if enforce_mask_input and mask_input is None:
+            if not all(e is not None for e in masks_from_the_cache):
+                raise ModelInputError(
+                    message="Attempted to use SAM model segment_images(...) method enforcing the presence of "
+                    "low-resolution mask input and not providing the mask explicitly (causing fallback to "
+                    "SAM cache lookup which  failed for at least one image) - this problem may be temporary, "
+                    "but may also be a result of bug or invalid integration. If you run inference locally, "
+                    "verify your integration making sure that the model interface is used correctly. Running "
+                    "on Roboflow platform - contact us to get help.",
+                    help_url="https://todo",
+                )
+            mask_input = [mask.to(self._device) for mask in masks_from_the_cache]
         point_coordinates, point_labels, boxes, mask_input = equalize_batch_size(
             embeddings_batch_size=len(embeddings),
             point_coordinates=point_coordinates,
@@ -237,7 +329,7 @@ class SAMTorch:
             image_boxes,
             image_mask_input,
         ) in generate_model_inputs(
-            embeddings=embeddings,
+            embeddings=embeddings_tensors,
             image_hashes=image_hashes,
             original_image_sizes=original_image_sizes,
             point_coordinates=point_coordinates,
@@ -256,8 +348,15 @@ class SAMTorch:
                 mask_input=image_mask_input,
                 multi_mask_output=multi_mask_output,
                 return_logits=return_logits,
+                mask_threshold=mask_threshold,
             )
+            if use_mask_input_cache:
+                max_score_id = torch.argmax(prediction[1]).item()
+                self._sam_low_resolution_masks_cache.save_mask(
+                    key=image_hash, mask=prediction[2][max_score_id].unsqueeze(dim=0)
+                )
             predictions.append(prediction)
+        return predictions
 
 
 def decode_sam_version(config_path: str) -> str:
@@ -374,9 +473,9 @@ def pre_process_prompts(
         ]
         point_labels = [
             (
-                l.to(device)[None, :, :]
+                l.to(device)[None, :]
                 if isinstance(l, torch.Tensor)
-                else torch.from_numpy(l).to(device)[None, :, :]
+                else torch.from_numpy(l).to(device)[None, :]
             )
             for l in point_labels
         ]
@@ -389,9 +488,9 @@ def pre_process_prompts(
     if boxes is not None:
         boxes = [
             (
-                box.to(device)[None, :, :]
+                box.to(device)[None, :]
                 if isinstance(box, torch.Tensor)
-                else torch.from_numpy(box).to(device)[None, :, :]
+                else torch.from_numpy(box).to(device)[None, :]
             )
             for box in boxes
         ]
@@ -464,6 +563,7 @@ def predict_for_single_image(
     mask_input: Optional[torch.Tensor] = None,
     multi_mask_output: Union[bool, int] = True,
     return_logits: bool = False,
+    mask_threshold: Optional[float] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     if point_coordinates is not None:
         points = (point_coordinates, point_labels)
@@ -488,5 +588,6 @@ def predict_for_single_image(
         low_res_masks, model_input_size, original_image_size
     )
     if not return_logits:
-        masks = masks > model.mask_threshold
-    return masks, iou_predictions, low_res_masks
+        threshold = mask_threshold or model.mask_threshold
+        masks = masks > threshold
+    return masks[0], iou_predictions[0], low_res_masks[0]
