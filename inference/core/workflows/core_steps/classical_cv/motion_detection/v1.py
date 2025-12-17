@@ -26,13 +26,13 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-SHORT_DESCRIPTION: str = "Detect motion in an image using OpenCV."
+SHORT_DESCRIPTION: str = "Detect motion in a video using OpenCV."
 LONG_DESCRIPTION: str = """
-This block uses background subtraction to detect motion in an image. The block draws the contours
+This block uses background subtraction to detect motion in a video. The block draws the contours
 of the detected motion, as well as outputs the bounding boxes as an object detection. Two flags are
 provided for use in workflows - one to indicate motion, and an alarm to indicate when the motion
 changed from no motion to motion detected. Additionally a zone can be provided to limit the scope
-of the motion detection to a specific area of the image.
+of the motion detection to a specific area of the video frame.
 
 Motion detection is extremely useful for generating alerts and file uploads. Additionally, inference
 can be conditionally run based on motion detection to save compute resources.
@@ -68,13 +68,15 @@ class MotionDetectionManifest(WorkflowBlockManifest):
     minimum_contour_area: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         title="Minimum Contour Area",
         description="Motion in areas smaller than this in square pixels will not be counted as motion.",
+        gt=0,
         examples=[200],
         default=200,
     )
 
     morphological_kernel_size: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         title="Morphological Kernel Size",
-        description="The size of the kernel used for morphological operations to combine contours.",
+        description="The size of the kernel in pixels used for morphological operations to combine contours.",
+        gt=0,
         examples=[3],
         default=3,
     )
@@ -83,6 +85,7 @@ class MotionDetectionManifest(WorkflowBlockManifest):
         title="Threshold",
         description="The threshold value for the squared Mahalanobis distance for background subtraction."
         " Smaller values increase sensitivity to motion. Recommended values are 8-32.",
+        gt=0,
         examples=[16],
         default=16,
     )
@@ -91,6 +94,7 @@ class MotionDetectionManifest(WorkflowBlockManifest):
         title="History",
         description="The number of previous frames to use for background subtraction. Larger values make the model"
         " less sensitive to quick changes in the background, smaller values allow for more adaptation.",
+        gt=0,
         examples=[30],
         default=30,
     )
