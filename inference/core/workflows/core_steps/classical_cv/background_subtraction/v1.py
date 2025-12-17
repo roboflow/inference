@@ -22,7 +22,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-SHORT_DESCRIPTION: str = "Subtract an image from it's background history."
+SHORT_DESCRIPTION: str = "Subtract an image from its background history."
 LONG_DESCRIPTION: str = """
 This block uses background subtraction to detect motion in an image in order to highlight areas of motion.
 The output of the block can be used to train and infer on motion based models.
@@ -90,11 +90,9 @@ class BackgroundSubtractionManifest(WorkflowBlockManifest):
 class BackgroundSubtractionBlockV1(WorkflowBlock):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.last_motion = False
         self.backSub = None
         self.threshold = None
         self.history = None
-        self.frame_count = 0
 
     @classmethod
     def get_manifest(cls) -> Type[BackgroundSubtractionManifest]:

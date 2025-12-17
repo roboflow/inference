@@ -190,7 +190,6 @@ def test_motion_detection_block_alarm_on_motion_start() -> None:
 
     # Simulate motion detection by directly setting block state
     # First call with no motion
-    static_output = {"motion": False}
     block.last_motion = False
 
     # Second call with motion - this should trigger alarm

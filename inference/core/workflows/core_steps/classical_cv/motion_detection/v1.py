@@ -175,13 +175,11 @@ class MotionDetectionBlockV1(WorkflowBlock):
         **kwargs,
     ) -> BlockResult:
 
-        if type(detection_zone) == str:
+        if isinstance(detection_zone, str):
             try:
                 detection_zone = json.loads(detection_zone)
             except Exception as e:
-                raise ValueError(
-                    f"Could not parse zone as a valid json: {detection_zone}"
-                )
+                raise ValueError(f"Could not parse detection zone as a valid json")
 
         if not self.backSub or self.threshold != threshold or self.history != history:
             self.threshold = threshold
@@ -269,7 +267,7 @@ class MotionDetectionBlockV1(WorkflowBlock):
         motion = len(filtered_contours) > 0
 
         # alarm flips to true only if there was no motion before and motion now
-        alarm = True if not self.last_motion and motion else False
+        alarm = not self.last_motion and motion
         self.last_motion = motion
 
         return {
