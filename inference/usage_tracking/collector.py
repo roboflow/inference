@@ -222,7 +222,7 @@ class UsageCollector:
             api_key_hash = self._hashed_api_keys.get(api_key)
             if not api_key_hash:
                 if self._api_keys_hashing_enabled:
-                    api_key_hash = sha256_hash(api_key)
+                    api_key_hash = sha256_hash(api_key, length=-1)
                 else:
                     api_key_hash = api_key
             self._hashed_api_keys[api_key] = api_key_hash
