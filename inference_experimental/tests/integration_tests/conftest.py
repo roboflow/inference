@@ -37,6 +37,15 @@ FLOWERS_IMAGE_URL = (
     "https://media.roboflow.com/inference/example-input-images/flowers.jpg"
 )
 FLOWERS_IMAGE_PATH = os.path.join(ASSETS_DIR, "flowers.jpg")
+CHESS_SET_IMAGE_URL = (
+    "https://media.roboflow.com/inference/example-input-images/chess_set.jpg"
+)
+CHESS_SET_IMAGE_PATH = os.path.join(ASSETS_DIR, "chess_set.jpg")
+CHESS_PIECE_IMAGE_URL = (
+    "https://media.roboflow.com/inference/example-input-images/chess_piece.jpg"
+)
+CHESS_PIECE_IMAGE_PATH = os.path.join(ASSETS_DIR, "chess_piece.jpg")
+
 COIN_COUNTING_IMAGE_URL = (
     "https://media.roboflow.com/inference/example-input-images/image-coin-counting.jpg"
 )
@@ -103,6 +112,34 @@ def balloons_image_numpy() -> np.ndarray:
 def balloons_image_torch() -> torch.Tensor:
     _download_if_not_exists(file_path=BALLOONS_IMAGE_PATH, url=BALLOONS_IMAGE_URL)
     return torchvision.io.read_image(BALLOONS_IMAGE_PATH)
+
+
+@pytest.fixture(scope="function")
+def chess_set_image_numpy() -> np.ndarray:
+    _download_if_not_exists(file_path=CHESS_SET_IMAGE_PATH, url=CHESS_SET_IMAGE_URL)
+    image = cv2.imread(CHESS_SET_IMAGE_PATH)
+    assert image is not None, "Could not load test image"
+    return image
+
+
+@pytest.fixture(scope="function")
+def chess_set_image_torch() -> torch.Tensor:
+    _download_if_not_exists(file_path=CHESS_SET_IMAGE_PATH, url=CHESS_SET_IMAGE_URL)
+    return torchvision.io.read_image(CHESS_SET_IMAGE_PATH)
+
+
+@pytest.fixture(scope="function")
+def chess_piece_image_numpy() -> np.ndarray:
+    _download_if_not_exists(file_path=CHESS_PIECE_IMAGE_PATH, url=CHESS_PIECE_IMAGE_URL)
+    image = cv2.imread(CHESS_PIECE_IMAGE_PATH)
+    assert image is not None, "Could not load test image"
+    return image
+
+
+@pytest.fixture(scope="function")
+def chess_piece_image_torch() -> torch.Tensor:
+    _download_if_not_exists(file_path=CHESS_PIECE_IMAGE_PATH, url=CHESS_PIECE_IMAGE_URL)
+    return torchvision.io.read_image(CHESS_PIECE_IMAGE_PATH)
 
 
 @pytest.fixture(scope="function")
