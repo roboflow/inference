@@ -205,11 +205,11 @@ class MotionDetectionBlockV1(WorkflowBlock):
         frame = image.numpy_image
 
         # apply background subtraction
-        fg_mask = self.backSub.apply(frame)
+        mask = self.backSub.apply(frame)
 
         # filter out the minimal grayscale values to reduce noise
         # not exposing this as a param for simplicity - overall sensitivity can be adjusted via the main threshold param
-        _, mask_thresh = cv2.threshold(fg_mask, 32, 255, cv2.THRESH_BINARY)
+        _, mask_thresh = cv2.threshold(mask, 32, 255, cv2.THRESH_BINARY)
 
         # apply morphological filtering to ignore changes due to noise
         kernel = cv2.getStructuringElement(
@@ -223,19 +223,19 @@ class MotionDetectionBlockV1(WorkflowBlock):
         )
 
         # apply minimum contour size and filter out 0 length contours
-        large_contours = [
-            cnt
-            for cnt in contours
-            if cv2.contourArea(cnt) > minimum_contour_area and len(cnt) > 0
+        filtered_contours = [
+            contour
+            for contour in contours
+            if cv2.contourArea(contour) > minimum_contour_area and len(contour) > 0
         ]
 
         # clip contours if a detection zone is provided
         if detection_zone and len(detection_zone) > 0:
-            large_contours = clip_contours_to_contour(large_contours, detection_zone)
+            filtered_contours = clip_contours_to_contour(filtered_contours, detection_zone)
 
-        if len(large_contours) > 0:
+        if len(filtered_contours) > 0:
             # draw contours on output image
-            frame_ct = cv2.drawContours(frame, large_contours, -1, (0, 255, 0), 2)
+            frame_ct = cv2.drawContours(frame, filtered_contours, -1, (0, 255, 0), 2)
             # create output workflow image
             output_image = WorkflowImageData.copy_and_replace(
                 origin_image_data=image,
@@ -247,7 +247,7 @@ class MotionDetectionBlockV1(WorkflowBlock):
 
         # get bounding boxes
         xyxy_boxes = []
-        for cnt in large_contours:
+        for cnt in filtered_contours:
             x, y, w, h = cv2.boundingRect(cnt)
             xyxy_boxes.append([x, y, x + w, y + h])
 
@@ -264,7 +264,7 @@ class MotionDetectionBlockV1(WorkflowBlock):
         )
 
         # if contours exist, there's motion
-        motion = len(large_contours) > 0
+        motion = len(filtered_contours) > 0
 
         # alarm flips to true only if there was no motion before and motion now
         alarm = True if not self.last_motion and motion else False
