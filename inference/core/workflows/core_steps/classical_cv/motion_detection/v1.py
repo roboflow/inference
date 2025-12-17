@@ -6,6 +6,7 @@ import numpy as np
 import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
 from shapely.geometry import Polygon
+
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
@@ -200,7 +201,8 @@ class MotionDetectionBlockV1(WorkflowBlock):
         # Use cached kernel to avoid recreating the same kernel repeatedly
         if morphological_kernel_size not in self._kernel_cache:
             self._kernel_cache[morphological_kernel_size] = cv2.getStructuringElement(
-                cv2.MORPH_ELLIPSE, (morphological_kernel_size, morphological_kernel_size)
+                cv2.MORPH_ELLIPSE,
+                (morphological_kernel_size, morphological_kernel_size),
             )
         kernel = self._kernel_cache[morphological_kernel_size]
         mask_morph = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
@@ -254,9 +256,7 @@ class MotionDetectionBlockV1(WorkflowBlock):
                 xyxy=np.array(xyxy_boxes),
                 confidence=np.array([1] * len(xyxy_boxes)),
                 class_id=np.array([0] * len(xyxy_boxes)),
-                data={
-                    'class_name': np.array(["motion"] * len(xyxy_boxes))
-                    },
+                data={"class_name": np.array(["motion"] * len(xyxy_boxes))},
             )
             if len(xyxy_boxes) > 0
             else sv.Detections.empty()
@@ -339,5 +339,7 @@ def list_to_contour(list_of_tuples: List[Tuple]) -> np.ndarray:
     Returns:
         NumPy array of shape (N, 1, 2) suitable for OpenCV operations
     """
-    points = np.array([[int(xy[0]), int(xy[1])] for xy in list_of_tuples], dtype=np.int32)
+    points = np.array(
+        [[int(xy[0]), int(xy[1])] for xy in list_of_tuples], dtype=np.int32
+    )
     return points.reshape(-1, 1, 2)

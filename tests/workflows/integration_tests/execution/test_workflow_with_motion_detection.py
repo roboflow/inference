@@ -153,7 +153,9 @@ def test_workflow_with_motion_detection(
     result_dicts = [r[0] for r in results]
 
     # Verify motion was detected in later frames (after history built up)
-    motion_detected_count = sum(1 for r in result_dicts[10:] if r.get("motion_detected"))
+    motion_detected_count = sum(
+        1 for r in result_dicts[10:] if r.get("motion_detected")
+    )
     assert motion_detected_count > 0, "Motion should be detected in later frames"
 
     # Verify alarm triggers on motion onset
@@ -164,7 +166,9 @@ def test_workflow_with_motion_detection(
     detections_with_data = [
         r.get("detections") for r in result_dicts[10:] if r.get("detections")
     ]
-    assert len(detections_with_data) > 0, "Detections should be present in motion frames"
+    assert (
+        len(detections_with_data) > 0
+    ), "Detections should be present in motion frames"
 
     # Verify motion_zones output is present
     motion_zones = [r.get("motion_zones") for r in result_dicts[10:]]
