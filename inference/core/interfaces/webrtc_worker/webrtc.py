@@ -956,7 +956,7 @@ async def init_rtc_peer_connection_with_loop(
 
     relay = MediaRelay()
 
-    # Wire up peer_connection reference for diagnostics
+    # Wire up peer_connection reference for diagnostics AND KEEP IT ALIVE
     video_processor.peer_connection = peer_connection
 
     # Add video track early for SDP negotiation when stream_output is requested
