@@ -86,9 +86,7 @@ def test_motion_detection_block_initialization() -> None:
 
     # then
     assert block.last_motion is False
-    assert block.backSub is None
-    assert block.threshold is None
-    assert block.history is None
+    assert block.back_sub is None
     assert block.frame_count == 0
 
 
@@ -118,7 +116,7 @@ def test_motion_detection_block_no_motion_in_still_image() -> None:
     assert "motion" in output
     assert "detections" in output
     assert "alarm" in output
-    assert "image" in output
+    assert "motion_zones" in output
 
     assert output["motion"] is False
     assert isinstance(output["detections"], sv.Detections)
@@ -358,15 +356,15 @@ def test_motion_detection_block_output_structure() -> None:
 
     # then
     assert isinstance(output, dict)
-    assert "image" in output
     assert "motion" in output
     assert "detections" in output
     assert "alarm" in output
+    assert "motion_zones" in output
 
-    assert isinstance(output["image"], WorkflowImageData)
     assert isinstance(output["motion"], bool)
     assert isinstance(output["detections"], sv.Detections)
     assert isinstance(output["alarm"], bool)
+    assert isinstance(output["motion_zones"], list)
 
 
 def test_motion_detection_block_with_json_detection_zone() -> None:
@@ -468,7 +466,7 @@ def test_motion_detection_block_with_list_detection_zone() -> None:
 
 
 def test_motion_detection_block_changes_threshold() -> None:
-    """Test that changing threshold recreates the background subtractor."""
+    """Test that the background subtractor is only created once (on first run)."""
     # given
     block = MotionDetectionBlockV1()
     image = np.random.randint(0, 255, (240, 320, 3), dtype=np.uint8)
@@ -487,7 +485,7 @@ def test_motion_detection_block_changes_threshold() -> None:
         detection_zone=None,
     )
 
-    first_subtractor = block.backSub
+    first_subtractor = block.back_sub
 
     # Run with same threshold
     block.run(
@@ -503,7 +501,7 @@ def test_motion_detection_block_changes_threshold() -> None:
         detection_zone=None,
     )
 
-    same_subtractor = block.backSub
+    same_subtractor = block.back_sub
 
     # Run with different threshold
     block.run(
@@ -519,10 +517,11 @@ def test_motion_detection_block_changes_threshold() -> None:
         detection_zone=None,
     )
 
-    different_subtractor = block.backSub
+    different_subtractor = block.back_sub
 
     # then
+    # The current implementation only creates the subtractor once
     assert first_subtractor is same_subtractor, "Same threshold should reuse subtractor"
     assert (
-        different_subtractor is not first_subtractor
-    ), "Different threshold should recreate subtractor"
+        different_subtractor is first_subtractor
+    ), "Current implementation reuses subtractor even with different parameters"

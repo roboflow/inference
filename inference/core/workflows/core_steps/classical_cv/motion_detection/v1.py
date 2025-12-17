@@ -4,6 +4,7 @@ from typing import List, Literal, Optional, Tuple, Type, Union
 
 import cv2
 import numpy as np
+import shapely
 import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
 from shapely.geometry import Polygon
@@ -30,7 +31,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-SHORT_DESCRIPTION: str = "Detect motion in an image using traditional CV."
+SHORT_DESCRIPTION: str = "Detect motion in an image using OpenCV."
 LONG_DESCRIPTION: str = """
 This block uses background subtraction to detect motion in an image. The block draws the contours
 of the detected motion, as well as outputs the bounding boxes as an object detection. Two flags are
@@ -73,7 +74,6 @@ class MotionDetectionManifest(WorkflowBlockManifest):
         title="Minimum Contour Area",
         description="Motion in areas smaller than this in square pixels will not be counted as motion.",
         examples=[200],
-        validation_alias=AliasChoices("minimum_contour_area"),
         default=200,
     )
 
@@ -81,7 +81,6 @@ class MotionDetectionManifest(WorkflowBlockManifest):
         title="Morphological Kernel Size",
         description="The size of the kernel used for morphological operations to combine contours.",
         examples=[3],
-        validation_alias=AliasChoices("morphological_kernel_size"),
         default=3,
     )
 
@@ -90,7 +89,6 @@ class MotionDetectionManifest(WorkflowBlockManifest):
         description="The threshold value for the squared Mahalanobis distance for background subtraction."
         " Smaller values increase sensitivity to motion. Recommended values are 8-32.",
         examples=[16],
-        validation_alias=AliasChoices("threshold"),
         default=16,
     )
 
@@ -99,7 +97,6 @@ class MotionDetectionManifest(WorkflowBlockManifest):
         description="The number of previous frames to use for background subtraction. Larger values make the model"
         " less sensitive to quick changes in the background, smaller values allow for more adaptation.",
         examples=[30],
-        validation_alias=AliasChoices("history"),
         default=30,
     )
 
@@ -107,24 +104,19 @@ class MotionDetectionManifest(WorkflowBlockManifest):
         title="Detection Zone",
         description="An optional polygon zone in a format [[x1, y1], [x2, y2], [x3, y3], ...];"
         " each zone must consist of more than 3 points",
-        examples=["$inputs.zones"],
         default=None,
     )
 
     suppress_first_detections: Union[Selector(kind=[BOOLEAN_KIND]), bool] = Field(  # type: ignore
         title="Don't Detect Until History is Full",
         description="Suppress motion detections until the background history is fully initialized.",
-        examples=["$inputs.zones"],
+        examples=[True],
         default=True,
     )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(
-                name=OUTPUT_IMAGE_KEY,
-                kind=[IMAGE_KIND],
-            ),
             OutputDefinition(
                 name="motion",
                 kind=[
@@ -141,6 +133,12 @@ class MotionDetectionManifest(WorkflowBlockManifest):
                 name="detections",
                 kind=[
                     OBJECT_DETECTION_PREDICTION_KIND,
+                ],
+            ),
+            OutputDefinition(
+                name="motion_zones",
+                kind=[
+                    LIST_OF_VALUES_KIND,
                 ],
             ),
         ]
@@ -192,10 +190,10 @@ class MotionDetectionBlockV1(WorkflowBlock):
         if not frames_initialized:
             self.frame_count += 1
             return {
-                OUTPUT_IMAGE_KEY: copy.copy(image),
                 "motion": False,
                 "detections": sv.Detections.empty(),
                 "alarm": False,
+                "motion_zones": [],
             }
 
         frame = image.numpy_image
@@ -203,15 +201,11 @@ class MotionDetectionBlockV1(WorkflowBlock):
         # apply background subtraction
         mask = self.back_sub.apply(frame)
 
-        # filter out the minimal grayscale values to reduce noise
-        # not exposing this as a param for simplicity - overall sensitivity can be adjusted via the main threshold param
-        _, mask_thresh = cv2.threshold(mask, 32, 255, cv2.THRESH_BINARY)
-
         # apply morphological filtering to ignore changes due to noise
         kernel = cv2.getStructuringElement(
             cv2.MORPH_ELLIPSE, (morphological_kernel_size, morphological_kernel_size)
         )
-        mask_morph = cv2.morphologyEx(mask_thresh, cv2.MORPH_OPEN, kernel)
+        mask_morph = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
 
         # create contours around filtered areas
         contours, hierarchy = cv2.findContours(
@@ -231,23 +225,25 @@ class MotionDetectionBlockV1(WorkflowBlock):
                 filtered_contours, detection_zone
             )
 
-        if len(filtered_contours) > 0:
-            # draw contours on output image
-            frame_ct = cv2.drawContours(frame, filtered_contours, -1, (0, 255, 0), 2)
-            # create output workflow image
-            output_image = WorkflowImageData.copy_and_replace(
-                origin_image_data=image,
-                numpy_image=frame_ct,
-            )
-        else:
-            # if no contours, output a copy of the input image
-            output_image = copy.copy(image)
+        # simplify contours by 1% of their perimeter
+        # this is ideal for keeping the detections to a reasonable size
+        simplified_contours = []
+        for contour in filtered_contours:
+            perimeter = cv2.arcLength(contour, True)
+            epsilon = 0.01 * perimeter
+            simplified_contours.append(cv2.approxPolyDP(contour, epsilon, True))
+        simplified_contours = [cnt for cnt in simplified_contours if len(cnt) >= 3]
 
         # get bounding boxes
+        mask_height, mask_width, _ = frame.shape
         xyxy_boxes = []
-        for cnt in filtered_contours:
+        polygons = []
+        for cnt in simplified_contours:
             x, y, w, h = cv2.boundingRect(cnt)
-            xyxy_boxes.append([x, y, x + w, y + h])
+            xyxy_boxes.append([int(x), int(y), int(x + w), int(y + h)])
+            polygon = np.squeeze(cnt)
+            mask = sv.polygon_to_mask(polygon,(mask_width,mask_height))
+            polygons.append(polygon.tolist())
 
         # convert to sv detections
         detections = (
@@ -255,7 +251,9 @@ class MotionDetectionBlockV1(WorkflowBlock):
                 xyxy=np.array(xyxy_boxes),
                 confidence=np.array([1] * len(xyxy_boxes)),
                 class_id=np.array([0] * len(xyxy_boxes)),
-                data={"class_name": np.array(["motion"] * len(xyxy_boxes))},
+                data={
+                    'class_name': np.array(["motion"] * len(xyxy_boxes))
+                    },
             )
             if len(xyxy_boxes) > 0
             else sv.Detections.empty()
@@ -269,10 +267,10 @@ class MotionDetectionBlockV1(WorkflowBlock):
         self.last_motion = motion
 
         return {
-            OUTPUT_IMAGE_KEY: output_image,
             "motion": motion,
             "detections": detections,
             "alarm": alarm,
+            "motion_zones": polygons,
         }
 
 

@@ -46,9 +46,9 @@ WORKFLOW_WITH_MOTION_DETECTION = {
         },
         {
             "type": "JsonField",
-            "name": "output_image",
+            "name": "motion_zones",
             "coordinates_system": "own",
-            "selector": "$steps.motion_detector.image",
+            "selector": "$steps.motion_detector.motion_zones",
         },
     ],
 }
@@ -149,18 +149,39 @@ def test_workflow_with_motion_detection(
         frames
     ), f"Expected {len(frames)} results, got {len(results)}"
 
+    # Extract result dicts (each result is a list with one dict)
+    result_dicts = [r[0] for r in results]
+
+    # Verify motion was detected in later frames (after history built up)
+    motion_detected_count = sum(1 for r in result_dicts[10:] if r.get("motion_detected"))
+    assert motion_detected_count > 0, "Motion should be detected in later frames"
+
+    # Verify alarm triggers on motion onset
+    alarms = [r.get("motion_alarm") for r in result_dicts]
+    assert any(alarms), "At least one alarm should be triggered"
+
+    # Verify detections are present
+    detections_with_data = [
+        r.get("detections") for r in result_dicts[10:] if r.get("detections")
+    ]
+    assert len(detections_with_data) > 0, "Detections should be present in motion frames"
+
+    # Verify motion_zones output is present
+    motion_zones = [r.get("motion_zones") for r in result_dicts[10:]]
+    assert any(motion_zones), "Motion zones should be detected in later frames"
+
     # Check structure of first result
-    first_result = results[0][0]
+    first_result = result_dicts[0]
     assert "motion_detected" in first_result, "Expected 'motion_detected' in outputs"
     assert "motion_alarm" in first_result, "Expected 'motion_alarm' in outputs"
     assert "detections" in first_result, "Expected 'detections' in outputs"
-    assert "output_image" in first_result, "Expected 'output_image' in outputs"
+    assert "motion_zones" in first_result, "Expected 'motion_zones' in outputs"
 
     # Early frames (before history is full) may be suppressed
     # Check that later frames (after history is built) detect motion
     motion_detected_in_later_frames = False
-    for result in results[30:]:  # Check last 10 frames
-        if result[0]["motion_detected"]:
+    for result in result_dicts[30:]:  # Check last 10 frames
+        if result["motion_detected"]:
             motion_detected_in_later_frames = True
             break
 
@@ -169,13 +190,13 @@ def test_workflow_with_motion_detection(
     ), "Expected motion to be detected in later frames when history is full"
 
     # Verify that detections is a valid object
-    last_result = results[-1][0]
+    last_result = result_dicts[-1]
     detections = last_result["detections"]
     assert detections is not None, "Expected detections to be present"
 
-    # Verify output image is present and valid
-    output_image = last_result["output_image"]
-    assert output_image is not None, "Expected output_image to be present"
+    # Verify motion_zones are present and valid
+    motion_zones = last_result["motion_zones"]
+    assert motion_zones is not None, "Expected motion_zones to be present"
 
 
 def test_workflow_with_motion_detection_batch_processing(
@@ -225,5 +246,5 @@ def test_workflow_with_motion_detection_batch_processing(
             "detections" in frame_result
         ), f"Frame {i}: Expected 'detections' in outputs"
         assert (
-            "output_image" in frame_result
-        ), f"Frame {i}: Expected 'output_image' in outputs"
+            "motion_zones" in frame_result
+        ), f"Frame {i}: Expected 'motion_zones' in outputs"
