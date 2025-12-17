@@ -77,9 +77,9 @@ def rank_model_packages(
         )
         sorting_features.append(
             (
-                model_package.trusted_source,
                 BACKEND_PRIORITY.get(model_package.backend, 0),
                 QUANTIZATION_PRIORITY.get(model_package.quantization, 0),
+                model_package.trusted_source,
                 BATCH_SIZE_PRIORITY[batch_mode],
                 static_batch_size_score,  # the bigger statis batch size, the worse - requires padding
                 retrieve_onnx_opset_score(
