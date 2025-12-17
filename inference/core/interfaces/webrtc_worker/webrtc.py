@@ -444,8 +444,14 @@ class VideoFrameProcessor:
         if self._received_frames % 100 == 1:
             import psutil
 
-            pc_state = self.peer_connection.connectionState if self.peer_connection else "N/A"
-            ice_state = self.peer_connection.iceConnectionState if self.peer_connection else "N/A"
+            pc_state = (
+                self.peer_connection.connectionState if self.peer_connection else "N/A"
+            )
+            ice_state = (
+                self.peer_connection.iceConnectionState
+                if self.peer_connection
+                else "N/A"
+            )
             dc_buffer = self.data_channel.bufferedAmount if self.data_channel else 0
             rss_mb = psutil.Process().memory_info().rss / (1024**2)
 
