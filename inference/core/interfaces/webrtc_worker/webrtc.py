@@ -450,7 +450,6 @@ class VideoFrameProcessor:
                 if self.heartbeat_callback:
                     self.heartbeat_callback()
 
-                
                 # Get frame from media track (existing behavior)
                 if not self.track or self.track.readyState == "ended":
                     break
