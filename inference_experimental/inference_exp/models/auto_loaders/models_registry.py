@@ -413,6 +413,22 @@ REGISTERED_MODELS: Dict[
         class_name="DinoV3ForClassificationOnnx",
     ),
     (
+        "dinov3_probe",
+        MULTI_LABEL_CLASSIFICATION_TASK,
+        BackendType.TORCH,
+    ): LazyClass(
+        module_name="inference_exp.models.dinov3.dinov3_classification_torch",
+        class_name="DinoV3ForMultiLabelClassificationTorch",
+    ),
+    (
+        "dinov3_probe",
+        CLASSIFICATION_TASK,
+        BackendType.TORCH,
+    ): LazyClass(
+        module_name="inference_exp.models.dinov3.dinov3_classification_torch",
+        class_name="DinoV3ForClassificationTorch",
+    ),
+    (
         "owlv2",
         OPEN_VOCABULARY_OBJECT_DETECTION_TASK,
         BackendType.HF,
