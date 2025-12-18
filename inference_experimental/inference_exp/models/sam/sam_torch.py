@@ -36,6 +36,7 @@ class SAMTorch:
         max_batch_size: int = MAX_SAM_BATCH_SIZE,
         sam_image_embeddings_cache: Optional[SamImageEmbeddingsCache] = None,
         sam_low_resolution_masks_cache: Optional[SamLowResolutionMasksCache] = None,
+        **kwargs,
     ) -> "SAMTorch":
         if sam_image_embeddings_cache is None:
             sam_image_embeddings_cache = SamImageEmbeddingsCacheNullObject()
