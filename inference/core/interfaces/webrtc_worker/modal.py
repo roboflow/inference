@@ -159,6 +159,7 @@ if modal is not None:
             "LOG_LEVEL": LOG_LEVEL,
             "ONNXRUNTIME_EXECUTION_PROVIDERS": "[CUDAExecutionProvider,CPUExecutionProvider]",
             "PROJECT": PROJECT,
+            "PYTHONASYNCIODEBUG": str(os.getenv("PYTHONASYNCIODEBUG", "1")),
             "ROBOFLOW_INTERNAL_SERVICE_NAME": WEBRTC_MODAL_ROBOFLOW_INTERNAL_SERVICE_NAME,
             "ROBOFLOW_INTERNAL_SERVICE_SECRET": ROBOFLOW_INTERNAL_SERVICE_SECRET,
             "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
@@ -631,7 +632,7 @@ if modal is not None:
                 requested_ram_mb,
             )
             cls_with_options = cls_with_options.with_options(
-                ram=requested_ram_mb,
+                memory=requested_ram_mb,
             )
         if requested_cpu_cores is not None:
             logger.info(

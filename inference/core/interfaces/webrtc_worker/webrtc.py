@@ -105,12 +105,12 @@ class OnDemandVideoTrack(MediaStreamTrack):
         self._iterator = self._container.decode(self._stream)
 
     async def recv(self) -> VideoFrame:
-        try:
-            frame = next(self._iterator)
-            return frame
-        except StopIteration:
+        loop = asyncio.get_running_loop()
+        frame = await loop.run_in_executor(None, lambda: next(self._iterator, None))
+        if frame is None:
             self.stop()
             raise MediaStreamError("End of video file")
+        return frame
 
     def stop(self):
         super().stop()
@@ -186,16 +186,17 @@ class VideoFileUploadHandler:
             return self._temp_file_path
         return None
 
-    def cleanup(self) -> None:
+    async def cleanup(self) -> None:
         """Clean up temp file."""
         if self._temp_file_path:
             import os
 
+            path_to_delete = self._temp_file_path
+            self._temp_file_path = None
             try:
-                os.unlink(self._temp_file_path)
+                await asyncio.to_thread(os.unlink, path_to_delete)
             except Exception:
                 pass
-            self._temp_file_path = None
 
 
 async def send_chunked_data(
@@ -347,12 +348,12 @@ class VideoFrameProcessor:
             self.track = track
             self._track_ready_event.set()
 
-    def close(self):
+    async def close(self):
         self._track_active = False
         self._stop_processing = True
         # Clean up video upload handler if present
         if self.video_upload_handler is not None:
-            self.video_upload_handler.cleanup()
+            await self.video_upload_handler.cleanup()
 
     def _check_termination(self):
         """Check if we should terminate based on timeout"""
@@ -437,7 +438,9 @@ class VideoFrameProcessor:
             webrtc_output.serialized_output_data = serialized_outputs
 
         # Send using binary chunked protocol
-        json_bytes = json.dumps(webrtc_output.model_dump(mode="json")).encode("utf-8")
+        json_bytes = await asyncio.to_thread(
+            lambda: json.dumps(webrtc_output.model_dump(mode="json")).encode("utf-8")
+        )
         await send_chunked_data(
             self.data_channel,
             self._received_frames,
@@ -984,10 +987,19 @@ async def init_rtc_peer_connection_with_loop(
             if video_processor.track:
                 logger.info("Stopping video processor track")
                 video_processor.track.stop()
-            video_processor.close()
+            await video_processor.close()
             logger.info("Stopping WebRTC peer")
             await peer_connection.close()
             terminate_event.set()
+    
+    def process_video_upload_message(message: bytes, video_processor: VideoTransformTrackWithLoop):
+        chunk_index, total_chunks, data = parse_video_file_chunk(message)
+        video_processor.video_upload_handler.handle_chunk(
+            chunk_index, total_chunks, data
+        )
+
+        video_path = video_processor.video_upload_handler.try_start_processing()
+        return video_path
 
     @peer_connection.on("datachannel")
     def on_datachannel(channel: RTCDataChannel):
@@ -998,10 +1010,9 @@ async def init_rtc_peer_connection_with_loop(
 
             video_processor.video_upload_handler = VideoFileUploadHandler()
 
-            # Note: track is already added early for SDP negotiation when should_send_video=True
 
             @channel.on("message")
-            def on_upload_message(message):
+            async def on_upload_message(message):
                 # Keep watchdog alive during upload and keepalive pings
                 if video_processor.heartbeat_callback:
                     video_processor.heartbeat_callback()
@@ -1010,13 +1021,10 @@ async def init_rtc_peer_connection_with_loop(
                 if len(message) <= 1:
                     channel.send(message)
                     return
-
-                chunk_index, total_chunks, data = parse_video_file_chunk(message)
-                video_processor.video_upload_handler.handle_chunk(
-                    chunk_index, total_chunks, data
+                loop = asyncio.get_running_loop()
+                video_path = await loop.run_in_executor(
+                    None, process_video_upload_message, message, video_processor
                 )
-
-                video_path = video_processor.video_upload_handler.try_start_processing()
                 if video_path:
                     if webrtc_request.webrtc_realtime_processing:
                         # Throttled playback - use MediaPlayer
@@ -1112,6 +1120,6 @@ async def init_rtc_peer_connection_with_loop(
     if video_processor.track:
         logger.info("Stopping video processor track")
         video_processor.track.stop()
-    video_processor.close()
+    await video_processor.close()
     await usage_collector.async_push_usage_payloads()
     logger.info("WebRTC peer connection closed")
