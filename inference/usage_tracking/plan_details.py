@@ -125,7 +125,7 @@ class PlanDetails(SQLiteWrapper):
         if "127.0.0.1" in self._api_plan_endpoint_url.lower():
             ssl_verify = False
 
-        api_key_hash = sha256_hash(api_key)
+        api_key_hash = sha256_hash(api_key, length=-1)
         if api_key_hash in self.api_keys_plans:
             api_key_plan = self.api_keys_plans[api_key_hash]
         else:
@@ -210,7 +210,7 @@ class PlanDetails(SQLiteWrapper):
     ) -> Dict[str, Union[str, bool]]:
         if date_time_now is None:
             date_time_now = datetime.datetime.now(tz=datetime.timezone.utc)
-        api_key_hash = sha256_hash(api_key)
+        api_key_hash = sha256_hash(api_key, length=-1)
         if api_key_hash not in self.api_keys_plans:
             api_key_plan = self.refresh_api_key_plan_cache(
                 api_key=api_key, sqlite_connection=sqlite_connection
