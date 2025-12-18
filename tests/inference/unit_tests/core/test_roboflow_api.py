@@ -2291,6 +2291,60 @@ def test_get_workflow_specification_when_valid_response_given_and_cache_disabled
     }
 
 
+def test_get_workflow_specification_when_deployedConfig_provided_and_cache_disabled(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    # config contains the last saved state of the workflow
+    saved_config = '{"specification":{"version":"1.0","inputs":[{"type":"InferenceImage","name":"image"}],"steps":[{"type":"CVModel","name":"step_1","image":"$inputs.image","model_id":"thermal dogs and people/18"}],"outputs":[{"type":"JsonField","name":"a","selector":"$steps.step_1.predictions"}]},"preset":"single-model"}'
+    # deployedConfig contains the current deployed workflow version
+    deployedConfig = '{"specification":{"version":"2.0","inputs":[{"type":"InferenceImage","name":"image"}],"steps":[{"type":"CVModel","name":"step_1","image":"$inputs.image","model_id":"thermal dogs and people/20"}],"outputs":[{"type":"JsonField","name":"b","selector":"$steps.step_1.predictions"}]},"preset":"single-model"}'
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/workflows/some_workflow"),
+        json={
+            "workflow": {
+                "owner": "50hbxrck9m8nKykOhCEq",
+                "name": "Thermal",
+                "url": "thermal",
+                "config": saved_config,
+                "deployedConfig": deployedConfig,
+                "id": "Har3FW34j1Rjc4p8IX4B",
+            },
+            "status": "ok",
+        },
+    )
+
+    # when
+    result = get_workflow_specification(
+        api_key="my_api_key",
+        workspace_id="my_workspace",
+        workflow_id="some_workflow",
+        use_cache=False,
+    )
+
+    # Expected to use deployedConfig (current deployed version) 
+    assert result == {
+        "version": "2.0",
+        "inputs": [{"type": "InferenceImage", "name": "image"}],
+        "steps": [
+            {
+                "type": "CVModel",
+                "name": "step_1",
+                "image": "$inputs.image",
+                "model_id": "thermal dogs and people/20",
+            }
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "b",
+                "selector": "$steps.step_1.predictions",
+            }
+        ],
+        "id": "Har3FW34j1Rjc4p8IX4B",
+    }
+
+
 def test_get_workflow_specification_when_valid_response_given_on_consecutive_requests(
     requests_mock: Mocker,
 ) -> None:

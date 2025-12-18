@@ -746,28 +746,33 @@ def get_workflow_specification(
         raise MalformedWorkflowResponseError(
             "Could not find workflow specification in API response"
         )
+    workflow = response["workflow"]
     try:
-        workflow_config = json.loads(response["workflow"]["config"])
-        specification = workflow_config["specification"]
-        if isinstance(specification, dict):
-            specification["id"] = response["workflow"].get("id")
-        if use_cache:
-            _cache_workflow_specification_in_ephemeral_cache(
-                api_key=api_key,
-                workspace_id=workspace_id,
-                workflow_id=workflow_id,
-                specification=specification,
-                ephemeral_cache=ephemeral_cache,
-            )
-        return specification
-    except KeyError as error:
-        raise MalformedWorkflowResponseError(
-            "Workflow specification not found in Roboflow API response"
-        ) from error
+        # Prefer deployedConfig (current deployed version) over config (last saved state) for backward compatibility
+        workflow_config = json.loads(workflow.get("deployedConfig", workflow["config"]))
     except (ValueError, TypeError) as error:
         raise MalformedWorkflowResponseError(
             "Could not decode workflow specification in Roboflow API response"
         ) from error
+    else:
+        try:
+            specification = workflow_config["specification"]
+        except KeyError as error:
+            raise MalformedWorkflowResponseError(
+                "Workflow specification not found in Roboflow API response"
+            ) from error
+        else:
+            if isinstance(specification, dict):
+                specification["id"] = response["workflow"].get("id")
+            if use_cache:
+                _cache_workflow_specification_in_ephemeral_cache(
+                    api_key=api_key,
+                    workspace_id=workspace_id,
+                    workflow_id=workflow_id,
+                    specification=specification,
+                    ephemeral_cache=ephemeral_cache,
+                )
+            return specification
 
 
 def _retrieve_workflow_specification_from_ephemeral_cache(
