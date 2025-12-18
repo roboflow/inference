@@ -119,6 +119,41 @@ class OnDemandVideoTrack(MediaStreamTrack):
             self._container = None
 
 
+class KeepAliveVideoTrack(VideoStreamTrack):
+    """Minimal video track that sends 1-pixel frames to keep WebRTC connection alive.
+
+    Used when processing data-only (no video output) to maintain RTP traffic
+    and prevent Chrome from closing the DTLS connection due to inactivity.
+
+    Call `send_frame()` each time you want to emit a keepalive frame.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self._queue: asyncio.Queue = asyncio.Queue()
+        # Pre-create a 1x1 black frame
+        import numpy as np
+
+        self._black_frame = np.zeros((1, 1, 3), dtype=np.uint8)
+
+    def send_frame(self):
+        """Signal to send a keepalive frame. Call this from processing loop."""
+        try:
+            self._queue.put_nowait(True)
+        except asyncio.QueueFull:
+            pass  # Skip if queue is full
+
+    async def recv(self) -> VideoFrame:
+        await self._queue.get()
+
+        pts, time_base = await self.next_timestamp()
+        frame = VideoFrame.from_ndarray(self._black_frame, format="rgb24")
+        frame.pts = pts
+        frame.time_base = time_base
+
+        return frame
+
+
 class VideoFileUploadHandler:
     """Handles video file uploads via data channel.
 
@@ -256,6 +291,11 @@ async def send_chunked_data(
         )
         data_channel.send(message)
 
+        # Yield to event loop to allow processing of ICE consent checks
+        # Prevents "Consent to send expired" during heavy data transfer
+        # See: https://github.com/aiortc/aioice/issues/58
+        await asyncio.sleep(0)
+
 
 class RTCPeerConnectionWithLoop(RTCPeerConnection):
     def __init__(
@@ -266,6 +306,44 @@ class RTCPeerConnectionWithLoop(RTCPeerConnection):
     ):
         super().__init__(*args, **kwargs)
         self._loop = asyncio_loop
+        self._prev_connection_state = "new"
+        self._setup_transport_tracing()
+
+    def _setup_transport_tracing(self):
+        """Hook into internal transports for debugging connection closures."""
+        original_update = self._RTCPeerConnection__updateConnectionState
+
+        def traced_update():
+            # Capture transport states BEFORE update
+            ice_states = set()
+            dtls_states = set()
+            for t in self.getTransceivers():
+                if hasattr(t, "_transport") and t._transport:
+                    ice_states.add(t._transport._iceTransport.state)
+                    dtls_states.add(t._transport.state)
+
+            original_update()
+
+            if self.connectionState != self._prev_connection_state:
+                logger.info(
+                    "CONNECTION STATE CHANGE: %s -> %s | ice=%s | dtls=%s",
+                    self._prev_connection_state,
+                    self.connectionState,
+                    ice_states,
+                    dtls_states,
+                )
+                self._prev_connection_state = self.connectionState
+
+        self._RTCPeerConnection__updateConnectionState = traced_update
+
+    async def close(self):
+        import traceback
+
+        logger.info(
+            "peer_connection.close() called from:\n%s",
+            "".join(traceback.format_stack()[-15:-1]),
+        )
+        await super().close()
 
 
 class VideoFrameProcessor:
@@ -289,6 +367,7 @@ class VideoFrameProcessor:
         terminate_event: Optional[asyncio.Event] = None,
         heartbeat_callback: Optional[Callable[[], None]] = None,
         realtime_processing: bool = True,
+        peer_connection: Optional[RTCPeerConnection] = None,
     ):
         self._loop = asyncio_loop
         self._termination_date = termination_date
@@ -309,6 +388,8 @@ class VideoFrameProcessor:
         self.video_upload_handler: Optional[VideoFileUploadHandler] = None
         self._track_ready_event: asyncio.Event = asyncio.Event()
         self.realtime_processing = realtime_processing
+        self.peer_connection = peer_connection
+        self.keepalive_track: Optional[KeepAliveVideoTrack] = None
 
         if data_output is None:
             self.data_output = None
@@ -500,6 +581,14 @@ class VideoFrameProcessor:
 
                 frame = await self.track.recv()
                 self._received_frames += 1
+                # if self._received_frames % 100 == 1 and self.peer_connection:
+                #     logger.info(
+                #         "WebRTC stats at frame %s: pc=%s | ice=%s | buf=%s",
+                #         self._received_frames,
+                #         self.peer_connection.connectionState,
+                #         self.peer_connection.iceConnectionState,
+                #         self.data_channel.bufferedAmount if self.data_channel else 0
+                #     )
 
                 frame_timestamp = datetime.datetime.now()
 
@@ -514,6 +603,10 @@ class VideoFrameProcessor:
                 await self._send_data_output(
                     workflow_output, frame_timestamp, frame, errors
                 )
+
+                # Send keepalive frame if track is active (keeps RTP traffic flowing)
+                if self.keepalive_track:
+                    self.keepalive_track.send_frame()
 
         except asyncio.CancelledError as exc:
             logger.info("Data-only processing cancelled: %s", exc)
@@ -744,6 +837,10 @@ async def init_rtc_peer_connection_with_loop(
     shutdown_reserve: int = WEBRTC_MODAL_SHUTDOWN_RESERVE,
     heartbeat_callback: Optional[Callable[[], None]] = None,
 ) -> RTCPeerConnectionWithLoop:
+    # DEBUG: Enable aiortc debug logging to see DTLS/SCTP messages
+    logging.getLogger("aiortc").setLevel(logging.DEBUG)
+    logging.getLogger("aioice").setLevel(logging.DEBUG)
+
     logger.info("Initializing RTC peer connection with loop")
     # ice._mdns is instantiated on the module level, it has a lock that is bound to the event loop
     # avoid RuntimeError: asyncio.locks.Lock is bound to a different event loop
@@ -934,6 +1031,31 @@ async def init_rtc_peer_connection_with_loop(
         asyncio_loop=asyncio_loop,
     )
 
+    # DEBUG: Monitor transport state changes
+    async def monitor_transports():
+        pc = peer_connection
+        last_ice_state = None
+        last_dtls_state = None
+        while pc.connectionState not in ("closed", "failed"):
+            for t in pc.getTransceivers():
+                if hasattr(t, "_transport") and t._transport:
+                    ice = t._transport._iceTransport
+                    dtls = t._transport
+                    if last_ice_state is not None and last_ice_state != ice.state:
+                        logger.info(
+                            "DEBUG ICE transport: %s -> %s", last_ice_state, ice.state
+                        )
+                    if last_dtls_state is not None and last_dtls_state != dtls.state:
+                        logger.info(
+                            "DEBUG DTLS transport: %s -> %s", last_dtls_state, dtls.state
+                        )
+                    last_ice_state = ice.state
+                    last_dtls_state = dtls.state
+            await asyncio.sleep(0.5)
+        logger.info("DEBUG: Transport monitor stopped (connectionState=%s)", pc.connectionState)
+
+    asyncio.create_task(monitor_transports())
+
     relay = MediaRelay()
 
     # Add video track early for SDP negotiation when stream_output is requested
@@ -941,6 +1063,13 @@ async def init_rtc_peer_connection_with_loop(
     if should_send_video:
         logger.info("Adding video track early for SDP negotiation")
         peer_connection.addTrack(video_processor)
+    else:
+        # Add keepalive video track to maintain RTP traffic and prevent connection closure
+        # This sends 1-pixel frames synced with processing to keep DTLS/ICE alive
+        logger.info("Adding keepalive video track for data-only mode")
+        keepalive_track = KeepAliveVideoTrack()
+        video_processor.keepalive_track = keepalive_track
+        peer_connection.addTrack(keepalive_track)
 
     player: Optional[MediaPlayer] = None
     if webrtc_request.rtsp_url:
@@ -1033,6 +1162,10 @@ async def init_rtc_peer_connection_with_loop(
                         logger.info("Starting data-only processing for video file")
                         asyncio.create_task(video_processor.process_frames_data_only())
 
+            @channel.on("close")
+            def on_video_upload_channel_close():
+                logger.warning("DEBUG: video_upload datachannel CLOSED")
+
             return
 
         # Handle inference control channel (bidirectional communication)
@@ -1073,6 +1206,10 @@ async def init_rtc_peer_connection_with_loop(
                     video_processor._data_mode = DataOutputMode.ALL
                 else:
                     video_processor._data_mode = DataOutputMode.SPECIFIC
+
+        @channel.on("close")
+        def on_data_channel_close():
+            logger.warning("DEBUG: data channel '%s' CLOSED", channel.label)
 
         video_processor.data_channel = channel
 
