@@ -832,6 +832,10 @@ async def init_rtc_peer_connection_with_loop(
     shutdown_reserve: int = WEBRTC_MODAL_SHUTDOWN_RESERVE,
     heartbeat_callback: Optional[Callable[[], None]] = None,
 ) -> RTCPeerConnectionWithLoop:
+    # DEBUG: Enable aiortc debug logging to see DTLS/SCTP messages
+    logging.getLogger("aiortc").setLevel(logging.DEBUG)
+    logging.getLogger("aioice").setLevel(logging.DEBUG)
+
     logger.info("Initializing RTC peer connection with loop")
     # ice._mdns is instantiated on the module level, it has a lock that is bound to the event loop
     # avoid RuntimeError: asyncio.locks.Lock is bound to a different event loop
