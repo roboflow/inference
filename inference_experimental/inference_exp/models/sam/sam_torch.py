@@ -13,9 +13,9 @@ from inference_exp.models.sam.cache import (
     SamLowResolutionMasksCache,
     SamLowResolutionMasksCacheNullObject,
 )
-from inference_exp.models.sam.entities import SAMImageEmbeddings
+from inference_exp.models.sam.entities import SAMImageEmbeddings, SAMPrediction
 from inference_exp.utils.file_system import read_json
-from segment_anything import sam_model_registry
+from segment_anything import SamPredictor, sam_model_registry
 from segment_anything.modeling import Sam
 from segment_anything.utils.transforms import ResizeLongestSide
 
@@ -259,7 +259,7 @@ class SAMTorch:
         use_mask_input_cache: bool = True,
         use_embeddings_cache: bool = True,
         **kwargs,
-    ) -> List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
+    ) -> List[SAMPrediction]:
         if images is None and embeddings is None:
             raise ModelInputError(
                 message="Attempted to use SAM model segment_images(...) method not providing valid input - "
@@ -293,8 +293,6 @@ class SAMTorch:
             for image_hash in image_hashes
         ]
         if enforce_mask_input and mask_input is None:
-            print("image_hashes", image_hashes)
-            print("masks_from_the_cache", masks_from_the_cache)
             if not all(e is not None for e in masks_from_the_cache):
                 raise ModelInputError(
                     message="Attempted to use SAM model segment_images(...) method enforcing the presence of "
@@ -353,12 +351,17 @@ class SAMTorch:
                 return_logits=return_logits,
                 mask_threshold=mask_threshold,
             )
-            if use_mask_input_cache:
+            if use_mask_input_cache and len(prediction[0].shape) == 3:
                 max_score_id = torch.argmax(prediction[1]).item()
                 self._sam_low_resolution_masks_cache.save_mask(
                     key=image_hash, mask=prediction[2][max_score_id].unsqueeze(dim=0)
                 )
-            predictions.append(prediction)
+            parsed_prediction = SAMPrediction(
+                masks=prediction[0],
+                scores=prediction[1],
+                logits=prediction[2],
+            )
+            predictions.append(parsed_prediction)
         return predictions
 
 
@@ -447,6 +450,53 @@ def equalize_batch_size(
                 help_url="https://todo",
             )
         mask_input = mask_input * embeddings_batch_size
+    prompts_first_dimension_characteristics = set()
+    if point_coordinates is not None:
+        point_coordinates_characteristic = "-".join(
+            [str(p.shape[0]) for p in point_coordinates]
+        )
+        prompts_first_dimension_characteristics.add(point_coordinates_characteristic)
+    if point_labels is not None:
+        point_labels_characteristic = "-".join([str(l.shape[0]) for l in point_labels])
+        prompts_first_dimension_characteristics.add(point_labels_characteristic)
+    if boxes is not None:
+        boxes_characteristic = "-".join(
+            [str(b.shape[0]) if len(b.shape) > 1 else "1" for b in boxes]
+        )
+        prompts_first_dimension_characteristics.add(boxes_characteristic)
+    if len(prompts_first_dimension_characteristics) > 1:
+        raise ModelInputError(
+            message="When using SAM model, in scenario when combination of `point_coordinates` and `point_labels` and "
+            "`boxes` provided, the model expect identical number of elements for each prompt component. "
+            "If you run inference locally, verify your integration making sure that the model interface is "
+            "used correctly. Running on Roboflow platform - contact us to get help.",
+            help_url="https://todo",
+        )
+    if mask_input is not None and any(
+        len(i.shape) != 3 or i.shape[0] != 1 for i in mask_input
+    ):
+        raise ModelInputError(
+            message="When using SAM model with `mask_input`, each mask must be 3D tensor of shape (1, H, W). "
+            "If you run inference locally, verify your integration making sure that the model interface is "
+            "used correctly. Running on Roboflow platform - contact us to get help.",
+            help_url="https://todo",
+        )
+    if boxes is not None:
+        batched_boxes_provided = False
+        for box in boxes:
+            if len(box.shape) > 1 and box.shape[0] > 1:
+                batched_boxes_provided = True
+        if batched_boxes_provided and any(
+            e is not None for e in [point_coordinates, point_labels, mask_input]
+        ):
+            raise ModelInputError(
+                message="When using SAM, providing batched boxes (multiple RoIs for single image) makes it impossible "
+                "to use other components of the prompt - like `point_coordinates`, `point_labels` "
+                "or `mask_input` - and such situation was detected. "
+                "If you run inference locally, verify your integration making sure that the model interface is "
+                "used correctly. Running on Roboflow platform - contact us to get help.",
+                help_url="https://todo",
+            )
     return point_coordinates, point_labels, boxes, mask_input
 
 
@@ -576,10 +626,11 @@ def predict_for_single_image(
     point_labels: Optional[torch.Tensor],
     boxes: Optional[torch.Tensor] = None,
     mask_input: Optional[torch.Tensor] = None,
-    multi_mask_output: Union[bool, int] = True,
+    multi_mask_output: bool = True,
     return_logits: bool = False,
     mask_threshold: Optional[float] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    embeddings = embeddings.unsqueeze(dim=0)
     if point_coordinates is not None:
         points = (point_coordinates, point_labels)
     else:
@@ -605,4 +656,7 @@ def predict_for_single_image(
     if not return_logits:
         threshold = mask_threshold or model.mask_threshold
         masks = masks > threshold
-    return masks[0], iou_predictions[0], low_res_masks[0]
+    if masks.shape[0] == 1:
+        return masks[0], iou_predictions[0], low_res_masks[0]
+    else:
+        return masks, iou_predictions, low_res_masks

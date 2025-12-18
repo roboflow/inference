@@ -16,3 +16,10 @@ class SAMImageEmbeddings:
             image_size_hw=self.image_size_hw,
             embeddings=self.embeddings.to(device=device),
         )
+
+
+@dataclass(frozen=True)
+class SAMPrediction:
+    masks: torch.Tensor
+    scores: torch.Tensor
+    logits: torch.Tensor
