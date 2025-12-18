@@ -88,6 +88,14 @@ def attach_prediction_type_info(
     return predictions
 
 
+def filter_relevant_predictions(predictions: List[dict]) -> List[dict]:
+    # This logic replicates what supervision.Detections.from_inference does
+    # to find detections that it skips.
+    return [
+        d for d in predictions if "points" not in d or len(d.get("points", [])) >= 3
+    ]
+
+
 def attach_prediction_type_info_to_sv_detections_batch(
     predictions: List[sv.Detections],
     prediction_type: str,
@@ -107,9 +115,12 @@ def convert_inference_detections_batch_to_sv_detections(
     for p in predictions:
         width, height = p[image_key][WIDTH_KEY], p[image_key][HEIGHT_KEY]
         detections = sv.Detections.from_inference(p)
-        parent_ids = [d.get(PARENT_ID_KEY, "") for d in p[predictions_key]]
+        raw_predictions = p[predictions_key]
+        if len(detections) != len(raw_predictions):
+            raw_predictions = filter_relevant_predictions(predictions=raw_predictions)
+        parent_ids = [d.get(PARENT_ID_KEY, "") for d in raw_predictions]
         detection_ids = [
-            d.get(DETECTION_ID_KEY, str(uuid.uuid4())) for d in p[predictions_key]
+            d.get(DETECTION_ID_KEY, str(uuid.uuid4())) for d in raw_predictions
         ]
         detections[DETECTION_ID_KEY] = np.array(detection_ids)
         detections[PARENT_ID_KEY] = np.array(parent_ids)
@@ -435,8 +446,13 @@ def post_process_ocr_result(
     expected_output_keys: Set[str],
 ) -> BlockResult:
     for prediction, image in zip(predictions, images):
-        detection_ids = [p["detection_id"] for p in prediction.get("predictions", [])]
+        raw_predictions = prediction.get("predictions", [])
         prediction["predictions"] = sv.Detections.from_inference(prediction)
+        if len(prediction["predictions"]) != len(raw_predictions):
+            raw_predictions = filter_relevant_predictions(predictions=raw_predictions)
+        detection_ids = [
+            p.get("detection_id", str(uuid.uuid4())) for p in raw_predictions
+        ]
         prediction["predictions"]["detection_id"] = detection_ids
         prediction[PREDICTION_TYPE_KEY] = "ocr"
         prediction[PARENT_ID_KEY] = image.parent_metadata.parent_id
