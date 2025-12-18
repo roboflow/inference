@@ -34,6 +34,7 @@ dependencies = [
   "rf_groundingdino==0.3.0",
   "tldextract~=5.1.2",
   "pybase64~=1.0.0",
+  "rf-segment-anything==1.0",
 ]
 
 [project.optional-dependencies]

@@ -22,6 +22,10 @@ COIN_COUNTING_IMAGE_URL = (
 )
 COIN_COUNTING_IMAGE_PATH = os.path.join(ASSETS_DIR, "image-coin-counting.jpg")
 
+# ORIGIN OF THE IMAGE https://github.com/facebookresearch/sam
+TRUCK_IMAGE_URL = "https://media.roboflow.com/inference/example-input-images/truck.jpg"
+TRUCK_IMAGE_PATH = os.path.join(ASSETS_DIR, "truck.jpg")
+
 
 @pytest.fixture()
 def roboflow_api_key() -> str:
@@ -59,6 +63,14 @@ def coins_counting_image_numpy() -> np.ndarray:
     )
     image = cv2.imread(COIN_COUNTING_IMAGE_PATH)
     assert image is not None, "Could not load test image"
+    return image
+
+
+@pytest.fixture(scope="function")
+def truck_image_numpy() -> np.ndarray:
+    _download_if_not_exists(file_path=TRUCK_IMAGE_PATH, url=TRUCK_IMAGE_URL)
+    image = cv2.imread(TRUCK_IMAGE_PATH)
+    assert image is not None, "Could not load OCR test image"
     return image
 
 
