@@ -301,7 +301,7 @@ class RTCPeerConnectionWithLoop(RTCPeerConnection):
 
         logger.info(
             "peer_connection.close() called from:\n%s",
-            "".join(traceback.format_stack()[-6:-1]),
+            "".join(traceback.format_stack()[-15:-1]),
         )
         await super().close()
 
