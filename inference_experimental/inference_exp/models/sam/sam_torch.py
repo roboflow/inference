@@ -292,6 +292,8 @@ class SAMTorch:
             for image_hash in image_hashes
         ]
         if enforce_mask_input and mask_input is None:
+            print("image_hashes", image_hashes)
+            print("masks_from_the_cache", masks_from_the_cache)
             if not all(e is not None for e in masks_from_the_cache):
                 raise ModelInputError(
                     message="Attempted to use SAM model segment_images(...) method enforcing the presence of "
@@ -397,41 +399,53 @@ def equalize_batch_size(
     Optional[List[ArrayOrTensor]],
     Optional[List[ArrayOrTensor]],
 ]:
-    values = set()
-    if point_coordinates is not None:
-        values.add(len(point_coordinates))
-    if point_labels is not None:
-        values.add(len(point_labels))
-    if boxes is not None:
-        values.add(len(boxes))
-    if mask_input is not None:
-        values.add(len(mask_input))
-    if len(values) == 0:
-        return point_coordinates, point_labels, boxes, mask_input
-    if len(values) > 1:
-        raise ModelInputError(
-            message="When using SAM model, at least two out of parameters `point_coordinates`, `point_labels`, `boxes` "
-            "were provided with invalid values indicating different input batch size. If you run inference "
-            "locally, verify your integration making sure that the model interface is used correctly. Running "
-            "on Roboflow platform - contact us to get help.",
-            help_url="https://todo",
-        )
-    prompt_determined_batch_size = values.pop()
-    if prompt_determined_batch_size != embeddings_batch_size:
-        if prompt_determined_batch_size != 1:
+    if (
+        point_coordinates is not None
+        and len(point_coordinates) != embeddings_batch_size
+    ):
+        if len(point_coordinates) != 1:
             raise ModelInputError(
-                message=f"When using SAM model, there are {embeddings_batch_size} input images, but prompts are "
-                f"provided for input with batch size {prompt_determined_batch_size}, which makes invalid input."
-                "If you run inference locally, verify your integration making sure that the model "
-                "interface is used correctly. Running on Roboflow platform - contact us to get help.",
+                message="When using SAM model, parameter `point_coordinates` was provided with invalid "
+                f"value indicating different input batch size ({len(point_coordinates)}) than provided "
+                f"images / embeddings ({embeddings_batch_size}). If you run inference locally, verify your "
+                "integration making sure that the model interface is used correctly. "
+                "Running on Roboflow platform - contact us to get help.",
                 help_url="https://todo",
             )
-        return (
-            maybe_broadcast_list(point_coordinates, embeddings_batch_size),
-            maybe_broadcast_list(point_labels, embeddings_batch_size),
-            maybe_broadcast_list(boxes, embeddings_batch_size),
-            maybe_broadcast_list(mask_input, embeddings_batch_size),
-        )
+        point_coordinates = point_coordinates * embeddings_batch_size
+    if point_labels is not None and len(point_labels) != embeddings_batch_size:
+        if len(point_labels) != 1:
+            raise ModelInputError(
+                message="When using SAM model, parameter `point_labels` was provided with invalid "
+                f"value indicating different input batch size ({len(point_labels)}) than provided "
+                f"images / embeddings ({embeddings_batch_size}). If you run inference locally, verify your "
+                "integration making sure that the model interface is used correctly. "
+                "Running on Roboflow platform - contact us to get help.",
+                help_url="https://todo",
+            )
+        point_labels = point_labels * embeddings_batch_size
+    if boxes is not None and len(boxes) != embeddings_batch_size:
+        if len(boxes) != 1:
+            raise ModelInputError(
+                message="When using SAM model, parameter `boxes` was provided with invalid "
+                f"value indicating different input batch size ({len(boxes)}) than provided "
+                f"images / embeddings ({embeddings_batch_size}). If you run inference locally, verify your "
+                "integration making sure that the model interface is used correctly. "
+                "Running on Roboflow platform - contact us to get help.",
+                help_url="https://todo",
+            )
+        boxes = boxes * embeddings_batch_size
+    if mask_input is not None and len(mask_input) != embeddings_batch_size:
+        if len(mask_input) != 1:
+            raise ModelInputError(
+                message="When using SAM model, parameter `mask_input` was provided with invalid "
+                f"value indicating different input batch size ({len(mask_input)}) than provided "
+                f"images / embeddings ({embeddings_batch_size}). If you run inference locally, verify your "
+                "integration making sure that the model interface is used correctly. "
+                "Running on Roboflow platform - contact us to get help.",
+                help_url="https://todo",
+            )
+        mask_input = mask_input * embeddings_batch_size
     return point_coordinates, point_labels, boxes, mask_input
 
 
