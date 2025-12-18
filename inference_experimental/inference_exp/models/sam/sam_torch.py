@@ -15,7 +15,7 @@ from inference_exp.models.sam.cache import (
 )
 from inference_exp.models.sam.entities import SAMImageEmbeddings, SAMPrediction
 from inference_exp.utils.file_system import read_json
-from segment_anything import SamPredictor, sam_model_registry
+from segment_anything import sam_model_registry
 from segment_anything.modeling import Sam
 from segment_anything.utils.transforms import ResizeLongestSide
 
