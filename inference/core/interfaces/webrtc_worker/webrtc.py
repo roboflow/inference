@@ -291,6 +291,11 @@ async def send_chunked_data(
         )
         data_channel.send(message)
 
+        # Yield to event loop to allow processing of ICE consent checks
+        # Prevents "Consent to send expired" during heavy data transfer
+        # See: https://github.com/aiortc/aioice/issues/58
+        await asyncio.sleep(0)
+
 
 class RTCPeerConnectionWithLoop(RTCPeerConnection):
     def __init__(
