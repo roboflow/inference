@@ -256,6 +256,7 @@ async def send_chunked_data(
             frame_id, chunk_index, total_chunks, chunk_data
         )
         data_channel.send(message)
+    await asyncio.sleep(0.01)
 
 
 class RTCPeerConnectionWithLoop(RTCPeerConnection):
