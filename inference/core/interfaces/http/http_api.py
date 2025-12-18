@@ -1,6 +1,7 @@
 import base64
 import concurrent
 import os
+import re
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from functools import partial
 from threading import Lock, Thread
@@ -1468,7 +1469,14 @@ class HttpInterface(BaseInterface):
             @with_route_exceptions_async
             async def initialise_webrtc_worker(
                 request: WebRTCWorkerRequest,
+                r: Request,
             ) -> InitializeWebRTCResponse:
+                if str(r.headers.get("origin")).lower() == BUILDER_ORIGIN.lower():
+                    if re.search(
+                        r"^https://[^.]+\.roboflow\.[^./]+/", str(r.url).lower()
+                    ):
+                        request.is_preview = True
+
                 logger.debug("Received initialise_webrtc_worker request")
                 worker_result: WebRTCWorkerResult = await start_worker(
                     webrtc_request=request,
