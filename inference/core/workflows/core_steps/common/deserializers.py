@@ -15,7 +15,7 @@ from inference.core.utils.image_utils import (
 )
 from inference.core.workflows.core_steps.common.utils import (
     add_inference_keypoints_to_sv_detections,
-    filter_relevant_predictions,
+    filter_out_invalid_polygons,
 )
 from inference.core.workflows.errors import RuntimeInputError
 from inference.core.workflows.execution_engine.constants import (
@@ -235,7 +235,7 @@ def deserialize_detections_kind(
     parsed_detections.data[IMAGE_DIMENSIONS_KEY] = image_metadata
     raw_predictions = detections["predictions"]
     if len(parsed_detections) != len(raw_predictions):
-        raw_predictions = filter_relevant_predictions(predictions=raw_predictions)
+        raw_predictions = filter_out_invalid_polygons(predictions=raw_predictions)
     detection_ids = [
         detection.get(DETECTION_ID_KEY, str(uuid4())) for detection in raw_predictions
     ]
@@ -301,13 +301,13 @@ def deserialize_detections_kind(
     ]
     for raw_detection_key, parsed_detection_key in optional_elements_keys:
         parsed_detections = _attach_optional_detection_element(
-            raw_detections=detections["predictions"],
+            raw_detections=raw_predictions,
             parsed_detections=parsed_detections,
             raw_detection_key=raw_detection_key,
             parsed_detection_key=parsed_detection_key,
         )
     return _attach_optional_key_points_detections(
-        raw_detections=detections["predictions"],
+        raw_detections=raw_predictions,
         parsed_detections=parsed_detections,
     )
 
@@ -369,8 +369,6 @@ def _attach_optional_detection_element(
 ) -> sv.Detections:
     if raw_detection_key not in raw_detections[0]:
         return parsed_detections
-    if len(parsed_detections) != len(raw_detections):
-        raw_detections = filter_relevant_predictions(predictions=raw_detections)
     result = []
     for detection in raw_detections:
         result.append(detection[raw_detection_key])
@@ -384,8 +382,6 @@ def _attach_optional_key_points_detections(
 ) -> sv.Detections:
     if KEYPOINTS_KEY_IN_INFERENCE_RESPONSE not in raw_detections[0]:
         return parsed_detections
-    if len(parsed_detections) != len(raw_detections):
-        raw_detections = filter_relevant_predictions(predictions=raw_detections)
     return add_inference_keypoints_to_sv_detections(
         inference_prediction=raw_detections,
         detections=parsed_detections,
