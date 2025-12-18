@@ -24,91 +24,35 @@ from inference_exp.models.common.roboflow.pre_processing import (
 )
 from torch import nn
 
-# Mapping from model names in inference_config to timm model configs
-# Format: "config_name": (timm_model_name, patch_size)
-# We use DINOv2 with registers from timm since DINOv3 weights are compatible
-# with the architecture when using proper key remapping
-DINOV3_MODEL_CONFIG = {
-    "vit_small_patch16_dinov3": ("vit_small_patch14_reg4_dinov2", 16),
-    "vit_base_patch16_dinov3": ("vit_base_patch14_reg4_dinov2", 16),
-    "vit_large_patch16_dinov3": ("vit_large_patch14_reg4_dinov2", 16),
-    "vit_giant_patch16_dinov3": ("vit_giant_patch14_reg4_dinov2", 16),
-}
 
-
-def _remap_state_dict_keys(state_dict: dict) -> Tuple[dict, dict]:
-    """Remap state dict keys from DINOv3 format to timm DINOv2 format.
-
-    DINOv3 weights use:
-    - backbone.blocks.X.gamma_1 -> blocks.X.ls1.gamma
-    - backbone.blocks.X.gamma_2 -> blocks.X.ls2.gamma
-
-    Returns:
-        Tuple of (backbone_state_dict, linear_layer_state_dict)
-    """
-    backbone_state_dict = {}
-    linear_state_dict = {}
-
-    for key, value in state_dict.items():
-        if key.startswith("backbone."):
-            new_key = key[len("backbone.") :]
-            # Remap layer scale keys
-            new_key = new_key.replace(".gamma_1", ".ls1.gamma")
-            new_key = new_key.replace(".gamma_2", ".ls2.gamma")
-            backbone_state_dict[new_key] = value
-        elif key.startswith("linear_layer."):
-            new_key = key[len("linear_layer.") :]
-            linear_state_dict[new_key] = value
-
-    return backbone_state_dict, linear_state_dict
-
-
-def _create_dinov3_backbone(model_name: str, img_size: int = 224) -> nn.Module:
-    """Create DINOv3-compatible backbone using timm's DINOv2 with registers.
-
-    The DINOv3 architecture is compatible with timm's DINOv2 with registers
-    when using patch_size override and qkv_bias=False.
-    """
-    # Remove dataset suffix like ".lvd1689m" or ".sat493m"
-    base_name = model_name.split(".")[0]
-    if base_name not in DINOV3_MODEL_CONFIG:
-        raise CorruptedModelPackageError(
-            message=f"Unknown DINOv3 model name: {model_name}. "
-            f"Supported models: {list(DINOV3_MODEL_CONFIG.keys())}",
-            help_url="https://todo",
-        )
-    timm_model_name, patch_size = DINOV3_MODEL_CONFIG[base_name]
-
-    backbone = timm.create_model(
-        timm_model_name,
-        pretrained=False,
-        qkv_bias=False,
-        patch_size=patch_size,
-        num_classes=0,  # Remove classification head
-        img_size=img_size,
-    )
-    return backbone
-
-
-class DinoV3Classifier(nn.Module):
+class DinoV3Model(nn.Module):
+    """DINOv3 model for classification using timm's EVA ViT backbone."""
 
     def __init__(
-        self,
-        backbone: nn.Module,
-        linear_layer: nn.Module,
-        softmax_fused: bool,
+        self, num_classes: int, model_name: str = "vit_small_patch16_dinov3.lvd1689m"
     ):
+        """
+        Args:
+            num_classes: Number of classes to classify
+            model_name: Name of the backbone model from timm
+        """
         super().__init__()
-        self.backbone = backbone
-        self.linear_layer = linear_layer
-        self._softmax_fused = softmax_fused
+        self.num_classes = num_classes
+        self.model_name = model_name
+
+        # DinoV3 is implemented as a parameterization of EVA ViT in timm
+        self.backbone: timm.models.Eva = timm.create_model(
+            self.model_name, pretrained=False
+        )
+        self.backbone = self.backbone.eval()
+        self.linear_layer = nn.Linear(self.backbone.embed_dim, num_classes)
+
+    def forward_embedding(self, x: torch.Tensor) -> torch.Tensor:
+        """Extract features using the CLS token (position 0)."""
+        return self.backbone.forward_features(x)[:, 0]
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        features = self.backbone(x)
-        logits = self.linear_layer(features)
-        if not self._softmax_fused:
-            logits = torch.nn.functional.softmax(logits, dim=-1)
-        return logits
+        return self.linear_layer(self.forward_embedding(x))
 
 
 class DinoV3ForClassificationTorch(ClassificationModel[torch.Tensor, torch.Tensor]):
@@ -140,6 +84,7 @@ class DinoV3ForClassificationTorch(ClassificationModel[torch.Tensor, torch.Tenso
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
             },
         )
+
         if inference_config.model_initialization is None:
             raise CorruptedModelPackageError(
                 message="Expected model initialization parameters not provided in inference config.",
@@ -157,6 +102,7 @@ class DinoV3ForClassificationTorch(ClassificationModel[torch.Tensor, torch.Tenso
                 message="Expected model initialization parameter `model_name` not provided or in invalid format.",
                 help_url="https://todo",
             )
+
         if (
             not inference_config.post_processing
             or inference_config.post_processing.type != "softmax"
@@ -166,32 +112,16 @@ class DinoV3ForClassificationTorch(ClassificationModel[torch.Tensor, torch.Tenso
                 help_url="https://todo",
             )
 
-        # Get image size from config
-        img_size = inference_config.network_input.training_input_size.width
-
-        # Create backbone and linear layer
-        backbone = _create_dinov3_backbone(model_name, img_size=img_size)
-        embed_dim = backbone.embed_dim
-        linear_layer = nn.Linear(embed_dim, num_classes)
-
-        # Load state dict with key remapping
+        # Create model and load weights
+        model = DinoV3Model(num_classes=num_classes, model_name=model_name)
         state_dict = torch.load(
             model_package_content["weights.pth"],
             map_location=device,
             weights_only=True,
         )
-        backbone_state_dict, linear_state_dict = _remap_state_dict_keys(state_dict)
-
-        # Load backbone weights (strict=False to skip pos_embed which is generated)
-        backbone.load_state_dict(backbone_state_dict, strict=False)
-        linear_layer.load_state_dict(linear_state_dict)
-
-        model = DinoV3Classifier(
-            backbone=backbone,
-            linear_layer=linear_layer,
-            softmax_fused=inference_config.post_processing.fused,
-        )
+        model.load_state_dict(state_dict)
         model = model.to(device).eval()
+
         return cls(
             model=model,
             inference_config=inference_config,
@@ -201,7 +131,7 @@ class DinoV3ForClassificationTorch(ClassificationModel[torch.Tensor, torch.Tenso
 
     def __init__(
         self,
-        model: DinoV3Classifier,
+        model: DinoV3Model,
         inference_config: InferenceConfig,
         class_names: List[str],
         device: torch.device,
@@ -240,31 +170,17 @@ class DinoV3ForClassificationTorch(ClassificationModel[torch.Tensor, torch.Tenso
         model_results: torch.Tensor,
         **kwargs,
     ) -> ClassificationPrediction:
+        if (
+            self._inference_config.post_processing
+            and self._inference_config.post_processing.fused
+        ):
+            confidence = model_results
+        else:
+            confidence = torch.nn.functional.softmax(model_results, dim=-1)
         return ClassificationPrediction(
-            class_id=model_results.argmax(dim=-1),
-            confidence=model_results,
+            class_id=confidence.argmax(dim=-1),
+            confidence=confidence,
         )
-
-
-class DinoV3MultiLabelClassifier(nn.Module):
-
-    def __init__(
-        self,
-        backbone: nn.Module,
-        linear_layer: nn.Module,
-        sigmoid_fused: bool,
-    ):
-        super().__init__()
-        self.backbone = backbone
-        self.linear_layer = linear_layer
-        self._sigmoid_fused = sigmoid_fused
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        features = self.backbone(x)
-        logits = self.linear_layer(features)
-        if not self._sigmoid_fused:
-            logits = torch.nn.functional.sigmoid(logits)
-        return logits
 
 
 class DinoV3ForMultiLabelClassificationTorch(
@@ -298,6 +214,7 @@ class DinoV3ForMultiLabelClassificationTorch(
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
             },
         )
+
         if inference_config.model_initialization is None:
             raise CorruptedModelPackageError(
                 message="Expected model initialization parameters not provided in inference config.",
@@ -315,6 +232,7 @@ class DinoV3ForMultiLabelClassificationTorch(
                 message="Expected model initialization parameter `model_name` not provided or in invalid format.",
                 help_url="https://todo",
             )
+
         if (
             inference_config.post_processing
             and inference_config.post_processing.type != "sigmoid"
@@ -324,32 +242,16 @@ class DinoV3ForMultiLabelClassificationTorch(
                 help_url="https://todo",
             )
 
-        # Get image size from config
-        img_size = inference_config.network_input.training_input_size.width
-
-        # Create backbone and linear layer
-        backbone = _create_dinov3_backbone(model_name, img_size=img_size)
-        embed_dim = backbone.embed_dim
-        linear_layer = nn.Linear(embed_dim, num_classes)
-
-        # Load state dict with key remapping
+        # Create model and load weights
+        model = DinoV3Model(num_classes=num_classes, model_name=model_name)
         state_dict = torch.load(
             model_package_content["weights.pth"],
             map_location=device,
             weights_only=True,
         )
-        backbone_state_dict, linear_state_dict = _remap_state_dict_keys(state_dict)
-
-        # Load backbone weights (strict=False to skip pos_embed which is generated)
-        backbone.load_state_dict(backbone_state_dict, strict=False)
-        linear_layer.load_state_dict(linear_state_dict)
-
-        model = DinoV3MultiLabelClassifier(
-            backbone=backbone,
-            linear_layer=linear_layer,
-            sigmoid_fused=inference_config.post_processing.fused,
-        )
+        model.load_state_dict(state_dict)
         model = model.to(device).eval()
+
         return cls(
             model=model,
             inference_config=inference_config,
@@ -359,7 +261,7 @@ class DinoV3ForMultiLabelClassificationTorch(
 
     def __init__(
         self,
-        model: DinoV3MultiLabelClassifier,
+        model: DinoV3Model,
         inference_config: InferenceConfig,
         class_names: List[str],
         device: torch.device,
@@ -399,6 +301,13 @@ class DinoV3ForMultiLabelClassificationTorch(
         confidence: float = 0.5,
         **kwargs,
     ) -> List[MultiLabelClassificationPrediction]:
+        if (
+            self._inference_config.post_processing
+            and self._inference_config.post_processing.fused
+        ):
+            model_results = model_results
+        else:
+            model_results = torch.nn.functional.sigmoid(model_results)
         results = []
         for batch_element_confidence in model_results:
             predicted_classes = torch.argwhere(
