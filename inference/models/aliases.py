@@ -62,6 +62,7 @@ RFDETR_ALIASES = {
     "rfdetr-nano": "coco/38",
     "rfdetr-small": "coco/39",
     "rfdetr-medium": "coco/40",
+    "rfdetr-seg-preview": "coco-dataset-vdnr1/26",
 }
 
 CLASSIFICATION_ALIASES = {
