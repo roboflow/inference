@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from inference_exp import ColorFormat
 from inference_exp.configuration import DEFAULT_DEVICE
-from inference_exp.errors import CorruptedModelPackageError, ModelInputError
+from inference_exp.errors import CorruptedModelPackageError, ModelInputError, AssumptionError
 from inference_exp.models.common.model_packages import get_model_package_contents
 from inference_exp.models.sam2.cache import (
     Sam2ImageEmbeddingsCache,
@@ -535,10 +535,10 @@ def generate_model_inputs(
         SAM2ImageEmbeddings,
         str,
         Tuple[int, int],
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
+        Optional[torch.Tensor],
+        Optional[torch.Tensor],
+        Optional[torch.Tensor],
+        Optional[torch.Tensor],
     ],
     None,
     None,
@@ -724,3 +724,48 @@ def predict_for_single_image(
         return masks[0], iou_predictions[0], low_res_masks[0]
     else:
         return masks, iou_predictions, low_res_masks
+
+
+def serialize_prompt(
+    point_coordinates: Optional[torch.Tensor],
+    point_labels: Optional[torch.Tensor],
+    boxes: Optional[torch.Tensor],
+) -> List[dict]:
+    if point_coordinates is None and point_labels is None and boxes is None:
+        return []
+    sizes = set()
+    if point_coordinates is not None:
+        sizes.add(point_coordinates.shape[0])
+    if point_labels is not None:
+        sizes.add(point_labels.shape[0])
+    if boxes is not None:
+        sizes.add(boxes.shape[0])
+    if len(sizes) != 1:
+        raise AssumptionError(
+            message="In SAM2 implementation, after pre-processing, all prompt elements must have the same "
+                    "leading dimension. This assumption just got violated. This is most likely a bug. "
+                    "You can help us sorting out this problem by submitting an issue: "
+                    "https://github.com/roboflow/inference/issues",
+            help_url="https://todo"
+        )
+    broadcast_size = sizes.pop()
+    point_coordinates_list = point_coordinates.tolist() if point_coordinates is not None else [None] * broadcast_size
+    point_labels_list = point_labels.tolist() if point_labels is not None else [None] * broadcast_size
+    boxes_list = boxes.tolist() if boxes is not None else [None] * broadcast_size
+    results = []
+    for points, labels, box in zip(point_coordinates_list, point_labels_list, boxes_list):
+        points_serialized = []
+        for point, label in zip(points, labels):
+            points_serialized.append({
+                "x": point[0].item(),
+                "y": point[1].item(),
+                "positive": label.item(),
+            })
+        x_min, y_min, x_max, y_max = box.reshape(-1).tolist()
+        results.append({
+            "points": points_serialized,
+            "box": {"x_min": x_min, "y_min": y_min, "x_max": x_max, "y_max": y_max}
+        })
+    return results
+
+

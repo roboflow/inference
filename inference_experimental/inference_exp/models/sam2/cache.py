@@ -1,11 +1,11 @@
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from threading import Lock
-from typing import Optional
+from typing import Optional, List
 
 import torch
 from inference_exp.errors import EnvironmentConfigurationError
-from inference_exp.models.sam2.entities import SAM2ImageEmbeddings
+from inference_exp.models.sam2.entities import SAM2ImageEmbeddings, SAM2MaskCacheEntry
 
 
 class Sam2ImageEmbeddingsCache(ABC):
@@ -80,20 +80,20 @@ class Sam2ImageEmbeddingsInMemoryCache(Sam2ImageEmbeddingsCache):
 class Sam2LowResolutionMasksCache(ABC):
 
     @abstractmethod
-    def retrieve_mask(self, key: str) -> Optional[torch.Tensor]:
+    def retrieve_all_masks_for_image(self, key: str) -> List[torch.Tensor]:
         pass
 
     @abstractmethod
-    def save_mask(self, key: str, mask: torch.Tensor) -> None:
+    def save_mask(self, key: str, mask: SAM2MaskCacheEntry) -> None:
         pass
 
 
 class Sam2LowResolutionMasksCacheNullObject(Sam2LowResolutionMasksCache):
 
-    def retrieve_mask(self, key: str) -> Optional[torch.Tensor]:
+    def retrieve_all_masks_for_image(self, key: str) -> List[torch.Tensor]:
         pass
 
-    def save_mask(self, key: str, mask: torch.Tensor) -> None:
+    def save_mask(self, key: str, mask: SAM2MaskCacheEntry) -> None:
         pass
 
 
@@ -112,6 +112,7 @@ class Sam2LowResolutionMasksInMemoryCache(Sam2LowResolutionMasksCache):
     def __init__(
         self,
         state: OrderedDict,
+        
         size_limit: Optional[int],
         send_to_cpu: bool = True,
     ):
@@ -120,8 +121,8 @@ class Sam2LowResolutionMasksInMemoryCache(Sam2LowResolutionMasksCache):
         self._send_to_cpu = send_to_cpu
         self._state_lock = Lock()
 
-    def retrieve_mask(self, key: str) -> Optional[torch.Tensor]:
-        return self._state.get(key)
+    def retrieve_all_masks_for_image(self, key: str) -> List[torch.Tensor]:
+        return self._state.get(key, [])
 
     def save_mask(self, key: str, mask: torch.Tensor) -> None:
         with self._state_lock:

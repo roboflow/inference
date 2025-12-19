@@ -27,3 +27,17 @@ class SAM2Prediction:
     masks: torch.Tensor
     scores: torch.Tensor
     logits: torch.Tensor
+
+
+@dataclass(frozen=True)
+class SAM2MaskCacheEntry:
+    prompt_hash: str
+    serialized_prompt: List[dict]
+    mask: torch.Tensor
+
+    def to(self, device: torch.device) -> "SAM2MaskCacheEntry":
+        return SAM2MaskCacheEntry(
+            prompt_hash=prompt_hash,
+            serialized_prompt=self.serialized_prompt,
+            mask=self.mask.to(device=device)
+        )
