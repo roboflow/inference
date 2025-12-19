@@ -473,15 +473,15 @@ def equalize_batch_size(
             "used correctly. Running on Roboflow platform - contact us to get help.",
             help_url="https://todo",
         )
-    if mask_input is not None and any(
-        len(i.shape) != 3 or i.shape[0] != 1 for i in mask_input
-    ):
-        raise ModelInputError(
-            message="When using SAM model with `mask_input`, each mask must be 3D tensor of shape (1, H, W). "
-            "If you run inference locally, verify your integration making sure that the model interface is "
-            "used correctly. Running on Roboflow platform - contact us to get help.",
-            help_url="https://todo",
-        )
+    if mask_input is not None:
+        mask_input = [i[None, :, :] if len(i.shape) == 2 else i for i in mask_input]
+        if any(len(i.shape) != 3 or i.shape[0] != 1 for i in mask_input):
+            raise ModelInputError(
+                message="When using SAM model with `mask_input`, each mask must be 3D tensor of shape (1, H, W). "
+                "If you run inference locally, verify your integration making sure that the model interface is "
+                "used correctly. Running on Roboflow platform - contact us to get help.",
+                help_url="https://todo",
+            )
     if boxes is not None:
         batched_boxes_provided = False
         for box in boxes:

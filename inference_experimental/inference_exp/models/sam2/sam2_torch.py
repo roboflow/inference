@@ -443,7 +443,7 @@ def equalize_batch_size(
     ):
         if len(point_coordinates) != 1:
             raise ModelInputError(
-                message="When using SAM model, parameter `point_coordinates` was provided with invalid "
+                message="When using SAM2 model, parameter `point_coordinates` was provided with invalid "
                 f"value indicating different input batch size ({len(point_coordinates)}) than provided "
                 f"images / embeddings ({embeddings_batch_size}). If you run inference locally, verify your "
                 "integration making sure that the model interface is used correctly. "
@@ -454,7 +454,7 @@ def equalize_batch_size(
     if point_labels is not None and len(point_labels) != embeddings_batch_size:
         if len(point_labels) != 1:
             raise ModelInputError(
-                message="When using SAM model, parameter `point_labels` was provided with invalid "
+                message="When using SAM2 model, parameter `point_labels` was provided with invalid "
                 f"value indicating different input batch size ({len(point_labels)}) than provided "
                 f"images / embeddings ({embeddings_batch_size}). If you run inference locally, verify your "
                 "integration making sure that the model interface is used correctly. "
@@ -465,7 +465,7 @@ def equalize_batch_size(
     if boxes is not None and len(boxes) != embeddings_batch_size:
         if len(boxes) != 1:
             raise ModelInputError(
-                message="When using SAM model, parameter `boxes` was provided with invalid "
+                message="When using SAM2 model, parameter `boxes` was provided with invalid "
                 f"value indicating different input batch size ({len(boxes)}) than provided "
                 f"images / embeddings ({embeddings_batch_size}). If you run inference locally, verify your "
                 "integration making sure that the model interface is used correctly. "
@@ -476,7 +476,7 @@ def equalize_batch_size(
     if mask_input is not None and len(mask_input) != embeddings_batch_size:
         if len(mask_input) != 1:
             raise ModelInputError(
-                message="When using SAM model, parameter `mask_input` was provided with invalid "
+                message="When using SAM2 model, parameter `mask_input` was provided with invalid "
                 f"value indicating different input batch size ({len(mask_input)}) than provided "
                 f"images / embeddings ({embeddings_batch_size}). If you run inference locally, verify your "
                 "integration making sure that the model interface is used correctly. "
@@ -498,35 +498,23 @@ def equalize_batch_size(
             [str(b.shape[0]) if len(b.shape) > 1 else "1" for b in boxes]
         )
         prompts_first_dimension_characteristics.add(boxes_characteristic)
+    print(
+        "prompts_first_dimension_characteristics",
+        prompts_first_dimension_characteristics,
+    )
     if len(prompts_first_dimension_characteristics) > 1:
         raise ModelInputError(
-            message="When using SAM model, in scenario when combination of `point_coordinates` and `point_labels` and "
+            message="When using SAM2 model, in scenario when combination of `point_coordinates` and `point_labels` and "
             "`boxes` provided, the model expect identical number of elements for each prompt component. "
             "If you run inference locally, verify your integration making sure that the model interface is "
             "used correctly. Running on Roboflow platform - contact us to get help.",
             help_url="https://todo",
         )
-    if mask_input is not None and any(
-        len(i.shape) != 3 or i.shape[0] != 1 for i in mask_input
-    ):
-        raise ModelInputError(
-            message="When using SAM model with `mask_input`, each mask must be 3D tensor of shape (1, H, W). "
-            "If you run inference locally, verify your integration making sure that the model interface is "
-            "used correctly. Running on Roboflow platform - contact us to get help.",
-            help_url="https://todo",
-        )
-    if boxes is not None:
-        batched_boxes_provided = False
-        for box in boxes:
-            if len(box.shape) > 1 and box.shape[0] > 1:
-                batched_boxes_provided = True
-        if batched_boxes_provided and any(
-            e is not None for e in [point_coordinates, point_labels, mask_input]
-        ):
+    if mask_input is not None:
+        mask_input = [i[None, :, :] if len(i.shape) == 2 else i for i in mask_input]
+        if any(len(i.shape) != 3 or i.shape[0] != 1 for i in mask_input):
             raise ModelInputError(
-                message="When using SAM, providing batched boxes (multiple RoIs for single image) makes it impossible "
-                "to use other components of the prompt - like `point_coordinates`, `point_labels` "
-                "or `mask_input` - and such situation was detected. "
+                message="When using SAM2 model with `mask_input`, each mask must be 3D tensor of shape (1, H, W). "
                 "If you run inference locally, verify your integration making sure that the model interface is "
                 "used correctly. Running on Roboflow platform - contact us to get help.",
                 help_url="https://todo",
@@ -732,4 +720,7 @@ def predict_for_single_image(
     low_res_masks = torch.clamp(low_res_masks, -32.0, 32.0)
     if not return_logits:
         masks = masks > (mask_threshold or 0.0)
-    return masks, iou_predictions, low_res_masks
+    if masks.shape[0] == 1:
+        return masks[0], iou_predictions[0], low_res_masks[0]
+    else:
+        return masks, iou_predictions, low_res_masks
