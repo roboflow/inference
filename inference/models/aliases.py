@@ -65,6 +65,13 @@ RFDETR_ALIASES = {
     "rfdetr-seg-preview": "coco-dataset-vdnr1/26",
 }
 
+CLASSIFICATION_ALIASES = {
+    "resent18": "classifiers/1",
+    "resent34": "classifiers/2",
+    "resent50": "classifiers/3",
+    "resent101": "classifiers/4",
+}
+
 REGISTERED_ALIASES = {
     "yolov8n-640": "coco/3",
     "yolov8n-1280": "coco/9",
@@ -106,6 +113,7 @@ REGISTERED_ALIASES = {
     **YOLOV11_ALIASES,
     **QWEN_ALIASES,
     **RFDETR_ALIASES,
+    **CLASSIFICATION_ALIASES,
 }
 
 
