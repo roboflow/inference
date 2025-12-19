@@ -15,6 +15,7 @@ from inference.core.utils.image_utils import (
 )
 from inference.core.workflows.core_steps.common.utils import (
     add_inference_keypoints_to_sv_detections,
+    filter_out_invalid_polygons,
 )
 from inference.core.workflows.errors import RuntimeInputError
 from inference.core.workflows.execution_engine.constants import (
@@ -232,21 +233,22 @@ def deserialize_detections_kind(
     height, width = detections["image"]["height"], detections["image"]["width"]
     image_metadata = np.array([[height, width]] * len(parsed_detections))
     parsed_detections.data[IMAGE_DIMENSIONS_KEY] = image_metadata
+    raw_predictions = detections["predictions"]
+    if len(parsed_detections) != len(raw_predictions):
+        raw_predictions = filter_out_invalid_polygons(predictions=raw_predictions)
     detection_ids = [
-        detection.get(DETECTION_ID_KEY, str(uuid4()))
-        for detection in detections["predictions"]
+        detection.get(DETECTION_ID_KEY, str(uuid4())) for detection in raw_predictions
     ]
     parsed_detections.data[DETECTION_ID_KEY] = np.array(detection_ids)
 
     parent_ids = [
-        detection.get(PARENT_ID_KEY, parameter)
-        for detection in detections["predictions"]
+        detection.get(PARENT_ID_KEY, parameter) for detection in raw_predictions
     ]
     parsed_detections[PARENT_ID_KEY] = np.array(parent_ids)
 
     _attach_parent_coordinates_and_dimensions(
         parameter=parameter,
-        raw_detections=detections["predictions"],
+        raw_detections=raw_predictions,
         parsed_detections=parsed_detections,
         origin_key=PARENT_ORIGIN_KEY,
         coordinates_key=PARENT_COORDINATES_KEY,
@@ -254,15 +256,14 @@ def deserialize_detections_kind(
     )
 
     root_parent_ids = [
-        detection.get(ROOT_PARENT_ID_KEY, parameter)
-        for detection in detections["predictions"]
+        detection.get(ROOT_PARENT_ID_KEY, parameter) for detection in raw_predictions
     ]
     if root_parent_ids:
         parsed_detections.data[ROOT_PARENT_ID_KEY] = np.array(root_parent_ids)
 
         _attach_parent_coordinates_and_dimensions(
             parameter=parameter,
-            raw_detections=detections["predictions"],
+            raw_detections=raw_predictions,
             parsed_detections=parsed_detections,
             origin_key=ROOT_PARENT_ORIGIN_KEY,
             coordinates_key=ROOT_PARENT_COORDINATES_KEY,
@@ -300,13 +301,13 @@ def deserialize_detections_kind(
     ]
     for raw_detection_key, parsed_detection_key in optional_elements_keys:
         parsed_detections = _attach_optional_detection_element(
-            raw_detections=detections["predictions"],
+            raw_detections=raw_predictions,
             parsed_detections=parsed_detections,
             raw_detection_key=raw_detection_key,
             parsed_detection_key=parsed_detection_key,
         )
     return _attach_optional_key_points_detections(
-        raw_detections=detections["predictions"],
+        raw_detections=raw_predictions,
         parsed_detections=parsed_detections,
     )
 
