@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from threading import Lock
-from typing import Optional, List
+from typing import DefaultDict, List, Optional
 
 import torch
 from inference_exp.errors import EnvironmentConfigurationError
@@ -80,7 +80,7 @@ class Sam2ImageEmbeddingsInMemoryCache(Sam2ImageEmbeddingsCache):
 class Sam2LowResolutionMasksCache(ABC):
 
     @abstractmethod
-    def retrieve_all_masks_for_image(self, key: str) -> List[torch.Tensor]:
+    def retrieve_all_masks_for_image(self, key: str) -> List[SAM2MaskCacheEntry]:
         pass
 
     @abstractmethod
@@ -90,8 +90,8 @@ class Sam2LowResolutionMasksCache(ABC):
 
 class Sam2LowResolutionMasksCacheNullObject(Sam2LowResolutionMasksCache):
 
-    def retrieve_all_masks_for_image(self, key: str) -> List[torch.Tensor]:
-        pass
+    def retrieve_all_masks_for_image(self, key: str) -> List[SAM2MaskCacheEntry]:
+        return []
 
     def save_mask(self, key: str, mask: SAM2MaskCacheEntry) -> None:
         pass
@@ -104,34 +104,37 @@ class Sam2LowResolutionMasksInMemoryCache(Sam2LowResolutionMasksCache):
         cls, size_limit: Optional[int], send_to_cpu: bool = True
     ) -> "Sam2LowResolutionMasksInMemoryCache":
         return cls(
-            state=OrderedDict(),
+            ordering_state=OrderedDict(),
+            cache_state=defaultdict(list),
             size_limit=size_limit,
             send_to_cpu=send_to_cpu,
         )
 
     def __init__(
         self,
-        state: OrderedDict,
-        
+        ordering_state: OrderedDict,
+        cache_state: DefaultDict[str, List[SAM2MaskCacheEntry]],
         size_limit: Optional[int],
         send_to_cpu: bool = True,
     ):
-        self._state = state
+        self._ordering_state = ordering_state
+        self._cache_state = cache_state
         self._size_limit = size_limit
         self._send_to_cpu = send_to_cpu
         self._state_lock = Lock()
 
-    def retrieve_all_masks_for_image(self, key: str) -> List[torch.Tensor]:
-        return self._state.get(key, [])
+    def retrieve_all_masks_for_image(self, key: str) -> List[SAM2MaskCacheEntry]:
+        return self._cache_state.get(key, [])
 
-    def save_mask(self, key: str, mask: torch.Tensor) -> None:
+    def save_mask(self, key: str, mask: SAM2MaskCacheEntry) -> None:
         with self._state_lock:
-            if key in self._state:
+            if (key, mask.prompt_hash) in self._ordering_state:
                 return None
             self._ensure_cache_has_capacity()
             if self._send_to_cpu:
                 mask = mask.to(device=torch.device("cpu"))
-            self._state[key] = mask
+            self._ordering_state[(key, mask.prompt_hash)] = True
+            self._cache_state[key].append(mask)
 
     def _ensure_cache_has_capacity(self) -> None:
         if self._size_limit < 1:
@@ -143,5 +146,13 @@ class Sam2LowResolutionMasksInMemoryCache(Sam2LowResolutionMasksCache):
             )
         if self._size_limit is None or self._size_limit < 1:
             return None
-        while len(self._state) > self._size_limit:
-            _ = self._state.popitem(last=False)
+        while len(self._ordering_state) > self._size_limit:
+            image_key, prompt_hash = self._ordering_state.popitem(last=False)
+            entries_for_image = self._cache_state[image_key]
+            to_remove_idx = None
+            for i, element in enumerate(entries_for_image):
+                if element.prompt_hash == prompt_hash:
+                    to_remove_idx = i
+                    break
+            if to_remove_idx is not None:
+                del entries_for_image[to_remove_idx]

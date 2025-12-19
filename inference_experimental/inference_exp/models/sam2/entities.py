@@ -37,7 +37,7 @@ class SAM2MaskCacheEntry:
 
     def to(self, device: torch.device) -> "SAM2MaskCacheEntry":
         return SAM2MaskCacheEntry(
-            prompt_hash=prompt_hash,
+            prompt_hash=self.prompt_hash,
             serialized_prompt=self.serialized_prompt,
-            mask=self.mask.to(device=device)
+            mask=self.mask.to(device=device),
         )

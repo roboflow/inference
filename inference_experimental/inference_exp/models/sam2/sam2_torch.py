@@ -1,11 +1,17 @@
 import hashlib
+import json
+from copy import copy
 from typing import Dict, Generator, List, Optional, Tuple, TypeVar, Union
 
 import numpy as np
 import torch
 from inference_exp import ColorFormat
 from inference_exp.configuration import DEFAULT_DEVICE
-from inference_exp.errors import CorruptedModelPackageError, ModelInputError, AssumptionError
+from inference_exp.errors import (
+    AssumptionError,
+    CorruptedModelPackageError,
+    ModelInputError,
+)
 from inference_exp.models.common.model_packages import get_model_package_contents
 from inference_exp.models.sam2.cache import (
     Sam2ImageEmbeddingsCache,
@@ -13,7 +19,11 @@ from inference_exp.models.sam2.cache import (
     Sam2LowResolutionMasksCache,
     Sam2LowResolutionMasksCacheNullObject,
 )
-from inference_exp.models.sam2.entities import SAM2ImageEmbeddings, SAM2Prediction
+from inference_exp.models.sam2.entities import (
+    SAM2ImageEmbeddings,
+    SAM2MaskCacheEntry,
+    SAM2Prediction,
+)
 from inference_exp.utils.file_system import read_json
 from sam2.build_sam import build_sam2
 from sam2.modeling.sam2_base import SAM2Base
@@ -290,8 +300,8 @@ class SAM2Torch:
         return_logits: bool = False,
         input_color_format: Optional[ColorFormat] = None,
         mask_threshold: Optional[float] = None,
-        enforce_mask_input: bool = False,
-        use_mask_input_cache: bool = True,
+        load_from_mask_input_cache: bool = True,
+        save_to_mask_input_cache: bool = True,
         use_embeddings_cache: bool = True,
         **kwargs,
     ) -> List[SAM2Prediction]:
@@ -317,27 +327,6 @@ class SAM2Torch:
         point_coordinates = maybe_wrap_in_list(value=point_coordinates)
         point_labels = maybe_wrap_in_list(value=point_labels)
         boxes = maybe_wrap_in_list(value=boxes)
-        mask_input = maybe_wrap_in_list(value=mask_input)
-        # masks_from_the_cache = [
-        #     (
-        #         self._sam_low_resolution_masks_cache.retrieve_mask(key=image_hash)
-        #         if use_mask_input_cache
-        #         else None
-        #     )
-        #     for image_hash in image_hashes
-        # ]
-        # if enforce_mask_input and mask_input is None:
-        #     if not all(e is not None for e in masks_from_the_cache):
-        #         raise ModelInputError(
-        #             message="Attempted to use SAM model segment_images(...) method enforcing the presence of "
-        #             "low-resolution mask input and not providing the mask explicitly (causing fallback to "
-        #             "SAM cache lookup which  failed for at least one image) - this problem may be temporary, "
-        #             "but may also be a result of bug or invalid integration. If you run inference locally, "
-        #             "verify your integration making sure that the model interface is used correctly. Running "
-        #             "on Roboflow platform - contact us to get help.",
-        #             help_url="https://todo",
-        #         )
-        #     mask_input = [mask.to(self._device) for mask in masks_from_the_cache]
         point_coordinates, point_labels, boxes, mask_input = equalize_batch_size(
             embeddings_batch_size=len(embeddings),
             point_coordinates=point_coordinates,
@@ -372,6 +361,24 @@ class SAM2Torch:
             boxes=boxes,
             mask_input=mask_input,
         ):
+            serialized_prompt, prompt_hash = None, None
+            if save_to_mask_input_cache or load_from_mask_input_cache:
+                serialized_prompt = serialize_prompt(
+                    point_coordinates=image_point_coordinates,
+                    point_labels=image_point_labels,
+                    boxes=image_boxes,
+                )
+                prompt_hash = hash_serialized_prompt(
+                    serialized_prompt=serialized_prompt
+                )
+            if image_mask_input is None and load_from_mask_input_cache:
+                image_mask_input = attempt_load_image_mask_from_cache(
+                    image_hash=image_hash,
+                    serialized_prompt_hash=prompt_hash,
+                    serialized_prompt=serialized_prompt,
+                    sam2_low_resolution_masks_cache=self._sam2_low_resolution_masks_cache,
+                    device=self._device,
+                )
             prediction = predict_for_single_image(
                 model=self._model,
                 transform=self._transform,
@@ -385,11 +392,17 @@ class SAM2Torch:
                 return_logits=return_logits,
                 mask_threshold=mask_threshold,
             )
-            # if use_mask_input_cache and len(prediction[0].shape) == 3:
-            #     max_score_id = torch.argmax(prediction[1]).item()
-            #     self._sam_low_resolution_masks_cache.save_mask(
-            #         key=image_hash, mask=prediction[2][max_score_id].unsqueeze(dim=0)
-            #     )
+            if save_to_mask_input_cache and len(prediction[0].shape) == 3:
+                max_score_id = torch.argmax(prediction[1]).item()
+                mask = SAM2MaskCacheEntry(
+                    prompt_hash=prompt_hash,
+                    serialized_prompt=serialized_prompt,
+                    mask=prediction[2][max_score_id].unsqueeze(dim=0),
+                )
+                self._sam2_low_resolution_masks_cache.save_mask(
+                    key=image_hash,
+                    mask=mask,
+                )
             parsed_prediction = SAM2Prediction(
                 masks=prediction[0],
                 scores=prediction[1],
@@ -743,29 +756,128 @@ def serialize_prompt(
     if len(sizes) != 1:
         raise AssumptionError(
             message="In SAM2 implementation, after pre-processing, all prompt elements must have the same "
-                    "leading dimension. This assumption just got violated. This is most likely a bug. "
-                    "You can help us sorting out this problem by submitting an issue: "
-                    "https://github.com/roboflow/inference/issues",
-            help_url="https://todo"
+            "leading dimension. This assumption just got violated. This is most likely a bug. "
+            "You can help us sorting out this problem by submitting an issue: "
+            "https://github.com/roboflow/inference/issues",
+            help_url="https://todo",
         )
     broadcast_size = sizes.pop()
-    point_coordinates_list = point_coordinates.tolist() if point_coordinates is not None else [None] * broadcast_size
-    point_labels_list = point_labels.tolist() if point_labels is not None else [None] * broadcast_size
+    point_coordinates_list = (
+        point_coordinates.tolist()
+        if point_coordinates is not None
+        else [None] * broadcast_size
+    )
+    point_labels_list = (
+        point_labels.tolist() if point_labels is not None else [None] * broadcast_size
+    )
     boxes_list = boxes.tolist() if boxes is not None else [None] * broadcast_size
     results = []
-    for points, labels, box in zip(point_coordinates_list, point_labels_list, boxes_list):
+    for points, labels, box in zip(
+        point_coordinates_list, point_labels_list, boxes_list
+    ):
         points_serialized = []
         for point, label in zip(points, labels):
-            points_serialized.append({
-                "x": point[0].item(),
-                "y": point[1].item(),
-                "positive": label.item(),
-            })
-        x_min, y_min, x_max, y_max = box.reshape(-1).tolist()
-        results.append({
-            "points": points_serialized,
-            "box": {"x_min": x_min, "y_min": y_min, "x_max": x_max, "y_max": y_max}
-        })
+            points_serialized.append(
+                {
+                    "x": point[0].item(),
+                    "y": point[1].item(),
+                    "positive": label.item(),
+                }
+            )
+        results.append({"points": points_serialized, "box": box.reshape(-1).tolist()})
     return results
 
 
+def hash_serialized_prompt(serialized_prompt: List[dict]) -> str:
+    serialized = json.dumps(serialized_prompt, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha1(serialized.encode("utf-8")).hexdigest()
+
+
+def attempt_load_image_mask_from_cache(
+    image_hash: str,
+    serialized_prompt_hash: str,
+    serialized_prompt: List[dict],
+    sam2_low_resolution_masks_cache: Sam2LowResolutionMasksCache,
+    device: torch.device,
+) -> Optional[torch.Tensor]:
+    all_masks_for_image = sam2_low_resolution_masks_cache.retrieve_all_masks_for_image(
+        key=image_hash
+    )
+    if not all_masks_for_image:
+        return None
+    if len(serialized_prompt) == 0:
+        return None
+    return find_prior_prompt_in_cache(
+        serialized_prompt_hash=serialized_prompt_hash,
+        serialized_prompt=serialized_prompt,
+        matching_cache_entries=all_masks_for_image,
+        device=device,
+    )
+
+
+def find_prior_prompt_in_cache(
+    serialized_prompt_hash: str,
+    serialized_prompt: List[dict],
+    matching_cache_entries: List[SAM2MaskCacheEntry],
+    device: torch.device,
+) -> Optional[torch.Tensor]:
+    maxed_size = 0
+    best_match: Optional[torch.Tensor] = None
+    desired_size = len(serialized_prompt) - 1
+    for cache_entry in matching_cache_entries[::-1]:
+        is_viable = is_prompt_strict_subset(
+            assumed_sub_set_prompt=(
+                cache_entry.prompt_hash,
+                cache_entry.serialized_prompt,
+            ),
+            assumed_super_set_prompt=(serialized_prompt_hash, serialized_prompt),
+        )
+        if not is_viable:
+            continue
+
+        # short circuit search if we find prompt with one less point (most recent possible mask)
+        current_cache_entry_prompt_size = len(cache_entry.serialized_prompt)
+        if current_cache_entry_prompt_size == desired_size:
+            return cache_entry.mask.to(device=device)
+        if current_cache_entry_prompt_size >= maxed_size:
+            maxed_size = current_cache_entry_prompt_size
+            best_match = cache_entry.mask.to(device=device)
+
+    return best_match
+
+
+def is_prompt_strict_subset(
+    assumed_sub_set_prompt: Tuple[str, List[dict]],
+    assumed_super_set_prompt: Tuple[str, List[dict]],
+) -> bool:
+    if assumed_sub_set_prompt[0] == assumed_super_set_prompt[0]:
+        return False
+    super_set_prompt_copy = copy(assumed_super_set_prompt[1])
+    for sub_set_prompt_element in assumed_sub_set_prompt[1]:
+        found_match = False
+        for super_set_prompt_element in super_set_prompt_copy:
+            boxes_matching = (
+                sub_set_prompt_element["box"] == super_set_prompt_element["box"]
+            )
+            if not boxes_matching:
+                continue
+            sub_set_prompt_element_points = {
+                get_hashable_point(point=point)
+                for point in sub_set_prompt_element["points"]
+            }
+            super_set_prompt_element_points = {
+                get_hashable_point(point=point)
+                for point in super_set_prompt_element["points"]
+            }
+            if sub_set_prompt_element_points <= super_set_prompt_element_points:
+                super_set_prompt_copy.remove(super_set_prompt_element)
+                found_match = True
+                break
+        if not found_match:
+            return False
+    # every prompt in subset has a matching super prompt
+    return True
+
+
+def get_hashable_point(point: dict) -> str:
+    return json.dumps(point, sort_keys=True, separators=(",", ":"))
