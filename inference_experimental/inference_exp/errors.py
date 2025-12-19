@@ -29,6 +29,10 @@ class ModelRuntimeError(BaseInferenceError):
     pass
 
 
+class ModelInputError(BaseInferenceError):
+    pass
+
+
 class RetryError(BaseInferenceError):
     pass
 
@@ -118,6 +122,10 @@ class MissingDependencyError(BaseInferenceError):
 
 
 class InvalidParameterError(BaseInferenceError):
+    pass
+
+
+class DependencyModelParametersValidationError(ModelLoadingError):
     pass
 
 

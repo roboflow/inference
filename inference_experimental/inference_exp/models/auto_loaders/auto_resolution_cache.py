@@ -9,10 +9,14 @@ from inference_exp.configuration import (
     INFERENCE_HOME,
 )
 from inference_exp.logger import LOGGER, verbose_info
-from inference_exp.models.auto_loaders.entities import ModelArchitecture, TaskType
-from inference_exp.utils.file_system import dump_json, read_json, remove_file_if_exists
-from inference_exp.weights_providers.entities import BackendType
-from pydantic import BaseModel
+from inference_exp.models.auto_loaders.entities import (
+    BackendType,
+    ModelArchitecture,
+    TaskType,
+)
+from inference_exp.utils.file_system import dump_json, read_json
+from inference_exp.weights_providers.entities import ModelDependency
+from pydantic import BaseModel, Field
 
 
 class AutoResolutionCacheEntry(BaseModel):
@@ -22,6 +26,7 @@ class AutoResolutionCacheEntry(BaseModel):
     model_architecture: Optional[ModelArchitecture]
     task_type: TaskType
     backend_type: Optional[BackendType]
+    model_dependencies: Optional[List[ModelDependency]] = Field(default=None)
     created_at: datetime
 
 

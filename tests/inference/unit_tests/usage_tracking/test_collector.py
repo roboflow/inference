@@ -22,7 +22,7 @@ def test_create_empty_usage_dict(usage_collector_with_mocked_threads):
     )
 
     # when
-    fake_api_key_hash = sha256_hash("fake_api_key")
+    fake_api_key_hash = sha256_hash("fake_api_key", length=-1)
     usage_default_dict[fake_api_key_hash]["category:fake_id"]
 
     # then

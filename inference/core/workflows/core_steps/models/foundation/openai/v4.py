@@ -37,6 +37,11 @@ from inference.core.workflows.prototypes.block import (
 
 OPENAI_MODELS = [
     {
+        "id": "gpt-5.2",
+        "name": "GPT-5.2",
+        "reasoning_effort_values": ["none", "low", "medium", "high", "xhigh"],
+    },
+    {
         "id": "gpt-5.1",
         "name": "GPT-5.1",
         "reasoning_effort_values": ["none", "low", "medium", "high"],
@@ -247,13 +252,13 @@ class BlockManifest(WorkflowBlockManifest):
     reasoning_effort: Optional[
         Union[
             Selector(kind=[STRING_KIND]),
-            Literal["none", "minimal", "low", "medium", "high"],
+            Literal["none", "minimal", "low", "medium", "high", "xhigh"],
         ]
     ] = Field(
         default=None,
-        description="Control the effort on reasoning. "
-        "Reducing reasoning effort can result in faster responses and fewer tokens used. "
-        "GPT-5.1 defaults to 'none' (no reasoning) and supports 'none', 'low', 'medium', 'high'. "
+        description="Controls reasoning. Reducing can result in faster responses and fewer tokens. "
+        "GPT-5.1 and higher models default to 'none' (no reasoning) and support 'none', 'low', 'medium', 'high'. "
+        "GPT-5.2 also supports 'xhigh'. "
         "GPT-5 models default to 'medium' and support 'minimal', 'low', 'medium', 'high'.",
         json_schema_extra={
             "relevant_for": {
