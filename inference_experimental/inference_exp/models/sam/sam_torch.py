@@ -203,6 +203,7 @@ class SAMTorch:
                         model_input_images.append(input_image)
                     else:
                         original_image_sizes.append(tuple(image.shape[1:3]))
+                        image = image.to(self._device)
                         if input_color_format == "bgr":
                             image = image[::-1, :, :].contiguous()
                         input_image = self._transform.apply_image_torch(
