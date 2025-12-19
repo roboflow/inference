@@ -1,7 +1,5 @@
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import List, Optional, Union
 
-import torch
-from inference_exp.configuration import DEFAULT_DEVICE
 from inference_exp.errors import ModelPipelineInitializationError
 from inference_exp.logger import verbose_info
 from inference_exp.model_pipelines.auto_loaders.pipelines_registry import (
@@ -9,37 +7,16 @@ from inference_exp.model_pipelines.auto_loaders.pipelines_registry import (
     get_default_pipeline_parameters,
     resolve_pipeline_class,
 )
+from inference_exp.models.auto_loaders.access_manager import ModelAccessManager
 from inference_exp.models.auto_loaders.auto_resolution_cache import AutoResolutionCache
-from inference_exp.models.auto_loaders.core import AnyModel, AutoModel
-from inference_exp.models.auto_loaders.storage_manager import ModelStorageManager
-from inference_exp.weights_providers.entities import BackendType, Quantization
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from inference_exp.models.auto_loaders.core import AutoModel
+from inference_exp.models.auto_loaders.dependency_models import (
+    DependencyModelParameters,
+    prepare_dependency_model_parameters,
+)
+from inference_exp.models.auto_loaders.entities import AnyModel
 from rich.console import Console
 from rich.tree import Tree
-
-
-class PipelineModelParameters(BaseModel):
-    model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
-
-    model_id_or_path: str
-    model_package_id: Optional[str] = Field(default=None)
-    backend: Optional[Union[str, BackendType, List[Union[str, BackendType]]]] = Field(
-        default=None
-    )
-    batch_size: Optional[Union[int, Tuple[int, int]]] = Field(default=None)
-    quantization: Optional[Union[str, Quantization, List[Union[str, Quantization]]]] = (
-        Field(default=None)
-    )
-    onnx_execution_providers: Optional[List[Union[str, tuple]]] = Field(default=None)
-    device: torch.device = Field(default=DEFAULT_DEVICE)
-    default_onnx_trt_options: bool = Field(default=True)
-    nms_fusion_preferences: Optional[Union[bool, dict]] = Field(default=None)
-    model_type: Optional[str] = Field(default=None)
-    task_type: Optional[str] = Field(default=None)
-
-    @property
-    def kwargs(self) -> Dict[str, Any]:
-        return self.model_extra or {}
 
 
 class AutoModelPipeline:
@@ -57,7 +34,7 @@ class AutoModelPipeline:
         cls,
         pipline_id: str,
         models_parameters: Optional[
-            List[Optional[Union[str, dict, PipelineModelParameters]]]
+            List[Optional[Union[str, dict, DependencyModelParameters]]]
         ] = None,
         weights_provider: str = "roboflow",
         api_key: Optional[str] = None,
@@ -72,7 +49,7 @@ class AutoModelPipeline:
         use_auto_resolution_cache: bool = True,
         auto_resolution_cache: Optional[AutoResolutionCache] = None,
         allow_direct_local_storage_loading: bool = True,
-        model_storage_manager: Optional[ModelStorageManager] = None,
+        model_access_manager: Optional[ModelAccessManager] = None,
         **kwargs,
     ) -> AnyModel:
         pipeline_class = resolve_pipeline_class(pipline_id=pipline_id)
@@ -101,7 +78,7 @@ class AutoModelPipeline:
                 )
             else:
                 parameters_to_be_used = model_parameters
-            resolved_model_parameters = prepare_model_parameters(
+            resolved_model_parameters = prepare_dependency_model_parameters(
                 model_parameters=parameters_to_be_used
             )
             verbose_info(
@@ -130,7 +107,7 @@ class AutoModelPipeline:
                 use_auto_resolution_cache=use_auto_resolution_cache,
                 auto_resolution_cache=auto_resolution_cache,
                 allow_direct_local_storage_loading=allow_direct_local_storage_loading,
-                model_storage_manager=model_storage_manager,
+                model_access_manager=model_access_manager,
                 nms_fusion_preferences=resolved_model_parameters.nms_fusion_preferences,
                 model_type=resolved_model_parameters.model_type,
                 task_type=resolved_model_parameters.task_type,
@@ -138,22 +115,3 @@ class AutoModelPipeline:
             )
             models.append(model)
         return pipeline_class.with_models(models, **kwargs)
-
-
-def prepare_model_parameters(
-    model_parameters: Union[str, dict, PipelineModelParameters]
-) -> PipelineModelParameters:
-    if isinstance(model_parameters, dict):
-        try:
-            return PipelineModelParameters.model_validate(model_parameters)
-        except ValidationError as error:
-            raise ModelPipelineInitializationError(
-                message="Could not validate parameters to initialise model pipeline - if you run locally, make sure "
-                f"that you initialise model properly, as at least one parameter parameter specified in "
-                f"dictionary with model options is invalid. If you use Roboflow hosted offering, contact us to "
-                f"get help.",
-                help_url="https://todo",
-            ) from error
-    if isinstance(model_parameters, str):
-        model_parameters = PipelineModelParameters(model_id_or_path=model_parameters)
-    return model_parameters

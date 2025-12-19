@@ -7,7 +7,7 @@ import pytest
 import torch
 from filelock import FileLock
 from inference_exp import AutoModel
-from inference_exp.weights_providers.entities import BackendType
+from inference_exp.models.auto_loaders.entities import BackendType
 from PIL import Image
 
 ASSETS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "assets"))

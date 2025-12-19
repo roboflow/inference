@@ -36,6 +36,9 @@ from inference.core.workflows.core_steps.analytics.time_in_zone.v3 import (
 from inference.core.workflows.core_steps.analytics.velocity.v1 import VelocityBlockV1
 from inference.core.workflows.core_steps.cache.cache_get.v1 import CacheGetBlockV1
 from inference.core.workflows.core_steps.cache.cache_set.v1 import CacheSetBlockV1
+from inference.core.workflows.core_steps.classical_cv.background_subtraction.v1 import (
+    BackgroundSubtractionBlockV1,
+)
 from inference.core.workflows.core_steps.classical_cv.camera_focus.v1 import (
     CameraFocusBlockV1,
 )
@@ -62,6 +65,9 @@ from inference.core.workflows.core_steps.classical_cv.image_preprocessing.v1 imp
 )
 from inference.core.workflows.core_steps.classical_cv.morphological_transformation.v1 import (
     MorphologicalTransformationBlockV1,
+)
+from inference.core.workflows.core_steps.classical_cv.motion_detection.v1 import (
+    MotionDetectionBlockV1,
 )
 from inference.core.workflows.core_steps.classical_cv.pixel_color_count.v1 import (
     PixelationCountBlockV1,
@@ -641,6 +647,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ImagePreprocessingBlockV1,
         ImageSlicerBlockV1,
         ImageThresholdBlockV1,
+        MotionDetectionBlockV1,
+        BackgroundSubtractionBlockV1,
         JSONParserBlockV1,
         LMMBlockV1,
         LMMForClassificationBlockV1,
