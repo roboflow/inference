@@ -1,11 +1,11 @@
 import hashlib
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, Generator, List, Optional, Tuple, TypeVar, Union
 
 import numpy as np
 import torch
 from inference_exp import ColorFormat
 from inference_exp.configuration import DEFAULT_DEVICE
-from inference_exp.errors import CorruptedModelPackageError
+from inference_exp.errors import CorruptedModelPackageError, ModelInputError
 from inference_exp.models.common.model_packages import get_model_package_contents
 from inference_exp.models.sam2.cache import (
     Sam2ImageEmbeddingsCache,
@@ -13,11 +13,14 @@ from inference_exp.models.sam2.cache import (
     Sam2LowResolutionMasksCache,
     Sam2LowResolutionMasksCacheNullObject,
 )
-from inference_exp.models.sam2.entities import SAM2ImageEmbeddings
+from inference_exp.models.sam2.entities import SAM2ImageEmbeddings, SAM2Prediction
 from inference_exp.utils.file_system import read_json
 from sam2.build_sam import build_sam2
 from sam2.modeling.sam2_base import SAM2Base
 from sam2.utils.transforms import SAM2Transforms
+
+ArrayOrTensor = Union[np.ndarray, torch.Tensor]
+T = TypeVar("T")
 
 MAX_SAM2_BATCH_SIZE = 8
 
@@ -271,6 +274,130 @@ class SAM2Torch:
                 )
         return result_embeddings
 
+    def segment_images(
+        self,
+        images: Optional[
+            Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]]
+        ] = None,
+        embeddings: Optional[
+            Union[List[SAM2ImageEmbeddings], SAM2ImageEmbeddings]
+        ] = None,
+        point_coordinates: Optional[Union[List[ArrayOrTensor], ArrayOrTensor]] = None,
+        point_labels: Optional[Union[List[ArrayOrTensor], ArrayOrTensor]] = None,
+        boxes: Optional[Union[List[ArrayOrTensor], ArrayOrTensor]] = None,
+        mask_input: Optional[Union[List[ArrayOrTensor], ArrayOrTensor]] = None,
+        multi_mask_output: bool = True,
+        return_logits: bool = False,
+        input_color_format: Optional[ColorFormat] = None,
+        mask_threshold: Optional[float] = None,
+        enforce_mask_input: bool = False,
+        use_mask_input_cache: bool = True,
+        use_embeddings_cache: bool = True,
+        **kwargs,
+    ) -> List[SAM2Prediction]:
+        if images is None and embeddings is None:
+            raise ModelInputError(
+                message="Attempted to use SAM model segment_images(...) method not providing valid input - "
+                "neither `images` nor `embeddings` parameter is given. If you run inference locally, "
+                "verify your integration making sure that the model interface is used correctly. Running "
+                "on Roboflow platform - contact us to get help.",
+                help_url="https://todo",
+            )
+        if images is not None:
+            embeddings = self.embed_images(
+                images=images,
+                input_color_format=input_color_format,
+                use_embeddings_cache=use_embeddings_cache,
+                **kwargs,
+            )
+        else:
+            embeddings = maybe_wrap_in_list(value=embeddings)
+        image_hashes = [e.image_hash for e in embeddings]
+        original_image_sizes = [e.image_size_hw for e in embeddings]
+        point_coordinates = maybe_wrap_in_list(value=point_coordinates)
+        point_labels = maybe_wrap_in_list(value=point_labels)
+        boxes = maybe_wrap_in_list(value=boxes)
+        mask_input = maybe_wrap_in_list(value=mask_input)
+        # masks_from_the_cache = [
+        #     (
+        #         self._sam_low_resolution_masks_cache.retrieve_mask(key=image_hash)
+        #         if use_mask_input_cache
+        #         else None
+        #     )
+        #     for image_hash in image_hashes
+        # ]
+        # if enforce_mask_input and mask_input is None:
+        #     if not all(e is not None for e in masks_from_the_cache):
+        #         raise ModelInputError(
+        #             message="Attempted to use SAM model segment_images(...) method enforcing the presence of "
+        #             "low-resolution mask input and not providing the mask explicitly (causing fallback to "
+        #             "SAM cache lookup which  failed for at least one image) - this problem may be temporary, "
+        #             "but may also be a result of bug or invalid integration. If you run inference locally, "
+        #             "verify your integration making sure that the model interface is used correctly. Running "
+        #             "on Roboflow platform - contact us to get help.",
+        #             help_url="https://todo",
+        #         )
+        #     mask_input = [mask.to(self._device) for mask in masks_from_the_cache]
+        point_coordinates, point_labels, boxes, mask_input = equalize_batch_size(
+            embeddings_batch_size=len(embeddings),
+            point_coordinates=point_coordinates,
+            point_labels=point_labels,
+            boxes=boxes,
+            mask_input=mask_input,
+        )
+        point_coordinates, point_labels, boxes, mask_input = pre_process_prompts(
+            point_coordinates=point_coordinates,
+            point_labels=point_labels,
+            boxes=boxes,
+            mask_input=mask_input,
+            device=self._device,
+            transform=self._transform,
+            original_image_sizes=original_image_sizes,
+        )
+        predictions = []
+        for (
+            image_embedding,
+            image_hash,
+            image_size,
+            image_point_coordinates,
+            image_point_labels,
+            image_boxes,
+            image_mask_input,
+        ) in generate_model_inputs(
+            embeddings=embeddings,
+            image_hashes=image_hashes,
+            original_image_sizes=original_image_sizes,
+            point_coordinates=point_coordinates,
+            point_labels=point_labels,
+            boxes=boxes,
+            mask_input=mask_input,
+        ):
+            prediction = predict_for_single_image(
+                model=self._model,
+                transform=self._transform,
+                embeddings=image_embedding,
+                original_image_size=image_size,
+                point_coordinates=image_point_coordinates,
+                point_labels=image_point_labels,
+                boxes=image_boxes,
+                mask_input=image_mask_input,
+                multi_mask_output=multi_mask_output,
+                return_logits=return_logits,
+                mask_threshold=mask_threshold,
+            )
+            # if use_mask_input_cache and len(prediction[0].shape) == 3:
+            #     max_score_id = torch.argmax(prediction[1]).item()
+            #     self._sam_low_resolution_masks_cache.save_mask(
+            #         key=image_hash, mask=prediction[2][max_score_id].unsqueeze(dim=0)
+            #     )
+            parsed_prediction = SAM2Prediction(
+                masks=prediction[0],
+                scores=prediction[1],
+                logits=prediction[2],
+            )
+            predictions.append(parsed_prediction)
+        return predictions
+
 
 def decode_sam_version(config_path: str) -> str:
     config = read_json(path=config_path)
@@ -288,3 +415,321 @@ def compute_image_hash(image: Union[torch.Tensor, np.ndarray]) -> str:
 
 def hash_function(value: Union[str, bytes]) -> str:
     return hashlib.sha1(value).hexdigest()
+
+
+def maybe_wrap_in_list(value: Optional[Union[T, List[T]]]) -> Optional[List[T]]:
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return value
+    return [value]
+
+
+def equalize_batch_size(
+    embeddings_batch_size: int,
+    point_coordinates: Optional[List[ArrayOrTensor]],
+    point_labels: Optional[List[ArrayOrTensor]],
+    boxes: Optional[List[ArrayOrTensor]],
+    mask_input: Optional[List[ArrayOrTensor]],
+) -> Tuple[
+    Optional[List[ArrayOrTensor]],
+    Optional[List[ArrayOrTensor]],
+    Optional[List[ArrayOrTensor]],
+    Optional[List[ArrayOrTensor]],
+]:
+    if (
+        point_coordinates is not None
+        and len(point_coordinates) != embeddings_batch_size
+    ):
+        if len(point_coordinates) != 1:
+            raise ModelInputError(
+                message="When using SAM model, parameter `point_coordinates` was provided with invalid "
+                f"value indicating different input batch size ({len(point_coordinates)}) than provided "
+                f"images / embeddings ({embeddings_batch_size}). If you run inference locally, verify your "
+                "integration making sure that the model interface is used correctly. "
+                "Running on Roboflow platform - contact us to get help.",
+                help_url="https://todo",
+            )
+        point_coordinates = point_coordinates * embeddings_batch_size
+    if point_labels is not None and len(point_labels) != embeddings_batch_size:
+        if len(point_labels) != 1:
+            raise ModelInputError(
+                message="When using SAM model, parameter `point_labels` was provided with invalid "
+                f"value indicating different input batch size ({len(point_labels)}) than provided "
+                f"images / embeddings ({embeddings_batch_size}). If you run inference locally, verify your "
+                "integration making sure that the model interface is used correctly. "
+                "Running on Roboflow platform - contact us to get help.",
+                help_url="https://todo",
+            )
+        point_labels = point_labels * embeddings_batch_size
+    if boxes is not None and len(boxes) != embeddings_batch_size:
+        if len(boxes) != 1:
+            raise ModelInputError(
+                message="When using SAM model, parameter `boxes` was provided with invalid "
+                f"value indicating different input batch size ({len(boxes)}) than provided "
+                f"images / embeddings ({embeddings_batch_size}). If you run inference locally, verify your "
+                "integration making sure that the model interface is used correctly. "
+                "Running on Roboflow platform - contact us to get help.",
+                help_url="https://todo",
+            )
+        boxes = boxes * embeddings_batch_size
+    if mask_input is not None and len(mask_input) != embeddings_batch_size:
+        if len(mask_input) != 1:
+            raise ModelInputError(
+                message="When using SAM model, parameter `mask_input` was provided with invalid "
+                f"value indicating different input batch size ({len(mask_input)}) than provided "
+                f"images / embeddings ({embeddings_batch_size}). If you run inference locally, verify your "
+                "integration making sure that the model interface is used correctly. "
+                "Running on Roboflow platform - contact us to get help.",
+                help_url="https://todo",
+            )
+        mask_input = mask_input * embeddings_batch_size
+    prompts_first_dimension_characteristics = set()
+    if point_coordinates is not None:
+        point_coordinates_characteristic = "-".join(
+            [str(p.shape[0]) for p in point_coordinates]
+        )
+        prompts_first_dimension_characteristics.add(point_coordinates_characteristic)
+    if point_labels is not None:
+        point_labels_characteristic = "-".join([str(l.shape[0]) for l in point_labels])
+        prompts_first_dimension_characteristics.add(point_labels_characteristic)
+    if boxes is not None:
+        boxes_characteristic = "-".join(
+            [str(b.shape[0]) if len(b.shape) > 1 else "1" for b in boxes]
+        )
+        prompts_first_dimension_characteristics.add(boxes_characteristic)
+    if len(prompts_first_dimension_characteristics) > 1:
+        raise ModelInputError(
+            message="When using SAM model, in scenario when combination of `point_coordinates` and `point_labels` and "
+            "`boxes` provided, the model expect identical number of elements for each prompt component. "
+            "If you run inference locally, verify your integration making sure that the model interface is "
+            "used correctly. Running on Roboflow platform - contact us to get help.",
+            help_url="https://todo",
+        )
+    if mask_input is not None and any(
+        len(i.shape) != 3 or i.shape[0] != 1 for i in mask_input
+    ):
+        raise ModelInputError(
+            message="When using SAM model with `mask_input`, each mask must be 3D tensor of shape (1, H, W). "
+            "If you run inference locally, verify your integration making sure that the model interface is "
+            "used correctly. Running on Roboflow platform - contact us to get help.",
+            help_url="https://todo",
+        )
+    if boxes is not None:
+        batched_boxes_provided = False
+        for box in boxes:
+            if len(box.shape) > 1 and box.shape[0] > 1:
+                batched_boxes_provided = True
+        if batched_boxes_provided and any(
+            e is not None for e in [point_coordinates, point_labels, mask_input]
+        ):
+            raise ModelInputError(
+                message="When using SAM, providing batched boxes (multiple RoIs for single image) makes it impossible "
+                "to use other components of the prompt - like `point_coordinates`, `point_labels` "
+                "or `mask_input` - and such situation was detected. "
+                "If you run inference locally, verify your integration making sure that the model interface is "
+                "used correctly. Running on Roboflow platform - contact us to get help.",
+                help_url="https://todo",
+            )
+    return point_coordinates, point_labels, boxes, mask_input
+
+
+def generate_model_inputs(
+    embeddings: List[SAM2ImageEmbeddings],
+    image_hashes: List[str],
+    original_image_sizes: List[Tuple[int, int]],
+    point_coordinates: Optional[List[torch.Tensor]],
+    point_labels: Optional[List[torch.Tensor]],
+    boxes: Optional[List[torch.Tensor]],
+    mask_input: Optional[List[torch.Tensor]],
+) -> Generator[
+    Tuple[
+        SAM2ImageEmbeddings,
+        str,
+        Tuple[int, int],
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+    ],
+    None,
+    None,
+]:
+    if point_coordinates is None:
+        point_coordinates = [None] * len(embeddings)
+    if point_labels is None:
+        point_labels = [None] * len(embeddings)
+    if boxes is None:
+        boxes = [None] * len(embeddings)
+    if mask_input is None:
+        mask_input = [None] * len(embeddings)
+    for embedding, hash_value, image_size, coords, labels, box, mask in zip(
+        embeddings,
+        image_hashes,
+        original_image_sizes,
+        point_coordinates,
+        point_labels,
+        boxes,
+        mask_input,
+    ):
+        yield embedding, hash_value, image_size, coords, labels, box, mask
+
+
+def pre_process_prompts(
+    point_coordinates: Optional[List[ArrayOrTensor]],
+    point_labels: Optional[List[ArrayOrTensor]],
+    boxes: Optional[List[ArrayOrTensor]],
+    mask_input: Optional[List[ArrayOrTensor]],
+    device: torch.device,
+    transform: SAM2Transforms,
+    original_image_sizes: List[Tuple[int, int]],
+    normalize_coordinates: bool = True,
+) -> Tuple[
+    Optional[List[torch.Tensor]],
+    Optional[List[torch.Tensor]],
+    Optional[List[torch.Tensor]],
+    Optional[List[torch.Tensor]],
+]:
+    (
+        processed_point_coordinates,
+        processed_point_labels,
+        processed_boxes,
+        processed_mask_input,
+    ) = (None, None, None, None)
+    if point_labels is not None and point_coordinates is None:
+        raise ModelInputError(
+            message="When using SAM2 model, provided `point_coordinates` without `point_labels` which makes "
+            "invalid input. If you run inference locally, verify your integration making sure that the "
+            "model interface is used correctly. Running on Roboflow platform - contact us to get help.",
+            help_url="https://todo",
+        )
+    if point_coordinates is not None:
+        if point_labels is None:
+            raise ModelInputError(
+                message="When using SAM2 model, provided `point_coordinates` without `point_labels` which makes "
+                "invalid input. If you run inference locally, verify your integration making sure that the "
+                "model interface is used correctly. Running on Roboflow platform - contact us to get help.",
+                help_url="https://todo",
+            )
+        processed_point_coordinates = []
+        processed_point_labels = []
+        for single_label, single_point_coordinates, image_size in zip(
+            point_labels, point_coordinates, original_image_sizes
+        ):
+            if isinstance(single_point_coordinates, torch.Tensor):
+                single_point_coordinates = single_point_coordinates.to(
+                    dtype=torch.float, device=device
+                )
+            else:
+                single_point_coordinates = torch.as_tensor(
+                    single_point_coordinates, dtype=torch.float, device=device
+                )
+            single_point_coordinates = transform.transform_coords(
+                single_point_coordinates,
+                normalize=normalize_coordinates,
+                orig_hw=image_size,
+            )
+            dimension_to_unsqueeze = len(single_point_coordinates.shape) == 2
+            if dimension_to_unsqueeze:
+                single_point_coordinates = single_point_coordinates[None, ...]
+            processed_point_coordinates.append(single_point_coordinates)
+            if isinstance(single_label, torch.Tensor):
+                single_label = single_label.to(dtype=torch.int, device=device)
+            else:
+                single_label = torch.as_tensor(
+                    single_label, dtype=torch.int, device=device
+                )
+            if dimension_to_unsqueeze:
+                single_label = single_label[None, ...]
+            processed_point_labels.append(single_label)
+    if boxes is not None:
+        processed_boxes = []
+        for box, image_size in zip(boxes, original_image_sizes):
+            if isinstance(box, torch.Tensor):
+                box = box.to(dtype=torch.float, device=device)
+            else:
+                box = torch.as_tensor(box, dtype=torch.float, device=device)
+            box = transform.transform_boxes(
+                box,
+                normalize=normalize_coordinates,
+                orig_hw=image_size,
+            )  # Bx2x2
+            processed_boxes.append(box)
+    if mask_input is not None:
+        processed_mask_input = []
+        for single_mask in mask_input:
+            if isinstance(single_mask, torch.Tensor):
+                single_mask = single_mask.to(dtype=torch.float, device=device)
+            else:
+                single_mask = torch.as_tensor(
+                    single_mask, dtype=torch.float, device=device
+                )
+            if len(single_mask.shape) == 3:
+                single_mask = single_mask[None, :, :, :]
+            processed_mask_input.append(single_mask)
+    return (
+        processed_point_coordinates,
+        processed_point_labels,
+        processed_boxes,
+        processed_mask_input,
+    )
+
+
+@torch.inference_mode()
+def predict_for_single_image(
+    model: SAM2Base,
+    transform: SAM2Transforms,
+    embeddings: SAM2ImageEmbeddings,
+    original_image_size: Tuple[int, int],
+    point_coordinates: Optional[torch.Tensor],
+    point_labels: Optional[torch.Tensor],
+    boxes: Optional[torch.Tensor] = None,
+    mask_input: Optional[torch.Tensor] = None,
+    multi_mask_output: bool = True,
+    return_logits: bool = False,
+    mask_threshold: Optional[float] = None,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    if point_coordinates is not None:
+        print("point_coordinates", point_coordinates.shape)
+    if point_labels is not None:
+        print("point_labels", point_labels.shape)
+    if boxes is not None:
+        print("boxes", boxes.shape)
+    if mask_input is not None:
+        print("mask_input", mask_input.shape)
+    if point_coordinates is not None:
+        concat_points = (point_coordinates, point_labels)
+    else:
+        concat_points = None
+    if boxes is not None:
+        box_coords = boxes.reshape(-1, 2, 2)
+        box_labels = torch.tensor([[2, 3]], dtype=torch.int, device=boxes.device)
+        box_labels = box_labels.repeat(boxes.size(0), 1)
+        # we merge "boxes" and "points" into a single "concat_points" input (where
+        # boxes are added at the beginning) to sam_prompt_encoder
+        if concat_points is not None:
+            concat_coords = torch.cat([box_coords, concat_points[0]], dim=1)
+            concat_labels = torch.cat([box_labels, concat_points[1]], dim=1)
+            concat_points = (concat_coords, concat_labels)
+        else:
+            concat_points = (box_coords, box_labels)
+    sparse_embeddings, dense_embeddings = model.sam_prompt_encoder(
+        points=concat_points,
+        boxes=None,
+        masks=mask_input,
+    )
+    batched_mode = concat_points is not None and concat_points[0].shape[0] > 1
+    low_res_masks, iou_predictions, _, _ = model.sam_mask_decoder(
+        image_embeddings=embeddings.embeddings,
+        image_pe=model.sam_prompt_encoder.get_dense_pe(),
+        sparse_prompt_embeddings=sparse_embeddings,
+        dense_prompt_embeddings=dense_embeddings,
+        multimask_output=multi_mask_output,
+        repeat_image=batched_mode,
+        high_res_features=embeddings.high_resolution_features,
+    )
+    masks = transform.postprocess_masks(low_res_masks, original_image_size)
+    low_res_masks = torch.clamp(low_res_masks, -32.0, 32.0)
+    if not return_logits:
+        masks = masks > (mask_threshold or 0.0)
+    return masks, iou_predictions, low_res_masks

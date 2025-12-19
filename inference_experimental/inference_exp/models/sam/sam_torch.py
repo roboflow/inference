@@ -521,6 +521,13 @@ def pre_process_prompts(
     Optional[List[torch.Tensor]],
     Optional[List[torch.Tensor]],
 ]:
+    if point_labels is not None and point_coordinates is None:
+        raise ModelInputError(
+            message="When using SAM model, provided `point_coordinates` without `point_labels` which makes invalid "
+            "input. If you run inference locally, verify your integration making sure that the model "
+            "interface is used correctly. Running on Roboflow platform - contact us to get help.",
+            help_url="https://todo",
+        )
     if point_coordinates is not None:
         if point_labels is None:
             raise ModelInputError(

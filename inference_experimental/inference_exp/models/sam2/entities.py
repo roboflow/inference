@@ -20,3 +20,10 @@ class SAM2ImageEmbeddings:
                 f.to(device=device) for f in self.high_resolution_features
             ],
         )
+
+
+@dataclass(frozen=True)
+class SAM2Prediction:
+    masks: torch.Tensor
+    scores: torch.Tensor
+    logits: torch.Tensor
