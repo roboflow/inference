@@ -1,5 +1,4 @@
 import numpy as np
-
 import supervision as sv
 
 from inference import get_model

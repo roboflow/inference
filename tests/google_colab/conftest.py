@@ -1,9 +1,9 @@
 import os
 
 import cv2
+import gdown
 import numpy as np
 import pytest
-import gdown
 
 if os.getenv("ENFORCE_GPU_EXECUTION"):
     os.environ["ONNXRUNTIME_EXECUTION_PROVIDERS"] = "[CUDAExecutionProvider]"

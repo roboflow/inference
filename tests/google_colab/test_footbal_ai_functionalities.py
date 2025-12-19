@@ -1,10 +1,11 @@
 import numpy as np
 import supervision as sv
+
 from inference import get_model
 from tests.google_colab.conftest import (
-    PLAYER_DETECTION_MODEL_ID,
-    PLAYER_CLASS_ID,
     FOOTBALL_FIELD_DETECTOR_MODEL_ID,
+    PLAYER_CLASS_ID,
+    PLAYER_DETECTION_MODEL_ID,
 )
 
 
