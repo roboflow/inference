@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+
 from inference import get_model
 from inference_cli.lib.benchmark.dataset import load_dataset_images
 
