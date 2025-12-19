@@ -48,6 +48,7 @@ from inference.core.env import (
     WEBRTC_MODAL_USAGE_QUOTA_ENABLED,
     WEBRTC_MODAL_WATCHDOG_TIMEMOUT,
     WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
+    WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT,
 )
 from inference.core.exceptions import (
     RoboflowAPITimeoutError,
@@ -192,6 +193,7 @@ if modal is not None:
                 if WEBRTC_MODAL_MODELS_PRELOAD_API_KEY
                 else ""
             ),
+            "WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT": str(WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT),
             "WEBRTC_MODAL_RTSP_PLACEHOLDER": WEBRTC_MODAL_RTSP_PLACEHOLDER,
             "WEBRTC_MODAL_RTSP_PLACEHOLDER_URL": WEBRTC_MODAL_RTSP_PLACEHOLDER_URL,
             "WEBRTC_MODAL_SHUTDOWN_RESERVE": str(WEBRTC_MODAL_SHUTDOWN_RESERVE),
@@ -631,17 +633,17 @@ if modal is not None:
                 "Spawning webrtc modal function with ram %s",
                 requested_ram_mb,
             )
-            cls_with_options = cls_with_options.with_options(
-                memory=requested_ram_mb,
-            )
+        cls_with_options = cls_with_options.with_options(
+            memory=12000,
+        )
         if requested_cpu_cores is not None:
             logger.info(
                 "Spawning webrtc modal function with cpu cores %s",
                 requested_cpu_cores,
             )
-            cls_with_options = cls_with_options.with_options(
-                cpu=requested_cpu_cores,
-            )
+        cls_with_options = cls_with_options.with_options(
+            cpu=4,
+        )
         rtc_modal_obj: RTCPeerConnectionModal = cls_with_options(
             preload_hf_ids=preload_hf_ids,
             preload_models=preload_models,

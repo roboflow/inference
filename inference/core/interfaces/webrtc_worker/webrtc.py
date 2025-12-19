@@ -3,6 +3,7 @@ import datetime
 import json
 import logging
 import struct
+import traceback
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from aioice import ice
@@ -222,16 +223,21 @@ async def send_chunked_data(
         return
 
     sleep_count = 0
-    while data_channel.bufferedAmount > WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT:
-        sleep_count += 1
-        if sleep_count % 10 == 0:
-            logger.debug(
-                "Waiting for data channel buffer to drain. Data channel buffer size: %s",
-                data_channel.bufferedAmount,
-            )
-        if heartbeat_callback:
-            heartbeat_callback()
-        await asyncio.sleep(WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY)
+
+    async def wait_for_buffer_drain() -> None:
+        nonlocal sleep_count
+        while data_channel.bufferedAmount > WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT:
+            sleep_count += 1
+            if sleep_count % 10 == 0:
+                logger.debug(
+                    "Waiting for data channel buffer to drain. Data channel buffer size: %s",
+                    data_channel.bufferedAmount,
+                )
+            if heartbeat_callback:
+                heartbeat_callback()
+            await asyncio.sleep(WEBRTC_DATA_CHANNEL_BUFFER_DRAINING_DELAY)
+
+    await wait_for_buffer_drain()
 
     total_chunks = (
         len(payload_bytes) + chunk_size - 1
@@ -247,6 +253,7 @@ async def send_chunked_data(
         if data_channel.readyState != "open":
             logger.warning("Channel closed while sending frame %s", frame_id)
             return
+        await wait_for_buffer_drain()
 
         start = chunk_index * chunk_size
         end = min(start + chunk_size, len(payload_bytes))
@@ -256,6 +263,7 @@ async def send_chunked_data(
             frame_id, chunk_index, total_chunks, chunk_data
         )
         data_channel.send(message)
+        await asyncio.sleep(0)
     await asyncio.sleep(0.01)
 
 
@@ -268,6 +276,12 @@ class RTCPeerConnectionWithLoop(RTCPeerConnection):
     ):
         super().__init__(*args, **kwargs)
         self._loop = asyncio_loop
+
+    async def close(self):
+        logger.info(
+            "peer_connection.close() called from:\n%s", "".join(traceback.format_stack())
+        )
+        await super().close()
 
 
 class VideoFrameProcessor:
