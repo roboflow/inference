@@ -1,3 +1,4 @@
+from time import time
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
@@ -120,18 +121,11 @@ class ContinueIfBlockV1(WorkflowBlock):
         evaluation_result = evaluation_function(evaluation_parameters)
 
         if evaluation_result:
-            return FlowControl(mode="select_step", context=next_steps)
-        elif stop_delay > 0:
-            import time
-
-            if self.start_time is None:
+            if self.stop_delay > 0:
                 self.start_time = time.time()
-                return FlowControl(mode="select_step", context=next_steps)
-            else:
-                elapsed_time = time.time() - self.start_time
-                if elapsed_time >= stop_delay:
-                    self.start_time = None
-                    return FlowControl(mode="terminate_branch")
-                else:
-                    return FlowControl(mode="select_step", context=next_steps)
+            return FlowControl(mode="select_step", context=next_steps)
+
+        if self.start_time and time.time() - self.start_time <= stop_delay:
+            return FlowControl(mode="select_step", context=next_steps)
+
         return FlowControl(mode="terminate_branch")
