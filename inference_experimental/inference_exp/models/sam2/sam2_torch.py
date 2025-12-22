@@ -133,14 +133,12 @@ class SAM2Torch:
     def embed_images(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-        input_color_format: Optional[ColorFormat] = None,
         use_embeddings_cache: bool = True,
         **kwargs,
     ) -> List[SAM2ImageEmbeddings]:
         model_input_images, image_hashes, original_image_sizes = (
             self.pre_process_images(
                 images=images,
-                input_color_format=input_color_format,
                 **kwargs,
             )
         )
@@ -196,21 +194,16 @@ class SAM2Torch:
     def pre_process_images(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-        input_color_format: Optional[ColorFormat] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[str], List[Tuple[int, int]]]:
         if isinstance(images, torch.Tensor):
             images = images.to(device=self._device)
             if len(images.shape) == 4:
                 image_hashes = [compute_image_hash(image=image) for image in images]
-                if input_color_format == "bgr":
-                    images = images[:, :-1, :, :].contiguous()
                 original_image_sizes = [tuple(images.shape[2:4])] * images.shape[0]
                 model_input_images = self._transform.transforms(images / 255.0)
             else:
                 image_hashes = [compute_image_hash(image=images)]
-                if input_color_format == "bgr":
-                    images = images[::-1, :, :].contiguous()
                 original_image_sizes = [tuple(images.shape[1:3])]
                 model_input_images = self._transform.transforms(
                     (images / 255).unsqueeze(dim=0)
@@ -223,23 +216,17 @@ class SAM2Torch:
                 for image in images:
                     if isinstance(image, np.ndarray):
                         original_image_sizes.append(image.shape[:2])
-                        if input_color_format in {None, "bgr"}:
-                            image = np.ascontiguousarray(image[:, :, ::-1])
                         input_image = self._transform(image).to(self._device)
                         model_input_images.append(input_image)
                     else:
                         original_image_sizes.append(tuple(image.shape[1:3]))
                         image = image.to(self._device)
-                        if input_color_format == "bgr":
-                            image = image[::-1, :, :].contiguous()
                         input_image = self._transform.transforms(image / 255)
                         model_input_images.append(input_image)
                 model_input_images = torch.stack(model_input_images, dim=0)
             else:
                 image_hashes = [compute_image_hash(image=images)]
                 original_image_sizes = [images.shape[:2]]
-                if input_color_format in {None, "bgr"}:
-                    images = np.ascontiguousarray(images[:, :, ::-1])
                 model_input_images = (
                     self._transform(images).to(self._device).unsqueeze(dim=0)
                 )
@@ -499,27 +486,56 @@ def equalize_batch_size(
             )
         mask_input = mask_input * embeddings_batch_size
     prompts_first_dimension_characteristics = set()
+    at_max_one_box_expected = False
     if point_coordinates is not None:
         point_coordinates_characteristic = "-".join(
             [str(p.shape[0]) for p in point_coordinates]
         )
         prompts_first_dimension_characteristics.add(point_coordinates_characteristic)
+        points_dimensions = set(len(p.shape) for p in point_coordinates)
+        if len(points_dimensions) != 1:
+            raise ModelInputError(
+                message="When using SAM2 model, in scenario when combination of `point_coordinates` provided with "
+                "different shapes for different input images, which makes the input invalid. "
+                "If you run inference locally, verify your integration making sure that the model interface is "
+                "used correctly. Running on Roboflow platform - contact us to get help.",
+                help_url="https://todo",
+            )
+        if points_dimensions.pop() == 2:
+            at_max_one_box_expected = True
     if point_labels is not None:
         point_labels_characteristic = "-".join([str(l.shape[0]) for l in point_labels])
         prompts_first_dimension_characteristics.add(point_labels_characteristic)
+    if len(prompts_first_dimension_characteristics) > 1:
+        raise ModelInputError(
+            message="When using SAM2 model, in scenario when combination of `point_coordinates` and `point_labels` "
+            "provided, the model expect identical number of elements for each prompt component. "
+            "If you run inference locally, verify your integration making sure that the model interface is "
+            "used correctly. Running on Roboflow platform - contact us to get help.",
+            help_url="https://todo",
+        )
     if boxes is not None:
         boxes_characteristic = "-".join(
             [str(b.shape[0]) if len(b.shape) > 1 else "1" for b in boxes]
         )
         prompts_first_dimension_characteristics.add(boxes_characteristic)
-    if len(prompts_first_dimension_characteristics) > 1:
-        raise ModelInputError(
-            message="When using SAM2 model, in scenario when combination of `point_coordinates` and `point_labels` and "
-            "`boxes` provided, the model expect identical number of elements for each prompt component. "
-            "If you run inference locally, verify your integration making sure that the model interface is "
-            "used correctly. Running on Roboflow platform - contact us to get help.",
-            help_url="https://todo",
-        )
+        if at_max_one_box_expected:
+            if not all(b.shape[0] == 1 if len(b.shape) > 1 else True for b in boxes):
+                raise ModelInputError(
+                    message="When using SAM2 model, with `point_coordinates` provided for single box, each box in "
+                    "`boxes` parameter must only define single bounding box."
+                    "If you run inference locally, verify your integration making sure that the model "
+                    "interface is used correctly. Running on Roboflow platform - contact us to get help.",
+                    help_url="https://todo",
+                )
+        elif len(prompts_first_dimension_characteristics) > 1:
+            raise ModelInputError(
+                message="When using SAM2 model, in scenario when combination of `point_coordinates`, `point_labels`, "
+                "`boxes` provided, the model expect identical number of elements for each prompt component. "
+                "If you run inference locally, verify your integration making sure that the model interface is "
+                "used correctly. Running on Roboflow platform - contact us to get help.",
+                help_url="https://todo",
+            )
     if mask_input is not None:
         mask_input = [i[None, :, :] if len(i.shape) == 2 else i for i in mask_input]
         if any(len(i.shape) != 3 or i.shape[0] != 1 for i in mask_input):
