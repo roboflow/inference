@@ -254,9 +254,10 @@ from inference.core.workflows.core_steps.models.foundation.segment_anything3.v2 
 from inference.core.workflows.core_steps.models.foundation.segment_anything3.v3 import (
     SegmentAnything3BlockV3,
 )
-from inference.core.workflows.core_steps.models.foundation.segment_anything3_3d.v1 import (
-    SegmentAnything3_3D_ObjectsBlockV1,
-)
+if SAM3_3D_OBJECTS_ENABLED:
+    from inference.core.workflows.core_steps.models.foundation.segment_anything3_3d.v1 import (
+        SegmentAnything3_3D_ObjectsBlockV1,
+    )
 from inference.core.workflows.core_steps.models.foundation.smolvlm.v1 import (
     SmolVLM2BlockV1,
 )
@@ -585,7 +586,7 @@ KINDS_DESERIALIZERS = {
 
 
 def load_blocks() -> List[Type[WorkflowBlock]]:
-    return [
+    blocks = [
         AbsoluteStaticCropBlockV1,
         DynamicCropBlockV1,
         DetectionsFilterBlockV1,
@@ -690,7 +691,6 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         SegmentAnything2BlockV1,
         SegmentAnything3BlockV1,
         SegmentAnything3BlockV2,
-        SegmentAnything3_3D_ObjectsBlockV1,
         SegmentAnything3BlockV3,
         SegPreviewBlockV1,
         StabilityAIInpaintingBlockV1,
@@ -742,6 +742,9 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         QRCodeGeneratorBlockV1,
         DetectionsCombineBlockV1,
     ]
+    if SAM3_3D_OBJECTS_ENABLED:
+        blocks.append(SegmentAnything3_3D_ObjectsBlockV1)
+    return blocks
 
 
 def load_kinds() -> List[Kind]:
