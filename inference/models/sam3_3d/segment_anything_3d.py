@@ -437,29 +437,35 @@ def convert_3d_objects_result_to_api_response(
 def transform_glb_to_world(glb_mesh, rotation, translation, scale):
     """
     Transform a GLB mesh from local to world coordinates.
-
-    Note: to_glb() already applies z-up to y-up rotation, so we just need
-    to apply the pose transform (rotation, translation, scale).
-
-    Based on export_transformed_mesh_glb from layout_post_optimization_utils.py
     """
     quat = rotation.squeeze()
     quat_normalized = quat / quat.norm()
-    R = quaternion_to_matrix(quat_normalized).cpu().numpy()
+    R_layout = quaternion_to_matrix(quat_normalized).cpu().numpy()
     t = translation.squeeze().cpu().numpy()
     s = scale.squeeze().cpu().numpy()[0]
 
-    verts = torch.from_numpy(glb_mesh.vertices.copy()).float()
+    z_to_y_up = np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]], dtype=np.float32)
+    y_to_z_up = np.array([[1, 0, 0], [0, 0, 1], [0, -1, 0]], dtype=np.float32)
 
-    center = verts.mean(dim=0)
+    verts = glb_mesh.vertices.copy().astype(np.float32)
 
-    verts = verts - center
+    verts = verts @ y_to_z_up
+
     verts = verts * s
-    verts = verts @ torch.from_numpy(R.T).float()
-    verts = verts + center
-    verts = verts + torch.from_numpy(t).float()
+    verts = verts @ R_layout
+    verts = verts + t
 
-    glb_mesh.vertices = verts.numpy()
+    verts = verts @ z_to_y_up
+
+    glb_mesh.vertices = verts
+
+    if hasattr(glb_mesh, 'vertex_normals') and glb_mesh.vertex_normals is not None and len(glb_mesh.vertex_normals) > 0:
+        normals = glb_mesh.vertex_normals.copy().astype(np.float32)
+        normals = normals @ y_to_z_up
+        normals = normals @ R_layout
+        normals = normals @ z_to_y_up
+        glb_mesh.vertex_normals = normals
+
     return glb_mesh
 
 
