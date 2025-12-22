@@ -28,6 +28,53 @@ Find complete working examples in the [examples/webrtc_sdk/](https://github.com/
 - [rtsp_basic.py](https://github.com/roboflow/inference/blob/main/examples/webrtc_sdk/rtsp_basic.py) - RTSP stream processing
 - [video_file_basic.py](https://github.com/roboflow/inference/blob/main/examples/webrtc_sdk/video_file_basic.py) - Video file processing with output saving
 
+## Minimal Example
+
+```python
+import cv2 as cv
+
+from inference_sdk import InferenceHTTPClient
+from inference_sdk.webrtc import VideoMetadata, StreamConfig, WebcamSource
+
+API_KEY = "<your API key>"
+WORKFLOW = "<your workflow id>"
+WORKSPACE = "<your workspace id>"
+STREAM_OUTPUT = "visualization" # must be valid video output as defined in workflow
+DATA_OUTPUT = "count" # must be valid data output as defined in workflow
+
+client = InferenceHTTPClient.init(
+   api_url="https://serverless.roboflow.com",  # or "http://127.0.0.1:9001" for local server
+   api_key=API_KEY,
+)
+
+source = WebcamSource()
+config = StreamConfig(
+   stream_output=[STREAM_OUTPUT],
+   data_output=[DATA_OUTPUT],
+   requested_region="us"
+)
+session = client.webrtc.stream(
+   source=source,
+   workflow=WORKFLOW,
+   workspace=WORKSPACE,
+   image_input="image",
+   config=config,
+)
+
+@session.on_frame
+def show_frame(frame, metadata):
+   cv.imshow("WebRTC SDK - Webcam", frame)
+   if cv.waitKey(1) & 0xFF == ord("q"):
+       session.close()
+
+@session.on_data()
+def on_message(data: dict, metadata: VideoMetadata):
+   print(
+       f"Frame {metadata.frame_id}: {data[DATA_OUTPUT]}"
+   )
+
+session.run()
+```
 
 ## Local Container Setup (optional)
 
@@ -49,10 +96,10 @@ docker run --gpus all -p 9001:9001 roboflow/roboflow-inference-server-gpu:latest
 
 ```python
 config = StreamConfig(
-    # Video outputs - specify workflow output names
+    # Video outputs - specify workflow output names, must be valid video output as defined in workflow
     stream_output=["annotated_image", "cropped_detections"],
     
-    # Data outputs - use ["*"] for all outputs
+    # Data outputs - use ["*"] for all outputs, must be valid data output as defined in workflow
     data_output=["predictions", "confidence_scores"],
     
     # Performance options
