@@ -12,12 +12,12 @@ Tests are marked with @pytest.mark.slow and can be skipped:
 """
 
 import os
+
 import numpy as np
 import pytest
 
 from inference_sdk import InferenceHTTPClient
 from inference_sdk.webrtc import StreamConfig, VideoFileSource
-
 
 # Simple passthrough workflow - uses absolute_static_crop to wrap image
 # This validates WebRTC connection and workflow execution without transformation
