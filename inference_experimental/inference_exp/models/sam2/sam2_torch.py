@@ -300,8 +300,8 @@ class SAM2Torch:
         return_logits: bool = False,
         input_color_format: Optional[ColorFormat] = None,
         mask_threshold: Optional[float] = None,
-        load_from_mask_input_cache: bool = True,
-        save_to_mask_input_cache: bool = True,
+        load_from_mask_input_cache: bool = False,
+        save_to_mask_input_cache: bool = False,
         use_embeddings_cache: bool = True,
         **kwargs,
     ) -> List[SAM2Prediction]:
@@ -327,6 +327,7 @@ class SAM2Torch:
         point_coordinates = maybe_wrap_in_list(value=point_coordinates)
         point_labels = maybe_wrap_in_list(value=point_labels)
         boxes = maybe_wrap_in_list(value=boxes)
+        mask_input = maybe_wrap_in_list(value=mask_input)
         point_coordinates, point_labels, boxes, mask_input = equalize_batch_size(
             embeddings_batch_size=len(embeddings),
             point_coordinates=point_coordinates,
@@ -511,10 +512,6 @@ def equalize_batch_size(
             [str(b.shape[0]) if len(b.shape) > 1 else "1" for b in boxes]
         )
         prompts_first_dimension_characteristics.add(boxes_characteristic)
-    print(
-        "prompts_first_dimension_characteristics",
-        prompts_first_dimension_characteristics,
-    )
     if len(prompts_first_dimension_characteristics) > 1:
         raise ModelInputError(
             message="When using SAM2 model, in scenario when combination of `point_coordinates` and `point_labels` and "
@@ -691,14 +688,6 @@ def predict_for_single_image(
     mask_threshold: Optional[float] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     if point_coordinates is not None:
-        print("point_coordinates", point_coordinates.shape)
-    if point_labels is not None:
-        print("point_labels", point_labels.shape)
-    if boxes is not None:
-        print("boxes", boxes.shape)
-    if mask_input is not None:
-        print("mask_input", mask_input.shape)
-    if point_coordinates is not None:
         concat_points = (point_coordinates, point_labels)
     else:
         concat_points = None
@@ -770,21 +759,38 @@ def serialize_prompt(
     point_labels_list = (
         point_labels.tolist() if point_labels is not None else [None] * broadcast_size
     )
-    boxes_list = boxes.tolist() if boxes is not None else [None] * broadcast_size
+    boxes_list = (
+        boxes.reshape(-1).tolist() if boxes is not None else [None] * broadcast_size
+    )
     results = []
     for points, labels, box in zip(
         point_coordinates_list, point_labels_list, boxes_list
     ):
         points_serialized = []
-        for point, label in zip(points, labels):
-            points_serialized.append(
-                {
-                    "x": point[0].item(),
-                    "y": point[1].item(),
-                    "positive": label.item(),
-                }
-            )
-        results.append({"points": points_serialized, "box": box.reshape(-1).tolist()})
+        if points is not None and labels is not None:
+            for point, label in zip(points, labels):
+                points_serialized.append(
+                    {
+                        "x": (
+                            point[0].item()
+                            if isinstance(point[0], torch.Tensor)
+                            else point[0]
+                        ),
+                        "y": (
+                            point[1].item()
+                            if isinstance(point[1], torch.Tensor)
+                            else point[1]
+                        ),
+                        "positive": (
+                            label.item() if isinstance(labels, torch.Tensor) else label
+                        ),
+                    }
+                )
+        if box is not None:
+            box_serialized = box
+        else:
+            box_serialized = None
+        results.append({"points": points_serialized, "box": box_serialized})
     return results
 
 
@@ -822,7 +828,7 @@ def find_prior_prompt_in_cache(
     device: torch.device,
 ) -> Optional[torch.Tensor]:
     maxed_size = 0
-    best_match: Optional[torch.Tensor] = None
+    best_match: Optional[SAM2MaskCacheEntry] = None
     desired_size = len(serialized_prompt) - 1
     for cache_entry in matching_cache_entries[::-1]:
         is_viable = is_prompt_strict_subset(
@@ -841,9 +847,8 @@ def find_prior_prompt_in_cache(
             return cache_entry.mask.to(device=device)
         if current_cache_entry_prompt_size >= maxed_size:
             maxed_size = current_cache_entry_prompt_size
-            best_match = cache_entry.mask.to(device=device)
-
-    return best_match
+            best_match = cache_entry
+    return best_match.mask.to(device=device)
 
 
 def is_prompt_strict_subset(
@@ -863,11 +868,11 @@ def is_prompt_strict_subset(
                 continue
             sub_set_prompt_element_points = {
                 get_hashable_point(point=point)
-                for point in sub_set_prompt_element["points"]
+                for point in sub_set_prompt_element.get("points", [])
             }
             super_set_prompt_element_points = {
                 get_hashable_point(point=point)
-                for point in super_set_prompt_element["points"]
+                for point in super_set_prompt_element.get("points", [])
             }
             if sub_set_prompt_element_points <= super_set_prompt_element_points:
                 super_set_prompt_copy.remove(super_set_prompt_element)
