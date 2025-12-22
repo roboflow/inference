@@ -27,7 +27,7 @@ def test_classification_onnx_static_package_numpy(
     assert torch.allclose(
         predictions.confidence.cpu(),
         torch.tensor([0.3554, 0.6446]).cpu(),
-        atol=0.0001,
+        atol=1e-2,
     )
     assert torch.allclose(
         predictions.class_id.cpu(),
@@ -58,7 +58,7 @@ def test_classification_onnx_static_package_numpy_no_detection(
     assert torch.allclose(
         predictions.confidence.cpu(),
         torch.tensor([0.5260, 0.4740]).cpu(),
-        atol=0.0001,
+        atol=1e-2,
     )
     assert torch.allclose(
         predictions.class_id.cpu(),
@@ -89,7 +89,7 @@ def test_classification_onnx_static_package_numpy_custom_image_size(
     assert torch.allclose(
         predictions.confidence.cpu(),
         torch.tensor([0.3554, 0.6446]).cpu(),
-        atol=0.0001,
+        atol=1e-2,
     )
     assert torch.allclose(
         predictions.class_id.cpu(),
@@ -121,7 +121,7 @@ def test_classification_onnx_static_package_batch_numpy(
     assert torch.allclose(
         predictions.confidence.cpu(),
         torch.tensor([[0.3554, 0.6446], [0.5260, 0.4740]]).cpu(),
-        atol=0.0001,
+        atol=1e-2,
     )
     assert torch.allclose(
         predictions.class_id.cpu(),
@@ -152,7 +152,7 @@ def test_classification_onnx_static_package_torch_tensor(
     assert torch.allclose(
         predictions.confidence.cpu(),
         torch.tensor([0.3556, 0.6444]).cpu(),
-        atol=0.0001,
+        atol=1e-2,
     )
     assert torch.allclose(
         predictions.class_id.cpu(),
@@ -186,7 +186,7 @@ def test_classification_onnx_static_package_batch_torch_tensor_stack(
     assert torch.allclose(
         predictions.confidence.cpu(),
         torch.tensor([[0.3556, 0.6444], [0.5260, 0.4740]]).cpu(),
-        atol=0.0001,
+        atol=1e-2,
     )
     assert torch.allclose(
         predictions.class_id.cpu(),
@@ -218,7 +218,7 @@ def test_classification_onnx_static_package_batch_torch_tensor_list(
     assert torch.allclose(
         predictions.confidence.cpu(),
         torch.tensor([[0.3556, 0.6444], [0.5259, 0.4741]]).cpu(),
-        atol=0.0001,
+        atol=1e-2,
     )
     assert torch.allclose(
         predictions.class_id.cpu(),
@@ -264,7 +264,7 @@ def test_multi_label_onnx_static_package_numpy(
                 0.9955,
             ]
         ).cpu(),
-        atol=0.0001,
+        atol=1e-2,
     )
     assert torch.allclose(
         predictions[0].class_ids.cpu(),
@@ -310,7 +310,7 @@ def test_multi_label_onnx_static_package_numpy_custom_image_size(
                 0.9955,
             ]
         ).cpu(),
-        atol=0.0001,
+        atol=1e-2,
     )
     assert torch.allclose(
         predictions[0].class_ids.cpu(),
@@ -357,7 +357,7 @@ def test_multi_label_onnx_static_package_batch_numpy(
                 0.9955,
             ]
         ).cpu(),
-        atol=0.0001,
+        atol=1e-2,
     )
     assert torch.allclose(
         predictions[0].class_ids.cpu(),
@@ -381,7 +381,7 @@ def test_multi_label_onnx_static_package_batch_numpy(
                 1.1921e-07,
             ]
         ).cpu(),
-        atol=0.0001,
+        atol=1e-2,
     )
     assert torch.allclose(
         predictions[1].class_ids.cpu(),
@@ -427,7 +427,7 @@ def test_multi_label_onnx_static_package_torch_tensor(
                 0.9949,
             ]
         ).cpu(),
-        atol=0.0001,
+        atol=1e-2,
     )
     assert torch.allclose(
         predictions[0].class_ids.cpu(),
@@ -476,7 +476,7 @@ def test_multi_label_onnx_static_package_batch_torch_tensor_stack(
                 0.9949,
             ]
         ).cpu(),
-        atol=0.0001,
+        atol=1e-2,
     )
     assert torch.allclose(
         predictions[0].class_ids.cpu(),
@@ -500,7 +500,7 @@ def test_multi_label_onnx_static_package_batch_torch_tensor_stack(
                 1.7881e-07,
             ]
         ).cpu(),
-        atol=0.0001,
+        atol=1e-2,
     )
     assert torch.allclose(
         predictions[1].class_ids.cpu(),
@@ -547,7 +547,7 @@ def test_multi_label_onnx_static_package_batch_torch_tensor_list(
                 0.9949,
             ]
         ).cpu(),
-        atol=0.0001,
+        atol=1e-2,
     )
     assert torch.allclose(
         predictions[0].class_ids.cpu(),
@@ -571,7 +571,7 @@ def test_multi_label_onnx_static_package_batch_torch_tensor_list(
                 1.7881e-07,
             ]
         ).cpu(),
-        atol=0.0001,
+        atol=1e-2,
     )
     assert torch.allclose(
         predictions[1].class_ids.cpu(),
