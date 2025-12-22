@@ -1,17 +1,14 @@
 # WebRTC Real-time Video Processing with Roboflow Inference
 
-## Overview
-
 The WebRTC feature in Roboflow Inference enables real-time video processing through WebRTC connections.
 
-Following is the list of supported sources:
- * webcam (via `WebcamSource`)
- * RTSP (via `RTSPSource`)
- * video files (via `VideoFileSource`)
+**Supported sources:** Webcam (`WebcamSource`), RTSP (`RTSPSource`), Video files (`VideoFileSource`)
 
-## Getting Started
+> **Prerequisites:**
+> - API key from [app.roboflow.com](https://app.roboflow.com)
+> - A deployed workflow with at least one video output block
 
-### Installation
+## Installation
 
 We recommend creating a virtual environment and installing the inference-sdk package:
 
@@ -20,6 +17,15 @@ python -m venv venv
 source venv/bin/activate
 pip install inference-sdk
 ```
+
+## Choose Your Backend
+
+| Option      | `api_url`                         | Best for              |
+|-------------|-----------------------------------|-----------------------|
+| Cloud       | `https://serverless.roboflow.com` | Quick start, no setup |
+| Local setup | `http://127.0.0.1:9001`           | Development           |
+
+For local setup, see [Local Container Setup](#local-container-setup) below.
 
 ## Basic Usage Examples
 
@@ -30,17 +36,24 @@ Find complete working examples in the [examples/webrtc_sdk/](https://github.com/
 
 ## Minimal Example
 
+```bash
+export ROBOFLOW_API_KEY="your_key"
+export WORKFLOW_ID="your_workflow"
+export WORKSPACE="your_workspace"
+```
+
 ```python
+import os
 import cv2 as cv
 
 from inference_sdk import InferenceHTTPClient
 from inference_sdk.webrtc import VideoMetadata, StreamConfig, WebcamSource
 
-API_KEY = "<your API key>"
-WORKFLOW = "<your workflow id>"
-WORKSPACE = "<your workspace id>"
-STREAM_OUTPUT = "visualization" # must be valid video output as defined in workflow
-DATA_OUTPUT = "count" # must be valid data output as defined in workflow
+API_KEY = os.environ.get("ROBOFLOW_API_KEY")
+WORKFLOW = os.environ.get("WORKFLOW_ID")
+WORKSPACE = os.environ.get("WORKSPACE")
+STREAM_OUTPUT = "visualization"  # must match a video output name in your workflow
+DATA_OUTPUT = "count"  # must match a data output name in your workflow
 
 client = InferenceHTTPClient.init(
    api_url="https://serverless.roboflow.com",  # or "http://127.0.0.1:9001" for local server
@@ -51,13 +64,12 @@ source = WebcamSource()
 config = StreamConfig(
    stream_output=[STREAM_OUTPUT],
    data_output=[DATA_OUTPUT],
-   requested_region="us"
 )
 session = client.webrtc.stream(
    source=source,
    workflow=WORKFLOW,
    workspace=WORKSPACE,
-   image_input="image",
+   image_input="image",  # must match the image input name in your workflow
    config=config,
 )
 
