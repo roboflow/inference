@@ -37,6 +37,8 @@ docker/dockerfiles/Dockerfile.onnx.gpu.3d
   - `metadata`: `{rotation, translation, scale}`
 - **time**: Inference time in seconds
 
+## Keep in mind to set 'os.environ["SAM3_3D_OBJECTS_ENABLED"] = "true"' otherwise the model won't be available.
+
 ## Example
 
 ```python
