@@ -12,6 +12,7 @@ from inference.core.workflows.execution_engine.entities.base import OutputDefini
 from inference.core.workflows.execution_engine.entities.types import (
     Selector,
     StepSelector,
+    FLOAT_KIND,
 )
 from inference.core.workflows.execution_engine.v1.entities import FlowControl
 from inference.core.workflows.prototypes.block import (
@@ -79,6 +80,14 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[["$steps.on_true"]],
     )
 
+    stop_delay: Union[Selector(kind=[FLOAT_KIND]), float] = Field(
+        title="Threshold",
+        description="Execution will persist for this many seconds after the false condition.",
+        gt=0,
+        examples=[5],
+        default=0,
+    )
+
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return []
@@ -90,6 +99,10 @@ class BlockManifest(WorkflowBlockManifest):
 
 class ContinueIfBlockV1(WorkflowBlock):
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.start_time = None
+
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
@@ -99,11 +112,26 @@ class ContinueIfBlockV1(WorkflowBlock):
         condition_statement: StatementGroup,
         evaluation_parameters: Dict[str, Any],
         next_steps: List[StepSelector],
+        stop_delay: float,
     ) -> BlockResult:
         if not next_steps:
             return FlowControl(mode="terminate_branch")
         evaluation_function = build_eval_function(definition=condition_statement)
         evaluation_result = evaluation_function(evaluation_parameters)
+
         if evaluation_result:
             return FlowControl(mode="select_step", context=next_steps)
+        elif stop_delay > 0:
+            import time
+
+            if self.start_time is None:
+                self.start_time = time.time()
+                return FlowControl(mode="select_step", context=next_steps)
+            else:
+                elapsed_time = time.time() - self.start_time
+                if elapsed_time >= stop_delay:
+                    self.start_time = None
+                    return FlowControl(mode="terminate_branch")
+                else:
+                    return FlowControl(mode="select_step", context=next_steps)
         return FlowControl(mode="terminate_branch")
