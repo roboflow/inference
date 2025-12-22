@@ -170,6 +170,8 @@ class SAMTorch:
     ) -> Tuple[torch.Tensor, List[str], List[Tuple[int, int]]]:
         if isinstance(images, torch.Tensor):
             images = images.to(device=self._device)
+            if images.device.type == "cuda":
+                images = images.float()
             if len(images.shape) == 4:
                 image_hashes = [compute_image_hash(image=image) for image in images]
                 if input_color_format == "bgr":
@@ -204,6 +206,8 @@ class SAMTorch:
                     else:
                         original_image_sizes.append(tuple(image.shape[1:3]))
                         image = image.to(self._device)
+                        if image.device.type == "cuda":
+                            image = image.float()
                         if input_color_format == "bgr":
                             image = image[::-1, :, :].contiguous()
                         input_image = self._transform.apply_image_torch(
