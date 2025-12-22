@@ -449,6 +449,10 @@ REGISTERED_MODELS: Dict[
         module_name="inference_exp.models.sam.sam_torch",
         class_name="SAMTorch",
     ),
+    ("sam2", INTERACTIVE_INSTANCE_SEGMENTATION_TASK, BackendType.TORCH): LazyClass(
+        module_name="inference_exp.models.sam2.sam2_torch",
+        class_name="SAM2Torch",
+    ),
 }
 
 
