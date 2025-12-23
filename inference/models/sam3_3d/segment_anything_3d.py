@@ -168,7 +168,11 @@ if DEVICE is None:
     DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 import trimesh
-from pytorch3d.transforms import quaternion_to_matrix, quaternion_multiply, matrix_to_quaternion
+from pytorch3d.transforms import (
+    matrix_to_quaternion,
+    quaternion_multiply,
+    quaternion_to_matrix,
+)
 from tdfy.sam3d_v1.inference_utils import make_scene, ready_gaussian_for_video_rendering
 
 
@@ -181,11 +185,11 @@ def apply_gaussian_view_correction(scene_gs):
     device = xyz.device
     dtype = xyz.dtype
 
-    R_view_zup = torch.tensor([
-        [-1.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0],
-        [0.0, 0.0, -1.0]
-    ], device=device, dtype=dtype)
+    R_view_zup = torch.tensor(
+        [[-1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, -1.0]],
+        device=device,
+        dtype=dtype,
+    )
 
     new_xyz = xyz @ R_view_zup
     scene_gs.from_xyz(new_xyz)
@@ -193,8 +197,7 @@ def apply_gaussian_view_correction(scene_gs):
     q_correction = matrix_to_quaternion(R_view_zup.unsqueeze(0)).squeeze(0)
     old_rotations = scene_gs.get_rotation
     new_rotations = quaternion_multiply(
-        q_correction.unsqueeze(0).expand(old_rotations.shape[0], -1),
-        old_rotations
+        q_correction.unsqueeze(0).expand(old_rotations.shape[0], -1), old_rotations
     )
     scene_gs.from_rotation(new_rotations)
 
@@ -214,11 +217,9 @@ def prepare_individual_object_for_export(gs):
     device = xyz.device
     dtype = xyz.dtype
 
-    R_view = torch.tensor([
-        [1.0, 0.0, 0.0],
-        [0.0, 0.0, -1.0],
-        [0.0, 1.0, 0.0]
-    ], device=device, dtype=dtype)
+    R_view = torch.tensor(
+        [[1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]], device=device, dtype=dtype
+    )
 
     new_xyz = xyz @ R_view
     gs_copy.from_xyz(new_xyz)
@@ -226,8 +227,7 @@ def prepare_individual_object_for_export(gs):
     q_correction = matrix_to_quaternion(R_view.unsqueeze(0)).squeeze(0)
     old_rotations = gs_copy.get_rotation
     new_rotations = quaternion_multiply(
-        q_correction.unsqueeze(0).expand(old_rotations.shape[0], -1),
-        old_rotations
+        q_correction.unsqueeze(0).expand(old_rotations.shape[0], -1), old_rotations
     )
     gs_copy.from_rotation(new_rotations)
 
@@ -522,7 +522,11 @@ def transform_glb_to_world(glb_mesh, rotation, translation, scale):
 
     glb_mesh.vertices = verts
 
-    if hasattr(glb_mesh, 'vertex_normals') and glb_mesh.vertex_normals is not None and len(glb_mesh.vertex_normals) > 0:
+    if (
+        hasattr(glb_mesh, "vertex_normals")
+        and glb_mesh.vertex_normals is not None
+        and len(glb_mesh.vertex_normals) > 0
+    ):
         normals = glb_mesh.vertex_normals.copy().astype(np.float32)
         normals = normals @ y_to_z_up
         normals = normals @ R_layout
@@ -555,7 +559,11 @@ def make_scene_glb(*outputs):
     for geom_name in scene.geometry:
         mesh = scene.geometry[geom_name]
         mesh.vertices = (mesh.vertices.astype(np.float32)) @ R_view
-        if hasattr(mesh, 'vertex_normals') and mesh.vertex_normals is not None and len(mesh.vertex_normals) > 0:
+        if (
+            hasattr(mesh, "vertex_normals")
+            and mesh.vertex_normals is not None
+            and len(mesh.vertex_normals) > 0
+        ):
             mesh.vertex_normals = (mesh.vertex_normals.astype(np.float32)) @ R_view
 
     return scene
