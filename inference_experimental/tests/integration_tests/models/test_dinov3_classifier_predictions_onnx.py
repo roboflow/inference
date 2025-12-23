@@ -629,9 +629,25 @@ def test_multi_label_onnx_static_package_batch_torch_tensor_list(
         predictions[0].class_ids.cpu(),
         torch.tensor([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], dtype=torch.int64).cpu(),
     )
-    assert torch.allclose(
-        predictions[1].confidence.cpu(),
-        torch.tensor(
+    if torch.cuda.is_available():
+        expected_confidence_1 = torch.tensor(
+            [
+                0.0000e+00,
+                0.0000e+00,
+                6.5923e-05,
+                0.0000e+00,
+                1.1921e-07,
+                1.1921e-06,
+                4.1614e-03,
+                4.6206e-04,
+                9.9946e-01,
+                2.1595e-04,
+                0.0000e+00,
+                1.1921e-07,
+            ]
+        )
+    else:
+        expected_confidence_1 = torch.tensor(
             [
                 -5.9605e-08,
                 -5.9605e-08,
@@ -646,7 +662,10 @@ def test_multi_label_onnx_static_package_batch_torch_tensor_list(
                 -5.9605e-08,
                 1.7881e-07,
             ]
-        ).cpu(),
+        )
+    assert torch.allclose(
+        predictions[1].confidence.cpu(),
+        expected_confidence_1.cpu(),
         atol=0.0001,
     )
     assert torch.allclose(
