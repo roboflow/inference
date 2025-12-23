@@ -95,9 +95,11 @@ PERCEPTION_ENCODER_VERSION_ID = os.getenv(
 PERCEPTION_ENCODER_MODEL_ID = f"perception_encoder/{PERCEPTION_ENCODER_VERSION_ID}"
 
 # Perception Encoder allowed version IDs, default is all three sizes
+# An example value might be "PE-Core-G14-448,PE-Core-B16-224", which would disallow the G14-448 and B16-224 models
+# By default, all models are allowed.
 PERCEPTION_ENCODER_DISALLOWED_VERSION_IDS = os.getenv(
     "PERCEPTION_ENCODER_DISALLOWED_VERSION_IDS",
-    "PE-Core-G14-448",
+    "",
 )
 if PERCEPTION_ENCODER_DISALLOWED_VERSION_IDS:
     PERCEPTION_ENCODER_DISALLOWED_VERSION_IDS = set(
