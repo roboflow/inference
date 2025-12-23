@@ -56,6 +56,10 @@ SMOLVLM_ALIASES = {
     "smolvlm2": "smolvlm-2.2b-instruct",
 }
 
+SAM3_3D_ALIASES = {
+    "sam3-3d-objects": "sam3-3d-weights-vc6vz/1",
+}
+
 RFDETR_ALIASES = {
     "rfdetr-base": "coco/36",
     "rfdetr-large": "coco/37",
@@ -66,10 +70,10 @@ RFDETR_ALIASES = {
 }
 
 CLASSIFICATION_ALIASES = {
-    "resent18": "classifiers/1",
-    "resent34": "classifiers/2",
-    "resent50": "classifiers/3",
-    "resent101": "classifiers/4",
+    "resnet18": "classifiers/1",
+    "resnet34": "classifiers/2",
+    "resnet50": "classifiers/3",
+    "resnet101": "classifiers/4",
 }
 
 REGISTERED_ALIASES = {
@@ -114,6 +118,7 @@ REGISTERED_ALIASES = {
     **QWEN_ALIASES,
     **RFDETR_ALIASES,
     **CLASSIFICATION_ALIASES,
+    **SAM3_3D_ALIASES,
 }
 
 
