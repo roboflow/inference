@@ -409,9 +409,25 @@ def test_multi_label_onnx_static_package_torch_tensor(
     predictions = model(chess_set_image_torch)
 
     # then
-    assert torch.allclose(
-        predictions[0].confidence.cpu(),
-        torch.tensor(
+    if torch.cuda.is_available():
+        expected_confidence = torch.tensor(
+            [
+                0.9892,
+                0.8798,
+                0.9916,
+                0.9998,
+                0.9995,
+                1.0000,
+                0.9998,
+                0.9981,
+                0.9973,
+                0.9999,
+                1.0000,
+                0.9949,
+            ]
+        )
+    else:
+        expected_confidence = torch.tensor(
             [
                 0.9883,
                 0.8467,
@@ -426,7 +442,10 @@ def test_multi_label_onnx_static_package_torch_tensor(
                 1.0000,
                 0.9949,
             ]
-        ).cpu(),
+        )
+    assert torch.allclose(
+        predictions[0].confidence.cpu(),
+        expected_confidence.cpu(),
         atol=0.0001,
     )
     assert torch.allclose(
@@ -458,9 +477,25 @@ def test_multi_label_onnx_static_package_batch_torch_tensor_stack(
     )
 
     # then
-    assert torch.allclose(
-        predictions[0].confidence.cpu(),
-        torch.tensor(
+    if torch.cuda.is_available():
+        expected_confidence = torch.tensor(
+            [
+                0.9892,
+                0.8798,
+                0.9916,
+                0.9998,
+                0.9995,
+                1.0000,
+                0.9998,
+                0.9981,
+                0.9973,
+                0.9999,
+                1.0000,
+                0.9949,
+            ]
+        )
+    else:
+        expected_confidence = torch.tensor(
             [
                 0.9883,
                 0.8467,
@@ -475,7 +510,10 @@ def test_multi_label_onnx_static_package_batch_torch_tensor_stack(
                 1.0000,
                 0.9949,
             ]
-        ).cpu(),
+        )
+    assert torch.allclose(
+        predictions[0].confidence.cpu(),
+        expected_confidence.cpu(),
         atol=0.0001,
     )
     assert torch.allclose(
@@ -529,9 +567,25 @@ def test_multi_label_onnx_static_package_batch_torch_tensor_list(
     predictions = model([chess_set_image_torch, chess_piece_image_torch])
 
     # then
-    assert torch.allclose(
-        predictions[0].confidence.cpu(),
-        torch.tensor(
+    if torch.cuda.is_available():
+        expected_confidence = torch.tensor(
+            [
+                0.9892,
+                0.8798,
+                0.9916,
+                0.9998,
+                0.9995,
+                1.0000,
+                0.9998,
+                0.9981,
+                0.9973,
+                0.9999,
+                1.0000,
+                0.9949,
+            ]
+        )
+    else:
+        expected_confidence = torch.tensor(
             [
                 0.9883,
                 0.8467,
@@ -546,7 +600,10 @@ def test_multi_label_onnx_static_package_batch_torch_tensor_list(
                 1.0000,
                 0.9949,
             ]
-        ).cpu(),
+        )
+    assert torch.allclose(
+        predictions[0].confidence.cpu(),
+        expected_confidence.cpu(),
         atol=0.0001,
     )
     assert torch.allclose(
