@@ -34,8 +34,7 @@ class PerceptionEncoderInferenceRequest(BaseRequest):
     def validate_version_id(cls, value):
         if value and value in PERCEPTION_ENCODER_DISALLOWED_VERSION_IDS:
             raise ModelNotRecognisedError(
-                f"Perception Encoder model version '{value}' is not supported. "
-                f"Try a smaller model size."
+                f"Perception Encoder model versions {list(PERCEPTION_ENCODER_DISALLOWED_VERSION_IDS)} have been disallowed in this inference configuration. Please try using a model version not in the list of disallowed versions."
             )
         return value
 
@@ -47,8 +46,7 @@ class PerceptionEncoderInferenceRequest(BaseRequest):
                 version_id = value.split("/")[-1]
                 if version_id in PERCEPTION_ENCODER_DISALLOWED_VERSION_IDS:
                     raise ValueError(
-                        f"Perception Encoder model version '{version_id}' is not supported. "
-                        f"Try a smaller model size."
+                        f"Perception Encoder model versions {list(PERCEPTION_ENCODER_DISALLOWED_VERSION_IDS)} have been disallowed in this inference configuration. Please try using a model version not in the list of disallowed versions."
                     )
             return value
         if values.get("perception_encoder_version_id") is None:
