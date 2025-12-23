@@ -283,7 +283,7 @@ def test_sam_predictions_with_mask_prompting(
     )
     second_results = model.segment_images(
         images=truck_image_torch,
-        mask_input=first_results[0].logits[0].unsqueeze(dim=0),
+        mask_input=first_results[0].logits[0],
         input_box=input_box,
     )
 

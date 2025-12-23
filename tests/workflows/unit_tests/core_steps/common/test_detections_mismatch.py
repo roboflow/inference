@@ -1,16 +1,18 @@
 import numpy as np
 import supervision as sv
-from inference.core.workflows.execution_engine.entities.base import (
-    ImageParentMetadata,
-    WorkflowImageData,
+
+from inference.core.workflows.core_steps.common.deserializers import (
+    deserialize_detections_kind,
 )
 from inference.core.workflows.core_steps.common.utils import (
     convert_inference_detections_batch_to_sv_detections,
     post_process_ocr_result,
 )
-from inference.core.workflows.core_steps.common.deserializers import (
-    deserialize_detections_kind,
+from inference.core.workflows.execution_engine.entities.base import (
+    ImageParentMetadata,
+    WorkflowImageData,
 )
+
 
 def test_convert_inference_detections_batch_to_sv_detections_with_invalid_polygons() -> None:
     # given

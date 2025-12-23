@@ -1,11 +1,12 @@
 """Unit tests for WebRTC session lifecycle management."""
 
-import pytest
 from datetime import datetime
 from unittest.mock import MagicMock, patch
-import numpy as np
 
-from inference_sdk.webrtc.session import VideoMetadata, WebRTCSession, SessionState
+import numpy as np
+import pytest
+
+from inference_sdk.webrtc.session import SessionState, VideoMetadata, WebRTCSession
 
 
 @pytest.fixture

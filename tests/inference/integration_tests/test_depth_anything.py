@@ -5,7 +5,6 @@ import requests
 
 from tests.inference.integration_tests.regression_test import bool_env
 
-
 api_key = os.environ.get("API_KEY")
 
 

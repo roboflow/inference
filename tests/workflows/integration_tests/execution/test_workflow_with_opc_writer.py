@@ -2,7 +2,7 @@ import asyncio
 import threading
 import time
 from typing import Optional, Union
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from asyncua import Server

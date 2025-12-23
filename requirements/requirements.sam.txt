@@ -1,5 +1,5 @@
 rf-segment-anything==1.0
-samv2==0.0.4
+rf-sam-2==1.0.2
 rasterio~=1.4.0
 pycocotools>=2.0.10
 # TODO: update to 2.8.0 once pre-built flashattn is available
