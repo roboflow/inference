@@ -1,22 +1,22 @@
-# Offline Weights Download
+# Model Weights Download
 
-When deploying Roboflow Inference in environments with limited or no internet connectivity, you can pre-download model weights to enable offline operation. This guide covers how to download weights for different deployment methods.
+When deploying Roboflow Inference, model weights are downloaded to your device where inference runs locally. This guide covers how to download and cache model weights for different deployment methods.
 
 ## Overview
 
-Model weights are downloaded automatically the first time you run inference. However, in offline scenarios such as edge devices, air-gapped networks, or production environments with restricted internet access, you'll want to pre-cache these weights.
+Model weights are downloaded automatically the first time you run inference with a given model. The weights are cached locally on your device, and all inference is performed on-device (not in the cloud).
 
 **How It Works:**
 
-1. Download model weights while connected to the internet
-2. Cache them locally on your machine
-3. Run inference offline using the cached weights
+1. Download model weights to your device while connected to the internet
+2. Weights are cached locally on your machine
+3. Run inference on-device using the cached weights
 
-This approach works across all Roboflow deployment methods.
+This approach works across all Roboflow deployment methods and ensures fast, local inference.
 
 ## InferencePipeline (Video Streaming)
 
-The `InferencePipeline` is designed for real-time video processing and streaming applications. To use it offline, you need to pre-download the model weights before disconnecting from the internet.
+The `InferencePipeline` is designed for real-time video processing and streaming applications. You can pre-download model weights to ensure they're cached before running inference.
 
 ### Pre-downloading Weights
 
@@ -53,9 +53,9 @@ model = get_model(model_id="rfdetr-base", api_key="YOUR_ROBOFLOW_API_KEY")
 print("Model loaded and cached!")
 ```
 
-### Using Offline
+### Running Inference
 
-Once the weights are cached, you can use the `InferencePipeline` without an internet connection:
+Once the weights are cached, you can run inference on your device:
 
 ```python
 from inference import InferencePipeline
@@ -63,7 +63,7 @@ from inference.core.interfaces.stream.sinks import render_boxes
 
 api_key = "YOUR_ROBOFLOW_API_KEY"
 
-# This will use cached weights - no internet required
+# This will use cached weights for on-device inference
 pipeline = InferencePipeline.init(
     model_id="rfdetr-base",
     video_reference="path/to/video.mp4",
@@ -89,7 +89,7 @@ from inference import InferencePipeline
 
 ## Client SDK (Image-Based Inference)
 
-The `InferenceHTTPClient` is used for image-based inference and can run models or workflows. When using a self-hosted Inference server, you can pre-load models to enable offline operation.
+The `InferenceHTTPClient` is used for image-based inference and can run models or workflows. When using a self-hosted Inference server, you can pre-load models to ensure weights are cached for on-device inference.
 
 ### Option 1: Pre-loading Models with `load_model()`
 
@@ -129,9 +129,9 @@ result = client.infer(
 print("Model weights cached after first inference!")
 ```
 
-### Using Offline
+### Running Inference
 
-Once weights are cached on the server, all subsequent inference requests will work offline:
+Once weights are cached on the server, all subsequent inference requests will use the cached weights for fast, on-device inference:
 
 ```python
 from inference_sdk import InferenceHTTPClient
@@ -141,16 +141,16 @@ client = InferenceHTTPClient(
     api_key="YOUR_ROBOFLOW_API_KEY"
 )
 
-# No internet required - uses cached weights
+# Uses cached weights for on-device inference
 result = client.infer(
     "path/to/image.jpg",
     model_id="rfdetr-base"
 )
 ```
 
-### Running Workflows Offline
+### Running Workflows
 
-Workflows can also be pre-cached. To run workflows offline, you need to:
+Workflows can also be pre-cached. To ensure workflows use cached weights, you need to:
 
 1. Download model weights for all models used in the workflow
 2. Cache the workflow definition
@@ -172,10 +172,10 @@ result = client.run_workflow(
     workflow_id="your-workflow",
     images={"image": "path/to/image.jpg"}
 )
-print("Workflow cached and ready for offline use!")
+print("Workflow cached and ready!")
 ```
 
-### Docker Configuration for Offline Use
+### Docker Configuration
 
 When running Inference in Docker, you can mount a persistent cache volume to preserve downloaded weights:
 
@@ -206,12 +206,12 @@ model = get_model(
 print("Model weights cached!")
 ```
 
-### Using Offline
+### Running Inference
 
 ```python
 from inference import get_model
 
-# Uses cached weights - no internet required
+# Uses cached weights for on-device inference
 model = get_model(
     model_id="rfdetr-base",
     api_key="YOUR_ROBOFLOW_API_KEY"
@@ -250,11 +250,11 @@ print(f"Loaded models: {loaded_models}")
 
 ## Best Practices
 
-1. **Pre-download During Setup**: Download all required model weights during your deployment setup phase while internet is available
+1. **Pre-download During Setup**: Download all required model weights during your deployment setup phase to ensure they're cached
 
 2. **Use Persistent Cache**: Configure `MODEL_CACHE_DIR` to a persistent location, especially in Docker environments
 
-3. **Verify Before Deployment**: Always verify that models work offline before deploying to production environments
+3. **Verify Before Deployment**: Always verify that models are properly cached before deploying to production environments
 
 4. **Document Model IDs**: Keep a list of all model IDs and versions your application requires for easier pre-caching
 
@@ -264,7 +264,7 @@ print(f"Loaded models: {loaded_models}")
 
 ### Model Not Found Error
 
-If you get a "model not found" error when running offline:
+If you get a "model not found" error:
 
 - Verify the model was actually downloaded (check cache directory)
 - Ensure you're using the exact same `model_id` as when downloading
@@ -272,7 +272,7 @@ If you get a "model not found" error when running offline:
 
 ### Workflow Definition Missing
 
-For workflows, ensure you've run the workflow at least once while online to cache the definition. The workflow definition is separate from model weights.
+For workflows, ensure you've run the workflow at least once while connected to download and cache the workflow definition. The workflow definition is separate from model weights.
 
 ### Permission Issues
 
