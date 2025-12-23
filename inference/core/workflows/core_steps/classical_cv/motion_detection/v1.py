@@ -190,7 +190,7 @@ class MotionDetectionBlockV1(WorkflowBlock):
         mask = self.back_sub.apply(frame)
 
         # if frames aren't initialized yet, return no motion
-        if self.frame_count <= history and suppress_first_detections:
+        if self.frame_count < history and suppress_first_detections:
             self.frame_count += 1
             return {
                 "motion": False,
