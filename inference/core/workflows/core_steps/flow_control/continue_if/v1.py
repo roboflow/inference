@@ -11,9 +11,9 @@ from inference.core.workflows.core_steps.common.query_language.evaluation_engine
 )
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
+    FLOAT_KIND,
     Selector,
     StepSelector,
-    FLOAT_KIND,
 )
 from inference.core.workflows.execution_engine.v1.entities import FlowControl
 from inference.core.workflows.prototypes.block import (

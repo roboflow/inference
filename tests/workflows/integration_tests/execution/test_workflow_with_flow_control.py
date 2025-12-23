@@ -992,3 +992,197 @@ def test_flow_control_workflow_where_non_batch_nested_parameter_produced_by_step
     assert (
         result[1]["independent_expression"] == "EXECUTED INDEPENDENT!"
     ), "Expected independent expression to execute"
+
+
+WORKFLOW_WITH_CONTINUE_IF_AND_STOP_DELAY = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "InferenceImage", "name": "image"},
+        {"type": "WorkflowParameter", "name": "condition_value", "default_value": 1},
+    ],
+    "steps": [
+        {
+            "type": "ContinueIf",
+            "name": "continue_if_with_delay",
+            "condition_statement": {
+                "type": "StatementGroup",
+                "statements": [
+                    {
+                        "type": "BinaryStatement",
+                        "left_operand": {
+                            "type": "DynamicOperand",
+                            "operand_name": "condition",
+                        },
+                        "comparator": {"type": "(Number) =="},
+                        "right_operand": {"type": "StaticOperand", "value": 1},
+                    }
+                ],
+            },
+            "next_steps": ["$steps.dependent_model"],
+            "evaluation_parameters": {"condition": "$inputs.condition_value"},
+            "stop_delay": 0.5,
+        },
+        {
+            "type": "RoboflowObjectDetectionModel",
+            "name": "dependent_model",
+            "images": "$inputs.image",
+            "model_id": "yolov8n-640",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "predictions",
+            "selector": "$steps.dependent_model.predictions",
+        }
+    ],
+}
+
+
+@add_to_workflows_gallery(
+    category="Workflows with flow control",
+    use_case_title="Workflow with continue_if block using stop_delay",
+    use_case_description="""
+In this test scenario we verify the stop_delay functionality of the continue_if block.
+The stop_delay parameter allows the conditional branch to continue executing for a
+specified duration after the condition becomes false, enabling graceful degradation
+and delayed termination scenarios.
+""",
+    workflow_definition=WORKFLOW_WITH_CONTINUE_IF_AND_STOP_DELAY,
+    workflow_name_in_app="continue-if-stop-delay",
+)
+def test_continue_if_with_stop_delay_true_condition(
+    model_manager: ModelManager,
+    crowd_image: np.ndarray,
+) -> None:
+    """
+    Test continue_if block with stop_delay when condition is true.
+    When condition is true, the next steps should execute immediately.
+    """
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_CONTINUE_IF_AND_STOP_DELAY,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when - condition is true (condition_value=1)
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": crowd_image,
+            "condition_value": 1,
+        }
+    )
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 1, "Expected 1 result"
+    assert (
+        len(result[0]["predictions"]) > 0
+    ), "Expected detections when condition is true"
+
+
+def test_continue_if_with_stop_delay_false_condition(
+    model_manager: ModelManager,
+    crowd_image: np.ndarray,
+) -> None:
+    """
+    Test continue_if block with stop_delay when condition is false.
+    When condition is false, execution should persist within the stop_delay window.
+    """
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_CONTINUE_IF_AND_STOP_DELAY,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when - condition is false (condition_value=2), first execution
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": crowd_image,
+            "condition_value": 2,
+        }
+    )
+
+    # then - First execution with false condition and stop_delay still active
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 1, "Expected 1 result"
+    # With stop_delay > 0 and condition false, should not execute on first false
+    assert (
+        result[0]["predictions"] is None
+    ), "Expected no detections on first false condition"
+
+
+def test_continue_if_with_multiple_calls_respects_stop_delay(
+    model_manager: ModelManager,
+    crowd_image: np.ndarray,
+) -> None:
+    """
+    Test that continue_if block respects stop_delay across multiple executions.
+    When condition becomes true, stop_delay timer should start.
+    When condition is later false but within stop_delay window, execution continues.
+    After stop_delay expires, execution should terminate.
+    """
+    import time
+
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_CONTINUE_IF_AND_STOP_DELAY,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # First execution with condition true
+    result1 = execution_engine.run(
+        runtime_parameters={
+            "image": crowd_image,
+            "condition_value": 1,
+        }
+    )
+
+    # Check that condition true causes execution
+    assert (
+        len(result1[0]["predictions"]) > 0
+    ), "Expected detections when condition is true"
+
+    # Second execution with condition false but within stop_delay
+    result2 = execution_engine.run(
+        runtime_parameters={
+            "image": crowd_image,
+            "condition_value": 2,
+        }
+    )
+
+    # Should execute within stop_delay window
+    assert (
+        len(result2[0]["predictions"]) > 0
+    ), "Expected detections within stop_delay window after condition became false"
+
+    # Wait for stop_delay to expire (0.5 seconds + buffer)
+    time.sleep(0.6)
+
+    # Third execution with condition false after stop_delay expires
+    result3 = execution_engine.run(
+        runtime_parameters={
+            "image": crowd_image,
+            "condition_value": 2,
+        }
+    )
+
+    # Should not execute after stop_delay expires
+    assert (
+        result3[0]["predictions"] is None
+    ), "Expected no detections after stop_delay window expires"
