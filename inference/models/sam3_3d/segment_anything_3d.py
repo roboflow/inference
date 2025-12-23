@@ -168,8 +168,70 @@ if DEVICE is None:
     DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 import trimesh
-from pytorch3d.transforms import quaternion_to_matrix
+from pytorch3d.transforms import quaternion_to_matrix, quaternion_multiply, matrix_to_quaternion
 from tdfy.sam3d_v1.inference_utils import make_scene, ready_gaussian_for_video_rendering
+
+
+def apply_gaussian_view_correction(scene_gs):
+    """
+    Apply view correction to Gaussian scene to match GLB orientation.
+    Used for combined scene PLY.
+    """
+    xyz = scene_gs.get_xyz
+    device = xyz.device
+    dtype = xyz.dtype
+
+    R_view_zup = torch.tensor([
+        [-1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, -1.0]
+    ], device=device, dtype=dtype)
+
+    new_xyz = xyz @ R_view_zup
+    scene_gs.from_xyz(new_xyz)
+
+    q_correction = matrix_to_quaternion(R_view_zup.unsqueeze(0)).squeeze(0)
+    old_rotations = scene_gs.get_rotation
+    new_rotations = quaternion_multiply(
+        q_correction.unsqueeze(0).expand(old_rotations.shape[0], -1),
+        old_rotations
+    )
+    scene_gs.from_rotation(new_rotations)
+
+    return scene_gs
+
+
+def prepare_individual_object_for_export(gs):
+    """
+    Prepare an individual object Gaussian for PLY export.
+    """
+    from copy import deepcopy
+
+    gs_copy = deepcopy(gs)
+    gs_copy = ready_gaussian_for_video_rendering(gs_copy)
+
+    xyz = gs_copy.get_xyz
+    device = xyz.device
+    dtype = xyz.dtype
+
+    R_view = torch.tensor([
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, -1.0],
+        [0.0, 1.0, 0.0]
+    ], device=device, dtype=dtype)
+
+    new_xyz = xyz @ R_view
+    gs_copy.from_xyz(new_xyz)
+
+    q_correction = matrix_to_quaternion(R_view.unsqueeze(0)).squeeze(0)
+    old_rotations = gs_copy.get_rotation
+    new_rotations = quaternion_multiply(
+        q_correction.unsqueeze(0).expand(old_rotations.shape[0], -1),
+        old_rotations
+    )
+    gs_copy.from_rotation(new_rotations)
+
+    return gs_copy
 
 
 class Sam3_3D_ObjectsPipelineSingleton:
@@ -332,7 +394,6 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
                     image_np = image_np.astype(np.uint8)
             image_shape = (image_np.shape[0], image_np.shape[1])
 
-            # Convert to list of binary masks
             if _is_single_mask_input(mask_input):
                 masks = [convert_mask_to_binary(mask_input, image_shape)]
             elif isinstance(mask_input, np.ndarray) and mask_input.ndim == 3:
@@ -356,6 +417,7 @@ class SegmentAnything3_3D_Objects(RoboflowCoreModel):
             else:
                 scene_gs = make_scene(*outputs)
                 scene_gs = ready_gaussian_for_video_rendering(scene_gs)
+                scene_gs = apply_gaussian_view_correction(scene_gs)
                 scene_glb = make_scene_glb(*outputs)
                 return {
                     "gs": scene_gs,
@@ -407,8 +469,9 @@ def convert_3d_objects_result_to_api_response(
         obj_ply_bytes = None
         obj_gs = output.get("gs")
         if obj_gs is not None:
+            obj_gs_export = prepare_individual_object_for_export(obj_gs)
             obj_ply_buffer = BytesIO()
-            obj_gs.save_ply(obj_ply_buffer)
+            obj_gs_export.save_ply(obj_ply_buffer)
             obj_ply_buffer.seek(0)
             obj_ply_bytes = obj_ply_buffer.getvalue()
 
@@ -470,6 +533,10 @@ def transform_glb_to_world(glb_mesh, rotation, translation, scale):
 
 
 def make_scene_glb(*outputs):
+    """
+    Combine multiple GLB meshes into a single scene.
+    Applies layout transforms and a final view correction rotation.
+    """
     scene = trimesh.Scene()
 
     for i, output in enumerate(outputs):
@@ -483,5 +550,12 @@ def make_scene_glb(*outputs):
             output["scale"],
         )
         scene.add_geometry(glb, node_name=f"object_{i}")
+
+    R_view = np.array([[-1, 0, 0], [0, 0, -1], [0, -1, 0]], dtype=np.float32)
+    for geom_name in scene.geometry:
+        mesh = scene.geometry[geom_name]
+        mesh.vertices = (mesh.vertices.astype(np.float32)) @ R_view
+        if hasattr(mesh, 'vertex_normals') and mesh.vertex_normals is not None and len(mesh.vertex_normals) > 0:
+            mesh.vertex_normals = (mesh.vertex_normals.astype(np.float32)) @ R_view
 
     return scene
