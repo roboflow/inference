@@ -66,10 +66,10 @@ RFDETR_ALIASES = {
 }
 
 CLASSIFICATION_ALIASES = {
-    "resent18": "classifiers/1",
-    "resent34": "classifiers/2",
-    "resent50": "classifiers/3",
-    "resent101": "classifiers/4",
+    "resnet18": "classifiers/1",
+    "resnet34": "classifiers/2",
+    "resnet50": "classifiers/3",
+    "resnet101": "classifiers/4",
 }
 
 REGISTERED_ALIASES = {
