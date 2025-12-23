@@ -6,7 +6,11 @@ from inference.core.entities.requests.inference import (
     BaseRequest,
     InferenceRequestImage,
 )
-from inference.core.env import PERCEPTION_ENCODER_VERSION_ID
+from inference.core.exceptions import ModelNotRecognisedError
+from inference.core.env import (
+    PERCEPTION_ENCODER_DISALLOWED_VERSION_IDS,
+    PERCEPTION_ENCODER_VERSION_ID,
+)
 
 
 class PerceptionEncoderInferenceRequest(BaseRequest):
@@ -26,9 +30,26 @@ class PerceptionEncoderInferenceRequest(BaseRequest):
 
     # TODO[pydantic]: We couldn't refactor the `validator`, please replace it by `field_validator` manually.
     # Check https://docs.pydantic.dev/dev-v2/migration/#changes-to-validators for more information.
+    @validator("perception_encoder_version_id")
+    def validate_version_id(cls, value):
+        if value and value in PERCEPTION_ENCODER_DISALLOWED_VERSION_IDS:
+            raise ModelNotRecognisedError(
+                f"Perception Encoder model version '{value}' is not supported. "
+                f"Try a smaller model size."
+            )
+        return value
+
     @validator("model_id", always=True)
     def validate_model_id(cls, value, values):
         if value is not None:
+            # Extract version from model_id if provided directly
+            if "/" in value:
+                version_id = value.split("/")[-1]
+                if version_id in PERCEPTION_ENCODER_DISALLOWED_VERSION_IDS:
+                    raise ValueError(
+                        f"Perception Encoder model version '{version_id}' is not supported. "
+                        f"Try a smaller model size."
+                    )
             return value
         if values.get("perception_encoder_version_id") is None:
             return None

@@ -94,6 +94,16 @@ PERCEPTION_ENCODER_VERSION_ID = os.getenv(
 # Perception Encoder model ID
 PERCEPTION_ENCODER_MODEL_ID = f"perception_encoder/{PERCEPTION_ENCODER_VERSION_ID}"
 
+# Perception Encoder allowed version IDs, default is all three sizes
+PERCEPTION_ENCODER_DISALLOWED_VERSION_IDS = os.getenv(
+    "PERCEPTION_ENCODER_DISALLOWED_VERSION_IDS",
+    "PE-Core-G14-448",
+)
+if PERCEPTION_ENCODER_DISALLOWED_VERSION_IDS:
+    PERCEPTION_ENCODER_DISALLOWED_VERSION_IDS = set(
+        [v.strip() for v in PERCEPTION_ENCODER_DISALLOWED_VERSION_IDS.split(",") if v.strip()]
+    )
+
 # Gaze version ID, default is "L2CS"
 GAZE_VERSION_ID = os.getenv("GAZE_VERSION_ID", "L2CS")
 
