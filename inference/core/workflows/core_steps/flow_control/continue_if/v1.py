@@ -1,4 +1,4 @@
-from time import time
+import time
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
@@ -82,7 +82,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     stop_delay: Union[Selector(kind=[FLOAT_KIND]), float] = Field(
-        title="Threshold",
+        title="Stop Delay",
         description="Execution will persist for this many seconds after the false condition.",
         gt=0,
         examples=[5],
@@ -121,11 +121,10 @@ class ContinueIfBlockV1(WorkflowBlock):
         evaluation_result = evaluation_function(evaluation_parameters)
 
         if evaluation_result:
-            if self.stop_delay > 0:
+            if stop_delay > 0:
                 self.start_time = time.time()
             return FlowControl(mode="select_step", context=next_steps)
 
         if self.start_time and time.time() - self.start_time <= stop_delay:
             return FlowControl(mode="select_step", context=next_steps)
-
         return FlowControl(mode="terminate_branch")
