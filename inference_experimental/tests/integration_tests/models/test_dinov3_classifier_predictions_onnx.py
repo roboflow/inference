@@ -149,9 +149,13 @@ def test_classification_onnx_static_package_torch_tensor(
     predictions = model(chess_piece_image_torch)
 
     # then
+    if torch.cuda.is_available():
+        expected_confidence = torch.tensor([0.3553, 0.6447])
+    else:
+        expected_confidence = torch.tensor([0.3556, 0.6444])
     assert torch.allclose(
         predictions.confidence.cpu(),
-        torch.tensor([0.3556, 0.6444]).cpu(),
+        expected_confidence.cpu(),
         atol=0.0001,
     )
     assert torch.allclose(
@@ -183,9 +187,13 @@ def test_classification_onnx_static_package_batch_torch_tensor_stack(
     predictions = model(torch.stack([chess_piece_image_torch, flowers_resized], dim=0))
 
     # then
+    if torch.cuda.is_available():
+        expected_confidence = torch.tensor([[0.3553, 0.6447], [0.5261, 0.4739]])
+    else:
+        expected_confidence = torch.tensor([[0.3556, 0.6444], [0.5260, 0.4740]])
     assert torch.allclose(
         predictions.confidence.cpu(),
-        torch.tensor([[0.3556, 0.6444], [0.5260, 0.4740]]).cpu(),
+        expected_confidence.cpu(),
         atol=0.0001,
     )
     assert torch.allclose(
@@ -215,9 +223,13 @@ def test_classification_onnx_static_package_batch_torch_tensor_list(
     predictions = model([chess_piece_image_torch, flowers_image_torch])
 
     # then
+    if torch.cuda.is_available():
+        expected_confidence = torch.tensor([[0.3553, 0.6447], [0.5261, 0.4739]])
+    else:
+        expected_confidence = torch.tensor([[0.3556, 0.6444], [0.5259, 0.4741]])
     assert torch.allclose(
         predictions.confidence.cpu(),
-        torch.tensor([[0.3556, 0.6444], [0.5259, 0.4741]]).cpu(),
+        expected_confidence.cpu(),
         atol=0.0001,
     )
     assert torch.allclose(
