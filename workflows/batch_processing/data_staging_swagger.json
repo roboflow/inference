@@ -1,0 +1,1010 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Roboflow Data Staging API",
+    "description": "API for managing batches, uploading and managing media content in the Roboflow platform.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "{baseUrl}/data-staging/v1/external",
+      "variables": {
+        "baseUrl": {
+          "default": "https://api.roboflow.com",
+          "description": "Base URL for the Roboflow API"
+        }
+      }
+    }
+  ],
+  "paths": {
+    "/{workspace}/batches": {
+      "get": {
+        "summary": "List all staged batches",
+        "description": "Retrieves a page of staged batches list with basic metadata",
+        "operationId": "listBatches",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/workspaceParam"
+          },
+          {
+            "$ref": "#/components/parameters/apiKeyParam"
+          },
+          {
+            "$ref": "#/components/parameters/pageSizeParam"
+          },
+          {
+            "$ref": "#/components/parameters/nextPageTokenParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response with batches listing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListBatchesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{workspace}/batches/{batchId}/list": {
+      "get": {
+        "summary": "List batch content",
+        "description": "Retrieves a page of batch content including file metadata",
+        "operationId": "listBatchContent",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/workspaceParam"
+          },
+          {
+            "$ref": "#/components/parameters/batchIdParam"
+          },
+          {
+            "$ref": "#/components/parameters/apiKeyParam"
+          },
+          {
+            "$ref": "#/components/parameters/pageSizeParam"
+          },
+          {
+            "$ref": "#/components/parameters/nextPageTokenParam"
+          },
+          {
+            "$ref": "#/components/parameters/partNameParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response with batch content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListBatchResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{workspace}/batches/{batchId}/bulk-upload/image-references": {
+      "post": {
+        "summary": "Trigger images references ingest",
+        "description": "Upload image references to a batch for ingestion",
+        "operationId": "triggerImagesReferencesIngest",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/workspaceParam"
+          },
+          {
+            "$ref": "#/components/parameters/batchIdParam"
+          },
+          {
+            "$ref": "#/components/parameters/apiKeyParam"
+          },
+          {
+            "$ref": "#/components/parameters/displayNameParam"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "imageReferences": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string"
+                            },
+                            "url": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      },
+                      "ingestId": {
+                        "type": "string"
+                      },
+                      "notificationsURL": {
+                        "type": "string"
+                      },
+                      "notificationCategories": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": [
+                      "imageReferences"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "imageReferencesURL": {
+                        "type": "string"
+                      },
+                      "ingestId": {
+                        "type": "string"
+                      },
+                      "notificationsURL": {
+                        "type": "string"
+                      },
+                      "notificationCategories": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": [
+                      "imageReferencesURL"
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful ingest of image references",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageReferencesIngestResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{workspace}/batches/{batchId}/bulk-upload/video-references": {
+      "post": {
+        "summary": "Trigger videos references ingest",
+        "description": "Upload video references to a batch for ingestion",
+        "operationId": "triggerVideosReferencesIngest",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/workspaceParam"
+          },
+          {
+            "$ref": "#/components/parameters/batchIdParam"
+          },
+          {
+            "$ref": "#/components/parameters/apiKeyParam"
+          },
+          {
+            "$ref": "#/components/parameters/displayNameParam"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "videoReferences": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string"
+                            },
+                            "url": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      },
+                      "ingestId": {
+                        "type": "string"
+                      },
+                      "notificationsURL": {
+                        "type": "string"
+                      },
+                      "notificationCategories": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": [
+                      "videoReferences"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "videoReferencesURL": {
+                        "type": "string"
+                      },
+                      "ingestId": {
+                        "type": "string"
+                      },
+                      "notificationsURL": {
+                        "type": "string"
+                      },
+                      "notificationCategories": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": [
+                      "videoReferencesURL"
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful ingest of video references",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoReferencesIngestResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{workspace}/batches/{batchId}/upload/image": {
+      "post": {
+        "summary": "Upload an image to a batch",
+        "description": "Upload a single image file to the specified batch",
+        "operationId": "uploadImage",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/workspaceParam"
+          },
+          {
+            "$ref": "#/components/parameters/batchIdParam"
+          },
+          {
+            "$ref": "#/components/parameters/apiKeyParam"
+          },
+          {
+            "$ref": "#/components/parameters/displayNameParam"
+          },
+          {
+            "name": "fileName",
+            "in": "query",
+            "description": "The name to use for the uploaded file",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                },
+                "required": [
+                  "file"
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Image successfully uploaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{workspace}/batches/{batchId}/upload/video": {
+      "post": {
+        "summary": "Get signed URL for video upload",
+        "description": "Get a signed URL to upload a video to cloud storage via subsequent PUT request.",
+        "operationId": "getVideoUploadUrl",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/workspaceParam"
+          },
+          {
+            "$ref": "#/components/parameters/batchIdParam"
+          },
+          {
+            "$ref": "#/components/parameters/apiKeyParam"
+          },
+          {
+            "$ref": "#/components/parameters/displayNameParam"
+          },
+          {
+            "name": "fileName",
+            "in": "query",
+            "description": "The name to use for the uploaded file",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successfully obtained signed URL for video upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "signedURLDetails": {
+                      "type": "object",
+                      "properties": {
+                        "uploadURL": {
+                          "type": "string"
+                        },
+                        "extensionHeaders": {
+                          "type": "object"
+                        }
+                      },
+                      "required": [
+                        "uploadURL",
+                        "extensionHeaders"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "signedURLDetails"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{workspace}/batches/{batchId}/bulk-upload/image-files": {
+      "post": {
+        "summary": "Get signed URL for bulk image upload",
+        "description": "Get a signed URL to upload a shard of multiple images via subsequent PUT request.",
+        "operationId": "getImagesShardUploadUrl",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/workspaceParam"
+          },
+          {
+            "$ref": "#/components/parameters/batchIdParam"
+          },
+          {
+            "$ref": "#/components/parameters/apiKeyParam"
+          },
+          {
+            "$ref": "#/components/parameters/displayNameParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successfully obtained signed URL for bulk image upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "signedURLDetails": {
+                      "type": "object",
+                      "properties": {
+                        "uploadURL": {
+                          "type": "string"
+                        },
+                        "extensionHeaders": {
+                          "type": "object"
+                        }
+                      },
+                      "required": [
+                        "uploadURL",
+                        "extensionHeaders"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "signedURLDetails"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{workspace}/batches/{batchId}/count": {
+      "get": {
+        "summary": "Get batch count",
+        "description": "Get the count of items in a batch",
+        "operationId": "getBatchCount",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/workspaceParam"
+          },
+          {
+            "$ref": "#/components/parameters/batchIdParam"
+          },
+          {
+            "$ref": "#/components/parameters/apiKeyParam"
+          },
+          {
+            "$ref": "#/components/parameters/partNameParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successfully retrieved batch count",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "count"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/{workspace}/batches/{batchId}": {
+      "get": {
+        "summary": "Get batch metadata",
+        "description": "Retrieve metadata for a specific batch",
+        "operationId": "getBatchMetadata",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/workspaceParam"
+          },
+          {
+            "$ref": "#/components/parameters/batchIdParam"
+          },
+          {
+            "$ref": "#/components/parameters/apiKeyParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successfully retrieved batch metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "batch": {
+                      "$ref": "#/components/schemas/BatchMetadata"
+                    }
+                  },
+                  "required": [
+                    "batch"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/{workspace}/batches/{batchId}/parts": {
+      "get": {
+        "summary": "List multipart batch parts",
+        "description": "List all parts of a multipart batch",
+        "operationId": "listMultipartBatchParts",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/workspaceParam"
+          },
+          {
+            "$ref": "#/components/parameters/batchIdParam"
+          },
+          {
+            "$ref": "#/components/parameters/apiKeyParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successfully retrieved multipart batch parts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListMultipartBatchPartsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/{workspace}/batches/{batchId}/shards": {
+      "get": {
+        "summary": "Get batch shards statuses",
+        "description": "Get the status of shards in a batch",
+        "operationId": "getBatchShardsStatuses",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/workspaceParam"
+          },
+          {
+            "$ref": "#/components/parameters/batchIdParam"
+          },
+          {
+            "$ref": "#/components/parameters/apiKeyParam"
+          },
+          {
+            "$ref": "#/components/parameters/pageSizeParam"
+          },
+          {
+            "$ref": "#/components/parameters/nextPageTokenParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successfully retrieved batch shards statuses",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageOfBatchShardsStatuses"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "workspaceParam": {
+        "name": "workspace",
+        "in": "path",
+        "description": "The workspace identifier",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "batchIdParam": {
+        "name": "batchId",
+        "in": "path",
+        "description": "The batch identifier",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "apiKeyParam": {
+        "name": "api_key",
+        "in": "query",
+        "description": "The API key for authentication",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "pageSizeParam": {
+        "name": "pageSize",
+        "in": "query",
+        "description": "Number of items to return per page",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "nextPageTokenParam": {
+        "name": "nextPageToken",
+        "in": "query",
+        "description": "Token for retrieving the next page of results",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "partNameParam": {
+        "name": "partName",
+        "in": "query",
+        "description": "The name of the part in a multipart batch",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "displayNameParam": {
+        "name": "displayName",
+        "in": "query",
+        "description": "Display name for the batch",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "schemas": {
+      "BatchMetadata": {
+        "type": "object",
+        "properties": {
+          "displayName": {
+            "type": "string"
+          },
+          "batchId": {
+            "type": "string"
+          },
+          "batchType": {
+            "type": "string"
+          },
+          "batchContentType": {
+            "type": "string"
+          },
+          "createdDate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiryDate": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "displayName",
+          "batchId",
+          "batchType",
+          "batchContentType",
+          "createdDate",
+          "expiryDate"
+        ]
+      },
+      "MultipartBatchPartMetadata": {
+        "type": "object",
+        "properties": {
+          "partName": {
+            "type": "string"
+          },
+          "partType": {
+            "type": "string"
+          },
+          "contentType": {
+            "type": "string"
+          },
+          "partDescription": {
+            "type": "string"
+          },
+          "nestedContentType": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "partName",
+          "partType",
+          "contentType"
+        ]
+      },
+      "ListMultipartBatchPartsResponse": {
+        "type": "object",
+        "properties": {
+          "batchParts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MultipartBatchPartMetadata"
+            }
+          }
+        },
+        "required": [
+          "batchParts"
+        ]
+      },
+      "FileMetadata": {
+        "type": "object",
+        "properties": {
+          "downloadURL": {
+            "type": "string"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "partName": {
+            "type": "string"
+          },
+          "shardId": {
+            "type": "string"
+          },
+          "contentType": {
+            "type": "string"
+          },
+          "nestedContentType": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "downloadURL",
+          "fileName",
+          "contentType"
+        ]
+      },
+      "ListBatchesResponse": {
+        "type": "object",
+        "properties": {
+          "batches": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BatchMetadata"
+            }
+          },
+          "nextPageToken": {
+            "type": "string"
+          }
+        },
+        "required": ["batches"]
+      },
+      "ListBatchResponse": {
+        "type": "object",
+        "properties": {
+          "filesMetadata": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FileMetadata"
+            }
+          },
+          "nextPageToken": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "filesMetadata"
+        ]
+      },
+      "ImageReferencesIngestResponse": {
+        "type": "object",
+        "properties": {
+          "shardIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ingestId": {
+            "type": "string"
+          },
+          "duplicated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ingestId"
+        ]
+      },
+      "VideoReferencesIngestResponse": {
+        "type": "object",
+        "properties": {
+          "ingestId": {
+            "type": "string"
+          },
+          "duplicated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ingestId"
+        ]
+      },
+      "ShardDetails": {
+        "type": "object",
+        "properties": {
+          "shardId": {
+            "type": "string"
+          },
+          "statusName": {
+            "type": "string"
+          },
+          "statusType": {
+            "type": "string"
+          },
+          "eventTimestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "shardObjectsCount": {
+            "type": "integer"
+          },
+          "statusMetadata": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "shardId",
+          "statusName",
+          "statusType",
+          "eventTimestamp",
+          "shardObjectsCount"
+        ]
+      },
+      "PageOfBatchShardsStatuses": {
+        "type": "object",
+        "properties": {
+          "shards": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ShardDetails"
+            }
+          },
+          "nextPageToken": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "shards"
+        ]
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Bad request parameters",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Unauthorized access",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Resource not found",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ServerError": {
+        "description": "Internal server error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
