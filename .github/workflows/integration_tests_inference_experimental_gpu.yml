@@ -97,7 +97,7 @@ jobs:
           python -m uv pip install -e .[test,${{ matrix.extras.install }}] --python .venv
       - name: 🧪 Run tests marked `${{ matrix.extras.marker }}`
         if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
-        working-directory: inference_experimental
+        working-directory: inference_models
         timeout-minutes: 25
         run: |
           source .venv/bin/activate
