@@ -29,7 +29,7 @@ on:
           - '3.12'
 
 jobs:
-  integration-tests-inference-experimental-cpu:
+  integration-tests-inference-models-cpu:
     name: ${{ matrix.extras.marker }}:${{ matrix.python-version }}
     runs-on:
       labels: depot-ubuntu-22.04-4

@@ -97,12 +97,12 @@ def ensure_inference_is_installed() -> None:
             ) from inner_error
 
 
-def ensure_inference_experimental_is_installed() -> None:
+def ensure_inference_models_is_installed() -> None:
     try:
         import inference_models
     except Exception as error:
         raise InferencePackageMissingError(
-            "You need to install `inference-exp` package to use this feature. Run `pip install inference-exp`"
+            "You need to install `inference-models` package to use this feature. Run `pip install inference-models`"
         ) from error
 
 

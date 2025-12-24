@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  e2e-tests-inference-experimental-gpu:
+  e2e-tests-inference-models-gpu:
     runs-on:
       labels: depot-ubuntu-22.04-4
       group: public-depot

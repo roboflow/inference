@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  e2e-tests-inference-experimental-gpu:
+  e2e-tests-inference-models-gpu:
     runs-on: Roboflow-GPU-VM-Runner
     timeout-minutes: 30
     steps:

@@ -1,4 +1,4 @@
-name: INTEGRATION TESTS - inference_experimental (GPU)
+name: INTEGRATION TESTS - inference-models (GPU)
 permissions:
   contents: read
 on:
@@ -26,7 +26,7 @@ on:
           - '3.12'
 
 jobs:
-  integration-tests-inference-experimental-gpu:
+  integration-tests-inference-models-gpu:
     name: ${{ matrix.extras.marker }}:${{ matrix.python-version }}
     runs-on: Roboflow-GPU-VM-Runner
     timeout-minutes: 30
@@ -47,7 +47,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ~/.cache/uv
-          key: ${{ runner.os }}-uv-${{ matrix.python-version }}-${{ hashFiles('inference_experimental/pyproject.toml') }}
+          key: ${{ runner.os }}-uv-${{ matrix.python-version }}-${{ hashFiles('inference_models/pyproject.toml') }}
           restore-keys: |
             ${{ runner.os }}-uv-${{ matrix.python-version }}-
       - name: 📦 Cache apt packages
@@ -84,7 +84,7 @@ jobs:
           sudo chown -R $(whoami):$(whoami) ~/apt-cache
       - name: 📦 Install base dependencies as well as `${{ matrix.extras.install }}` dependencies
         if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
-        working-directory: inference_experimental
+        working-directory: inference_models
         run: |
           export CUDA_HOME=/usr/local/cuda-12.5
           export PATH=/usr/local/cuda-12.5/bin:$PATH

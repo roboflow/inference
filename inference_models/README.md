@@ -1,9 +1,9 @@
 # Experimental version of inference
 
-## 🚀 Introducing `inference-exp` - the evolution of `inference`
+## 🚀 Introducing `inference-models` - the evolution of `inference`
 
 At Roboflow, we’re taking a bold step toward a new generation of `inference` — designed to be faster, 
-more reliable, and more user-friendly. With this vision in mind, we’re building a new library called `inference-exp`.
+more reliable, and more user-friendly. With this vision in mind, we’re building a new library called `inference-models`.
 
 This is an early-stage project, and we’re sharing initial versions to gather valuable community feedback. 
 Your input will help us shape and steer this initiative in the right direction.
@@ -11,34 +11,34 @@ Your input will help us shape and steer this initiative in the right direction.
 We’re excited to have you join us on this journey — let’s build something great together! 🤝
 
 > [!CAUTION]
-> The `inference-exp` package **is an experimental preview** of upcoming inference capabilities.
+> The `inference-models` package **is an experimental preview** of upcoming inference capabilities.
 > * Features may change, break, or be removed without notice.
 > * We **do not guarantee backward compatibility** between releases.
 > 
-> ❗ **We strongly advise against** using `inference-exp` in production systems - for such purposes 
+> ❗ **We strongly advise against** using `inference-models` in production systems - for such purposes 
 > please **continue to use the stable `inference` package.**
 
 ## ⚡ Installation
 
 > [!TIP]
-> We recommend using `uv` to install `inference-exp`. To install the tool, follow 
+> We recommend using `uv` to install `inference-models`. To install the tool, follow 
 > [official guide](https://docs.astral.sh/uv/getting-started/installation/) or use the snippet below:
 > ```bash
 > curl -LsSf https://astral.sh/uv/install.sh | sh
 > ```
 
-Use the following command to install `inference-exp` on **CPU machine 💻** (below you can find more advanced options):
+Use the following command to install `inference-models` on **CPU machine 💻** (below you can find more advanced options):
 
 ```bash
-uv pip install inference-exp
+uv pip install inference-models
 # or - if you use pip
-pip install inference-exp
+pip install inference-models
 ```
 
 <details>
 <summary>👉 GPU installation</summary>
 
-As you may learn from [📜 Principles and Assumptions](#-principles-and-assumptions), `inference-exp` is designed to 
+As you may learn from [📜 Principles and Assumptions](#-principles-and-assumptions), `inference-models` is designed to 
 compose the build out of different [extras](#-extra-dependencies) defined for the package. Some extras bring new 
 models, while others - ability to run models created for specific backend. To get the most out of the installation
 on GPU machine, we recommend including TRT and ONNX extensions, as well as select `torch-cu*` extras to install 
@@ -46,9 +46,9 @@ torch compliant with version of CUDA installed on the machine. ONNX backend is p
 models trained on Roboflow platform.
 
 ```bash
-uv pip install "inference-exp[torch-cu128,onnx-cu12,trt10]" "tensorrt==10.12.0.36"
+uv pip install "inference-models[torch-cu128,onnx-cu12,trt10]" "tensorrt==10.12.0.36"
 # or - if you use pip
-pip install "inference-exp[torch-cu128,onnx-cu12,trt10]" "tensorrt==10.12.0.36"
+pip install "inference-models[torch-cu128,onnx-cu12,trt10]" "tensorrt==10.12.0.36"
 ```
 
 > To avoid clashes with external packages, `pyproject.toml` defines quite loose restrictions for the dependent packages.
@@ -68,9 +68,9 @@ For CPU installations, we recommend installing ONNX backed, as the majority of m
 are exported to ONNX and not available:
 ```bash
 # to install with ONNX backend
-uv pip install "inference-exp[onnx-cpu]"
+uv pip install "inference-models[onnx-cpu]"
 # or - to install only base dependencies
-uv pip install inference-exp
+uv pip install inference-models
 ```
 
 </details>
@@ -136,12 +136,12 @@ but can be fully overridden by the user when needed.
 Extras dependencies are optional features of the package that can be installed with:
 
 ```bash
-uv pip install "inference-exp[extras-name-1,extras-name-1]"
+uv pip install "inference-models[extras-name-1,extras-name-1]"
 # or - if you use pip
-pip install "inference-exp[extras-name-1,extras-name-2]"
+pip install "inference-models[extras-name-1,extras-name-2]"
 ```
 
-In case of `inference-exp`, extras bring either additional **backends** (dependencies to run AI models of different type, 
+In case of `inference-models`, extras bring either additional **backends** (dependencies to run AI models of different type, 
 like TensorRT engines) or additional **models**. 
 
 ### Backends
@@ -162,11 +162,11 @@ like TensorRT engines) or additional **models**.
 
 #### Special Installation: SAM2 Real-Time
 
-`sam2 real time` requires a Git-based dependency that cannot be distributed via PyPI. To use SAM2 real-time capabilities, you need to manually install it after installing `inference-exp`:
+`sam2 real time` requires a Git-based dependency that cannot be distributed via PyPI. To use SAM2 real-time capabilities, you need to manually install it after installing `inference-models`:
 
 ```bash
-# First, install inference-exp with your desired extras (e.g., torch-cu124)
-pip install "inference-exp[torch-cu124]"
+# First, install inference-models with your desired extras (e.g., torch-cu124)
+pip install "inference-models[torch-cu124]"
 
 # Then, install SAM2 real-time from GitHub
 pip install git+https://github.com/Gy920/segment-anything-2-real-time.git
@@ -195,7 +195,7 @@ uv pip install git+https://github.com/Gy920/segment-anything-2-real-time.git
 
 > [!IMPORTANT] 
 > If you see a bug in model implementation or loading mechanism - create 
-> [new issue](https://github.com/roboflow/inference/issues/) tagging it with `inference-exp-bug`.
+> [new issue](https://github.com/roboflow/inference/issues/) tagging it with `inference-models-bug`.
 > 
 > Additionally, We are working hard to extend pool of supported models - suggestions on new models to be added 
 > appreciated 🤝
