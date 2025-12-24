@@ -8,6 +8,7 @@ from shapely.ops import unary_union
 from typing import List, Tuple
 
 from inference.core.workflows.execution_engine.entities.base import (
+    Batch,
     OutputDefinition,
 )
 from inference.core.workflows.execution_engine.entities.types import (
@@ -15,6 +16,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    KEYPOINT_DETECTION_PREDICTION_KIND,
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -90,25 +92,15 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
-    def get_dimensionality_reference_property(cls) -> Optional[str]:
-        return "parent_detection"
-
-    #@classmethod
-    #def get_output_dimensionality_offset(
-    #    cls,
-    #) -> int:
-    #    return -1
-
-    #@classmethod
-    #def get_parameters_enforcing_auto_batch_casting(cls) -> List[str]:
-    #    return ["child_detections"]
-
-    @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
                 name="rolled_up_detections",
-                kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND, OBJECT_DETECTION_PREDICTION_KIND],
+                kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND, OBJECT_DETECTION_PREDICTION_KIND, KEYPOINT_DETECTION_PREDICTION_KIND],
+            ),
+            OutputDefinition(
+                name="crop_zones",
+                kind=[LIST_OF_VALUES_KIND],
             )
         ]
 
@@ -124,24 +116,20 @@ class DimensionRollUpBlockV1(WorkflowBlock):
         return BlockManifest
 
     def run(self,
-            parent_detection: Union[OBJECT_DETECTION_PREDICTION_KIND,INSTANCE_SEGMENTATION_PREDICTION_KIND],
+            parent_detection: Union[OBJECT_DETECTION_PREDICTION_KIND,INSTANCE_SEGMENTATION_PREDICTION_KIND, KEYPOINT_DETECTION_PREDICTION_KIND],
             child_detections: Any, # TBD List[Union[OBJECT_DETECTION_PREDICTION_KIND,INSTANCE_SEGMENTATION_PREDICTION_KIND]]],
             confidence_strategy: str = "max",
             overlap_threshold: float = 0.0,
             ) -> BlockResult:
 
-        print("Running Dimension Rollup Block V1")
-        print(type(parent_detection))
-        print(type(child_detections))
-        print(parent_detection)
-        print(child_detections)
-
-        return {"rolled_up_detections": merge_crop_predictions(
+        detections, zones = merge_crop_predictions(
             parent_detection,
             child_detections,
             confidence_strategy,
             overlap_threshold
-        )}
+        )
+
+        return {"rolled_up_detections": detections, "crop_zones": zones}
 
 
 def merge_crop_predictions(
@@ -149,8 +137,7 @@ def merge_crop_predictions(
     child_predictions: List,
     confidence_strategy: str = "max",
     overlap_threshold: float = 0.0
-):
-
+) -> Tuple:
     """
     Merge predictions from multiple crops back to parent image coordinates.
 
@@ -167,8 +154,11 @@ def merge_crop_predictions(
                          - 1.0: Only merge completely overlapping detections
 
     Returns:
-        Detections object with merged predictions in parent image coordinates.
-        Works for both instance segmentation (with masks) and object detection (without masks).
+        Tuple of (detections, crop_zones):
+        - detections: Detections object with merged predictions in parent image coordinates.
+                     Works for both instance segmentation (with masks) and object detection (without masks).
+        - crop_zones: List of lists of (x, y) tuples. Each inner list defines the rectangular
+                     zone boundary of a crop in parent image coordinates as 4 corner points.
     """
     if len(parent_prediction) != len(child_predictions):
         raise ValueError(
@@ -187,6 +177,21 @@ def merge_crop_predictions(
 
     # Get the first tuple (all should be identical for the same parent image)
     parent_image_shape = root_parent_dims[0]
+
+    # Build crop zones list - one zone per crop/child prediction
+    crop_zones = []
+    for i in range(len(parent_prediction)):
+        crop_bbox = parent_prediction.xyxy[i]  # [x_min, y_min, x_max, y_max]
+        x_min, y_min, x_max, y_max = crop_bbox[0], crop_bbox[1], crop_bbox[2], crop_bbox[3]
+
+        # Create zone as list of 4 corner points: top-left, top-right, bottom-right, bottom-left
+        zone = [
+            (float(x_min), float(y_min)),  # top-left
+            (float(x_max), float(y_min)),  # top-right
+            (float(x_max), float(y_max)),  # bottom-right
+            (float(x_min), float(y_max))   # bottom-left
+        ]
+        crop_zones.append(zone)
 
     # Check if we have instance segmentation (with masks) or object detection (without masks)
     has_masks = False
@@ -353,7 +358,7 @@ def merge_crop_predictions(
     if not merged_confidences:
         # Return empty detections if no detections
         from supervision import Detections
-        return Detections.empty()
+        return Detections.empty(), crop_zones
 
     # Convert to numpy arrays
     merged_confidences_array = np.array(merged_confidences, dtype=np.float32)
@@ -414,7 +419,7 @@ def merge_crop_predictions(
             # Other fields - store as is
             result.data[key] = np.array(values)
 
-    return result
+    return result, crop_zones
 
 
 def _transform_mask_to_parent(
@@ -676,7 +681,6 @@ def _find_overlapping_bbox_groups(predictions: List[dict], overlap_threshold: fl
         groups_dict[root].append(predictions[i])
 
     return list(groups_dict.values())
-
 
 def _mask_to_polygons(mask: np.ndarray) -> List[Polygon]:
     """
