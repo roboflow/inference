@@ -3,12 +3,6 @@ from time import perf_counter
 from typing import Any, Generic, List, Optional, Tuple, Union
 
 import numpy as np
-from inference_models.models.base.object_detection import Detections, ObjectDetectionModel
-from inference_models.models.base.types import (
-    PreprocessedInputs,
-    PreprocessingMetadata,
-    RawPrediction,
-)
 
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
@@ -20,6 +14,15 @@ from inference.core.logger import logger
 from inference.core.models.base import Model
 from inference.core.utils.image_utils import load_image_rgb
 from inference.models.aliases import resolve_roboflow_model_alias
+from inference_models.models.base.object_detection import (
+    Detections,
+    ObjectDetectionModel,
+)
+from inference_models.models.base.types import (
+    PreprocessedInputs,
+    PreprocessingMetadata,
+    RawPrediction,
+)
 
 
 class InferenceExpObjectDetectionModelAdapter(Model):

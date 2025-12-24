@@ -17,8 +17,8 @@ from inference_cli.lib.benchmark.results_gathering import (
 )
 from inference_cli.lib.utils import (
     dump_json,
-    ensure_inference_models_is_installed,
     ensure_inference_is_installed,
+    ensure_inference_models_is_installed,
     initialise_client,
 )
 

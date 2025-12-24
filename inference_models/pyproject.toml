@@ -1,7 +1,7 @@
 [project]
 name = "inference-models"
-version = "0.18.1"
-description = "Experimental vresion of inference package which is supposed to evolve into inference 1.0"
+version = "0.18.2"
+description = "The new inference engine for Computer Vision models"
 readme = "README.md"
 requires-python = ">=3.9,<3.13"
 dependencies = [
@@ -153,7 +153,7 @@ url = "https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxrunti
 explicit = true
 
 [tool.setuptools.packages.find]
-include = ["inference_exp*"]
+include = ["inference_models*"]
 exclude = ["development*", "dockerfiles*", "tests*"]
 
 [[tool.uv.dependency-metadata]]

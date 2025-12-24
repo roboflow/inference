@@ -4,13 +4,13 @@ from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import torch
-from inference_models import AutoModel
-from inference_models.configuration import DEFAULT_DEVICE
-from inference_models.models.auto_loaders.entities import AnyModel
 from supervision.utils.file import read_yaml_file
 from tqdm import tqdm
 
 from inference_cli.lib.benchmark.results_gathering import ResultsCollector
+from inference_models import AutoModel
+from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.models.auto_loaders.entities import AnyModel
 
 
 def run_inference_experimental_benchmark(
