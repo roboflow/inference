@@ -14,10 +14,12 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 
 
-def test_convert_inference_detections_batch_to_sv_detections_with_invalid_polygons() -> None:
+def test_convert_inference_detections_batch_to_sv_detections_with_invalid_polygons() -> (
+    None
+):
     # given
-    # supervision skips polygons with < 3 points. 
-    # If we have 2 predictions, one valid and one invalid, 
+    # supervision skips polygons with < 3 points.
+    # If we have 2 predictions, one valid and one invalid,
     # sv.Detections.from_inference returns a Detections object of length 1.
     predictions = [
         {
@@ -49,7 +51,7 @@ def test_convert_inference_detections_batch_to_sv_detections_with_invalid_polygo
                     "points": [
                         {"x": 90, "y": 170},
                         {"x": 90, "y": 190},
-                    ], # ONLY 2 POINTS - will be skipped by supervision
+                    ],  # ONLY 2 POINTS - will be skipped by supervision
                     "class": "cat",
                     "detection_id": "invalid",
                     "parent_id": "image",
@@ -66,17 +68,17 @@ def test_convert_inference_detections_batch_to_sv_detections_with_invalid_polygo
     # then
     assert len(result) == 1
     detections = result[0]
-    
+
     # Core fields length
     assert len(detections.xyxy) == 1
     assert len(detections.confidence) == 1
     assert len(detections.class_id) == 1
-    
+
     # Metadata fields length (THIS WAS THE BUG - they used to be length 2)
     assert len(detections.data["detection_id"]) == 1
     assert len(detections.data["parent_id"]) == 1
     assert len(detections.data["image_dimensions"]) == 1
-    
+
     # Ensure they contain the right data (the valid one)
     assert detections.data["detection_id"][0] == "valid"
 
@@ -103,10 +105,10 @@ def test_deserialize_detections_kind_with_invalid_polygons() -> None:
                 "y": 15,
                 "confidence": 0.6,
                 "class_id": 2,
-                "points": [{"x": 10, "y": 10}, {"x": 20, "y": 20}], # INVALID
+                "points": [{"x": 10, "y": 10}, {"x": 20, "y": 20}],  # INVALID
                 "class": "invalid",
-            }
-        ]
+            },
+        ],
     }
 
     # when
@@ -147,11 +149,11 @@ def test_post_process_ocr_result_with_invalid_polygons() -> None:
                     "y": 15,
                     "confidence": 0.6,
                     "class_id": 2,
-                    "points": [{"x": 10, "y": 10}, {"x": 20, "y": 20}], # INVALID
+                    "points": [{"x": 10, "y": 10}, {"x": 20, "y": 20}],  # INVALID
                     "class": "invalid",
                     "detection_id": "invalid_ocr",
-                }
-            ]
+                },
+            ],
         }
     ]
     images = [

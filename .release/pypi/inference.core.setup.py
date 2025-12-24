@@ -41,8 +41,8 @@ setuptools.setup(
             "tests.*",
             "development",
             "development.*",
-            "inference_experimental",
-            "inference_experimental.*"
+            "inference_models",
+            "inference_models.*"
         ),
     ),
     package_data={

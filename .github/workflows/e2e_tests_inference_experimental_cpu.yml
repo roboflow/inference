@@ -1,4 +1,4 @@
-name: E2E tests - inference_experimental (CPU)
+name: E2E tests - inference_models (CPU)
 permissions:
   contents: read
 on:
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  e2e-tests-inference-experimental-gpu:
+  e2e-tests-inference-models-gpu:
     runs-on:
       labels: depot-ubuntu-22.04-4
       group: public-depot
@@ -19,7 +19,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ~/.cache/uv
-          key: ${{ runner.os }}-uv-3.12-${{ hashFiles('inference_experimental/pyproject.toml') }}
+          key: ${{ runner.os }}-uv-3.12-${{ hashFiles('inference_models/pyproject.toml') }}
           restore-keys: |
             ${{ runner.os }}-uv-3.12-
       - name: 📦 Cache apt packages
@@ -35,14 +35,14 @@ jobs:
           python-version: 3.12
           check-latest: true
       - name: 📦 Install dependencies
-        working-directory: inference_experimental
+        working-directory: inference_models
         run: |
           python -m pip install --upgrade pip
           python -m pip install uv
           python -m uv venv
           python -m uv pip install -e .[test,onnx-cpu,torch-cpu,mediapipe] --python .venv
       - name: 🧪 Run E2E tests
-        working-directory: inference_experimental
+        working-directory: inference_models
         timeout-minutes: 20
         run: |
           source .venv/bin/activate

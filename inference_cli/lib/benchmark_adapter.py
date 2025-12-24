@@ -17,8 +17,8 @@ from inference_cli.lib.benchmark.results_gathering import (
 )
 from inference_cli.lib.utils import (
     dump_json,
-    ensure_inference_experimental_is_installed,
     ensure_inference_is_installed,
+    ensure_inference_models_is_installed,
     initialise_client,
 )
 
@@ -230,7 +230,7 @@ def run_python_package_speed_benchmark(
     )
 
 
-def run_inference_experimental_benchmark(
+def run_inference_models_benchmark(
     model_id: str,
     dataset_reference: str,
     warm_up_inferences: int = 10,
@@ -243,11 +243,11 @@ def run_inference_experimental_benchmark(
     turn_images_to_tensors: bool = True,
     allow_untrusted_packages: bool = True,
 ) -> None:
-    ensure_inference_experimental_is_installed()
+    ensure_inference_models_is_installed()
 
     # importing here not to affect other entrypoints by missing `inference` core library
-    from inference_cli.lib.benchmark.inference_experimental_speed import (
-        run_inference_experimental_benchmark,
+    from inference_cli.lib.benchmark.inference_models_speed import (
+        run_inference_models_benchmark,
     )
 
     dataset_images = load_dataset_images(
@@ -260,7 +260,7 @@ def run_inference_experimental_benchmark(
         target=display_benchmark_statistics, args=(results_collector,)
     )
     statistics_display_thread.start()
-    run_inference_experimental_benchmark(
+    run_inference_models_benchmark(
         model_id=model_id,
         images=dataset_images,
         results_collector=results_collector,

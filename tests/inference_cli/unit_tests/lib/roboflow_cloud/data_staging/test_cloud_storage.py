@@ -81,7 +81,9 @@ def test_get_fs_kwargs_gcs(monkeypatch):
     """Test GCS authentication - gcsfs auto-detects GOOGLE_APPLICATION_CREDENTIALS"""
     monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
     monkeypatch.delenv("AWS_PROFILE", raising=False)
-    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", "/path/to/service-account.json")
+    monkeypatch.setenv(
+        "GOOGLE_APPLICATION_CREDENTIALS", "/path/to/service-account.json"
+    )
 
     # gcsfs auto-detects GOOGLE_APPLICATION_CREDENTIALS, so no kwargs needed
     kwargs = _get_fs_kwargs("gs")
@@ -107,7 +109,9 @@ def test_get_fs_kwargs_azure_sas_token(monkeypatch):
     monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
     monkeypatch.delenv("AWS_PROFILE", raising=False)
     monkeypatch.setenv("AZURE_STORAGE_ACCOUNT_NAME", "myaccount")
-    monkeypatch.setenv("AZURE_STORAGE_SAS_TOKEN", "sv=2021-06-08&ss=b&srt=sco&sp=rl&se=2024-12-31")
+    monkeypatch.setenv(
+        "AZURE_STORAGE_SAS_TOKEN", "sv=2021-06-08&ss=b&srt=sco&sp=rl&se=2024-12-31"
+    )
 
     kwargs = _get_fs_kwargs("az")
     assert kwargs["account_name"] == "myaccount"
@@ -217,13 +221,12 @@ def test_list_and_filter_files_streaming():
     ]
 
     # Mock rich.progress.Progress to avoid actual progress bar
-    with patch('inference_cli.lib.roboflow_cloud.data_staging.api_operations.Progress'):
-        result = list(_list_and_filter_files_streaming(
-            mock_fs,
-            "s3://bucket/path/",
-            "**/*.jpg",
-            ["jpg", "png"]
-        ))
+    with patch("inference_cli.lib.roboflow_cloud.data_staging.api_operations.Progress"):
+        result = list(
+            _list_and_filter_files_streaming(
+                mock_fs, "s3://bucket/path/", "**/*.jpg", ["jpg", "png"]
+            )
+        )
 
     # Should find .jpg files (even though png is in extensions, pattern limits to .jpg)
     assert len(result) == 2
@@ -239,16 +242,19 @@ def test_list_and_filter_files_streaming_no_pattern():
     mock_fs.exists.return_value = True
 
     mock_fs.walk.return_value = [
-        ("s3://bucket/path", [], ["image1.jpg", "image2.JPG", "document.pdf", "image3.png"]),
+        (
+            "s3://bucket/path",
+            [],
+            ["image1.jpg", "image2.JPG", "document.pdf", "image3.png"],
+        ),
     ]
 
-    with patch('inference_cli.lib.roboflow_cloud.data_staging.api_operations.Progress'):
-        result = list(_list_and_filter_files_streaming(
-            mock_fs,
-            "s3://bucket/path/",
-            None,  # No pattern
-            ["jpg", "png"]
-        ))
+    with patch("inference_cli.lib.roboflow_cloud.data_staging.api_operations.Progress"):
+        result = list(
+            _list_and_filter_files_streaming(
+                mock_fs, "s3://bucket/path/", None, ["jpg", "png"]  # No pattern
+            )
+        )
 
     # Should find all jpg and png files (case insensitive)
     assert len(result) == 3
@@ -260,7 +266,9 @@ def test_list_and_filter_files_streaming_no_pattern():
 def test_generate_presigned_urls_parallel():
     """Test parallel presigned URL generation from generator"""
     mock_fs = MagicMock()
-    mock_fs.sign.side_effect = lambda path, expiration: f"https://signed-url.com/{path.split('/')[-1]}"
+    mock_fs.sign.side_effect = (
+        lambda path, expiration: f"https://signed-url.com/{path.split('/')[-1]}"
+    )
 
     def file_generator():
         """Generator to simulate streaming files"""
@@ -269,13 +277,13 @@ def test_generate_presigned_urls_parallel():
         yield "s3://bucket/path/file3.jpg"  # Already has protocol
 
     # Mock Progress to avoid actual progress bars during tests
-    with patch('inference_cli.lib.roboflow_cloud.data_staging.api_operations.Progress'), \
-         patch('builtins.print'):  # Mock print to avoid output during tests
+    with patch(
+        "inference_cli.lib.roboflow_cloud.data_staging.api_operations.Progress"
+    ), patch(
+        "builtins.print"
+    ):  # Mock print to avoid output during tests
         result = _generate_presigned_urls_parallel(
-            mock_fs,
-            file_generator(),
-            "s3://bucket/path/",
-            expiration_seconds=86400
+            mock_fs, file_generator(), "s3://bucket/path/", expiration_seconds=86400
         )
 
     assert len(result) == 3
@@ -295,7 +303,7 @@ def test_generate_presigned_urls_error_handling():
     mock_fs.sign.side_effect = [
         "https://signed-url.com/file1.jpg",
         ConnectionError("Failed to connect to S3"),
-        "https://signed-url.com/file3.jpg"
+        "https://signed-url.com/file3.jpg",
     ]
 
     def file_generator():
@@ -305,15 +313,13 @@ def test_generate_presigned_urls_error_handling():
         yield "bucket/path/file3.jpg"
 
     # Mock Progress to avoid actual progress bars during tests
-    with patch('inference_cli.lib.roboflow_cloud.data_staging.api_operations.Progress'), \
-         patch('builtins.print'):
+    with patch(
+        "inference_cli.lib.roboflow_cloud.data_staging.api_operations.Progress"
+    ), patch("builtins.print"):
         # Should raise the connection error
         with pytest.raises(ConnectionError) as exc_info:
             _generate_presigned_urls_parallel(
-                mock_fs,
-                file_generator(),
-                "s3://bucket/path/",
-                expiration_seconds=86400
+                mock_fs, file_generator(), "s3://bucket/path/", expiration_seconds=86400
             )
 
         # Verify the error message contains context
@@ -333,15 +339,16 @@ def test_generate_presigned_urls_generator_error():
         raise PermissionError("Access denied to bucket")
 
     # Mock Progress to avoid actual progress bars during tests
-    with patch('inference_cli.lib.roboflow_cloud.data_staging.api_operations.Progress'), \
-         patch('builtins.print'):
+    with patch(
+        "inference_cli.lib.roboflow_cloud.data_staging.api_operations.Progress"
+    ), patch("builtins.print"):
         # Should raise the permission error
         with pytest.raises(PermissionError) as exc_info:
             _generate_presigned_urls_parallel(
                 mock_fs,
                 failing_generator(),
                 "s3://bucket/path/",
-                expiration_seconds=86400
+                expiration_seconds=86400,
             )
 
         # Verify the error message contains context
@@ -358,12 +365,11 @@ def test_list_and_filter_files_path_not_exists():
     mock_fs.exists.return_value = False
 
     with pytest.raises(FileNotFoundError) as exc_info:
-        list(_list_and_filter_files_streaming(
-            mock_fs,
-            "s3://nonexistent-bucket/",
-            None,
-            ["jpg", "png"]
-        ))
+        list(
+            _list_and_filter_files_streaming(
+                mock_fs, "s3://nonexistent-bucket/", None, ["jpg", "png"]
+            )
+        )
 
     # Verify error message is helpful
     error_msg = str(exc_info.value)
@@ -380,12 +386,11 @@ def test_list_and_filter_files_access_error():
     mock_fs.exists.side_effect = PermissionError("Access Denied")
 
     with pytest.raises(Exception) as exc_info:
-        list(_list_and_filter_files_streaming(
-            mock_fs,
-            "s3://restricted-bucket/",
-            None,
-            ["jpg", "png"]
-        ))
+        list(
+            _list_and_filter_files_streaming(
+                mock_fs, "s3://restricted-bucket/", None, ["jpg", "png"]
+            )
+        )
 
     # Verify error message provides helpful context
     error_msg = str(exc_info.value)
