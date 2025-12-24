@@ -2,6 +2,11 @@ from typing import Any, List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
+import numpy as np
+from shapely.geometry import Polygon
+from shapely.ops import unary_union
+from typing import List, Tuple
+
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -49,12 +54,16 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/dimension_rollup@v1", "DimensionRollUp"]
-    parent_detection: Selector() = Field(
+    parent_detection: Selector(kind=[OBJECT_DETECTION_PREDICTION_KIND, INSTANCE_SEGMENTATION_PREDICTION_KIND]) = Field(
         description="The parent detection the dimensionality inherits from.",
     )
 
-    child_detections: Selector() = Field(
-        description="The child detections resulting from inferences on dynamic crops.",
+    child_detections: Selector(
+        kind=[
+            LIST_OF_VALUES_KIND
+        ]
+    ) = Field(
+        description="A list of child detections resulting from inferences on dynamic crops. This list can be constructed by running the \"Dimension Collapse\" block on a higher dimensionality result (ex. a prediction after a dynamic crop).",
     )
 
     confidence_strategy: Union[Selector(kind=[LIST_OF_VALUES_KIND]), str] = Field(
@@ -87,9 +96,9 @@ class BlockManifest(WorkflowBlockManifest):
     ) -> int:
         return -1
 
-    @classmethod
-    def get_parameters_enforcing_auto_batch_casting(cls) -> List[str]:
-        return ["parent_detection", "child_detections"]
+    #@classmethod
+    #def get_parameters_enforcing_auto_batch_casting(cls) -> List[str]:
+    #    return ["child_detections"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -113,10 +122,15 @@ class DimensionRollUpBlockV1(WorkflowBlock):
 
     def run(self,
             parent_detection: Union[OBJECT_DETECTION_PREDICTION_KIND,INSTANCE_SEGMENTATION_PREDICTION_KIND],
-            child_detections: Batch[Union[OBJECT_DETECTION_PREDICTION_KIND,INSTANCE_SEGMENTATION_PREDICTION_KIND]],
+            child_detections: Any, # TBD List[Union[OBJECT_DETECTION_PREDICTION_KIND,INSTANCE_SEGMENTATION_PREDICTION_KIND]]],
             confidence_strategy: str = "max",
             overlap_threshold: float = 0.0,
             ) -> BlockResult:
+
+        print("Running Dimension Rollup Block V1")
+        print(type(parent_detection))
+        print(type(child_detections))
+
         return {"rolled_up_detections": merge_crop_predictions(
             parent_detection,
             child_detections,
@@ -131,6 +145,7 @@ def merge_crop_predictions(
     confidence_strategy: str = "max",
     overlap_threshold: float = 0.0
 ):
+
     """
     Merge predictions from multiple crops back to parent image coordinates.
 
