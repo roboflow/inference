@@ -8,7 +8,6 @@ from shapely.ops import unary_union
 from typing import List, Tuple
 
 from inference.core.workflows.execution_engine.entities.base import (
-    Batch,
     OutputDefinition,
 )
 from inference.core.workflows.execution_engine.entities.types import (
@@ -91,10 +90,14 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
-    def get_output_dimensionality_offset(
-        cls,
-    ) -> int:
-        return -1
+    def get_dimensionality_reference_property(cls) -> Optional[str]:
+        return "parent_detection"
+
+    #@classmethod
+    #def get_output_dimensionality_offset(
+    #    cls,
+    #) -> int:
+    #    return -1
 
     #@classmethod
     #def get_parameters_enforcing_auto_batch_casting(cls) -> List[str]:
@@ -130,6 +133,8 @@ class DimensionRollUpBlockV1(WorkflowBlock):
         print("Running Dimension Rollup Block V1")
         print(type(parent_detection))
         print(type(child_detections))
+        print(parent_detection)
+        print(child_detections)
 
         return {"rolled_up_detections": merge_crop_predictions(
             parent_detection,
