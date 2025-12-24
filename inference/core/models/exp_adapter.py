@@ -3,8 +3,8 @@ from time import perf_counter
 from typing import Any, Generic, List, Optional, Tuple, Union
 
 import numpy as np
-from inference_exp.models.base.object_detection import Detections, ObjectDetectionModel
-from inference_exp.models.base.types import (
+from inference_models.models.base.object_detection import Detections, ObjectDetectionModel
+from inference_models.models.base.types import (
     PreprocessedInputs,
     PreprocessingMetadata,
     RawPrediction,
@@ -34,7 +34,7 @@ class InferenceExpObjectDetectionModelAdapter(Model):
         self.task_type = "object-detection"
 
         # Lazy import to avoid hard dependency if flag disabled
-        from inference_exp import AutoModel  # type: ignore
+        from inference_models import AutoModel  # type: ignore
 
         self._exp_model: ObjectDetectionModel = AutoModel.from_pretrained(
             model_id_or_path=model_id,

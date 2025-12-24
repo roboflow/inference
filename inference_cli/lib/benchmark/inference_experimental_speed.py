@@ -4,9 +4,9 @@ from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import torch
-from inference_exp import AutoModel
-from inference_exp.configuration import DEFAULT_DEVICE
-from inference_exp.models.auto_loaders.entities import AnyModel
+from inference_models import AutoModel
+from inference_models.configuration import DEFAULT_DEVICE
+from inference_models.models.auto_loaders.entities import AnyModel
 from supervision.utils.file import read_yaml_file
 from tqdm import tqdm
 
