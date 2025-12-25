@@ -4,7 +4,7 @@
 
 This model is currenlty in Beta state! The model is only available if "SAM3_3D_OBJECTS_ENABLED" flag is on. The model can currently be ran using inference package, and also be used in Roboflow Worklows as a part of local inference server.
 
-## DISCLAIMER: In order to run this model you will 32GB+ VRAM GPU machine. 
+## DISCLAIMER: In order to run this model you will need a 32GB+ VRAM GPU machine. 
 
 ## Installation
 
