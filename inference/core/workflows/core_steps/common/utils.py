@@ -294,24 +294,15 @@ def sv_detections_to_root_coordinates(
         new_anchored_masks = np.array(
             [origin_mask_base.copy() for _ in detections_copy]
         )
-        for i, (anchored_mask, original_mask) in enumerate(
-            zip(new_anchored_masks, detections_copy.mask)
+        for anchored_mask, original_mask in zip(
+            new_anchored_masks, detections_copy.mask
         ):
             mask_h, mask_w = original_mask.shape
-            # Get bounding box for this detection to determine valid mask region
-            bbox = detections_copy.xyxy[i]
-            bbox_h = int(bbox[3] - bbox[1])
-            bbox_w = int(bbox[2] - bbox[0])
-
-            # Clip mask to bounding box dimensions if needed
-            clipped_mask = original_mask[:bbox_h, :bbox_w]
-            clipped_h, clipped_w = clipped_mask.shape
-
             # TODO: instead of shifting mask we could store contours in data instead of storing mask (even if calculated)
             #       it would be faster to shift contours but at expense of having to remember to generate mask from contour when it's needed
-            anchored_mask[
-                shift_y : shift_y + clipped_h, shift_x : shift_x + clipped_w
-            ] = clipped_mask
+            anchored_mask[shift_y : shift_y + mask_h, shift_x : shift_x + mask_w] = (
+                original_mask
+            )
         detections_copy.mask = new_anchored_masks
     new_root_metadata = ImageParentMetadata(
         parent_id=root_parent_id,
