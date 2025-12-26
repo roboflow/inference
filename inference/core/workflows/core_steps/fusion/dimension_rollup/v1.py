@@ -1,14 +1,15 @@
-from typing import Any, List, Literal, Optional, Type, Union
-
-from pydantic import ConfigDict, Field
+import uuid
+from typing import Any, List, Literal, Optional, Tuple, Type, Union
 
 import numpy as np
+from pydantic import ConfigDict, Field
 from shapely.geometry import Polygon
 from shapely.ops import unary_union
-from typing import List, Tuple
+from skimage import draw, measure
+from supervision import Detections
+import logging
 
 from inference.core.workflows.execution_engine.entities.base import (
-    Batch,
     OutputDefinition,
 )
 from inference.core.workflows.execution_engine.entities.types import (
@@ -27,7 +28,7 @@ from inference.core.workflows.prototypes.block import (
 )
 
 LONG_DESCRIPTION = """
-Rolls up dimensionality from from children to parent detections
+Rolls up dimensionality from children to parent detections
 
 Useful in scenarios like:
 * rolling up results from a secondary model run on crops back to parent images
@@ -56,7 +57,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/dimension_rollup@v1", "DimensionRollUp"]
-    parent_detection: Selector(kind=[OBJECT_DETECTION_PREDICTION_KIND, INSTANCE_SEGMENTATION_PREDICTION_KIND]) = Field(
+    parent_detection: Selector(kind=[OBJECT_DETECTION_PREDICTION_KIND, INSTANCE_SEGMENTATION_PREDICTION_KIND, KEYPOINT_DETECTION_PREDICTION_KIND]) = Field(
         description="The parent detection the dimensionality inherits from.",
     )
 
@@ -93,6 +94,7 @@ class BlockManifest(WorkflowBlockManifest):
         ),
         examples=[0.0, 0.5],
         ge=0.0,
+        le=1.0,
     )
 
     keypoint_merge_threshold: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
@@ -456,9 +458,6 @@ def merge_crop_predictions(
         if 'parent_id' in child_predictions[0].data:
             sample_parent_id = child_predictions[0].data['parent_id'][0]
 
-    # Counter for generating new detection IDs
-    import uuid
-
     for class_id, preds in class_predictions.items():
         if is_keypoint_detection:
             # For keypoint detection, merge based on keypoint proximity
@@ -540,14 +539,11 @@ def merge_crop_predictions(
 
     if not merged_confidences:
         # Return empty detections if no detections
-        from supervision import Detections
         return Detections.empty(), crop_zones
 
     # Convert to numpy arrays
     merged_confidences_array = np.array(merged_confidences, dtype=np.float32)
     merged_class_ids_array = np.array(merged_class_ids, dtype=int)
-
-    from supervision import Detections
 
     if has_masks:
         # Instance segmentation - stack masks and compute bounding boxes
@@ -887,8 +883,6 @@ def _mask_to_polygons(mask: np.ndarray) -> List[Polygon]:
     Returns:
         List of Polygon objects
     """
-    from skimage import measure
-
     # Find contours
     contours = measure.find_contours(mask.astype(np.uint8), 0.5)
 
@@ -903,8 +897,8 @@ def _mask_to_polygons(mask: np.ndarray) -> List[Polygon]:
                 poly = Polygon(contour)
                 if poly.is_valid:
                     polygons.append(poly)
-            except Exception:
-                continue
+            except Exception as e:
+                logging.warning(f"Failed to create polygon from contour: {e}")
 
     return polygons
 
@@ -920,8 +914,6 @@ def _polygon_to_mask(polygon: Polygon, shape: Tuple[int, int]) -> np.ndarray:
     Returns:
         Boolean mask array
     """
-    from skimage import draw
-
     mask = np.zeros(shape, dtype=bool)
 
     # Get exterior coordinates
