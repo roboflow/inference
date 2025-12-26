@@ -1,3 +1,4 @@
+import logging
 import uuid
 from typing import Any, List, Literal, Optional, Tuple, Type, Union
 
@@ -8,18 +9,15 @@ from shapely.ops import unary_union
 from shapely.strtree import STRtree
 from skimage import draw, measure
 from supervision import Detections
-import logging
 
-from inference.core.workflows.execution_engine.entities.base import (
-    OutputDefinition,
-)
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
-    LIST_OF_VALUES_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
-    OBJECT_DETECTION_PREDICTION_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    KEYPOINT_DETECTION_PREDICTION_KIND,
     INTEGER_KIND,
+    KEYPOINT_DETECTION_PREDICTION_KIND,
+    LIST_OF_VALUES_KIND,
+    OBJECT_DETECTION_PREDICTION_KIND,
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -58,17 +56,19 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/dimension_rollup@v1", "DimensionRollUp"]
-    parent_detection: Selector(kind=[OBJECT_DETECTION_PREDICTION_KIND, INSTANCE_SEGMENTATION_PREDICTION_KIND, KEYPOINT_DETECTION_PREDICTION_KIND]) = Field(
+    parent_detection: Selector(
+        kind=[
+            OBJECT_DETECTION_PREDICTION_KIND,
+            INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            KEYPOINT_DETECTION_PREDICTION_KIND,
+        ]
+    ) = Field(
         description="The parent detection the dimensionality inherits from.",
     )
 
-    child_detections: Selector(
-        kind=[
-            LIST_OF_VALUES_KIND
-        ]
-    ) = Field(
+    child_detections: Selector(kind=[LIST_OF_VALUES_KIND]) = Field(
         description="A list of child detections resulting from higher dimensionality,"
-        " such as predictions made on dynamic crops. Use the \"Dimension Collapse\" to "
+        ' such as predictions made on dynamic crops. Use the "Dimension Collapse" to '
         " reduce the higher dimensionality result to one that can be used with this."
         " Example: Prediction -> Dimension Collapse -> Dimension Roll Up",
     )
@@ -80,7 +80,7 @@ class BlockManifest(WorkflowBlockManifest):
             "Strategy to use when merging confidence scores from child detections. "
             "Options are 'max', 'mean', or 'min'."
         ),
-        examples=["min","mean","max"],
+        examples=["min", "mean", "max"],
     )
 
     overlap_threshold: Union[Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]), float] = Field(
@@ -113,12 +113,16 @@ class BlockManifest(WorkflowBlockManifest):
         return [
             OutputDefinition(
                 name="rolled_up_detections",
-                kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND, OBJECT_DETECTION_PREDICTION_KIND, KEYPOINT_DETECTION_PREDICTION_KIND],
+                kind=[
+                    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                    OBJECT_DETECTION_PREDICTION_KIND,
+                    KEYPOINT_DETECTION_PREDICTION_KIND,
+                ],
             ),
             OutputDefinition(
                 name="crop_zones",
                 kind=[LIST_OF_VALUES_KIND],
-            )
+            ),
         ]
 
     @classmethod
@@ -146,16 +150,14 @@ class DimensionRollUpBlockV1(WorkflowBlock):
             child_detections,
             confidence_strategy,
             overlap_threshold,
-            keypoint_merge_threshold
+            keypoint_merge_threshold,
         )
 
         return {"rolled_up_detections": detections, "crop_zones": zones}
 
 
 def _merge_keypoint_detections(
-    preds: List[dict],
-    confidence_strategy: str,
-    keypoint_threshold: float
+    preds: List[dict], confidence_strategy: str, keypoint_threshold: float
 ) -> List[dict]:
     """
     Merge keypoint detections based on keypoint proximity.
@@ -172,8 +174,16 @@ def _merge_keypoint_detections(
         return []
 
     # Filter predictions that have keypoint data
-    preds_with_keypoints = [p for p in preds if p.get('keypoint_data') and 'keypoints_xy' in p['keypoint_data']]
-    preds_without_keypoints = [p for p in preds if not (p.get('keypoint_data') and 'keypoints_xy' in p['keypoint_data'])]
+    preds_with_keypoints = [
+        p
+        for p in preds
+        if p.get("keypoint_data") and "keypoints_xy" in p["keypoint_data"]
+    ]
+    preds_without_keypoints = [
+        p
+        for p in preds
+        if not (p.get("keypoint_data") and "keypoints_xy" in p["keypoint_data"])
+    ]
 
     if not preds_with_keypoints:
         return preds
@@ -189,14 +199,14 @@ def _merge_keypoint_detections(
         group = [pred1]
         used.add(i)
 
-        kp1 = np.array(pred1['keypoint_data']['keypoints_xy'])
+        kp1 = np.array(pred1["keypoint_data"]["keypoints_xy"])
 
         # Find all predictions that should merge with this one
-        for j, pred2 in enumerate(preds_with_keypoints[i+1:], start=i+1):
+        for j, pred2 in enumerate(preds_with_keypoints[i + 1 :], start=i + 1):
             if j in used:
                 continue
 
-            kp2 = np.array(pred2['keypoint_data']['keypoints_xy'])
+            kp2 = np.array(pred2["keypoint_data"]["keypoints_xy"])
 
             # Calculate average distance between corresponding keypoints
             if len(kp1) == len(kp2):
@@ -212,41 +222,49 @@ def _merge_keypoint_detections(
             merged.append(group[0])
         else:
             # Merge multiple predictions
-            if confidence_strategy == 'max':
-                best_idx = np.argmax([p['confidence'] for p in group])
-                confidence = group[best_idx]['confidence']
-            elif confidence_strategy == 'mean':
-                confidence = np.mean([p['confidence'] for p in group])
+            if confidence_strategy == "max":
+                best_idx = np.argmax([p["confidence"] for p in group])
+                confidence = group[best_idx]["confidence"]
+            elif confidence_strategy == "mean":
+                confidence = np.mean([p["confidence"] for p in group])
             else:  # 'min'
-                confidence = np.min([p['confidence'] for p in group])
+                confidence = np.min([p["confidence"] for p in group])
 
             # Average keypoint coordinates
-            all_kp_xy = [np.array(p['keypoint_data']['keypoints_xy']) for p in group]
+            all_kp_xy = [np.array(p["keypoint_data"]["keypoints_xy"]) for p in group]
             merged_kp_xy = np.mean(all_kp_xy, axis=0).tolist()
 
             # Average keypoint confidences if available
             merged_kp_data = {
-                'keypoints_xy': merged_kp_xy,
-                'keypoints_class_name': group[0]['keypoint_data'].get('keypoints_class_name'),
-                'keypoints_class_id': group[0]['keypoint_data'].get('keypoints_class_id')
+                "keypoints_xy": merged_kp_xy,
+                "keypoints_class_name": group[0]["keypoint_data"].get(
+                    "keypoints_class_name"
+                ),
+                "keypoints_class_id": group[0]["keypoint_data"].get(
+                    "keypoints_class_id"
+                ),
             }
 
-            if 'keypoints_confidence' in group[0]['keypoint_data']:
-                all_kp_conf = [np.array(p['keypoint_data']['keypoints_confidence']) for p in group]
+            if "keypoints_confidence" in group[0]["keypoint_data"]:
+                all_kp_conf = [
+                    np.array(p["keypoint_data"]["keypoints_confidence"]) for p in group
+                ]
                 merged_kp_conf = np.mean(all_kp_conf, axis=0).tolist()
-                merged_kp_data['keypoints_confidence'] = merged_kp_conf
+                merged_kp_data["keypoints_confidence"] = merged_kp_conf
 
             # Average bbox coordinates
-            all_bboxes = np.array([p['bbox'] for p in group])
+            all_bboxes = np.array([p["bbox"] for p in group])
             merged_bbox = np.mean(all_bboxes, axis=0)
 
-            merged.append({
-                'bbox': merged_bbox,
-                'confidence': confidence,
-                'class_id': group[0]['class_id'],
-                'mask': None,
-                'keypoint_data': merged_kp_data
-            })
+            merged.append(
+                {
+                    "bbox": merged_bbox,
+                    "confidence": confidence,
+                    "class_id": group[0]["class_id"],
+                    "mask": None,
+                    "keypoint_data": merged_kp_data,
+                }
+            )
 
     # Add back predictions without keypoints
     merged.extend(preds_without_keypoints)
@@ -259,7 +277,7 @@ def merge_crop_predictions(
     child_predictions: List,
     confidence_strategy: str = "max",
     overlap_threshold: float = 0.0,
-    keypoint_merge_threshold: float = 10.0
+    keypoint_merge_threshold: float = 10.0,
 ) -> Tuple:
     """
     Merge predictions from multiple crops back to parent image coordinates.
@@ -294,7 +312,7 @@ def merge_crop_predictions(
 
     # Extract parent image shape from parent prediction's data
     # root_parent_dimensions is a list of tuples, one per detection (all should be the same)
-    root_parent_dims = parent_prediction.data.get('root_parent_dimensions')
+    root_parent_dims = parent_prediction.data.get("root_parent_dimensions")
 
     if root_parent_dims is None or len(root_parent_dims) == 0:
         raise ValueError(
@@ -308,14 +326,19 @@ def merge_crop_predictions(
     crop_zones = []
     for i in range(len(parent_prediction)):
         crop_bbox = parent_prediction.xyxy[i]  # [x_min, y_min, x_max, y_max]
-        x_min, y_min, x_max, y_max = crop_bbox[0], crop_bbox[1], crop_bbox[2], crop_bbox[3]
+        x_min, y_min, x_max, y_max = (
+            crop_bbox[0],
+            crop_bbox[1],
+            crop_bbox[2],
+            crop_bbox[3],
+        )
 
         # Create zone as list of 4 corner points: top-left, top-right, bottom-right, bottom-left
         zone = [
             (float(x_min), float(y_min)),  # top-left
             (float(x_max), float(y_min)),  # top-right
             (float(x_max), float(y_max)),  # bottom-right
-            (float(x_min), float(y_max))   # bottom-left
+            (float(x_min), float(y_max)),  # bottom-left
         ]
         crop_zones.append(zone)
 
@@ -327,13 +350,13 @@ def merge_crop_predictions(
             has_masks = True
             break
         # Check for keypoint detection
-        if 'prediction_type' in child_pred.data:
-            pred_type = child_pred.data['prediction_type']
+        if "prediction_type" in child_pred.data:
+            pred_type = child_pred.data["prediction_type"]
             if isinstance(pred_type, np.ndarray):
-                if len(pred_type) > 0 and pred_type[0] == 'keypoint-detection':
+                if len(pred_type) > 0 and pred_type[0] == "keypoint-detection":
                     is_keypoint_detection = True
                     break
-            elif pred_type == 'keypoint-detection':
+            elif pred_type == "keypoint-detection":
                 is_keypoint_detection = True
                 break
 
@@ -353,9 +376,11 @@ def merge_crop_predictions(
 
             # Prepare keypoint data if present
             keypoint_data = {}
-            if is_keypoint_detection and 'keypoints_xy' in child_pred.data:
+            if is_keypoint_detection and "keypoints_xy" in child_pred.data:
                 # Transform keypoint coordinates from crop to parent space
-                keypoints_xy = child_pred.data['keypoints_xy'][j]  # Shape: (num_keypoints, 2)
+                keypoints_xy = child_pred.data["keypoints_xy"][
+                    j
+                ]  # Shape: (num_keypoints, 2)
 
                 # Transform coordinates
                 transformed_keypoints = []
@@ -363,15 +388,21 @@ def merge_crop_predictions(
                     transformed_kp = [kp[0] + x_min, kp[1] + y_min]
                     transformed_keypoints.append(transformed_kp)
 
-                keypoint_data['keypoints_xy'] = transformed_keypoints
+                keypoint_data["keypoints_xy"] = transformed_keypoints
 
                 # Copy other keypoint data
-                if 'keypoints_class_name' in child_pred.data:
-                    keypoint_data['keypoints_class_name'] = child_pred.data['keypoints_class_name'][j]
-                if 'keypoints_class_id' in child_pred.data:
-                    keypoint_data['keypoints_class_id'] = child_pred.data['keypoints_class_id'][j]
-                if 'keypoints_confidence' in child_pred.data:
-                    keypoint_data['keypoints_confidence'] = child_pred.data['keypoints_confidence'][j]
+                if "keypoints_class_name" in child_pred.data:
+                    keypoint_data["keypoints_class_name"] = child_pred.data[
+                        "keypoints_class_name"
+                    ][j]
+                if "keypoints_class_id" in child_pred.data:
+                    keypoint_data["keypoints_class_id"] = child_pred.data[
+                        "keypoints_class_id"
+                    ][j]
+                if "keypoints_confidence" in child_pred.data:
+                    keypoint_data["keypoints_confidence"] = child_pred.data[
+                        "keypoints_confidence"
+                    ][j]
 
             if has_masks and child_pred.mask is not None:
                 # Instance segmentation - transform mask
@@ -384,34 +415,35 @@ def merge_crop_predictions(
                 if class_id not in class_predictions:
                     class_predictions[class_id] = []
 
-                class_predictions[class_id].append({
-                    'mask': transformed_mask,
-                    'confidence': confidence,
-                    'class_id': class_id,
-                    'bbox': None,  # Will compute from mask
-                    'keypoint_data': keypoint_data
-                })
+                class_predictions[class_id].append(
+                    {
+                        "mask": transformed_mask,
+                        "confidence": confidence,
+                        "class_id": class_id,
+                        "bbox": None,  # Will compute from mask
+                        "keypoint_data": keypoint_data,
+                    }
+                )
             else:
                 # Object detection - transform bounding box
                 bbox = child_pred.xyxy[j]  # [x_min, y_min, x_max, y_max]
-                transformed_bbox = np.array([
-                    bbox[0] + x_min,
-                    bbox[1] + y_min,
-                    bbox[2] + x_min,
-                    bbox[3] + y_min
-                ])
+                transformed_bbox = np.array(
+                    [bbox[0] + x_min, bbox[1] + y_min, bbox[2] + x_min, bbox[3] + y_min]
+                )
 
                 # Store prediction with transformed bbox
                 if class_id not in class_predictions:
                     class_predictions[class_id] = []
 
-                class_predictions[class_id].append({
-                    'bbox': transformed_bbox,
-                    'confidence': confidence,
-                    'class_id': class_id,
-                    'mask': None,
-                    'keypoint_data': keypoint_data
-                })
+                class_predictions[class_id].append(
+                    {
+                        "bbox": transformed_bbox,
+                        "confidence": confidence,
+                        "class_id": class_id,
+                        "mask": None,
+                        "keypoint_data": keypoint_data,
+                    }
+                )
 
     # Merge overlapping predictions for each class
     merged_masks = []
@@ -425,16 +457,24 @@ def merge_crop_predictions(
         all_data_keys.update(child_pred.data.keys())
 
     # Initialize lists for each data field
-    merged_data = {key: [] for key in all_data_keys if key not in [
-        'keypoints_xy', 'keypoints_class_name', 'keypoints_class_id', 'keypoints_confidence'
-    ]}
+    merged_data = {
+        key: []
+        for key in all_data_keys
+        if key
+        not in [
+            "keypoints_xy",
+            "keypoints_class_name",
+            "keypoints_class_id",
+            "keypoints_confidence",
+        ]
+    }
 
     # Collect keypoint data separately
     all_keypoints_data = {
-        'keypoints_xy': [],
-        'keypoints_class_name': [],
-        'keypoints_class_id': [],
-        'keypoints_confidence': []
+        "keypoints_xy": [],
+        "keypoints_class_name": [],
+        "keypoints_class_id": [],
+        "keypoints_confidence": [],
     }
 
     # Build mapping from class_id to typical data values
@@ -446,8 +486,15 @@ def merge_crop_predictions(
                 class_id_to_data[class_id] = {}
                 # Store sample values for this class_id (except ID fields and keypoint fields)
                 for key in child_pred.data.keys():
-                    if key not in ['detection_id', 'parent_id', 'inference_id',
-                                   'keypoints_xy', 'keypoints_class_name', 'keypoints_class_id', 'keypoints_confidence']:
+                    if key not in [
+                        "detection_id",
+                        "parent_id",
+                        "inference_id",
+                        "keypoints_xy",
+                        "keypoints_class_name",
+                        "keypoints_class_id",
+                        "keypoints_confidence",
+                    ]:
                         if key in child_pred.data and i < len(child_pred.data[key]):
                             class_id_to_data[class_id][key] = child_pred.data[key][i]
 
@@ -455,87 +502,122 @@ def merge_crop_predictions(
     sample_inference_id = None
     sample_parent_id = None
     if len(child_predictions) > 0 and len(child_predictions[0]) > 0:
-        if 'inference_id' in child_predictions[0].data:
-            sample_inference_id = child_predictions[0].data['inference_id'][0]
-        if 'parent_id' in child_predictions[0].data:
-            sample_parent_id = child_predictions[0].data['parent_id'][0]
+        if "inference_id" in child_predictions[0].data:
+            sample_inference_id = child_predictions[0].data["inference_id"][0]
+        if "parent_id" in child_predictions[0].data:
+            sample_parent_id = child_predictions[0].data["parent_id"][0]
 
     for class_id, preds in class_predictions.items():
         if is_keypoint_detection:
             # For keypoint detection, merge based on keypoint proximity
-            merged_preds = _merge_keypoint_detections(preds, confidence_strategy, keypoint_merge_threshold)
+            merged_preds = _merge_keypoint_detections(
+                preds, confidence_strategy, keypoint_merge_threshold
+            )
         elif has_masks:
-            merged_preds = _merge_overlapping_masks(preds, confidence_strategy, overlap_threshold)
+            merged_preds = _merge_overlapping_masks(
+                preds, confidence_strategy, overlap_threshold
+            )
         else:
-            merged_preds = _merge_overlapping_bboxes(preds, confidence_strategy, overlap_threshold)
+            merged_preds = _merge_overlapping_bboxes(
+                preds, confidence_strategy, overlap_threshold
+            )
 
         for pred in merged_preds:
             if has_masks:
-                merged_masks.append(pred['mask'])
-            merged_confidences.append(pred['confidence'])
-            merged_class_ids.append(pred['class_id'])
+                merged_masks.append(pred["mask"])
+            merged_confidences.append(pred["confidence"])
+            merged_class_ids.append(pred["class_id"])
 
             # Store bbox for later use
-            if 'bbox' in pred and pred['bbox'] is not None:
-                merged_bboxes.append(pred['bbox'])
+            if "bbox" in pred and pred["bbox"] is not None:
+                merged_bboxes.append(pred["bbox"])
 
             # Collect keypoint data if present
-            if 'keypoint_data' in pred and pred['keypoint_data']:
-                kp_data = pred['keypoint_data']
-                all_keypoints_data['keypoints_xy'].append(kp_data.get('keypoints_xy'))
-                all_keypoints_data['keypoints_class_name'].append(kp_data.get('keypoints_class_name'))
-                all_keypoints_data['keypoints_class_id'].append(kp_data.get('keypoints_class_id'))
-                all_keypoints_data['keypoints_confidence'].append(kp_data.get('keypoints_confidence'))
+            if "keypoint_data" in pred and pred["keypoint_data"]:
+                kp_data = pred["keypoint_data"]
+                all_keypoints_data["keypoints_xy"].append(kp_data.get("keypoints_xy"))
+                all_keypoints_data["keypoints_class_name"].append(
+                    kp_data.get("keypoints_class_name")
+                )
+                all_keypoints_data["keypoints_class_id"].append(
+                    kp_data.get("keypoints_class_id")
+                )
+                all_keypoints_data["keypoints_confidence"].append(
+                    kp_data.get("keypoints_confidence")
+                )
 
             # Add data fields for this detection
             for key in all_data_keys:
                 # Skip keypoint fields as they're handled separately
-                if key in ['keypoints_xy', 'keypoints_class_name', 'keypoints_class_id', 'keypoints_confidence']:
+                if key in [
+                    "keypoints_xy",
+                    "keypoints_class_name",
+                    "keypoints_class_id",
+                    "keypoints_confidence",
+                ]:
                     continue
 
-                if key == 'detection_id':
+                if key == "detection_id":
                     # Generate new UUID for merged detection
                     merged_data[key].append(str(uuid.uuid4()))
-                elif key == 'parent_id':
+                elif key == "parent_id":
                     # Use sample parent_id or generate new one
-                    merged_data[key].append(sample_parent_id if sample_parent_id else str(uuid.uuid4()))
-                elif key == 'inference_id':
+                    merged_data[key].append(
+                        sample_parent_id if sample_parent_id else str(uuid.uuid4())
+                    )
+                elif key == "inference_id":
                     # Use the same inference_id as inputs (they're from same inference batch)
-                    merged_data[key].append(sample_inference_id if sample_inference_id else str(uuid.uuid4()))
-                elif key == 'root_parent_dimensions':
+                    merged_data[key].append(
+                        sample_inference_id
+                        if sample_inference_id
+                        else str(uuid.uuid4())
+                    )
+                elif key == "root_parent_dimensions":
                     # Add the parent image shape as a list [height, width]
                     merged_data[key].append(list(parent_image_shape))
-                elif key == 'parent_dimensions':
+                elif key == "parent_dimensions":
                     # Parent dimensions should be same as root_parent_dimensions for merged results
                     merged_data[key].append(list(parent_image_shape))
-                elif key == 'image_dimensions':
+                elif key == "image_dimensions":
                     # Image dimensions for this detection
                     merged_data[key].append(list(parent_image_shape))
-                elif key == 'root_parent_coordinates':
+                elif key == "root_parent_coordinates":
                     # Root parent coordinates [y, x] - should be [0, 0] for the root
-                    if pred['class_id'] in class_id_to_data and key in class_id_to_data[pred['class_id']]:
-                        merged_data[key].append(class_id_to_data[pred['class_id']][key])
+                    if (
+                        pred["class_id"] in class_id_to_data
+                        and key in class_id_to_data[pred["class_id"]]
+                    ):
+                        merged_data[key].append(class_id_to_data[pred["class_id"]][key])
                     else:
                         merged_data[key].append([0, 0])
-                elif key == 'parent_coordinates':
+                elif key == "parent_coordinates":
                     # Parent coordinates [y, x]
-                    if pred['class_id'] in class_id_to_data and key in class_id_to_data[pred['class_id']]:
-                        merged_data[key].append(class_id_to_data[pred['class_id']][key])
+                    if (
+                        pred["class_id"] in class_id_to_data
+                        and key in class_id_to_data[pred["class_id"]]
+                    ):
+                        merged_data[key].append(class_id_to_data[pred["class_id"]][key])
                     else:
                         merged_data[key].append([0, 0])
-                elif key == 'root_parent_id':
+                elif key == "root_parent_id":
                     # Root parent ID
-                    if pred['class_id'] in class_id_to_data and key in class_id_to_data[pred['class_id']]:
-                        merged_data[key].append(class_id_to_data[pred['class_id']][key])
+                    if (
+                        pred["class_id"] in class_id_to_data
+                        and key in class_id_to_data[pred["class_id"]]
+                    ):
+                        merged_data[key].append(class_id_to_data[pred["class_id"]][key])
                     else:
-                        merged_data[key].append('image')
-                elif key == 'prediction_type':
+                        merged_data[key].append("image")
+                elif key == "prediction_type":
                     # Prediction type should be 'instance-segmentation'
-                    merged_data[key].append('instance-segmentation')
+                    merged_data[key].append("instance-segmentation")
                 else:
                     # For other fields like class_name, use the value associated with this class_id
-                    if pred['class_id'] in class_id_to_data and key in class_id_to_data[pred['class_id']]:
-                        merged_data[key].append(class_id_to_data[pred['class_id']][key])
+                    if (
+                        pred["class_id"] in class_id_to_data
+                        and key in class_id_to_data[pred["class_id"]]
+                    ):
+                        merged_data[key].append(class_id_to_data[pred["class_id"]][key])
                     else:
                         merged_data[key].append(None)
 
@@ -569,7 +651,7 @@ def merge_crop_predictions(
             xyxy=xyxy_array,
             mask=merged_masks_array,
             confidence=merged_confidences_array,
-            class_id=merged_class_ids_array
+            class_id=merged_class_ids_array,
         )
     else:
         # Object detection - use bounding boxes directly
@@ -583,17 +665,28 @@ def merge_crop_predictions(
         result = Detections(
             xyxy=xyxy_array,
             confidence=merged_confidences_array,
-            class_id=merged_class_ids_array
+            class_id=merged_class_ids_array,
         )
 
     # Convert data fields to numpy arrays with proper dtypes
     for key, values in merged_data.items():
-        if key in ['class_name', 'prediction_type', 'detection_id', 'parent_id',
-                   'inference_id', 'root_parent_id']:
+        if key in [
+            "class_name",
+            "prediction_type",
+            "detection_id",
+            "parent_id",
+            "inference_id",
+            "root_parent_id",
+        ]:
             # String fields - use 'U' dtype (Unicode strings), not np.str_
             result.data[key] = np.array(values, dtype=str)
-        elif key in ['root_parent_dimensions', 'parent_dimensions', 'image_dimensions',
-                     'root_parent_coordinates', 'parent_coordinates']:
+        elif key in [
+            "root_parent_dimensions",
+            "parent_dimensions",
+            "image_dimensions",
+            "root_parent_coordinates",
+            "parent_coordinates",
+        ]:
             # Array/coordinate fields - convert to numpy arrays of integers
             result.data[key] = np.array(values, dtype=int)
         else:
@@ -602,23 +695,28 @@ def merge_crop_predictions(
 
     # Add keypoint data if it exists
     if is_keypoint_detection:
-        if all_keypoints_data['keypoints_xy']:
-            result.data['keypoints_xy'] = np.array(all_keypoints_data['keypoints_xy'], dtype=object)
-        if all_keypoints_data['keypoints_class_name']:
-            result.data['keypoints_class_name'] = np.array(all_keypoints_data['keypoints_class_name'], dtype=object)
-        if all_keypoints_data['keypoints_class_id']:
-            result.data['keypoints_class_id'] = np.array(all_keypoints_data['keypoints_class_id'], dtype=object)
-        if all_keypoints_data['keypoints_confidence']:
-            result.data['keypoints_confidence'] = np.array(all_keypoints_data['keypoints_confidence'], dtype=object)
+        if all_keypoints_data["keypoints_xy"]:
+            result.data["keypoints_xy"] = np.array(
+                all_keypoints_data["keypoints_xy"], dtype=object
+            )
+        if all_keypoints_data["keypoints_class_name"]:
+            result.data["keypoints_class_name"] = np.array(
+                all_keypoints_data["keypoints_class_name"], dtype=object
+            )
+        if all_keypoints_data["keypoints_class_id"]:
+            result.data["keypoints_class_id"] = np.array(
+                all_keypoints_data["keypoints_class_id"], dtype=object
+            )
+        if all_keypoints_data["keypoints_confidence"]:
+            result.data["keypoints_confidence"] = np.array(
+                all_keypoints_data["keypoints_confidence"], dtype=object
+            )
 
     return result, crop_zones
 
 
 def _transform_mask_to_parent(
-    mask: np.ndarray,
-    x_offset: int,
-    y_offset: int,
-    parent_shape: Tuple[int, int]
+    mask: np.ndarray, x_offset: int, y_offset: int, parent_shape: Tuple[int, int]
 ) -> np.ndarray:
     """
     Transform a mask from crop coordinates to parent image coordinates.
@@ -658,9 +756,7 @@ def _transform_mask_to_parent(
 
 
 def _merge_overlapping_masks(
-    predictions: List[dict],
-    confidence_strategy: str,
-    overlap_threshold: float = 0.0
+    predictions: List[dict], confidence_strategy: str, overlap_threshold: float = 0.0
 ) -> List[dict]:
     """
     Merge overlapping masks of the same class using union operations.
@@ -679,16 +775,18 @@ def _merge_overlapping_masks(
     # Convert masks to polygons for merging
     polygons_with_data = []
     for pred in predictions:
-        mask = pred['mask']
+        mask = pred["mask"]
         polygons = _mask_to_polygons(mask)
 
         for poly in polygons:
             if poly.is_valid and not poly.is_empty:
-                polygons_with_data.append({
-                    'polygon': poly,
-                    'confidence': pred['confidence'],
-                    'class_id': pred['class_id']
-                })
+                polygons_with_data.append(
+                    {
+                        "polygon": poly,
+                        "confidence": pred["confidence"],
+                        "class_id": pred["class_id"],
+                    }
+                )
 
     if not polygons_with_data:
         return []
@@ -699,10 +797,10 @@ def _merge_overlapping_masks(
     # Merge each group
     merged_results = []
     for group in groups:
-        merged_poly = unary_union([item['polygon'] for item in group])
+        merged_poly = unary_union([item["polygon"] for item in group])
 
         # Calculate merged confidence
-        confidences = [item['confidence'] for item in group]
+        confidences = [item["confidence"] for item in group]
         if confidence_strategy == "max":
             merged_confidence = max(confidences)
         elif confidence_strategy == "mean":
@@ -712,37 +810,39 @@ def _merge_overlapping_masks(
         else:
             merged_confidence = max(confidences)
 
-        class_id = group[0]['class_id']
+        class_id = group[0]["class_id"]
 
         # Get image shape from first mask
-        image_shape = group[0].get('image_shape', predictions[0]['mask'].shape)
+        image_shape = group[0].get("image_shape", predictions[0]["mask"].shape)
 
         # Handle MultiPolygon results
-        if merged_poly.geom_type == 'MultiPolygon':
+        if merged_poly.geom_type == "MultiPolygon":
             for poly in merged_poly.geoms:
                 mask = _polygon_to_mask(poly, image_shape)
                 if mask.any():
-                    merged_results.append({
-                        'mask': mask,
-                        'confidence': merged_confidence,
-                        'class_id': class_id
-                    })
+                    merged_results.append(
+                        {
+                            "mask": mask,
+                            "confidence": merged_confidence,
+                            "class_id": class_id,
+                        }
+                    )
         else:
             mask = _polygon_to_mask(merged_poly, image_shape)
             if mask.any():
-                merged_results.append({
-                    'mask': mask,
-                    'confidence': merged_confidence,
-                    'class_id': class_id
-                })
+                merged_results.append(
+                    {
+                        "mask": mask,
+                        "confidence": merged_confidence,
+                        "class_id": class_id,
+                    }
+                )
 
     return merged_results
 
 
 def _merge_overlapping_bboxes(
-    predictions: List[dict],
-    confidence_strategy: str,
-    overlap_threshold: float = 0.0
+    predictions: List[dict], confidence_strategy: str, overlap_threshold: float = 0.0
 ) -> List[dict]:
     """
     Merge overlapping bounding boxes of the same class.
@@ -765,7 +865,7 @@ def _merge_overlapping_bboxes(
     merged_results = []
     for group in groups:
         # Calculate merged confidence
-        confidences = [item['confidence'] for item in group]
+        confidences = [item["confidence"] for item in group]
         if confidence_strategy == "max":
             merged_confidence = max(confidences)
         elif confidence_strategy == "mean":
@@ -775,32 +875,27 @@ def _merge_overlapping_bboxes(
         else:
             merged_confidence = max(confidences)
 
-        class_id = group[0]['class_id']
+        class_id = group[0]["class_id"]
 
         # Merge bounding boxes - take the union (min/max coordinates)
-        bboxes = [item['bbox'] for item in group]
+        bboxes = [item["bbox"] for item in group]
         x_mins = [bbox[0] for bbox in bboxes]
         y_mins = [bbox[1] for bbox in bboxes]
         x_maxs = [bbox[2] for bbox in bboxes]
         y_maxs = [bbox[3] for bbox in bboxes]
 
-        merged_bbox = np.array([
-            min(x_mins),
-            min(y_mins),
-            max(x_maxs),
-            max(y_maxs)
-        ])
+        merged_bbox = np.array([min(x_mins), min(y_mins), max(x_maxs), max(y_maxs)])
 
-        merged_results.append({
-            'bbox': merged_bbox,
-            'confidence': merged_confidence,
-            'class_id': class_id
-        })
+        merged_results.append(
+            {"bbox": merged_bbox, "confidence": merged_confidence, "class_id": class_id}
+        )
 
     return merged_results
 
 
-def _find_overlapping_bbox_groups(predictions: List[dict], overlap_threshold: float = 0.0) -> List[List[dict]]:
+def _find_overlapping_bbox_groups(
+    predictions: List[dict], overlap_threshold: float = 0.0
+) -> List[List[dict]]:
     """
     Find groups of overlapping bounding boxes using union-find with spatial indexing.
 
@@ -865,7 +960,7 @@ def _find_overlapping_bbox_groups(predictions: List[dict], overlap_threshold: fl
     # Create boxes as Polygons for spatial indexing
     boxes = []
     for pred in predictions:
-        x_min, y_min, x_max, y_max = pred['bbox']
+        x_min, y_min, x_max, y_max = pred["bbox"]
         # Create box polygon (coordinates: [bottom-left, bottom-right, top-right, top-left])
         box = Polygon([(x_min, y_min), (x_max, y_min), (x_max, y_max), (x_min, y_max)])
         boxes.append(box)
@@ -877,15 +972,15 @@ def _find_overlapping_bbox_groups(predictions: List[dict], overlap_threshold: fl
     for i in range(n):
         box1 = boxes[i]
         # Query for boxes that intersect the bounding box
-        candidates = tree.query(box1, predicate='intersects')
+        candidates = tree.query(box1, predicate="intersects")
 
         for j in candidates:
             if i >= j or (i, j) in checked_pairs or (j, i) in checked_pairs:
                 continue
             checked_pairs.add((i, j))
 
-            bbox1 = predictions[i]['bbox']
-            bbox2 = predictions[j]['bbox']
+            bbox1 = predictions[i]["bbox"]
+            bbox2 = predictions[j]["bbox"]
 
             iou = bbox_iou(bbox1, bbox2)
 
@@ -972,7 +1067,9 @@ def _polygon_to_mask(polygon: Polygon, shape: Tuple[int, int]) -> np.ndarray:
     return mask
 
 
-def _find_overlapping_groups(polygons_with_data: List[dict], overlap_threshold: float = 0.0) -> List[List[dict]]:
+def _find_overlapping_groups(
+    polygons_with_data: List[dict], overlap_threshold: float = 0.0
+) -> List[List[dict]]:
     """
     Find groups of overlapping/touching polygons using union-find with spatial indexing.
 
@@ -1012,7 +1109,7 @@ def _find_overlapping_groups(polygons_with_data: List[dict], overlap_threshold: 
             parent[px] = py
 
     # Use spatial indexing (STRtree) to efficiently find candidate pairs
-    polygons = [item['polygon'] for item in polygons_with_data]
+    polygons = [item["polygon"] for item in polygons_with_data]
     tree = STRtree(polygons)
 
     # Check candidate pairs identified by spatial index
@@ -1020,7 +1117,7 @@ def _find_overlapping_groups(polygons_with_data: List[dict], overlap_threshold: 
     for i in range(n):
         poly1 = polygons[i]
         # Query for geometries that intersect the bounding box
-        candidates = tree.query(poly1, predicate='intersects')
+        candidates = tree.query(poly1, predicate="intersects")
 
         for j in candidates:
             if i >= j or (i, j) in checked_pairs or (j, i) in checked_pairs:
