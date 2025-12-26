@@ -816,7 +816,7 @@ def _find_overlapping_bbox_groups(predictions: List[dict], overlap_threshold: fl
     n = len(predictions)
     if n == 0:
         return []
-    
+
     parent = list(range(n))
 
     def find(x):
@@ -824,13 +824,13 @@ def _find_overlapping_bbox_groups(predictions: List[dict], overlap_threshold: fl
         root = x
         while parent[root] != root:
             root = parent[root]
-        
+
         # Path compression: make all visited nodes point directly to root
         while parent[x] != root:
             next_x = parent[x]
             parent[x] = root
             x = next_x
-        
+
         return root
 
     def union(x, y):
@@ -868,7 +868,7 @@ def _find_overlapping_bbox_groups(predictions: List[dict], overlap_threshold: fl
         # Create box polygon (coordinates: [bottom-left, bottom-right, top-right, top-left])
         box = Polygon([(x_min, y_min), (x_max, y_min), (x_max, y_max), (x_min, y_max)])
         boxes.append(box)
-    
+
     tree = STRtree(boxes)
 
     # Check candidate pairs identified by spatial index
@@ -877,12 +877,12 @@ def _find_overlapping_bbox_groups(predictions: List[dict], overlap_threshold: fl
         box1 = boxes[i]
         # Query for boxes that intersect the bounding box
         candidates = tree.query(box1, predicate='intersects')
-        
+
         for j in candidates:
             if i >= j or (i, j) in checked_pairs or (j, i) in checked_pairs:
                 continue
             checked_pairs.add((i, j))
-            
+
             bbox1 = predictions[i]['bbox']
             bbox2 = predictions[j]['bbox']
 
@@ -988,7 +988,7 @@ def _find_overlapping_groups(polygons_with_data: List[dict], overlap_threshold: 
     n = len(polygons_with_data)
     if n == 0:
         return []
-    
+
     parent = list(range(n))
 
     def find(x):
@@ -996,13 +996,13 @@ def _find_overlapping_groups(polygons_with_data: List[dict], overlap_threshold: 
         root = x
         while parent[root] != root:
             root = parent[root]
-        
+
         # Path compression: make all visited nodes point directly to root
         while parent[x] != root:
             next_x = parent[x]
             parent[x] = root
             x = next_x
-        
+
         return root
 
     def union(x, y):
@@ -1020,12 +1020,12 @@ def _find_overlapping_groups(polygons_with_data: List[dict], overlap_threshold: 
         poly1 = polygons[i]
         # Query for geometries that intersect the bounding box
         candidates = tree.query(poly1, predicate='intersects')
-        
+
         for j in candidates:
             if i >= j or (i, j) in checked_pairs or (j, i) in checked_pairs:
                 continue
             checked_pairs.add((i, j))
-            
+
             poly2 = polygons[j]
 
             # Check if polygons overlap based on threshold
