@@ -167,6 +167,9 @@ from inference.core.workflows.core_steps.fusion.detections_stitch.v1 import (
 from inference.core.workflows.core_steps.fusion.dimension_collapse.v1 import (
     DimensionCollapseBlockV1,
 )
+from inference.core.workflows.core_steps.fusion.dimension_rollup.v1 import (
+    DimensionRollUpBlockV1,
+)
 from inference.core.workflows.core_steps.math.cosine_similarity.v1 import (
     CosineSimilarityBlockV1,
 )
@@ -609,6 +612,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ExpressionBlockV1,
         PropertyDefinitionBlockV1,
         DimensionCollapseBlockV1,
+        DimensionRollUpBlockV1,
         FirstNonEmptyOrDefaultBlockV1,
         AnthropicClaudeBlockV1,
         AnthropicClaudeBlockV2,
