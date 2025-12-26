@@ -467,12 +467,13 @@ predictions from dynamic crops back to parent image coordinates.
 def test_full_dimension_rollup_workflow_with_all_detection_types(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
+    roboflow_api_key: str,
 ) -> None:
     """Test dimension_rollup with object detection, keypoints, and segmentation."""
     # given
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
-        "workflows_core.api_key": None,
+        "workflows_core.api_key": roboflow_api_key,
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
@@ -542,12 +543,13 @@ overlap thresholds.
 def test_dimension_rollup_with_object_detection_only(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
+    roboflow_api_key: str,
 ) -> None:
     """Test dimension_rollup with object detection predictions."""
     # given
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
-        "workflows_core.api_key": None,
+        "workflows_core.api_key": roboflow_api_key,
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
@@ -603,12 +605,13 @@ with configurable keypoint merge thresholds.
 def test_dimension_rollup_with_keypoint_detection_only(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
+    roboflow_api_key: str,
 ) -> None:
     """Test dimension_rollup with keypoint detection predictions."""
     # given
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
-        "workflows_core.api_key": None,
+        "workflows_core.api_key": roboflow_api_key,
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
@@ -659,12 +662,13 @@ rollup segmentation masks from dynamic crops back to parent image coordinates.
 def test_dimension_rollup_with_segmentation_only(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
+    roboflow_api_key: str,
 ) -> None:
     """Test dimension_rollup with instance segmentation predictions."""
     # given
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
-        "workflows_core.api_key": None,
+        "workflows_core.api_key": roboflow_api_key,
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
@@ -704,12 +708,13 @@ def test_dimension_rollup_with_segmentation_only(
 def test_dimension_rollup_coordinate_transformation(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
+    roboflow_api_key: str,
 ) -> None:
     """Test that dimension_rollup correctly transforms coordinates from crop space to parent space."""
     # given
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
-        "workflows_core.api_key": None,
+        "workflows_core.api_key": roboflow_api_key,
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
@@ -749,6 +754,7 @@ def test_dimension_rollup_coordinate_transformation(
 def test_dimension_rollup_with_different_confidence_strategies(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
+    roboflow_api_key: str,
 ) -> None:
     """Test dimension_rollup with different confidence merging strategies."""
     strategies = ["max", "mean", "min"]
@@ -811,7 +817,7 @@ def test_dimension_rollup_with_different_confidence_strategies(
         # given
         workflow_init_parameters = {
             "workflows_core.model_manager": model_manager,
-            "workflows_core.api_key": None,
+            "workflows_core.api_key": roboflow_api_key,
             "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
         }
         execution_engine = ExecutionEngine.init(
@@ -847,6 +853,7 @@ def test_dimension_rollup_with_different_confidence_strategies(
 def test_dimension_rollup_with_different_overlap_thresholds(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
+    roboflow_api_key: str,
 ) -> None:
     """Test dimension_rollup with different overlap thresholds."""
     thresholds = [0.0, 0.3, 0.5, 0.7]
@@ -909,7 +916,7 @@ def test_dimension_rollup_with_different_overlap_thresholds(
         # given
         workflow_init_parameters = {
             "workflows_core.model_manager": model_manager,
-            "workflows_core.api_key": None,
+            "workflows_core.api_key": roboflow_api_key,
             "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
         }
         execution_engine = ExecutionEngine.init(
