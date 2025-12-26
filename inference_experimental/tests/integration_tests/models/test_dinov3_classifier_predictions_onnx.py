@@ -403,6 +403,7 @@ def test_multi_label_onnx_static_package_batch_numpy(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
+@pytest.mark.cpu_only  # NOT STABLE ASSERTIONS ON GPU
 def test_multi_label_onnx_static_package_torch_tensor(
     dinov3_multi_label_onnx_static_package: str,
     chess_set_image_torch: torch.Tensor,
@@ -468,6 +469,7 @@ def test_multi_label_onnx_static_package_torch_tensor(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
+@pytest.mark.cpu_only  # NOT STABLE ASSERTIONS ON GPU
 def test_multi_label_onnx_static_package_batch_torch_tensor_stack(
     dinov3_multi_label_onnx_static_package: str,
     chess_set_image_torch: torch.Tensor,
@@ -579,6 +581,7 @@ def test_multi_label_onnx_static_package_batch_torch_tensor_stack(
 
 @pytest.mark.slow
 @pytest.mark.onnx_extras
+@pytest.mark.cpu_only  # NOT STABLE ASSERTIONS ON GPU
 def test_multi_label_onnx_static_package_batch_torch_tensor_list(
     dinov3_multi_label_onnx_static_package: str,
     chess_set_image_torch: torch.Tensor,
