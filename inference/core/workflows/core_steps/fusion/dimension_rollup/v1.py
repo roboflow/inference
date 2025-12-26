@@ -820,9 +820,18 @@ def _find_overlapping_bbox_groups(predictions: List[dict], overlap_threshold: fl
     parent = list(range(n))
 
     def find(x):
-        if parent[x] != x:
-            parent[x] = find(parent[x])
-        return parent[x]
+        # Iterative find with path compression to avoid stack overflow
+        root = x
+        while parent[root] != root:
+            root = parent[root]
+        
+        # Path compression: make all visited nodes point directly to root
+        while parent[x] != root:
+            next_x = parent[x]
+            parent[x] = root
+            x = next_x
+        
+        return root
 
     def union(x, y):
         px, py = find(x), find(y)
@@ -983,9 +992,18 @@ def _find_overlapping_groups(polygons_with_data: List[dict], overlap_threshold: 
     parent = list(range(n))
 
     def find(x):
-        if parent[x] != x:
-            parent[x] = find(parent[x])
-        return parent[x]
+        # Iterative find with path compression to avoid stack overflow
+        root = x
+        while parent[root] != root:
+            root = parent[root]
+        
+        # Path compression: make all visited nodes point directly to root
+        while parent[x] != root:
+            next_x = parent[x]
+            parent[x] = root
+            x = next_x
+        
+        return root
 
     def union(x, y):
         px, py = find(x), find(y)
