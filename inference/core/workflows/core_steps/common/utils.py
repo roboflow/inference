@@ -309,9 +309,9 @@ def sv_detections_to_root_coordinates(
 
             # TODO: instead of shifting mask we could store contours in data instead of storing mask (even if calculated)
             #       it would be faster to shift contours but at expense of having to remember to generate mask from contour when it's needed
-            anchored_mask[shift_y : shift_y + clipped_h, shift_x : shift_x + clipped_w] = (
-                clipped_mask
-            )
+            anchored_mask[
+                shift_y : shift_y + clipped_h, shift_x : shift_x + clipped_w
+            ] = clipped_mask
         detections_copy.mask = new_anchored_masks
     new_root_metadata = ImageParentMetadata(
         parent_id=root_parent_id,
