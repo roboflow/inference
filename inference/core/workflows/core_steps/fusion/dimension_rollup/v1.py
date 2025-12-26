@@ -5,6 +5,7 @@ import numpy as np
 from pydantic import ConfigDict, Field
 from shapely.geometry import Polygon
 from shapely.ops import unary_union
+from shapely.strtree import STRtree
 from skimage import draw, measure
 from supervision import Detections
 import logging
@@ -800,7 +801,10 @@ def _merge_overlapping_bboxes(
 
 def _find_overlapping_bbox_groups(predictions: List[dict], overlap_threshold: float = 0.0) -> List[List[dict]]:
     """
-    Find groups of overlapping bounding boxes using union-find.
+    Find groups of overlapping bounding boxes using union-find with spatial indexing.
+
+    Uses STRtree spatial index for efficient candidate finding, avoiding O(n²) all-pairs comparison.
+    This optimization becomes increasingly valuable as the number of detections grows.
 
     Args:
         predictions: List of dictionaries with 'bbox' key
@@ -810,6 +814,9 @@ def _find_overlapping_bbox_groups(predictions: List[dict], overlap_threshold: fl
         List of groups, where each group is a list of prediction dicts
     """
     n = len(predictions)
+    if n == 0:
+        return []
+    
     parent = list(range(n))
 
     def find(x):
@@ -845,9 +852,28 @@ def _find_overlapping_bbox_groups(predictions: List[dict], overlap_threshold: fl
 
         return intersection / union if union > 0 else 0.0
 
-    # Check all pairs for overlap
+    # Create boxes as Polygons for spatial indexing
+    boxes = []
+    for pred in predictions:
+        x_min, y_min, x_max, y_max = pred['bbox']
+        # Create box polygon (coordinates: [bottom-left, bottom-right, top-right, top-left])
+        box = Polygon([(x_min, y_min), (x_max, y_min), (x_max, y_max), (x_min, y_max)])
+        boxes.append(box)
+    
+    tree = STRtree(boxes)
+
+    # Check candidate pairs identified by spatial index
+    checked_pairs = set()
     for i in range(n):
-        for j in range(i + 1, n):
+        box1 = boxes[i]
+        # Query for boxes that intersect the bounding box
+        candidates = tree.query(box1, predicate='intersects')
+        
+        for j in candidates:
+            if i >= j or (i, j) in checked_pairs or (j, i) in checked_pairs:
+                continue
+            checked_pairs.add((i, j))
+            
             bbox1 = predictions[i]['bbox']
             bbox2 = predictions[j]['bbox']
 
@@ -938,7 +964,10 @@ def _polygon_to_mask(polygon: Polygon, shape: Tuple[int, int]) -> np.ndarray:
 
 def _find_overlapping_groups(polygons_with_data: List[dict], overlap_threshold: float = 0.0) -> List[List[dict]]:
     """
-    Find groups of overlapping/touching polygons using union-find.
+    Find groups of overlapping/touching polygons using union-find with spatial indexing.
+
+    Uses STRtree spatial index for efficient candidate finding, avoiding O(n²) all-pairs comparison.
+    This optimization becomes increasingly valuable as the number of detections grows.
 
     Args:
         polygons_with_data: List of dictionaries with 'polygon' key.
@@ -948,6 +977,9 @@ def _find_overlapping_groups(polygons_with_data: List[dict], overlap_threshold: 
         List of groups, where each group is a list of polygon data dicts.
     """
     n = len(polygons_with_data)
+    if n == 0:
+        return []
+    
     parent = list(range(n))
 
     def find(x):
@@ -960,11 +992,23 @@ def _find_overlapping_groups(polygons_with_data: List[dict], overlap_threshold: 
         if px != py:
             parent[px] = py
 
-    # Check all pairs for overlap
+    # Use spatial indexing (STRtree) to efficiently find candidate pairs
+    polygons = [item['polygon'] for item in polygons_with_data]
+    tree = STRtree(polygons)
+
+    # Check candidate pairs identified by spatial index
+    checked_pairs = set()
     for i in range(n):
-        for j in range(i + 1, n):
-            poly1 = polygons_with_data[i]['polygon']
-            poly2 = polygons_with_data[j]['polygon']
+        poly1 = polygons[i]
+        # Query for geometries that intersect the bounding box
+        candidates = tree.query(poly1, predicate='intersects')
+        
+        for j in candidates:
+            if i >= j or (i, j) in checked_pairs or (j, i) in checked_pairs:
+                continue
+            checked_pairs.add((i, j))
+            
+            poly2 = polygons[j]
 
             # Check if polygons overlap based on threshold
             if overlap_threshold <= 0.0:
@@ -973,12 +1017,11 @@ def _find_overlapping_groups(polygons_with_data: List[dict], overlap_threshold: 
                     union(i, j)
             else:
                 # Merge only if overlap ratio exceeds threshold
-                if poly1.intersects(poly2):
-                    intersection_area = poly1.intersection(poly2).area
-                    union_area = poly1.union(poly2).area
-                    iou = intersection_area / union_area if union_area > 0 else 0
-                    if iou >= overlap_threshold:
-                        union(i, j)
+                intersection_area = poly1.intersection(poly2).area
+                union_area = poly1.union(poly2).area
+                iou = intersection_area / union_area if union_area > 0 else 0
+                if iou >= overlap_threshold:
+                    union(i, j)
 
     # Group by root parent
     groups_dict = {}
