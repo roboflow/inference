@@ -432,6 +432,7 @@ def retrieve_selectors_from_union_definition(
             inputs_accepting_batches_and_scalars=inputs_accepting_batches_and_scalars,
             inputs_enforcing_auto_batch_casting=inputs_enforcing_auto_batch_casting,
             is_list_element=is_list_element,
+            is_dict_element=is_dict_element,
         )
         if result is None:
             continue
@@ -464,12 +465,14 @@ def retrieve_selectors_from_union_definition(
         )
     if not merged_references:
         return None
+    merged_is_list_element = is_list_element or any(r.is_list_element for r in results)
+    merged_is_dict_element = is_dict_element or any(r.is_dict_element for r in results)
     return SelectorDefinition(
         property_name=property_name,
         property_description=property_description,
         allowed_references=merged_references,
-        is_list_element=is_list_element,
-        is_dict_element=is_dict_element,
+        is_list_element=merged_is_list_element,
+        is_dict_element=merged_is_dict_element,
         dimensionality_offset=property_dimensionality_offset,
         is_dimensionality_reference_property=is_dimensionality_reference_property,
     )
