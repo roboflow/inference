@@ -73,7 +73,7 @@ class BlockManifest(WorkflowBlockManifest):
         " Example: Prediction -> Dimension Collapse -> Dimension Roll Up",
     )
 
-    confidence_strategy: Union[Selector(kind=[LIST_OF_VALUES_KIND]), str] = Field(
+    confidence_strategy: Literal["max", "mean", "min"] = Field(
         default="max",
         title="Confidence Strategy",
         description=(
