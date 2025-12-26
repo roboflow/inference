@@ -1,47 +1,56 @@
-# SAM3-3D (3D Object Generation)
+# SAM3-3D Model
 
-SAM3-3D is a 3D object generation model that converts 2D images with masks into 3D assets, including meshes (GLB format) and Gaussian splats (PLY format).
+3D object generation model that converts 2D images with masks into 3D assets (meshes and Gaussian splats).
 
-!!! warning "Beta Feature"
+This model is currenlty in Beta state! The model is only available if "SAM3_3D_OBJECTS_ENABLED" flag is on. The model can currently be ran using inference package, and also be used in Roboflow Worklows as a part of local inference server.
 
-    This model is currently in Beta state. It is only available when the `SAM3_3D_OBJECTS_ENABLED` environment flag is enabled.
+## DISCLAIMER: In order to run this model you will need a 32GB+ VRAM GPU machine. 
 
-!!! warning "Hardware Requirements"
-
-    SAM3-3D requires a GPU with **32GB+ VRAM** to run.
-
-## How to Use SAM3-3D with Inference
-
-You can use SAM3-3D via the Inference Python SDK or run it in Docker.
-
-### Prerequisites
-
-To use SAM3-3D, you will need:
-
-1. A Roboflow API key. [Sign up for a free Roboflow account](https://app.roboflow.com) to retrieve your key.
-2. A GPU with 32GB+ VRAM
-3. Python 3.10 (recommended)
-
-### Installation
+## Installation
 
 ```bash
 pip install --no-cache-dir --no-build-isolation -r requirements/requirements.sam3_3d.txt
 ```
+We recommend using python 3.10
 
-### Environment Configuration
+## Docker
 
-You must enable the SAM3-3D feature flag. For optimal performance, also configure the attention backends:
-
-```python
-import os
-os.environ["SAM3_3D_OBJECTS_ENABLED"] = "true"
-os.environ["SPARSE_ATTN_BACKEND"] = "flash_attn"
-os.environ["ATTN_BACKEND"] = "flash_attn"
+```
+docker build -t roboflow/roboflow-inference-server-gpu:dev -f docker/dockerfiles/Dockerfile.onnx.gpu.3d .
 ```
 
-### Python SDK
+and then
 
-Here is an example of how to use SAM3-3D to generate 3D objects from an image with masks.
+```
+docker run --gpus all -p 9001:9001 -v ./inference:/app/inference roboflow/roboflow-inference-server-gpu:dev
+```
+
+## Input
+
+- **image**: RGB image (PIL Image, numpy array, or inference request format)
+- **mask_input**: Mask(s) defining object regions. Supports multiple formats:
+
+| Format | Single | Multiple |
+|--------|--------|----------|
+| Binary mask | `np.ndarray` (H, W) | `np.ndarray` (N, H, W) or `List[np.ndarray]` |
+| Polygon (COCO flat) | `[x1, y1, x2, y2, ...]` | `[[x1, y1, ...], [x1, y1, ...]]` |
+| Polygon (points) | `[[x1, y1], [x2, y2], ...]` | N/A |
+| RLE | `{"counts": "...", "size": [H, W]}` | `[{"counts": ...}, ...]` |
+| sv.Detections | From SAM2 or other segmentation models | Extracts all masks |
+
+## Output
+
+- **mesh_glb**: Combined 3D scene mesh (GLB binary)
+- **gaussian_ply**: Combined Gaussian splatting (PLY binary)
+- **objects**: List of individual objects:
+  - `mesh_glb`: Object mesh (GLB binary)
+  - `gaussian_ply`: Object Gaussian splat (PLY binary)
+  - `metadata`: `{rotation, translation, scale}`
+- **time**: Inference time in seconds
+
+## Keep in mind to set 'os.environ["SAM3_3D_OBJECTS_ENABLED"] = "true"' otherwise the model won't be available. And if available, set "SPARSE_ATTN_BACKEND" and "ATTN_BACKEND" to "flash_attn" to speed the pipeline up.
+
+## Example
 
 ```python
 import os
@@ -68,8 +77,8 @@ def load_coco_masks(annotations_path, image_id):
 
     return segmentations
 
-image_path = "path/to/your/image.jpg"
-annotations_path = "path/to/annotations.coco.json"
+image_path = "demo-data/train/IMG_6860_jpeg.rf.9fceef9265cef07f0cd4b339527a6756.jpg"
+annotations_path = "demo-data/train/_annotations.coco.json"
 image_id = 0
 
 mask_polygon = load_coco_masks(annotations_path, image_id)
@@ -79,7 +88,7 @@ image = {
     "value": image_path
 }
 
-model = get_model("sam3-3d-objects", api_key="<YOUR_ROBOFLOW_API_KEY>")
+model = get_model("sam3-3d-objects", api_key="your api key here")
 
 request = Sam3_3D_Objects_InferenceRequest(
     image=image,
@@ -89,74 +98,63 @@ request = Sam3_3D_Objects_InferenceRequest(
 print("Running SAM3_3D inference...")
 response: Sam3_3D_Objects_Response = model.infer_from_request(request)
 
-print(f"SAM3_3D inference completed in {response.time:.2f} seconds!")
+print(f"\nSAM3_3D inference completed in {response.time:.2f} seconds!")
+print("=" * 80)
 
-# Save Scene Mesh (GLB)
+# 1. Scene Mesh (GLB)
 if response.mesh_glb is not None:
+    print(f"\n[Output 1/3] Scene Mesh (GLB format)")
     with open("out_mesh.glb", "wb") as f:
         f.write(response.mesh_glb)
-    print(f"Saved mesh to out_mesh.glb ({len(response.mesh_glb):,} bytes)")
+    print(f"  Saved mesh to out_mesh.glb ({len(response.mesh_glb):,} bytes)")
+else:
+    print(f"\n[Output 1/3] No mesh output")
 
-# Save Combined Gaussian Splatting (PLY)
+# 2. Combined Gaussian splatting
 if response.gaussian_ply is not None:
+    print(f"\n[Output 2/3] Combined Gaussian splatting (PLY format)")
     with open("out_gaussian.ply", "wb") as f:
         f.write(response.gaussian_ply)
-    print(f"Saved gaussian to out_gaussian.ply ({len(response.gaussian_ply):,} bytes)")
+    print(f"  Saved gaussian to out_gaussian.ply ({len(response.gaussian_ply):,} bytes)")
+else:
+    print(f"\n[Output 2/3] No combined gaussian output")
 
-# Save Individual Objects
+# 3. Individual objects
+print(f"\n[Output 3/3] Individual objects ({len(response.objects)} objects)")
+objects_metadata = []
 for i, obj in enumerate(response.objects):
+    print(f"\n  Object {i}:")
+
+    # Save individual mesh
     if obj.mesh_glb is not None:
-        with open(f"out_object_{i}_mesh.glb", "wb") as f:
+        filename = f"out_object_{i}_mesh.glb"
+        with open(filename, "wb") as f:
             f.write(obj.mesh_glb)
+        print(f"    Saved mesh to {filename} ({len(obj.mesh_glb):,} bytes)")
 
+    # Save individual gaussian
     if obj.gaussian_ply is not None:
-        with open(f"out_object_{i}_gaussian.ply", "wb") as f:
+        filename = f"out_object_{i}_gaussian.ply"
+        with open(filename, "wb") as f:
             f.write(obj.gaussian_ply)
+        print(f"    Saved gaussian to {filename} ({len(obj.gaussian_ply):,} bytes)")
+
+    # Collect metadata
+    obj_metadata = {
+        "object_index": i,
+        "rotation": obj.metadata.rotation,
+        "translation": obj.metadata.translation,
+        "scale": obj.metadata.scale,
+    }
+    objects_metadata.append(obj_metadata)
+    print(f"    Metadata: rotation={obj.metadata.rotation is not None}, translation={obj.metadata.translation is not None}, scale={obj.metadata.scale is not None}")
+
+# Save all metadata to file
+with open("out_metadata.json", "w") as f:
+    json.dump({"objects": objects_metadata}, f, indent=2)
+print(f"\n  Saved all metadata to out_metadata.json")
+
+print("\n" + "=" * 80)
+print("All outputs saved successfully!")
+print("=" * 80)
 ```
-
-### Docker
-
-You can build and run SAM3-3D using Docker:
-
-#### 1. Build the Docker Image
-
-```bash
-docker build -t roboflow/roboflow-inference-server-gpu:dev -f docker/dockerfiles/Dockerfile.onnx.gpu.3d .
-```
-
-#### 2. Run the Container
-
-```bash
-docker run --gpus all -p 9001:9001 roboflow/roboflow-inference-server-gpu:dev
-```
-
-## Input Format
-
-SAM3-3D accepts the following inputs:
-
-- **image**: RGB image (PIL Image, numpy array, or inference request format)
-- **mask_input**: Mask(s) defining object regions. Supports multiple formats:
-
-| Format | Single | Multiple |
-|--------|--------|----------|
-| Binary mask | `np.ndarray` (H, W) | `np.ndarray` (N, H, W) or `List[np.ndarray]` |
-| Polygon (COCO flat) | `[x1, y1, x2, y2, ...]` | `[[x1, y1, ...], [x1, y1, ...]]` |
-| Polygon (points) | `[[x1, y1], [x2, y2], ...]` | N/A |
-| RLE | `{"counts": "...", "size": [H, W]}` | `[{"counts": ...}, ...]` |
-| sv.Detections | From SAM2 or other segmentation models | Extracts all masks |
-
-## Output Format
-
-SAM3-3D returns:
-
-- **mesh_glb**: Combined 3D scene mesh (GLB binary)
-- **gaussian_ply**: Combined Gaussian splatting (PLY binary)
-- **objects**: List of individual objects, each containing:
-    - `mesh_glb`: Object mesh (GLB binary)
-    - `gaussian_ply`: Object Gaussian splat (PLY binary)
-    - `metadata`: Object transform data (`rotation`, `translation`, `scale`)
-- **time**: Inference time in seconds
-
-## Workflow Integration
-
-SAM3-3D can be used in [Inference Workflows](https://inference.roboflow.com/workflows/core_steps/) as part of a local inference server, allowing you to chain it with other models like SAM2 for mask generation.
