@@ -132,13 +132,14 @@ class DimensionRollUpBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    def run(self,
-            parent_detection: Union[OBJECT_DETECTION_PREDICTION_KIND,INSTANCE_SEGMENTATION_PREDICTION_KIND, KEYPOINT_DETECTION_PREDICTION_KIND],
-            child_detections: Any, # TBD List[Union[OBJECT_DETECTION_PREDICTION_KIND,INSTANCE_SEGMENTATION_PREDICTION_KIND]]],
-            confidence_strategy: str = "max",
-            overlap_threshold: float = 0.0,
-            keypoint_merge_threshold: float = 10.0
-            ) -> BlockResult:
+    def run(
+        self,
+        parent_detection: Any,
+        child_detections: Any,
+        confidence_strategy: str = "max",
+        overlap_threshold: float = 0.0,
+        keypoint_merge_threshold: float = 10.0,
+    ) -> BlockResult:
 
         detections, zones = merge_crop_predictions(
             parent_detection,
