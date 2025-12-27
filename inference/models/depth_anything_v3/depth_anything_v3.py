@@ -23,7 +23,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.models.transformers import TransformerModel
 
 
-class DepthAnythingV2(TransformerModel):
+class DepthAnythingV3(TransformerModel):
     transformers_class = AutoModelForDepthEstimation
     processor_class = AutoImageProcessor
     load_base_from_roboflow = True
@@ -31,7 +31,7 @@ class DepthAnythingV2(TransformerModel):
     version_id = None
     default_dtype = torch.bfloat16
     load_weights_as_transformers = True
-    endpoint = "depth-anything-v2/small"
+    endpoint = "depth-anything-v3/small"
     task_type = "depth-estimation"
 
     def __init__(self, *args, **kwargs):
