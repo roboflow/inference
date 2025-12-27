@@ -366,6 +366,10 @@ REGISTERED_MODELS: Dict[
         module_name="inference_exp.models.depth_anything_v2.depth_anything_v2_hf",
         class_name="DepthAnythingV2HF",
     ),
+    ("depth-anything-v3", DEPTH_ESTIMATION_TASK, BackendType.HF): LazyClass(
+        module_name="inference_exp.models.depth_anything_v3.depth_anything_v3_hf",
+        class_name="DepthAnythingV3HF",
+    ),
     ("doctr", STRUCTURED_OCR_TASK, BackendType.TORCH): LazyClass(
         module_name="inference_exp.models.doctr.doctr_torch", class_name="DocTR"
     ),
