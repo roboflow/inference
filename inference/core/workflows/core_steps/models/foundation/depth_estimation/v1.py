@@ -14,6 +14,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     NUMPY_ARRAY_KIND,
     ROBOFLOW_MODEL_ID_KIND,
+    STRING_KIND,
     ImageInputField,
     RoboflowModelField,
     Selector,
@@ -61,6 +62,7 @@ class BlockManifest(WorkflowBlockManifest):
                 "Depth Estimation",
                 "Depth Anything",
                 "Depth Anything V2",
+                "Depth Anything V3",
                 "Hugging Face",
                 "HuggingFace",
             ],
@@ -76,10 +78,13 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/depth_estimation@v1"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
 
-    model_version: str = Field(
+    model_version: Union[
+        Literal["depth-anything-v2/small", "depth-anything-v3/small", "depth-anything-v3/base"],
+        Selector(kind=[STRING_KIND]),
+    ] = Field(
         default="depth-anything-v3/small",
         description="The Depth Estimation model to be used for inference.",
-        examples=["depth-anything-v2/small", "depth-anything-v3/small"],
+        examples=["depth-anything-v2/small", "depth-anything-v3/small", "depth-anything-v3/base"],
     )
 
     @classmethod
@@ -121,7 +126,7 @@ class DepthEstimationBlockV1(WorkflowBlock):
     def run(
         self,
         images: Batch[WorkflowImageData],
-        model_version: str = "depth-anything-v2/small",
+        model_version: str = "depth-anything-v3/small",
     ) -> BlockResult:
         if self._step_execution_mode == StepExecutionMode.LOCAL:
             return self.run_locally(
@@ -140,7 +145,7 @@ class DepthEstimationBlockV1(WorkflowBlock):
     def run_locally(
         self,
         images: Batch[WorkflowImageData],
-        model_version: str = "depth-anything-v2/small",
+        model_version: str = "depth-anything-v3/small",
     ) -> BlockResult:
         # Convert each image to the format required by the model.
         inference_images = [
