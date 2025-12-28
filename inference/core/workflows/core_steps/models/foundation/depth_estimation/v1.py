@@ -84,7 +84,7 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         default="depth-anything-v3/small",
         description="The Depth Estimation model to be used for inference.",
-        examples=["depth-anything-v2/small", "depth-anything-v3/small", "depth-anything-v3/base"],
+        examples=["depth-anything-v2/small", "$inputs.variant"],
     )
 
     @classmethod
