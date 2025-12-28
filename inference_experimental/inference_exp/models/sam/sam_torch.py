@@ -170,6 +170,8 @@ class SAMTorch:
     ) -> Tuple[torch.Tensor, List[str], List[Tuple[int, int]]]:
         if isinstance(images, torch.Tensor):
             images = images.to(device=self._device)
+            if images.device.type == "cuda":
+                images = images.float()
             if len(images.shape) == 4:
                 image_hashes = [compute_image_hash(image=image) for image in images]
                 if input_color_format == "bgr":
@@ -203,6 +205,9 @@ class SAMTorch:
                         model_input_images.append(input_image)
                     else:
                         original_image_sizes.append(tuple(image.shape[1:3]))
+                        image = image.to(self._device)
+                        if image.device.type == "cuda":
+                            image = image.float()
                         if input_color_format == "bgr":
                             image = image[::-1, :, :].contiguous()
                         input_image = self._transform.apply_image_torch(
@@ -472,15 +477,15 @@ def equalize_batch_size(
             "used correctly. Running on Roboflow platform - contact us to get help.",
             help_url="https://todo",
         )
-    if mask_input is not None and any(
-        len(i.shape) != 3 or i.shape[0] != 1 for i in mask_input
-    ):
-        raise ModelInputError(
-            message="When using SAM model with `mask_input`, each mask must be 3D tensor of shape (1, H, W). "
-            "If you run inference locally, verify your integration making sure that the model interface is "
-            "used correctly. Running on Roboflow platform - contact us to get help.",
-            help_url="https://todo",
-        )
+    if mask_input is not None:
+        mask_input = [i[None, :, :] if len(i.shape) == 2 else i for i in mask_input]
+        if any(len(i.shape) != 3 or i.shape[0] != 1 for i in mask_input):
+            raise ModelInputError(
+                message="When using SAM model with `mask_input`, each mask must be 3D tensor of shape (1, H, W). "
+                "If you run inference locally, verify your integration making sure that the model interface is "
+                "used correctly. Running on Roboflow platform - contact us to get help.",
+                help_url="https://todo",
+            )
     if boxes is not None:
         batched_boxes_provided = False
         for box in boxes:
@@ -520,6 +525,13 @@ def pre_process_prompts(
     Optional[List[torch.Tensor]],
     Optional[List[torch.Tensor]],
 ]:
+    if point_labels is not None and point_coordinates is None:
+        raise ModelInputError(
+            message="When using SAM model, provided `point_coordinates` without `point_labels` which makes invalid "
+            "input. If you run inference locally, verify your integration making sure that the model "
+            "interface is used correctly. Running on Roboflow platform - contact us to get help.",
+            help_url="https://todo",
+        )
     if point_coordinates is not None:
         if point_labels is None:
             raise ModelInputError(
@@ -588,10 +600,10 @@ def generate_model_inputs(
         torch.Tensor,
         str,
         Tuple[int, int],
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
+        Optional[torch.Tensor],
+        Optional[torch.Tensor],
+        Optional[torch.Tensor],
+        Optional[torch.Tensor],
     ],
     None,
     None,

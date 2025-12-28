@@ -184,10 +184,13 @@ class MotionDetectionBlockV1(WorkflowBlock):
                 history=history, varThreshold=threshold, detectShadows=True
             )
 
-        frames_initialized = (
-            self.frame_count >= history or not suppress_first_detections
-        )
-        if not frames_initialized:
+        frame = image.numpy_image
+
+        # apply background subtraction
+        mask = self.back_sub.apply(frame)
+
+        # if frames aren't initialized yet, return no motion
+        if self.frame_count < history and suppress_first_detections:
             self.frame_count += 1
             return {
                 "motion": False,
@@ -195,11 +198,6 @@ class MotionDetectionBlockV1(WorkflowBlock):
                 "alarm": False,
                 "motion_zones": [],
             }
-
-        frame = image.numpy_image
-
-        # apply background subtraction
-        mask = self.back_sub.apply(frame)
 
         # apply morphological filtering to ignore changes due to noise
         # Use cached kernel to avoid recreating the same kernel repeatedly
@@ -221,7 +219,7 @@ class MotionDetectionBlockV1(WorkflowBlock):
         filtered_contours = [
             contour
             for contour in contours
-            if len(contour) > 0 and cv2.contourArea(contour) > minimum_contour_area
+            if len(contour) > 2 and cv2.contourArea(contour) > minimum_contour_area
         ]
 
         # clip contours if a detection zone is provided
@@ -242,7 +240,6 @@ class MotionDetectionBlockV1(WorkflowBlock):
                 simplified_contours.append(approx)
 
         # get bounding boxes and polygons
-        mask_height, mask_width, _ = frame.shape
         xyxy_boxes = []
         polygons = []
         for cnt in simplified_contours:
