@@ -163,7 +163,7 @@ class CameraFocusBlockV2(WorkflowBlock):
     ) -> BlockResult:
         underexposed_threshold = int(underexposed_threshold_percent * 255 / 100)
         overexposed_threshold = int(overexposed_threshold_percent * 255 / 100)
-        result_image, focus_value, bbox_focus_values = calculate_tenengrad_measure(
+        result_image, focus_value, bbox_focus_values = visualize_tenengrad_measure(
             image.numpy_image,
             underexposed_threshold=underexposed_threshold,
             overexposed_threshold=overexposed_threshold,
@@ -253,7 +253,7 @@ def _draw_center_marker(
     scale = max(0.4, min(scale, 2.5))
 
     size = int(20 * scale)
-    thickness = max(1, int(1.5 * scale))
+    thickness = max(1, int(1.6 * scale))
 
     cx, cy = width // 2, height // 2
     cv2.line(image, (cx - size, cy), (cx + size, cy), color, thickness)
@@ -276,10 +276,26 @@ def _draw_grid(
     return image
 
 
+def _draw_text_with_outline(
+    image: np.ndarray,
+    text: str,
+    pos: Tuple[int, int],
+    font: int,
+    font_scale: float,
+    color: Tuple[int, int, int],
+    thickness: int,
+) -> None:
+    """Draw text with dark outline for better legibility."""
+    x, y = pos
+    cv2.putText(image, text, (x, y), font, font_scale, (0, 0, 0), thickness + 2)
+    cv2.putText(image, text, (x, y), font, font_scale, color, thickness)
+
+
 def _draw_hud_overlay(
     image: np.ndarray,
     focus_value: float,
     gray: np.ndarray,
+    original_image: np.ndarray,
 ) -> np.ndarray:
     """Draw focus value and histogram overlay."""
     output = image.copy()
@@ -289,22 +305,27 @@ def _draw_hud_overlay(
     scale = min(height, width) / reference_size
     scale = max(0.4, min(scale, 2.5))
 
-    padding = int(12 * scale)
-    hist_width = int(200 * scale)
-    hist_height = int(60 * scale)
+    padding = int(14 * scale)
+    hist_width = int(180 * scale)
+    hist_height = int(50 * scale)
     font = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale = 0.55 * scale
-    thickness = max(1, int(1.5 * scale))
-    line_height = int(20 * scale)
-    radius = int(8 * scale)
+    font_scale = 0.5 * scale
+    font_scale_small = 0.4 * scale
+    thickness = max(1, int(1.6 * scale))
+    line_spacing = int(6 * scale)
     margin = int(12 * scale)
 
-    text1 = f"Focus: {focus_value:.1f}"
+    focus_label = "TFM Focus"
+    focus_value_text = f"{focus_value:.1f}"
+    exposure_label = "Exposure"
 
-    text_width = cv2.getTextSize(text1, font, font_scale, thickness)[0][0]
-    text_height = cv2.getTextSize(text1, font, font_scale, thickness)[0][1]
-    content_width = max(text_width, hist_width)
-    content_height = line_height + hist_height
+    focus_label_size = cv2.getTextSize(focus_label, font, font_scale, thickness)[0]
+    focus_value_size = cv2.getTextSize(focus_value_text, font, font_scale, thickness)[0]
+    label_size = cv2.getTextSize(exposure_label, font, font_scale_small, thickness)[0]
+    section_spacing = int(12 * scale)
+
+    content_width = max(focus_label_size[0] + focus_value_size[0] + int(20 * scale), label_size[0], hist_width)
+    content_height = focus_label_size[1] + section_spacing + label_size[1] + line_spacing + hist_height
 
     hud_width = content_width + padding * 2
     hud_height = content_height + padding * 2
@@ -318,48 +339,71 @@ def _draw_hud_overlay(
         (0, 0, 0),
         -1,
     )
-    corner_radius = min(radius, hud_width // 4, hud_height // 4)
-    if corner_radius > 0:
-        cv2.rectangle(
-            overlay,
-            (hud_x + corner_radius, hud_y),
-            (hud_x + hud_width - corner_radius, hud_y + hud_height),
-            (0, 0, 0),
-            -1,
-        )
-        cv2.rectangle(
-            overlay,
-            (hud_x, hud_y + corner_radius),
-            (hud_x + hud_width, hud_y + hud_height - corner_radius),
-            (0, 0, 0),
-            -1,
-        )
-        for cx, cy in [
-            (hud_x + corner_radius, hud_y + corner_radius),
-            (hud_x + hud_width - corner_radius, hud_y + corner_radius),
-            (hud_x + corner_radius, hud_y + hud_height - corner_radius),
-            (hud_x + hud_width - corner_radius, hud_y + hud_height - corner_radius),
-        ]:
-            cv2.circle(overlay, (cx, cy), corner_radius, (0, 0, 0), -1)
+    cv2.addWeighted(overlay, 0.7, output, 0.3, 0, output)
 
-    cv2.addWeighted(overlay, 0.6, output, 0.4, 0, output)
-
-    text_x = hud_x + padding
-    text_y = hud_y + padding + text_height
-    cv2.putText(
-        output, text1, (text_x, text_y), font, font_scale, (255, 255, 255), thickness
+    cv2.rectangle(
+        output,
+        (hud_x, hud_y),
+        (hud_x + hud_width, hud_y + hud_height),
+        (80, 80, 80),
+        1,
     )
 
-    hist = cv2.calcHist([gray], [0], None, [256], [0, 256])
-    hist_normalized = (hist / hist.max() * hist_height).astype(np.int32).flatten()
+    text_x = hud_x + padding
+    cursor_y = hud_y + padding + focus_label_size[1]
+    _draw_text_with_outline(
+        output, focus_label, (text_x, cursor_y), font, font_scale, (255, 255, 255), thickness
+    )
+    value_x = hud_x + hud_width - padding - focus_value_size[0]
+    _draw_text_with_outline(
+        output, focus_value_text, (value_x, cursor_y), font, font_scale, (255, 255, 255), thickness
+    )
 
-    hist_x = hud_x + padding
-    hist_y = text_y + int(8 * scale)
+    divider_y = cursor_y + int(section_spacing * 0.5)
+    cv2.line(
+        output,
+        (hud_x + padding, divider_y),
+        (hud_x + hud_width - padding, divider_y),
+        (60, 60, 60),
+        1,
+    )
+
+    cursor_y += section_spacing + label_size[1]
+    _draw_text_with_outline(
+        output, exposure_label, (text_x, cursor_y), font, font_scale_small, (180, 180, 180), thickness
+    )
+
+    hist_x = text_x
+    hist_y = cursor_y + line_spacing
+    hist_bottom = hist_y + hist_height - 1
+
+    cv2.rectangle(
+        output,
+        (hist_x, hist_y),
+        (hist_x + hist_width, hist_bottom),
+        (0, 0, 0),
+        -1,
+    )
+
     x_coords = np.linspace(hist_x, hist_x + hist_width - 1, 256).astype(np.int32)
-    pts = np.column_stack(
-        [x_coords, hist_y + hist_height - 1 - hist_normalized]
-    ).astype(np.int32)
-    cv2.polylines(output, [pts], False, (255, 255, 255), max(1, thickness - 1))
+    line_thickness = max(1, thickness)
+
+    if len(original_image.shape) == 3:
+        channel_colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255)]
+        for ch, color in enumerate(channel_colors):
+            hist = cv2.calcHist([original_image], [ch], None, [256], [0, 256])
+            hist_max = hist.max()
+            if hist_max > 0:
+                hist_normalized = (hist / hist_max * hist_height).astype(np.int32).flatten()
+                pts = np.column_stack([x_coords, hist_bottom - hist_normalized]).astype(np.int32)
+                cv2.polylines(output, [pts], False, color, line_thickness)
+
+    gray_hist = cv2.calcHist([gray], [0], None, [256], [0, 256])
+    gray_hist_max = gray_hist.max()
+    if gray_hist_max > 0:
+        gray_hist_normalized = (gray_hist / gray_hist_max * hist_height).astype(np.int32).flatten()
+        pts = np.column_stack([x_coords, hist_bottom - gray_hist_normalized]).astype(np.int32)
+        cv2.polylines(output, [pts], False, (255, 255, 255), line_thickness)
 
     return output
 
@@ -408,7 +452,7 @@ def _compute_tenengrad(
     return gray, focus_measure, focus_value, bbox_focus_measures
 
 
-def calculate_tenengrad_measure(
+def visualize_tenengrad_measure(
     input_image: np.ndarray,
     underexposed_threshold: int = 16,
     overexposed_threshold: int = 239,
@@ -459,6 +503,6 @@ def calculate_tenengrad_measure(
     if grid_divisions > 0:
         output = _draw_grid(output, grid_divisions)
     if show_hud:
-        output = _draw_hud_overlay(output, focus_value, gray)
+        output = _draw_hud_overlay(output, focus_value, gray, input_image)
 
     return output, focus_value, bbox_focus_measures
