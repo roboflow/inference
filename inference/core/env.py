@@ -791,6 +791,19 @@ WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT = int(
     os.getenv("WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT", str(1024 * 1024))  # 1MB
 )
 
+# Maximum number of frames the server is allowed to be ahead of the last client ACK
+# when ACK-based pacing is enabled on the WebRTC control datachannel.
+#
+# Example: if ack=1 and window=4, server may produce/send up to frame 5.
+try:
+    WEBRTC_DATACHANNEL_ACK_WINDOW = int(
+        os.getenv("WEBRTC_DATACHANNEL_ACK_WINDOW", "4")
+    )
+except (ValueError, TypeError):
+    WEBRTC_DATACHANNEL_ACK_WINDOW = 4
+if WEBRTC_DATACHANNEL_ACK_WINDOW < 0:
+    WEBRTC_DATACHANNEL_ACK_WINDOW = 0
+
 HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED = str2bool(
     os.getenv("HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED", "True")
 )
