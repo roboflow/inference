@@ -174,10 +174,13 @@ class CameraFocusBlockV2(WorkflowBlock):
             show_center_marker=show_center_marker,
             detections=detections,
         )
-        output = WorkflowImageData.copy_and_replace(
-            origin_image_data=image,
-            numpy_image=result_image,
-        )
+        if result_image is image.numpy_image:
+            output = image
+        else:
+            output = WorkflowImageData.copy_and_replace(
+                origin_image_data=image,
+                numpy_image=result_image,
+            )
         return {
             OUTPUT_IMAGE_KEY: output,
             "focus_measure": focus_value,
@@ -370,55 +373,20 @@ GRID_DIVISIONS = {
 }
 
 
-def calculate_tenengrad_measure(
+def _compute_tenengrad(
     input_image: np.ndarray,
-    underexposed_threshold: int = 16,
-    overexposed_threshold: int = 239,
-    show_zebra_warnings: bool = True,
-    grid_overlay: str = "3x3",
-    show_hud: bool = True,
-    show_focus_peaking: bool = True,
-    show_center_marker: bool = True,
     detections: Optional[sv.Detections] = None,
-) -> Tuple[np.ndarray, float, List[float]]:
+) -> Tuple[np.ndarray, np.ndarray, float, List[float]]:
     """
-    Tenengrad focus measure with visualization overlay.
+    Compute Tenengrad focus measure using Sobel gradients.
 
-    Uses Sobel operators to compute gradient magnitudes as a focus metric.
-    Higher values indicate sharper/more in-focus images.
-
-    Parameters
-    ----------
-    input_image : np.ndarray
-        The input image (color or grayscale).
-    underexposed_threshold : int
-        Pixel intensity below which areas are marked as underexposed.
-    overexposed_threshold : int
-        Pixel intensity above which areas are marked as overexposed.
-    show_zebra_warnings : bool
-        Whether to display zebra pattern overlay on under/overexposed regions.
-    grid_overlay : str
-        Grid overlay type: "None", "2x2", "3x3", "4x4", or "5x5".
-    show_hud : bool
-        Whether to display heads-up overlay with focus values and histogram.
-    show_focus_peaking : bool
-        Whether to display green overlay on in-focus areas.
-    show_center_marker : bool
-        Whether to display crosshair at frame center.
-    detections : Optional[sv.Detections]
-        Optional detections to compute focus measures within bounding boxes.
-
-    Returns
-    -------
-    Tuple[np.ndarray, float, List[float]]
-        Visualization image, whole-image focus value, and list of per-bbox focus values.
+    Returns grayscale image, focus measure array, overall focus value,
+    and per-bbox focus values.
     """
     if len(input_image.shape) == 3:
         gray = cv2.cvtColor(input_image, cv2.COLOR_BGR2GRAY)
-        output = input_image.copy()
     else:
         gray = input_image
-        output = cv2.cvtColor(input_image, cv2.COLOR_GRAY2BGR)
 
     height, width = gray.shape
 
@@ -437,6 +405,49 @@ def calculate_tenengrad_measure(
                 region_focus = focus_measure[y1:y2, x1:x2].mean()
                 bbox_focus_measures.append(float(region_focus))
 
+    return gray, focus_measure, focus_value, bbox_focus_measures
+
+
+def calculate_tenengrad_measure(
+    input_image: np.ndarray,
+    underexposed_threshold: int = 16,
+    overexposed_threshold: int = 239,
+    show_zebra_warnings: bool = True,
+    grid_overlay: str = "3x3",
+    show_hud: bool = True,
+    show_focus_peaking: bool = True,
+    show_center_marker: bool = True,
+    detections: Optional[sv.Detections] = None,
+) -> Tuple[np.ndarray, float, List[float]]:
+    """
+    Tenengrad focus measure with visualization overlay.
+
+    Uses Sobel operators to compute gradient magnitudes as a focus metric.
+    Higher values indicate sharper/more in-focus images.
+
+    Returns the input image unchanged if no visualizations are enabled.
+    """
+    grid_divisions = GRID_DIVISIONS.get(grid_overlay, 0)
+    any_visualization_enabled = (
+        show_zebra_warnings
+        or show_hud
+        or show_focus_peaking
+        or show_center_marker
+        or grid_divisions > 0
+    )
+
+    gray, focus_measure, focus_value, bbox_focus_measures = _compute_tenengrad(
+        input_image, detections
+    )
+
+    if not any_visualization_enabled:
+        return input_image, focus_value, bbox_focus_measures
+
+    if len(input_image.shape) == 3:
+        output = input_image.copy()
+    else:
+        output = cv2.cvtColor(input_image, cv2.COLOR_GRAY2BGR)
+
     if show_zebra_warnings:
         output = _apply_zebra_warnings(
             output, gray, underexposed_threshold, overexposed_threshold
@@ -445,7 +456,6 @@ def calculate_tenengrad_measure(
         output = _apply_focus_peaking(output, focus_measure)
     if show_center_marker:
         output = _draw_center_marker(output)
-    grid_divisions = GRID_DIVISIONS.get(grid_overlay, 0)
     if grid_divisions > 0:
         output = _draw_grid(output, grid_divisions)
     if show_hud:

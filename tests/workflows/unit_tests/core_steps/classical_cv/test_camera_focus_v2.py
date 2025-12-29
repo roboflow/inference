@@ -103,3 +103,32 @@ def test_camera_focus_v2_block_with_detections(dogs_image: np.ndarray) -> None:
     assert "bbox_focus_measures" in output
     assert len(output["bbox_focus_measures"]) == 2
     assert all(fm >= 0 for fm in output["bbox_focus_measures"])
+
+
+def test_camera_focus_v2_block_returns_same_image_when_all_visualizations_disabled(
+    dogs_image: np.ndarray,
+) -> None:
+    block = CameraFocusBlockV2()
+
+    input_image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="some"),
+        numpy_image=dogs_image,
+    )
+
+    output = block.run(
+        image=input_image,
+        underexposed_threshold_percent=3.0,
+        overexposed_threshold_percent=97.0,
+        show_zebra_warnings=False,
+        grid_overlay="None",
+        show_hud=False,
+        show_focus_peaking=False,
+        show_center_marker=False,
+        detections=None,
+    )
+
+    assert output is not None
+    assert output["image"] is input_image
+    assert "focus_measure" in output
+    assert output["focus_measure"] >= 0
+    assert output["bbox_focus_measures"] == []
