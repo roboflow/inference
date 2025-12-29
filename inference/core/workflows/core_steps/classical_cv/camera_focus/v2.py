@@ -324,8 +324,18 @@ def _draw_hud_overlay(
     label_size = cv2.getTextSize(exposure_label, font, font_scale_small, thickness)[0]
     section_spacing = int(12 * scale)
 
-    content_width = max(focus_label_size[0] + focus_value_size[0] + int(20 * scale), label_size[0], hist_width)
-    content_height = focus_label_size[1] + section_spacing + label_size[1] + line_spacing + hist_height
+    content_width = max(
+        focus_label_size[0] + focus_value_size[0] + int(20 * scale),
+        label_size[0],
+        hist_width,
+    )
+    content_height = (
+        focus_label_size[1]
+        + section_spacing
+        + label_size[1]
+        + line_spacing
+        + hist_height
+    )
 
     hud_width = content_width + padding * 2
     hud_height = content_height + padding * 2
@@ -352,11 +362,23 @@ def _draw_hud_overlay(
     text_x = hud_x + padding
     cursor_y = hud_y + padding + focus_label_size[1]
     _draw_text_with_outline(
-        output, focus_label, (text_x, cursor_y), font, font_scale, (255, 255, 255), thickness
+        output,
+        focus_label,
+        (text_x, cursor_y),
+        font,
+        font_scale,
+        (255, 255, 255),
+        thickness,
     )
     value_x = hud_x + hud_width - padding - focus_value_size[0]
     _draw_text_with_outline(
-        output, focus_value_text, (value_x, cursor_y), font, font_scale, (255, 255, 255), thickness
+        output,
+        focus_value_text,
+        (value_x, cursor_y),
+        font,
+        font_scale,
+        (255, 255, 255),
+        thickness,
     )
 
     divider_y = cursor_y + int(section_spacing * 0.5)
@@ -370,7 +392,13 @@ def _draw_hud_overlay(
 
     cursor_y += section_spacing + label_size[1]
     _draw_text_with_outline(
-        output, exposure_label, (text_x, cursor_y), font, font_scale_small, (180, 180, 180), thickness
+        output,
+        exposure_label,
+        (text_x, cursor_y),
+        font,
+        font_scale_small,
+        (180, 180, 180),
+        thickness,
     )
 
     hist_x = text_x
@@ -394,15 +422,23 @@ def _draw_hud_overlay(
             hist = cv2.calcHist([original_image], [ch], None, [256], [0, 256])
             hist_max = hist.max()
             if hist_max > 0:
-                hist_normalized = (hist / hist_max * hist_height).astype(np.int32).flatten()
-                pts = np.column_stack([x_coords, hist_bottom - hist_normalized]).astype(np.int32)
+                hist_normalized = (
+                    (hist / hist_max * hist_height).astype(np.int32).flatten()
+                )
+                pts = np.column_stack([x_coords, hist_bottom - hist_normalized]).astype(
+                    np.int32
+                )
                 cv2.polylines(output, [pts], False, color, line_thickness)
 
     gray_hist = cv2.calcHist([gray], [0], None, [256], [0, 256])
     gray_hist_max = gray_hist.max()
     if gray_hist_max > 0:
-        gray_hist_normalized = (gray_hist / gray_hist_max * hist_height).astype(np.int32).flatten()
-        pts = np.column_stack([x_coords, hist_bottom - gray_hist_normalized]).astype(np.int32)
+        gray_hist_normalized = (
+            (gray_hist / gray_hist_max * hist_height).astype(np.int32).flatten()
+        )
+        pts = np.column_stack([x_coords, hist_bottom - gray_hist_normalized]).astype(
+            np.int32
+        )
         cv2.polylines(output, [pts], False, (255, 255, 255), line_thickness)
 
     return output
